@@ -83,6 +83,34 @@ void main() {
       expect(timerService.timerEndsAt, isNotNull);
     });
 
+    test(
+      'manual playback clears the completed timer pause before restarting',
+      () async {
+        final platform = _RecordingPowerPlatformService();
+        final timerService = TimerService()
+          ..timerMode = TimerMode.manual
+          ..timerDuration = const Duration(minutes: 30)
+          ..timerRemaining = Duration.zero
+          ..pausedByTimerSessionIds.add('session-a');
+        final timer = TimerFacade.create(
+          service: timerService,
+          powerPlatformService: platform,
+        );
+        addTearDown(timer.dispose);
+        _attachNoopRuntime(timer);
+
+        await timer.clearTimerPauseForManualPlayback('session-a');
+
+        expect(timerService.pausedByTimerSessionIds, isEmpty);
+        expect(timerService.timerMode, isNull);
+        expect(timerService.timerDuration, isNull);
+        expect(timer.hasArmedRuntime, isFalse);
+        expect(platform.timerSyncs, hasLength(1));
+        expect(platform.timerSyncs.single['pausedSessionIds'], isEmpty);
+        expect(platform.timerSyncs.single['timerMode'], isNull);
+      },
+    );
+
     test('retains overdue sessions when playback activation fails', () async {
       final timerService = TimerService();
       final timer = TimerFacade.create(
@@ -317,5 +345,30 @@ final class _ControlledPowerPlatformService extends PowerPlatformService {
       nativeRuntimeReadStarted.complete();
     }
     return nativeRuntime.future;
+  }
+}
+
+final class _RecordingPowerPlatformService extends PowerPlatformService {
+  _RecordingPowerPlatformService() : super(isAndroidOverride: false);
+
+  final List<Map<String, Object?>> timerSyncs = <Map<String, Object?>>[];
+
+  @override
+  Future<void> syncPlaybackTimerAlarms({
+    required int? timerMode,
+    required int? timerDurationMs,
+    required bool timerWaitingForPlayback,
+    required int? timerEndsAtWallClockMs,
+    required bool autoResumeEnabled,
+    required int autoResumeHour,
+    required int autoResumeMinute,
+    required int? autoResumeAtMs,
+    required List<String> pausedSessionIds,
+    required int generation,
+  }) async {
+    timerSyncs.add(<String, Object?>{
+      'timerMode': timerMode,
+      'pausedSessionIds': List<String>.from(pausedSessionIds),
+    });
   }
 }

@@ -209,6 +209,29 @@ final class TimerFacade {
     startCountdown();
   }
 
+  /// Releases a session that the completed timer paused when the user starts
+  /// it again manually.
+  ///
+  /// This is completed before issuing the playback command so the native
+  /// timer alarm cannot race a user-initiated restart with stale pause state.
+  Future<void> clearTimerPauseForManualPlayback(String sessionId) async {
+    if (!_service.pausedByTimerSessionIds.remove(sessionId)) return;
+
+    if (_service.pausedByTimerSessionIds.isEmpty) {
+      _service.autoResumeTimer?.cancel();
+      _service
+        ..autoResumeTimer = null
+        ..autoResumeAt = null;
+      if (!_service.timerActive && !_service.timerWaitingForPlayback) {
+        resetRuntimeState(clearPausedSessions: false);
+      }
+    }
+
+    _changed();
+    await saveRuntime();
+    await syncNativeAlarms();
+  }
+
   void resetRuntimeState({bool clearPausedSessions = true}) {
     _service.timerGeneration++;
     _service.countdownTimer?.cancel();

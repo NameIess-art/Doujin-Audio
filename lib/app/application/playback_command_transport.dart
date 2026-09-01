@@ -15,6 +15,10 @@ extension PlaybackCommandTransport on PlaybackCommandCoordinator {
     required bool shouldStartTriggerCountdown,
   }) async {
     if (!_isRegisteredSession(session)) return false;
+    if (shouldStartTriggerCountdown) {
+      await _timerFacade.clearTimerPauseForManualPlayback(session.id);
+      if (!_isRegisteredSession(session)) return false;
+    }
     final generation = _playbackFacade.nextTransportCommandId();
     final token = _playbackCommandRunner.start(
       sessionId: session.id,

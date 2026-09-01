@@ -17,6 +17,8 @@ class LibraryLikeCardMetrics {
 
   static const double rootTileHeight = 150;
   static const double contentHeight = 134;
+  static const double compactRootTileHeight = 112;
+  static const double compactContentHeight = 96;
   static const double infoBlockHeight = 90;
   static const double infoVerticalOffset = -4;
   static const double titleBlockHeight = 38;
@@ -316,6 +318,7 @@ class LibraryLikeWorkCardContent extends StatelessWidget {
     this.enableTitleMarquee = true,
     this.playLoading = false,
     this.extraTrailing,
+    this.compactCoverLayout = false,
   });
 
   final String title;
@@ -330,6 +333,7 @@ class LibraryLikeWorkCardContent extends StatelessWidget {
   final bool enableTitleMarquee;
   final bool playLoading;
   final Widget? extraTrailing;
+  final bool compactCoverLayout;
 
   @override
   Widget build(BuildContext context) {
@@ -360,12 +364,60 @@ class LibraryLikeWorkCardContent extends StatelessWidget {
       builder: (context, _) {
         const infoBlockHeight = LibraryLikeCardMetrics.infoBlockHeight;
         const titleBlockHeight = LibraryLikeCardMetrics.titleBlockHeight;
-        const coverWidth =
-            infoBlockHeight * LibraryLikeCardMetrics.coverAspectRatio;
+        final contentHeight = compactCoverLayout
+            ? LibraryLikeCardMetrics.compactContentHeight
+            : LibraryLikeCardMetrics.contentHeight;
+        final coverHeight = compactCoverLayout
+            ? LibraryLikeCardMetrics.compactContentHeight
+            : infoBlockHeight;
+        final coverWidth =
+            coverHeight * LibraryLikeCardMetrics.coverAspectRatio;
         const maxInfoRows = LibraryLikeInfoLineData.maxLines;
         final visibleLines = lines.take(maxInfoRows).toList(growable: false);
+        if (compactCoverLayout) {
+          return SizedBox(
+            height: contentHeight,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                coverBuilder(coverWidth),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Align(
+                          alignment: Alignment.topLeft,
+                          child: SearchHighlightedText(
+                            text: title,
+                            style: titleStyle,
+                            maxLines: 3,
+                            softWrap: true,
+                          ),
+                        ),
+                      ),
+                      SizedBox(
+                        height: LibraryLikeCardMetrics.actionButtonSize,
+                        child: Align(
+                          alignment: Alignment.centerRight,
+                          child: _buildActions(
+                            context,
+                            cs,
+                            actionHeight:
+                                LibraryLikeCardMetrics.actionButtonSize,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
         return SizedBox(
-          height: LibraryLikeCardMetrics.contentHeight,
+          height: contentHeight,
           child: Column(
             children: [
               Row(
@@ -413,59 +465,7 @@ class LibraryLikeWorkCardContent extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(width: 8),
-                    IconButton(
-                      onPressed: playLoading
-                          ? null
-                          : () {
-                              unawaited(
-                                AppInteractionFeedback.trigger(
-                                  AppInteractionFeedbackType.tap,
-                                ),
-                              );
-                              onPlay();
-                            },
-                      visualDensity: VisualDensity.compact,
-                      tooltip: playTooltip,
-                      style: IconButton.styleFrom(
-                        foregroundColor: accentColor ?? cs.primary,
-                        minimumSize: const Size(
-                          LibraryLikeCardMetrics.actionButtonSize,
-                          LibraryLikeCardMetrics.titleBlockHeight,
-                        ),
-                        maximumSize: const Size(
-                          LibraryLikeCardMetrics.actionButtonSize,
-                          LibraryLikeCardMetrics.titleBlockHeight,
-                        ),
-                        padding: EdgeInsets.zero,
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      ),
-                      icon: playLoading
-                          ? SizedBox.square(
-                              dimension: 20,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2.2,
-                                color: accentColor ?? cs.primary,
-                              ),
-                            )
-                          : const Icon(Icons.add_circle_rounded, size: 25),
-                    ),
-                    if (showExpandIndicator)
-                      Padding(
-                        padding: const EdgeInsets.only(right: 2),
-                        child: IgnorePointer(
-                          child: AnimatedRotation(
-                            turns: expanded ? 0.5 : 0,
-                            duration: const Duration(milliseconds: 180),
-                            curve: Curves.easeOutCubic,
-                            child: Icon(
-                              Icons.expand_more_rounded,
-                              color: cs.onSurfaceVariant,
-                              size: 21,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ?extraTrailing,
+                    _buildActions(context, cs, actionHeight: titleBlockHeight),
                   ],
                 ),
               ),
@@ -473,6 +473,71 @@ class LibraryLikeWorkCardContent extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+
+  Widget _buildActions(
+    BuildContext context,
+    ColorScheme cs, {
+    required double actionHeight,
+  }) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        IconButton(
+          onPressed: playLoading
+              ? null
+              : () {
+                  unawaited(
+                    AppInteractionFeedback.trigger(
+                      AppInteractionFeedbackType.tap,
+                    ),
+                  );
+                  onPlay();
+                },
+          visualDensity: VisualDensity.compact,
+          tooltip: playTooltip,
+          style: IconButton.styleFrom(
+            foregroundColor: accentColor ?? cs.primary,
+            minimumSize: Size(
+              LibraryLikeCardMetrics.actionButtonSize,
+              actionHeight,
+            ),
+            maximumSize: Size(
+              LibraryLikeCardMetrics.actionButtonSize,
+              actionHeight,
+            ),
+            padding: EdgeInsets.zero,
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+          icon: playLoading
+              ? SizedBox.square(
+                  dimension: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2.2,
+                    color: accentColor ?? cs.primary,
+                  ),
+                )
+              : const Icon(Icons.add_circle_rounded, size: 25),
+        ),
+        if (showExpandIndicator)
+          Padding(
+            padding: const EdgeInsets.only(right: 2),
+            child: IgnorePointer(
+              child: AnimatedRotation(
+                turns: expanded ? 0.5 : 0,
+                duration: const Duration(milliseconds: 180),
+                curve: Curves.easeOutCubic,
+                child: Icon(
+                  Icons.expand_more_rounded,
+                  color: cs.onSurfaceVariant,
+                  size: 21,
+                ),
+              ),
+            ),
+          ),
+        ?extraTrailing,
+      ],
     );
   }
 }
@@ -500,6 +565,7 @@ class LibraryLikeMetadataWorkCardContent extends StatelessWidget {
     this.enableTitleMarquee = true,
     this.playLoading = false,
     this.extraTrailing,
+    this.hasResolvedCover = false,
   });
 
   final String title;
@@ -522,6 +588,7 @@ class LibraryLikeMetadataWorkCardContent extends StatelessWidget {
   final bool enableTitleMarquee;
   final bool playLoading;
   final Widget? extraTrailing;
+  final bool hasResolvedCover;
 
   @override
   Widget build(BuildContext context) {
@@ -549,6 +616,7 @@ class LibraryLikeMetadataWorkCardContent extends StatelessWidget {
       enableTitleMarquee: enableTitleMarquee,
       playLoading: playLoading,
       extraTrailing: extraTrailing,
+      compactCoverLayout: fields.isEmpty && hasResolvedCover,
     );
   }
 }

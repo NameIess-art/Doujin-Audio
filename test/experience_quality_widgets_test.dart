@@ -81,6 +81,7 @@ LibraryLikeWorkCardContent _buildFeaturedCard({
   required List<LibraryLikeInfoLineData> lines,
   required Key coverKey,
   bool showExpandIndicator = true,
+  bool compactCoverLayout = false,
 }) {
   return LibraryLikeWorkCardContent(
     title: title,
@@ -88,12 +89,13 @@ LibraryLikeWorkCardContent _buildFeaturedCard({
     playTooltip: 'add',
     onPlay: () {},
     showExpandIndicator: showExpandIndicator,
+    compactCoverLayout: compactCoverLayout,
     enableMarquee: false,
     enableTitleMarquee: false,
     coverBuilder: (coverWidth) => Container(
       key: coverKey,
       width: coverWidth,
-      height: LibraryLikeCardMetrics.infoBlockHeight,
+      height: coverWidth / LibraryLikeCardMetrics.coverAspectRatio,
       decoration: BoxDecoration(
         color: Colors.pink,
         borderRadius: BorderRadius.circular(LibraryLikeCardMetrics.coverRadius),
@@ -393,6 +395,105 @@ void main() {
     expect(titleText.overflow, TextOverflow.ellipsis);
     expect(titleText.softWrap, isTrue);
   });
+
+  testWidgets('empty card info uses the compact resolved-cover layout', (
+    tester,
+  ) async {
+    const coverKey = ValueKey('compact-cover');
+    const title = 'A long work title that remains on the right of its cover';
+
+    await tester.pumpWidget(
+      _buildSurface(
+        ListTile(
+          minTileHeight: LibraryLikeCardMetrics.compactRootTileHeight,
+          contentPadding: LibraryLikeCardMetrics.rootTilePadding,
+          title: _buildFeaturedCard(
+            title: title,
+            coverKey: coverKey,
+            lines: const <LibraryLikeInfoLineData>[],
+            compactCoverLayout: true,
+          ),
+        ),
+      ),
+    );
+
+    final content = find.byType(LibraryLikeWorkCardContent);
+    final contentRect = tester.getRect(content);
+    final coverRect = tester.getRect(find.byKey(coverKey));
+    final addRect = tester.getRect(find.byIcon(Icons.add_circle_rounded));
+    final expandRect = tester.getRect(find.byIcon(Icons.expand_more_rounded));
+    final titleText = tester.widget<Text>(find.text(title));
+
+    expect(
+      tester.getSize(content),
+      const Size(344, LibraryLikeCardMetrics.compactContentHeight),
+    );
+    expect(
+      tester.getSize(find.byKey(coverKey)),
+      const Size(
+        LibraryLikeCardMetrics.compactContentHeight *
+            LibraryLikeCardMetrics.coverAspectRatio,
+        LibraryLikeCardMetrics.compactContentHeight,
+      ),
+    );
+    expect(
+      tester.getSize(find.byType(ListTile)).height,
+      LibraryLikeCardMetrics.compactRootTileHeight,
+    );
+    expect(
+      tester.getTopLeft(find.text(title)).dx,
+      greaterThan(coverRect.right),
+    );
+    expect(tester.getTopLeft(find.text(title)).dy, contentRect.top);
+    expect(addRect.center.dy, greaterThan(contentRect.center.dy));
+    expect(expandRect.center.dy, greaterThan(contentRect.center.dy));
+    expect(addRect.left, greaterThan(coverRect.right));
+    expect(expandRect.left, greaterThan(addRect.left));
+    expect(titleText.maxLines, 3);
+    expect(titleText.overflow, TextOverflow.ellipsis);
+  });
+
+  testWidgets(
+    'metadata card compacts only for empty fields with a resolved cover',
+    (tester) async {
+      const coverKey = ValueKey('metadata-compact-cover');
+
+      Widget buildCard({required bool hasResolvedCover}) {
+        return _buildSurface(
+          LibraryLikeMetadataWorkCardContent(
+            title: 'Work',
+            fields: const <CardInfoField>[],
+            metadata: const LibraryLikeInfoMetadata(),
+            circleLabel: 'Circle',
+            tagsLabel: 'Tags',
+            releaseDateLabel: 'Release',
+            salesCountLabel: 'Sales',
+            ratingLabel: 'Rating',
+            onPlay: () {},
+            playTooltip: 'add',
+            hasResolvedCover: hasResolvedCover,
+            coverBuilder: (coverWidth) => SizedBox(
+              key: coverKey,
+              width: coverWidth,
+              height: coverWidth / LibraryLikeCardMetrics.coverAspectRatio,
+            ),
+          ),
+        );
+      }
+
+      await tester.pumpWidget(buildCard(hasResolvedCover: false));
+      expect(
+        tester.getSize(find.byType(LibraryLikeWorkCardContent)).height,
+        LibraryLikeCardMetrics.contentHeight,
+      );
+
+      await tester.pumpWidget(buildCard(hasResolvedCover: true));
+      expect(
+        tester.getSize(find.byType(LibraryLikeWorkCardContent)).height,
+        LibraryLikeCardMetrics.compactContentHeight,
+      );
+    },
+  );
 
   testWidgets('library-like skeleton cards blend into the page surface', (
     tester,

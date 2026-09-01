@@ -372,24 +372,6 @@ class _SessionListCard extends ConsumerWidget {
   final VoidCallback? onLongPress;
   final VoidCallback? onToggleSelect;
 
-  String _loopModeSummary(BuildContext context, SessionLoopMode mode) {
-    final i18n = ProviderScope.containerOf(
-      context,
-      listen: false,
-    ).read(appLanguageProviderInstanceProvider);
-    if (mode == SessionLoopMode.single) return i18n.tr('single_loop');
-    final scope = mode.isCrossFolder
-        ? i18n.tr('cross_folder')
-        : i18n.tr('current_folder');
-    final order = mode.isShuffle
-        ? i18n.tr('random_order')
-        : i18n.tr('sequential_order');
-    if (mode.isOneShot) {
-      return '$order (${i18n.tr('pause_after_playback')}) - $scope';
-    }
-    return '$order - $scope';
-  }
-
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     if (ref.watch(
@@ -566,7 +548,7 @@ class _SessionListCard extends ConsumerWidget {
                                 children: [
                                   _SessionMetaChip(
                                     icon: Icons.repeat_rounded,
-                                    text: _loopModeSummary(
+                                    text: _playlistLoopModeSummary(
                                       context,
                                       cardState.loopMode,
                                     ),

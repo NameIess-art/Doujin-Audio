@@ -60,14 +60,41 @@ class NativePlaybackRestoreCoordinatorTest {
                     session.sessionId
                 }
             },
-            onTimerSessionsRestored = restored::addAll
+            onMissingSessionsRestored = restored::addAll
         )
-        coordinator.restoreSessionsForTimer(
+        coordinator.restoreMissingSessions(
             sessionIds = listOf("existing", "missing"),
             existingSessionIds = setOf("existing")
         )
         assertEquals(listOf("missing"), restored)
         assertEquals(listOf(false), autoPlayValues)
+    }
+
+    @Test
+    fun `manual playback restore loads a persisted paused session`() {
+        val environment = FakeRestoreEnvironment().apply {
+            sessions = listOf(
+                storedSession("paused").copy(playing = false, playWhenReady = false)
+            )
+        }
+        val restored = mutableListOf<String>()
+        val coordinator = coordinator(
+            environment,
+            restore = { stored, autoPlay, _ ->
+                stored.map { session ->
+                    assertEquals(false, autoPlay(session))
+                    session.sessionId
+                }
+            },
+            onMissingSessionsRestored = restored::addAll
+        )
+
+        coordinator.restoreMissingSessions(
+            sessionIds = listOf("paused"),
+            existingSessionIds = emptySet()
+        )
+
+        assertEquals(listOf("paused"), restored)
     }
 
     @Test
@@ -128,7 +155,7 @@ class NativePlaybackRestoreCoordinatorTest {
         hasPendingCommandDelivery: () -> Boolean = { false },
         stopIdleService: (Int, String) -> Unit = { _, _ -> },
         completeRestore: (List<String>, Boolean) -> Unit = { _, _ -> },
-        onTimerSessionsRestored: (List<String>) -> Unit = {},
+        onMissingSessionsRestored: (List<String>) -> Unit = {},
         onNotificationSessionRestored: (String) -> Unit = {},
         requestAudioFocus: () -> Boolean = { true },
         startBootstrap: () -> NativePlaybackForegroundStartResult = {
@@ -146,7 +173,7 @@ class NativePlaybackRestoreCoordinatorTest {
         hasPlaybackToKeepAlive = { false },
         hasPendingCommandDelivery = hasPendingCommandDelivery,
         stopIdleService = stopIdleService,
-        onTimerSessionsRestored = onTimerSessionsRestored,
+        onMissingSessionsRestored = onMissingSessionsRestored,
         onNotificationSessionRestored = onNotificationSessionRestored,
         logInfo = {}
     )

@@ -321,7 +321,7 @@ class NativePlaybackService : MediaSessionService() {
             hasPlaybackToKeepAlive = ::hasPlaybackToKeepAlive,
             hasPendingCommandDelivery = ::hasPendingCommandDelivery,
             stopIdleService = ::stopIdleServiceAfterRestore,
-            onTimerSessionsRestored = { restoredSessionIds ->
+            onMissingSessionsRestored = { restoredSessionIds ->
                 restoredSessionIds.forEach(::publishSessionState)
                 evictPlayersIfNeeded()
                 persistSessionStateNow()
@@ -812,6 +812,7 @@ class NativePlaybackService : MediaSessionService() {
         transportCommandId: Long = 0L,
         exclusive: Boolean = false
     ): Map<String, Any?> {
+        restoreCoordinator.restoreMissingSessions(listOf(sessionId), sessions.keys)
         val session = sessions[sessionId] ?: return errorResult("Unknown session.")
         val pausedSessionIds = if (exclusive) {
             exclusivePlaybackSessionIdsToPause(
@@ -1274,7 +1275,7 @@ class NativePlaybackService : MediaSessionService() {
         if (sessionIds.isEmpty()) {
             return NativeTimerResumeResult(emptyList(), audioFocusDenied = false)
         }
-        restoreCoordinator.restoreSessionsForTimer(sessionIds, sessions.keys)
+        restoreCoordinator.restoreMissingSessions(sessionIds, sessions.keys)
         notificationsDismissed = false
         playbackSuspended = false
         val resumableSessions = sessionIds.mapNotNull { sessionId ->

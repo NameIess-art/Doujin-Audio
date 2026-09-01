@@ -1724,8 +1724,14 @@ void main() {
       groupKey: '/library/queue',
       groupTitle: 'Queue work',
     );
+    final secondQueueTrack = testMusicTrack(
+      name: 'Queue second track',
+      path: '/library/queue/second-track.mp3',
+      groupKey: '/library/queue',
+      groupTitle: 'Queue work',
+    );
     runtimeGraph.library.addTracks(
-      <MusicTrack>[queueTrack],
+      <MusicTrack>[queueTrack, secondQueueTrack],
       notify: false,
       persist: false,
     );
@@ -1740,6 +1746,12 @@ void main() {
             title: queueTrack.displayName,
             tracks: <MusicTrack>[queueTrack],
           ),
+          PlaybackQueueEntry(
+            id: 'queue-second-entry',
+            kind: PlaybackQueueEntryKind.track,
+            title: secondQueueTrack.displayName,
+            tracks: <MusicTrack>[secondQueueTrack],
+          ),
         ],
       );
     playbackService.markActiveSessionsDirty();
@@ -1751,7 +1763,7 @@ void main() {
       coverGeneration: 0,
       isInitialized: true,
     );
-    await tester.pump();
+    await tester.pumpAndSettle();
 
     final queueCard = tester
         .widgetList<SwipeRevealCard>(find.byType(SwipeRevealCard))
@@ -1767,6 +1779,44 @@ void main() {
       queueCard.closedColor,
       Theme.of(tester.element(find.byType(PlaylistTab))).colorScheme.surface,
     );
+    final queueName = tester.widget<Text>(
+      find.byKey(ValueKey('playback_queue_name_${queueSession.id}')),
+    );
+    final firstTrackName = tester.widget<Text>(
+      find.byKey(ValueKey('playback_queue_track_0_${queueSession.id}')),
+    );
+    final secondTrackName = tester.widget<Text>(
+      find.byKey(ValueKey('playback_queue_track_1_${queueSession.id}')),
+    );
+    expect(queueName.data, queueSession.playbackQueue!.name);
+    expect(queueName.style?.fontSize, 12);
+    expect(queueName.style?.fontWeight, FontWeight.w600);
+    expect(
+      queueName.style?.color,
+      Theme.of(
+        tester.element(find.byType(PlaylistTab)),
+      ).colorScheme.onSurfaceVariant,
+    );
+    expect(firstTrackName.data, queueTrack.displayName);
+    expect(secondTrackName.data, secondQueueTrack.displayName);
+    for (final trackName in <Text>[firstTrackName, secondTrackName]) {
+      expect(trackName.style?.fontSize, 14);
+      expect(trackName.style?.fontWeight, FontWeight.w800);
+      expect(trackName.style?.height, 1.12);
+    }
+    expect(
+      find.byKey(ValueKey('playback_queue_loop_mode_${queueSession.id}')),
+      findsOneWidget,
+    );
+    final loopText = tester.widget<Text>(
+      find.descendant(
+        of: find.byKey(ValueKey('playback_queue_loop_mode_${queueSession.id}')),
+        matching: find.byType(Text),
+      ),
+    );
+    expect(loopText.style?.fontSize, 11);
+    expect(loopText.style?.fontWeight, FontWeight.w600);
+    expect(loopText.style?.fontStyle, FontStyle.italic);
     queueSession.state = PlayerState(true, ProcessingState.ready);
     playbackService.markSessionStateDirty();
     playbackService.syncSlice(
@@ -1777,7 +1827,7 @@ void main() {
       coverGeneration: 0,
       isInitialized: true,
     );
-    await tester.pump();
+    await tester.pumpAndSettle();
 
     final queueRowMaterial = tester.widget<Material>(
       find.byKey(ValueKey('playback_queue_row_surface_${queueSession.id}')),
@@ -3014,18 +3064,30 @@ void main() {
 
       final track = testMusicTrack(
         name: 'Selection track',
-        path: PathMatcher.normalize('/library/selection/track.mp3'),
-        groupKey: PathMatcher.normalize('/library/selection'),
+        path: PathMatcher.normalize('/library/regular/track.mp3'),
+        groupKey: PathMatcher.normalize('/library/regular'),
         groupTitle: 'Selection work',
       );
       final queueTrack = testMusicTrack(
         name: 'Queue selection track',
-        path: PathMatcher.normalize('/library/selection/queue.mp3'),
-        groupKey: PathMatcher.normalize('/library/selection/queue'),
+        path: PathMatcher.normalize('/library/queue/queue.mp3'),
+        groupKey: PathMatcher.normalize('/library/queue'),
         groupTitle: 'Queue selection work',
       );
+      final queueWorkTrack = testMusicTrack(
+        name: 'Queue work first track',
+        path: PathMatcher.normalize('/library/queue-work/first.mp3'),
+        groupKey: PathMatcher.normalize('/library/queue-work'),
+        groupTitle: 'Queue source work',
+      );
+      final secondQueueWorkTrack = testMusicTrack(
+        name: 'Queue work second track',
+        path: PathMatcher.normalize('/library/queue-work/second.mp3'),
+        groupKey: PathMatcher.normalize('/library/queue-work'),
+        groupTitle: 'Queue source work',
+      );
       fixture.runtimeGraph.library.addTracks(
-        <MusicTrack>[track, queueTrack],
+        <MusicTrack>[track, queueTrack, queueWorkTrack, secondQueueWorkTrack],
         notify: false,
         persist: false,
       );
@@ -3044,6 +3106,13 @@ void main() {
                   kind: PlaybackQueueEntryKind.track,
                   title: queueTrack.displayName,
                   tracks: <MusicTrack>[queueTrack],
+                ),
+                PlaybackQueueEntry(
+                  id: 'selection-queue-work-entry',
+                  kind: PlaybackQueueEntryKind.work,
+                  title: 'Queue source work',
+                  workRootPath: PathMatcher.normalize('/library/queue-work'),
+                  tracks: <MusicTrack>[queueWorkTrack, secondQueueWorkTrack],
                 ),
               ],
             );
@@ -3304,6 +3373,51 @@ void main() {
       await tester.longPress(queueTitle);
       await tester.pumpAndSettle();
       expect(queueIndicator, findsOneWidget);
+      await tester.tap(trackTitle);
+      await tester.pumpAndSettle();
+      expect(trackIndicator, findsOneWidget);
+      final sourceQueueIsFirst =
+          tester.getTopLeft(queueTitle).dy < tester.getTopLeft(trackTitle).dy;
+      await tester.tap(createQueueIconButton);
+      await tester.pumpAndSettle();
+      final createdQueue = fixture.runtimeGraph.playback.activeSessions
+          .where(
+            (session) =>
+                session.isPlaybackQueue && session.id != queueSession.id,
+          )
+          .single;
+      final createdEntries = createdQueue.playbackQueue!.entries;
+      expect(
+        createdEntries.map((entry) => entry.kind).toList(growable: false),
+        sourceQueueIsFirst
+            ? <PlaybackQueueEntryKind>[
+                PlaybackQueueEntryKind.track,
+                PlaybackQueueEntryKind.work,
+                PlaybackQueueEntryKind.work,
+              ]
+            : <PlaybackQueueEntryKind>[
+                PlaybackQueueEntryKind.work,
+                PlaybackQueueEntryKind.track,
+                PlaybackQueueEntryKind.work,
+              ],
+      );
+      final copiedQueueTrack = createdEntries.firstWhere(
+        (entry) => entry.kind == PlaybackQueueEntryKind.track,
+      );
+      expect(copiedQueueTrack.tracks, <MusicTrack>[queueTrack]);
+      final copiedQueueWork = createdEntries.firstWhere(
+        (entry) => entry.title == 'Queue source work',
+      );
+      expect(copiedQueueWork.kind, PlaybackQueueEntryKind.work);
+      expect(
+        copiedQueueWork.workRootPath,
+        PathMatcher.normalize('/library/queue-work'),
+      );
+      expect(copiedQueueWork.tracks, <MusicTrack>[
+        queueWorkTrack,
+        secondQueueWorkTrack,
+      ]);
+      expect(batchHeader, findsNothing);
       fixture.playbackService.removeSessions(<String>[queueSession.id]);
       fixture.playbackService.syncSlice(
         activeSessions: <PlaybackSession>[trackSession],

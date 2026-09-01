@@ -226,7 +226,7 @@ class _SessionCoverThumbnailState
 }
 
 class _SessionMetaChip extends StatelessWidget {
-  const _SessionMetaChip({required this.icon, required this.text});
+  const _SessionMetaChip({super.key, required this.icon, required this.text});
 
   final IconData icon;
   final String text;

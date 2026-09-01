@@ -51,7 +51,7 @@ internal class NativePlaybackRestoreCoordinator(
     private val hasPlaybackToKeepAlive: () -> Boolean,
     private val hasPendingCommandDelivery: () -> Boolean,
     private val stopIdleService: (Int, String) -> Unit,
-    private val onTimerSessionsRestored: (List<String>) -> Unit,
+    private val onMissingSessionsRestored: (List<String>) -> Unit,
     private val onNotificationSessionRestored: (String) -> Unit,
     private val logInfo: (String) -> Unit
 ) {
@@ -75,7 +75,10 @@ internal class NativePlaybackRestoreCoordinator(
         }
     }
 
-    fun restoreSessionsForTimer(sessionIds: List<String>, existingSessionIds: Set<String>) {
+    fun restoreMissingSessions(
+        sessionIds: List<String>,
+        existingSessionIds: Set<String>
+    ) {
         val missingSessionIds = sessionIds.filterNot(existingSessionIds::contains).toSet()
         if (missingSessionIds.isEmpty()) return
         val restored = restoreSessions(
@@ -83,7 +86,7 @@ internal class NativePlaybackRestoreCoordinator(
             { false },
             {}
         )
-        onTimerSessionsRestored(restored)
+        onMissingSessionsRestored(restored)
     }
 
     fun restoreSessionForNotification(

@@ -89,18 +89,10 @@ class _PlaybackQueueCard extends ConsumerWidget {
         )
         .take(4)
         .toList(growable: false);
-    final currentTrack = tracks.isEmpty
-        ? null
-        : (tracks
-                .where(
-                  (track) => PathMatcher.equalsNormalized(
-                    track.path,
-                    session.currentTrackPath,
-                  ),
-                )
-                .firstOrNull ??
-            library.trackByPath(session.currentTrackPath) ??
-            tracks[session.currentQueueIndex.clamp(0, tracks.length - 1)]);
+    final firstTrackName = tracks.isEmpty
+        ? i18n.tr('empty_playback_queue')
+        : tracks.first.displayName;
+    final secondTrackName = tracks.length > 1 ? tracks[1].displayName : '';
     return SwipeRevealCard(
       key: ValueKey(session.id),
       shape: _playlistRowShape,
@@ -132,10 +124,14 @@ class _PlaybackQueueCard extends ConsumerWidget {
               ),
             ),
             child: InkWell(
+              excludeFromSemantics: true,
               onTap: () {
                 if (isSelectionMode) {
                   onToggleSelect?.call();
                 } else {
+                  AppInteractionFeedback.trigger(
+                    AppInteractionFeedbackType.tap,
+                  );
                   onOpen();
                 }
               },
@@ -147,6 +143,9 @@ class _PlaybackQueueCard extends ConsumerWidget {
                 }
               },
               child: Padding(
+                key: ValueKey<String>(
+                  'playback_queue_card_content_${session.id}',
+                ),
                 padding: _playlistRowPadding,
                 child: Row(
                   children: [
@@ -177,29 +176,34 @@ class _PlaybackQueueCard extends ConsumerWidget {
                     ],
                     Expanded(
                       child: Semantics(
+                        button: true,
                         selected: isSelectionMode ? isSelected : null,
+                        label: i18n.tr('open_playback_details'),
                         onTap: isSelectionMode ? onToggleSelect : onOpen,
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
                               queue.name,
+                              key: ValueKey<String>(
+                                'playback_queue_name_${session.id}',
+                              ),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: Theme.of(context).textTheme.titleMedium
+                              style: Theme.of(context).textTheme.bodySmall
                                   ?.copyWith(
-                                    fontWeight: FontWeight.w800,
-                                    color: isPlaying
-                                        ? activeColor
-                                        : cs.onSurface,
-                                    fontSize: 14,
+                                    color: cs.onSurfaceVariant,
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 12,
                                   ),
                             ),
-                            const SizedBox(height: 5),
+                            const SizedBox(height: 3),
                             Text(
-                              currentTrack?.displayName ??
-                                  i18n.tr('empty_playback_queue'),
-                              maxLines: 2,
+                              firstTrackName,
+                              key: ValueKey<String>(
+                                'playback_queue_track_0_${session.id}',
+                              ),
+                              maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: Theme.of(context).textTheme.titleMedium
                                   ?.copyWith(
@@ -208,10 +212,37 @@ class _PlaybackQueueCard extends ConsumerWidget {
                                     height: 1.12,
                                   ),
                             ),
+                            const SizedBox(height: 1),
+                            Text(
+                              secondTrackName,
+                              key: ValueKey<String>(
+                                'playback_queue_track_1_${session.id}',
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: Theme.of(context).textTheme.titleMedium
+                                  ?.copyWith(
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: 14,
+                                    height: 1.12,
+                                  ),
+                            ),
+                            const SizedBox(height: 4),
+                            _SessionMetaChip(
+                              key: ValueKey<String>(
+                                'playback_queue_loop_mode_${session.id}',
+                              ),
+                              icon: Icons.repeat_rounded,
+                              text: _playlistLoopModeSummary(
+                                context,
+                                cardState.loopMode,
+                              ),
+                            ),
                           ],
                         ),
                       ),
                     ),
+                    const SizedBox(width: AppSpacing.xxs),
                     Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
@@ -711,8 +742,9 @@ class _PlaybackQueueAudioEditPageState
 
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final playlistAreaBackground =
-        isDark ? cs.surfaceContainerLowest : cs.surfaceContainer;
+    final playlistAreaBackground = isDark
+        ? cs.surfaceContainerLowest
+        : cs.surfaceContainer;
 
     final headerHeight =
         MediaQuery.paddingOf(context).top +
@@ -757,7 +789,8 @@ class _PlaybackQueueAudioEditPageState
                                 AppSpacing.xs,
                               ),
                               buildDefaultDragHandles: false,
-                              proxyDecorator: (child, index, animation) => child,
+                              proxyDecorator: (child, index, animation) =>
+                                  child,
                               itemCount: queueEntries.length,
                               onReorder: (oldIndex, newIndex) {
                                 playback.reorderPlaybackQueueEntry(
@@ -770,12 +803,13 @@ class _PlaybackQueueAudioEditPageState
                                 final entry = queueEntries[index];
                                 return _AnimatedQueueEntryCard(
                                   key: ValueKey(entry.id),
-                                  onRemove: () => _stagePlaybackQueueEntryRemoval(
-                                    context,
-                                    ref,
-                                    sessionId: sessionId,
-                                    entryId: entry.id,
-                                  ),
+                                  onRemove: () =>
+                                      _stagePlaybackQueueEntryRemoval(
+                                        context,
+                                        ref,
+                                        sessionId: sessionId,
+                                        entryId: entry.id,
+                                      ),
                                   builder: (context, triggerRemove) {
                                     return _QueueAudioEditCard(
                                       track: entry.tracks.firstOrNull,
@@ -785,7 +819,8 @@ class _PlaybackQueueAudioEditPageState
                                       }),
                                       trailing: Column(
                                         mainAxisSize: MainAxisSize.min,
-                                        mainAxisAlignment: MainAxisAlignment.center,
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.center,
                                         children: [
                                           IconButton(
                                             tooltip: i18n.tr('remove'),
@@ -795,9 +830,11 @@ class _PlaybackQueueAudioEditPageState
                                                   height: 32,
                                                 ),
                                             padding: EdgeInsets.zero,
-                                            visualDensity: VisualDensity.compact,
+                                            visualDensity:
+                                                VisualDensity.compact,
                                             icon: const Icon(
-                                              Icons.remove_circle_outline_rounded,
+                                              Icons
+                                                  .remove_circle_outline_rounded,
                                               size: 22,
                                             ),
                                             onPressed: triggerRemove,
@@ -850,9 +887,7 @@ class _PlaybackQueueAudioEditPageState
                                 const SizedBox(width: 6),
                                 Text(
                                   i18n.tr('queue_added_audio'),
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .titleSmall
+                                  style: Theme.of(context).textTheme.titleSmall
                                       ?.copyWith(
                                         fontWeight: FontWeight.w700,
                                         color: cs.onSurface,
@@ -871,9 +906,7 @@ class _PlaybackQueueAudioEditPageState
                 final sectionTopOffset = isLandscape ? headerHeight : 0.0;
 
                 final playlistAudioSection = DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: playlistAreaBackground,
-                  ),
+                  decoration: BoxDecoration(color: playlistAreaBackground),
                   child: Stack(
                     children: [
                       Positioned.fill(
@@ -920,7 +953,9 @@ class _PlaybackQueueAudioEditPageState
                             child: HeaderFloatingSurface(
                               height: 32,
                               radius: 16,
-                              padding: const EdgeInsets.symmetric(horizontal: 12),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                              ),
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
@@ -1028,8 +1063,9 @@ class _QueueSourceAudioTile extends ConsumerWidget {
     ).read(appLanguageProviderInstanceProvider);
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final playlistAreaBackground =
-        isDark ? cs.surfaceContainerLowest : cs.surfaceContainer;
+    final playlistAreaBackground = isDark
+        ? cs.surfaceContainerLowest
+        : cs.surfaceContainer;
     return _QueueAudioEditCard(
       track: track,
       title: track.displayName,

@@ -264,6 +264,24 @@ MusicTrack? resolveSessionSwitcherSelectedTrack({
   return null;
 }
 
+String _playlistLoopModeSummary(BuildContext context, SessionLoopMode mode) {
+  final i18n = ProviderScope.containerOf(
+    context,
+    listen: false,
+  ).read(appLanguageProviderInstanceProvider);
+  if (mode == SessionLoopMode.single) return i18n.tr('single_loop');
+  final scope = mode.isCrossFolder
+      ? i18n.tr('cross_folder')
+      : i18n.tr('current_folder');
+  final order = mode.isShuffle
+      ? i18n.tr('random_order')
+      : i18n.tr('sequential_order');
+  if (mode.isOneShot) {
+    return '$order (${i18n.tr('pause_after_playback')}) - $scope';
+  }
+  return '$order - $scope';
+}
+
 bool _sameSessionSwitcherTrack(MusicTrack left, MusicTrack right) {
   if (identical(left, right) ||
       PathMatcher.equalsNormalized(left.path, right.path)) {
@@ -634,19 +652,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
     PlaybackFacade playback,
     AudioPathCoordinator paths,
   ) async {
-    final selectedTracks = <MusicTrack>[];
-    for (final entry in visibleEntries) {
-      if (!_selectedSessionIds.contains(entry.sessionId) ||
-          entry.isPlaybackQueue) {
-        continue;
-      }
-      final track = paths.sessionTrackForPath(
-        entry.session.id,
-        entry.trackPath,
-      );
-      if (track != null) selectedTracks.add(track);
-    }
-    if (selectedTracks.isEmpty) return;
+    if (!_hasSelectedPlaybackQueueSource(visibleEntries, paths)) return;
 
     final queueCount = playback.sessions.values
         .where((session) => session.isPlaybackQueue)
@@ -658,10 +664,58 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
       }),
     );
     final coordinator = ref.read(playbackQueueCoordinatorProvider);
-    for (final track in selectedTracks) {
-      await coordinator.addWork(queue.id, track);
+    for (final entry in visibleEntries) {
+      if (!_selectedSessionIds.contains(entry.sessionId)) continue;
+      if (entry.isPlaybackQueue) {
+        for (final sourceEntry
+            in entry.session.playbackQueue?.entries ??
+                const <PlaybackQueueEntry>[]) {
+          if (sourceEntry.tracks.isEmpty) continue;
+          if (sourceEntry.kind == PlaybackQueueEntryKind.work) {
+            await playback.addWorkToPlaybackQueue(
+              queue.id,
+              title: sourceEntry.title,
+              tracks: sourceEntry.tracks,
+              workRootPath: sourceEntry.workRootPath,
+            );
+          } else {
+            for (final track in sourceEntry.tracks) {
+              await playback.addTrackToPlaybackQueue(queue.id, track);
+            }
+          }
+        }
+        continue;
+      }
+      final track = paths.sessionTrackForPath(
+        entry.session.id,
+        entry.trackPath,
+      );
+      if (track != null) {
+        await coordinator.addWork(queue.id, track);
+      }
     }
     if (mounted) _exitSelectionMode();
+  }
+
+  bool _hasSelectedPlaybackQueueSource(
+    List<PlaylistStructureEntry> visibleEntries,
+    AudioPathCoordinator paths,
+  ) {
+    for (final entry in visibleEntries) {
+      if (!_selectedSessionIds.contains(entry.sessionId)) continue;
+      if (entry.isPlaybackQueue) {
+        if (entry.session.playbackQueue?.entries.any(
+              (sourceEntry) => sourceEntry.tracks.isNotEmpty,
+            ) ??
+            false) {
+          return true;
+        }
+      } else if (paths.sessionTrackForPath(entry.session.id, entry.trackPath) !=
+          null) {
+        return true;
+      }
+    }
+    return false;
   }
 
   @override
@@ -995,17 +1049,10 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                       count > 0 && (multiThreadEnabled || count <= 1);
                   final isPauseEnabled = count > 0;
                   final isRemoveEnabled = count > 0;
-                  final canCreateQueue = visibleEntries.any((entry) {
-                    if (!_selectedSessionIds.contains(entry.sessionId) ||
-                        entry.isPlaybackQueue) {
-                      return false;
-                    }
-                    return paths.sessionTrackForPath(
-                          entry.session.id,
-                          entry.trackPath,
-                        ) !=
-                        null;
-                  });
+                  final canCreateQueue = _hasSelectedPlaybackQueueSource(
+                    visibleEntries,
+                    paths,
+                  );
 
                   return TopPageHeader(
                     key: const ValueKey('playlist_batch_selection_header'),

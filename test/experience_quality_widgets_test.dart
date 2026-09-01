@@ -509,6 +509,85 @@ void main() {
   });
 
   testWidgets(
+    'compact library-like skeleton matches the compact cover card layout',
+    (tester) async {
+      const coverKey = ValueKey('compact-skeleton-cover');
+
+      await tester.pumpWidget(
+        _buildSurface(
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const LibraryLikeSkeletonCard(compactCoverLayout: true),
+              ListTile(
+                minTileHeight: LibraryLikeCardMetrics.compactRootTileHeight,
+                contentPadding: LibraryLikeCardMetrics.rootTilePadding,
+                title: _buildFeaturedCard(
+                  title: 'Work',
+                  coverKey: coverKey,
+                  lines: const <LibraryLikeInfoLineData>[],
+                  compactCoverLayout: true,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+
+      final skeletonCover = find.byWidgetPredicate(
+        (widget) =>
+            widget is ShimmerContainer &&
+            widget.width ==
+                LibraryLikeCardMetrics.compactContentHeight *
+                    LibraryLikeCardMetrics.coverAspectRatio &&
+            widget.height == LibraryLikeCardMetrics.compactContentHeight,
+      );
+      final skeletonAdd = find.byWidgetPredicate(
+        (widget) =>
+            widget is ShimmerContainer &&
+            widget.width == 25 &&
+            widget.height == 25,
+      );
+      final skeletonExpand = find.byWidgetPredicate(
+        (widget) =>
+            widget is ShimmerContainer &&
+            widget.width == 16 &&
+            widget.height == 16,
+      );
+
+      expect(
+        tester.getSize(find.byType(Card)),
+        const Size(360, LibraryLikeCardMetrics.compactRootTileHeight),
+      );
+      expect(skeletonCover, findsOneWidget);
+      expect(
+        tester.getSize(skeletonCover),
+        const Size(
+          LibraryLikeCardMetrics.compactContentHeight *
+              LibraryLikeCardMetrics.coverAspectRatio,
+          LibraryLikeCardMetrics.compactContentHeight,
+        ),
+      );
+      expect(skeletonAdd, findsOneWidget);
+      expect(skeletonExpand, findsOneWidget);
+      expect(
+        tester.getCenter(skeletonAdd).dx -
+            tester.getCenter(find.byIcon(Icons.add_circle_rounded)).dx,
+        closeTo(0, 0.1),
+      );
+      expect(
+        tester.getCenter(skeletonExpand).dx -
+            tester.getCenter(find.byIcon(Icons.expand_more_rounded)).dx,
+        closeTo(0, 0.1),
+      );
+      expect(
+        tester.getCenter(skeletonAdd).dy,
+        greaterThan(tester.getCenter(skeletonCover).dy),
+      );
+    },
+  );
+
+  testWidgets(
     'library-like skeleton actions align with rendered card actions',
     (tester) async {
       const coverKey = ValueKey('alignment-cover');

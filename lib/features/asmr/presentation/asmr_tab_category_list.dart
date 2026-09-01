@@ -223,6 +223,11 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
             (widget.isLoadPending ||
                 state.isLoading ||
                 !state.hasAttemptedLoad));
+    final useCompactSkeleton = ref.watch(
+      settingsStateProvider.select(
+        (state) => state.value?.cardInfoFields.isEmpty ?? false,
+      ),
+    );
     if (widget.isActive) {
       ref.watch(appLanguageStateProvider);
     } else {
@@ -317,7 +322,9 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
                     return Column(
                       children: [
                         for (int i = 0; i < 5; i++)
-                          const LibraryLikeSkeletonCard(),
+                          LibraryLikeSkeletonCard(
+                            compactCoverLayout: useCompactSkeleton,
+                          ),
                       ],
                     );
                   },

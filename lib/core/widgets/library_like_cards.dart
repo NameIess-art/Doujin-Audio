@@ -38,10 +38,15 @@ class LibraryLikeCardMetrics {
 }
 
 class LibraryLikeSkeletonCard extends StatelessWidget {
-  const LibraryLikeSkeletonCard({super.key});
+  const LibraryLikeSkeletonCard({super.key, this.compactCoverLayout = false});
+
+  final bool compactCoverLayout;
 
   @override
   Widget build(BuildContext context) {
+    if (compactCoverLayout) {
+      return const _CompactLibraryLikeSkeletonCard();
+    }
     const infoBlockHeight = LibraryLikeCardMetrics.infoBlockHeight;
     const titleBlockHeight = LibraryLikeCardMetrics.titleBlockHeight;
     const coverWidth =
@@ -116,26 +121,77 @@ class LibraryLikeSkeletonCard extends StatelessWidget {
                         ),
                       ),
                       SizedBox(width: 8),
-                      SizedBox(
-                        width: LibraryLikeCardMetrics
-                            .compactActionButtonLayoutSize,
-                        height: titleBlockHeight,
-                        child: Center(
-                          child: ShimmerContainer(
-                            width: 25,
-                            height: 25,
-                            borderRadius: 12.5,
+                      _LibraryLikeSkeletonActions(
+                        actionHeight: titleBlockHeight,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CompactLibraryLikeSkeletonCard extends StatelessWidget {
+  const _CompactLibraryLikeSkeletonCard();
+
+  @override
+  Widget build(BuildContext context) {
+    const coverHeight = LibraryLikeCardMetrics.compactContentHeight;
+    const coverWidth = coverHeight * LibraryLikeCardMetrics.coverAspectRatio;
+
+    return const Card(
+      margin: EdgeInsets.zero,
+      shape: LibraryLikeCardMetrics.cardShape,
+      color: Colors.transparent,
+      elevation: 0,
+      shadowColor: Colors.transparent,
+      surfaceTintColor: Colors.transparent,
+      child: SizedBox(
+        height: LibraryLikeCardMetrics.compactRootTileHeight,
+        width: double.infinity,
+        child: ShimmerLoader(
+          child: Padding(
+            padding: EdgeInsets.all(8),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                ShimmerContainer(
+                  width: coverWidth,
+                  height: coverHeight,
+                  borderRadius: LibraryLikeCardMetrics.coverRadius,
+                ),
+                SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Padding(
+                          padding: EdgeInsets.only(top: 2),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              ShimmerContainer(height: 12, borderRadius: 4),
+                              SizedBox(height: 4),
+                              ShimmerContainer(
+                                width: 140,
+                                height: 12,
+                                borderRadius: 4,
+                              ),
+                            ],
                           ),
                         ),
                       ),
                       SizedBox(
-                        width: 23,
-                        height: titleBlockHeight,
-                        child: Padding(
-                          padding: EdgeInsets.only(right: 2),
-                          child: Center(
-                            child: ShimmerContainer(width: 16, height: 16),
-                          ),
+                        height: LibraryLikeCardMetrics.actionButtonSize,
+                        child: Align(
+                          alignment: Alignment.centerRight,
+                          child: _LibraryLikeSkeletonActions(),
                         ),
                       ),
                     ],
@@ -146,6 +202,38 @@ class LibraryLikeSkeletonCard extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _LibraryLikeSkeletonActions extends StatelessWidget {
+  const _LibraryLikeSkeletonActions({
+    this.actionHeight = LibraryLikeCardMetrics.actionButtonSize,
+  });
+
+  final double actionHeight;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        SizedBox(
+          width: LibraryLikeCardMetrics.compactActionButtonLayoutSize,
+          height: actionHeight,
+          child: const Center(
+            child: ShimmerContainer(width: 25, height: 25, borderRadius: 12.5),
+          ),
+        ),
+        SizedBox(
+          width: 23,
+          height: actionHeight,
+          child: const Padding(
+            padding: EdgeInsets.only(right: 2),
+            child: Center(child: ShimmerContainer(width: 16, height: 16)),
+          ),
+        ),
+      ],
     );
   }
 }

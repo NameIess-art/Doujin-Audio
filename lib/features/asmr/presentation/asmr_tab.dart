@@ -603,6 +603,11 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
         : _minimumExpandedHeaderHeight(context);
     final headerContentHeight = effectiveHeaderHeight + 4.0;
     final globalInitialized = globalState?.initialized ?? false;
+    final useCompactSkeleton = _readOrWatch(
+      settingsStateProvider.select(
+        (state) => state.value?.cardInfoFields.isEmpty ?? false,
+      ),
+    );
     final categoryState = ref
         .watch(
           asmrCategoryStateProvider((
@@ -641,7 +646,10 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
                 bottomInset + 24,
               ),
               children: [
-                for (int i = 0; i < 5; i++) const LibraryLikeSkeletonCard(),
+                for (int i = 0; i < 5; i++)
+                  LibraryLikeSkeletonCard(
+                    compactCoverLayout: useCompactSkeleton,
+                  ),
               ],
             ),
             content: _AsmrCategoryList(

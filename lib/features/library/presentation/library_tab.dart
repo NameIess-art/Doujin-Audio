@@ -1556,7 +1556,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
   }
 }
 
-class _LibraryLoadingSkeleton extends StatelessWidget {
+class _LibraryLoadingSkeleton extends ConsumerWidget {
   const _LibraryLoadingSkeleton({
     required this.bottomInset,
     required this.topInset,
@@ -1566,7 +1566,12 @@ class _LibraryLoadingSkeleton extends StatelessWidget {
   final double topInset;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final useCompactCard = ref.watch(
+      settingsStateProvider.select(
+        (state) => state.value?.cardInfoFields.isEmpty ?? false,
+      ),
+    );
     return ListView(
       physics: const NeverScrollableScrollPhysics(),
       padding: EdgeInsets.fromLTRB(
@@ -1575,7 +1580,10 @@ class _LibraryLoadingSkeleton extends StatelessWidget {
         LibraryLikeCardMetrics.listHorizontalPadding,
         bottomInset,
       ),
-      children: [for (int i = 0; i < 5; i++) const LibraryLikeSkeletonCard()],
+      children: [
+        for (int i = 0; i < 5; i++)
+          LibraryLikeSkeletonCard(compactCoverLayout: useCompactCard),
+      ],
     );
   }
 }

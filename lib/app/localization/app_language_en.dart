@@ -385,7 +385,7 @@ const Map<String, String> appLanguageEn = {
   'pause_after_playback': 'Pause after finish',
   'loop_mode_title': 'Playback mode',
   'sequential_playback': 'Sequential',
-  'loop_playback': 'Loop',
+  'loop_playback': 'Sequential',
   'shuffle_playback': 'Shuffle',
   'cross_folder': 'Cross-folder',
   'current_folder': 'Current folder',

@@ -23,6 +23,7 @@ import 'package:doujin_audio/features/asmr/presentation/asmr_tab.dart';
 import 'package:doujin_audio/features/library/presentation/library_cover_ui_controller.dart';
 import 'package:doujin_audio/features/library/presentation/library_tab.dart';
 import 'package:doujin_audio/features/player/presentation/playlist_tab.dart';
+import 'package:doujin_audio/features/player/application/playback_facade.dart';
 import 'package:doujin_audio/features/player/application/playback_session_snapshot.dart';
 import 'package:doujin_audio/features/settings/application/app_preferences.dart';
 import 'package:doujin_audio/features/settings/application/app_update_service.dart';
@@ -2430,6 +2431,47 @@ void main() {
     },
   );
 
+  testWidgets('playback queue loop mode includes folder scope selection', (
+    tester,
+  ) async {
+    _setLogicalTestViewSize(tester, const Size(1080, 2400));
+    final harness = await _pumpAppShell(tester);
+    final session = harness.playbackService.sessions['orientation_session']!;
+    session.playbackQueue = PlaybackQueueDefinition(
+      name: 'Queue',
+      entries: const <PlaybackQueueEntry>[],
+    );
+    harness.playbackService.markSessionStateDirty();
+    harness.playbackService.syncSlice(
+      activeSessions: <PlaybackSession>[session],
+      playingSessionCount: 0,
+      focusedSessionId: session.id,
+      multiThreadPlaybackEnabled: false,
+      coverGeneration: 0,
+      isInitialized: true,
+    );
+
+    unawaited(
+      showLoopModeBottomSheet(
+        context: tester.element(find.byType(Scaffold).first),
+        session: PlaybackSessionSnapshot.fromRuntime(session),
+        playback: harness.playback,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('loop_mode_scope_row')), findsOneWidget);
+    await tester.tap(find.text(harness.language.tr('single_loop')));
+    await tester.pump();
+    await tester.tap(find.text(harness.language.tr('cross_folder')));
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('loop_mode_confirm')));
+    await tester.pumpAndSettle();
+    expect(session.loopMode, SessionLoopMode.crossSequential);
+    await _settleSessionDetailAsyncWork(tester);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   testWidgets('session volume slider keeps its released value visible', (
     tester,
   ) async {
@@ -2573,10 +2615,12 @@ void main() {
 final class _AppShellHarness {
   const _AppShellHarness({
     required this.language,
+    required this.playback,
     required this.playbackService,
   });
 
   final AppLanguageProvider language;
+  final PlaybackFacade playback;
   final PlaybackSessionService playbackService;
 }
 
@@ -2991,6 +3035,7 @@ Future<_AppShellHarness> _pumpAppShell(
   }
   return _AppShellHarness(
     language: languageProvider,
+    playback: runtimeGraph.playback,
     playbackService: playbackService,
   );
 }

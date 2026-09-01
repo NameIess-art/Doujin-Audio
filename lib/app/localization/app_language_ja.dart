@@ -349,7 +349,7 @@ const Map<String, String> appLanguageJa = {
   'pause_after_playback': '再生完了後に一時停止',
   'loop_mode_title': '再生モード',
   'sequential_playback': '順番再生',
-  'loop_playback': 'リピート再生',
+  'loop_playback': '順番再生',
   'shuffle_playback': 'シャッフル再生',
   'cross_folder': 'フォルダ横断',
   'current_folder': '現在のフォルダ',

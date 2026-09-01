@@ -274,6 +274,54 @@ void main() {
     expect(next?.queueIndex, 2);
   });
 
+  test('playback queue current-folder mode preserves source queue indices', () {
+    final scope = resolver.resolveScope(
+      currentPath: a1.path,
+      currentTrack: a1,
+      loopMode: SessionLoopMode.folderSequential,
+      sortedLibraryTrackPaths: const <String>['a1', 'a2', 'b1'],
+      tracksByGroup: tracksByGroup,
+      customQueueTracks: <MusicTrack>[a1, b1, a2],
+      isPlaybackQueue: true,
+    );
+
+    final next = resolver.resolveAdvance(
+      scope: scope,
+      forward: true,
+      loopMode: SessionLoopMode.folderSequential,
+      nextInt: (_) => 0,
+    );
+
+    expect(scope.paths, const <String>['a1', 'a2']);
+    expect(scope.queueIndices, const <int>[0, 2]);
+    expect(next?.path, 'a2');
+    expect(next?.queueIndex, 2);
+  });
+
+  test('playback queue cross-folder mode keeps every queue entry', () {
+    final scope = resolver.resolveScope(
+      currentPath: a1.path,
+      currentTrack: a1,
+      loopMode: SessionLoopMode.crossSequential,
+      sortedLibraryTrackPaths: const <String>['a1', 'a2', 'b1'],
+      tracksByGroup: tracksByGroup,
+      customQueueTracks: <MusicTrack>[a1, b1, a2],
+      isPlaybackQueue: true,
+    );
+
+    final next = resolver.resolveAdvance(
+      scope: scope,
+      forward: true,
+      loopMode: SessionLoopMode.crossSequential,
+      nextInt: (_) => 0,
+    );
+
+    expect(scope.paths, const <String>['a1', 'b1', 'a2']);
+    expect(scope.queueIndices, const <int>[0, 1, 2]);
+    expect(next?.path, 'b1');
+    expect(next?.queueIndex, 1);
+  });
+
   test('random once modes are one shot and shuffle', () {
     expect(SessionLoopMode.folderRandomOnce.isOneShot, isTrue);
     expect(SessionLoopMode.folderRandomOnce.isShuffle, isTrue);
@@ -353,7 +401,7 @@ void main() {
 
     expect(scope.paths, const <String>['a1', 'a2']);
     expect(next?.path, 'a2');
-    expect(next?.queueIndex, 1);
+    expect(next?.queueIndex, 2);
   });
 
   test('custom cross-folder scope keeps every custom track', () {

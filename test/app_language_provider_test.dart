@@ -221,6 +221,7 @@ void main() {
     await provider.setLanguage(AppLanguage.zh);
     expect(provider.tr('loop_mode_title'), '循环方式');
     expect(provider.tr('sequential_playback'), '顺序播放');
+    expect(provider.tr('loop_playback'), '顺序播放');
     expect(provider.tr('shuffle_playback'), '随机播放');
     expect(provider.tr('single_loop'), '单曲循环');
     expect(provider.tr('pause_after_playback'), '播放完后暂停');
@@ -234,6 +235,7 @@ void main() {
     await provider.setLanguage(AppLanguage.en);
     expect(provider.tr('loop_mode_title'), 'Playback mode');
     expect(provider.tr('sequential_playback'), 'Sequential');
+    expect(provider.tr('loop_playback'), 'Sequential');
     expect(provider.tr('shuffle_playback'), 'Shuffle');
     expect(provider.tr('single_loop'), 'Single loop');
     expect(provider.tr('pause_after_playback'), 'Pause after finish');
@@ -247,6 +249,7 @@ void main() {
     await provider.setLanguage(AppLanguage.ja);
     expect(provider.tr('loop_mode_title'), '再生モード');
     expect(provider.tr('sequential_playback'), '順番再生');
+    expect(provider.tr('loop_playback'), '順番再生');
     expect(provider.tr('shuffle_playback'), 'シャッフル再生');
     expect(provider.tr('single_loop'), '1曲リピート');
     expect(provider.tr('pause_after_playback'), '再生完了後に一時停止');

@@ -347,7 +347,7 @@ const Map<String, String> appLanguageZh = {
   'pause_after_playback': '播放完后暂停',
   'loop_mode_title': '循环方式',
   'sequential_playback': '顺序播放',
-  'loop_playback': '循环播放',
+  'loop_playback': '顺序播放',
   'shuffle_playback': '随机播放',
   'cross_folder': '跨文件夹',
   'current_folder': '当前文件夹',

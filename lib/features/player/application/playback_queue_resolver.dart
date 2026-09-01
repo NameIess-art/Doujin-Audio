@@ -14,12 +14,15 @@ String _defaultTrackFolderKey(MusicTrack track) => track.groupKey;
 class PlaybackQueueScope {
   PlaybackQueueScope({
     required List<String> paths,
+    List<int> queueIndices = const <int>[],
     required this.currentIndex,
     required this.isPlaybackQueue,
     required this.isCustomQueue,
-  }) : paths = immutableList(paths);
+  }) : paths = immutableList(paths),
+       queueIndices = immutableList(queueIndices);
 
   final List<String> paths;
+  final List<int> queueIndices;
   final int currentIndex;
   final bool isPlaybackQueue;
   final bool isCustomQueue;
@@ -49,21 +52,25 @@ class PlaybackQueueResolver {
   }) {
     final customTracks = customQueueTracks;
     if (customTracks != null && customTracks.isNotEmpty) {
-      final paths = _customQueuePaths(
+      final queueIndices = _customQueueIndices(
         currentTrack: currentTrack,
         loopMode: loopMode,
         customQueueTracks: customTracks,
         isPlaybackQueue: isPlaybackQueue,
-        trackPath: trackPath,
         folderKeyForTrack: folderKeyForTrack,
       );
+      final paths = queueIndices
+          .map((index) => trackPath(customTracks[index]))
+          .toList(growable: false);
       return PlaybackQueueScope(
         paths: paths,
+        queueIndices: queueIndices,
         currentIndex: _currentIndexForPaths(
           paths: paths,
           currentPath: currentPath,
           currentQueueIndex: currentQueueIndex,
           useQueueIndex: isPlaybackQueue,
+          queueIndices: queueIndices,
         ),
         isPlaybackQueue: isPlaybackQueue,
         isCustomQueue: true,
@@ -101,13 +108,15 @@ class PlaybackQueueResolver {
     if (paths.isEmpty) return null;
     final effectiveLoopMode = scope.isPlaybackQueue
         ? (loopMode == SessionLoopMode.single
-            ? SessionLoopMode.folderSequential
-            : loopMode)
+              ? SessionLoopMode.folderSequential
+              : loopMode)
         : loopMode;
     if (effectiveLoopMode == SessionLoopMode.single || paths.length == 1) {
       return PlaybackAdvanceResult(
         path: paths[scope.currentIndex.clamp(0, paths.length - 1)],
-        queueIndex: scope.isCustomQueue ? 0 : null,
+        queueIndex: scope.isCustomQueue
+            ? scope.queueIndices[scope.currentIndex.clamp(0, paths.length - 1)]
+            : null,
       );
     }
 
@@ -117,7 +126,7 @@ class PlaybackQueueResolver {
               paths.length;
     return PlaybackAdvanceResult(
       path: paths[nextIndex],
-      queueIndex: scope.isCustomQueue ? nextIndex : null,
+      queueIndex: scope.isCustomQueue ? scope.queueIndices[nextIndex] : null,
     );
   }
 
@@ -179,31 +188,31 @@ class PlaybackQueueResolver {
     )?.path;
   }
 
-  List<String> _customQueuePaths({
+  List<int> _customQueueIndices({
     required MusicTrack? currentTrack,
     required SessionLoopMode loopMode,
     required List<MusicTrack> customQueueTracks,
     required bool isPlaybackQueue,
-    required TrackPathResolver trackPath,
     required TrackFolderKeyResolver folderKeyForTrack,
   }) {
     if (loopMode == SessionLoopMode.single && !isPlaybackQueue) {
-      return currentTrack == null
-          ? const <String>[]
-          : <String>[trackPath(currentTrack)];
+      final index = currentTrack == null
+          ? -1
+          : customQueueTracks.indexWhere(
+              (track) => identical(track, currentTrack),
+            );
+      return index < 0 ? const <int>[] : <int>[index];
     }
-    Iterable<MusicTrack> candidateTracks = customQueueTracks;
-    if (!isPlaybackQueue && !loopMode.isCrossFolder) {
-      final folderKey = currentTrack == null
-          ? null
-          : folderKeyForTrack(currentTrack);
-      if (folderKey != null) {
-        candidateTracks = candidateTracks.where(
-          (track) => folderKeyForTrack(track) == folderKey,
-        );
-      }
+    final folderKey = currentTrack == null
+        ? null
+        : folderKeyForTrack(currentTrack);
+    if (loopMode.isCrossFolder || folderKey == null) {
+      return List<int>.generate(customQueueTracks.length, (index) => index);
     }
-    return candidateTracks.map(trackPath).toList(growable: false);
+    return <int>[
+      for (var index = 0; index < customQueueTracks.length; index++)
+        if (folderKeyForTrack(customQueueTracks[index]) == folderKey) index,
+    ];
   }
 
   List<String> _libraryScopePaths({
@@ -222,8 +231,7 @@ class PlaybackQueueResolver {
           ? <String>[currentPath]
           : sortedLibraryTrackPaths;
     }
-    final scope =
-        tracksByGroup[currentTrack.groupKey] ?? const <MusicTrack>[];
+    final scope = tracksByGroup[currentTrack.groupKey] ?? const <MusicTrack>[];
     return scope.isEmpty
         ? <String>[currentPath]
         : scope.map(trackPath).toList(growable: false);
@@ -234,12 +242,14 @@ class PlaybackQueueResolver {
     required String currentPath,
     required int currentQueueIndex,
     required bool useQueueIndex,
+    List<int>? queueIndices,
   }) {
     if (paths.isEmpty) return 0;
-    if (useQueueIndex) {
-      final queueIndex = currentQueueIndex.clamp(0, paths.length - 1);
-      if (PathMatcher.equalsNormalized(paths[queueIndex], currentPath)) {
-        return queueIndex;
+    if (useQueueIndex && queueIndices != null) {
+      final scopeIndex = queueIndices.indexOf(currentQueueIndex);
+      if (scopeIndex >= 0 &&
+          PathMatcher.equalsNormalized(paths[scopeIndex], currentPath)) {
+        return scopeIndex;
       }
     }
     final index = paths.indexWhere(

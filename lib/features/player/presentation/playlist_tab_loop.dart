@@ -115,32 +115,26 @@ class _LoopModeSheetState extends State<_LoopModeSheet> {
                                 crossAxisAlignment: CrossAxisAlignment.stretch,
                                 children: [
                                   const SizedBox(height: 12),
-                                  if (!widget.session.isPlaybackQueue) ...[
-                                    SegmentedButton<bool>(
-                                      key: const ValueKey(
-                                        'loop_mode_scope_row',
+                                  SegmentedButton<bool>(
+                                    key: const ValueKey('loop_mode_scope_row'),
+                                    segments: [
+                                      ButtonSegment<bool>(
+                                        value: false,
+                                        label: Text(i18n.tr('current_folder')),
                                       ),
-                                      segments: [
-                                        ButtonSegment<bool>(
-                                          value: false,
-                                          label: Text(
-                                            i18n.tr('current_folder'),
-                                          ),
-                                        ),
-                                        ButtonSegment<bool>(
-                                          value: true,
-                                          label: Text(i18n.tr('cross_folder')),
-                                        ),
-                                      ],
-                                      selected: {_crossFolder},
-                                      onSelectionChanged: (selected) {
-                                        setState(() {
-                                          _crossFolder = selected.first;
-                                        });
-                                      },
-                                      expandedInsets: EdgeInsets.zero,
-                                    ),
-                                  ],
+                                      ButtonSegment<bool>(
+                                        value: true,
+                                        label: Text(i18n.tr('cross_folder')),
+                                      ),
+                                    ],
+                                    selected: {_crossFolder},
+                                    onSelectionChanged: (selected) {
+                                      setState(() {
+                                        _crossFolder = selected.first;
+                                      });
+                                    },
+                                    expandedInsets: EdgeInsets.zero,
+                                  ),
                                   const SizedBox(height: 12),
                                   SegmentedButton<_PlaybackOption>(
                                     key: const ValueKey(
@@ -202,9 +196,7 @@ class _LoopModeSheetState extends State<_LoopModeSheet> {
                         TextButton(
                           key: const ValueKey('loop_mode_confirm'),
                           onPressed: () async {
-                            final effectiveCrossFolder =
-                                _crossFolder && !widget.session.isPlaybackQueue;
-                            final targetNonSingleMode = effectiveCrossFolder
+                            final targetNonSingleMode = _crossFolder
                                 ? (_pauseAfterPlay
                                       ? (_shuffle
                                             ? SessionLoopMode.crossRandomOnce

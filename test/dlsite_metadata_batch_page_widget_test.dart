@@ -244,6 +244,161 @@ void main() {
     );
   });
 
+  testWidgets('batch results wait for all lookups before saving', (
+    tester,
+  ) async {
+    final pending = Completer<List<DlsiteMetadata>>();
+    final session = DlsiteMetadataBatchSession(
+      entries: [resultEntry('001')],
+      lookup: (_) => pending.future,
+      apply: (_) async {},
+    );
+    final languageProvider = AppLanguageProvider();
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appLanguageProviderInstanceProvider.overrideWithValue(
+            languageProvider,
+          ),
+        ],
+        child: MaterialApp(
+          home: DlsiteMetadataBatchResultsPage(session: session),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final doneButton = find.byKey(
+      const ValueKey<String>('batch_metadata_results_done'),
+    );
+    expect(
+      tester
+          .widget<InkWell>(
+            find.descendant(of: doneButton, matching: find.byType(InkWell)),
+          )
+          .onTap,
+      isNull,
+    );
+  });
+
+  testWidgets('batch results show completion counts after saving', (
+    tester,
+  ) async {
+    final session = DlsiteMetadataBatchSession(
+      entries: [resultEntry('001')],
+      lookup: (_) =>
+          Future<List<DlsiteMetadata>>.value([resultMetadata('001')]),
+      apply: (_) async {},
+    );
+    final languageProvider = AppLanguageProvider();
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appLanguageProviderInstanceProvider.overrideWithValue(
+            languageProvider,
+          ),
+        ],
+        child: MaterialApp(
+          home: DlsiteMetadataBatchResultsPage(session: session),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('batch_metadata_results_done')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey<String>('batch_metadata_completion_dialog')),
+      findsOneWidget,
+    );
+    expect(
+      find.text(
+        languageProvider.tr('batch_metadata_completion_saved', {'count': '0'}),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.text(
+        languageProvider.tr('batch_metadata_completion_skipped', {
+          'count': '1',
+        }),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.text(
+        languageProvider.tr('batch_metadata_completion_failed', {'count': '0'}),
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('failed saves retain the result page after the summary closes', (
+    tester,
+  ) async {
+    final session = DlsiteMetadataBatchSession(
+      entries: [resultEntry('001')],
+      lookup: (_) =>
+          Future<List<DlsiteMetadata>>.value([resultMetadata('001')]),
+      apply: (_) => Future<void>.error(StateError('storage unavailable')),
+    );
+    final languageProvider = AppLanguageProvider();
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appLanguageProviderInstanceProvider.overrideWithValue(
+            languageProvider,
+          ),
+        ],
+        child: MaterialApp(
+          home: Builder(
+            builder: (context) => FilledButton(
+              onPressed: () => Navigator.of(context).push<void>(
+                MaterialPageRoute<void>(
+                  builder: (_) =>
+                      DlsiteMetadataBatchResultsPage(session: session),
+                ),
+              ),
+              child: const Text('open results'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('open results'));
+    await tester.pump();
+    await tester.pump();
+    session.confirm(0, metadata: resultMetadata('001'), saveCover: false);
+    await tester.pump();
+
+    final doneButton = find.byKey(
+      const ValueKey<String>('batch_metadata_results_done'),
+    );
+    tester
+        .widget<InkWell>(
+          find.descendant(of: doneButton, matching: find.byType(InkWell)),
+        )
+        .onTap!
+        .call();
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey<String>('batch_metadata_completion_confirm')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey<String>('batch_metadata_results_header')),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('batch setup content follows the one-line header closely', (
     tester,
   ) async {

@@ -80,10 +80,12 @@ typedef DlsiteMetadataBatchApply =
 final class DlsiteMetadataBatchApplyResult {
   const DlsiteMetadataBatchApplyResult({
     required this.savedCount,
+    required this.skippedCount,
     required this.failedCount,
   });
 
   final int savedCount;
+  final int skippedCount;
   final int failedCount;
 }
 
@@ -155,6 +157,10 @@ final class DlsiteMetadataBatchSession extends ChangeNotifier {
       .where((item) => item.status == DlsiteMetadataBatchLookupStatus.confirmed)
       .length;
 
+  bool get hasPendingLookups => _items.any(
+    (item) => item.status == DlsiteMetadataBatchLookupStatus.searching,
+  );
+
   void start() {
     if (_started) return;
     _started = true;
@@ -214,8 +220,20 @@ final class DlsiteMetadataBatchSession extends ChangeNotifier {
     if (apply == null) {
       throw StateError('This batch session cannot save metadata.');
     }
+    if (hasPendingLookups) {
+      throw StateError('Cannot save metadata while lookups are pending.');
+    }
     var savedCount = 0;
-    var failedCount = 0;
+    final skippedCount = _items
+        .where(
+          (item) =>
+              item.status == DlsiteMetadataBatchLookupStatus.notFound ||
+              item.status == DlsiteMetadataBatchLookupStatus.found,
+        )
+        .length;
+    var failedCount = _items
+        .where((item) => item.status == DlsiteMetadataBatchLookupStatus.failed)
+        .length;
     for (final item in _items.where(
       (item) => item.status == DlsiteMetadataBatchLookupStatus.confirmed,
     )) {
@@ -228,6 +246,7 @@ final class DlsiteMetadataBatchSession extends ChangeNotifier {
     }
     return DlsiteMetadataBatchApplyResult(
       savedCount: savedCount,
+      skippedCount: skippedCount,
       failedCount: failedCount,
     );
   }

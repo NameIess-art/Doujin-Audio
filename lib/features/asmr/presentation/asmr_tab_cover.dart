@@ -5,12 +5,14 @@ class _AsmrWorkCover extends ConsumerWidget {
     required this.url,
     required this.width,
     required this.isActive,
+    this.isSelected = false,
     this.duration,
   });
 
   final String url;
   final double width;
   final bool isActive;
+  final bool isSelected;
   final Duration? duration;
 
   @override
@@ -63,6 +65,12 @@ class _AsmrWorkCover extends ConsumerWidget {
                 right: 4,
                 bottom: 4,
                 child: DurationOverlay(duration: duration!),
+              ),
+            if (isSelected)
+              const Positioned(
+                left: 4,
+                bottom: 4,
+                child: _AsmrSelectionIndicator(),
               ),
           ],
         ),

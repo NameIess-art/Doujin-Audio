@@ -616,11 +616,28 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
 
   Future<void> _addSelectedToPlaylist(List<LibraryNode> selected) async {
     final playback = ref.read(playbackFacadeProvider);
+    var addedCount = 0;
     for (final node in selected) {
       final track = _firstTrackForLibraryNode(node);
-      if (track != null) await playback.spawnSession(track);
+      if (track != null && await playback.spawnSession(track)) {
+        addedCount += 1;
+      }
     }
-    if (mounted) _exitSelectionMode();
+    if (!mounted) return;
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
+    _exitSelectionMode();
+    showAppSnackBar(
+      context,
+      addedCount > 0
+          ? i18n.tr('batch_added_to_playlist', {'count': addedCount.toString()})
+          : i18n.tr('operation_failed_retry'),
+      tone: addedCount > 0
+          ? AppFeedbackTone.success
+          : AppFeedbackTone.destructive,
+      icon: addedCount > 0
+          ? Icons.playlist_add_check_rounded
+          : Icons.error_outline_rounded,
+    );
   }
 
   Future<void> _completeSelectedMetadata(List<LibraryNode> selected) async {
@@ -1292,46 +1309,79 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                       titleWidget: const SizedBox.shrink(),
                       leading: HeaderActionPill(
                         children: [
-                          IconButton(
-                            key: const ValueKey('library_batch_add_button'),
-                            onPressed: selectedNodes.isEmpty
-                                ? null
-                                : () => _addSelectedToPlaylist(selectedNodes),
-                            icon: const Icon(Icons.playlist_add_rounded),
-                            tooltip: i18n.tr('batch_add_to_playlist'),
-                          ),
-                          IconButton(
-                            key: const ValueKey(
-                              'library_batch_metadata_action_button',
+                          AppHeaderActionTransition(
+                            child: IconButton(
+                              key: const ValueKey('library_batch_add_button'),
+                              onPressed: selectedNodes.isEmpty
+                                  ? null
+                                  : () => _addSelectedToPlaylist(selectedNodes),
+                              icon: const Icon(Icons.playlist_add_rounded),
+                              tooltip: i18n.tr('batch_add_to_playlist'),
+                              iconSize: 18,
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints.tightFor(
+                                width: 32,
+                                height: 32,
+                              ),
                             ),
-                            onPressed: selectedNodes.isEmpty
-                                ? null
-                                : () =>
-                                      _completeSelectedMetadata(selectedNodes),
-                            icon: const Icon(Icons.library_add_check_rounded),
-                            tooltip: i18n.tr('batch_metadata'),
                           ),
-                          IconButton(
-                            key: const ValueKey('library_batch_remove_button'),
-                            onPressed: selectedNodes.isEmpty
-                                ? null
-                                : () => _removeSelectedLibraryNodes(
-                                    selectedNodes,
-                                  ),
-                            icon: const Icon(Icons.delete_outline_rounded),
-                            tooltip: i18n.tr('remove'),
+                          AppHeaderActionTransition(
+                            delayIndex: 1,
+                            child: IconButton(
+                              key: const ValueKey(
+                                'library_batch_metadata_action_button',
+                              ),
+                              onPressed: selectedNodes.isEmpty
+                                  ? null
+                                  : () => _completeSelectedMetadata(
+                                      selectedNodes,
+                                    ),
+                              icon: const Icon(Icons.library_add_check_rounded),
+                              tooltip: i18n.tr('batch_metadata'),
+                              iconSize: 18,
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints.tightFor(
+                                width: 32,
+                                height: 32,
+                              ),
+                            ),
+                          ),
+                          AppHeaderActionTransition(
+                            delayIndex: 2,
+                            child: IconButton(
+                              key: const ValueKey(
+                                'library_batch_remove_button',
+                              ),
+                              onPressed: selectedNodes.isEmpty
+                                  ? null
+                                  : () => _removeSelectedLibraryNodes(
+                                      selectedNodes,
+                                    ),
+                              icon: const Icon(Icons.delete_outline_rounded),
+                              tooltip: i18n.tr('remove'),
+                              iconSize: 18,
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints.tightFor(
+                                width: 32,
+                                height: 32,
+                              ),
+                            ),
                           ),
                         ],
                       ),
-                      trailing: HeaderFloatingButton(
-                        child: IconButton(
-                          key: const ValueKey('library_exit_selection_button'),
-                          onPressed: _exitSelectionMode,
-                          icon: const Icon(Icons.close_rounded),
-                          tooltip: i18n.tr('cancel'),
+                      trailing: AppHeaderLeadingTransition(
+                        child: HeaderFloatingButton(
+                          child: IconButton(
+                            key: const ValueKey(
+                              'library_exit_selection_button',
+                            ),
+                            onPressed: _exitSelectionMode,
+                            icon: const Icon(Icons.close_rounded),
+                            tooltip: i18n.tr('cancel'),
+                          ),
                         ),
                       ),
-                    )
+                    ).withAppHeaderTransition()
                   : TopPageHeader(
                       key: headerKey,
                       icon: Icons.library_music_rounded,
@@ -1422,7 +1472,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                           ],
                         ),
                       ),
-                    ),
+                    ).withAppHeaderTransition(),
             ),
           ],
         ),

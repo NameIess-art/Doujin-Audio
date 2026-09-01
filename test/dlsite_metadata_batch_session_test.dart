@@ -53,10 +53,12 @@ void main() {
     expect(session.items[1].status, DlsiteMetadataBatchLookupStatus.notFound);
     expect(session.items[2].status, DlsiteMetadataBatchLookupStatus.failed);
     expect(session.items[3].status, DlsiteMetadataBatchLookupStatus.searching);
+    expect(session.hasPendingLookups, isTrue);
 
     searching.complete([metadata('004')]);
     await Future<void>.delayed(Duration.zero);
     expect(session.items[3].status, DlsiteMetadataBatchLookupStatus.found);
+    expect(session.hasPendingLookups, isFalse);
   });
 
   test('keeps at most three lookups active and retries failures', () async {
@@ -112,8 +114,49 @@ void main() {
 
     final result = await session.applyConfirmed();
     expect(result.savedCount, 1);
+    expect(result.skippedCount, 1);
     expect(result.failedCount, 0);
     expect(saved.single.entry.title, '001');
     expect(saved.single.confirmedMetadata?.workTitle, 'Edited work');
   });
+
+  test(
+    'summarizes saved, skipped, and failed batch metadata results',
+    () async {
+      final session = DlsiteMetadataBatchSession(
+        entries: [entry('001'), entry('002'), entry('003'), entry('004')],
+        maxConcurrentLookups: 4,
+        lookup: (query) => switch (query.rjCode) {
+          'RJ000003' => Future<List<DlsiteMetadata>>.error(
+            StateError('offline'),
+          ),
+          _ => Future<List<DlsiteMetadata>>.value([
+            metadata(query.rjCode!.substring(5)),
+          ]),
+        },
+        apply: (item) {
+          if (item.entry.title == '004') {
+            return Future<void>.error(StateError('storage unavailable'));
+          }
+          return Future<void>.value();
+        },
+      );
+      addTearDown(session.dispose);
+
+      session.start();
+      await Future<void>.delayed(Duration.zero);
+      session.confirm(0, metadata: metadata('001'), saveCover: false);
+      session.confirm(3, metadata: metadata('004'), saveCover: false);
+
+      final result = await session.applyConfirmed();
+
+      expect(result.savedCount, 1);
+      expect(result.skippedCount, 1);
+      expect(result.failedCount, 2);
+      expect(
+        result.savedCount + result.skippedCount + result.failedCount,
+        session.items.length,
+      );
+    },
+  );
 }

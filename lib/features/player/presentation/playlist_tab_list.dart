@@ -87,13 +87,12 @@ class _PlaylistSelectionIndicatorAnchor extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: 0,
+      width: isSelected ? 24 : 0,
       height: _playlistCoverSize,
       child: Stack(
-        clipBehavior: Clip.none,
         children: [
           Positioned(
-            left: 4,
+            left: 0,
             bottom: 4,
             child: _PlaylistSelectionIndicator(
               sessionId: sessionId,

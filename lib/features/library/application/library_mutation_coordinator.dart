@@ -593,12 +593,6 @@ final class LibraryMutationCoordinator {
     await _endLibraryBatch(waitForPersistence: false);
   }
 
-  Future<LibraryMutationRenameResult> renameAudioDetailTarget(
-    AudioDetail detail,
-  ) async {
-    return renameAudioDetailTargetToName(detail, detail.workTitle);
-  }
-
   Future<LibraryMutationRenameResult> renameAudioDetailTargetToName(
     AudioDetail detail,
     String targetName,

@@ -8,6 +8,96 @@ const kAppMotionFast = Duration(milliseconds: 180);
 const kAppMotionStandard = Duration(milliseconds: 220);
 const kAppMotionSlow = Duration(milliseconds: 300);
 
+class AppHeaderTransition extends StatelessWidget {
+  const AppHeaderTransition({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final duration = MediaQuery.disableAnimationsOf(context)
+        ? Duration.zero
+        : kAppMotionFast;
+    return AnimatedSwitcher(
+      duration: duration,
+      switchInCurve: Curves.easeOutCubic,
+      switchOutCurve: Curves.easeInCubic,
+      layoutBuilder: (currentChild, previousChildren) => Stack(
+        alignment: Alignment.topLeft,
+        children: [...previousChildren, ?currentChild],
+      ),
+      transitionBuilder: (child, animation) => buildAppFadeTransition(
+        context: context,
+        animation: animation,
+        child: child,
+      ),
+      child: child,
+    );
+  }
+}
+
+class AppHeaderLeadingTransition extends StatelessWidget {
+  const AppHeaderLeadingTransition({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    if (MediaQuery.disableAnimationsOf(context)) return child;
+    return TweenAnimationBuilder<double>(
+      tween: Tween<double>(begin: 0.0, end: 1.0),
+      duration: const Duration(milliseconds: 360),
+      curve: Curves.easeOutBack,
+      builder: (context, value, _) {
+        final scale = 0.4 + (0.6 * value);
+        final turns = (1.0 - value) * -0.25;
+        return Opacity(
+          opacity: value.clamp(0.0, 1.0),
+          child: Transform.scale(
+            scale: scale,
+            child: Transform.rotate(
+              angle: turns * 2 * 3.141592653589793,
+              child: child,
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class AppHeaderActionTransition extends StatelessWidget {
+  const AppHeaderActionTransition({
+    super.key,
+    required this.child,
+    this.delayIndex = 0,
+  });
+
+  final Widget child;
+  final int delayIndex;
+
+  @override
+  Widget build(BuildContext context) {
+    if (MediaQuery.disableAnimationsOf(context)) return child;
+    return TweenAnimationBuilder<double>(
+      tween: Tween<double>(begin: 0.0, end: 1.0),
+      duration: Duration(milliseconds: 320 + delayIndex * 45),
+      curve: Curves.easeOutCubic,
+      builder: (context, value, _) {
+        final scale = 0.5 + (0.5 * value);
+        return Opacity(
+          opacity: value.clamp(0.0, 1.0),
+          child: Transform.scale(scale: scale, child: child),
+        );
+      },
+    );
+  }
+}
+
+extension AppHeaderTransitionWidget on Widget {
+  Widget withAppHeaderTransition() => AppHeaderTransition(child: this);
+}
+
 enum AppPageTransitionStyle { fade, fadeThrough, sharedAxisX, sharedAxisZ }
 
 enum AppIndexedStackTransitionStyle { none, directional, crossFade }
@@ -105,10 +195,7 @@ class _PlaceholderContentTransitionState
               child: widget.placeholder,
             ),
           ),
-        FadeTransition(
-          opacity: _contentOpacity,
-          child: widget.content,
-        ),
+        FadeTransition(opacity: _contentOpacity, child: widget.content),
       ],
     );
   }
@@ -230,10 +317,7 @@ Widget buildAppFadeTransition({
     curve: curve,
     reverseCurve: reverseCurve,
   );
-  return FadeTransition(
-    opacity: curved,
-    child: child,
-  );
+  return FadeTransition(opacity: curved, child: child);
 }
 
 Widget buildCenterExpandTransition({
@@ -700,10 +784,7 @@ class _AppRollingNumberState extends State<AppRollingNumber>
   void initState() {
     super.initState();
     _currentNumber = widget.number;
-    _controller = AnimationController(
-      vsync: this,
-      duration: widget.duration,
-    );
+    _controller = AnimationController(vsync: this, duration: widget.duration);
     _controller.value = 1.0;
   }
 

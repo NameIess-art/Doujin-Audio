@@ -779,7 +779,7 @@ void main() {
     _expectPrimaryFilledButton(tester, button);
   });
 
-  testWidgets('single audio detail keeps the title rename action', (
+  testWidgets('single audio detail omits the title rename action', (
     WidgetTester tester,
   ) async {
     final fixture = AppRuntimeWidgetTestFixture();
@@ -797,17 +797,13 @@ void main() {
     await tester.pumpWidget(
       fixture.build(const AudioDetailSheet(target: target)),
     );
-    final button = find.widgetWithText(
-      FilledButton,
-      fixture.languageProvider.tr('audio_detail_rename_file_from_title'),
-    );
-    for (var i = 0; i < 40 && button.evaluate().isEmpty; i++) {
+    for (var i = 0; i < 40; i++) {
       await tester.runAsync(
         () => Future<void>.delayed(const Duration(milliseconds: 10)),
       );
       await tester.pump(const Duration(milliseconds: 20));
     }
 
-    _expectPrimaryFilledButton(tester, button);
+    expect(find.byIcon(Icons.drive_file_rename_outline), findsNothing);
   });
 }

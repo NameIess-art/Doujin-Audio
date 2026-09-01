@@ -142,9 +142,6 @@ final class AudioPathCoordinator implements PlaybackTrackResolver {
     return root == null ? '' : PathDisplay.folderName(root);
   }
 
-  Future<AudioDetailRenameResult> renameAudioDetailTarget(AudioDetail detail) =>
-      renameAudioDetailTargetToName(detail, detail.workTitle);
-
   Future<AudioDetailRenameResult> renameAudioDetailTargetToName(
     AudioDetail detail,
     String targetName,

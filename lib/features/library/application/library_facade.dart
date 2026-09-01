@@ -828,9 +828,6 @@ final class LibraryFacade implements LibraryCatalog {
     excluded,
   );
 
-  Future<AudioDetailRenameResult> renameAudioDetailTarget(AudioDetail detail) =>
-      renameAudioDetailTargetToName(detail, detail.workTitle);
-
   Future<AudioDetailRenameResult> renameAudioDetailTargetToName(
     AudioDetail detail,
     String targetName,

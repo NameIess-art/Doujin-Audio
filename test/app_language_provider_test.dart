@@ -46,6 +46,15 @@ void main() {
       expect(provider.tr('multi_select'), '多选模式');
       expect(provider.tr('batch_favorite'), '批量收藏');
       expect(provider.tr('batch_unfavorite'), '批量取消收藏');
+      expect(
+        provider.tr('batch_added_to_playlist', {'count': '2'}),
+        '已添加 2 个作品至播放列表',
+      );
+      expect(provider.tr('batch_metadata_completion_title'), '批量补全完成');
+      expect(
+        provider.tr('batch_metadata_completion_saved', {'count': '2'}),
+        '已保存 2 条作品数据',
+      );
       expect(provider.tr('audio_detail_title'), '详细信息');
       expect(provider.tr('asmr_detail_other'), '其他信息');
       expect(provider.tr('asmr_category_rating'), '评分');
@@ -53,12 +62,28 @@ void main() {
       await provider.setLanguage(AppLanguage.en);
       expect(provider.tr('add_playback_queue'), 'Create playback queue');
       expect(provider.tr('multi_select'), 'Multi-select mode');
+      expect(
+        provider.tr('batch_added_to_playlist', {'count': '2'}),
+        'Added 2 works to the playlist',
+      );
+      expect(
+        provider.tr('batch_metadata_completion_skipped', {'count': '3'}),
+        'Skipped 3 work data entries',
+      );
       expect(provider.tr('audio_detail_title'), 'Details');
       expect(provider.tr('asmr_detail_other'), 'Other information');
 
       await provider.setLanguage(AppLanguage.ja);
       expect(provider.tr('add_playback_queue'), '再生キューを作成');
       expect(provider.tr('multi_select'), '複数選択モード');
+      expect(
+        provider.tr('batch_added_to_playlist', {'count': '2'}),
+        '2 件の作品をプレイリストに追加しました',
+      );
+      expect(
+        provider.tr('batch_metadata_completion_failed', {'count': '1'}),
+        '1 件の作品データに失敗しました',
+      );
       expect(provider.tr('audio_detail_title'), '詳細情報');
       expect(provider.tr('asmr_detail_other'), 'その他の情報');
     },

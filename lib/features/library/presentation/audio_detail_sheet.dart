@@ -20,7 +20,6 @@ import '../../../core/widgets/app_buttons.dart';
 import '../../../core/widgets/app_dialog.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/async_cover_image.dart';
-import '../../../core/widgets/confirm_action_dialog.dart';
 import '../../../core/widgets/operation_feedback.dart';
 import '../../../core/widgets/app_bottom_sheet.dart';
 import 'dlsite_metadata_review_page.dart';
@@ -401,88 +400,6 @@ class _AudioDetailSheetState extends ConsumerState<AudioDetailSheet> {
     });
   }
 
-  Future<void> _confirmRename(AudioDetail detail) async {
-    final i18n = ProviderScope.containerOf(
-      context,
-      listen: false,
-    ).read(appLanguageProviderInstanceProvider);
-    if (detail.workTitle.trim().isEmpty) {
-      showAppSnackBar(
-        context,
-        i18n.tr('audio_detail_rename_missing_title'),
-        tone: AppFeedbackTone.warning,
-      );
-      return;
-    }
-    final confirmed = await _confirmAction(
-      title: i18n.tr('audio_detail_rename_file_from_title'),
-      message: i18n.tr('audio_detail_rename_confirm'),
-      confirmLabel: i18n.tr('confirm'),
-    );
-    if (!confirmed || !mounted) return;
-
-    setState(() {
-      _runningAction = true;
-    });
-    try {
-      final result = await ref
-          .read(uiOperationServiceProvider)
-          .run<AudioDetailRenameResult>(
-            scope: _operationScope,
-            labelKey: 'audio_detail_rename_file_from_title',
-            task: (_) => ref
-                .read(audioPathCoordinatorProvider)
-                .renameAudioDetailTarget(detail),
-          );
-      if (!mounted) return;
-      setState(() {
-        _target = result.detail.target;
-        _detail = result.detail;
-        _runningAction = false;
-      });
-      showAppSnackBar(
-        context,
-        result.backupFailed
-            ? i18n.tr('audio_detail_backup_failed')
-            : i18n.tr('audio_detail_rename_done'),
-        tone: result.backupFailed
-            ? AppFeedbackTone.warning
-            : AppFeedbackTone.success,
-      );
-    } catch (_) {
-      if (!mounted) return;
-      setState(() {
-        _runningAction = false;
-      });
-      showAppSnackBar(
-        context,
-        i18n.tr('audio_detail_rename_failed'),
-        tone: AppFeedbackTone.warning,
-      );
-    }
-  }
-
-  Future<bool> _confirmAction({
-    required String title,
-    required String message,
-    required String confirmLabel,
-  }) async {
-    final i18n = ProviderScope.containerOf(
-      context,
-      listen: false,
-    ).read(appLanguageProviderInstanceProvider);
-    return showConfirmActionDialog(
-      context: context,
-      title: title,
-      message: message,
-      cancelLabel: i18n.tr('cancel'),
-      confirmLabel: confirmLabel,
-      icon: Icons.drive_file_rename_outline_rounded,
-      confirmIcon: Icons.check_rounded,
-      isDestructive: false,
-    );
-  }
-
   @override
   void dispose() {
     _durationCalculationGeneration++;
@@ -587,25 +504,6 @@ class _AudioDetailSheetState extends ConsumerState<AudioDetailSheet> {
                 ),
               )
             else if (detail != null) ...[
-              if (!_target.isLibraryRootFolder) ...[
-                SizedBox(
-                  width: double.infinity,
-                  child: FilledButton.icon(
-                    onPressed: _runningAction
-                        ? null
-                        : () => _confirmRename(detail),
-                    icon: const Icon(Icons.drive_file_rename_outline),
-                    label: Text(
-                      i18n.tr('audio_detail_rename_file_from_title'),
-                      maxLines: 2,
-                      textAlign: TextAlign.center,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 12),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 12),
-              ],
               if (_target.isLibraryRootFolder) ...[
                 _FolderCoverSelector(
                   key: ValueKey('${_target.targetPath}:$coverGeneration'),

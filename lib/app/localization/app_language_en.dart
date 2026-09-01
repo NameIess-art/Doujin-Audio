@@ -89,6 +89,10 @@ const Map<String, String> appLanguageEn = {
   'batch_metadata_progress': '{current} / {total}',
   'batch_metadata_load_failed':
       'Unable to load the local library. Please try again.',
+  'batch_metadata_completion_title': 'Batch completion finished',
+  'batch_metadata_completion_saved': 'Saved {count} work data entries',
+  'batch_metadata_completion_skipped': 'Skipped {count} work data entries',
+  'batch_metadata_completion_failed': 'Failed {count} work data entries',
   'library_manage_empty': 'No imported libraries yet.',
   'skip': 'Skip',
   'search': 'Search',
@@ -348,11 +352,6 @@ const Map<String, String> appLanguageEn = {
   'audio_detail_set_cover': 'Set as cover',
   'audio_detail_current_cover': 'Current cover',
   'audio_detail_rename_file': 'Rename file',
-  'audio_detail_rename_file_from_title': 'Use work title\nas file name',
-  'audio_detail_rename_confirm':
-      'Use the work title to rename this file. This moves the local path. Continue?',
-  'audio_detail_rename_missing_title': 'Fill in the work title first.',
-  'audio_detail_rename_done': 'Renamed.',
   'audio_detail_rename_failed':
       'Rename failed. Check whether the file exists or is in use.',
   'dlsite_review_title': 'Review work data',
@@ -851,6 +850,7 @@ const Map<String, String> appLanguageEn = {
   'save': 'Save',
   'multi_select': 'Multi-select mode',
   'batch_add_to_playlist': 'Add to playlist',
+  'batch_added_to_playlist': 'Added {count} works to the playlist',
   'batch_download': 'Batch download',
   'batch_favorite': 'Batch favorite',
   'batch_unfavorite': 'Batch unfavorite',

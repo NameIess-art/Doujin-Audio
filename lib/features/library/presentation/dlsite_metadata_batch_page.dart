@@ -6,7 +6,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/theme/app_styles.dart';
 import '../../../core/ui/ui_operation_service.dart';
-import '../../../core/widgets/app_feedback.dart';
+import '../../../core/widgets/app_buttons.dart';
+import '../../../core/widgets/app_dialog.dart';
 import '../application/dlsite_metadata_batch_session.dart';
 import '../domain/audio_library_category.dart';
 import 'dlsite_metadata_review_page.dart';
@@ -611,25 +612,20 @@ class _DlsiteMetadataBatchResultsPageState
   }
 
   Future<void> _saveAll() async {
-    if (_savingAll || widget.session.confirmedCount == 0) return;
+    if (_savingAll || widget.session.hasPendingLookups) return;
     setState(() {
       _savingAll = true;
     });
     final result = await widget.session.applyConfirmed();
     if (!mounted) return;
-    if (result.failedCount > 0) {
-      setState(() {
-        _savingAll = false;
-      });
-      showAppSnackBar(
-        context,
-        ProviderScope.containerOf(context, listen: false)
-            .read(appLanguageProviderInstanceProvider)
-            .tr('audio_detail_save_failed'),
-        tone: AppFeedbackTone.warning,
-      );
-      return;
-    }
+    setState(() {
+      _savingAll = false;
+    });
+    await showAppDialog<void>(
+      context: context,
+      builder: (_) => _BatchMetadataCompletionDialog(result: result),
+    );
+    if (!mounted || result.failedCount > 0) return;
     Navigator.of(context).pop();
   }
 
@@ -714,7 +710,7 @@ class _DlsiteMetadataBatchResultsPageState
                   borderRadius: BorderRadius.circular(23),
                   child: InkWell(
                     borderRadius: BorderRadius.circular(23),
-                    onTap: _savingAll || widget.session.confirmedCount == 0
+                    onTap: _savingAll || widget.session.hasPendingLookups
                         ? null
                         : _saveAll,
                     child: Padding(
@@ -755,6 +751,60 @@ class _DlsiteMetadataBatchResultsPageState
                 ),
               ),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _BatchMetadataCompletionDialog extends StatelessWidget {
+  const _BatchMetadataCompletionDialog({required this.result});
+
+  final DlsiteMetadataBatchApplyResult result;
+
+  @override
+  Widget build(BuildContext context) {
+    final i18n = ProviderScope.containerOf(
+      context,
+      listen: false,
+    ).read(appLanguageProviderInstanceProvider);
+    return AppDialog(
+      key: const ValueKey<String>('batch_metadata_completion_dialog'),
+      title: i18n.tr('batch_metadata_completion_title'),
+      icon: Icons.task_alt_rounded,
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            i18n.tr('batch_metadata_completion_saved', {
+              'count': result.savedCount.toString(),
+            }),
+            key: const ValueKey<String>('batch_metadata_completion_saved'),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            i18n.tr('batch_metadata_completion_skipped', {
+              'count': result.skippedCount.toString(),
+            }),
+            key: const ValueKey<String>('batch_metadata_completion_skipped'),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            i18n.tr('batch_metadata_completion_failed', {
+              'count': result.failedCount.toString(),
+            }),
+            key: const ValueKey<String>('batch_metadata_completion_failed'),
+          ),
+        ],
+      ),
+      actions: AppDialogActions(
+        children: [
+          AppPrimaryButton(
+            key: const ValueKey<String>('batch_metadata_completion_confirm'),
+            onPressed: () => Navigator.of(context).pop(),
+            label: i18n.tr('confirm'),
           ),
         ],
       ),

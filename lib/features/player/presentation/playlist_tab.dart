@@ -531,95 +531,6 @@ class PlaylistTab extends ConsumerStatefulWidget {
   ConsumerState<PlaylistTab> createState() => _PlaylistTabState();
 }
 
-class _PlaylistHeaderTransition extends StatelessWidget {
-  const _PlaylistHeaderTransition({required this.child});
-
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    final duration = MediaQuery.disableAnimationsOf(context)
-        ? Duration.zero
-        : kAppMotionFast;
-    return AnimatedSwitcher(
-      duration: duration,
-      switchInCurve: Curves.easeOutCubic,
-      switchOutCurve: Curves.easeInCubic,
-      layoutBuilder: (currentChild, previousChildren) {
-        return Stack(
-          alignment: Alignment.topLeft,
-          children: [...previousChildren, ?currentChild],
-        );
-      },
-      transitionBuilder: (child, animation) => buildAppFadeTransition(
-        context: context,
-        animation: animation,
-        child: child,
-      ),
-      child: child,
-    );
-  }
-}
-
-class _AnimatedHeaderLeading extends StatelessWidget {
-  const _AnimatedHeaderLeading({required this.child});
-
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    if (MediaQuery.disableAnimationsOf(context)) return child;
-    return TweenAnimationBuilder<double>(
-      tween: Tween<double>(begin: 0.0, end: 1.0),
-      duration: const Duration(milliseconds: 360),
-      curve: Curves.easeOutBack,
-      builder: (context, value, _) {
-        final scale = 0.4 + (0.6 * value);
-        final turns = (1.0 - value) * -0.25;
-        return Opacity(
-          opacity: value.clamp(0.0, 1.0),
-          child: Transform.scale(
-            scale: scale,
-            child: Transform.rotate(
-              angle: turns * 2 * 3.141592653589793,
-              child: child,
-            ),
-          ),
-        );
-      },
-    );
-  }
-}
-
-class _AnimatedHeaderAction extends StatelessWidget {
-  const _AnimatedHeaderAction({required this.child, this.delayIndex = 0});
-
-  final Widget child;
-  final int delayIndex;
-
-  @override
-  Widget build(BuildContext context) {
-    if (MediaQuery.disableAnimationsOf(context)) return child;
-    return TweenAnimationBuilder<double>(
-      tween: Tween<double>(begin: 0.0, end: 1.0),
-      duration: Duration(milliseconds: 320 + delayIndex * 45),
-      curve: Curves.easeOutCubic,
-      builder: (context, value, _) {
-        final scale = 0.5 + (0.5 * value);
-        return Opacity(
-          opacity: value.clamp(0.0, 1.0),
-          child: Transform.scale(scale: scale, child: child),
-        );
-      },
-    );
-  }
-}
-
-extension on Widget {
-  Widget _withPlaylistHeaderTransition() =>
-      _PlaylistHeaderTransition(child: this);
-}
-
 class _PlaylistTabState extends ConsumerState<PlaylistTab>
     with AutomaticKeepAliveClientMixin, MainTabStateMixin<PlaylistTab> {
   final ScrollController _scrollController = ScrollController();
@@ -1106,7 +1017,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                     titleWidget: const SizedBox.shrink(),
                     leading: HeaderActionPill(
                       children: [
-                        _AnimatedHeaderAction(
+                        AppHeaderActionTransition(
                           child: IconButton(
                             key: const ValueKey('batch_play_button'),
                             onPressed: isPlayEnabled ? _handleBatchPlay : null,
@@ -1120,7 +1031,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                             ),
                           ),
                         ),
-                        _AnimatedHeaderAction(
+                        AppHeaderActionTransition(
                           delayIndex: 1,
                           child: IconButton(
                             key: const ValueKey('batch_pause_button'),
@@ -1137,7 +1048,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                             ),
                           ),
                         ),
-                        _AnimatedHeaderAction(
+                        AppHeaderActionTransition(
                           delayIndex: 2,
                           child: IconButton(
                             key: const ValueKey('batch_create_queue_button'),
@@ -1158,7 +1069,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                             ),
                           ),
                         ),
-                        _AnimatedHeaderAction(
+                        AppHeaderActionTransition(
                           delayIndex: 3,
                           child: IconButton(
                             key: const ValueKey('batch_remove_button'),
@@ -1177,7 +1088,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                         ),
                       ],
                     ),
-                    trailing: _AnimatedHeaderLeading(
+                    trailing: AppHeaderLeadingTransition(
                       child: HeaderFloatingButton(
                         child: IconButton(
                           key: const ValueKey('exit_selection_button'),
@@ -1187,7 +1098,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                         ),
                       ),
                     ),
-                  )._withPlaylistHeaderTransition();
+                  ).withAppHeaderTransition();
                 }
 
                 return TopPageHeader(
@@ -1211,7 +1122,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                       mainAxisSize: MainAxisSize.min,
                       mainAxisAlignment: MainAxisAlignment.end,
                       children: [
-                        _AnimatedHeaderAction(
+                        AppHeaderActionTransition(
                           child: headerState.hasTimer
                               ? _TimerCountdownCapsule(
                                   remaining:
@@ -1237,7 +1148,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                                 ),
                         ),
                         const SizedBox(width: 8),
-                        _AnimatedHeaderAction(
+                        AppHeaderActionTransition(
                           delayIndex: 1,
                           child: HeaderFloatingButton(
                             child: IconButton(
@@ -1259,7 +1170,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                       ],
                     ),
                   ),
-                )._withPlaylistHeaderTransition();
+                ).withAppHeaderTransition();
               },
             ),
           ),

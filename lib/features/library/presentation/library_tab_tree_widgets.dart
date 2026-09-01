@@ -1,5 +1,21 @@
 part of 'library_tab.dart';
 
+class _LibrarySelectionIndicator extends StatelessWidget {
+  const _LibrarySelectionIndicator();
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: 24,
+    height: 24,
+    decoration: BoxDecoration(
+      shape: BoxShape.circle,
+      color: const Color(0xFF4CAF50),
+      border: Border.all(color: Colors.white, width: 1.5),
+    ),
+    child: const Icon(Icons.check_rounded, size: 16, color: Colors.white),
+  );
+}
+
 class _LibraryTreeItem extends StatelessWidget {
   const _LibraryTreeItem({
     super.key,
@@ -322,6 +338,7 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
                 hasChildren: hasChildren,
                 onPlay: () => unawaited(_playFolder(context, playback)),
                 index: widget.index,
+                isSelected: widget.isSelected,
               )
             : Row(
                 children: [
@@ -471,25 +488,17 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
         ),
         onRemove: () => _removeFolder(context),
         onWillReveal: _expansionController.collapse,
-        child: Badge(
-          alignment: Alignment.bottomLeft,
-          offset: const Offset(6, -6),
-          isLabelVisible: widget.isSelected,
-          backgroundColor: const Color(0xFF4CAF50),
-          largeSize: 22,
-          label: const Icon(Icons.check_rounded, size: 14, color: Colors.white),
-          child: Card(
-            margin: EdgeInsets.zero,
-            clipBehavior: Clip.antiAlias,
-            shape: cardShape,
-            color: widget.isSelected
-                ? cs.primaryContainer.withValues(alpha: 0.25)
-                : Colors.transparent,
-            elevation: 0,
-            shadowColor: Colors.transparent,
-            surfaceTintColor: Colors.transparent,
-            child: content,
-          ),
+        child: Card(
+          margin: EdgeInsets.zero,
+          clipBehavior: Clip.antiAlias,
+          shape: cardShape,
+          color: widget.isSelected
+              ? cs.primaryContainer.withValues(alpha: 0.25)
+              : Colors.transparent,
+          elevation: 0,
+          shadowColor: Colors.transparent,
+          surfaceTintColor: Colors.transparent,
+          child: content,
         ),
       ),
     );
@@ -609,75 +618,64 @@ class _TrackNodeWidget extends ConsumerWidget {
             ),
           ),
           onRemove: () => _removeTrack(context, ref, track),
-          child: Badge(
-            alignment: Alignment.bottomLeft,
-            offset: const Offset(6, -6),
-            isLabelVisible: isSelected,
-            backgroundColor: const Color(0xFF4CAF50),
-            largeSize: 22,
-            label: const Icon(
-              Icons.check_rounded,
-              size: 14,
-              color: Colors.white,
-            ),
-            child: Card(
-              margin: EdgeInsets.zero,
-              clipBehavior: Clip.antiAlias,
-              shape: cardShape,
-              color: isSelected
-                  ? cs.primaryContainer.withValues(alpha: 0.25)
-                  : (isAlreadyPlaying && !track.isVideo)
-                  ? Color.alphaBlend(
-                      cs.primaryContainer.withValues(alpha: 0.40),
-                      cs.surface,
-                    )
-                  : Colors.transparent,
-              elevation: 0,
-              shadowColor: Colors.transparent,
-              surfaceTintColor: Colors.transparent,
-              child: useFeaturedCard
-                  ? ListTile(
-                      contentPadding: LibraryLikeCardMetrics.rootTilePadding,
-                      minTileHeight:
-                          _FolderNodeWidgetState._rootFolderTileHeight,
-                      title: _SingleMediaFileCardContent(
-                        track: track,
-                        title: track.displayName,
-                        detail: singleDetail,
-                        detailLoading: isSingleDetailLoading,
-                        index: index,
-                        onPlay: () => unawaited(playSingleTrack()),
-                      ),
-                    )
-                  : Padding(
-                      padding: const EdgeInsets.fromLTRB(12, 12, 6, 12),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: _SingleAudioFileCardContent(
-                              title: track.displayName,
-                              detail: singleDetail,
-                              detailLoading: isSingleDetailLoading,
-                            ),
-                          ),
-                          IconButton(
-                            onPressed: () => unawaited(playSingleTrack()),
-                            style: IconButton.styleFrom(
-                              foregroundColor: cs.primary,
-                              minimumSize: const Size(40, 44),
-                              maximumSize: const Size(40, 44),
-                              padding: EdgeInsets.zero,
-                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                            ),
-                            icon: const Icon(
-                              Icons.add_circle_rounded,
-                              size: 25,
-                            ),
-                          ),
-                        ],
-                      ),
+          child: Card(
+            margin: EdgeInsets.zero,
+            clipBehavior: Clip.antiAlias,
+            shape: cardShape,
+            color: isSelected
+                ? cs.primaryContainer.withValues(alpha: 0.25)
+                : (isAlreadyPlaying && !track.isVideo)
+                ? Color.alphaBlend(
+                    cs.primaryContainer.withValues(alpha: 0.40),
+                    cs.surface,
+                  )
+                : Colors.transparent,
+            elevation: 0,
+            shadowColor: Colors.transparent,
+            surfaceTintColor: Colors.transparent,
+            child: useFeaturedCard
+                ? ListTile(
+                    contentPadding: LibraryLikeCardMetrics.rootTilePadding,
+                    minTileHeight: _FolderNodeWidgetState._rootFolderTileHeight,
+                    title: _SingleMediaFileCardContent(
+                      track: track,
+                      title: track.displayName,
+                      detail: singleDetail,
+                      detailLoading: isSingleDetailLoading,
+                      index: index,
+                      isSelected: isSelected,
+                      onPlay: () => unawaited(playSingleTrack()),
                     ),
-            ),
+                  )
+                : Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 12, 6, 12),
+                    child: Row(
+                      children: [
+                        if (isSelected) ...[
+                          const _LibrarySelectionIndicator(),
+                          const SizedBox(width: AppSpacing.xs),
+                        ],
+                        Expanded(
+                          child: _SingleAudioFileCardContent(
+                            title: track.displayName,
+                            detail: singleDetail,
+                            detailLoading: isSingleDetailLoading,
+                          ),
+                        ),
+                        IconButton(
+                          onPressed: () => unawaited(playSingleTrack()),
+                          style: IconButton.styleFrom(
+                            foregroundColor: cs.primary,
+                            minimumSize: const Size(40, 44),
+                            maximumSize: const Size(40, 44),
+                            padding: EdgeInsets.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                          icon: const Icon(Icons.add_circle_rounded, size: 25),
+                        ),
+                      ],
+                    ),
+                  ),
           ),
         ),
       );
@@ -969,6 +967,7 @@ class _RootFolderCardContent extends StatelessWidget {
     required this.expanded,
     required this.hasChildren,
     required this.onPlay,
+    this.isSelected = false,
     this.index,
   });
 
@@ -980,6 +979,7 @@ class _RootFolderCardContent extends StatelessWidget {
   final bool expanded;
   final bool hasChildren;
   final VoidCallback onPlay;
+  final bool isSelected;
   final int? index;
 
   @override
@@ -992,10 +992,21 @@ class _RootFolderCardContent extends StatelessWidget {
       showExpandIndicator: hasChildren,
       onPlay: onPlay,
       index: index,
-      coverBuilder: (coverWidth) => _LibraryCoverThumbnail(
-        folderPath: folderPath,
-        width: coverWidth,
-        duration: detail?.duration ?? folderDuration,
+      coverBuilder: (coverWidth) => Stack(
+        clipBehavior: Clip.none,
+        children: [
+          _LibraryCoverThumbnail(
+            folderPath: folderPath,
+            width: coverWidth,
+            duration: detail?.duration ?? folderDuration,
+          ),
+          if (isSelected)
+            const Positioned(
+              left: 4,
+              bottom: 4,
+              child: _LibrarySelectionIndicator(),
+            ),
+        ],
       ),
     );
   }
@@ -1092,6 +1103,7 @@ class _SingleMediaFileCardContent extends StatelessWidget {
     required this.detail,
     required this.detailLoading,
     required this.onPlay,
+    this.isSelected = false,
     this.index,
   });
 
@@ -1100,6 +1112,7 @@ class _SingleMediaFileCardContent extends StatelessWidget {
   final AudioDetail? detail;
   final bool detailLoading;
   final VoidCallback onPlay;
+  final bool isSelected;
   final int? index;
 
   @override
@@ -1110,10 +1123,21 @@ class _SingleMediaFileCardContent extends StatelessWidget {
       detailLoading: detailLoading,
       onPlay: onPlay,
       index: index,
-      coverBuilder: (coverWidth) => _LibraryTrackCoverThumbnail(
-        track: track,
-        width: coverWidth,
-        duration: detail?.duration ?? track.duration,
+      coverBuilder: (coverWidth) => Stack(
+        clipBehavior: Clip.none,
+        children: [
+          _LibraryTrackCoverThumbnail(
+            track: track,
+            width: coverWidth,
+            duration: detail?.duration ?? track.duration,
+          ),
+          if (isSelected)
+            const Positioned(
+              left: 4,
+              bottom: 4,
+              child: _LibrarySelectionIndicator(),
+            ),
+        ],
       ),
     );
   }

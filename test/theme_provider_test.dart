@@ -45,6 +45,22 @@ void main() {
       ],
     );
     for (final preset in ThemeAccentPreset.values) {
+      if (preset == ThemeAccentPreset.gray) {
+        final lightScheme = preset.colorScheme(Brightness.light);
+        expect(lightScheme.primary, const Color(0xFF5C5F62));
+        expect(
+          _contrastRatio(lightScheme.onPrimary, lightScheme.primary),
+          greaterThan(4.5),
+        );
+
+        final darkScheme = preset.colorScheme(Brightness.dark);
+        expect(darkScheme.primary, preset.primaryColor);
+        expect(
+          _contrastRatio(darkScheme.onPrimary, darkScheme.primary),
+          greaterThan(4.5),
+        );
+        continue;
+      }
       final lightScheme = preset.colorScheme(Brightness.light);
       final generatedLightScheme = ColorScheme.fromSeed(
         seedColor: preset.primaryColor,

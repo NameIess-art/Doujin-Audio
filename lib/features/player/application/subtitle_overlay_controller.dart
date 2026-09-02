@@ -63,10 +63,6 @@ final class SubtitleOverlayController {
 
   Future<void> updateSubtitle(String text) => _platform.updateSubtitle(text);
 
-  Future<void> updatePlaybackState(bool isPlaying) async {
-    // The Android overlay receives playback state through its service.
-  }
-
   Future<void> updateStyle({
     double? fontSize,
     String? backgroundColor,

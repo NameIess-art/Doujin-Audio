@@ -11,7 +11,7 @@ class StartupWindowThemeTest {
             StartupWindowTheme.surfaceColor("mint", dark = false)
         )
         assertEquals(
-            0xFF12201C.toInt(),
+            0xFF101513.toInt(),
             StartupWindowTheme.surfaceColor("mint", dark = true)
         )
         assertEquals(
@@ -19,7 +19,7 @@ class StartupWindowThemeTest {
             StartupWindowTheme.surfaceColor("lavender", dark = false)
         )
         assertEquals(
-            0xFF1D1927.toInt(),
+            0xFF131117.toInt(),
             StartupWindowTheme.surfaceColor("lavender", dark = true)
         )
     }
@@ -31,7 +31,7 @@ class StartupWindowThemeTest {
             StartupWindowTheme.surfaceColor("unknown", dark = false)
         )
         assertEquals(
-            0xFF211A1B.toInt(),
+            0xFF141112.toInt(),
             StartupWindowTheme.surfaceColor("unknown", dark = true)
         )
     }

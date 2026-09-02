@@ -59,28 +59,31 @@ extension ThemeAccentPresetValue on ThemeAccentPreset {
       ThemeAccentPreset.coral ||
       ThemeAccentPreset.rose ||
       ThemeAccentPreset.pink =>
-        dark ? const Color(0xFF211A1B) : const Color(0xFFFFF8F8),
+        dark ? const Color(0xFF141112) : const Color(0xFFFFF8F8),
       ThemeAccentPreset.lavender || ThemeAccentPreset.periwinkle =>
-        dark ? const Color(0xFF1D1927) : const Color(0xFFFAF8FF),
+        dark ? const Color(0xFF131117) : const Color(0xFFFAF8FF),
       ThemeAccentPreset.blue ||
       ThemeAccentPreset.sky ||
       ThemeAccentPreset.cyan =>
-        dark ? const Color(0xFF111D24) : const Color(0xFFF5FBFF),
+        dark ? const Color(0xFF101417) : const Color(0xFFF5FBFF),
       ThemeAccentPreset.mint ||
       ThemeAccentPreset.green ||
       ThemeAccentPreset.lightGreen =>
-        dark ? const Color(0xFF12201C) : const Color(0xFFF5FFF9),
+        dark ? const Color(0xFF101513) : const Color(0xFFF5FFF9),
       ThemeAccentPreset.lime ||
       ThemeAccentPreset.amber ||
       ThemeAccentPreset.orange ||
       ThemeAccentPreset.peach =>
-        dark ? const Color(0xFF241D13) : const Color(0xFFFFF9F2),
+        dark ? const Color(0xFF151310) : const Color(0xFFFFF9F2),
       ThemeAccentPreset.gray =>
-        dark ? const Color(0xFF1A1D21) : const Color(0xFFF7F8FA),
+        dark ? const Color(0xFF121315) : const Color(0xFFF7F8FA),
     };
   }
 
   ColorScheme colorScheme(Brightness brightness) {
+    if (this == ThemeAccentPreset.gray) {
+      return _grayColorScheme(brightness);
+    }
     final generated = ColorScheme.fromSeed(
       seedColor: primaryColor,
       brightness: brightness,
@@ -90,10 +93,187 @@ extension ThemeAccentPresetValue on ThemeAccentPreset {
         ThemeData.estimateBrightnessForColor(primaryColor) == Brightness.dark
         ? Colors.white
         : const Color(0xFF1B1B1F);
+    final darkSurface = bootstrapSurfaceColor(Brightness.dark);
+    final containerLowest = Color.alphaBlend(
+      Colors.black.withValues(alpha: 0.35),
+      darkSurface,
+    );
+    final containerLow = Color.alphaBlend(
+      Colors.white.withValues(alpha: 0.035),
+      darkSurface,
+    );
+    final container = Color.alphaBlend(
+      Colors.white.withValues(alpha: 0.06),
+      darkSurface,
+    );
+    final containerHigh = Color.alphaBlend(
+      Colors.white.withValues(alpha: 0.09),
+      darkSurface,
+    );
+    final containerHighest = Color.alphaBlend(
+      Colors.white.withValues(alpha: 0.13),
+      darkSurface,
+    );
     return generated.copyWith(
       primary: primaryColor,
       onPrimary: onPrimary,
       surfaceTint: primaryColor,
+      surface: darkSurface,
+      surfaceDim: darkSurface,
+      surfaceBright: containerHigh,
+      surfaceContainerLowest: containerLowest,
+      surfaceContainerLow: containerLow,
+      surfaceContainer: container,
+      surfaceContainerHigh: containerHigh,
+      surfaceContainerHighest: containerHighest,
+    );
+  }
+
+  static ColorScheme _grayColorScheme(Brightness brightness) {
+    if (brightness == Brightness.dark) {
+      const primary = Color(0xFFC7C6C6);
+      const onPrimary = Color(0xFF1B1B1F);
+      const primaryContainer = Color(0xFF44474B);
+      const onPrimaryContainer = Color(0xFFE2E3E6);
+      const secondary = Color(0xFFC6C7CA);
+      const onSecondary = Color(0xFF2F3235);
+      const secondaryContainer = Color(0xFF45484C);
+      const onSecondaryContainer = Color(0xFFE2E3E6);
+      const tertiary = Color(0xFFA8A9AC);
+      const onTertiary = Color(0xFF222426);
+      const tertiaryContainer = Color(0xFF383A3D);
+      const onTertiaryContainer = Color(0xFFD6D7DA);
+      const error = Color(0xFFFFB4AB);
+      const onError = Color(0xFF690005);
+      const errorContainer = Color(0xFF93000A);
+      const onErrorContainer = Color(0xFFFFDAD6);
+      const surface = Color(0xFF121315);
+      const onSurface = Color(0xFFE2E3E6);
+      const onSurfaceVariant = Color(0xFFC4C7CB);
+      const outline = Color(0xFF8E9195);
+      const outlineVariant = Color(0xFF44474B);
+      const shadow = Color(0xFF000000);
+      const scrim = Color(0xFF000000);
+      const inverseSurface = Color(0xFFE2E3E6);
+      const onInverseSurface = Color(0xFF121315);
+      const inversePrimary = Color(0xFF5C5F62);
+      const surfaceDim = Color(0xFF121315);
+      const surfaceBright = Color(0xFF27282A);
+      const surfaceContainerLowest = Color(0xFF0C0C0E);
+      const surfaceContainerLow = Color(0xFF1A1B1D);
+      const surfaceContainer = Color(0xFF202123);
+      const surfaceContainerHigh = Color(0xFF27282A);
+      const surfaceContainerHighest = Color(0xFF313233);
+
+      return const ColorScheme(
+        brightness: Brightness.dark,
+        primary: primary,
+        onPrimary: onPrimary,
+        primaryContainer: primaryContainer,
+        onPrimaryContainer: onPrimaryContainer,
+        secondary: secondary,
+        onSecondary: onSecondary,
+        secondaryContainer: secondaryContainer,
+        onSecondaryContainer: onSecondaryContainer,
+        tertiary: tertiary,
+        onTertiary: onTertiary,
+        tertiaryContainer: tertiaryContainer,
+        onTertiaryContainer: onTertiaryContainer,
+        error: error,
+        onError: onError,
+        errorContainer: errorContainer,
+        onErrorContainer: onErrorContainer,
+        surface: surface,
+        onSurface: onSurface,
+        onSurfaceVariant: onSurfaceVariant,
+        outline: outline,
+        outlineVariant: outlineVariant,
+        shadow: shadow,
+        scrim: scrim,
+        inverseSurface: inverseSurface,
+        onInverseSurface: onInverseSurface,
+        inversePrimary: inversePrimary,
+        surfaceDim: surfaceDim,
+        surfaceBright: surfaceBright,
+        surfaceContainerLowest: surfaceContainerLowest,
+        surfaceContainerLow: surfaceContainerLow,
+        surfaceContainer: surfaceContainer,
+        surfaceContainerHigh: surfaceContainerHigh,
+        surfaceContainerHighest: surfaceContainerHighest,
+        surfaceTint: primary,
+      );
+    }
+
+    const primary = Color(0xFF5C5F62);
+    const onPrimary = Color(0xFFFFFFFF);
+    const primaryContainer = Color(0xFFE2E3E5);
+    const onPrimaryContainer = Color(0xFF191C1E);
+    const secondary = Color(0xFF5D6063);
+    const onSecondary = Color(0xFFFFFFFF);
+    const secondaryContainer = Color(0xFFE2E3E5);
+    const onSecondaryContainer = Color(0xFF1A1C1E);
+    const tertiary = Color(0xFF707376);
+    const onTertiary = Color(0xFFFFFFFF);
+    const tertiaryContainer = Color(0xFFEAEBEE);
+    const onTertiaryContainer = Color(0xFF202224);
+    const error = Color(0xFFBA1A1A);
+    const onError = Color(0xFFFFFFFF);
+    const errorContainer = Color(0xFFFFDAD6);
+    const onErrorContainer = Color(0xFF410002);
+    const surface = Color(0xFFF7F8FA);
+    const onSurface = Color(0xFF1A1C1E);
+    const onSurfaceVariant = Color(0xFF44474A);
+    const outline = Color(0xFF74777B);
+    const outlineVariant = Color(0xFFC4C7CB);
+    const shadow = Color(0xFF000000);
+    const scrim = Color(0xFF000000);
+    const inverseSurface = Color(0xFF2F3133);
+    const onInverseSurface = Color(0xFFF1F0F4);
+    const inversePrimary = Color(0xFFC7C6C6);
+    const surfaceDim = Color(0xFFDCDFE2);
+    const surfaceBright = Color(0xFFF7F8FA);
+    const surfaceContainerLowest = Color(0xFFFFFFFF);
+    const surfaceContainerLow = Color(0xFFF1F3F5);
+    const surfaceContainer = Color(0xFFEBEDEF);
+    const surfaceContainerHigh = Color(0xFFE5E7EA);
+    const surfaceContainerHighest = Color(0xFFDFE2E4);
+
+    return const ColorScheme(
+      brightness: Brightness.light,
+      primary: primary,
+      onPrimary: onPrimary,
+      primaryContainer: primaryContainer,
+      onPrimaryContainer: onPrimaryContainer,
+      secondary: secondary,
+      onSecondary: onSecondary,
+      secondaryContainer: secondaryContainer,
+      onSecondaryContainer: onSecondaryContainer,
+      tertiary: tertiary,
+      onTertiary: onTertiary,
+      tertiaryContainer: tertiaryContainer,
+      onTertiaryContainer: onTertiaryContainer,
+      error: error,
+      onError: onError,
+      errorContainer: errorContainer,
+      onErrorContainer: onErrorContainer,
+      surface: surface,
+      onSurface: onSurface,
+      onSurfaceVariant: onSurfaceVariant,
+      outline: outline,
+      outlineVariant: outlineVariant,
+      shadow: shadow,
+      scrim: scrim,
+      inverseSurface: inverseSurface,
+      onInverseSurface: onInverseSurface,
+      inversePrimary: inversePrimary,
+      surfaceDim: surfaceDim,
+      surfaceBright: surfaceBright,
+      surfaceContainerLowest: surfaceContainerLowest,
+      surfaceContainerLow: surfaceContainerLow,
+      surfaceContainer: surfaceContainer,
+      surfaceContainerHigh: surfaceContainerHigh,
+      surfaceContainerHighest: surfaceContainerHighest,
+      surfaceTint: primary,
     );
   }
 }

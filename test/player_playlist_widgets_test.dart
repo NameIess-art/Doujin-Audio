@@ -1724,7 +1724,7 @@ void main() {
       path: '/library/queue/track.mp3',
       groupKey: '/library/queue',
       groupTitle: 'Queue work',
-    );
+    ).copyWith(duration: const Duration(minutes: 2, seconds: 35));
     final secondQueueTrack = testMusicTrack(
       name: 'Queue second track',
       path: '/library/queue/second-track.mp3',
@@ -1794,9 +1794,6 @@ void main() {
     final firstTrackName = tester.widget<Text>(
       find.byKey(ValueKey('playback_queue_track_0_${queueSession.id}')),
     );
-    final secondTrackName = tester.widget<Text>(
-      find.byKey(ValueKey('playback_queue_track_1_${queueSession.id}')),
-    );
     expect(queueName.data, queueSession.playbackQueue!.name);
     expect(queueName.style?.fontSize, 12);
     expect(queueName.style?.fontWeight, FontWeight.w600);
@@ -1807,19 +1804,35 @@ void main() {
       ).colorScheme.onSurfaceVariant,
     );
     expect(firstTrackName.data, queueTrack.displayName);
-    expect(secondTrackName.data, secondQueueTrack.displayName);
-    for (final trackName in <Text>[firstTrackName, secondTrackName]) {
-      expect(trackName.style?.fontSize, 14);
-      expect(trackName.style?.fontWeight, FontWeight.w800);
-      expect(trackName.style?.height, 1.12);
-    }
+    expect(firstTrackName.style?.fontSize, 14);
+    expect(firstTrackName.style?.fontWeight, FontWeight.w800);
+    expect(firstTrackName.style?.height, 1.12);
+    expect(firstTrackName.maxLines, 2);
+    expect(
+      find.byKey(ValueKey('playback_queue_track_1_${queueSession.id}')),
+      findsNothing,
+    );
+    final durationOverlay = find.byKey(
+      ValueKey('playback_queue_duration_${queueSession.id}'),
+    );
+    expect(durationOverlay, findsOneWidget);
+    expect(
+      find.descendant(of: durationOverlay, matching: find.text('02:35')),
+      findsOneWidget,
+    );
+    final coverGridRect = tester.getRect(
+      find.byKey(const ValueKey('playback_queue_cover_grid')),
+    );
+    final durationRect = tester.getRect(durationOverlay);
+    expect(durationRect.right, closeTo(coverGridRect.right - 4, 0.01));
+    expect(durationRect.bottom, closeTo(coverGridRect.bottom - 4, 0.01));
 
     final remoteCurrentTrack = testMusicTrack(
       name: 'Remote current track name',
       path: 'https://example.com/audio/current-track.mp3',
       groupKey: 'remote-work',
       groupTitle: 'Remote work',
-    );
+    ).copyWith(duration: const Duration(minutes: 5, seconds: 12));
     queueSession
       ..currentTrackPath = remoteCurrentTrack.path
       ..currentQueueIndex = 1
@@ -1867,12 +1880,12 @@ void main() {
       remoteCurrentTrack.displayName,
     );
     expect(
-      tester
-          .widget<Text>(
-            find.byKey(ValueKey('playback_queue_track_1_${queueSession.id}')),
-          )
-          .data,
-      secondQueueTrack.displayName,
+      find.byKey(ValueKey('playback_queue_track_1_${queueSession.id}')),
+      findsNothing,
+    );
+    expect(
+      find.descendant(of: durationOverlay, matching: find.text('05:12')),
+      findsOneWidget,
     );
     expect(
       find.byKey(ValueKey('playback_queue_loop_mode_${queueSession.id}')),
@@ -1958,6 +1971,18 @@ void main() {
     expect(find.text(languageProvider.tr('edit_queue_name')), findsOneWidget);
     expect(find.text(languageProvider.tr('edit_queue_color')), findsOneWidget);
     expect(find.text(languageProvider.tr('remove_queue')), findsOneWidget);
+    final queueTrackCountText = languageProvider.tr(
+      'audio_count',
+      {'count': queueSession.playbackQueue!.expandedTracks.length.toString()},
+    );
+    expect(find.text(queueTrackCountText), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byType(PlaybackQueueEditPage),
+        matching: find.byType(Divider),
+      ),
+      findsOneWidget,
+    );
     expect(
       find.ancestor(
         of: find.byType(PlaybackQueueEditPage),
@@ -2021,6 +2046,7 @@ void main() {
       findsOneWidget,
     );
     expect(find.byType(BottomSheet), findsOneWidget);
+    expect(find.byType(Slider), findsNWidgets(3));
     expect(find.text(languageProvider.tr('edit_queue_audio')), findsNothing);
     await tester.tap(find.byKey(const ValueKey('playback_queue_color_back')));
     await tester.pump();
@@ -3234,6 +3260,39 @@ void main() {
       await pumpUntilFound(tester, trackTitle);
       await pumpUntilFound(tester, queueTitle);
       await tester.pumpAndSettle();
+
+      final trackContentFinder = find.byKey(
+        ValueKey<String>('playlist_card_content_${trackSession.id}'),
+      );
+      final queueContentFinder = find.byKey(
+        ValueKey<String>('playback_queue_card_content_${queueSession.id}'),
+      );
+      final trackCardRect = tester.getRect(trackContentFinder);
+      final queueCardRect = tester.getRect(queueContentFinder);
+      final trackButton = find.descendant(
+        of: trackContentFinder,
+        matching: find.byType(IconButton),
+      );
+      final queueButton = find.descendant(
+        of: queueContentFinder,
+        matching: find.byType(IconButton),
+      );
+      final trackButtonRect = tester.getRect(trackButton);
+      final queueButtonRect = tester.getRect(queueButton);
+
+      expect(queueCardRect.height, closeTo(trackCardRect.height, 0.01));
+      expect(
+        queueButtonRect.center.dx,
+        closeTo(trackButtonRect.center.dx, 0.01),
+      );
+      expect(
+        queueButtonRect.right - queueCardRect.right,
+        closeTo(trackButtonRect.right - trackCardRect.right, 0.01),
+      );
+      expect(
+        queueButtonRect.center.dy - queueCardRect.top,
+        closeTo(trackButtonRect.center.dy - trackCardRect.top, 0.01),
+      );
 
       final trackTitleX = tester.getTopLeft(trackTitle).dx;
       final queueTitleX = tester.getTopLeft(queueTitle).dx;

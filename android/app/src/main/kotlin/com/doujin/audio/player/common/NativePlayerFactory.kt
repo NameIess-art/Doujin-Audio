@@ -123,6 +123,8 @@ internal class NativePlayerFactory(
         }
         val httpDataSourceFactory = DefaultHttpDataSource.Factory()
             .setAllowCrossProtocolRedirects(true)
+            .setConnectTimeoutMs(15_000)
+            .setReadTimeoutMs(20_000)
         val defaultDataSourceFactory = DefaultDataSource.Factory(context, httpDataSourceFactory)
         val resolvingDataSourceFactory = ResolvingDataSource.Factory(defaultDataSourceFactory) { dataSpec ->
             val headers = nativePlaybackRequestHeadersForHost(dataSpec.uri.host)

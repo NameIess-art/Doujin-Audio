@@ -1,12 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="launch_background">#211A1B</color>
+    <color name="launch_background">#141112</color>
 
     <!-- System mode dynamic surface colors (night mode overrides) -->
-    <color name="launch_background_rose">#211A1B</color>
-    <color name="launch_background_lavender">#1D1927</color>
-    <color name="launch_background_blue">#111D24</color>
-    <color name="launch_background_mint">#12201C</color>
-    <color name="launch_background_amber">#241D13</color>
-    <color name="launch_background_gray">#1A1D21</color>
+    <color name="launch_background_rose">#141112</color>
+    <color name="launch_background_lavender">#131117</color>
+    <color name="launch_background_blue">#101417</color>
+    <color name="launch_background_mint">#101513</color>
+    <color name="launch_background_amber">#151310</color>
+    <color name="launch_background_gray">#121315</color>
 </resources>

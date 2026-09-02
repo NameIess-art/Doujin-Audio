@@ -317,10 +317,10 @@ void main() {
     );
     final theme = Theme.of(context);
     expect(theme.brightness, Brightness.dark);
-    expect(theme.scaffoldBackgroundColor, const Color(0xFF211A1B));
+    expect(theme.scaffoldBackgroundColor, const Color(0xFF141112));
     expect(
       tester.widget<MaterialApp>(find.byType(MaterialApp)).color,
-      const Color(0xFF211A1B),
+      const Color(0xFF141112),
     );
     expect(find.byType(AppBrandIcon), findsNothing);
     expect(find.byType(CircularProgressIndicator), findsNothing);
@@ -354,7 +354,7 @@ void main() {
     final context = tester.element(
       find.byKey(const ValueKey<String>('app_bootstrap_loading')),
     );
-    expect(Theme.of(context).scaffoldBackgroundColor, const Color(0xFF12201C));
+    expect(Theme.of(context).scaffoldBackgroundColor, const Color(0xFF101513));
   });
 
   testWidgets('startup shell honors light appearance over dark system mode', (

@@ -451,12 +451,12 @@ open class MainActivity : FlutterFragmentActivity() {
 internal object StartupWindowTheme {
     fun surfaceColor(preset: String, dark: Boolean): Int {
         return when (preset) {
-            "lavender", "periwinkle" -> if (dark) 0xFF1D1927.toInt() else 0xFFFAF8FF.toInt()
-            "blue", "sky", "cyan" -> if (dark) 0xFF111D24.toInt() else 0xFFF5FBFF.toInt()
-            "mint", "green", "lightGreen" -> if (dark) 0xFF12201C.toInt() else 0xFFF5FFF9.toInt()
-            "lime", "amber", "orange", "peach" -> if (dark) 0xFF241D13.toInt() else 0xFFFFF9F2.toInt()
-            "gray" -> if (dark) 0xFF1A1D21.toInt() else 0xFFF7F8FA.toInt()
-            else -> if (dark) 0xFF211A1B.toInt() else 0xFFFFF8F8.toInt()
+            "lavender", "periwinkle" -> if (dark) 0xFF131117.toInt() else 0xFFFAF8FF.toInt()
+            "blue", "sky", "cyan" -> if (dark) 0xFF101417.toInt() else 0xFFF5FBFF.toInt()
+            "mint", "green", "lightGreen" -> if (dark) 0xFF101513.toInt() else 0xFFF5FFF9.toInt()
+            "lime", "amber", "orange", "peach" -> if (dark) 0xFF151310.toInt() else 0xFFFFF9F2.toInt()
+            "gray" -> if (dark) 0xFF121315.toInt() else 0xFFF7F8FA.toInt()
+            else -> if (dark) 0xFF141112.toInt() else 0xFFFFF8F8.toInt()
         }
     }
 

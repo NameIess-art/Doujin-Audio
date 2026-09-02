@@ -639,7 +639,6 @@ class _MainScreenState extends ConsumerState<MainScreen>
       _lastGlobalSubtitleOverlayText = text;
       unawaited(_subtitleOverlay.updateSubtitle(text));
     }
-    unawaited(_subtitleOverlay.updatePlaybackState(session.state.playing));
   }
 
   @override

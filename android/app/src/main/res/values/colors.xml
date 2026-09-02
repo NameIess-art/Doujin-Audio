@@ -4,17 +4,17 @@
 
     <!-- Explicit mode surface colors -->
     <color name="launch_background_rose_light">#FFF8F8</color>
-    <color name="launch_background_rose_dark">#211A1B</color>
+    <color name="launch_background_rose_dark">#141112</color>
     <color name="launch_background_lavender_light">#FAF8FF</color>
-    <color name="launch_background_lavender_dark">#1D1927</color>
+    <color name="launch_background_lavender_dark">#131117</color>
     <color name="launch_background_blue_light">#F5FBFF</color>
-    <color name="launch_background_blue_dark">#111D24</color>
+    <color name="launch_background_blue_dark">#101417</color>
     <color name="launch_background_mint_light">#F5FFF9</color>
-    <color name="launch_background_mint_dark">#12201C</color>
+    <color name="launch_background_mint_dark">#101513</color>
     <color name="launch_background_amber_light">#FFF9F2</color>
-    <color name="launch_background_amber_dark">#241D13</color>
+    <color name="launch_background_amber_dark">#151310</color>
     <color name="launch_background_gray_light">#F7F8FA</color>
-    <color name="launch_background_gray_dark">#1A1D21</color>
+    <color name="launch_background_gray_dark">#121315</color>
 
     <!-- System mode dynamic surface colors (light mode defaults) -->
     <color name="launch_background_rose">#FFF8F8</color>

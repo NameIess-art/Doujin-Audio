@@ -281,9 +281,13 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
   }
 
   void _rebuildThemes() {
-    _lightTheme = _buildTheme(_appThemeColor.colorScheme(Brightness.light));
-    _darkTheme = _buildTheme(_appThemeColor.colorScheme(Brightness.dark));
+    _lightTheme = _buildTheme(_colorSchemeFor(Brightness.light));
+    _darkTheme = _buildTheme(_colorSchemeFor(Brightness.dark));
   }
+
+  ColorScheme _colorSchemeFor(Brightness brightness) => _appThemeColor
+      .colorScheme(brightness)
+      .copyWith(surface: _appThemeColor.bootstrapSurfaceColor(brightness));
 
   ThemeData _buildTheme(ColorScheme scheme) {
     final bodyText = const TextTheme().copyWith(

@@ -11,6 +11,9 @@ import com.doujin.audio.subtitle.*
 import com.doujin.audio.update.*
 
 import android.content.Intent
+import android.content.res.Configuration
+import android.graphics.drawable.ColorDrawable
+import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.Process
@@ -43,7 +46,28 @@ open class MainActivity : FlutterFragmentActivity() {
     private var pendingNotificationSessionId: String? = null
     private val subtitleOverlayCoordinator by lazy { SubtitleOverlayCoordinator(this) }
 
+    override fun onCreate(savedInstanceState: Bundle?) {
+        applyStartupWindowTheme()
+        super.onCreate(savedInstanceState)
+    }
+
     override fun getRenderMode(): RenderMode = RenderMode.surface
+
+    private fun applyStartupWindowTheme() {
+        val preferences = getSharedPreferences("FlutterSharedPreferences", MODE_PRIVATE)
+        val preset = preferences.getString("appThemeColor", "rose") ?: "rose"
+        val mode = preferences.getString("themeMode", "system") ?: "system"
+        val dark = when (mode) {
+            "dark" -> true
+            "light" -> false
+            else -> (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
+                Configuration.UI_MODE_NIGHT_YES
+        }
+        val background = StartupWindowTheme.surfaceColor(preset, dark)
+        window.setBackgroundDrawable(ColorDrawable(background))
+        window.statusBarColor = background
+        window.navigationBarColor = background
+    }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -244,5 +268,18 @@ open class MainActivity : FlutterFragmentActivity() {
             },
             100L
         )
+    }
+}
+
+internal object StartupWindowTheme {
+    fun surfaceColor(preset: String, dark: Boolean): Int {
+        return when (preset) {
+            "lavender", "periwinkle" -> if (dark) 0xFF1D1927.toInt() else 0xFFFAF8FF.toInt()
+            "blue", "sky", "cyan" -> if (dark) 0xFF111D24.toInt() else 0xFFF5FBFF.toInt()
+            "mint", "green", "lightGreen" -> if (dark) 0xFF12201C.toInt() else 0xFFF5FFF9.toInt()
+            "lime", "amber", "orange", "peach" -> if (dark) 0xFF241D13.toInt() else 0xFFFFF9F2.toInt()
+            "gray" -> if (dark) 0xFF1A1D21.toInt() else 0xFFF7F8FA.toInt()
+            else -> if (dark) 0xFF211A1B.toInt() else 0xFFFFF8F8.toInt()
+        }
     }
 }

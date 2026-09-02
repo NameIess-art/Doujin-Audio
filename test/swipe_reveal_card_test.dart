@@ -251,4 +251,86 @@ void main() {
     expect((revealShape as RoundedRectangleBorder).side, BorderSide.none);
     expect(tester.getSize(revealPane), tester.getSize(closedSurface.first));
   });
+
+  testWidgets('leading action reveals on a right swipe', (tester) async {
+    var downloads = 0;
+    final shape = RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(12),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: SizedBox(
+              width: 260,
+              height: 96,
+              child: SwipeRevealCard(
+                shape: shape,
+                actionLabel: 'Favorite',
+                removeTooltip: 'Favorite',
+                onRemove: () {},
+                leadingActionLabel: 'Download',
+                leadingActionTooltip: 'Download',
+                onLeadingAction: () => downloads++,
+                child: const SizedBox.expand(child: Text('Downloadable card')),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.drag(find.text('Downloadable card'), const Offset(180, 0));
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('Download'), findsOneWidget);
+    expect(find.byIcon(Icons.swipe_right_rounded), findsNothing);
+
+    await tester.tap(find.byTooltip('Download'));
+    await tester.pump();
+    expect(downloads, 1);
+  });
+
+  testWidgets(
+    'opposite swipe closes a leading action without revealing trailing actions',
+    (tester) async {
+      final shape = RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: SizedBox(
+                width: 260,
+                height: 96,
+                child: SwipeRevealCard(
+                  shape: shape,
+                  actionLabel: 'Favorite',
+                  removeTooltip: 'Favorite',
+                  onRemove: () {},
+                  leadingActionLabel: 'Download',
+                  leadingActionTooltip: 'Download',
+                  onLeadingAction: () {},
+                  child: const SizedBox.expand(child: Text('Swipe target')),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.drag(find.text('Swipe target'), const Offset(180, 0));
+      await tester.pumpAndSettle();
+      expect(find.byTooltip('Download'), findsOneWidget);
+
+      await tester.drag(find.text('Swipe target'), const Offset(-180, 0));
+      await tester.pump();
+      expect(find.byIcon(Icons.swipe_left_rounded), findsNothing);
+      await tester.pumpAndSettle();
+      expect(find.byType(TweenAnimationBuilder<double>), findsNothing);
+      expect(find.text('Swipe target'), findsOneWidget);
+    },
+  );
 }

@@ -364,12 +364,22 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp> {
         (state) => state.value?.reduceAnimations ?? false,
       ),
     );
+    final platformBrightness =
+        MediaQuery.maybePlatformBrightnessOf(context) ?? Brightness.light;
+    final windowSurface = switch (themeProvider.themeMode) {
+      ThemeMode.dark => themeProvider.darkTheme.colorScheme.surface,
+      ThemeMode.light => themeProvider.lightTheme.colorScheme.surface,
+      ThemeMode.system =>
+        platformBrightness == Brightness.dark
+            ? themeProvider.darkTheme.colorScheme.surface
+            : themeProvider.lightTheme.colorScheme.surface,
+    };
     return MaterialApp(
       navigatorKey: _navigatorKey,
       title: languageProvider.tr('app_title'),
       debugShowCheckedModeBanner: false,
       navigatorObservers: [UiInteractionNavigatorObserver.instance],
-      color: themeProvider.lightTheme.colorScheme.primary,
+      color: windowSurface,
       locale: languageState.locale,
       supportedLocales: AppLanguageProvider.supportedLocales,
       localizationsDelegates: const [
@@ -392,7 +402,10 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp> {
           data: mediaQuery.copyWith(
             disableAnimations: reduceAnimations || mediaQuery.disableAnimations,
           ),
-          child: child ?? const SizedBox(),
+          child: ColoredBox(
+            color: Theme.of(context).colorScheme.surface,
+            child: child ?? const SizedBox(),
+          ),
         );
       },
       home: OnboardingRuntimeGate(

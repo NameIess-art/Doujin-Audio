@@ -199,6 +199,10 @@ class _AsmrWorkTreeCardState extends ConsumerState<_AsmrWorkTreeCard> {
         primaryActionIcon: widget.work.isFavorite
             ? Icons.favorite_rounded
             : Icons.favorite_border_rounded,
+        leadingActionLabel: i18n.tr('batch_download'),
+        leadingActionTooltip: i18n.tr('asmr_download_work_tooltip'),
+        onLeadingAction: () =>
+            unawaited(_downloadAsmrWorks(context, <AsmrWork>[widget.work])),
         destructive: false,
         secondaryActionLabel: i18n.tr('asmr_detail_action'),
         secondaryActionTooltip: i18n.tr('asmr_detail_tooltip'),

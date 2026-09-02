@@ -249,7 +249,7 @@ void main() {
       );
       expect(
         tester.getSize(fadeMaskFinder).height,
-        112 + MediaQuery.paddingOf(tester.element(fadeMaskFinder)).bottom,
+        94 + MediaQuery.paddingOf(tester.element(fadeMaskFinder)).bottom,
       );
       expect(
         tester
@@ -857,7 +857,8 @@ void main() {
       closeTo(tester.getTopLeft(localCard).dy, 0.01),
     );
     expect(asmrSwipeCard.verticalActions, isTrue);
-    expect(asmrSwipeCard.onTertiaryAction, isNull);
+    expect(asmrSwipeCard.onLeadingAction, isNotNull);
+    expect(asmrSwipeCard.leadingActionIcon, Icons.download_rounded);
     expect(asmrSwipeCard.secondaryActionIcon, Icons.info_outline_rounded);
     expect(asmrSwipeCard.primaryActionIcon, Icons.favorite_border_rounded);
     await tester.pumpWidget(const SizedBox.shrink());
@@ -2793,6 +2794,42 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(milliseconds: 200));
     debugDefaultTargetPlatformOverride = previousPlatform;
+  });
+
+  testWidgets('main screen background follows the active theme surface', (
+    tester,
+  ) async {
+    await AppPreferences.init();
+    await _pumpAppShell(tester, includePlaybackSession: false);
+
+    final mainScreen = find.byType(MainScreen);
+    final themeProvider = ProviderScope.containerOf(
+      tester.element(mainScreen),
+      listen: false,
+    ).read(themeProviderInstanceProvider);
+    Finder rootScaffold() =>
+        find.descendant(of: mainScreen, matching: find.byType(Scaffold));
+
+    expect(
+      tester.widget<Scaffold>(rootScaffold()).backgroundColor,
+      themeProvider.lightTheme.colorScheme.surface,
+    );
+    expect(
+      tester.widget<MaterialApp>(find.byType(MaterialApp)).color,
+      themeProvider.lightTheme.colorScheme.surface,
+    );
+
+    await themeProvider.setThemeMode(ThemeMode.dark);
+    await tester.pumpAndSettle();
+
+    expect(
+      tester.widget<Scaffold>(rootScaffold()).backgroundColor,
+      themeProvider.darkTheme.colorScheme.surface,
+    );
+    expect(
+      tester.widget<MaterialApp>(find.byType(MaterialApp)).color,
+      themeProvider.darkTheme.colorScheme.surface,
+    );
   });
 }
 

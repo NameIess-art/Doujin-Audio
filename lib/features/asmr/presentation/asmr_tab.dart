@@ -735,14 +735,9 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
         (state) => state.value?.cardInfoFields.isEmpty ?? false,
       ),
     );
-    final categoryState = ref
-        .watch(
-          asmrCategoryStateProvider((
-            category: _selectedCategory,
-            searchQuery: '',
-          )),
-        )
-        .value;
+    final categoryState = _readOrWatch(
+      asmrCategoryStateProvider((category: _selectedCategory, searchQuery: '')),
+    ).value;
     final totalWorks = (categoryState?.totalCount ?? 0) > 0
         ? categoryState!.totalCount
         : (categoryState?.works.length ?? 0);
@@ -785,10 +780,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
               layoutBuilder: (currentChild, previousChildren) {
                 return Stack(
                   fit: StackFit.expand,
-                  children: [
-                    ...previousChildren,
-                    ?currentChild,
-                  ],
+                  children: [...previousChildren, ?currentChild],
                 );
               },
               child: _AsmrCategoryList(

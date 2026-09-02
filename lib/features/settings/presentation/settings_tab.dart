@@ -276,11 +276,6 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
 }
 
 enum _SettingsCategory {
-  language(
-    'section_language',
-    'section_language_subtitle',
-    Icons.language_rounded,
-  ),
   common('section_common', 'section_common_subtitle', Icons.tune_rounded),
   appearance(
     'section_appearance',
@@ -553,13 +548,8 @@ class _SettingsCategoryPageState extends ConsumerState<_SettingsCategoryPage> {
       valueListenable: widget.updateInfoListenable,
       builder: (context, updateInfo, _) {
         final sections = _withStickySectionTitles(switch (widget.category) {
-          _SettingsCategory.language => _buildSettingsLanguageSection(
-            context: context,
-            i18n: i18n,
-            settings: settings,
-            cs: cs,
-          ),
           _SettingsCategory.common => _buildSettingsGeneralSection(
+            context: context,
             i18n: i18n,
             settings: settings,
             settingsController: settingsController,

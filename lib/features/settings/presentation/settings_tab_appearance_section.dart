@@ -29,54 +29,6 @@ List<Widget> _buildSettingsAppearanceSection({
 
   return <Widget>[
     _SettingsSectionCard(
-      title: i18n.tr('settings_group_page_display'),
-      children: [
-        Consumer(
-          builder: (context, ref, _) {
-            final settingsState = ref.watch(settingsStateProvider).value;
-            final showLocal = settingsState?.showLocalLibrary ?? true;
-            final showAsmr = settingsState?.showAsmrOne ?? true;
-            return Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                SwitchListTile(
-                  key: const ValueKey<String>(
-                    'settings_show_asmr_one_switch',
-                  ),
-                  title: _settingsTitle(i18n.tr('show_asmr_one')),
-                  value: showAsmr,
-                  onChanged: showLocal
-                      ? (value) => unawaited(settings.setShowAsmrOne(value))
-                      : null,
-                  secondary: _settingsIcon(
-                    Icons.cloud_outlined,
-                    cs.onSurface,
-                  ),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-                ),
-                SwitchListTile(
-                  key: const ValueKey<String>(
-                    'settings_show_local_library_switch',
-                  ),
-                  title: _settingsTitle(i18n.tr('show_local_library')),
-                  value: showLocal,
-                  onChanged: showAsmr
-                      ? (value) =>
-                          unawaited(settings.setShowLocalLibrary(value))
-                      : null,
-                  secondary: _settingsIcon(
-                    Icons.library_music_rounded,
-                    cs.onSurface,
-                  ),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-                ),
-              ],
-            );
-          },
-        ),
-      ],
-    ),
-    _SettingsSectionCard(
       title: i18n.tr('settings_group_theme_layout'),
       children: [
         Consumer(

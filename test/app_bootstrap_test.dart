@@ -313,6 +313,10 @@ void main() {
     final theme = Theme.of(context);
     expect(theme.brightness, Brightness.dark);
     expect(theme.scaffoldBackgroundColor, const Color(0xFF211A1B));
+    expect(
+      tester.widget<MaterialApp>(find.byType(MaterialApp)).color,
+      const Color(0xFF211A1B),
+    );
     expect(find.byType(AppBrandIcon), findsNothing);
     expect(find.byType(CircularProgressIndicator), findsNothing);
     expect(find.text('Starting Doujin Audio…'), findsNothing);
@@ -345,5 +349,36 @@ void main() {
       find.byKey(const ValueKey<String>('app_bootstrap_loading')),
     );
     expect(Theme.of(context).scaffoldBackgroundColor, const Color(0xFF12201C));
+  });
+
+  testWidgets('startup shell honors light appearance over dark system mode', (
+    tester,
+  ) async {
+    tester.platformDispatcher.platformBrightnessTestValue = Brightness.dark;
+    addTearDown(tester.platformDispatcher.clearPlatformBrightnessTestValue);
+    SharedPreferences.setMockInitialValues(const <String, Object>{
+      'appThemeColor': 'mint',
+      'themeMode': 'light',
+    });
+    await AppPreferences.init();
+    final pending = Completer<void>();
+    final controller = AppBootstrapController(
+      initializer: () => pending.future,
+    );
+
+    await tester.pumpWidget(
+      AppBootstrapHost(
+        controller: controller,
+        locale: const Locale('en'),
+        appBuilder: () => const SizedBox(),
+      ),
+    );
+
+    final context = tester.element(
+      find.byKey(const ValueKey<String>('app_bootstrap_loading')),
+    );
+    final theme = Theme.of(context);
+    expect(theme.brightness, Brightness.light);
+    expect(theme.scaffoldBackgroundColor, const Color(0xFFF5FFF9));
   });
 }

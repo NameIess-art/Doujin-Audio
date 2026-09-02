@@ -861,7 +861,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
       child: Scaffold(
         extendBody: !isDesktop,
         resizeToAvoidBottomInset: false,
-        backgroundColor: Colors.transparent,
+        backgroundColor: Theme.of(context).colorScheme.surface,
         body: Stack(
           fit: StackFit.expand,
           children: [

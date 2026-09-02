@@ -50,7 +50,6 @@ void main() {
 
     final i18n = harness.languageProvider;
     for (final key in [
-      'section_language',
       'section_common',
       'section_appearance',
       'section_playback',
@@ -63,10 +62,7 @@ void main() {
       expect(find.text(i18n.tr('${key}_subtitle')), findsOneWidget);
     }
 
-    final rootLanguageTile = find.widgetWithText(
-      ListTile,
-      i18n.tr('section_language'),
-    );
+    expect(find.text(i18n.tr('section_language')), findsNothing);
     expect(
       tester
           .widget<TopPageHeader>(find.byType(TopPageHeader))
@@ -78,45 +74,7 @@ void main() {
       (rootList.padding! as EdgeInsets).bottom,
       greaterThanOrEqualTo(AppSpacing.sm),
     );
-    final rootLanguageIcon = tester.widget<Icon>(
-      find.descendant(
-        of: rootLanguageTile,
-        matching: find.byIcon(Icons.language_rounded),
-      ),
-    );
-    expect(rootLanguageIcon.size, 30);
-    expect(tester.getSize(rootLanguageTile).height, 78);
-    final rootTileTheme = ListTileTheme.of(tester.element(rootLanguageTile));
-    expect(rootTileTheme.minTileHeight, 78);
-    expect(rootTileTheme.titleTextStyle?.fontSize, 18);
-    expect(rootTileTheme.titleTextStyle?.fontWeight, FontWeight.bold);
-    expect(rootTileTheme.subtitleTextStyle?.fontSize, 14);
-    expect(rootTileTheme.subtitleTextStyle?.fontWeight, FontWeight.normal);
-    final rootLanguageContext = tester.element(rootLanguageTile);
-    expect(
-      rootTileTheme.subtitleTextStyle?.color,
-      Theme.of(
-        rootLanguageContext,
-      ).colorScheme.onSurfaceVariant.withValues(alpha: 0.68),
-    );
-    final rootTitleRect = tester.getRect(
-      find.text(i18n.tr('section_language')),
-    );
-    final rootSubtitleRect = tester.getRect(
-      find.text(i18n.tr('section_language_subtitle')),
-    );
-    expect(
-      (rootTitleRect.top + rootSubtitleRect.bottom) / 2,
-      closeTo(tester.getRect(rootLanguageTile).center.dy, 0.5),
-    );
-    final rootCards = find.ancestor(
-      of: rootLanguageTile,
-      matching: find.byType(Card),
-    );
-    expect(rootCards, findsOneWidget);
-    expect(tester.widget<ListTile>(rootLanguageTile).subtitle, isNull);
-
-    await tester.tap(find.text(i18n.tr('section_language')));
+    await tester.tap(find.text(i18n.tr('section_common')));
     await tester.pumpAndSettle();
     expect(find.text(i18n.tr('language')), findsAtLeastNWidgets(1));
     expect(find.text(i18n.tr('interface_language')), findsOneWidget);
@@ -194,11 +152,25 @@ void main() {
           tester.getBottomLeft(firstLanguageCard).dy,
       closeTo(3, 0.001),
     );
-    await tester.tap(find.byIcon(Icons.arrow_back_rounded));
-    await tester.pumpAndSettle();
-
-    await tester.tap(find.text(i18n.tr('section_common')));
-    await tester.pumpAndSettle();
+    final pageDisplayPill = find.byKey(
+      const ValueKey<String>('settings_section_pill_common_1'),
+    );
+    expect(pageDisplayPill, findsOneWidget);
+    expect(
+      find.descendant(
+        of: pageDisplayPill,
+        matching: find.text(i18n.tr('settings_group_page_display')),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      tester.getTopLeft(pageDisplayPill).dy,
+      greaterThan(tester.getTopLeft(firstLanguageCard).dy),
+    );
+    expect(
+      find.byKey(const ValueKey<String>('settings_show_asmr_one_switch')),
+      findsOneWidget,
+    );
     expect(find.text(i18n.tr('startup_page')), findsOneWidget);
     expect(find.text(i18n.tr('portrait_lock')), findsOneWidget);
     expect(
@@ -232,6 +204,8 @@ void main() {
       i18n.tr('portrait_lock'),
     );
     expect(tester.widget<SwitchListTile>(portraitLockTile).value, isFalse);
+    await tester.ensureVisible(portraitLockTile);
+    await tester.pumpAndSettle();
     await tester.tap(portraitLockTile);
     await tester.pump();
     expect(tester.widget<SwitchListTile>(portraitLockTile).value, isTrue);
@@ -325,6 +299,7 @@ void main() {
     final i18n = harness.languageProvider;
     await tester.tap(find.text(i18n.tr('section_appearance')));
     await tester.pumpAndSettle();
+    expect(find.text(i18n.tr('settings_group_page_display')), findsNothing);
 
     final categoryHeader = find.byType(TopPageHeader);
     final startupPill = find.byKey(
@@ -360,7 +335,7 @@ void main() {
     expect(
       find.descendant(
         of: stickyPill,
-        matching: find.text(i18n.tr('settings_group_page_display')),
+        matching: find.text(i18n.tr('settings_group_theme_layout')),
       ),
       findsOneWidget,
     );
@@ -381,12 +356,13 @@ void main() {
     );
     expect(inlineVisibility.visible, isFalse);
 
-    await tester.drag(categoryList, const Offset(0, -250));
+    final coverTitle = find.text(i18n.tr('settings_group_cover_background'));
+    await Scrollable.ensureVisible(tester.element(coverTitle), alignment: 0.05);
     await tester.pumpAndSettle();
     expect(
       find.descendant(
         of: stickyPill,
-        matching: find.text(i18n.tr('settings_group_theme_layout')),
+        matching: find.text(i18n.tr('settings_group_cover_background')),
       ),
       findsOneWidget,
     );
@@ -398,7 +374,7 @@ void main() {
     final mainSettingsHeader = find.byType(TopPageHeader);
     final firstMainCard = find
         .ancestor(
-          of: find.text(i18n.tr('section_language')),
+          of: find.text(i18n.tr('section_common')),
           matching: find.byType(Card),
         )
         .first;
@@ -407,27 +383,7 @@ void main() {
         tester.getRect(mainSettingsHeader).bottom;
     expect(mainPageGap, closeTo(14.0, 0.5));
 
-    await tester.tap(find.text(i18n.tr('section_language')));
-    await tester.pumpAndSettle();
-    expect(
-      find.byKey(const ValueKey<String>('settings_section_pill_language_0')),
-      findsNothing,
-    );
-    expect(
-      find.byKey(const ValueKey<String>('settings_sticky_section_pill')),
-      findsNothing,
-    );
-    final languageHeader = find.byType(TopPageHeader);
-    final languageFirstCard = find
-        .ancestor(
-          of: find.text(i18n.tr('interface_language')),
-          matching: find.byType(Card),
-        )
-        .first;
-    final languagePageGap =
-        tester.getTopLeft(languageFirstCard).dy -
-        tester.getRect(languageHeader).bottom;
-    expect(languagePageGap, closeTo(mainPageGap, 0.5));
+    expect(find.text(i18n.tr('section_language')), findsNothing);
   });
 
   testWidgets(
@@ -804,10 +760,6 @@ void main() {
     final headerCapsule = find.byType(HeaderTopCapsule);
     expect(headerCapsule, findsOneWidget);
     expect(find.byIcon(Icons.settings_rounded), findsOneWidget);
-    final firstTile = find.widgetWithText(
-      ListTile,
-      i18n.tr('section_language'),
-    );
     final rootTile = find.widgetWithText(ListTile, i18n.tr('section_common'));
     final rootContext = tester.element(rootTile);
     final rootIcon = tester.widget<Icon>(
@@ -819,7 +771,7 @@ void main() {
       find.ancestor(of: rootTile, matching: find.byType(Card)).first,
     );
     final firstCardFinder = find
-        .ancestor(of: firstTile, matching: find.byType(Card))
+        .ancestor(of: rootTile, matching: find.byType(Card))
         .first;
     final headerWidget = tester.widget<HeaderTopCapsule>(headerCapsule);
     expect(
@@ -840,22 +792,8 @@ void main() {
     final rootBorderRadius =
         (rootCard.shape! as RoundedRectangleBorder).borderRadius
             as BorderRadius;
-    expect(rootBorderRadius, BorderRadius.circular(6));
-    final languageCard = find.ancestor(
-      of: find.widgetWithText(ListTile, i18n.tr('section_language')),
-      matching: find.byType(Card),
-    );
-    final commonCard = find.ancestor(of: rootTile, matching: find.byType(Card));
-    expect(
-      tester.getTopLeft(commonCard).dy - tester.getBottomLeft(languageCard).dy,
-      closeTo(3, 0.001),
-    );
-    final firstCardShape =
-        tester.widget<Card>(languageCard.first).shape!
-            as RoundedRectangleBorder;
-    final firstBorderRadius = firstCardShape.borderRadius as BorderRadius;
-    expect(firstBorderRadius.topLeft, const Radius.circular(12));
-    expect(firstBorderRadius.bottomLeft, const Radius.circular(6));
+    expect(rootBorderRadius.topLeft, const Radius.circular(12));
+    expect(rootBorderRadius.bottomLeft, const Radius.circular(6));
     final aboutCard = find.ancestor(
       of: find.widgetWithText(ListTile, i18n.tr('about')),
       matching: find.byType(Card),
@@ -1075,7 +1013,7 @@ void main() {
     await tester.pumpAndSettle();
 
     final i18n = harness.languageProvider;
-    await tester.tap(find.text(i18n.tr('section_language')));
+    await tester.tap(find.text(i18n.tr('section_common')));
     await tester.pumpAndSettle();
 
     final interfaceLanguageTile = find.widgetWithText(
@@ -1132,6 +1070,11 @@ void main() {
             );
 
             if (scale == 3) {
+              await Scrollable.ensureVisible(
+                tester.element(tile),
+                alignment: 0.5,
+              );
+              await tester.pumpAndSettle();
               final dropdown = find.byType(
                 DropdownButton<StartupPlaybackRestoreBehavior>,
               );

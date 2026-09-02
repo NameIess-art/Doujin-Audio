@@ -27,6 +27,10 @@ class SwipeRevealCard extends StatefulWidget {
     this.enabled = true,
     this.color,
     this.closedColor,
+    this.onLeadingAction,
+    this.leadingActionLabel,
+    this.leadingActionTooltip,
+    this.leadingActionIcon = Icons.download_rounded,
   });
 
   final Widget child;
@@ -51,6 +55,10 @@ class SwipeRevealCard extends StatefulWidget {
   final bool enabled;
   final Color? color;
   final Color? closedColor;
+  final VoidCallback? onLeadingAction;
+  final String? leadingActionLabel;
+  final String? leadingActionTooltip;
+  final IconData leadingActionIcon;
 
   @override
   State<SwipeRevealCard> createState() => _SwipeRevealCardState();
@@ -72,9 +80,12 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
   bool _snapClosed = false;
   bool _actionPaneActive = false;
   bool _tickerModeEnabled = true;
+  bool _revealedFromStart = false;
+  bool _dragStartFromStart = false;
 
   bool get _hasSecondaryAction => widget.onSecondaryAction != null;
   bool get _hasTertiaryAction => widget.onTertiaryAction != null;
+  bool get _hasLeadingAction => widget.onLeadingAction != null;
   int get _actionCount =>
       1 + (_hasSecondaryAction ? 1 : 0) + (_hasTertiaryAction ? 1 : 0);
   double get _actionWidth => widget.verticalActions && _actionCount > 1
@@ -82,7 +93,8 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
       : _hasSecondaryAction
       ? 144
       : 72;
-  bool get _isOpen => _revealedWidth > (_actionWidth * 0.5);
+  double get _activeActionWidth => _revealedFromStart ? 72 : _actionWidth;
+  bool get _isOpen => _revealedWidth > (_activeActionWidth * 0.5);
 
   @override
   void didChangeDependencies() {
@@ -115,6 +127,8 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
     _dragRejected = false;
     _snapClosed = false;
     _actionPaneActive = false;
+    _revealedFromStart = false;
+    _dragStartFromStart = false;
   }
 
   void _closePane({bool immediate = false}) {
@@ -134,11 +148,10 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
     });
   }
 
-
-
   void _handleHorizontalDragStart(DragStartDetails details) {
     if (!widget.enabled) return;
     _dragStartRevealedWidth = _revealedWidth;
+    _dragStartFromStart = _revealedFromStart;
     _dragDx = 0;
     _dragDy = 0;
     _dragAccepted = _revealedWidth > 0;
@@ -162,13 +175,16 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
         _dragRejected = true;
         return;
       }
-      final isIntentionalLeftSwipe =
-          _dragDx < 0 &&
+      final isIntentionalSwipe =
+          ((_dragDx < 0 && _actionCount > 0) ||
+              (_dragDx > 0 && _hasLeadingAction)) &&
           horizontalDistance >= _revealStartThreshold &&
           horizontalDistance > verticalDistance * _acceptSlopeRatio;
-      if (!isIntentionalLeftSwipe) {
+      if (!isIntentionalSwipe) {
         return;
       }
+      _revealedFromStart = _dragDx > 0;
+      _dragStartFromStart = _revealedFromStart;
       _dragAccepted = true;
       AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
       widget.onWillReveal?.call();
@@ -192,10 +208,9 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
       return;
     }
 
-    final nextWidth = (_dragStartRevealedWidth - _dragDx).clamp(
-      0.0,
-      _actionWidth,
-    );
+    final nextWidth =
+        (_dragStartRevealedWidth + (_dragStartFromStart ? _dragDx : -_dragDx))
+            .clamp(0.0, _activeActionWidth);
     if (nextWidth == _revealedWidth) return;
     setState(() {
       _actionPaneActive = true;
@@ -216,11 +231,13 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
     }
     final velocity = details.primaryVelocity ?? 0;
     final distanceMet = _revealedWidth >= _minOpenDistance;
-    final velocityMet = velocity <= -_minOpenVelocity;
-    final fullyRevealed = _revealedWidth >= _actionWidth * 0.88;
+    final velocityMet = _revealedFromStart
+        ? velocity >= _minOpenVelocity
+        : velocity <= -_minOpenVelocity;
+    final fullyRevealed = _revealedWidth >= _activeActionWidth * 0.88;
     final shouldOpen = (distanceMet && velocityMet) || fullyRevealed;
     setState(() {
-      _revealedWidth = shouldOpen ? _actionWidth : 0;
+      _revealedWidth = shouldOpen ? _activeActionWidth : 0;
     });
     _dragAccepted = false;
     _dragRejected = false;
@@ -229,7 +246,8 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final revealProgress = (_revealedWidth / _actionWidth).clamp(0.0, 1.0);
+    final actionWidth = _activeActionWidth;
+    final revealProgress = (_revealedWidth / actionWidth).clamp(0.0, 1.0);
     final baseColor =
         widget.color ??
         (widget.destructive
@@ -261,7 +279,9 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
         ? onColor
         : onColor.withValues(alpha: 0.3);
     final primaryFg = widget.destructive ? baseColor : onColor;
-    final showVerticalActions = widget.verticalActions && _actionCount > 1;
+    final showVerticalActions =
+        !_revealedFromStart && widget.verticalActions && _actionCount > 1;
+    final leadingActionLabel = widget.leadingActionLabel ?? '';
     final actionLabel = _hasTertiaryAction
         ? [
             widget.tertiaryActionLabel ?? '',
@@ -314,6 +334,7 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
               setState(() {
                 final opening = !_isOpen;
                 _actionPaneActive = opening || _actionPaneActive;
+                _revealedFromStart = false;
                 _revealedWidth = opening ? _actionWidth : 0;
               });
             },
@@ -349,7 +370,7 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                                     ? 158
                                     : 86,
                               ),
-                              child: revealProgress == 0
+                              child: _revealedFromStart || revealProgress == 0
                                   ? const SizedBox.shrink()
                                   : AnimatedOpacity(
                                       opacity: 0.24 + (revealProgress * 0.76),
@@ -392,13 +413,19 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                                                       MainAxisSize.min,
                                                   children: [
                                                     Icon(
-                                                      Icons.swipe_left_rounded,
+                                                      _revealedFromStart
+                                                          ? Icons
+                                                                .swipe_right_rounded
+                                                          : Icons
+                                                                .swipe_left_rounded,
                                                       size: 14,
                                                       color: accentColor,
                                                     ),
                                                     const SizedBox(width: 4),
                                                     Text(
-                                                      actionLabel,
+                                                      _revealedFromStart
+                                                          ? leadingActionLabel
+                                                          : actionLabel,
                                                       style: Theme.of(context)
                                                           .textTheme
                                                           .labelMedium
@@ -411,7 +438,8 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                                                   ],
                                                 ),
                                               ),
-                                              if (!compact) ...[
+                                              if (!compact &&
+                                                  !_revealedFromStart) ...[
                                                 const SizedBox(height: 8),
                                                 Text(
                                                   actionTooltip,
@@ -437,11 +465,18 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                             ),
                           ),
                           Align(
-                            alignment: Alignment.centerRight,
+                            alignment: _revealedFromStart
+                                ? Alignment.centerLeft
+                                : Alignment.centerRight,
                             child: Padding(
                               padding: EdgeInsets.only(
                                 top: showVerticalActions ? 10 : 0,
-                                right: showVerticalActions ? 10 : 14,
+                                left: _revealedFromStart
+                                    ? (showVerticalActions ? 0 : 14)
+                                    : 0,
+                                right: _revealedFromStart
+                                    ? 0
+                                    : (showVerticalActions ? 10 : 14),
                                 bottom: showVerticalActions ? 10 : 0,
                               ),
                               child: AnimatedScale(
@@ -450,7 +485,7 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                                 curve: Curves.easeOutBack,
                                 child: showVerticalActions
                                     ? SizedBox(
-                                        width: _actionWidth - 20,
+                                        width: actionWidth - 20,
                                         child: LayoutBuilder(
                                           builder: (context, constraints) {
                                             final gap = _actionCount > 1
@@ -550,6 +585,25 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                                             );
                                           },
                                         ),
+                                      )
+                                    : _revealedFromStart
+                                    ? _SwipeRevealActionButton(
+                                        onPressed: () {
+                                          AppInteractionFeedback.trigger(
+                                            AppInteractionFeedbackType
+                                                .confirmation,
+                                          );
+                                          _runActionAfterPaneClose(
+                                            widget.onLeadingAction,
+                                          );
+                                        },
+                                        backgroundColor: primaryBg,
+                                        foregroundColor: primaryFg,
+                                        tooltip:
+                                            widget.leadingActionTooltip ??
+                                            widget.leadingActionLabel,
+                                        icon: widget.leadingActionIcon,
+                                        tonal: true,
                                       )
                                     : LayoutBuilder(
                                         builder: (context, constraints) {
@@ -660,16 +714,20 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                           (_revealedWidth != 0 || !_actionPaneActive)) {
                         return;
                       }
-                      setState(() {
-                        _snapClosed = false;
-                        if (_revealedWidth == 0) {
-                          _actionPaneActive = false;
-                        }
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        if (!mounted) return;
+                        setState(() {
+                          _snapClosed = false;
+                          if (_revealedWidth == 0) {
+                            _actionPaneActive = false;
+                            _revealedFromStart = false;
+                          }
+                        });
                       });
                     },
                     builder: (context, value, child) {
                       return Transform.translate(
-                        offset: Offset(-value, 0),
+                        offset: Offset(_revealedFromStart ? value : -value, 0),
                         child: child,
                       );
                     },
@@ -677,7 +735,8 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                   ),
                 if (_isOpen)
                   Positioned.fill(
-                    right: _actionWidth,
+                    right: _revealedFromStart ? 0 : actionWidth,
+                    left: _revealedFromStart ? actionWidth : 0,
                     child: GestureDetector(
                       behavior: HitTestBehavior.translucent,
                       onTap: _closePane,

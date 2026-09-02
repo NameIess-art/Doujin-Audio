@@ -9,7 +9,8 @@ List<Widget> _buildSettingsLanguageSection({
   required ColorScheme cs,
 }) {
   return <Widget>[
-    _SettingsGroupCard(
+    _SettingsSectionCard(
+      title: i18n.tr('language'),
       children: [
         ListTile(
           title: _settingsTitle(i18n.tr('interface_language')),
@@ -116,12 +117,20 @@ List<Widget> _buildSettingsLanguageSection({
 }
 
 List<Widget> _buildSettingsGeneralSection({
+  required BuildContext context,
   required AppLanguageProvider i18n,
   required SettingsRepository settings,
   required SettingsCommandController settingsController,
   required ColorScheme cs,
 }) {
   return <Widget>[
+    ..._buildSettingsLanguageSection(
+      context: context,
+      i18n: i18n,
+      settings: settings,
+      cs: cs,
+    ),
+    ..._buildSettingsPageDisplaySection(i18n: i18n, settings: settings, cs: cs),
     _SettingsSectionCard(
       title: i18n.tr('settings_group_startup_behavior'),
       children: [
@@ -132,15 +141,16 @@ List<Widget> _buildSettingsGeneralSection({
             final showAsmr = settingsValue?.showAsmrOne ?? true;
             final startupPage =
                 settingsValue?.startupPage ?? StartupPage.library;
-            final availablePages = StartupPage.values.where((page) {
-              if (page == StartupPage.library) return showLocal;
-              if (page == StartupPage.asmrOne) return showAsmr;
-              return true;
-            }).toList(growable: false);
-            final effectiveStartupPage =
-                availablePages.contains(startupPage)
-                    ? startupPage
-                    : availablePages.first;
+            final availablePages = StartupPage.values
+                .where((page) {
+                  if (page == StartupPage.library) return showLocal;
+                  if (page == StartupPage.asmrOne) return showAsmr;
+                  return true;
+                })
+                .toList(growable: false);
+            final effectiveStartupPage = availablePages.contains(startupPage)
+                ? startupPage
+                : availablePages.first;
             return ListTile(
               title: _settingsTitle(i18n.tr('startup_page')),
               leading: _settingsIcon(Icons.home_rounded, cs.onSurface),
@@ -272,6 +282,58 @@ List<Widget> _buildSettingsGeneralSection({
               onChanged: settings.setHapticFeedbackEnabled,
               secondary: _settingsIcon(Icons.vibration_rounded, cs.onSurface),
               contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+            );
+          },
+        ),
+      ],
+    ),
+  ];
+}
+
+List<Widget> _buildSettingsPageDisplaySection({
+  required AppLanguageProvider i18n,
+  required SettingsRepository settings,
+  required ColorScheme cs,
+}) {
+  return <Widget>[
+    _SettingsSectionCard(
+      title: i18n.tr('settings_group_page_display'),
+      children: [
+        Consumer(
+          builder: (context, ref, _) {
+            final settingsState = ref.watch(settingsStateProvider).value;
+            final showLocal = settingsState?.showLocalLibrary ?? true;
+            final showAsmr = settingsState?.showAsmrOne ?? true;
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SwitchListTile(
+                  key: const ValueKey<String>('settings_show_asmr_one_switch'),
+                  title: _settingsTitle(i18n.tr('show_asmr_one')),
+                  value: showAsmr,
+                  onChanged: showLocal
+                      ? (value) => unawaited(settings.setShowAsmrOne(value))
+                      : null,
+                  secondary: _settingsIcon(Icons.cloud_outlined, cs.onSurface),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+                ),
+                SwitchListTile(
+                  key: const ValueKey<String>(
+                    'settings_show_local_library_switch',
+                  ),
+                  title: _settingsTitle(i18n.tr('show_local_library')),
+                  value: showLocal,
+                  onChanged: showAsmr
+                      ? (value) =>
+                            unawaited(settings.setShowLocalLibrary(value))
+                      : null,
+                  secondary: _settingsIcon(
+                    Icons.library_music_rounded,
+                    cs.onSurface,
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+                ),
+              ],
             );
           },
         ),

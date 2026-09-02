@@ -41,9 +41,20 @@ class AppBootstrapHost extends StatelessWidget {
         .copyWith(
           surface: appThemeColor.bootstrapSurfaceColor(Brightness.dark),
         );
+    final themeMode = ThemeProvider.readThemeModeSync();
+    final platformBrightness =
+        WidgetsBinding.instance.platformDispatcher.platformBrightness;
+    final brightness = switch (themeMode) {
+      ThemeMode.dark => Brightness.dark,
+      ThemeMode.light => Brightness.light,
+      ThemeMode.system => platformBrightness,
+    };
+    final windowSurface = brightness == Brightness.dark
+        ? darkScheme.surface
+        : lightScheme.surface;
     Widget shell(Widget home) => MaterialApp(
       debugShowCheckedModeBanner: false,
-      color: lightScheme.surface,
+      color: windowSurface,
       theme: ThemeData(
         useMaterial3: true,
         colorScheme: lightScheme,

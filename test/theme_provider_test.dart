@@ -244,6 +244,34 @@ void main() {
     expect(provider.darkTheme.colorScheme.primary, isNot(previousDarkPrimary));
   });
 
+  test(
+    'selected app color updates page surfaces in both appearance modes',
+    () async {
+      SharedPreferences.setMockInitialValues(const <String, Object>{});
+      await AppPreferences.init();
+      final provider = ThemeProvider();
+
+      await provider.setAppThemeColor(ThemeAccentPreset.mint);
+
+      expect(
+        provider.lightTheme.colorScheme.surface,
+        ThemeAccentPreset.mint.bootstrapSurfaceColor(Brightness.light),
+      );
+      expect(
+        provider.darkTheme.colorScheme.surface,
+        ThemeAccentPreset.mint.bootstrapSurfaceColor(Brightness.dark),
+      );
+      expect(
+        provider.lightTheme.scaffoldBackgroundColor,
+        ThemeAccentPreset.mint.bootstrapSurfaceColor(Brightness.light),
+      );
+      expect(
+        provider.darkTheme.scaffoldBackgroundColor,
+        ThemeAccentPreset.mint.bootstrapSurfaceColor(Brightness.dark),
+      );
+    },
+  );
+
   test('selected ASMR color updates independent design tokens', () async {
     SharedPreferences.setMockInitialValues(const <String, Object>{});
     await AppPreferences.init();

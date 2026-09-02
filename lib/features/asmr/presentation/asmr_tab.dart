@@ -299,7 +299,8 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
     _languageProvider.addListener(_handleAppLanguageChanged);
     widget.activeTabIndexListenable?.addListener(_handleActiveStateChanged);
     widget.activeSectionListenable?.addListener(_handleActiveStateChanged);
-    initTabState(ref.read(mainScreenControllerProvider).scrollToTopTab);
+    final controller = ref.read(mainScreenControllerProvider);
+    initTabState(controller.scrollToTopTab, controller.stopScrollTab);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || !_isActive) return;
       _scheduleHeaderMeasurement(force: true);
@@ -775,20 +776,36 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
                   ),
               ],
             ),
-            content: _AsmrCategoryList(
-              key: ValueKey(_selectedCategory),
-              isActive: _isActive,
-              category: _selectedCategory,
-              isLoadPending: !_activationCompleted,
-              scrollController: _scrollController,
-              searchQuery: '',
-              topInset: headerContentHeight,
-              bottomInset: bottomInset,
-              onRefresh: _refreshCategoryWithFeedback,
-              isSelectionMode: _isSelectionMode,
-              selectedWorkIds: _selectedWorkIds,
-              onEnterSelectionMode: _enterSelectionMode,
-              onToggleSelection: _toggleWorkSelection,
+            content: AnimatedSwitcher(
+              duration: MediaQuery.disableAnimationsOf(context)
+                  ? Duration.zero
+                  : kAppMotionSlow,
+              switchInCurve: Curves.easeOutCubic,
+              switchOutCurve: Curves.easeInCubic,
+              layoutBuilder: (currentChild, previousChildren) {
+                return Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    ...previousChildren,
+                    ?currentChild,
+                  ],
+                );
+              },
+              child: _AsmrCategoryList(
+                key: ValueKey(_selectedCategory),
+                isActive: _isActive,
+                category: _selectedCategory,
+                isLoadPending: !_activationCompleted,
+                scrollController: _scrollController,
+                searchQuery: '',
+                topInset: headerContentHeight,
+                bottomInset: bottomInset,
+                onRefresh: _refreshCategoryWithFeedback,
+                isSelectionMode: _isSelectionMode,
+                selectedWorkIds: _selectedWorkIds,
+                onEnterSelectionMode: _enterSelectionMode,
+                onToggleSelection: _toggleWorkSelection,
+              ),
             ),
           ),
         ),

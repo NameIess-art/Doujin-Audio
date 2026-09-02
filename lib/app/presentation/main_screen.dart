@@ -686,6 +686,10 @@ class _MainScreenState extends ConsumerState<MainScreen>
       return;
     }
 
+    ref
+        .read(mainScreenControllerProvider)
+        .requestStopScroll(_activePageIndex.value);
+
     final coordinator = UiInteractionCoordinator.instance;
     coordinator.beginInteraction(_pageSwitchInteraction);
     _pageSwitchCoordinatorGeneration = coordinator.beginGeneration();

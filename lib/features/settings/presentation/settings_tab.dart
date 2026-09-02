@@ -105,7 +105,8 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    initTabState(ref.read(mainScreenControllerProvider).scrollToTopTab);
+    final controller = ref.read(mainScreenControllerProvider);
+    initTabState(controller.scrollToTopTab, controller.stopScrollTab);
   }
 
   Future<AppVersionInfo> _ensureAppVersionFuture() {

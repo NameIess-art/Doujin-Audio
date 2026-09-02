@@ -761,7 +761,8 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
   void initState() {
     super.initState();
     widget.activeTabIndexListenable?.addListener(_handleActiveTabChanged);
-    initTabState(ref.read(mainScreenControllerProvider).scrollToTopTab);
+    final controller = ref.read(mainScreenControllerProvider);
+    initTabState(controller.scrollToTopTab, controller.stopScrollTab);
   }
 
   Future<void> _clearAllWithUndo(

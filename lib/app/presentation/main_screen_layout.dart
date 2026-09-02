@@ -115,7 +115,7 @@ extension _MainScreenLayout on _MainScreenState {
       itemCount: destinations.length,
       itemBuilder: pageShell,
       style: AppIndexedStackTransitionStyle.crossFade,
-      duration: kAppMotionStandard,
+      duration: kAppMotionSlow,
       onTransitionCompleted: _handlePageTransitionCompleted,
     );
   }

@@ -491,7 +491,7 @@ const Map<String, String> appLanguageEn = {
   'audio_device_disconnect_continuePlayback': 'Continue',
   'audio_focus_strategy': 'Audio focus',
   'audio_focus_strategy_standard': 'Standard',
-  'audio_focus_strategy_mixWithOthers': 'Mix with other apps',
+  'audio_focus_strategy_mixWithOthers': 'Overlap',
   'transient_audio_focus_loss_behavior': 'When other audio interrupts',
   'transient_audio_focus_loss_duck': 'Lower volume',
   'transient_audio_focus_loss_pause': 'Pause',
@@ -532,8 +532,7 @@ const Map<String, String> appLanguageEn = {
   'asmr_download_retry_count': 'Retry count',
   'asmr_download_thread_count': 'Thread count',
   'asmr_download_thread_count_hint': 'Works downloaded at the same time',
-  'asmr_download_save_metadata_setting':
-      'Automatically save work information after download',
+  'asmr_download_save_metadata_setting': 'Save work information',
   'asmr_download_save_cover': 'Save cover image',
   'asmr_download_folder_name_setting': 'Downloaded work folder name',
   'asmr_download_folder_name_hint':

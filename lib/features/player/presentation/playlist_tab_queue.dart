@@ -1172,7 +1172,7 @@ class _QueueAudioEditCard extends ConsumerWidget {
                     if (showCover) ...[
                       ClipRRect(
                         borderRadius: BorderRadius.circular(
-                          LibraryLikeCardMetrics.cardRadius,
+                          LibraryLikeCardMetrics.coverRadius,
                         ),
                         child: SizedBox.square(
                           dimension: _playlistCoverSize,

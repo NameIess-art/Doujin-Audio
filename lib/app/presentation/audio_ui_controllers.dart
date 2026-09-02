@@ -5,8 +5,10 @@ import 'package:flutter/foundation.dart';
 /// Owns main-screen-only scroll requests.
 final class MainScreenController {
   final ValueNotifier<int?> _scrollToTopTab = ValueNotifier<int?>(null);
+  final ValueNotifier<int?> _stopScrollTab = ValueNotifier<int?>(null);
 
   ValueListenable<int?> get scrollToTopTab => _scrollToTopTab;
+  ValueListenable<int?> get stopScrollTab => _stopScrollTab;
 
   void requestScrollToTop(int tabIndex) {
     _scrollToTopTab.value = tabIndex;
@@ -17,7 +19,19 @@ final class MainScreenController {
     });
   }
 
-  void dispose() => _scrollToTopTab.dispose();
+  void requestStopScroll(int tabIndex) {
+    _stopScrollTab.value = tabIndex;
+    scheduleMicrotask(() {
+      if (_stopScrollTab.value == tabIndex) {
+        _stopScrollTab.value = null;
+      }
+    });
+  }
+
+  void dispose() {
+    _scrollToTopTab.dispose();
+    _stopScrollTab.dispose();
+  }
 }
 
 /// Owns playlist-only carousel positioning and follows session activations.

@@ -7,7 +7,10 @@ mixin MainTabStateMixin<T extends StatefulWidget> on State<T> {
   final GlobalKey headerKey = GlobalKey();
   late double headerHeight = defaultHeaderHeight;
 
-  ValueListenable<int?>? _scrollToTopListenable;
+  ValueListenable<int?> _scrollToTopListenable =
+      ValueNotifier<int?>(null);
+  ValueListenable<int?> _stopScrollListenable =
+      ValueNotifier<int?>(null);
 
   /// The tab index this state responds to for scroll-to-top events.
   int get tabIndex;
@@ -25,9 +28,14 @@ mixin MainTabStateMixin<T extends StatefulWidget> on State<T> {
   bool get handlesScrollToTop => true;
 
   /// Call this in `initState` after getting the listenable.
-  void initTabState(ValueListenable<int?>? listenable) {
-    _scrollToTopListenable = listenable;
-    _scrollToTopListenable?.addListener(handleScrollToTopSignal);
+  void initTabState(ValueListenable<int?> scrollToTop,
+      [ValueListenable<int?>? stopScroll]) {
+    _scrollToTopListenable = scrollToTop;
+    _scrollToTopListenable.addListener(handleScrollToTopSignal);
+    if (stopScroll != null) {
+      _stopScrollListenable = stopScroll;
+      _stopScrollListenable.addListener(_handleStopScrollSignal);
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       measureHeader();
@@ -36,13 +44,21 @@ mixin MainTabStateMixin<T extends StatefulWidget> on State<T> {
 
   /// Call this in `dispose`.
   void disposeTabState() {
-    _scrollToTopListenable?.removeListener(handleScrollToTopSignal);
+    _scrollToTopListenable.removeListener(handleScrollToTopSignal);
+    _stopScrollListenable.removeListener(_handleStopScrollSignal);
   }
 
   void handleScrollToTopSignal() {
     if (!mounted) return;
-    if (_scrollToTopListenable?.value == tabIndex && handlesScrollToTop) {
+    if (_scrollToTopListenable.value == tabIndex && handlesScrollToTop) {
       jumpToTop();
+    }
+  }
+
+  void _handleStopScrollSignal() {
+    if (!mounted) return;
+    if (_stopScrollListenable.value == tabIndex) {
+      stopScroll();
     }
   }
 
@@ -50,6 +66,13 @@ mixin MainTabStateMixin<T extends StatefulWidget> on State<T> {
     final controller = mainScrollController;
     if (!controller.hasClients) return;
     controller.jumpTo(0);
+  }
+
+  /// Immediately stops any ongoing momentum/animated scroll.
+  void stopScroll() {
+    final controller = mainScrollController;
+    if (!controller.hasClients) return;
+    controller.jumpTo(controller.offset);
   }
 
   void measureHeader() {
@@ -62,3 +85,4 @@ mixin MainTabStateMixin<T extends StatefulWidget> on State<T> {
     }
   }
 }
+

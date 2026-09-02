@@ -850,7 +850,8 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _ensureStartupRefreshStarted();
     });
-    initTabState(ref.read(mainScreenControllerProvider).scrollToTopTab);
+    final controller = ref.read(mainScreenControllerProvider);
+    initTabState(controller.scrollToTopTab, controller.stopScrollTab);
   }
 
   void _ensureStartupRefreshStarted() {

@@ -63,6 +63,8 @@ internal fun parsePlaybackTimerSyncArguments(call: MethodCall): PlaybackTimerSyn
 internal class PowerMethodHandler(
     private val activity: Activity
 ) : MethodChannel.MethodCallHandler {
+    private val activeWakeLocks = mutableMapOf<String, PowerManager.WakeLock>()
+
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
         val envelope = ChannelEnvelopeResult(result)
         try {
@@ -112,6 +114,8 @@ internal class PowerMethodHandler(
                 )
                 envelope.success(null)
             }
+            PowerMethods.ACQUIRE_WAKE_LOCK -> envelope.success(acquireWakeLock(call))
+            PowerMethods.RELEASE_WAKE_LOCK -> envelope.success(releaseWakeLock(call))
             else -> result.notImplemented()
             }
         } catch (error: IllegalArgumentException) {
@@ -266,6 +270,61 @@ internal class PowerMethodHandler(
             true
         } catch (_: Exception) {
             false
+        }
+    }
+
+    private fun acquireWakeLock(call: MethodCall): Boolean {
+        val tag = call.argument<String>("tag") ?: "generic"
+        val timeoutMs = call.argument<Number>("timeoutMs")?.toLong() ?: (15 * 60 * 1000L)
+        val powerManager = activity.getSystemService(Activity.POWER_SERVICE) as? PowerManager ?: return false
+        return try {
+            synchronized(activeWakeLocks) {
+                var lock = activeWakeLocks[tag]
+                if (lock == null) {
+                    lock = powerManager.newWakeLock(
+                        PowerManager.PARTIAL_WAKE_LOCK,
+                        "${activity.packageName}:$tag"
+                    ).apply {
+                        setReferenceCounted(false)
+                    }
+                    activeWakeLocks[tag] = lock
+                }
+                if (!lock.isHeld) {
+                    lock.acquire(timeoutMs)
+                }
+            }
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private fun releaseWakeLock(call: MethodCall): Boolean {
+        val tag = call.argument<String>("tag") ?: "generic"
+        return try {
+            synchronized(activeWakeLocks) {
+                val lock = activeWakeLocks.remove(tag)
+                if (lock?.isHeld == true) {
+                    lock.release()
+                }
+            }
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    fun dispose() {
+        synchronized(activeWakeLocks) {
+            for (lock in activeWakeLocks.values) {
+                try {
+                    if (lock.isHeld) {
+                        lock.release()
+                    }
+                } catch (_: Exception) {
+                }
+            }
+            activeWakeLocks.clear()
         }
     }
 }

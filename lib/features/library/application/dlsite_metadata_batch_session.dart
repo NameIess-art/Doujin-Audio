@@ -27,6 +27,7 @@ final class DlsiteMetadataBatchItem {
     this.confirmedMetadata,
     this.saveCover,
     this.error,
+    this.isExcluded = false,
   });
 
   final AudioLibraryCategoryEntry entry;
@@ -36,10 +37,12 @@ final class DlsiteMetadataBatchItem {
   final DlsiteMetadata? confirmedMetadata;
   final bool? saveCover;
   final Object? error;
+  final bool isExcluded;
 
   bool get isReviewable =>
-      status == DlsiteMetadataBatchLookupStatus.found ||
-      status == DlsiteMetadataBatchLookupStatus.confirmed;
+      !isExcluded &&
+      (status == DlsiteMetadataBatchLookupStatus.found ||
+          status == DlsiteMetadataBatchLookupStatus.confirmed);
 
   List<DlsiteMetadata> get reviewCandidates {
     final confirmedMetadata = this.confirmedMetadata;
@@ -57,6 +60,7 @@ final class DlsiteMetadataBatchItem {
     Object? saveCover = _unset,
     Object? error,
     bool clearError = false,
+    bool? isExcluded,
   }) => DlsiteMetadataBatchItem(
     entry: entry,
     query: query,
@@ -67,6 +71,7 @@ final class DlsiteMetadataBatchItem {
         : confirmedMetadata as DlsiteMetadata?,
     saveCover: saveCover == _unset ? this.saveCover : saveCover as bool?,
     error: clearError ? null : (error ?? this.error),
+    isExcluded: isExcluded ?? this.isExcluded,
   );
 }
 
@@ -154,26 +159,54 @@ final class DlsiteMetadataBatchSession extends ChangeNotifier {
       List<DlsiteMetadataBatchItem>.unmodifiable(_items);
 
   int get confirmedCount => _items
-      .where((item) => item.status == DlsiteMetadataBatchLookupStatus.confirmed)
+      .where(
+        (item) =>
+            !item.isExcluded &&
+            item.status == DlsiteMetadataBatchLookupStatus.confirmed,
+      )
       .length;
 
   bool get hasPendingLookups => _items.any(
-    (item) => item.status == DlsiteMetadataBatchLookupStatus.searching,
+    (item) =>
+        !item.isExcluded &&
+        item.status == DlsiteMetadataBatchLookupStatus.searching,
   );
 
   void start() {
     if (_started) return;
     _started = true;
     for (var index = 0; index < _items.length; index += 1) {
-      if (_items[index].status == DlsiteMetadataBatchLookupStatus.searching) {
+      if (!_items[index].isExcluded &&
+          _items[index].status == DlsiteMetadataBatchLookupStatus.searching) {
         _enqueue(index);
       }
     }
     _pump();
   }
 
+  void toggleExcluded(int index) {
+    if (index < 0 || index >= _items.length) return;
+    final item = _items[index];
+    final nextExcluded = !item.isExcluded;
+    _items[index] = item.copyWith(isExcluded: nextExcluded);
+    if (nextExcluded) {
+      _pending.remove(index);
+      _queued.remove(index);
+    } else if (item.status == DlsiteMetadataBatchLookupStatus.searching &&
+        !_active.contains(index)) {
+      _enqueue(index);
+      _pump();
+    }
+    _notify();
+  }
+
   void retry(int index) {
-    if (index < 0 || index >= _items.length || _active.contains(index)) return;
+    if (index < 0 ||
+        index >= _items.length ||
+        _active.contains(index) ||
+        _items[index].isExcluded) {
+      return;
+    }
     final item = _items[index];
     if (!item.query.hasQuery) return;
     _items[index] = item.copyWith(
@@ -193,7 +226,7 @@ final class DlsiteMetadataBatchSession extends ChangeNotifier {
   }) {
     if (index < 0 || index >= _items.length) return;
     final item = _items[index];
-    if (!item.isReviewable) return;
+    if (item.isExcluded || !item.isReviewable) return;
     _items[index] = item.copyWith(
       status: DlsiteMetadataBatchLookupStatus.confirmed,
       confirmedMetadata: metadata,
@@ -208,7 +241,7 @@ final class DlsiteMetadataBatchSession extends ChangeNotifier {
       index >= 0 && index < _items.length;
       index += direction
     ) {
-      if (_items[index].isReviewable) {
+      if (!_items[index].isExcluded && _items[index].isReviewable) {
         return index;
       }
     }
@@ -227,15 +260,22 @@ final class DlsiteMetadataBatchSession extends ChangeNotifier {
     final skippedCount = _items
         .where(
           (item) =>
+              item.isExcluded ||
               item.status == DlsiteMetadataBatchLookupStatus.notFound ||
               item.status == DlsiteMetadataBatchLookupStatus.found,
         )
         .length;
     var failedCount = _items
-        .where((item) => item.status == DlsiteMetadataBatchLookupStatus.failed)
+        .where(
+          (item) =>
+              !item.isExcluded &&
+              item.status == DlsiteMetadataBatchLookupStatus.failed,
+        )
         .length;
     for (final item in _items.where(
-      (item) => item.status == DlsiteMetadataBatchLookupStatus.confirmed,
+      (item) =>
+          !item.isExcluded &&
+          item.status == DlsiteMetadataBatchLookupStatus.confirmed,
     )) {
       try {
         await apply(item);
@@ -268,10 +308,17 @@ final class DlsiteMetadataBatchSession extends ChangeNotifier {
 
   Future<void> _runLookup(int index) async {
     final item = _items[index];
+    if (item.isExcluded) {
+      _active.remove(index);
+      _notify();
+      _pump();
+      return;
+    }
     try {
       final candidates = await _lookup(item.query);
       if (_disposed) return;
-      _items[index] = item.copyWith(
+      final currentItem = _items[index];
+      _items[index] = currentItem.copyWith(
         status: candidates.isEmpty
             ? DlsiteMetadataBatchLookupStatus.notFound
             : DlsiteMetadataBatchLookupStatus.found,
@@ -280,7 +327,8 @@ final class DlsiteMetadataBatchSession extends ChangeNotifier {
       );
     } on DlsiteMetadataException catch (error) {
       if (_disposed) return;
-      _items[index] = item.copyWith(
+      final currentItem = _items[index];
+      _items[index] = currentItem.copyWith(
         status: error.isNotFound
             ? DlsiteMetadataBatchLookupStatus.notFound
             : DlsiteMetadataBatchLookupStatus.failed,
@@ -289,7 +337,8 @@ final class DlsiteMetadataBatchSession extends ChangeNotifier {
       );
     } catch (error) {
       if (_disposed) return;
-      _items[index] = item.copyWith(
+      final currentItem = _items[index];
+      _items[index] = currentItem.copyWith(
         status: DlsiteMetadataBatchLookupStatus.failed,
         candidates: const <DlsiteMetadata>[],
         error: error,

@@ -25,6 +25,47 @@ class AppLifecycleMethodHandlerTest {
         handler.onMethodCall(MethodCall("unknown", null), result)
         assertEquals(1, result.notImplementedCalls)
     }
+
+    @Test
+    fun `app theme sync forwards the required preset and theme mode`() {
+        var receivedPreset: String? = null
+        var receivedMode: String? = null
+        val handler = AppLifecycleMethodHandler(
+            terminateForPendingRestore = {},
+            syncAppTheme = { preset, mode ->
+                receivedPreset = preset
+                receivedMode = mode
+            },
+        )
+        val result = RecordingAppLifecycleResult()
+
+        handler.onMethodCall(
+            MethodCall(
+                AppLifecycleMethods.SYNC_APP_THEME,
+                mapOf("preset" to "mint", "themeMode" to "dark"),
+            ),
+            result,
+        )
+
+        assertEquals("mint", receivedPreset)
+        assertEquals("dark", receivedMode)
+        assertTrue((result.successValue as Map<*, *>)["ok"] == true)
+    }
+
+    @Test
+    fun `app theme sync rejects missing arguments`() {
+        val handler = AppLifecycleMethodHandler(terminateForPendingRestore = {})
+        val result = RecordingAppLifecycleResult()
+
+        handler.onMethodCall(
+            MethodCall(AppLifecycleMethods.SYNC_APP_THEME, emptyMap<String, Any>()),
+            result,
+        )
+
+        val response = result.successValue as Map<*, *>
+        assertEquals(false, response["ok"])
+        assertEquals(ChannelErrorCodes.INVALID_ARGUMENT, response["errorCode"])
+    }
 }
 
 private class RecordingAppLifecycleResult(private val onSuccess: () -> Unit = {}) : MethodChannel.Result {

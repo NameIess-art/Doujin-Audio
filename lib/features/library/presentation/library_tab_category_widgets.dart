@@ -738,11 +738,9 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    if (ref.watch(
+    final isHidden = ref.watch(
       isUndoableRemovalHiddenProvider(_libraryRemovalKey(entry.path)),
-    )) {
-      return const SizedBox.shrink();
-    }
+    );
     final i18n = ProviderScope.containerOf(
       context,
       listen: false,
@@ -816,15 +814,21 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
       );
     }
 
+    final Widget cardWidget;
     if (!entry.isFolder && firstTrack != null) {
       final resolvedCoverPath = library.resolvedCoverPathForTrack(firstTrack);
       final useFeaturedCard =
           firstTrack.isVideo ||
           hasDisplayableCoverArtwork(firstTrack, resolvedCoverPath);
-      return buildEntryCard(useFeaturedCard);
+      cardWidget = buildEntryCard(useFeaturedCard);
+    } else {
+      cardWidget = buildEntryCard(entry.isFolder);
     }
 
-    return buildEntryCard(entry.isFolder);
+    return UndoableRemovalTransition(
+      hidden: isHidden,
+      child: cardWidget,
+    );
   }
 
   Widget _buildEntryContent(

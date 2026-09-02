@@ -31,4 +31,19 @@ class AppLifecyclePlatformService {
     return result.isOk;
   }
 
+  Future<bool> syncAppTheme({
+    required String preset,
+    required String themeMode,
+  }) async {
+    if (!_isAndroid) return true;
+    final result = await _client.invoke<void>(
+      AppLifecycleMethod.syncAppTheme,
+      arguments: <String, Object>{
+        'preset': preset,
+        'themeMode': themeMode,
+      },
+      decode: (_) {},
+    );
+    return result.isOk;
+  }
 }

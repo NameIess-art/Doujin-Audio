@@ -374,11 +374,9 @@ class _SessionListCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    if (ref.watch(
+    final isHidden = ref.watch(
       isUndoableRemovalHiddenProvider(_playbackSessionRemovalKey(sessionId)),
-    )) {
-      return const SizedBox.shrink();
-    }
+    );
     final cardState = ref.watch(playlistSessionCardStateProvider(sessionId));
     if (cardState == null) return const SizedBox.shrink();
     final i18n = ProviderScope.containerOf(
@@ -422,8 +420,10 @@ class _SessionListCard extends ConsumerWidget {
     final activeColor = isAsmrOne ? asmrBlue : localPlayRose;
     final showCover = shouldShowPlaylistCoverArtwork(track, coverPath);
 
-    return SwipeRevealCard(
-      key: ValueKey(sessionId),
+    return UndoableRemovalTransition(
+      hidden: isHidden,
+      child: SwipeRevealCard(
+        key: ValueKey(sessionId),
       shape: _playlistRowShape,
       closedColor: cs.surface,
       enabled: !isSelectionMode,
@@ -650,6 +650,7 @@ class _SessionListCard extends ConsumerWidget {
           ),
         ),
       ),
-    );
+    ),
+  );
   }
 }

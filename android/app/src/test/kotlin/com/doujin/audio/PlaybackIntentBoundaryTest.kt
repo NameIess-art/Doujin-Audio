@@ -1,6 +1,7 @@
 package com.doujin.audio
 
 import com.doujin.audio.player.notification.*
+import com.doujin.audio.player.session.StoredPlaybackTimerRuntimeState
 
 import android.app.AlarmManager
 import android.content.Intent
@@ -17,6 +18,41 @@ class PlaybackIntentBoundaryTest {
         assertTrue(isPlaybackTimerAlarmAction(PlaybackTimerAlarmScheduler.actionAutoResume))
         assertFalse(isPlaybackTimerAlarmAction("external.action"))
         assertFalse(isPlaybackTimerAlarmAction(null))
+    }
+
+    @Test
+    fun `timer delivery requires a matching persisted deadline`() {
+        val timerState = StoredPlaybackTimerRuntimeState(
+            timerModeIndex = 0,
+            durationMs = 60_000L,
+            waitingForPlayback = false,
+            timerEndsAtWallClockMs = 1_700_000_000_000L,
+            timerEndsElapsedRealtimeMs = null,
+            autoResumeEnabled = false,
+            autoResumeHour = 7,
+            autoResumeMinute = 0,
+            autoResumeAtMs = null,
+            pausedSessionIds = emptyList(),
+            generation = 3
+        )
+        assertTrue(
+            hasScheduledPlaybackTimerRuntime(
+                PlaybackTimerAlarmScheduler.actionTimerExpired,
+                timerState
+            )
+        )
+        assertFalse(
+            hasScheduledPlaybackTimerRuntime(
+                PlaybackTimerAlarmScheduler.actionTimerExpired,
+                null
+            )
+        )
+        assertFalse(
+            hasScheduledPlaybackTimerRuntime(
+                PlaybackTimerAlarmScheduler.actionAutoResume,
+                timerState
+            )
+        )
     }
 
     @Test

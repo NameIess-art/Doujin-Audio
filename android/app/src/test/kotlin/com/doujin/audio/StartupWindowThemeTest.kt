@@ -35,4 +35,36 @@ class StartupWindowThemeTest {
             StartupWindowTheme.surfaceColor("unknown", dark = true)
         )
     }
+
+    @Test
+    fun `splash theme maps correctly for presets and appearance modes`() {
+        assertEquals(
+            R.style.LaunchTheme_Mint,
+            StartupWindowTheme.splashThemeResId("mint", "system")
+        )
+        assertEquals(
+            R.style.LaunchTheme_Mint_Light,
+            StartupWindowTheme.splashThemeResId("mint", "light")
+        )
+        assertEquals(
+            R.style.LaunchTheme_Mint_Dark,
+            StartupWindowTheme.splashThemeResId("mint", "dark")
+        )
+        assertEquals(
+            R.style.LaunchTheme_Blue_Light,
+            StartupWindowTheme.splashThemeResId("sky", "light")
+        )
+        assertEquals(
+            R.style.LaunchTheme_Amber_Dark,
+            StartupWindowTheme.splashThemeResId("peach", "dark")
+        )
+        assertEquals(
+            R.style.LaunchTheme_Gray,
+            StartupWindowTheme.splashThemeResId("gray", "system")
+        )
+        assertEquals(
+            R.style.LaunchTheme_Rose,
+            StartupWindowTheme.splashThemeResId("unknown", "system")
+        )
+    }
 }

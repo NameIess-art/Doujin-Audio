@@ -480,6 +480,169 @@ void main() {
 
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('swiping left excludes item and swiping left again restores it', (
+    tester,
+  ) async {
+    final session = DlsiteMetadataBatchSession(
+      entries: [resultEntry('001'), resultEntry('002')],
+      lookup: (query) => Future<List<DlsiteMetadata>>.value([
+        resultMetadata(query.rjCode!.substring(5)),
+      ]),
+      apply: (_) async {},
+    );
+    final languageProvider = AppLanguageProvider();
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appLanguageProviderInstanceProvider.overrideWithValue(
+            languageProvider,
+          ),
+        ],
+        child: MaterialApp(
+          home: DlsiteMetadataBatchResultsPage(session: session),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final item0 = find.byKey(const ValueKey<String>('batch_metadata_result_0'));
+    expect(item0, findsOneWidget);
+
+    // Initial state: not excluded, opacity 1.0, found icon
+    expect(session.items[0].isExcluded, isFalse);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey<String>('batch_metadata_status_0')),
+        matching: find.byIcon(Icons.pending_actions_rounded),
+      ),
+      findsOneWidget,
+    );
+
+    // Swipe left to exclude
+    await tester.drag(item0, const Offset(-500, 0));
+    await tester.pumpAndSettle();
+
+    expect(session.items[0].isExcluded, isTrue);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey<String>('batch_metadata_status_0')),
+        matching: find.byIcon(Icons.block_rounded),
+      ),
+      findsOneWidget,
+    );
+
+    // Verify opacity is reduced (greyed out)
+    final opacityWidget = tester.widget<Opacity>(
+      find.ancestor(
+        of: item0,
+        matching: find.byType(Opacity),
+      ).first,
+    );
+    expect(opacityWidget.opacity, closeTo(0.38, 0.01));
+
+    // Swipe left again to restore
+    await tester.drag(item0, const Offset(-500, 0));
+    await tester.pumpAndSettle();
+
+    expect(session.items[0].isExcluded, isFalse);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey<String>('batch_metadata_status_0')),
+        matching: find.byIcon(Icons.pending_actions_rounded),
+      ),
+      findsOneWidget,
+    );
+
+    final restoredOpacity = tester.widget<Opacity>(
+      find.ancestor(
+        of: item0,
+        matching: find.byType(Opacity),
+      ).first,
+    );
+    expect(restoredOpacity.opacity, equals(1.0));
+  });
+
+  testWidgets('excluding searching item unblocks saving and skips excluded item', (
+    tester,
+  ) async {
+    final pending = Completer<List<DlsiteMetadata>>();
+    final saved = <DlsiteMetadataBatchItem>[];
+    final session = DlsiteMetadataBatchSession(
+      entries: [resultEntry('001'), resultEntry('002')],
+      lookup: (query) => switch (query.rjCode) {
+        'RJ000001' => Future<List<DlsiteMetadata>>.value([resultMetadata('001')]),
+        _ => pending.future,
+      },
+      apply: (item) async {
+        saved.add(item);
+      },
+    );
+    final languageProvider = AppLanguageProvider();
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appLanguageProviderInstanceProvider.overrideWithValue(
+            languageProvider,
+          ),
+        ],
+        child: MaterialApp(
+          home: DlsiteMetadataBatchResultsPage(session: session),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    // Confirm item 0
+    session.confirm(0, metadata: resultMetadata('001'), saveCover: false);
+    await tester.pump();
+
+    // Done button should be disabled because item 1 is still searching
+    final doneButton = find.byKey(
+      const ValueKey<String>('batch_metadata_results_done'),
+    );
+    expect(
+      tester
+          .widget<InkWell>(
+            find.descendant(of: doneButton, matching: find.byType(InkWell)),
+          )
+          .onTap,
+      isNull,
+    );
+
+    // Swipe left to exclude item 1 (searching item)
+    final item1 = find.byKey(const ValueKey<String>('batch_metadata_result_1'));
+    await tester.drag(item1, const Offset(-500, 0));
+    await tester.pumpAndSettle();
+
+    expect(session.items[1].isExcluded, isTrue);
+
+    // Done button should now be enabled!
+    expect(
+      tester
+          .widget<InkWell>(
+            find.descendant(of: doneButton, matching: find.byType(InkWell)),
+          )
+          .onTap,
+      isNotNull,
+    );
+
+    // Tap confirm to save
+    await tester.tap(doneButton);
+    await tester.pumpAndSettle();
+
+    // Item 0 is saved, item 1 is skipped
+    expect(saved.length, 1);
+    expect(saved.single.entry.title, 'Work 001');
+
+    // Dialog shows completion with 1 saved and 1 skipped
+    expect(
+      find.byKey(const ValueKey<String>('batch_metadata_completion_dialog')),
+      findsOneWidget,
+    );
+  });
 }
 
 class _RecordingNavigatorObserver extends NavigatorObserver {

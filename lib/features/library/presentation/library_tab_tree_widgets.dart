@@ -261,11 +261,9 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
 
   @override
   Widget build(BuildContext context) {
-    if (ref.watch(
+    final isHidden = ref.watch(
       isUndoableRemovalHiddenProvider(_libraryRemovalKey(widget.folder.path)),
-    )) {
-      return const SizedBox.shrink();
-    }
+    );
     final i18n = ProviderScope.containerOf(
       context,
       listen: false,
@@ -474,43 +472,46 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
       ),
     );
 
-    if (!isRootFolder) {
-      return content;
-    }
+    final result = !isRootFolder
+        ? content
+        : GestureDetector(
+            onLongPress: widget.onLongPress,
+            onTap: widget.isSelectionMode ? widget.onToggleSelect : null,
+            child: SwipeRevealCard(
+              shape: cardShape,
+              enabled: !widget.isSelectionMode,
+              closedColor: cs.surface,
+              actionLabel: i18n.tr('remove'),
+              removeTooltip: i18n.tr('remove_audio_folder'),
+              secondaryActionLabel: i18n.tr('audio_detail'),
+              secondaryActionTooltip: i18n.tr('audio_detail'),
+              verticalActions: true,
+              onSecondaryAction: () => unawaited(
+                showAudioDetailSheet(
+                  context,
+                  AudioDetailTarget.libraryRootFolder(widget.folder.path),
+                ),
+              ),
+              onRemove: () => _removeFolder(context),
+              onWillReveal: _expansionController.collapse,
+              child: Card(
+                margin: EdgeInsets.zero,
+                clipBehavior: Clip.antiAlias,
+                shape: cardShape,
+                color: widget.isSelected
+                    ? cs.primaryContainer.withValues(alpha: 0.25)
+                    : Colors.transparent,
+                elevation: 0,
+                shadowColor: Colors.transparent,
+                surfaceTintColor: Colors.transparent,
+                child: content,
+              ),
+            ),
+          );
 
-    return GestureDetector(
-      onLongPress: widget.onLongPress,
-      onTap: widget.isSelectionMode ? widget.onToggleSelect : null,
-      child: SwipeRevealCard(
-        shape: cardShape,
-        enabled: !widget.isSelectionMode,
-        closedColor: cs.surface,
-        actionLabel: i18n.tr('remove'),
-        removeTooltip: i18n.tr('remove_audio_folder'),
-        secondaryActionLabel: i18n.tr('audio_detail'),
-        secondaryActionTooltip: i18n.tr('audio_detail'),
-        verticalActions: true,
-        onSecondaryAction: () => unawaited(
-          showAudioDetailSheet(
-            context,
-            AudioDetailTarget.libraryRootFolder(widget.folder.path),
-          ),
-        ),
-        onRemove: () => _removeFolder(context),
-        onWillReveal: _expansionController.collapse,
-        child: Card(
-          margin: EdgeInsets.zero,
-          clipBehavior: Clip.antiAlias,
-          shape: cardShape,
-          color: widget.isSelected
-              ? cs.primaryContainer.withValues(alpha: 0.25)
-              : Colors.transparent,
-          elevation: 0,
-          shadowColor: Colors.transparent,
-          surfaceTintColor: Colors.transparent,
-          child: content,
-        ),
-      ),
+    return UndoableRemovalTransition(
+      hidden: isHidden,
+      child: result,
     );
   }
 }
@@ -549,11 +550,9 @@ class _TrackNodeWidget extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    if (ref.watch(
+    final isHidden = ref.watch(
       isUndoableRemovalHiddenProvider(_libraryRemovalKey(trackNode.track.path)),
-    )) {
-      return const SizedBox.shrink();
-    }
+    );
     final i18n = ProviderScope.containerOf(
       context,
       listen: false,
@@ -691,81 +690,90 @@ class _TrackNodeWidget extends ConsumerWidget {
       );
     }
 
-    if (track.isSingle) {
-      return buildSingleTrackCard(useFeaturedSingleCard);
-    }
-
-    return SwipeRevealCard(
-      shape: cardShape,
-      actionLabel: i18n.tr('remove'),
-      removeTooltip: i18n.tr('remove_audio'),
-      onRemove: () => _removeTrack(context, ref, track),
-      child: ColoredBox(
-        color: Colors.transparent,
-        child: SizedBox(
-          height: 38,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
-            child: Row(
-              children: [
-                Icon(
-                  Icons.audio_file_rounded,
-                  size: 16,
-                  color: cs.onSurfaceVariant.withValues(alpha: 0.6),
-                ),
-                const SizedBox(width: AppSpacing.sm),
-                Expanded(
-                  child: SearchHighlightedText(
-                    text: track.displayName,
-                    terms: extractSearchTerms(searchQuery),
-                    maxLines: 1,
-                    style:
-                        Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          fontWeight: FontWeight.w600,
-                          fontSize: 13,
-                          color: isAlreadyPlaying ? cs.primary : cs.onSurface,
-                        ) ??
-                        const TextStyle(),
+    final result = track.isSingle
+        ? buildSingleTrackCard(useFeaturedSingleCard)
+        : SwipeRevealCard(
+            shape: cardShape,
+            actionLabel: i18n.tr('remove'),
+            removeTooltip: i18n.tr('remove_audio'),
+            onRemove: () => _removeTrack(context, ref, track),
+            child: ColoredBox(
+              color: Colors.transparent,
+              child: SizedBox(
+                height: 38,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.xs,
                   ),
-                ),
-                IconButton(
-                  onPressed: () async {
-                    unawaited(
-                      AppInteractionFeedback.trigger(
-                        AppInteractionFeedbackType.tap,
-                        context: context,
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.audio_file_rounded,
+                        size: 16,
+                        color: cs.onSurfaceVariant.withValues(alpha: 0.6),
                       ),
-                    );
-                    final created = await playback.spawnSession(track);
-                    if (!context.mounted) return;
-                    if (created) {
-                      _showSessionCreatedSnack(
-                        context,
-                        i18n.tr('session_created', {'name': track.displayName}),
-                      );
-                    } else {
-                      showAppSnackBar(
-                        context,
-                        i18n.tr('operation_failed_retry'),
-                        tone: AppFeedbackTone.destructive,
-                        icon: Icons.error_outline_rounded,
-                      );
-                    }
-                  },
-                  style: IconButton.styleFrom(
-                    foregroundColor: cs.primary,
-                    minimumSize: const Size(36, 36),
-                    maximumSize: const Size(36, 36),
-                    padding: EdgeInsets.zero,
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      const SizedBox(width: AppSpacing.sm),
+                      Expanded(
+                        child: SearchHighlightedText(
+                          text: track.displayName,
+                          terms: extractSearchTerms(searchQuery),
+                          maxLines: 1,
+                          style:
+                              Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                fontWeight: FontWeight.w600,
+                                fontSize: 13,
+                                color: isAlreadyPlaying
+                                    ? cs.primary
+                                    : cs.onSurface,
+                              ) ??
+                              const TextStyle(),
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: () async {
+                          unawaited(
+                            AppInteractionFeedback.trigger(
+                              AppInteractionFeedbackType.tap,
+                              context: context,
+                            ),
+                          );
+                          final created = await playback.spawnSession(track);
+                          if (!context.mounted) return;
+                          if (created) {
+                            _showSessionCreatedSnack(
+                              context,
+                              i18n.tr('session_created', {
+                                'name': track.displayName,
+                              }),
+                            );
+                          } else {
+                            showAppSnackBar(
+                              context,
+                              i18n.tr('operation_failed_retry'),
+                              tone: AppFeedbackTone.destructive,
+                              icon: Icons.error_outline_rounded,
+                            );
+                          }
+                        },
+                        style: IconButton.styleFrom(
+                          foregroundColor: cs.primary,
+                          minimumSize: const Size(36, 36),
+                          maximumSize: const Size(36, 36),
+                          padding: EdgeInsets.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        icon: const Icon(Icons.add_circle_rounded, size: 22),
+                      ),
+                    ],
                   ),
-                  icon: const Icon(Icons.add_circle_rounded, size: 22),
                 ),
-              ],
+              ),
             ),
-          ),
-        ),
-      ),
+          );
+
+    return UndoableRemovalTransition(
+      hidden: isHidden,
+      child: result,
     );
   }
 }

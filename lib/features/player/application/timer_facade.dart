@@ -293,8 +293,21 @@ final class TimerFacade {
       powerPlatformService.executeTimerExpiredNow,
       generation,
     );
-    if (!_isCurrentGeneration(generation) ||
-        result == TimerExecutionResult.stale) {
+    if (!_isCurrentGeneration(generation)) {
+      return;
+    }
+    if (result == TimerExecutionResult.stale) {
+      // A missing native runtime means the alarm was never synchronized (or
+      // was cleared by the OS). Keep the user-visible timer semantics by
+      // applying the local fallback, while still ignoring a stale generation
+      // after a newly configured timer.
+      final nativeRuntime = await _loadNativeRuntime(
+        expectedGeneration: generation,
+      );
+      if (nativeRuntime == _NativeTimerRuntimeLoadResult.empty ||
+          nativeRuntime == _NativeTimerRuntimeLoadResult.failed) {
+        await _applyLocalTimerExpiryFallback(generation);
+      }
       return;
     }
     if (result == TimerExecutionResult.failed) {
@@ -361,8 +374,17 @@ final class TimerFacade {
       powerPlatformService.executeAutoResumeNow,
       generation,
     );
-    if (!_isCurrentGeneration(generation) ||
-        result == TimerExecutionResult.stale) {
+    if (!_isCurrentGeneration(generation)) {
+      return;
+    }
+    if (result == TimerExecutionResult.stale) {
+      final nativeRuntime = await _loadNativeRuntime(
+        expectedGeneration: generation,
+      );
+      if (nativeRuntime == _NativeTimerRuntimeLoadResult.empty ||
+          nativeRuntime == _NativeTimerRuntimeLoadResult.failed) {
+        await _resumeTimerPausedSessions(generation);
+      }
       return;
     }
     if (result == TimerExecutionResult.failed) {

@@ -170,28 +170,68 @@ class _CompactLibraryLikeSkeletonCard extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Expanded(
-                        child: Padding(
-                          padding: EdgeInsets.only(top: 2),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              ShimmerContainer(height: 12, borderRadius: 4),
-                              SizedBox(height: 4),
-                              ShimmerContainer(
-                                width: 140,
-                                height: 12,
-                                borderRadius: 4,
-                              ),
-                            ],
-                          ),
+                      Padding(
+                        padding: EdgeInsets.only(top: 2),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            ShimmerContainer(
+                              height: 12,
+                              borderRadius: 4,
+                            ),
+                            SizedBox(height: 4),
+                            ShimmerContainer(
+                              height: 12,
+                              borderRadius: 4,
+                            ),
+                            SizedBox(height: 4),
+                            ShimmerContainer(
+                              width: 140,
+                              height: 12,
+                              borderRadius: 4,
+                            ),
+                          ],
                         ),
                       ),
-                      SizedBox(
-                        height: LibraryLikeCardMetrics.actionButtonSize,
-                        child: Align(
-                          alignment: Alignment.centerRight,
-                          child: _LibraryLikeSkeletonActions(),
+                      Expanded(
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Align(
+                                alignment: Alignment.topLeft,
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    SizedBox(height: 4),
+                                    ShimmerContainer(
+                                      height: 12,
+                                      borderRadius: 4,
+                                    ),
+                                    SizedBox(height: 4),
+                                    ShimmerContainer(
+                                      height: 12,
+                                      borderRadius: 4,
+                                    ),
+                                    SizedBox(height: 4),
+                                    ShimmerContainer(
+                                      width: 100,
+                                      height: 12,
+                                      borderRadius: 4,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            SizedBox(width: 8),
+                            Align(
+                              alignment: Alignment.bottomRight,
+                              child: _LibraryLikeSkeletonActions(
+                                actionHeight:
+                                    LibraryLikeCardMetrics
+                                        .compactActionButtonLayoutSize,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ],
@@ -449,7 +489,7 @@ class LibraryLikeWorkCardContent extends StatelessWidget {
         );
 
     return LayoutBuilder(
-      builder: (context, _) {
+      builder: (context, constraints) {
         const infoBlockHeight = LibraryLikeCardMetrics.infoBlockHeight;
         const titleBlockHeight = LibraryLikeCardMetrics.titleBlockHeight;
         final contentHeight = compactCoverLayout
@@ -463,6 +503,22 @@ class LibraryLikeWorkCardContent extends StatelessWidget {
         const maxInfoRows = LibraryLikeInfoLineData.maxLines;
         final visibleLines = lines.take(maxInfoRows).toList(growable: false);
         if (compactCoverLayout) {
+          final textDirection =
+              Directionality.maybeOf(context) ?? TextDirection.ltr;
+          final textScaler =
+              MediaQuery.maybeTextScalerOf(context) ?? TextScaler.noScaling;
+          final availableWidth = constraints.maxWidth.isFinite
+              ? constraints.maxWidth - coverWidth - 10
+              : 0.0;
+          final (topTitle, bottomTitle) = availableWidth > 0
+              ? splitCompactCardTitle(
+                  title: title,
+                  style: titleStyle,
+                  maxWidth: availableWidth,
+                  textDirection: textDirection,
+                  textScaler: textScaler,
+                )
+              : (title, '');
           return SizedBox(
             height: contentHeight,
             child: Row(
@@ -474,27 +530,40 @@ class LibraryLikeWorkCardContent extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Expanded(
-                        child: Align(
-                          alignment: Alignment.topLeft,
-                          child: SearchHighlightedText(
-                            text: title,
-                            style: titleStyle,
-                            maxLines: 3,
-                            softWrap: true,
-                          ),
-                        ),
+                      SearchHighlightedText(
+                        text: topTitle,
+                        style: titleStyle,
+                        maxLines: 3,
+                        softWrap: true,
                       ),
-                      SizedBox(
-                        height: LibraryLikeCardMetrics.actionButtonSize,
-                        child: Align(
-                          alignment: Alignment.centerRight,
-                          child: _buildActions(
-                            context,
-                            cs,
-                            actionHeight:
-                                LibraryLikeCardMetrics.actionButtonSize,
-                          ),
+                      Expanded(
+                        child: Row(
+                          children: [
+                            if (bottomTitle.isNotEmpty) ...[
+                              Expanded(
+                                child: Align(
+                                  alignment: Alignment.topLeft,
+                                  child: SearchHighlightedText(
+                                    text: bottomTitle,
+                                    style: titleStyle,
+                                    maxLines: 3,
+                                    softWrap: true,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                            ] else
+                              const Spacer(),
+                            Align(
+                              alignment: Alignment.bottomRight,
+                              child: _buildActions(
+                                context,
+                                cs,
+                                actionHeight:
+                                    LibraryLikeCardMetrics.actionButtonSize,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ],
@@ -1057,3 +1126,42 @@ bool _isLibraryLikeSplitChar(String char) {
 
 bool shouldReserveTwoLibraryLikeInfoLines(String text) =>
     text.characters.length > 18;
+
+@visibleForTesting
+(String, String) splitCompactCardTitle({
+  required String title,
+  required TextStyle style,
+  required double maxWidth,
+  required TextDirection textDirection,
+  TextScaler textScaler = TextScaler.noScaling,
+  int maxTopLines = 3,
+}) {
+  final trimmed = title.trim();
+  if (trimmed.isEmpty || maxWidth <= 0) return (title, '');
+  final textPainter = TextPainter(
+    text: TextSpan(text: title, style: style),
+    textDirection: textDirection,
+    textScaler: textScaler,
+  )..layout(maxWidth: maxWidth);
+
+  final lineMetrics = textPainter.computeLineMetrics();
+  if (lineMetrics.length <= maxTopLines) {
+    return (title, '');
+  }
+
+  final lastTopLine = lineMetrics[maxTopLines - 1];
+  final pos = textPainter.getPositionForOffset(
+    Offset(maxWidth, lastTopLine.baseline),
+  );
+  final range = textPainter.getLineBoundary(pos);
+  final splitIndex = range.end;
+  if (splitIndex <= 0 || splitIndex >= title.length) {
+    return (title, '');
+  }
+  final topText = title.substring(0, splitIndex).trimRight();
+  final bottomText = title.substring(splitIndex).trimLeft();
+  if (bottomText.isEmpty) {
+    return (title, '');
+  }
+  return (topText, bottomText);
+}

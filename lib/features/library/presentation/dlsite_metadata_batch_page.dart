@@ -593,6 +593,7 @@ class _DlsiteMetadataBatchResultsPageState
 
   Future<void> _handleItemTap(int index) async {
     final item = widget.session.items[index];
+    if (item.isExcluded) return;
     if (item.isReviewable) {
       await Navigator.of(context).push<void>(
         buildAppPageRoute(
@@ -659,25 +660,116 @@ class _DlsiteMetadataBatchResultsPageState
                     final title = entry.detail.workTitle.isNotEmpty
                         ? entry.detail.workTitle
                         : entry.title;
-                    return ListTile(
-                      key: ValueKey<String>('batch_metadata_result_$index'),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
+                    final isExcluded = item.isExcluded;
+                    final cs = Theme.of(context).colorScheme;
+                    return Dismissible(
+                      key: ValueKey<String>(
+                        'batch_metadata_dismissible_${AudioLibraryCategorySnapshot.targetKey(entry.target)}',
                       ),
-                      title: Text(
-                        title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                      direction: DismissDirection.endToStart,
+                      confirmDismiss: (direction) async {
+                        if (direction == DismissDirection.endToStart) {
+                          widget.session.toggleExcluded(index);
+                        }
+                        return false;
+                      },
+                      background: const SizedBox.shrink(),
+                      secondaryBackground: Container(
+                        alignment: Alignment.centerRight,
+                        padding: const EdgeInsets.only(right: 20),
+                        margin: const EdgeInsets.symmetric(vertical: 2),
+                        decoration: BoxDecoration(
+                          color: isExcluded
+                              ? cs.surfaceContainerHighest
+                              : cs.errorContainer.withValues(alpha: 0.6),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              isExcluded
+                                  ? Icons.undo_rounded
+                                  : Icons.block_rounded,
+                              color: isExcluded
+                                  ? cs.onSurface
+                                  : cs.onErrorContainer,
+                              size: 20,
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              isExcluded
+                                  ? i18n.tr('batch_metadata_action_restore')
+                                  : i18n.tr('batch_metadata_action_exclude'),
+                              style: TextStyle(
+                                color: isExcluded
+                                    ? cs.onSurface
+                                    : cs.onErrorContainer,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                      subtitle: entry.detail.rjCode.isEmpty
-                          ? null
-                          : Text(entry.detail.rjCode),
-                      trailing: _BatchMetadataStatusIcon(
-                        key: ValueKey<String>('batch_metadata_status_$index'),
-                        status: item.status,
+                      child: ColorFiltered(
+                        colorFilter: isExcluded
+                            ? const ColorFilter.matrix(<double>[
+                                0.2126, 0.7152, 0.0722, 0, 0,
+                                0.2126, 0.7152, 0.0722, 0, 0,
+                                0.2126, 0.7152, 0.0722, 0, 0,
+                                0,      0,      0,      1, 0,
+                              ])
+                            : const ColorFilter.mode(
+                                Colors.transparent,
+                                BlendMode.dst,
+                              ),
+                        child: Opacity(
+                          opacity: isExcluded ? 0.38 : 1.0,
+                          child: ListTile(
+                            key: ValueKey<String>(
+                              'batch_metadata_result_$index',
+                            ),
+                            contentPadding:
+                                const EdgeInsets.symmetric(horizontal: 8),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            title: Text(
+                              title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: isExcluded
+                                  ? TextStyle(
+                                      color:
+                                          cs.onSurface.withValues(alpha: 0.38),
+                                    )
+                                  : null,
+                            ),
+                            subtitle: entry.detail.rjCode.isEmpty
+                                ? null
+                                : Text(
+                                    entry.detail.rjCode,
+                                    style: isExcluded
+                                        ? TextStyle(
+                                            color: cs.onSurfaceVariant
+                                                .withValues(alpha: 0.38),
+                                          )
+                                        : null,
+                                  ),
+                            trailing: _BatchMetadataStatusIcon(
+                              key: ValueKey<String>(
+                                'batch_metadata_status_$index',
+                              ),
+                              status: item.status,
+                              isExcluded: isExcluded,
+                            ),
+                            onTap: isExcluded
+                                ? null
+                                : () => _handleItemTap(index),
+                          ),
+                        ),
                       ),
-                      onTap: () => _handleItemTap(index),
                     );
                   },
                 );
@@ -887,9 +979,14 @@ class _DlsiteMetadataBatchReviewPageState
 }
 
 class _BatchMetadataStatusIcon extends StatelessWidget {
-  const _BatchMetadataStatusIcon({super.key, required this.status});
+  const _BatchMetadataStatusIcon({
+    super.key,
+    required this.status,
+    this.isExcluded = false,
+  });
 
   final DlsiteMetadataBatchLookupStatus status;
+  final bool isExcluded;
 
   @override
   Widget build(BuildContext context) {
@@ -898,6 +995,16 @@ class _BatchMetadataStatusIcon extends StatelessWidget {
       listen: false,
     ).read(appLanguageProviderInstanceProvider);
     final cs = Theme.of(context).colorScheme;
+    if (isExcluded) {
+      final label = i18n.tr('batch_metadata_status_excluded');
+      return Tooltip(
+        message: label,
+        child: Semantics(
+          label: label,
+          child: Icon(Icons.block_rounded, color: cs.outline, size: 22),
+        ),
+      );
+    }
     if (status == DlsiteMetadataBatchLookupStatus.searching) {
       final label = i18n.tr('batch_metadata_status_searching');
       return Tooltip(

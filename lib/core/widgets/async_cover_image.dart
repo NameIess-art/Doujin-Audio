@@ -801,7 +801,6 @@ class RetryingFileImage extends ConsumerWidget {
       maxRetryAttempts: maxRetryAttempts,
       displayMode: effectiveDisplayMode,
       deferLoadDuringInteraction: false,
-      showPlaceholderWhileDecoding: false,
     );
   }
 }

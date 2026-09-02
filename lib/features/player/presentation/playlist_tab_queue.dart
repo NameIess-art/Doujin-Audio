@@ -49,11 +49,9 @@ class _PlaybackQueueCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    if (ref.watch(
+    final isHidden = ref.watch(
       isUndoableRemovalHiddenProvider(_playbackSessionRemovalKey(session.id)),
-    )) {
-      return const SizedBox.shrink();
-    }
+    );
     final cardState = ref.watch(playlistSessionCardStateProvider(session.id));
     if (cardState == null) return const SizedBox.shrink();
     final i18n = ProviderScope.containerOf(
@@ -119,8 +117,10 @@ class _PlaybackQueueCard extends ConsumerWidget {
         ? tracks[currentIndex + 1]
         : null;
     final secondTrackName = nextTrack?.displayName ?? '';
-    return SwipeRevealCard(
-      key: ValueKey(session.id),
+    return UndoableRemovalTransition(
+      hidden: isHidden,
+      child: SwipeRevealCard(
+        key: ValueKey(session.id),
       shape: _playlistRowShape,
       color: revealActionColor,
       closedColor: cs.surface,
@@ -336,8 +336,9 @@ class _PlaybackQueueCard extends ConsumerWidget {
           ),
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 }
 
 class _QueueCoverGrid extends StatelessWidget {
@@ -1495,17 +1496,10 @@ class _AnimatedQueueEntryCardState extends State<_AnimatedQueueEntryCard> {
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedOpacity(
-      opacity: _isRemoving ? 0.0 : 1.0,
+    return UndoableRemovalTransition(
+      hidden: _isRemoving,
       duration: const Duration(milliseconds: 250),
-      curve: Curves.easeOut,
-      child: AnimatedSize(
-        duration: const Duration(milliseconds: 250),
-        curve: Curves.easeInOut,
-        child: _isRemoving
-            ? const SizedBox(width: double.infinity, height: 0)
-            : widget.builder(context, _triggerRemove),
-      ),
+      child: widget.builder(context, _triggerRemove),
     );
   }
 }

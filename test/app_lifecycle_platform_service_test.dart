@@ -48,4 +48,25 @@ void main() {
     expect(await service.terminateForPendingRestore(), isFalse);
   });
 
+  test('app theme sync sends preset and theme mode to Android', () async {
+    MethodCall? received;
+    messenger.setMockMethodCallHandler(channel, (call) async {
+      received = call;
+      return <String, Object?>{'ok': true, 'value': null};
+    });
+    final service = AppLifecyclePlatformService(
+      channel: channel,
+      isAndroidOverride: true,
+    );
+
+    expect(
+      await service.syncAppTheme(preset: 'mint', themeMode: 'dark'),
+      isTrue,
+    );
+    expect(received?.method, 'syncAppTheme');
+    expect(received?.arguments, <String, Object>{
+      'preset': 'mint',
+      'themeMode': 'dark',
+    });
+  });
 }

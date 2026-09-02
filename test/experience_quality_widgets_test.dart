@@ -422,7 +422,6 @@ void main() {
     final coverRect = tester.getRect(find.byKey(coverKey));
     final addRect = tester.getRect(find.byIcon(Icons.add_circle_rounded));
     final expandRect = tester.getRect(find.byIcon(Icons.expand_more_rounded));
-    final titleText = tester.widget<Text>(find.text(title));
 
     expect(
       tester.getSize(content),
@@ -440,18 +439,133 @@ void main() {
       tester.getSize(find.byType(ListTile)).height,
       LibraryLikeCardMetrics.compactRootTileHeight,
     );
-    expect(
-      tester.getTopLeft(find.text(title)).dx,
-      greaterThan(coverRect.right),
-    );
-    expect(tester.getTopLeft(find.text(title)).dy, contentRect.top);
+
+    final topFinder = find.text('A long work title that remains on the');
+    final bottomFinder = find.text('right of its cover');
+    expect(topFinder, findsOneWidget);
+    expect(bottomFinder, findsOneWidget);
+
+    final topRect = tester.getRect(topFinder);
+    final bottomRect = tester.getRect(bottomFinder);
+    final topText = tester.widget<Text>(topFinder);
+    final bottomText = tester.widget<Text>(bottomFinder);
+
+    expect(topRect.left, greaterThan(coverRect.right));
+    expect(topRect.top, contentRect.top);
+    expect(bottomRect.left, greaterThan(coverRect.right));
+    expect(bottomRect.right, lessThanOrEqualTo(addRect.left));
     expect(addRect.center.dy, greaterThan(contentRect.center.dy));
     expect(expandRect.center.dy, greaterThan(contentRect.center.dy));
     expect(addRect.left, greaterThan(coverRect.right));
     expect(expandRect.left, greaterThan(addRect.left));
-    expect(titleText.maxLines, 3);
-    expect(titleText.overflow, TextOverflow.ellipsis);
+    expect(topText.maxLines, 3);
+    expect(bottomText.maxLines, 3);
+    expect(bottomText.overflow, TextOverflow.ellipsis);
+    expect(bottomRect.top, equals(topRect.bottom));
   });
+
+  test('splitCompactCardTitle preserves short titles and splits long titles', () {
+    const style = TextStyle(fontSize: 14, height: 1.06, fontWeight: FontWeight.w800);
+
+    final (shortTop, shortBot) = splitCompactCardTitle(
+      title: 'Short',
+      style: style,
+      maxWidth: 206,
+      textDirection: TextDirection.ltr,
+    );
+    expect(shortTop, 'Short');
+    expect(shortBot, isEmpty);
+
+    final (longTop, longBot) = splitCompactCardTitle(
+      title: 'A long work title that remains on the right of its cover',
+      style: style,
+      maxWidth: 206,
+      textDirection: TextDirection.ltr,
+    );
+    expect(longTop, 'A long work title that remains on the');
+    expect(longBot, 'right of its cover');
+  });
+
+  testWidgets('compact card with short title keeps title in top block', (
+    tester,
+  ) async {
+    const coverKey = ValueKey('compact-short-cover');
+    const title = 'Short';
+
+    await tester.pumpWidget(
+      _buildSurface(
+        ListTile(
+          minTileHeight: LibraryLikeCardMetrics.compactRootTileHeight,
+          contentPadding: LibraryLikeCardMetrics.rootTilePadding,
+          title: _buildFeaturedCard(
+            title: title,
+            coverKey: coverKey,
+            lines: const <LibraryLikeInfoLineData>[],
+            compactCoverLayout: true,
+          ),
+        ),
+      ),
+    );
+
+    final addRect = tester.getRect(find.byIcon(Icons.add_circle_rounded));
+    final titleFinder = find.text(title);
+    expect(titleFinder, findsOneWidget);
+    expect(tester.getTopLeft(titleFinder).dy, lessThan(addRect.top));
+  });
+
+  testWidgets(
+    'compact card actions keep fixed position regardless of title length',
+    (tester) async {
+      const coverKey1 = ValueKey('cover-short');
+      const coverKey2 = ValueKey('cover-long');
+      const shortTitle = 'Short';
+      const longTitle =
+          'A long work title that remains on the right of its cover';
+
+      await tester.pumpWidget(
+        _buildSurface(
+          ListTile(
+            minTileHeight: LibraryLikeCardMetrics.compactRootTileHeight,
+            contentPadding: LibraryLikeCardMetrics.rootTilePadding,
+            title: _buildFeaturedCard(
+              title: shortTitle,
+              coverKey: coverKey1,
+              lines: const <LibraryLikeInfoLineData>[],
+              compactCoverLayout: true,
+            ),
+          ),
+        ),
+      );
+
+      final shortAddRect =
+          tester.getRect(find.byIcon(Icons.add_circle_rounded));
+      final shortExpandRect =
+          tester.getRect(find.byIcon(Icons.expand_more_rounded));
+
+      await tester.pumpWidget(
+        _buildSurface(
+          ListTile(
+            minTileHeight: LibraryLikeCardMetrics.compactRootTileHeight,
+            contentPadding: LibraryLikeCardMetrics.rootTilePadding,
+            title: _buildFeaturedCard(
+              title: longTitle,
+              coverKey: coverKey2,
+              lines: const <LibraryLikeInfoLineData>[],
+              compactCoverLayout: true,
+            ),
+          ),
+        ),
+      );
+
+      final longAddRect =
+          tester.getRect(find.byIcon(Icons.add_circle_rounded));
+      final longExpandRect =
+          tester.getRect(find.byIcon(Icons.expand_more_rounded));
+
+      expect(longAddRect, equals(shortAddRect));
+      expect(longExpandRect, equals(shortExpandRect));
+    },
+  );
 
   testWidgets(
     'metadata card keeps the configured compact layout while the cover loads',
@@ -568,22 +682,30 @@ void main() {
           LibraryLikeCardMetrics.compactContentHeight,
         ),
       );
-      expect(skeletonAdd, findsOneWidget);
-      expect(skeletonExpand, findsOneWidget);
+      final cardRect = tester.getRect(find.byType(Card));
+      final tileRect = tester.getRect(find.byType(ListTile));
+      final actualAdd = find.byIcon(Icons.add_circle_rounded);
+      final actualExpand = find.byIcon(Icons.expand_more_rounded);
+
       expect(
-        tester.getCenter(skeletonAdd).dx -
-            tester.getCenter(find.byIcon(Icons.add_circle_rounded)).dx,
+        tester.getCenter(skeletonAdd).dx - tester.getCenter(actualAdd).dx,
         closeTo(0, 0.1),
       );
       expect(
-        tester.getCenter(skeletonExpand).dx -
-            tester.getCenter(find.byIcon(Icons.expand_more_rounded)).dx,
+        tester.getCenter(skeletonExpand).dx - tester.getCenter(actualExpand).dx,
         closeTo(0, 0.1),
       );
-      expect(
-        tester.getCenter(skeletonAdd).dy,
-        greaterThan(tester.getCenter(skeletonCover).dy),
-      );
+
+      final skeletonAddRelativeY =
+          tester.getCenter(skeletonAdd).dy - cardRect.top;
+      final actualAddRelativeY = tester.getCenter(actualAdd).dy - tileRect.top;
+      final skeletonExpandRelativeY =
+          tester.getCenter(skeletonExpand).dy - cardRect.top;
+      final actualExpandRelativeY =
+          tester.getCenter(actualExpand).dy - tileRect.top;
+
+      expect(skeletonAddRelativeY, closeTo(actualAddRelativeY, 0.1));
+      expect(skeletonExpandRelativeY, closeTo(actualExpandRelativeY, 0.1));
     },
   );
 

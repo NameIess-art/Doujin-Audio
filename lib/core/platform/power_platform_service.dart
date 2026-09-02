@@ -213,6 +213,28 @@ class PowerPlatformService {
     return result.valueOrNull ?? TimerExecutionResult.failed;
   }
 
+  Future<bool> acquireWakeLock({required String tag, int? timeoutMs}) async {
+    if (!_isAndroid) return true;
+    final result = await _client.invoke<bool>(
+      PowerMethod.acquireWakeLock,
+      arguments: <String, Object?>{'tag': tag, 'timeoutMs': timeoutMs},
+      decode: (value) => value as bool? ?? false,
+    );
+    _logFailure(PowerMethod.acquireWakeLock, result);
+    return result.valueOrNull ?? false;
+  }
+
+  Future<bool> releaseWakeLock({required String tag}) async {
+    if (!_isAndroid) return true;
+    final result = await _client.invoke<bool>(
+      PowerMethod.releaseWakeLock,
+      arguments: <String, Object?>{'tag': tag},
+      decode: (value) => value as bool? ?? false,
+    );
+    _logFailure(PowerMethod.releaseWakeLock, result);
+    return result.valueOrNull ?? false;
+  }
+
   Future<T?> _invokeBestEffort<T>(String method, [Object? arguments]) async {
     if (!_isAndroid) return null;
     final result = await _client.invoke<T?>(

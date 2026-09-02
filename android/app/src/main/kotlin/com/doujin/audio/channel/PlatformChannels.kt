@@ -37,6 +37,7 @@ internal object NativePlaybackMethods {
 
 internal object AppLifecycleMethods {
     const val TERMINATE_FOR_PENDING_RESTORE = "terminateForPendingRestore"
+    const val SYNC_APP_THEME = "syncAppTheme"
 }
 
 internal object VideoDisplayMethods {
@@ -58,6 +59,8 @@ internal object PowerMethods {
     const val OPEN_EXACT_ALARM_SETTINGS = "openExactAlarmSettings"
     const val OPEN_MANAGE_ALL_FILES_ACCESS_SETTINGS = "openManageAllFilesAccessSettings"
     const val SYNC_PLAYBACK_TIMER_ALARMS = "syncPlaybackTimerAlarms"
+    const val ACQUIRE_WAKE_LOCK = "acquireWakeLock"
+    const val RELEASE_WAKE_LOCK = "releaseWakeLock"
 }
 
 internal object UpdateMethods {

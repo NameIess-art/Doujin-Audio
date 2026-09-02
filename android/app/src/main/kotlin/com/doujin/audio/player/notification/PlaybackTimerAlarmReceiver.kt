@@ -20,6 +20,17 @@ internal fun isPlaybackTimerAlarmAction(action: String?): Boolean {
         action == PlaybackTimerAlarmScheduler.actionAutoResume
 }
 
+internal fun hasScheduledPlaybackTimerRuntime(
+    action: String,
+    runtimeState: StoredPlaybackTimerRuntimeState?
+): Boolean = when (action) {
+    PlaybackTimerAlarmScheduler.actionTimerExpired ->
+        runtimeState?.timerEndsAtWallClockMs != null
+    PlaybackTimerAlarmScheduler.actionAutoResume ->
+        runtimeState?.autoResumeAtMs != null
+    else -> false
+}
+
 class PlaybackTimerAlarmReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent?) {
         val action = intent?.action ?: return
@@ -245,6 +256,16 @@ object PlaybackTimerAlarmScheduler {
             onComplete?.invoke(resultStale)
             return
         }
+        if (!hasScheduledPlaybackTimerRuntime(action, runtimeState)) {
+            logInfo(context, "execute_skip_unscheduled_action action=$action")
+            finishDelivery(
+                pendingResult,
+                deliveryWakeLock,
+                commandDeliveryRegistered = false
+            )
+            onComplete?.invoke(resultStale)
+            return
+        }
         NativePlaybackService.beginCommandDelivery()
         logInfo(context, "execute_now action=$action generation=$generation")
         deliverToService(
@@ -276,6 +297,11 @@ object PlaybackTimerAlarmScheduler {
             generation != null &&
             currentState.generation != generation
         ) {
+            finishDelivery(pendingResult, deliveryWakeLock)
+            onComplete?.invoke(resultStale)
+            return
+        }
+        if (!hasScheduledPlaybackTimerRuntime(action, currentState)) {
             finishDelivery(pendingResult, deliveryWakeLock)
             onComplete?.invoke(resultStale)
             return
@@ -316,6 +342,11 @@ object PlaybackTimerAlarmScheduler {
             generation != null &&
             latestState.generation != generation
         ) {
+            finishDelivery(pendingResult, deliveryWakeLock)
+            onComplete?.invoke(resultStale)
+            return
+        }
+        if (!hasScheduledPlaybackTimerRuntime(action, latestState)) {
             finishDelivery(pendingResult, deliveryWakeLock)
             onComplete?.invoke(resultStale)
             return

@@ -159,4 +159,75 @@ void main() {
       );
     },
   );
+
+  test('toggleExcluded excludes and restores item, updating lookups and counts', () async {
+    final pending = Completer<List<DlsiteMetadata>>();
+    final session = DlsiteMetadataBatchSession(
+      entries: [entry('001'), entry('002')],
+      lookup: (query) => switch (query.rjCode) {
+        'RJ000001' => Future<List<DlsiteMetadata>>.value([metadata('001')]),
+        _ => pending.future,
+      },
+    );
+    addTearDown(session.dispose);
+
+    session.start();
+    await Future<void>.delayed(Duration.zero);
+
+    expect(session.items[0].status, DlsiteMetadataBatchLookupStatus.found);
+    expect(session.items[1].status, DlsiteMetadataBatchLookupStatus.searching);
+    expect(session.hasPendingLookups, isTrue);
+
+    // Exclude item 1 (still searching)
+    var notified = false;
+    session.addListener(() => notified = true);
+    session.toggleExcluded(1);
+
+    expect(session.items[1].isExcluded, isTrue);
+    expect(notified, isTrue);
+    // Since item 1 is excluded, hasPendingLookups should be false
+    expect(session.hasPendingLookups, isFalse);
+
+    // Confirm item 0 then exclude it
+    session.confirm(0, metadata: metadata('001'), saveCover: false);
+    expect(session.confirmedCount, 1);
+    session.toggleExcluded(0);
+    expect(session.items[0].isExcluded, isTrue);
+    expect(session.items[0].isReviewable, isFalse);
+    expect(session.confirmedCount, 0);
+
+    // Restore item 0
+    session.toggleExcluded(0);
+    expect(session.items[0].isExcluded, isFalse);
+    expect(session.items[0].isReviewable, isTrue);
+    expect(session.confirmedCount, 1);
+  });
+
+  test('applyConfirmed skips excluded items and does not save them', () async {
+    final saved = <DlsiteMetadataBatchItem>[];
+    final session = DlsiteMetadataBatchSession(
+      entries: [entry('001'), entry('002')],
+      lookup: (query) async => [metadata(query.rjCode!.substring(5))],
+      apply: (item) async {
+        saved.add(item);
+      },
+    );
+    addTearDown(session.dispose);
+
+    session.start();
+    await Future<void>.delayed(Duration.zero);
+    session.confirm(0, metadata: metadata('001'), saveCover: false);
+    session.confirm(1, metadata: metadata('002'), saveCover: false);
+    expect(session.confirmedCount, 2);
+
+    // Exclude item 1
+    session.toggleExcluded(1);
+    expect(session.confirmedCount, 1);
+
+    final result = await session.applyConfirmed();
+    expect(result.savedCount, 1);
+    expect(result.skippedCount, 1);
+    expect(saved.length, 1);
+    expect(saved.single.entry.title, '001');
+  });
 }

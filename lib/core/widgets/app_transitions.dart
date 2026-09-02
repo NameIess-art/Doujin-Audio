@@ -281,6 +281,110 @@ class AnimatedTreeReveal extends StatelessWidget {
   }
 }
 
+class UndoableRemovalTransition extends StatefulWidget {
+  const UndoableRemovalTransition({
+    super.key,
+    required this.hidden,
+    required this.child,
+    this.duration = kAppMotionStandard,
+    this.curve = Curves.easeInOutCubic,
+    this.reverseCurve = Curves.easeOutCubic,
+  });
+
+  final bool hidden;
+  final Widget child;
+  final Duration duration;
+  final Curve curve;
+  final Curve reverseCurve;
+
+  @override
+  State<UndoableRemovalTransition> createState() =>
+      _UndoableRemovalTransitionState();
+}
+
+class _UndoableRemovalTransitionState extends State<UndoableRemovalTransition>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late Animation<double> _animation;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: widget.duration,
+      value: widget.hidden ? 0.0 : 1.0,
+    );
+    _updateAnimation();
+  }
+
+  void _updateAnimation() {
+    _animation = CurvedAnimation(
+      parent: _controller,
+      curve: widget.reverseCurve,
+      reverseCurve: widget.curve,
+    );
+  }
+
+  @override
+  void didUpdateWidget(UndoableRemovalTransition oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.duration != oldWidget.duration) {
+      _controller.duration = widget.duration;
+    }
+    if (widget.curve != oldWidget.curve ||
+        widget.reverseCurve != oldWidget.reverseCurve) {
+      _updateAnimation();
+    }
+    if (widget.hidden != oldWidget.hidden) {
+      if (MediaQuery.disableAnimationsOf(context) ||
+          widget.duration == Duration.zero) {
+        _controller.value = widget.hidden ? 0.0 : 1.0;
+      } else if (widget.hidden) {
+        _controller.reverse();
+      } else {
+        _controller.forward();
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        if (_controller.value == 0.0 && widget.hidden) {
+          return const SizedBox.shrink();
+        }
+        if (_controller.value == 1.0 && !widget.hidden) {
+          return child!;
+        }
+        return SizeTransition(
+          sizeFactor: _animation,
+          axisAlignment: -1.0,
+          child: FadeTransition(
+            opacity: _animation,
+            child: IgnorePointer(
+              ignoring: widget.hidden,
+              child: ExcludeSemantics(
+                excluding: widget.hidden,
+                child: child,
+              ),
+            ),
+          ),
+        );
+      },
+      child: widget.child,
+    );
+  }
+}
+
 Widget buildAppScaleFadeTransition({
   required BuildContext context,
   required Animation<double> animation,

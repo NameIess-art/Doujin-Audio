@@ -646,6 +646,6 @@ void main() {
     );
     expect(retryingImage.displayMode, CoverImageDisplayMode.fill);
     expect(retryingImage.deferLoadDuringInteraction, isFalse);
-    expect(retryingImage.showPlaceholderWhileDecoding, isFalse);
+    expect(retryingImage.showPlaceholderWhileDecoding, isTrue);
   });
 }

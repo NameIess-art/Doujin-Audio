@@ -47,7 +47,10 @@ import 'features/settings/application/settings_repository.dart';
 import 'features/settings/application/settings_state.dart';
 import 'core/persistence/app_database.dart';
 import 'core/persistence/json_document_store.dart';
+import 'core/platform/app_lifecycle_platform_service.dart';
 import 'features/data_support/application/data_backup_service.dart';
+import 'features/video_converter/application/video_conversion_runner.dart';
+import 'features/video_converter/presentation/video_conversion_dialog.dart';
 
 StartupRestoreOutcome? _startupRestoreOutcome;
 
@@ -84,6 +87,12 @@ Future<void> main() async {
         initializer: () async {
           await _initializeAudioPlayerApp();
           await themeProvider.reloadPersistedState();
+          unawaited(
+            AppLifecyclePlatformService().syncAppTheme(
+              preset: themeProvider.appThemeColor.name,
+              themeMode: themeProvider.themeMode.name,
+            ),
+          );
           shouldShowOnboarding = AppPreferences.shouldShowOnboardingSync();
         },
       );
@@ -310,6 +319,7 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp> {
   final _navigatorKey = GlobalKey<NavigatorState>();
   var _restoreOutcomeScheduled = false;
   var _runtimeBootstrapSettledNotified = false;
+  StreamSubscription<VideoConversionResult>? _conversionSubscription;
 
   @override
   void initState() {
@@ -323,13 +333,34 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp> {
     _shouldShowOnboarding =
         widget.shouldShowOnboarding ??
         AppPreferences.shouldShowOnboardingSync();
+    _conversionSubscription = ref
+        .read(videoConversionCoordinatorProvider)
+        .completionStream
+        .listen(_handleConversionCompletion);
   }
 
   @override
   void dispose() {
+    _conversionSubscription?.cancel();
     _runtimeBootstrapController.removeListener(_handleRuntimeBootstrapState);
     _runtimeBootstrapController.dispose();
     super.dispose();
+  }
+
+  void _handleConversionCompletion(VideoConversionResult result) {
+    if (result.status == VideoConversionStatus.canceled) return;
+    final context = _navigatorKey.currentContext;
+    if (context == null || !mounted) return;
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
+    final coordinator = ref.read(videoConversionCoordinatorProvider);
+    unawaited(
+      showVideoConversionResultDialog(
+        context,
+        result: result,
+        i18n: i18n,
+        videoPath: coordinator.selectedVideoPath,
+      ),
+    );
   }
 
   void _handleRuntimeBootstrapState() {
@@ -355,6 +386,21 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp> {
         );
       }
     });
+    ref.listen<(ThemeAccentPreset, ThemeMode)>(
+      themeProviderInstanceProvider.select(
+        (theme) => (theme.appThemeColor, theme.themeMode),
+      ),
+      (previous, next) {
+        if (previous != next) {
+          unawaited(
+            ref.read(appLifecyclePlatformServiceProvider).syncAppTheme(
+              preset: next.$1.name,
+              themeMode: next.$2.name,
+            ),
+          );
+        }
+      },
+    );
     final themeProvider = ref.watch(themeProviderInstanceProvider);
     final languageProvider = ref.read(appLanguageProviderInstanceProvider);
     _scheduleRestoreOutcomeFeedback(languageProvider);

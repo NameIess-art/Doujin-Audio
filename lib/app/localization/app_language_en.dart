@@ -86,6 +86,9 @@ const Map<String, String> appLanguageEn = {
   'batch_metadata_status_confirmed': 'Found (confirmed)',
   'batch_metadata_status_not_found': 'Not found',
   'batch_metadata_status_failed': 'Search failed',
+  'batch_metadata_status_excluded': 'Excluded',
+  'batch_metadata_action_exclude': 'Exclude',
+  'batch_metadata_action_restore': 'Restore',
   'batch_metadata_progress': '{current} / {total}',
   'batch_metadata_load_failed':
       'Unable to load the local library. Please try again.',
@@ -745,6 +748,8 @@ const Map<String, String> appLanguageEn = {
   'conversion_starting': 'Starting conversion...',
   'converting_percent': 'Converting: {percent}%',
   'conversion_done_saved': 'Conversion complete. Saved to: {path}',
+  'video_conversion_completed': 'Video to audio conversion complete',
+  'video_conversion_failed_title': 'Video to audio conversion failed',
   'conversion_canceled': 'Conversion canceled.',
   'conversion_failed': 'Conversion failed. Please try again.',
   'canceling_conversion': 'Canceling conversion...',

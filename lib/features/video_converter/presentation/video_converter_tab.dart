@@ -2,18 +2,11 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:path/path.dart' as path;
-
-import '../../../app/localization/app_language_provider.dart';
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/theme/app_styles.dart';
-import '../../../core/logging/app_log_service.dart';
 import '../../settings/application/settings_repository.dart';
 import '../../settings/application/settings_state.dart';
 import '../../../core/ui/ui_operation_service.dart';
-import '../application/video_conversion_plan.dart';
-import '../application/video_conversion_input_service.dart';
-import '../application/video_conversion_runner.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/operation_feedback.dart';
 import '../../../core/widgets/top_page_header.dart';
@@ -45,83 +38,24 @@ class VideoConverterTab extends ConsumerStatefulWidget {
 }
 
 class _VideoConverterTabState extends ConsumerState<VideoConverterTab> {
-  String? _selectedVideoPath;
-  bool _isConverting = false;
-  bool _isCanceling = false;
-  double _progress = 0.0;
-  String _statusMessage = '';
-  int _videoDurationMs = 0;
-  int _conversionGeneration = 0;
-  Timer? _successResetTimer;
-  final VideoConversionRunner _conversionRunner = VideoConversionRunner();
-  final VideoConversionInputService _inputService =
-      VideoConversionInputService();
-
   Future<void> _pickVideoFile() async {
     final i18n = ref.read(appLanguageProviderInstanceProvider);
-    final selectedPath = await ref
-        .read(uiOperationServiceProvider)
-        .run<String?>(
-          scope: UiOperationScope.videoConverterPick,
-          labelKey: 'source_video_file',
-          task: (_) => _inputService.pickVideoPath(),
-        );
-    if (!mounted) return;
-    if (selectedPath != null && selectedPath.isNotEmpty) {
-      final videoPath = selectedPath;
-      _successResetTimer?.cancel();
-      _successResetTimer = null;
-      _conversionGeneration++;
-      setState(() {
-        _selectedVideoPath = videoPath;
-        _statusMessage = i18n.tr('selected_file', {
-          'name': path.basename(videoPath),
-        });
-      });
-      await _getVideoDuration(videoPath);
-    }
+    await ref.read(videoConversionCoordinatorProvider).pickVideo(i18n);
   }
 
   Future<void> _pickOutputDirectory() async {
-    final result = await ref
-        .read(uiOperationServiceProvider)
-        .run<String?>(
-          scope: UiOperationScope.videoConverterPick,
-          labelKey: 'output_directory',
-          task: (_) => _inputService.pickOutputDirectory(),
-        );
-    if (!mounted) return;
-    if (result != null && result.isNotEmpty) {
-      _successResetTimer?.cancel();
-      _successResetTimer = null;
-      _conversionGeneration++;
-      await ref
-          .read(settingsRepositoryProvider)
-          .setConverterOutputDirectoryPath(result);
-    }
-  }
-
-  Future<void> _getVideoDuration(String videoPath) async {
-    final durationMs = await ref
-        .read(uiOperationServiceProvider)
-        .run<int>(
-          scope: UiOperationScope.videoConverterPick,
-          labelKey: 'source_video_file',
-          task: (_) => _conversionRunner.readDurationMs(videoPath),
-        );
-
-    if (!mounted) return;
-    if (_selectedVideoPath != videoPath) return;
-    setState(() {
-      _videoDurationMs = durationMs;
-    });
+    final settings = ref.read(settingsRepositoryProvider);
+    await ref
+        .read(videoConversionCoordinatorProvider)
+        .pickOutputDirectory(settings);
   }
 
   Future<void> _startConversion(SettingsRepository settings) async {
-    if (_isConverting) return;
+    final coordinator = ref.read(videoConversionCoordinatorProvider);
+    if (coordinator.isConverting) return;
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     final outputDirectoryPath = settings.converterOutputDirectoryPath;
-    if (_selectedVideoPath == null || outputDirectoryPath == null) {
+    if (coordinator.selectedVideoPath == null || outputDirectoryPath == null) {
       showAppSnackBar(
         context,
         i18n.tr('select_video_and_output'),
@@ -130,149 +64,14 @@ class _VideoConverterTabState extends ConsumerState<VideoConverterTab> {
       );
       return;
     }
-
-    _successResetTimer?.cancel();
-    _successResetTimer = null;
-    final generation = ++_conversionGeneration;
-    final inputPath = _selectedVideoPath!;
-    final durationMs = _videoDurationMs;
-    setState(() {
-      _isConverting = true;
-      _isCanceling = false;
-      _progress = 0.0;
-      _statusMessage = i18n.tr('conversion_starting');
-    });
-
-    try {
-      final conversion = await ref
-          .read(uiOperationServiceProvider)
-          .run<VideoConversionResult>(
-            scope: UiOperationScope.videoConverterConvert,
-            labelKey: 'conversion_starting',
-            cancelPrevious: false,
-            task: (operationProgress) async {
-              final selectedFormat = settings.converterFormat;
-              final selectedBitrate = settings.converterBitrate;
-              final plan = await createVideoConversionPlan(
-                inputPath: inputPath,
-                outputDirectoryPath: outputDirectoryPath,
-                format: selectedFormat,
-                bitrate: selectedBitrate,
-              );
-              final result = await _conversionRunner.convert(
-                plan: plan,
-                durationMs: durationMs,
-                onProgress: (progress) {
-                  operationProgress.report(progress);
-                  if (!mounted || generation != _conversionGeneration) return;
-                  setState(() {
-                    _progress = progress;
-                    _statusMessage = i18n.tr('converting_percent', {
-                      'percent': (_progress * 100).toStringAsFixed(1),
-                    });
-                  });
-                },
-              );
-              return result;
-            },
-          );
-      if (!mounted || generation != _conversionGeneration) return;
-      final result = conversion;
-      switch (result.status) {
-        case VideoConversionStatus.success:
-          _onConversionSuccess(i18n, result.outputPath!, generation);
-          break;
-        case VideoConversionStatus.canceled:
-          setState(() {
-            _statusMessage = i18n.tr('conversion_canceled');
-          });
-          break;
-        case VideoConversionStatus.failed:
-          setState(() {
-            _statusMessage = i18n.tr('conversion_failed');
-          });
-          final errorMessage = result.errorMessage;
-          if (errorMessage != null && errorMessage.isNotEmpty) {
-            AppLogService.error(
-              'video_conversion_ffmpeg_failed',
-              error: errorMessage,
-            );
-          }
-          break;
-      }
-    } catch (error, stackTrace) {
-      if (!mounted || generation != _conversionGeneration) return;
-      AppLogService.error(
-        'video_conversion_failed',
-        error: error,
-        stackTrace: stackTrace,
-      );
-      setState(() {
-        _statusMessage = i18n.tr('conversion_failed');
-      });
-    } finally {
-      if (mounted && generation == _conversionGeneration) {
-        setState(() {
-          _isConverting = false;
-          _isCanceling = false;
-        });
-      }
-    }
-  }
-
-  void _onConversionSuccess(
-    AppLanguageProvider i18n,
-    String outputPath,
-    int generation,
-  ) {
-    setState(() {
-      _progress = 1.0;
-      _statusMessage = i18n.tr('conversion_done_saved', {'path': outputPath});
-    });
-    _successResetTimer?.cancel();
-    _successResetTimer = Timer(const Duration(seconds: 3), () {
-      if (!mounted || generation != _conversionGeneration) return;
-      _successResetTimer = null;
-      setState(() {
-        _selectedVideoPath = null;
-        _progress = 0.0;
-        _videoDurationMs = 0;
-        _statusMessage = '';
-      });
-    });
+    await coordinator.startConversion(settings: settings, i18n: i18n);
   }
 
   Future<void> _cancelConversion() async {
-    if (!_isConverting || _isCanceling) return;
     final i18n = ref.read(appLanguageProviderInstanceProvider);
-    final generation = _conversionGeneration;
-    setState(() {
-      _isCanceling = true;
-      _statusMessage = i18n.tr('canceling_conversion');
-    });
-    try {
-      await _conversionRunner.cancel();
-    } catch (error, stackTrace) {
-      AppLogService.error(
-        'video_conversion_cancel_failed',
-        error: error,
-        stackTrace: stackTrace,
-      );
-      if (mounted && generation == _conversionGeneration && _isConverting) {
-        setState(() {
-          _statusMessage = i18n.tr('conversion_failed');
-        });
-      }
-    }
-  }
-
-  @override
-  void dispose() {
-    _conversionGeneration++;
-    _successResetTimer?.cancel();
-    _successResetTimer = null;
-    unawaited(_conversionRunner.cancel());
-    super.dispose();
+    await ref
+        .read(videoConversionCoordinatorProvider)
+        .cancelConversion(i18n: i18n);
   }
 
   @override
@@ -285,6 +84,13 @@ class _VideoConverterTabState extends ConsumerState<VideoConverterTab> {
     final pickOperation = ref.watch(
       uiOperationForScopeProvider(UiOperationScope.videoConverterPick),
     );
+    final coordinator = ref.watch(videoConversionCoordinatorProvider);
+    final selectedVideoPath = coordinator.selectedVideoPath;
+    final isConverting = coordinator.isConverting;
+    final isCanceling = coordinator.isCanceling;
+    final progress = coordinator.progress;
+    final statusMessage = coordinator.statusMessage;
+    final videoDurationMs = coordinator.videoDurationMs;
     final selectedFormat = settingsState.converterFormat;
     final selectedBitrate = settingsState.converterBitrate;
     final outputDirectoryPath = settingsState.converterOutputDirectoryPath;
@@ -322,8 +128,8 @@ class _VideoConverterTabState extends ConsumerState<VideoConverterTab> {
                       icon: Icons.video_file_rounded,
                       title: i18n.tr('source_video_file'),
                       placeholder: i18n.tr('tap_select_video_file'),
-                      value: _selectedVideoPath,
-                      onTap: _isConverting || pickOperation.isBusy
+                      value: selectedVideoPath,
+                      onTap: isConverting || pickOperation.isBusy
                           ? null
                           : _pickVideoFile,
                     ),
@@ -342,7 +148,7 @@ class _VideoConverterTabState extends ConsumerState<VideoConverterTab> {
                           : formatVideoConverterOutputDirectoryPath(
                               outputDirectoryPath,
                             ),
-                      onTap: _isConverting || pickOperation.isBusy
+                      onTap: isConverting || pickOperation.isBusy
                           ? null
                           : _pickOutputDirectory,
                     ),
@@ -352,8 +158,8 @@ class _VideoConverterTabState extends ConsumerState<VideoConverterTab> {
               if (pickOperation.isBusy) ...[
                 const SizedBox(height: 12),
                 OperationStatusBanner(
-                  label: _statusMessage.isNotEmpty
-                      ? _statusMessage
+                  label: statusMessage.isNotEmpty
+                      ? statusMessage
                       : i18n.tr(pickOperation.labelKey),
                   progress: pickOperation.progress,
                   icon: Icons.folder_open_rounded,
@@ -464,17 +270,17 @@ class _VideoConverterTabState extends ConsumerState<VideoConverterTab> {
                 ),
               ),
               const SizedBox(height: 16),
-              if (_isConverting || _progress > 0) ...[
+              if (isConverting || progress > 0) ...[
                 const SizedBox(height: 16),
                 TweenAnimationBuilder<double>(
                   duration: const Duration(milliseconds: 250),
                   curve: Curves.easeInOut,
                   tween: Tween<double>(
                     begin: 0,
-                    end: _isConverting && _videoDurationMs == 0 ? 0 : _progress,
+                    end: isConverting && videoDurationMs == 0 ? 0 : progress,
                   ),
                   builder: (context, value, _) => LinearProgressIndicator(
-                    value: _isConverting && _videoDurationMs == 0
+                    value: isConverting && videoDurationMs == 0
                         ? null
                         : value,
                     minHeight: 8,
@@ -482,7 +288,7 @@ class _VideoConverterTabState extends ConsumerState<VideoConverterTab> {
                   ),
                 ),
               ],
-              if (_statusMessage.isNotEmpty) ...[
+              if (statusMessage.isNotEmpty) ...[
                 const SizedBox(height: 16),
                 Container(
                   padding: const EdgeInsets.symmetric(
@@ -495,10 +301,10 @@ class _VideoConverterTabState extends ConsumerState<VideoConverterTab> {
                     borderRadius: BorderRadius.circular(16),
                   ),
                   child: Text(
-                    _statusMessage,
+                    statusMessage,
                     textAlign: TextAlign.center,
                     style: TextStyle(
-                      color: _isConverting
+                      color: isConverting
                           ? Theme.of(context).colorScheme.primary
                           : Theme.of(context).colorScheme.onSurfaceVariant,
                       fontWeight: FontWeight.w600,
@@ -513,19 +319,19 @@ class _VideoConverterTabState extends ConsumerState<VideoConverterTab> {
             left: 16,
             right: 16,
             bottom: 16 + MediaQuery.paddingOf(context).bottom,
-            child: _isConverting
+            child: isConverting
                 ? FilledButton.icon(
-                    onPressed: _isCanceling
+                    onPressed: isCanceling
                         ? null
                         : () => unawaited(_cancelConversion()),
                     icon: Icon(
-                      _isCanceling
+                      isCanceling
                           ? Icons.hourglass_top_rounded
                           : Icons.cancel_rounded,
                     ),
                     label: Text(
                       i18n.tr(
-                        _isCanceling
+                        isCanceling
                             ? 'canceling_conversion'
                             : 'cancel_conversion',
                       ),
@@ -539,8 +345,7 @@ class _VideoConverterTabState extends ConsumerState<VideoConverterTab> {
                   )
                 : FilledButton.icon(
                     onPressed:
-                        _selectedVideoPath != null &&
-                            outputDirectoryPath != null
+                        selectedVideoPath != null && outputDirectoryPath != null
                         ? () => _startConversion(settings)
                         : null,
                     icon: const Icon(Icons.transform_rounded),

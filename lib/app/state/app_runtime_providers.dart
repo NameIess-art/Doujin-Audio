@@ -41,6 +41,7 @@ import '../../core/platform/file_cache_platform_gateway.dart';
 import '../../core/platform/app_lifecycle_platform_service.dart';
 import '../../core/platform/video_display_platform_gateway.dart';
 import '../../core/platform/video_display_platform_service.dart';
+import '../../features/video_converter/application/video_conversion_coordinator.dart';
 
 final themeProviderInstanceProvider = ChangeNotifierProvider<ThemeProvider>(
   (ref) => ThemeProvider(),
@@ -390,6 +391,12 @@ final settingsStateProvider = StreamProvider<SettingsState>((ref) {
 
 final notificationStateProvider = StreamProvider<NotificationState>((ref) {
   return ref.watch(notificationFacadeProvider).states;
+});
+
+final videoConversionCoordinatorProvider =
+    ChangeNotifierProvider<VideoConversionCoordinator>((ref) {
+  final uiOps = ref.watch(uiOperationServiceProvider);
+  return VideoConversionCoordinator(uiOperationService: uiOps);
 });
 
 List<Override> createAppRuntimeOverrides({

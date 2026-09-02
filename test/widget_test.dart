@@ -2830,6 +2830,43 @@ void main() {
       tester.widget<MaterialApp>(find.byType(MaterialApp)).color,
       themeProvider.darkTheme.colorScheme.surface,
     );
+
+    await themeProvider.setAppThemeColor(ThemeAccentPreset.mint);
+    await tester.pumpAndSettle();
+
+    expect(
+      tester.widget<Scaffold>(rootScaffold()).backgroundColor,
+      themeProvider.darkTheme.colorScheme.surface,
+    );
+    expect(
+      tester.widget<MaterialApp>(find.byType(MaterialApp)).color,
+      themeProvider.darkTheme.colorScheme.surface,
+    );
+  });
+
+  testWidgets('theme changes rebuild pages while an interaction is active', (
+    tester,
+  ) async {
+    await AppPreferences.init();
+    await _pumpAppShell(tester, includePlaybackSession: false);
+    final mainScreen = find.byType(MainScreen);
+    final container = ProviderScope.containerOf(
+      tester.element(mainScreen),
+      listen: false,
+    );
+    final themeProvider = container.read(themeProviderInstanceProvider);
+    final interaction = UiInteractionCoordinator.instance;
+    final source = Object();
+    interaction.beginInteraction(source);
+    addTearDown(() => interaction.cancelInteraction(source));
+
+    await themeProvider.setAppThemeColor(ThemeAccentPreset.mint);
+    await tester.pump();
+
+    expect(
+      tester.widget<MaterialApp>(find.byType(MaterialApp)).color,
+      themeProvider.lightTheme.colorScheme.surface,
+    );
   });
 }
 

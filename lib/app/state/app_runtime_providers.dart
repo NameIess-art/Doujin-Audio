@@ -219,10 +219,13 @@ final asmrDownloadTaskProvider = Provider.autoDispose
 
 final themeStateProvider = StreamProvider<ThemeState>((ref) {
   final controller = ref.watch(themeProviderInstanceProvider);
-  return interactionDeferredListenableStream(
-    source: controller,
-    read: () => ThemeState.from(controller),
-  );
+  return Stream<ThemeState>.multi((events) {
+    void emit() => events.addSync(ThemeState.from(controller));
+
+    emit();
+    controller.addListener(emit);
+    events.onCancel = () => controller.removeListener(emit);
+  }, isBroadcast: true);
 });
 
 final audioRuntimeCoordinatorProvider = Provider<AppRuntimeLifecycle>((ref) {

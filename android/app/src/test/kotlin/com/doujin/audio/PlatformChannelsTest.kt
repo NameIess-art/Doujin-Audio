@@ -79,6 +79,7 @@ class PlatformChannelsTest {
             "terminateForPendingRestore",
             AppLifecycleMethods.TERMINATE_FOR_PENDING_RESTORE
         )
+        assertEquals("syncWindowSurface", AppLifecycleMethods.SYNC_WINDOW_SURFACE)
     }
 
     @Test

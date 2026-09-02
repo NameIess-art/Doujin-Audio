@@ -49,24 +49,28 @@ open class MainActivity : FlutterFragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         applyStartupWindowTheme()
         super.onCreate(savedInstanceState)
+        applyStartupWindowTheme()
     }
 
     override fun getRenderMode(): RenderMode = RenderMode.surface
 
     private fun applyStartupWindowTheme() {
         val preferences = getSharedPreferences("FlutterSharedPreferences", MODE_PRIVATE)
-        val preset = preferences.getString("appThemeColor", "rose") ?: "rose"
-        val mode = preferences.getString("themeMode", "system") ?: "system"
+        val preset = preferences.getString("flutter.appThemeColor", "rose") ?: "rose"
+        val mode = preferences.getString("flutter.themeMode", "system") ?: "system"
         val dark = when (mode) {
             "dark" -> true
             "light" -> false
             else -> (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
                 Configuration.UI_MODE_NIGHT_YES
         }
-        val background = StartupWindowTheme.surfaceColor(preset, dark)
-        window.setBackgroundDrawable(ColorDrawable(background))
-        window.statusBarColor = background
-        window.navigationBarColor = background
+        syncWindowSurface(StartupWindowTheme.surfaceColor(preset, dark))
+    }
+
+    private fun syncWindowSurface(color: Int) {
+        window.setBackgroundDrawable(ColorDrawable(color))
+        window.statusBarColor = color
+        window.navigationBarColor = color
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -78,7 +82,10 @@ open class MainActivity : FlutterFragmentActivity() {
             PlatformChannelNames.APP_LIFECYCLE
         ).also {
             it.setMethodCallHandler(
-                AppLifecycleMethodHandler(::schedulePendingRestoreTermination)
+                AppLifecycleMethodHandler(
+                    terminateForPendingRestore = ::schedulePendingRestoreTermination,
+                    syncWindowSurface = ::syncWindowSurface,
+                )
             )
         }
         flutterEngine.platformViewsController.registry.registerViewFactory(

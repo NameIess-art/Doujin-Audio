@@ -37,6 +37,7 @@ internal object NativePlaybackMethods {
 
 internal object AppLifecycleMethods {
     const val TERMINATE_FOR_PENDING_RESTORE = "terminateForPendingRestore"
+    const val SYNC_WINDOW_SURFACE = "syncWindowSurface"
 }
 
 internal object VideoDisplayMethods {

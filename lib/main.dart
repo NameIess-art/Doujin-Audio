@@ -306,6 +306,7 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp> {
   final _navigatorKey = GlobalKey<NavigatorState>();
   var _restoreOutcomeScheduled = false;
   var _runtimeBootstrapSettledNotified = false;
+  Color? _lastWindowSurface;
 
   @override
   void initState() {
@@ -374,6 +375,7 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp> {
             ? themeProvider.darkTheme.colorScheme.surface
             : themeProvider.lightTheme.colorScheme.surface,
     };
+    _scheduleWindowSurfaceSync(windowSurface);
     return MaterialApp(
       navigatorKey: _navigatorKey,
       title: languageProvider.tr('app_title'),
@@ -424,6 +426,19 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp> {
         ),
       ),
     );
+  }
+
+  void _scheduleWindowSurfaceSync(Color surface) {
+    if (_lastWindowSurface == surface) return;
+    _lastWindowSurface = surface;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      unawaited(
+        ref
+            .read(appLifecyclePlatformServiceProvider)
+            .syncWindowSurface(surface),
+      );
+    });
   }
 
   void _scheduleRestoreOutcomeFeedback(AppLanguageProvider languageProvider) {

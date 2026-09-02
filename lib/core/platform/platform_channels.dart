@@ -18,6 +18,7 @@ abstract final class AppLifecycleChannel {
 
 abstract final class AppLifecycleMethod {
   static const String terminateForPendingRestore = 'terminateForPendingRestore';
+  static const String syncWindowSurface = 'syncWindowSurface';
 }
 
 abstract final class PowerChannel {

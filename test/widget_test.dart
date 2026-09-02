@@ -1794,7 +1794,7 @@ void main() {
       ProviderScope(
         overrides: [
           ..._testRuntimeOverrides(runtimeGraph),
-          themeProviderInstanceProvider.overrideWithValue(themeProvider),
+          themeProviderInstanceProvider.overrideWith((ref) => themeProvider),
           appLanguageProviderInstanceProvider.overrideWithValue(
             languageProvider,
           ),
@@ -2040,7 +2040,7 @@ void main() {
       ProviderScope(
         overrides: [
           ..._testRuntimeOverrides(runtimeGraph),
-          themeProviderInstanceProvider.overrideWithValue(themeProvider),
+          themeProviderInstanceProvider.overrideWith((ref) => themeProvider),
           appLanguageProviderInstanceProvider.overrideWithValue(
             languageProvider,
           ),
@@ -3277,7 +3277,7 @@ Future<_AppShellHarness> _pumpAppShell(
     ProviderScope(
       overrides: [
         ..._testRuntimeOverrides(runtimeGraph),
-        themeProviderInstanceProvider.overrideWithValue(themeProvider),
+        themeProviderInstanceProvider.overrideWith((ref) => themeProvider),
         appLanguageProviderInstanceProvider.overrideWithValue(languageProvider),
         appUpdateServiceProvider.overrideWithValue(AppUpdateService()),
       ],

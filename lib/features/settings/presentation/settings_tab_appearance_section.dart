@@ -10,10 +10,7 @@ List<Widget> _buildSettingsAppearanceSection({
   required VoidCallback onShowSubtitleWindowSettings,
   required VoidCallback onShowCardInfoFieldsSettings,
 }) {
-  final themeState =
-      ref.watch(themeStateProvider).value ??
-      ThemeState.from(ref.read(themeProviderInstanceProvider));
-  final themeProvider = ref.read(themeProviderInstanceProvider);
+  final themeProvider = ref.watch(themeProviderInstanceProvider);
   final coverResolutionLabels = <CoverImageResolution, String>{
     CoverImageResolution.memorySaver: i18n.tr('cover_image_resolution_300'),
     CoverImageResolution.balanced: i18n.tr('cover_image_resolution_600'),
@@ -33,9 +30,9 @@ List<Widget> _buildSettingsAppearanceSection({
       children: [
         Consumer(
           builder: (context, ref, _) {
-            final themeMode =
-                ref.watch(themeStateProvider).value?.themeMode ??
-                ref.read(themeProviderInstanceProvider).themeMode;
+            final themeMode = ref
+                .watch(themeProviderInstanceProvider)
+                .themeMode;
             final modeLabels = <ThemeMode, String>{
               ThemeMode.system: i18n.tr('theme_system'),
               ThemeMode.light: i18n.tr('theme_light'),
@@ -75,7 +72,7 @@ List<Widget> _buildSettingsAppearanceSection({
         ),
         SwitchListTile(
           title: _settingsTitle(i18n.tr('differentiate_asmr_theme')),
-          value: themeState.differentiateAsmrTheme,
+          value: themeProvider.differentiateAsmrTheme,
           onChanged: (value) {
             unawaited(
               _applyThemeChange(
@@ -92,7 +89,7 @@ List<Widget> _buildSettingsAppearanceSection({
           key: const ValueKey<String>('app_theme_color_tile'),
           title: i18n.tr('app_theme_color'),
           indicatorKey: const ValueKey<String>('app_theme_color_indicator'),
-          color: themeState.appThemeColor
+          color: themeProvider.appThemeColor
               .colorScheme(Theme.of(context).brightness)
               .primary,
           iconColor: cs.onSurface,
@@ -100,16 +97,16 @@ List<Widget> _buildSettingsAppearanceSection({
             context: context,
             i18n: i18n,
             title: i18n.tr('app_theme_color'),
-            selected: themeState.appThemeColor,
+            selected: themeProvider.appThemeColor,
             onSelected: themeProvider.setAppThemeColor,
           ),
         ),
-        if (themeState.differentiateAsmrTheme)
+        if (themeProvider.differentiateAsmrTheme)
           _ThemeColorTile(
             key: const ValueKey<String>('asmr_theme_color_tile'),
             title: i18n.tr('asmr_theme_color'),
             indicatorKey: const ValueKey<String>('asmr_theme_color_indicator'),
-            color: themeState.asmrThemeColor
+            color: themeProvider.asmrThemeColor
                 .colorScheme(Theme.of(context).brightness)
                 .primary,
             iconColor: cs.onSurface,
@@ -117,7 +114,7 @@ List<Widget> _buildSettingsAppearanceSection({
               context: context,
               i18n: i18n,
               title: i18n.tr('asmr_theme_color'),
-              selected: themeState.asmrThemeColor,
+              selected: themeProvider.asmrThemeColor,
               onSelected: themeProvider.setAsmrThemeColor,
             ),
           ),

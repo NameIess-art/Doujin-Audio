@@ -2,7 +2,6 @@ part of 'main_screen.dart';
 
 extension _MainScreenLayout on _MainScreenState {
   Widget _buildBody({required bool isDesktop}) {
-    final cs = Theme.of(context).colorScheme;
     final layoutSize = _layoutViewSize();
     final width = layoutSize.width;
     final isLargeScreen = width >= 980;
@@ -44,65 +43,76 @@ extension _MainScreenLayout on _MainScreenState {
             padding: isDesktop && !isLandscapeLayout
                 ? padding
                 : EdgeInsets.zero,
-            child: DecoratedBox(
-              decoration: isDesktop
-                  ? BoxDecoration(
-                      color: isLandscapeLayout
-                          ? cs.surface
-                          : cs.surfaceContainerLow,
-                      borderRadius: isLandscapeLayout
-                          ? const BorderRadius.only(
-                              topLeft: Radius.circular(AppRadius.medium),
-                            )
-                          : radius,
-                      border: isLandscapeLayout
-                          ? Border(
-                              left: BorderSide(
-                                color: cs.outlineVariant.withValues(
-                                  alpha: 0.25,
+            child: Builder(
+              builder: (pageContext) {
+                // This shell is cached by the lazy indexed stack. Read the
+                // inherited theme here so its surfaces follow live changes.
+                final pageCs = Theme.of(pageContext).colorScheme;
+                return DecoratedBox(
+                  decoration: isDesktop
+                      ? BoxDecoration(
+                          color: isLandscapeLayout
+                              ? pageCs.surface
+                              : pageCs.surfaceContainerLow,
+                          borderRadius: isLandscapeLayout
+                              ? const BorderRadius.only(
+                                  topLeft: Radius.circular(AppRadius.medium),
+                                )
+                              : radius,
+                          border: isLandscapeLayout
+                              ? Border(
+                                  left: BorderSide(
+                                    color: pageCs.outlineVariant.withValues(
+                                      alpha: 0.25,
+                                    ),
+                                  ),
+                                  top: BorderSide(
+                                    color: pageCs.outlineVariant.withValues(
+                                      alpha: 0.25,
+                                    ),
+                                  ),
+                                )
+                              : Border.all(
+                                  color: pageCs.outlineVariant.withValues(
+                                    alpha: 0.85,
+                                  ),
                                 ),
-                              ),
-                              top: BorderSide(
-                                color: cs.outlineVariant.withValues(
-                                  alpha: 0.25,
-                                ),
-                              ),
-                            )
-                          : Border.all(
-                              color: cs.outlineVariant.withValues(alpha: 0.85),
-                            ),
-                      boxShadow: isLandscapeLayout
-                          ? [
-                              BoxShadow(
-                                color: cs.shadow.withValues(alpha: 0.04),
-                                blurRadius: 16,
-                                offset: const Offset(-2, -2),
-                              ),
-                            ]
-                          : [
-                              BoxShadow(
-                                color: cs.shadow.withValues(alpha: 0.1),
-                                blurRadius: 28,
-                                offset: const Offset(0, 12),
-                              ),
-                            ],
-                    )
-                  : const BoxDecoration(),
-              child: ClipRRect(
-                borderRadius: isDesktop
-                    ? (isLandscapeLayout
-                          ? const BorderRadius.only(
-                              topLeft: Radius.circular(AppRadius.medium),
-                            )
-                          : radius)
-                    : BorderRadius.zero,
-                clipBehavior: isDesktop ? Clip.hardEdge : Clip.none,
-                child: ColoredBox(
-                  key: ValueKey<String>('main_page_canvas_$actualIndex'),
-                  color: cs.surface,
-                  child: RepaintBoundary(child: page),
-                ),
-              ),
+                          boxShadow: isLandscapeLayout
+                              ? [
+                                  BoxShadow(
+                                    color: pageCs.shadow.withValues(
+                                      alpha: 0.04,
+                                    ),
+                                    blurRadius: 16,
+                                    offset: const Offset(-2, -2),
+                                  ),
+                                ]
+                              : [
+                                  BoxShadow(
+                                    color: pageCs.shadow.withValues(alpha: 0.1),
+                                    blurRadius: 28,
+                                    offset: const Offset(0, 12),
+                                  ),
+                                ],
+                        )
+                      : const BoxDecoration(),
+                  child: ClipRRect(
+                    borderRadius: isDesktop
+                        ? (isLandscapeLayout
+                              ? const BorderRadius.only(
+                                  topLeft: Radius.circular(AppRadius.medium),
+                                )
+                              : radius)
+                        : BorderRadius.zero,
+                    clipBehavior: isDesktop ? Clip.hardEdge : Clip.none,
+                    child: ColoredBox(
+                      key: ValueKey<String>('main_page_canvas_$actualIndex'),
+                      color: pageCs.surface,
+                      child: RepaintBoundary(child: page),
+                    ),
+                  ),
+                );
+              },
             ),
           ),
         ),
@@ -543,8 +553,7 @@ extension _MainScreenLayout on _MainScreenState {
                   builder: (context, selectedIndex, _) => Theme(
                     data: Theme.of(context).copyWith(
                       splashFactory: NoSplash.splashFactory,
-                      navigationRailTheme: Theme.of(context)
-                          .navigationRailTheme
+                      navigationRailTheme: Theme.of(context).navigationRailTheme
                           .copyWith(
                             indicatorShape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(
@@ -616,9 +625,7 @@ extension _MainScreenLayout on _MainScreenState {
                                               color: cs.onPrimaryContainer,
                                             ),
                                           ),
-                                          const SizedBox(
-                                            width: AppSpacing.sm,
-                                          ),
+                                          const SizedBox(width: AppSpacing.sm),
                                           Expanded(
                                             child: Text(
                                               i18n.tr('asmr_player'),
@@ -628,8 +635,7 @@ extension _MainScreenLayout on _MainScreenState {
                                                   .textTheme
                                                   .titleMedium
                                                   ?.copyWith(
-                                                    fontWeight:
-                                                        FontWeight.w800,
+                                                    fontWeight: FontWeight.w800,
                                                   ),
                                             ),
                                           ),
@@ -643,9 +649,7 @@ extension _MainScreenLayout on _MainScreenState {
                                       ),
                               ),
                             ),
-                      destinations: destinations.asMap().entries.map((
-                        entry,
-                      ) {
+                      destinations: destinations.asMap().entries.map((entry) {
                         final index = entry.key;
                         final item = entry.value;
                         final isSelected = selectedIndex == index;

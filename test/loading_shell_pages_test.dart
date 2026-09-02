@@ -94,7 +94,7 @@ Widget _buildTestApp({
         notifications: services.runtimeGraph.notifications,
         settings: services.runtimeGraph.settings,
       ),
-      themeProviderInstanceProvider.overrideWithValue(themeProvider),
+      themeProviderInstanceProvider.overrideWith((ref) => themeProvider),
       appLanguageProviderInstanceProvider.overrideWithValue(languageProvider),
     ],
     child: MaterialApp(home: child),

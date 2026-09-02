@@ -244,7 +244,9 @@ Widget buildAppRuntimeTestApp({
         undoableRemovalService: undoableRemovalService,
       ),
       appUpdateServiceProvider.overrideWithValue(AppUpdateService()),
-      themeProviderInstanceProvider.overrideWithValue(resolvedThemeProvider),
+      themeProviderInstanceProvider.overrideWith(
+        (ref) => resolvedThemeProvider,
+      ),
       appLanguageProviderInstanceProvider.overrideWithValue(languageProvider),
       ...overrides,
     ],

@@ -48,19 +48,4 @@ void main() {
     expect(await service.terminateForPendingRestore(), isFalse);
   });
 
-  test('window surface sync sends the packed color to Android', () async {
-    MethodCall? received;
-    messenger.setMockMethodCallHandler(channel, (call) async {
-      received = call;
-      return <String, Object?>{'ok': true, 'value': null};
-    });
-    final service = AppLifecyclePlatformService(
-      channel: channel,
-      isAndroidOverride: true,
-    );
-
-    expect(await service.syncWindowSurface(const Color(0xFF12201C)), isTrue);
-    expect(received?.method, 'syncWindowSurface');
-    expect(received?.arguments, <String, Object>{'color': 0xFF12201C});
-  });
 }

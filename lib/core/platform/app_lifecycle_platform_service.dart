@@ -31,13 +31,4 @@ class AppLifecyclePlatformService {
     return result.isOk;
   }
 
-  Future<bool> syncWindowSurface(Color color) async {
-    if (!_isAndroid) return true;
-    final result = await _client.invoke<void>(
-      AppLifecycleMethod.syncWindowSurface,
-      arguments: <String, Object>{'color': color.toARGB32()},
-      decode: (_) {},
-    );
-    return result.isOk;
-  }
 }

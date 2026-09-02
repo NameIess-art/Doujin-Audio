@@ -76,11 +76,14 @@ Future<void> main() async {
       };
 
       bool? shouldShowOnboarding;
+      await AppPreferences.init();
+      final themeProvider = ThemeProvider();
 
       late final AppBootstrapController appBootstrapController;
       appBootstrapController = AppBootstrapController(
         initializer: () async {
           await _initializeAudioPlayerApp();
+          await themeProvider.reloadPersistedState();
           shouldShowOnboarding = AppPreferences.shouldShowOnboardingSync();
         },
       );
@@ -88,8 +91,10 @@ Future<void> main() async {
       runApp(
         AppBootstrapHost(
           controller: appBootstrapController,
+          themeProvider: themeProvider,
           appBuilder: () => _createAudioPlayerApp(
             shouldShowOnboarding: shouldShowOnboarding!,
+            themeProvider: themeProvider,
             startupRestoreOutcome: _startupRestoreOutcome,
             onBootstrapSettled: allowFirstFrame,
           ),
@@ -121,7 +126,6 @@ Future<void> _initializeAudioPlayerApp() async {
     AudioSession.instance.then(
       (session) => session.configure(const AudioSessionConfiguration.music()),
     ),
-    AppPreferences.init(),
   ]);
 
   SystemChrome.setSystemUIOverlayStyle(
@@ -159,6 +163,7 @@ Future<void> _initializeAudioPlayerApp() async {
 
 Widget _createAudioPlayerApp({
   required bool shouldShowOnboarding,
+  required ThemeProvider themeProvider,
   StartupRestoreOutcome? startupRestoreOutcome,
   VoidCallback? onBootstrapSettled,
 }) {
@@ -210,7 +215,6 @@ Widget _createAudioPlayerApp({
     source: asmrLibraryController,
     launcher: PlaybackFacadeSessionLauncher(playbackFacade),
   );
-  final themeProvider = ThemeProvider();
 
   Future<void> initializeRuntimeData() async {
     await appLanguageProvider.initialized;
@@ -240,7 +244,7 @@ Widget _createAudioPlayerApp({
         notifications: notificationFacade,
         settings: settingsRepository,
       ),
-      themeProviderInstanceProvider.overrideWithValue(themeProvider),
+      themeProviderInstanceProvider.overrideWith((ref) => themeProvider),
       appLanguageProviderInstanceProvider.overrideWithValue(
         appLanguageProvider,
       ),
@@ -306,7 +310,6 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp> {
   final _navigatorKey = GlobalKey<NavigatorState>();
   var _restoreOutcomeScheduled = false;
   var _runtimeBootstrapSettledNotified = false;
-  Color? _lastWindowSurface;
 
   @override
   void initState() {
@@ -352,9 +355,7 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp> {
         );
       }
     });
-    final themeProvider =
-        ref.watch(themeStateProvider).value ??
-        ThemeState.from(ref.read(themeProviderInstanceProvider));
+    final themeProvider = ref.watch(themeProviderInstanceProvider);
     final languageProvider = ref.read(appLanguageProviderInstanceProvider);
     _scheduleRestoreOutcomeFeedback(languageProvider);
     final languageState =
@@ -375,7 +376,6 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp> {
             ? themeProvider.darkTheme.colorScheme.surface
             : themeProvider.lightTheme.colorScheme.surface,
     };
-    _scheduleWindowSurfaceSync(windowSurface);
     return MaterialApp(
       navigatorKey: _navigatorKey,
       title: languageProvider.tr('app_title'),
@@ -426,19 +426,6 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp> {
         ),
       ),
     );
-  }
-
-  void _scheduleWindowSurfaceSync(Color surface) {
-    if (_lastWindowSurface == surface) return;
-    _lastWindowSurface = surface;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      unawaited(
-        ref
-            .read(appLifecyclePlatformServiceProvider)
-            .syncWindowSurface(surface),
-      );
-    });
   }
 
   void _scheduleRestoreOutcomeFeedback(AppLanguageProvider languageProvider) {

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/legacy.dart' show ChangeNotifierProvider;
 import 'package:flutter_riverpod/misc.dart' show Override;
 
 import '../application/app_persistence_coordinator.dart';
@@ -41,11 +42,9 @@ import '../../core/platform/app_lifecycle_platform_service.dart';
 import '../../core/platform/video_display_platform_gateway.dart';
 import '../../core/platform/video_display_platform_service.dart';
 
-final themeProviderInstanceProvider = Provider<ThemeProvider>((ref) {
-  throw UnimplementedError(
-    'themeProviderInstanceProvider must be overridden in ProviderScope.',
-  );
-});
+final themeProviderInstanceProvider = ChangeNotifierProvider<ThemeProvider>(
+  (ref) => ThemeProvider(),
+);
 
 final appLanguageProviderInstanceProvider = Provider<AppLanguageProvider>((
   ref,
@@ -216,17 +215,6 @@ final asmrDownloadTaskProvider = Provider.autoDispose
       return ref.watch(_asmrDownloadTaskSnapshotProvider(workId)).value ??
           manager?.getTask(workId);
     });
-
-final themeStateProvider = StreamProvider<ThemeState>((ref) {
-  final controller = ref.watch(themeProviderInstanceProvider);
-  return Stream<ThemeState>.multi((events) {
-    void emit() => events.addSync(ThemeState.from(controller));
-
-    emit();
-    controller.addListener(emit);
-    events.onCancel = () => controller.removeListener(emit);
-  }, isBroadcast: true);
-});
 
 final audioRuntimeCoordinatorProvider = Provider<AppRuntimeLifecycle>((ref) {
   throw UnimplementedError(

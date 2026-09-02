@@ -11,6 +11,7 @@ import 'app_error_view.dart';
 class AppBootstrapHost extends StatelessWidget {
   const AppBootstrapHost({
     required this.controller,
+    required this.themeProvider,
     required this.appBuilder,
     this.exportDiagnostics,
     this.disposeController = true,
@@ -20,6 +21,7 @@ class AppBootstrapHost extends StatelessWidget {
   });
 
   final AppBootstrapController controller;
+  final ThemeProvider themeProvider;
   final Widget Function() appBuilder;
   final Future<void> Function()? exportDiagnostics;
   final bool disposeController;
@@ -30,65 +32,53 @@ class AppBootstrapHost extends StatelessWidget {
   Widget build(BuildContext context) {
     final locale =
         this.locale ?? WidgetsBinding.instance.platformDispatcher.locale;
-    final appThemeColor = ThemeProvider.readAppThemeColorSync();
-    final lightScheme = appThemeColor
-        .colorScheme(Brightness.light)
-        .copyWith(
-          surface: appThemeColor.bootstrapSurfaceColor(Brightness.light),
+    return ListenableBuilder(
+      listenable: themeProvider,
+      builder: (context, _) {
+        final lightTheme = themeProvider.lightTheme;
+        final darkTheme = themeProvider.darkTheme;
+        final themeMode = themeProvider.themeMode;
+        final platformBrightness =
+            WidgetsBinding.instance.platformDispatcher.platformBrightness;
+        final brightness = switch (themeMode) {
+          ThemeMode.dark => Brightness.dark,
+          ThemeMode.light => Brightness.light,
+          ThemeMode.system => platformBrightness,
+        };
+        final windowSurface = brightness == Brightness.dark
+            ? darkTheme.colorScheme.surface
+            : lightTheme.colorScheme.surface;
+        Widget shell(Widget home) => MaterialApp(
+          debugShowCheckedModeBanner: false,
+          color: windowSurface,
+          theme: lightTheme,
+          darkTheme: darkTheme,
+          themeMode: themeMode,
+          locale: locale,
+          supportedLocales: AppLanguageProvider.supportedLocales,
+          localizationsDelegates: const [
+            GlobalMaterialLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+          ],
+          home: home,
         );
-    final darkScheme = appThemeColor
-        .colorScheme(Brightness.dark)
-        .copyWith(
-          surface: appThemeColor.bootstrapSurfaceColor(Brightness.dark),
+        return AppBootstrapGate(
+          controller: controller,
+          disposeController: disposeController,
+          onBootstrapSettled: onBootstrapSettled,
+          readyBuilder: (_) => appBuilder(),
+          loadingBuilder: (_) => shell(const AppBootstrapLoadingView()),
+          failureBuilder: (_, state) => shell(
+            AppErrorView(
+              error: state.error ?? StateError('Unknown bootstrap failure'),
+              stackTrace: state.stackTrace,
+              onRetry: () => unawaited(controller.retry()),
+              exportDiagnostics: exportDiagnostics,
+            ),
+          ),
         );
-    final themeMode = ThemeProvider.readThemeModeSync();
-    final platformBrightness =
-        WidgetsBinding.instance.platformDispatcher.platformBrightness;
-    final brightness = switch (themeMode) {
-      ThemeMode.dark => Brightness.dark,
-      ThemeMode.light => Brightness.light,
-      ThemeMode.system => platformBrightness,
-    };
-    final windowSurface = brightness == Brightness.dark
-        ? darkScheme.surface
-        : lightScheme.surface;
-    Widget shell(Widget home) => MaterialApp(
-      debugShowCheckedModeBanner: false,
-      color: windowSurface,
-      theme: ThemeData(
-        useMaterial3: true,
-        colorScheme: lightScheme,
-        scaffoldBackgroundColor: lightScheme.surface,
-      ),
-      darkTheme: ThemeData(
-        useMaterial3: true,
-        colorScheme: darkScheme,
-        scaffoldBackgroundColor: darkScheme.surface,
-      ),
-      themeMode: ThemeProvider.readThemeModeSync(),
-      locale: locale,
-      supportedLocales: AppLanguageProvider.supportedLocales,
-      localizationsDelegates: const [
-        GlobalMaterialLocalizations.delegate,
-        GlobalCupertinoLocalizations.delegate,
-        GlobalWidgetsLocalizations.delegate,
-      ],
-      home: home,
-    );
-    return AppBootstrapGate(
-      controller: controller,
-      disposeController: disposeController,
-      onBootstrapSettled: onBootstrapSettled,
-      readyBuilder: (_) => appBuilder(),
-      loadingBuilder: (_) => shell(const AppBootstrapLoadingView()),
-      failureBuilder: (_, state) => shell(
-        AppErrorView(
-          error: state.error ?? StateError('Unknown bootstrap failure'),
-          stackTrace: state.stackTrace,
-          onRetry: () => unawaited(controller.retry()),
-          exportDiagnostics: exportDiagnostics,
-        ),
-      ),
+      },
     );
   }
 }

@@ -8,6 +8,7 @@ import 'package:doujin_audio/app/localization/app_language_provider.dart';
 import 'package:doujin_audio/app/presentation/app_bootstrap_host.dart';
 import 'package:doujin_audio/app/presentation/onboarding_page.dart';
 import 'package:doujin_audio/app/state/app_runtime_providers.dart';
+import 'package:doujin_audio/app/theme/theme_provider.dart';
 import 'package:doujin_audio/core/widgets/app_brand_icon.dart';
 import 'package:doujin_audio/features/settings/application/app_preferences.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -50,6 +51,7 @@ void main() {
     await tester.pumpWidget(
       AppBootstrapHost(
         controller: controller,
+        themeProvider: ThemeProvider(),
         locale: const Locale('zh'),
         onBootstrapSettled: () => bootstrapSettledCalls++,
         appBuilder: () {
@@ -92,6 +94,7 @@ void main() {
     await tester.pumpWidget(
       AppBootstrapHost(
         controller: controller,
+        themeProvider: ThemeProvider(),
         locale: const Locale('en'),
         onBootstrapSettled: () => bootstrapSettledCalls++,
         appBuilder: () => const MaterialApp(home: Text('ready app')),
@@ -267,6 +270,7 @@ void main() {
     await tester.pumpWidget(
       AppBootstrapHost(
         controller: controller,
+        themeProvider: ThemeProvider(),
         locale: const Locale('en'),
         appBuilder: () => const SizedBox(),
         exportDiagnostics: () async {
@@ -302,6 +306,7 @@ void main() {
     await tester.pumpWidget(
       AppBootstrapHost(
         controller: controller,
+        themeProvider: ThemeProvider(),
         locale: const Locale('en'),
         appBuilder: () => const SizedBox(),
       ),
@@ -338,6 +343,7 @@ void main() {
     await tester.pumpWidget(
       AppBootstrapHost(
         controller: controller,
+        themeProvider: ThemeProvider(),
         locale: const Locale('en'),
         appBuilder: () => const SizedBox(),
       ),
@@ -369,6 +375,7 @@ void main() {
     await tester.pumpWidget(
       AppBootstrapHost(
         controller: controller,
+        themeProvider: ThemeProvider(),
         locale: const Locale('en'),
         appBuilder: () => const SizedBox(),
       ),

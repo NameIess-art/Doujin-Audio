@@ -84,7 +84,6 @@ open class MainActivity : FlutterFragmentActivity() {
             it.setMethodCallHandler(
                 AppLifecycleMethodHandler(
                     terminateForPendingRestore = ::schedulePendingRestoreTermination,
-                    syncWindowSurface = ::syncWindowSurface,
                 )
             )
         }

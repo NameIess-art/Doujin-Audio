@@ -97,20 +97,20 @@ void main() {
       final container = ProviderContainer(
         overrides: [
           appLanguageProviderInstanceProvider.overrideWithValue(language),
-          themeProviderInstanceProvider.overrideWithValue(theme),
+          themeProviderInstanceProvider.overrideWith((ref) => theme),
           asmrDownloadManagerProvider.overrideWithValue(downloads),
         ],
       );
       final languageValues = <AppLanguageState>[];
-      final themeValues = <ThemeState>[];
+      final themeValues = <ThemeProvider>[];
       final downloadValues = <List<int>>[];
       final subscriptions = [
         container.listen(appLanguageStateProvider, (_, next) {
           if (next case AsyncData(:final value)) languageValues.add(value);
         }),
-        container.listen(themeStateProvider, (_, next) {
-          if (next case AsyncData(:final value)) themeValues.add(value);
-        }),
+        container.listen(themeProviderInstanceProvider, (_, next) {
+          themeValues.add(next);
+        }, fireImmediately: true),
         container.listen(asmrDownloadTaskIdsProvider, (_, next) {
           if (next case AsyncData(:final value)) downloadValues.add(value);
         }),
@@ -138,7 +138,6 @@ void main() {
       expect(theme.removeListenerCalls, 1);
       expect(downloads.cancelCalls, 1);
       language.dispose();
-      theme.dispose();
       downloads.dispose();
     },
   );

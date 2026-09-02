@@ -89,10 +89,36 @@ class _PlaybackQueueCard extends ConsumerWidget {
         )
         .take(4)
         .toList(growable: false);
-    final firstTrackName = tracks.isEmpty
+    final resolvedCurrentPath = playback.resolveRetargetedPath(
+      cardState.trackPath,
+    );
+    final matchedCurrentIndex = tracks.indexWhere(
+      (track) =>
+          PathMatcher.equalsNormalized(track.path, cardState.trackPath) ||
+          PathMatcher.equalsNormalized(
+            playback.resolveRetargetedPath(track.path),
+            resolvedCurrentPath,
+          ),
+    );
+    final currentIndex = matchedCurrentIndex >= 0
+        ? matchedCurrentIndex
+        : session.currentQueueIndex >= 0 &&
+              session.currentQueueIndex < tracks.length
+        ? session.currentQueueIndex
+        : -1;
+    final currentTrack = currentIndex >= 0
+        ? tracks[currentIndex]
+        : ref
+              .read(audioPathCoordinatorProvider)
+              .sessionTrackForPath(session.id, cardState.trackPath);
+    final currentTrackName = tracks.isEmpty
         ? i18n.tr('empty_playback_queue')
-        : tracks.first.displayName;
-    final secondTrackName = tracks.length > 1 ? tracks[1].displayName : '';
+        : currentTrack?.displayName ??
+              path.basenameWithoutExtension(cardState.trackPath);
+    final nextTrack = currentIndex >= 0 && currentIndex + 1 < tracks.length
+        ? tracks[currentIndex + 1]
+        : null;
+    final secondTrackName = nextTrack?.displayName ?? '';
     return SwipeRevealCard(
       key: ValueKey(session.id),
       shape: _playlistRowShape,
@@ -199,7 +225,7 @@ class _PlaybackQueueCard extends ConsumerWidget {
                             ),
                             const SizedBox(height: 3),
                             Text(
-                              firstTrackName,
+                              currentTrackName,
                               key: ValueKey<String>(
                                 'playback_queue_track_0_${session.id}',
                               ),
@@ -356,7 +382,7 @@ class _QueueCoverGrid extends StatelessWidget {
     }
     return ClipRRect(
       key: const ValueKey('playback_queue_cover_grid'),
-      borderRadius: BorderRadius.circular(16),
+      borderRadius: BorderRadius.circular(LibraryLikeCardMetrics.coverRadius),
       child: SizedBox.square(dimension: _playlistCoverSize, child: content),
     );
   }
@@ -424,45 +450,31 @@ Future<void> showPlaybackQueueEditPanel(
   BuildContext context,
   String sessionId,
 ) {
-  return _showPlaybackQueuePanel(
-    context,
-    panel: PlaybackQueueEditPage(sessionId: sessionId),
-  );
-}
-
-Future<void> showPlaybackQueueColorPanel(
-  BuildContext context,
-  String sessionId,
-) {
-  return _showPlaybackQueuePanel(
-    context,
-    panel: _PlaybackQueueColorPanel(sessionId: sessionId),
-  );
-}
-
-Future<void> _showPlaybackQueuePanel(
-  BuildContext context, {
-  required Widget panel,
-}) {
-  final i18n = ProviderScope.containerOf(
-    context,
-    listen: false,
-  ).read(appLanguageProviderInstanceProvider);
-  return showAppOverlayPanel<void>(
+  return AppBottomSheet.show<void>(
     context: context,
-    barrierLabel: i18n.tr('close'),
-    maxHeight: 560,
-    builder: (_) => panel,
+    builder: (_) => PlaybackQueueEditPage(sessionId: sessionId),
   );
 }
 
-class PlaybackQueueEditPage extends ConsumerWidget {
+const double _playbackQueueEditPanelHeight = 360;
+
+class PlaybackQueueEditPage extends ConsumerStatefulWidget {
   const PlaybackQueueEditPage({super.key, required this.sessionId});
 
   final String sessionId;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<PlaybackQueueEditPage> createState() =>
+      _PlaybackQueueEditPageState();
+}
+
+class _PlaybackQueueEditPageState extends ConsumerState<PlaybackQueueEditPage> {
+  bool _editingColor = false;
+
+  String get sessionId => widget.sessionId;
+
+  @override
+  Widget build(BuildContext context) {
     final structure = ref.watch(playlistStructureUiProvider);
     final playback = ref.read(playbackFacadeProvider);
     final session = structure.entries
@@ -475,95 +487,106 @@ class PlaybackQueueEditPage extends ConsumerWidget {
       listen: false,
     ).read(appLanguageProviderInstanceProvider);
     if (queue == null) return const SizedBox.shrink();
+    if (_editingColor) {
+      return _PlaybackQueueColorPanel(
+        sessionId: sessionId,
+        onBack: () => setState(() => _editingColor = false),
+      );
+    }
     final cs = Theme.of(context).colorScheme;
     final tokens = AppDesignTokens.of(context);
-    return Material(
-      color: cs.surfaceContainerLow,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-      clipBehavior: Clip.antiAlias,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                Container(
-                  key: const ValueKey('playback_queue_edit_header_icon'),
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: cs.primary.withValues(alpha: 0.14),
-                    borderRadius: BorderRadius.circular(tokens.radiusSmall),
-                  ),
-                  child: Icon(
-                    Icons.queue_music_rounded,
-                    color: cs.primary,
-                    size: 22,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    queue.name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w800,
+    return SizedBox(
+      height: _playbackQueueEditPanelHeight,
+      child: Material(
+        color: cs.surfaceContainerLow,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        clipBehavior: Clip.antiAlias,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    key: const ValueKey('playback_queue_edit_header_icon'),
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: cs.primary.withValues(alpha: 0.14),
+                      borderRadius: BorderRadius.circular(tokens.radiusSmall),
+                    ),
+                    child: Icon(
+                      Icons.queue_music_rounded,
+                      color: cs.primary,
+                      size: 22,
                     ),
                   ),
-                ),
-                IconButton(
-                  tooltip: i18n.tr('close'),
-                  icon: const Icon(Icons.close_rounded),
-                  onPressed: () => Navigator.of(context).pop(),
-                ),
-              ],
-            ),
-            const SizedBox(height: 18),
-            Flexible(
-              child: ListView(
-                shrinkWrap: true,
-                padding: EdgeInsets.zero,
-                children: [
-                  _queueEditTile(
-                    context,
-                    Icons.queue_music_rounded,
-                    i18n.tr('edit_queue_audio'),
-                    () => Navigator.of(context).push(
-                      buildAppPageRoute<void>(
-                        context: context,
-                        child: PlaybackQueueAudioEditPage(sessionId: sessionId),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      queue.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w800,
                       ),
                     ),
                   ),
-                  const SizedBox(height: 6),
-                  _queueEditTile(
-                    context,
-                    Icons.drive_file_rename_outline_rounded,
-                    i18n.tr('edit_queue_name'),
-                    () => _editQueueName(context, playback, queue.name),
-                  ),
-                  const SizedBox(height: 6),
-                  _queueEditTile(
-                    context,
-                    Icons.palette_outlined,
-                    i18n.tr('edit_card_color'),
-                    () => showPlaybackQueueColorPanel(context, sessionId),
-                  ),
-                  const SizedBox(height: 12),
-                  _queueEditTile(
-                    context,
-                    Icons.delete_outline_rounded,
-                    i18n.tr('remove_queue'),
-                    () => _removeQueue(context, ref),
-                    destructive: true,
+                  IconButton(
+                    tooltip: i18n.tr('close'),
+                    icon: const Icon(Icons.close_rounded),
+                    onPressed: () => Navigator.of(context).pop(),
                   ),
                 ],
               ),
-            ),
-          ],
+              const SizedBox(height: 18),
+              Flexible(
+                child: ListView(
+                  shrinkWrap: true,
+                  padding: EdgeInsets.zero,
+                  children: [
+                    _queueEditTile(
+                      context,
+                      Icons.queue_music_rounded,
+                      i18n.tr('edit_queue_audio'),
+                      () => Navigator.of(context).push(
+                        buildAppPageRoute<void>(
+                          context: context,
+                          child: PlaybackQueueAudioEditPage(
+                            sessionId: sessionId,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    _queueEditTile(
+                      context,
+                      Icons.drive_file_rename_outline_rounded,
+                      i18n.tr('edit_queue_name'),
+                      () => _editQueueName(context, playback, queue.name),
+                    ),
+                    const SizedBox(height: 6),
+                    _queueEditTile(
+                      context,
+                      Icons.palette_outlined,
+                      i18n.tr('edit_queue_color'),
+                      () => setState(() => _editingColor = true),
+                    ),
+                    const SizedBox(height: 12),
+                    _queueEditTile(
+                      context,
+                      Icons.delete_outline_rounded,
+                      i18n.tr('remove_queue'),
+                      () => _removeQueue(context, ref),
+                      destructive: true,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -1240,8 +1263,13 @@ class _QueueAudioEditCard extends ConsumerWidget {
 }
 
 class _PlaybackQueueColorPanel extends ConsumerWidget {
-  const _PlaybackQueueColorPanel({required this.sessionId});
+  const _PlaybackQueueColorPanel({
+    required this.sessionId,
+    required this.onBack,
+  });
+
   final String sessionId;
+  final VoidCallback onBack;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -1260,100 +1288,111 @@ class _PlaybackQueueColorPanel extends ConsumerWidget {
     ).read(appLanguageProviderInstanceProvider);
     final cs = Theme.of(context).colorScheme;
     final tokens = AppDesignTokens.of(context);
-    return Material(
-      color: cs.surfaceContainerLow,
-      elevation: 12,
-      shadowColor: cs.shadow.withValues(alpha: 0.22),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-      clipBehavior: Clip.antiAlias,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: color.withValues(alpha: 0.14),
-                    borderRadius: BorderRadius.circular(tokens.radiusSmall),
+    return SizedBox(
+      height: _playbackQueueEditPanelHeight,
+      child: Material(
+        key: const ValueKey('playback_queue_color_panel'),
+        color: cs.surfaceContainerLow,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        clipBehavior: Clip.antiAlias,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: color.withValues(alpha: 0.14),
+                      borderRadius: BorderRadius.circular(tokens.radiusSmall),
+                    ),
+                    child: Icon(Icons.palette_outlined, color: color, size: 22),
                   ),
-                  child: Icon(Icons.palette_outlined, color: color, size: 22),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    i18n.tr('edit_card_color'),
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w800,
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      i18n.tr('edit_queue_color'),
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
                     ),
                   ),
-                ),
-                IconButton(
-                  tooltip: i18n.tr('close'),
-                  icon: const Icon(Icons.close_rounded),
-                  onPressed: () => Navigator.of(context).pop(),
-                ),
-              ],
-            ),
-            const SizedBox(height: 18),
-            Container(
-              height: 54,
-              decoration: BoxDecoration(
-                color: color.withValues(alpha: 0.18),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: color.withValues(alpha: 0.42)),
+                  IconButton(
+                    key: const ValueKey('playback_queue_color_back'),
+                    tooltip: MaterialLocalizations.of(
+                      context,
+                    ).backButtonTooltip,
+                    icon: const Icon(Icons.arrow_back_rounded),
+                    onPressed: onBack,
+                  ),
+                ],
               ),
-              alignment: Alignment.center,
-              child: Container(
-                width: 28,
-                height: 28,
+              const SizedBox(height: 18),
+              Container(
+                height: 54,
                 decoration: BoxDecoration(
-                  color: color,
-                  shape: BoxShape.circle,
-                  boxShadow: [
-                    BoxShadow(
-                      color: color.withValues(alpha: 0.32),
-                      blurRadius: 12,
-                    ),
-                  ],
+                  color: color.withValues(alpha: 0.18),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: color.withValues(alpha: 0.42)),
+                ),
+                alignment: Alignment.center,
+                child: Container(
+                  width: 28,
+                  height: 28,
+                  decoration: BoxDecoration(
+                    color: color,
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: color.withValues(alpha: 0.32),
+                        blurRadius: 12,
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(height: 12),
-            for (final channel in <(String, int)>[
-              ('R', (color.r * 255).round()),
-              ('G', (color.g * 255).round()),
-              ('B', (color.b * 255).round()),
-            ])
-              _QueueColorSlider(
-                label: channel.$1,
-                value: channel.$2,
-                color: color,
-                onChanged: (next) {
-                  final r = channel.$1 == 'R' ? next : (color.r * 255).round();
-                  final g = channel.$1 == 'G' ? next : (color.g * 255).round();
-                  final b = channel.$1 == 'B' ? next : (color.b * 255).round();
-                  playback.setPlaybackQueueColorValue(
-                    sessionId,
-                    Color.fromARGB(255, r, g, b).toARGB32(),
-                  );
-                },
+              const SizedBox(height: 12),
+              for (final channel in <(String, int)>[
+                ('R', (color.r * 255).round()),
+                ('G', (color.g * 255).round()),
+                ('B', (color.b * 255).round()),
+              ])
+                _QueueColorSlider(
+                  label: channel.$1,
+                  value: channel.$2,
+                  color: color,
+                  onChanged: (next) {
+                    final r = channel.$1 == 'R'
+                        ? next
+                        : (color.r * 255).round();
+                    final g = channel.$1 == 'G'
+                        ? next
+                        : (color.g * 255).round();
+                    final b = channel.$1 == 'B'
+                        ? next
+                        : (color.b * 255).round();
+                    playback.setPlaybackQueueColorValue(
+                      sessionId,
+                      Color.fromARGB(255, r, g, b).toARGB32(),
+                    );
+                  },
+                ),
+              const SizedBox(height: 4),
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton.icon(
+                  onPressed: () =>
+                      playback.setPlaybackQueueColorValue(sessionId, null),
+                  icon: const Icon(Icons.restart_alt_rounded, size: 18),
+                  label: Text(i18n.tr('reset_to_default')),
+                ),
               ),
-            const SizedBox(height: 4),
-            Align(
-              alignment: Alignment.centerRight,
-              child: TextButton.icon(
-                onPressed: () =>
-                    playback.setPlaybackQueueColorValue(sessionId, null),
-                icon: const Icon(Icons.restart_alt_rounded, size: 18),
-                label: Text(i18n.tr('reset_to_default')),
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

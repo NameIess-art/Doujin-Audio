@@ -382,7 +382,7 @@ const Map<String, String> appLanguageEn = {
   'go_library_hint':
       'Play audio in Library first, then create concurrent sessions.',
   'single_loop': 'Single loop',
-  'pause_after_playback': 'Pause after finish',
+  'pause_after_playback': 'Pause after one round',
   'loop_mode_title': 'Playback mode',
   'sequential_playback': 'Sequential',
   'loop_playback': 'Sequential',
@@ -534,7 +534,7 @@ const Map<String, String> appLanguageEn = {
   'asmr_download_thread_count_hint': 'Works downloaded at the same time',
   'asmr_download_save_metadata_setting': 'Save work information',
   'asmr_download_save_cover': 'Save cover image',
-  'asmr_download_folder_name_setting': 'Downloaded work folder name',
+  'asmr_download_folder_name_setting': 'Folder name',
   'asmr_download_folder_name_hint':
       'Select the fields to use and drag selected fields to reorder them. Keep at least one field.',
   'asmr_download_folder_field_rj_code': 'RJ number',
@@ -836,7 +836,7 @@ const Map<String, String> appLanguageEn = {
   'edit_playback_queue': 'Edit playback queue',
   'edit_queue_audio': 'Edit queue audio',
   'edit_queue_name': 'Edit queue name',
-  'edit_card_color': 'Edit card color',
+  'edit_queue_color': 'Edit queue color',
   'remove_queue': 'Remove queue',
   'remove_queue_confirm': 'Remove this playback queue?',
   'queue_added_audio': 'Added to queue',

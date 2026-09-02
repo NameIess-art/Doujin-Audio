@@ -35,4 +35,26 @@ void main() {
     expect(PathDisplay.displayPathFor(track), 'ASMR/RJ123456/羊娘.mp3');
     expect(PathDisplay.fileName(track, withoutExtension: true), '羊娘');
   });
+
+  test('keeps exported SAF files relative to shared storage', () {
+    const exported =
+        'content://com.android.externalstorage.documents/document/'
+        'primary%3ADownload%2FDoujinAudio-backup.dabackup';
+
+    expect(
+      PathDisplay.displayPathFor(exported),
+      'Download/DoujinAudio-backup.dabackup',
+    );
+  });
+
+  test('removes the raw SAF shared-storage prefix from display paths', () {
+    const exported =
+        'content://com.android.externalstorage.documents/document/'
+        'raw%3A%2Fstorage%2Femulated%2F0%2FDownload%2FDoujinAudio-diagnostic.zip';
+
+    expect(
+      PathDisplay.displayPathFor(exported),
+      'Download/DoujinAudio-diagnostic.zip',
+    );
+  });
 }

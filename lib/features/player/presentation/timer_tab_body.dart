@@ -207,11 +207,14 @@ extension _TimerTabBody on _TimerTabState {
     }
 
     Widget buildConfiguratorSection({required bool compactMode}) {
-      final children = [
-        _TimerSectionTitle(
-          icon: Icons.timer_rounded,
-          title: i18n.tr('set_countdown'),
-          subtitle: compactMode ? '' : _modeSubtitle(i18n, _selectedMode),
+      final sectionChildren = [
+        KeyedSubtree(
+          key: const ValueKey('timer_compact_title'),
+          child: _TimerSectionTitle(
+            icon: Icons.timer_rounded,
+            title: i18n.tr('set_countdown'),
+            subtitle: compactMode ? '' : _modeSubtitle(i18n, _selectedMode),
+          ),
         ),
         SizedBox(height: compactMode ? 12 : 16),
         _DurationPicker(
@@ -257,68 +260,68 @@ extension _TimerTabBody on _TimerTabState {
             });
           },
         ),
-        if (compactMode) const Spacer(),
-        SizedBox(height: compactMode ? 12 : 14),
-        FilledButton.icon(
-          onPressed: _durationIsZero
-              ? null
-              : () {
-                  AppInteractionFeedback.trigger(
-                    AppInteractionFeedbackType.confirmation,
-                  );
-                  _onConfirm(timer);
-                },
-          icon: Icon(
-            _selectedMode == TimerMode.manual
-                ? Icons.play_arrow_rounded
-                : Icons.schedule_rounded,
-          ),
-          label: Text(
-            _selectedMode == TimerMode.manual
-                ? i18n.tr('confirm_start_now')
-                : i18n.tr('confirm_wait_playback'),
-          ),
-          style: FilledButton.styleFrom(
-            elevation: 0,
-            shadowColor: Colors.transparent,
-            minimumSize: Size.fromHeight(compactMode ? 50 : 56),
-            shape: const StadiumBorder(),
-          ),
-        ),
-        if (_durationIsZero && !compactMode)
-          Padding(
-            padding: const EdgeInsets.only(top: 8),
-            child: Text(
-              i18n.tr('set_duration_first'),
-              style: TextStyle(color: cs.error, fontSize: 12),
-            ),
-          ),
       ];
+      final confirmButton = FilledButton.icon(
+        onPressed: _durationIsZero
+            ? null
+            : () {
+                AppInteractionFeedback.trigger(
+                  AppInteractionFeedbackType.confirmation,
+                );
+                _onConfirm(timer);
+              },
+        icon: Icon(
+          _selectedMode == TimerMode.manual
+              ? Icons.play_arrow_rounded
+              : Icons.schedule_rounded,
+        ),
+        label: Text(
+          _selectedMode == TimerMode.manual
+              ? i18n.tr('confirm_start_now')
+              : i18n.tr('confirm_wait_playback'),
+        ),
+        style: FilledButton.styleFrom(
+          elevation: 0,
+          shadowColor: Colors.transparent,
+          minimumSize: Size.fromHeight(compactMode ? 50 : 56),
+          shape: const StadiumBorder(),
+        ),
+      );
 
       Widget content = Padding(
         padding: EdgeInsets.all(compactMode ? 14 : 18),
         child: compactMode
-            ? LayoutBuilder(
-                builder: (context, constraints) {
-                  return SingleChildScrollView(
-                    child: ConstrainedBox(
-                      constraints: BoxConstraints(
-                        minHeight: constraints.maxHeight,
-                      ),
-                      child: IntrinsicHeight(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: children,
-                        ),
+            ? Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Expanded(
+                    child: SingleChildScrollView(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: sectionChildren,
                       ),
                     ),
-                  );
-                },
+                  ),
+                  const SizedBox(height: 12),
+                  confirmButton,
+                ],
               )
             : Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: children,
+                children: [
+                  ...sectionChildren,
+                  const SizedBox(height: 14),
+                  confirmButton,
+                  if (_durationIsZero)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Text(
+                        i18n.tr('set_duration_first'),
+                        style: TextStyle(color: cs.error, fontSize: 12),
+                      ),
+                    ),
+                ],
               ),
       );
 
@@ -331,30 +334,27 @@ extension _TimerTabBody on _TimerTabState {
     final compactContent = LayoutBuilder(
       builder: (context, constraints) {
         final compactHeight = constraints.maxHeight.isFinite
-            ? math.min(500.0, constraints.maxHeight)
-            : 500.0;
+            ? math.min(kTimerCompactPanelHeight, constraints.maxHeight)
+            : kTimerCompactPanelHeight;
 
         return SizedBox(
           height: compactHeight,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(6, 4, 6, 6),
-            child: KeyedSubtree(
-              key: ValueKey<bool>(showCompactDetail),
-              child: showCompactDetail
-                  ? _buildCompactDetailPage(
-                      context: context,
-                      i18n: i18n,
-                      timer: timer,
-                      timerState: timerSlice,
-                      cs: cs,
-                      timerExpired: timerExpired,
-                      timerWaitingTrigger: timerWaitingTrigger,
-                      timerConfigured: timerConfigured,
-                      pickAutoResumeTime: pickAutoResumeTime,
-                      autoResumeAt: autoResumeCountdownTarget,
-                    )
-                  : buildConfiguratorSection(compactMode: true),
-            ),
+          child: KeyedSubtree(
+            key: ValueKey<bool>(showCompactDetail),
+            child: showCompactDetail
+                ? _buildCompactDetailPage(
+                    context: context,
+                    i18n: i18n,
+                    timer: timer,
+                    timerState: timerSlice,
+                    cs: cs,
+                    timerExpired: timerExpired,
+                    timerWaitingTrigger: timerWaitingTrigger,
+                    timerConfigured: timerConfigured,
+                    pickAutoResumeTime: pickAutoResumeTime,
+                    autoResumeAt: autoResumeCountdownTarget,
+                  )
+                : buildConfiguratorSection(compactMode: true),
           ),
         );
       },

@@ -2480,13 +2480,25 @@ void main() {
         find.byKey(const ValueKey('loop_mode_playback_row')),
         findsOneWidget,
       );
+      final singleRect = tester.getRect(
+        find.byKey(const ValueKey('loop_mode_single_row')),
+      );
+      final pauseAfterRoundRect = tester.getRect(
+        find.byKey(const ValueKey('loop_mode_pause_after_round_row')),
+      );
       final scopeRect = tester.getRect(
         find.byKey(const ValueKey('loop_mode_scope_row')),
       );
       final playbackRect = tester.getRect(
         find.byKey(const ValueKey('loop_mode_playback_row')),
       );
+      expect(singleRect.bottom, lessThan(pauseAfterRoundRect.top));
+      expect(pauseAfterRoundRect.bottom, lessThan(scopeRect.top));
       expect(scopeRect.bottom, lessThan(playbackRect.top));
+      expect(singleRect.width, closeTo(scopeRect.width, 0.1));
+      expect(pauseAfterRoundRect.width, closeTo(scopeRect.width, 0.1));
+      expect(singleRect.left, closeTo(scopeRect.left, 0.1));
+      expect(pauseAfterRoundRect.left, closeTo(scopeRect.left, 0.1));
       expect(find.text(harness.language.tr('loop_playback')), findsOneWidget);
 
       final ignorePointer = tester.widget<IgnorePointer>(

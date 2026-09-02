@@ -6,6 +6,7 @@ import '../../../app/state/app_runtime_providers.dart';
 import '../../../core/logging/app_log_service.dart';
 import '../application/data_support_file_service.dart';
 import '../../../core/ui/ui_operation_service.dart';
+import '../../../core/media/path_display.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../app/presentation/onboarding_page.dart';
@@ -196,9 +197,14 @@ class _DataSupportSettingsControlsState
     Duration? duration,
   }) {
     final i18n = ref.read(appLanguageProviderInstanceProvider);
+    final displayDetail = detail == null
+        ? null
+        : PathDisplay.displayPathFor(detail);
     showAppSnackBar(
       context,
-      detail == null ? i18n.tr(key) : i18n.tr(key, {'path': detail}),
+      displayDetail == null
+          ? i18n.tr(key)
+          : i18n.tr(key, {'path': displayDetail}),
       tone: AppFeedbackTone.success,
       title: titleKey == null ? null : i18n.tr(titleKey),
       icon: Icons.check_circle_outline_rounded,

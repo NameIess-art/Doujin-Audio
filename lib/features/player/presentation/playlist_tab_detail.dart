@@ -36,6 +36,48 @@ ThemeData _createAsmrSessionDetailTheme(
   );
 }
 
+ThemeData _createPlaybackQueueSessionDetailTheme(
+  ThemeData base,
+  Color queueColor,
+) {
+  final generated = ColorScheme.fromSeed(
+    seedColor: queueColor,
+    brightness: base.brightness,
+  );
+  final onQueueColor =
+      ThemeData.estimateBrightnessForColor(queueColor) == Brightness.dark
+      ? Colors.white
+      : const Color(0xFF1B1B1F);
+  final scheme = base.colorScheme.copyWith(
+    primary: queueColor,
+    onPrimary: onQueueColor,
+    primaryContainer: generated.primaryContainer,
+    onPrimaryContainer: generated.onPrimaryContainer,
+    secondary: queueColor,
+    onSecondary: onQueueColor,
+    secondaryContainer: generated.primaryContainer,
+    onSecondaryContainer: generated.onPrimaryContainer,
+    surfaceTint: queueColor,
+  );
+  return base.copyWith(
+    colorScheme: scheme,
+    sliderTheme: base.sliderTheme.copyWith(
+      activeTrackColor: queueColor,
+      thumbColor: queueColor,
+      overlayColor: queueColor.withValues(alpha: 0.15),
+    ),
+    textButtonTheme: TextButtonThemeData(
+      style: TextButton.styleFrom(foregroundColor: queueColor),
+    ),
+    filledButtonTheme: FilledButtonThemeData(
+      style: FilledButton.styleFrom(
+        backgroundColor: queueColor,
+        foregroundColor: onQueueColor,
+      ),
+    ),
+  );
+}
+
 ButtonStyle _sessionDetailResetButtonStyle(BuildContext context) {
   final colorScheme = Theme.of(context).colorScheme;
   return FilledButton.styleFrom(
@@ -496,12 +538,33 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
   ThemeData? _cachedBaseTheme;
   AppDesignTokens? _cachedDesignTokens;
   ThemeData? _cachedAsmrTheme;
+  ThemeData? _cachedQueueBaseTheme;
+  int? _cachedQueueColorValue;
+  ThemeData? _cachedQueueTheme;
   double _segmentPanelDragDelta = 0;
   bool _isSegmentPanelGesture = false;
   bool _isDismissGesture = false;
 
-  ThemeData _detailThemeForTrack(BuildContext context, MusicTrack? track) {
+  ThemeData _detailThemeForSession(
+    BuildContext context,
+    PlaybackSessionSnapshot session,
+    MusicTrack? track,
+  ) {
     final base = Theme.of(context);
+    final queueColorValue = session.playbackQueue?.colorValue;
+    if (queueColorValue != null) {
+      if (identical(_cachedQueueBaseTheme, base) &&
+          _cachedQueueColorValue == queueColorValue &&
+          _cachedQueueTheme != null) {
+        return _cachedQueueTheme!;
+      }
+      _cachedQueueBaseTheme = base;
+      _cachedQueueColorValue = queueColorValue;
+      return _cachedQueueTheme = _createPlaybackQueueSessionDetailTheme(
+        base,
+        Color(queueColorValue),
+      );
+    }
     if (track?.remoteMetadataKind != 'asmr.one') return base;
     final tokens = AppDesignTokens.of(context);
     if (identical(_cachedBaseTheme, base) &&
@@ -609,7 +672,7 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
 
     final track = paths.trackByPath(session.currentTrackPath);
     final isAsmrTrack = track?.remoteMetadataKind == 'asmr.one';
-    final detailTheme = _detailThemeForTrack(context, track);
+    final detailTheme = _detailThemeForSession(context, session, track);
     final cs = detailTheme.colorScheme;
     final requestedBackgroundCacheWidth = coverCacheWidthForResolution(
       ref.watch(

@@ -37,6 +37,8 @@ Future<T?> showAppOverlayPanel<T>({
   double mobileMaxWidth = 404,
   double desktopMaxWidth = 472,
   double? maxHeight,
+  Alignment mobileAlignment = Alignment.topCenter,
+  EdgeInsets? mobileOuterPadding,
   ThemeData Function(BuildContext context)? themeBuilder,
 }) {
   return showGeneralDialog<T>(
@@ -54,12 +56,9 @@ Future<T?> showAppOverlayPanel<T>({
       final isDesktop =
           mediaSize.width >= 760 ||
           MediaQuery.orientationOf(dialogContext) == Orientation.landscape;
-      final outerPadding = EdgeInsets.fromLTRB(
-        isDesktop ? 28 : 16,
-        isDesktop ? 28 : 176,
-        isDesktop ? 28 : 16,
-        isDesktop ? 28 : 132,
-      );
+      final outerPadding = isDesktop
+          ? const EdgeInsets.all(28)
+          : mobileOuterPadding ?? const EdgeInsets.fromLTRB(16, 176, 16, 132);
       final panel = Builder(builder: builder);
       final themedPanel = themeBuilder == null
           ? panel
@@ -70,6 +69,7 @@ Future<T?> showAppOverlayPanel<T>({
         maxWidth: isDesktop ? desktopMaxWidth : mobileMaxWidth,
         maxHeight: maxHeight,
         isDesktop: isDesktop,
+        mobileAlignment: mobileAlignment,
         barrierDismissible: barrierDismissible,
         child: themedPanel,
       );
@@ -85,6 +85,7 @@ class _AppOverlayPanelShell extends StatelessWidget {
     required this.maxWidth,
     required this.maxHeight,
     required this.isDesktop,
+    required this.mobileAlignment,
     required this.barrierDismissible,
     required this.child,
   });
@@ -94,6 +95,7 @@ class _AppOverlayPanelShell extends StatelessWidget {
   final double maxWidth;
   final double? maxHeight;
   final bool isDesktop;
+  final Alignment mobileAlignment;
   final bool barrierDismissible;
   final Widget child;
 
@@ -127,9 +129,7 @@ class _AppOverlayPanelShell extends StatelessWidget {
                 child: Padding(
                   padding: outerPadding,
                   child: Align(
-                    alignment: isDesktop
-                        ? Alignment.center
-                        : Alignment.topCenter,
+                    alignment: isDesktop ? Alignment.center : mobileAlignment,
                     child: ConstrainedBox(
                       constraints: constraints,
                       child: buildAppScaleFadeTransition(

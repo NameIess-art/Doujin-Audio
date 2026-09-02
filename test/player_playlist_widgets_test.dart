@@ -1718,6 +1718,7 @@ void main() {
     final queueSession = runtimeGraph.playback.activeSessions.singleWhere(
       (session) => session.isPlaybackQueue,
     );
+    const queueCardColor = Color(0xFF2E9C8B);
     final queueTrack = testMusicTrack(
       name: 'Queue track',
       path: '/library/queue/track.mp3',
@@ -1739,6 +1740,7 @@ void main() {
       ..currentTrackPath = queueTrack.path
       ..playbackQueue = PlaybackQueueDefinition(
         name: queueSession.playbackQueue!.name,
+        colorValue: queueCardColor.toARGB32(),
         entries: <PlaybackQueueEntry>[
           PlaybackQueueEntry(
             id: 'queue-entry',
@@ -1775,6 +1777,13 @@ void main() {
       BorderRadius.circular(LibraryLikeCardMetrics.cardRadius),
     );
     expect(queueCard.margin, EdgeInsets.zero);
+    final queueCoverGrid = tester.widget<ClipRRect>(
+      find.byKey(const ValueKey('playback_queue_cover_grid')),
+    );
+    expect(
+      queueCoverGrid.borderRadius,
+      BorderRadius.circular(LibraryLikeCardMetrics.coverRadius),
+    );
     expect(
       queueCard.closedColor,
       Theme.of(tester.element(find.byType(PlaylistTab))).colorScheme.surface,
@@ -1804,6 +1813,67 @@ void main() {
       expect(trackName.style?.fontWeight, FontWeight.w800);
       expect(trackName.style?.height, 1.12);
     }
+
+    final remoteCurrentTrack = testMusicTrack(
+      name: 'Remote current track name',
+      path: 'https://example.com/audio/current-track.mp3',
+      groupKey: 'remote-work',
+      groupTitle: 'Remote work',
+    );
+    queueSession
+      ..currentTrackPath = remoteCurrentTrack.path
+      ..currentQueueIndex = 1
+      ..playbackQueue = PlaybackQueueDefinition(
+        name: queueSession.playbackQueue!.name,
+        colorValue: queueCardColor.toARGB32(),
+        entries: <PlaybackQueueEntry>[
+          PlaybackQueueEntry(
+            id: 'queue-entry',
+            kind: PlaybackQueueEntryKind.track,
+            title: queueTrack.displayName,
+            tracks: <MusicTrack>[queueTrack],
+          ),
+          PlaybackQueueEntry(
+            id: 'remote-current-entry',
+            kind: PlaybackQueueEntryKind.track,
+            title: remoteCurrentTrack.displayName,
+            tracks: <MusicTrack>[remoteCurrentTrack],
+          ),
+          PlaybackQueueEntry(
+            id: 'queue-second-entry',
+            kind: PlaybackQueueEntryKind.track,
+            title: secondQueueTrack.displayName,
+            tracks: <MusicTrack>[secondQueueTrack],
+          ),
+        ],
+      );
+    playbackService.markActiveSessionsDirty();
+    playbackService.syncSlice(
+      activeSessions: <PlaybackSession>[queueSession],
+      playingSessionCount: 0,
+      focusedSessionId: queueSession.id,
+      multiThreadPlaybackEnabled: false,
+      coverGeneration: 0,
+      isInitialized: true,
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      tester
+          .widget<Text>(
+            find.byKey(ValueKey('playback_queue_track_0_${queueSession.id}')),
+          )
+          .data,
+      remoteCurrentTrack.displayName,
+    );
+    expect(
+      tester
+          .widget<Text>(
+            find.byKey(ValueKey('playback_queue_track_1_${queueSession.id}')),
+          )
+          .data,
+      secondQueueTrack.displayName,
+    );
     expect(
       find.byKey(ValueKey('playback_queue_loop_mode_${queueSession.id}')),
       findsOneWidget,
@@ -1843,7 +1913,7 @@ void main() {
             as LinearGradient;
     final playlistTheme = Theme.of(tester.element(find.byType(PlaylistTab)));
     expect(activeGradient.colors, <Color>[
-      playlistTheme.colorScheme.primary.withValues(
+      queueCardColor.withValues(
         alpha: playlistTheme.brightness == Brightness.dark ? 0.16 : 0.12,
       ),
       Colors.transparent,
@@ -1852,6 +1922,27 @@ void main() {
     ]);
     expect(activeGradient.begin, Alignment.topLeft);
     expect(activeGradient.end, Alignment.bottomRight);
+
+    unawaited(
+      Navigator.of(
+        tester.element(find.byType(PlaylistTab)),
+      ).push(buildSessionDetailRoute(sessionId: queueSession.id)),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.descendant(
+        of: find.byType(SessionDetailPage),
+        matching: find.byWidgetPredicate(
+          (widget) =>
+              widget is Theme &&
+              widget.child is Material &&
+              widget.data.colorScheme.primary == queueCardColor,
+        ),
+      ),
+      findsOneWidget,
+    );
+    Navigator.of(tester.element(find.byType(SessionDetailPage))).pop();
+    await tester.pumpAndSettle();
 
     unawaited(
       showPlaybackQueueEditPanel(
@@ -1865,12 +1956,12 @@ void main() {
 
     expect(find.text(languageProvider.tr('edit_queue_audio')), findsOneWidget);
     expect(find.text(languageProvider.tr('edit_queue_name')), findsOneWidget);
-    expect(find.text(languageProvider.tr('edit_card_color')), findsOneWidget);
+    expect(find.text(languageProvider.tr('edit_queue_color')), findsOneWidget);
     expect(find.text(languageProvider.tr('remove_queue')), findsOneWidget);
     expect(
       find.ancestor(
         of: find.byType(PlaybackQueueEditPage),
-        matching: find.byType(ScaleTransition),
+        matching: find.byType(BottomSheet),
       ),
       findsOneWidget,
     );
@@ -1923,6 +2014,17 @@ void main() {
       (editAudioIcon.decoration! as BoxDecoration).borderRadius,
       BorderRadius.circular(iconRadius),
     );
+    await tester.tap(find.text(languageProvider.tr('edit_queue_color')));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('playback_queue_color_panel')),
+      findsOneWidget,
+    );
+    expect(find.byType(BottomSheet), findsOneWidget);
+    expect(find.text(languageProvider.tr('edit_queue_audio')), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('playback_queue_color_back')));
+    await tester.pump();
+    expect(find.text(languageProvider.tr('edit_queue_audio')), findsOneWidget);
     await tester.tap(find.text(languageProvider.tr('edit_queue_audio')));
     await tester.pumpAndSettle();
     expect(find.byType(PlaybackQueueAudioEditPage), findsOneWidget);

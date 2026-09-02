@@ -303,6 +303,44 @@ void main() {
     expect(find.text('Back overlay'), findsNothing);
   });
 
+  testWidgets('shared overlay panel can be centered on mobile', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(400, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => TextButton(
+              onPressed: () => showAppOverlayPanel<void>(
+                context: context,
+                maxHeight: 560,
+                mobileAlignment: Alignment.center,
+                mobileOuterPadding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 24,
+                ),
+                builder: (_) => const SizedBox(
+                  key: ValueKey('centered_mobile_overlay'),
+                  height: 560,
+                ),
+              ),
+              child: const Text('Open centered overlay'),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Open centered overlay'));
+    await tester.pumpAndSettle();
+
+    final panel = find.byKey(const ValueKey('centered_mobile_overlay'));
+    final panelRect = tester.getRect(panel);
+    expect(panelRect.height, 560);
+    expect(panelRect.center.dy, 400);
+  });
+
   testWidgets('shared overlay panel honors reduced motion', (tester) async {
     await tester.pumpWidget(
       const MediaQuery(

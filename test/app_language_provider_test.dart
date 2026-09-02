@@ -43,6 +43,7 @@ void main() {
 
       await provider.setLanguage(AppLanguage.zh);
       expect(provider.tr('add_playback_queue'), '创建播放队列');
+      expect(provider.tr('edit_queue_color'), '编辑队列颜色');
       expect(provider.tr('multi_select'), '多选模式');
       expect(provider.tr('batch_favorite'), '批量收藏');
       expect(provider.tr('batch_unfavorite'), '批量取消收藏');
@@ -61,6 +62,7 @@ void main() {
 
       await provider.setLanguage(AppLanguage.en);
       expect(provider.tr('add_playback_queue'), 'Create playback queue');
+      expect(provider.tr('edit_queue_color'), 'Edit queue color');
       expect(provider.tr('multi_select'), 'Multi-select mode');
       expect(
         provider.tr('batch_added_to_playlist', {'count': '2'}),
@@ -75,6 +77,7 @@ void main() {
 
       await provider.setLanguage(AppLanguage.ja);
       expect(provider.tr('add_playback_queue'), '再生キューを作成');
+      expect(provider.tr('edit_queue_color'), 'キューの色を編集');
       expect(provider.tr('multi_select'), '複数選択モード');
       expect(
         provider.tr('batch_added_to_playlist', {'count': '2'}),
@@ -224,7 +227,7 @@ void main() {
     expect(provider.tr('loop_playback'), '顺序播放');
     expect(provider.tr('shuffle_playback'), '随机播放');
     expect(provider.tr('single_loop'), '单曲循环');
-    expect(provider.tr('pause_after_playback'), '播放完后暂停');
+    expect(provider.tr('pause_after_playback'), '一轮循环后暂停');
     expect(provider.tr('cross_folder'), '跨文件夹');
     expect(provider.tr('current_folder'), '当前文件夹');
     expect(provider.tr('eq_delete_preset'), '删除预设');
@@ -238,7 +241,7 @@ void main() {
     expect(provider.tr('loop_playback'), 'Sequential');
     expect(provider.tr('shuffle_playback'), 'Shuffle');
     expect(provider.tr('single_loop'), 'Single loop');
-    expect(provider.tr('pause_after_playback'), 'Pause after finish');
+    expect(provider.tr('pause_after_playback'), 'Pause after one round');
     expect(provider.tr('cross_folder'), 'Cross-folder');
     expect(provider.tr('current_folder'), 'Current folder');
     expect(provider.tr('eq_delete_preset'), 'Delete preset');
@@ -252,7 +255,7 @@ void main() {
     expect(provider.tr('loop_playback'), '順番再生');
     expect(provider.tr('shuffle_playback'), 'シャッフル再生');
     expect(provider.tr('single_loop'), '1曲リピート');
-    expect(provider.tr('pause_after_playback'), '再生完了後に一時停止');
+    expect(provider.tr('pause_after_playback'), 'リスト1周後に停止');
     expect(provider.tr('cross_folder'), 'フォルダ横断');
     expect(provider.tr('current_folder'), '現在のフォルダ');
     expect(provider.tr('eq_delete_preset'), 'プリセット削除');

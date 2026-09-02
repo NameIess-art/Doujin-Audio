@@ -26,6 +26,8 @@ part 'timer_tab_detail_body.dart';
 part 'timer_tab_widgets.dart';
 part 'timer_tab_countdown_widgets.dart';
 
+const double kTimerCompactPanelHeight = 448;
+
 class TimerTab extends ConsumerStatefulWidget {
   const TimerTab({
     super.key,

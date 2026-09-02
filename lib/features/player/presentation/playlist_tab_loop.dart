@@ -29,7 +29,6 @@ class _LoopModeSheetState extends State<_LoopModeSheet> {
   late bool _crossFolder;
 
   Set<_PlaybackOption> get _playbackOptions => <_PlaybackOption>{
-    if (_pauseAfterPlay) _PlaybackOption.pauseAfterPlayback,
     _shuffle ? _PlaybackOption.shuffle : _PlaybackOption.loop,
   };
 
@@ -38,7 +37,6 @@ class _LoopModeSheetState extends State<_LoopModeSheet> {
     final shuffleSelected = selected.contains(_PlaybackOption.shuffle);
     if (!loopSelected && !shuffleSelected) return;
     setState(() {
-      _pauseAfterPlay = selected.contains(_PlaybackOption.pauseAfterPlayback);
       _shuffle = loopSelected && shuffleSelected ? !_shuffle : shuffleSelected;
     });
   }
@@ -104,7 +102,6 @@ class _LoopModeSheetState extends State<_LoopModeSheet> {
                                 _single = selected.isNotEmpty;
                               });
                             },
-                            expandedInsets: EdgeInsets.zero,
                           ),
                           AnimatedOpacity(
                             duration: const Duration(milliseconds: 200),
@@ -114,6 +111,29 @@ class _LoopModeSheetState extends State<_LoopModeSheet> {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.stretch,
                                 children: [
+                                  const SizedBox(height: 12),
+                                  SegmentedButton<bool>(
+                                    key: const ValueKey(
+                                      'loop_mode_pause_after_round_row',
+                                    ),
+                                    segments: [
+                                      ButtonSegment<bool>(
+                                        value: true,
+                                        label: Text(
+                                          i18n.tr('pause_after_playback'),
+                                        ),
+                                      ),
+                                    ],
+                                    emptySelectionAllowed: true,
+                                    selected: _pauseAfterPlay
+                                        ? const <bool>{true}
+                                        : const <bool>{},
+                                    onSelectionChanged: (selected) {
+                                      setState(() {
+                                        _pauseAfterPlay = selected.isNotEmpty;
+                                      });
+                                    },
+                                  ),
                                   const SizedBox(height: 12),
                                   SegmentedButton<bool>(
                                     key: const ValueKey('loop_mode_scope_row'),
@@ -141,15 +161,6 @@ class _LoopModeSheetState extends State<_LoopModeSheet> {
                                       'loop_mode_playback_row',
                                     ),
                                     segments: [
-                                      ButtonSegment<_PlaybackOption>(
-                                        value:
-                                            _PlaybackOption.pauseAfterPlayback,
-                                        label: Text(
-                                          i18n.tr('pause_after_playback'),
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                      ),
                                       ButtonSegment<_PlaybackOption>(
                                         value: _PlaybackOption.loop,
                                         label: Text(
@@ -247,7 +258,7 @@ class _LoopModeSheetState extends State<_LoopModeSheet> {
   }
 }
 
-enum _PlaybackOption { pauseAfterPlayback, loop, shuffle }
+enum _PlaybackOption { loop, shuffle }
 
 class _SessionLoopModeButton extends StatelessWidget {
   const _SessionLoopModeButton({required this.session, required this.playback});

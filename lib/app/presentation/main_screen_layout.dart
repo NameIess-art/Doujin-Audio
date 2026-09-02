@@ -131,6 +131,12 @@ extension _MainScreenLayout on _MainScreenState {
     return showAppOverlayPanel<void>(
       context: context,
       barrierLabel: i18n.tr('close'),
+      maxHeight: kTimerCompactPanelHeight,
+      mobileAlignment: Alignment.center,
+      mobileOuterPadding: const EdgeInsets.symmetric(
+        horizontal: 16,
+        vertical: 24,
+      ),
       builder: (_) => TimerTab(
         showHeader: false,
         useSafeArea: false,

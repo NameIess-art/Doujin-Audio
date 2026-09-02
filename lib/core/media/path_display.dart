@@ -75,7 +75,9 @@ abstract final class PathDisplay {
           ? relativePath
           : '$documentPath/$relativePath';
     }
-    return _normalizeDisplaySegment(documentPath);
+    final sharedStoragePath = _androidSharedStoragePath(documentPath);
+    final displayPath = sharedStoragePath ?? documentPath;
+    return _normalizeDisplaySegment(displayPath).replaceAll('\\', '/');
   }
 
   static String normalizeDisplaySegment(String value) {

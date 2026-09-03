@@ -21,20 +21,12 @@ class _ActiveSessionCard extends ConsumerWidget {
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    final style = ref.watch(
-      settingsStateProvider.select(
-        (s) => s.value?.bottomNavigationStyle ?? BottomNavigationStyle.capsule,
-      ),
-    );
-    final isBar = style == BottomNavigationStyle.bar;
     const cardHeight = 56.0;
     const coverDistance = 4.0;
     const coverDimension = cardHeight - 2 * coverDistance;
     const coverRadius = LibraryLikeCardMetrics.coverRadius;
-    final cardRadius = isBar ? 0.0 : (coverRadius + coverDistance);
-    final contentPadding = isBar
-        ? const EdgeInsets.fromLTRB(4, 3, 6, 4)
-        : const EdgeInsets.fromLTRB(3, 3, 6, 3);
+    const cardRadius = coverRadius + coverDistance;
+    const contentPadding = EdgeInsets.fromLTRB(3, 3, 6, 3);
 
     final view = ref.watch(
       playbackStateProvider.select((value) {
@@ -94,20 +86,12 @@ class _ActiveSessionCard extends ConsumerWidget {
             color: (isDark ? cs.surfaceContainer : cs.surfaceContainerHigh)
                 .withValues(alpha: useBlur ? (isDark ? 0.72 : 0.78) : 1.0),
             borderRadius: BorderRadius.circular(cardRadius),
-            border: isBar
-                ? Border(
-                    top: BorderSide(
-                      color: cs.outlineVariant.withValues(
-                        alpha: isDark ? 0.24 : 0.42,
-                      ),
-                    ),
-                  )
-                : Border.all(
-                    color: cs.outlineVariant.withValues(
-                      alpha: isDark ? 0.24 : 0.42,
-                    ),
-                  ),
-            boxShadow: (isTinyWindow || isBar)
+            border: Border.all(
+              color: cs.outlineVariant.withValues(
+                alpha: isDark ? 0.24 : 0.42,
+              ),
+            ),
+            boxShadow: isTinyWindow
                 ? null
                 : [
                     BoxShadow(
@@ -148,7 +132,7 @@ class _ActiveSessionCard extends ConsumerWidget {
                         i18n: i18n,
                         showCover: false,
                         coverDimension: coverDimension,
-                        contentPadding: EdgeInsets.fromLTRB(
+                        contentPadding: const EdgeInsets.fromLTRB(
                           14,
                           coverDistance,
                           6,
@@ -167,7 +151,7 @@ class _ActiveSessionCard extends ConsumerWidget {
                   coverDimension: coverDimension,
                   contentPadding: showCover
                       ? contentPadding
-                      : EdgeInsets.fromLTRB(
+                      : const EdgeInsets.fromLTRB(
                           14,
                           coverDistance,
                           6,

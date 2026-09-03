@@ -159,8 +159,34 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
   }
 
   Future<void> _toggleSelectedFavorites() async {
-    await _toggleAsmrWorksFavorite(ref, _selectedWorks());
-    if (mounted) setState(() {});
+    final selected = _selectedWorks();
+    final shouldFavorite = selected.any((work) => !work.isFavorite);
+    await _toggleAsmrWorksFavorite(ref, selected);
+    if (!mounted) return;
+    setState(() {});
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
+    final asmrBlue = AppDesignTokens.of(context).asmrAccent;
+    if (!shouldFavorite) {
+      showAppSnackBar(
+        context,
+        i18n.tr('asmr_favorite_removed'),
+        actionLabel: i18n.tr('undo'),
+        onAction: () => unawaited(_toggleAsmrWorksFavorite(ref, selected)),
+        duration: const Duration(seconds: 5),
+        showCountdown: true,
+        tone: AppFeedbackTone.warning,
+        icon: Icons.favorite_border_rounded,
+        iconColor: asmrBlue,
+      );
+    } else {
+      showAppSnackBar(
+        context,
+        i18n.tr('asmr_favorite_added'),
+        tone: AppFeedbackTone.success,
+        icon: Icons.favorite_rounded,
+        iconColor: asmrBlue,
+      );
+    }
   }
 
   Future<void> _downloadSelectedWorks() async {

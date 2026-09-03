@@ -809,9 +809,13 @@ class _TimeSegmentDragTooltip extends StatelessWidget {
 }
 
 class _SessionSubtitlePanel extends ConsumerStatefulWidget {
-  const _SessionSubtitlePanel({required this.session});
+  const _SessionSubtitlePanel({
+    required this.session,
+    this.subtitleEnabled = true,
+  });
 
   final PlaybackSessionSnapshot session;
+  final bool subtitleEnabled;
 
   @override
   ConsumerState<_SessionSubtitlePanel> createState() =>
@@ -834,7 +838,9 @@ class _SessionSubtitlePanelState extends ConsumerState<_SessionSubtitlePanel> {
       session: widget.session,
       includeBufferedPosition: false,
     )..addListener(_handlePositionTick);
-    _scheduleSubtitleTrackLoad();
+    if (widget.subtitleEnabled) {
+      _scheduleSubtitleTrackLoad();
+    }
   }
 
   @override
@@ -843,8 +849,11 @@ class _SessionSubtitlePanelState extends ConsumerState<_SessionSubtitlePanel> {
     if (oldWidget.session != widget.session) {
       _positionGate.updateSession(widget.session);
     }
-    if (_loadedPath != widget.session.currentTrackPath) {
-      _scheduleSubtitleTrackLoad();
+    if (_loadedPath != widget.session.currentTrackPath ||
+        (!oldWidget.subtitleEnabled && widget.subtitleEnabled)) {
+      if (widget.subtitleEnabled) {
+        _scheduleSubtitleTrackLoad();
+      }
     }
   }
 
@@ -947,9 +956,12 @@ class _SessionSubtitlePanelState extends ConsumerState<_SessionSubtitlePanel> {
         : AppDesignTokens.of(context).motionStandard;
 
     late final Widget content;
-    if (isLoading) {
+    if (!widget.subtitleEnabled) {
+      content = const SizedBox.shrink(key: ValueKey('subtitle_empty'));
+    } else if (isLoading) {
       content = Container(
         key: const ValueKey('subtitle_loading'),
+        margin: const EdgeInsets.only(top: 8),
         width: double.infinity,
         height: 44,
         padding: EdgeInsets.zero,
@@ -971,6 +983,7 @@ class _SessionSubtitlePanelState extends ConsumerState<_SessionSubtitlePanel> {
     } else if (playbackError != null) {
       content = Container(
         key: const ValueKey('subtitle_error'),
+        margin: const EdgeInsets.only(top: 8),
         width: double.infinity,
         height: 44,
         padding: EdgeInsets.zero,
@@ -1053,6 +1066,7 @@ class _SubtitleChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     return Container(
+      margin: const EdgeInsets.only(top: 8),
       width: double.infinity,
       height: 44,
       padding: EdgeInsets.zero,
@@ -1477,17 +1491,19 @@ class _TimelineSubtitleViewState extends State<_TimelineSubtitleView> {
           ];
           _updateLayoutMetrics(itemExtents);
         }
-        return SizedBox(
-          key: const ValueKey('subtitle_timeline_viewport'),
-          width: double.infinity,
-          height: _viewportHeight,
-          child: ClipRect(
-            child: Listener(
-              onPointerDown: _handlePointerDown,
-              onPointerUp: _handlePointerReleased,
-              onPointerCancel: _handlePointerReleased,
-              child: NotificationListener<ScrollNotification>(
-                onNotification: _handleScrollNotification,
+        return Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: SizedBox(
+            key: const ValueKey('subtitle_timeline_viewport'),
+            width: double.infinity,
+            height: _viewportHeight,
+            child: ClipRect(
+              child: Listener(
+                onPointerDown: _handlePointerDown,
+                onPointerUp: _handlePointerReleased,
+                onPointerCancel: _handlePointerReleased,
+                child: NotificationListener<ScrollNotification>(
+                  onNotification: _handleScrollNotification,
                 child: ListView.builder(
                   key: const ValueKey('subtitle_timeline_list'),
                   controller: _scrollController,
@@ -1581,7 +1597,8 @@ class _TimelineSubtitleViewState extends State<_TimelineSubtitleView> {
               ),
             ),
           ),
-        );
+        ),
+      );
       },
     );
   }

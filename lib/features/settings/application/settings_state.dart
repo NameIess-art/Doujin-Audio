@@ -11,8 +11,6 @@ export '../../../core/media/cover_image_resolution.dart';
 
 enum StartupPage { asmrOne, library, playlist }
 
-enum BottomNavigationStyle { capsule, bar }
-
 enum PlaybackDetailSubtitleStyle { compact, timeline }
 
 enum AudioDeviceDisconnectBehavior { pause, continuePlayback }
@@ -73,7 +71,6 @@ class SettingsState {
     this.showAsmrOne = true,
     this.startupPage = StartupPage.library,
     this.portraitLockEnabled = false,
-    this.bottomNavigationStyle = BottomNavigationStyle.capsule,
     this.playbackDetailSubtitleStyle = PlaybackDetailSubtitleStyle.compact,
     this.coverImageResolution = CoverImageResolution.balanced,
     this.coverImageDisplayMode = CoverImageDisplayMode.fill,
@@ -128,7 +125,6 @@ class SettingsState {
   final bool showAsmrOne;
   final StartupPage startupPage;
   final bool portraitLockEnabled;
-  final BottomNavigationStyle bottomNavigationStyle;
   final PlaybackDetailSubtitleStyle playbackDetailSubtitleStyle;
   final CoverImageResolution coverImageResolution;
   final CoverImageDisplayMode coverImageDisplayMode;
@@ -180,7 +176,6 @@ class SettingsState {
         other.showAsmrOne == showAsmrOne &&
         other.startupPage == startupPage &&
         other.portraitLockEnabled == portraitLockEnabled &&
-        other.bottomNavigationStyle == bottomNavigationStyle &&
         other.playbackDetailSubtitleStyle == playbackDetailSubtitleStyle &&
         other.coverImageResolution == coverImageResolution &&
         other.coverImageDisplayMode == coverImageDisplayMode &&
@@ -237,7 +232,6 @@ class SettingsState {
     showAsmrOne,
     startupPage,
     portraitLockEnabled,
-    bottomNavigationStyle,
     playbackDetailSubtitleStyle,
     coverImageResolution,
     coverImageDisplayMode,

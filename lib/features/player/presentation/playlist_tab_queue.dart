@@ -1769,3 +1769,84 @@ class _AnimatedQueueEntryCardState extends State<_AnimatedQueueEntryCard> {
     );
   }
 }
+
+class _PlaybackQueueEntranceTransition extends StatefulWidget {
+  const _PlaybackQueueEntranceTransition({
+    super.key,
+    required this.child,
+    this.onComplete,
+  });
+
+  final Widget child;
+  final VoidCallback? onComplete;
+
+  @override
+  State<_PlaybackQueueEntranceTransition> createState() =>
+      _PlaybackQueueEntranceTransitionState();
+}
+
+class _PlaybackQueueEntranceTransitionState
+    extends State<_PlaybackQueueEntranceTransition>
+    with SingleTickerProviderStateMixin {
+  static const Duration _entranceDuration = Duration(milliseconds: 420);
+  late final AnimationController _controller;
+  late final Animation<double> _sizeAnimation;
+  late final Animation<double> _fadeAnimation;
+  late final Animation<double> _scaleAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: _entranceDuration,
+    );
+    _sizeAnimation = CurvedAnimation(
+      parent: _controller,
+      curve: const Interval(0.0, 0.55, curve: Curves.easeOutCubic),
+    );
+    _fadeAnimation = CurvedAnimation(
+      parent: _controller,
+      curve: const Interval(0.40, 1.0, curve: Curves.easeOutCubic),
+    );
+    _scaleAnimation = Tween<double>(begin: 0.94, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _controller,
+        curve: const Interval(0.40, 1.0, curve: Curves.easeOutBack),
+      ),
+    );
+    _controller.forward().then((_) {
+      if (mounted) widget.onComplete?.call();
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (MediaQuery.disableAnimationsOf(context)) {
+      return widget.child;
+    }
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        return SizeTransition(
+          sizeFactor: _sizeAnimation,
+          axisAlignment: -1.0,
+          child: FadeTransition(
+            opacity: _fadeAnimation,
+            child: ScaleTransition(
+              scale: _scaleAnimation,
+              child: child,
+            ),
+          ),
+        );
+      },
+      child: widget.child,
+    );
+  }
+}

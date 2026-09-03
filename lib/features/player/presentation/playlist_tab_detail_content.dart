@@ -530,15 +530,17 @@ class _SessionDetailContentState extends ConsumerState<_SessionDetailContent> {
                           ),
                     ),
                   ),
-                  const SizedBox(height: 8),
-                  if (widget.subtitleEnabled && !_segmentPanelExpanded)
-                    RepaintBoundary(
-                      child: _SessionSubtitlePanel(session: session),
-                    ),
                 ],
               ),
             ),
           ),
+          if (!_segmentPanelExpanded)
+            RepaintBoundary(
+              child: _SessionSubtitlePanel(
+                session: session,
+                subtitleEnabled: widget.subtitleEnabled,
+              ),
+            ),
           RepaintBoundary(child: buildProgressBar()),
           buildTransportControls(),
           if (!widget.isLandscape)

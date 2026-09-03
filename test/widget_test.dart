@@ -1858,25 +1858,6 @@ void main() {
       BorderRadius.circular(LibraryLikeCardMetrics.coverRadius),
     );
 
-    await settingsRepository.setBottomNavigationStyle(
-      BottomNavigationStyle.bar,
-    );
-    await tester.pump();
-    final barCardRect = tester.getRect(
-      find.byKey(const ValueKey('active_session_card_asmr_error_session')),
-    );
-    final barCoverRect = tester.getRect(
-      find.byKey(const ValueKey('active_session_cover_asmr_error_session')),
-    );
-    expect(barCoverRect.size, const Size.square(48));
-    expect(barCoverRect.left - barCardRect.left, 4);
-    expect(barCoverRect.top - barCardRect.top, 4);
-    expect(barCardRect.bottom - barCoverRect.bottom, 4);
-    await settingsRepository.setBottomNavigationStyle(
-      BottomNavigationStyle.capsule,
-    );
-    await tester.pump();
-
     expect(
       find.text(languageProvider.tr('asmr_playback_network_failed_retry')),
       findsOneWidget,

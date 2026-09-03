@@ -143,10 +143,7 @@ List<Widget> _buildSettingsAsmrSection({
               ),
             );
             return ListTile(
-              title: _SettingsTitleBlock(
-                title: i18n.tr('asmr_download_thread_count'),
-                subtitle: Text(i18n.tr('asmr_download_thread_count_hint')),
-              ),
+              title: _settingsTitle(i18n.tr('asmr_download_thread_count')),
               leading: _settingsIcon(Icons.dynamic_feed_rounded, cs.onSurface),
               trailing: _settingsDropdown<int>(
                 context,

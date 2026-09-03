@@ -70,7 +70,6 @@ void main() {
           'notificationsEnabled': false,
           'showPlaybackCard': false,
           'startupPage': StartupPage.asmrOne.name,
-          'bottomNavigationStyle': BottomNavigationStyle.bar.name,
           'autoPlayAddedSessions': false,
           'autoCheckUpdates': true,
           'recordPlaybackProgress': false,
@@ -125,7 +124,6 @@ void main() {
       expect(repository.preferEmbeddedAudioCover, isFalse);
       expect(repository.blurPlayerBackgroundEnabled, isFalse);
       expect(repository.startupPage, StartupPage.asmrOne);
-      expect(repository.bottomNavigationStyle, BottomNavigationStyle.bar);
       expect(repository.asmrDownloadDestinationRoot, '/backup/asmr');
       expect(
         repository.asmrDownloadConflictPolicy,
@@ -178,7 +176,6 @@ void main() {
         ..notificationsEnabled = false
         ..showPlaybackCard = false
         ..startupPage = StartupPage.asmrOne
-        ..bottomNavigationStyle = BottomNavigationStyle.bar
         ..autoPlayAddedSessions = false
         ..autoCheckUpdates = true
         ..dlsiteMetadataLanguage = ContentLanguagePreference.en
@@ -218,11 +215,6 @@ void main() {
               (state) => state.startupPage,
               'startup page',
               StartupPage.asmrOne,
-            )
-            .having(
-              (state) => state.bottomNavigationStyle,
-              'bottom navigation',
-              BottomNavigationStyle.bar,
             )
             .having(
               (state) => state.autoPlayAddedSessions,

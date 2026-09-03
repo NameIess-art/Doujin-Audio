@@ -116,13 +116,18 @@ Future<void> _downloadAsmrWorks(
   BuildContext context,
   List<AsmrWork> works,
 ) async {
-  for (final work in works) {
+  for (var i = 0; i < works.length; i++) {
+    final work = works[i];
     if (!context.mounted) return;
     await Navigator.of(context).push<void>(
       buildAppPageRoute<void>(
         context: context,
         style: AppPageTransitionStyle.sharedAxisZ,
-        child: AsmrDownloadPage(work: work),
+        child: AsmrDownloadPage(
+          work: work,
+          batchIndex: works.length > 1 ? i + 1 : null,
+          batchTotal: works.length > 1 ? works.length : null,
+        ),
       ),
     );
   }
@@ -600,8 +605,34 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
   }
 
   Future<void> _toggleSelectedFavorites() async {
-    await _toggleAsmrWorksFavorite(ref, _selectedWorks());
-    if (mounted) setState(() {});
+    final selected = _selectedWorks();
+    final shouldFavorite = selected.any((work) => !work.isFavorite);
+    await _toggleAsmrWorksFavorite(ref, selected);
+    if (!mounted) return;
+    setState(() {});
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
+    final asmrBlue = AppDesignTokens.of(context).asmrAccent;
+    if (!shouldFavorite) {
+      showAppSnackBar(
+        context,
+        i18n.tr('asmr_favorite_removed'),
+        actionLabel: i18n.tr('undo'),
+        onAction: () => unawaited(_toggleAsmrWorksFavorite(ref, selected)),
+        duration: const Duration(seconds: 5),
+        showCountdown: true,
+        tone: AppFeedbackTone.warning,
+        icon: Icons.favorite_border_rounded,
+        iconColor: asmrBlue,
+      );
+    } else {
+      showAppSnackBar(
+        context,
+        i18n.tr('asmr_favorite_added'),
+        tone: AppFeedbackTone.success,
+        icon: Icons.favorite_rounded,
+        iconColor: asmrBlue,
+      );
+    }
   }
 
   Future<void> _downloadSelectedWorks() async {

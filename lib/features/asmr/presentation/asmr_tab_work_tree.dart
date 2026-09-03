@@ -143,15 +143,27 @@ class _AsmrWorkTreeCardState extends ConsumerState<_AsmrWorkTreeCard> {
       return;
     }
     if (!context.mounted) return;
-    showAppSnackBar(
-      context,
-      i18n.tr(shouldFavorite ? 'asmr_favorite_added' : 'asmr_favorite_removed'),
-      tone: shouldFavorite ? AppFeedbackTone.success : AppFeedbackTone.warning,
-      icon: shouldFavorite
-          ? Icons.favorite_rounded
-          : Icons.favorite_border_rounded,
-      iconColor: asmrBlue,
-    );
+    if (!shouldFavorite) {
+      showAppSnackBar(
+        context,
+        i18n.tr('asmr_favorite_removed'),
+        actionLabel: i18n.tr('undo'),
+        onAction: () => unawaited(controller.toggleFavorite(widget.work)),
+        duration: const Duration(seconds: 5),
+        showCountdown: true,
+        tone: AppFeedbackTone.warning,
+        icon: Icons.favorite_border_rounded,
+        iconColor: asmrBlue,
+      );
+    } else {
+      showAppSnackBar(
+        context,
+        i18n.tr('asmr_favorite_added'),
+        tone: AppFeedbackTone.success,
+        icon: Icons.favorite_rounded,
+        iconColor: asmrBlue,
+      );
+    }
   }
 
   @override

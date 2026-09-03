@@ -286,42 +286,14 @@ extension _MainScreenLayout on _MainScreenState {
     BuildContext context, {
     required AppLanguageProvider i18n,
     required List<PlaybackSessionSnapshot> overlaySessions,
-    required BottomNavigationStyle style,
     bool tinyMode = false,
   }) {
-    final isBar = style == BottomNavigationStyle.bar;
-    final reducedMotion = MediaQuery.disableAnimationsOf(context);
-    return AnimatedSwitcher(
-      duration: reducedMotion
-          ? Duration.zero
-          : const Duration(milliseconds: 300),
-      switchInCurve: Curves.easeOutCubic,
-      switchOutCurve: Curves.easeInCubic,
-      transitionBuilder: (child, animation) {
-        return buildAppScaleFadeTransition(
-          context: context,
-          animation: animation,
-          child: child,
-          beginScale: 0.96,
-        );
-      },
-      child: isBar
-          ? _buildMobileBottomNavigationBar(
-              context,
-              key: const ValueKey('bar'),
-              i18n: i18n,
-              overlaySessions: overlaySessions,
-              tinyMode: tinyMode,
-              isCurrent: isBar,
-            )
-          : _buildMobileBottomCapsule(
-              context,
-              key: const ValueKey('capsule'),
-              i18n: i18n,
-              overlaySessions: overlaySessions,
-              tinyMode: tinyMode,
-              isCurrent: !isBar,
-            ),
+    return _buildMobileBottomCapsule(
+      context,
+      key: const ValueKey('capsule'),
+      i18n: i18n,
+      overlaySessions: overlaySessions,
+      tinyMode: tinyMode,
     );
   }
 
@@ -414,80 +386,6 @@ extension _MainScreenLayout on _MainScreenState {
           ),
         ),
       ],
-    );
-  }
-
-  Widget _buildMobileBottomNavigationBar(
-    BuildContext context, {
-    Key? key,
-    required AppLanguageProvider i18n,
-    required List<PlaybackSessionSnapshot> overlaySessions,
-    bool tinyMode = false,
-    bool isCurrent = true,
-  }) {
-    final cs = Theme.of(context).colorScheme;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final blurEnabled = ref.watch(
-      settingsStateProvider.select((s) => s.value?.uiBlurEffectEnabled ?? true),
-    );
-    final bgColor = isDark ? cs.surfaceContainer : cs.surfaceContainerHigh;
-    final textScale = MediaQuery.textScalerOf(context).scale(1).clamp(1.0, 1.5);
-    final barHeight = (58 * textScale).toDouble();
-
-    Widget buildBar(bool useBlur) => DecoratedBox(
-      decoration: BoxDecoration(
-        color: bgColor.withValues(
-          alpha: useBlur ? (isDark ? 0.72 : 0.78) : 1.0,
-        ),
-        border: Border(
-          top: BorderSide(
-            color: cs.outlineVariant.withValues(alpha: 0.55),
-            width: 0.5,
-          ),
-        ),
-      ),
-      child: SizedBox(
-        height: barHeight,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(8, 4, 8, 2),
-          child: _buildBottomBar(context),
-        ),
-      ),
-    );
-
-    final useBlur = blurEnabled;
-    return SafeArea(
-      key: key,
-      top: false,
-      child: Align(
-        alignment: Alignment.bottomCenter,
-        child: Column(
-          key: isCurrent ? _dockContentKey : null,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (overlaySessions.isNotEmpty)
-              ActiveSessionCarousel(
-                sessions: overlaySessions,
-                i18n: i18n,
-                onOpenSession: (sessionId) {
-                  Navigator.of(
-                    context,
-                  ).push(buildSessionDetailRoute(sessionId: sessionId));
-                },
-              ),
-            if (!tinyMode)
-              ClipRect(
-                child: useBlur
-                    ? BackdropFilter(
-                        key: const ValueKey('mobile_bottom_bar_blur'),
-                        filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-                        child: buildBar(useBlur),
-                      )
-                    : buildBar(useBlur),
-              ),
-          ],
-        ),
-      ),
     );
   }
 
@@ -714,7 +612,6 @@ extension _MainScreenLayout on _MainScreenState {
   double _mobileContentInset({
     required bool hasNowPlaying,
     required bool? previousHasNowPlaying,
-    required BottomNavigationStyle bottomNavigationStyle,
   }) {
     // The render box still has the previous frame's height while the playback
     // card is entering or leaving, so compensate for that one transition.
@@ -725,9 +622,7 @@ extension _MainScreenLayout on _MainScreenState {
       var contentHeight = contentBox.size.height;
       if (previousHasNowPlaying != null &&
           previousHasNowPlaying != hasNowPlaying) {
-        final cardExtent = bottomNavigationStyle == BottomNavigationStyle.bar
-            ? kActiveSessionCarouselBarHeight
-            : kActiveSessionCarouselCapsuleHeight + 6;
+        const cardExtent = kActiveSessionCarouselCapsuleHeight + 6;
         contentHeight += hasNowPlaying ? cardExtent : -cardExtent;
       }
       return (max(systemBottom, 6.0) + contentHeight).clamp(

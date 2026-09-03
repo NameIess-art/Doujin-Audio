@@ -505,6 +505,7 @@ class AsmrLibraryController extends ChangeNotifier
       _contentLanguagePreference;
   AppLanguage get pageLanguage => _pageLanguage;
   AsmrContentLanguage get contentLanguage => _contentLanguage;
+  bool isFavorite(int workId) => _favoriteIds.contains(workId);
   bool get isAsmrAccountLoggedIn {
     final session = _authSession;
     return session != null &&

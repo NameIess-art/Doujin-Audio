@@ -13,6 +13,7 @@ extension PlaybackCommandTransport on PlaybackCommandCoordinator {
   Future<bool> _startSessionPlayback(
     PlaybackSession session, {
     required bool shouldStartTriggerCountdown,
+    bool allowPreparationFallback = true,
   }) async {
     if (!_isRegisteredSession(session)) return false;
     if (shouldStartTriggerCountdown) {
@@ -68,6 +69,22 @@ extension PlaybackCommandTransport on PlaybackCommandCoordinator {
         return false;
       }
       if (!playResult.isOk) {
+        final errorCode = playResult.errorCodeOrNull;
+        final errorMessage = playResult.errorOrNull;
+        final isRecoverableFailure =
+            allowPreparationFallback && session.currentTrackPath.isNotEmpty;
+        if (isRecoverableFailure) {
+          AppLogService.warning(
+            'PlaybackCommandCoordinator.startSession: native play failed '
+            '($errorCode: $errorMessage); re-preparing session ${session.id}.',
+          );
+          session.loadedPath = null;
+          return await _prepareAndPlay(
+            session,
+            nextPath: session.currentTrackPath,
+            shouldStartTriggerCountdown: shouldStartTriggerCountdown,
+          );
+        }
         session.failTransportCommand(generation);
         for (final pausedSession in exclusivelyPausedSessions) {
           pausedSession.failTransportCommand(generation);
@@ -81,6 +98,19 @@ extension PlaybackCommandTransport on PlaybackCommandCoordinator {
         }
       }
     } catch (e, stackTrace) {
+      if (allowPreparationFallback && session.currentTrackPath.isNotEmpty) {
+        AppLogService.warning(
+          'PlaybackCommandCoordinator.startSession: native play threw exception; '
+          're-preparing session ${session.id}.',
+          error: e,
+        );
+        session.loadedPath = null;
+        return await _prepareAndPlay(
+          session,
+          nextPath: session.currentTrackPath,
+          shouldStartTriggerCountdown: shouldStartTriggerCountdown,
+        );
+      }
       if (_isSessionCommandCurrent(session, token)) {
         session.failTransportCommand(generation);
         for (final pausedSession in exclusivelyPausedSessions) {

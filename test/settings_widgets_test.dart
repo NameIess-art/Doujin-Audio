@@ -482,11 +482,10 @@ void main() {
       expect(retryTile, findsOneWidget);
       expect(tester.widget<ListTile>(retryTile).title, isA<Text>());
       expect(tester.widget<ListTile>(retryTile).subtitle, isNull);
+      expect(threadTile, findsOneWidget);
+      expect(tester.widget<ListTile>(threadTile).title, isA<Text>());
+      expect(tester.widget<ListTile>(threadTile).subtitle, isNull);
       expect(find.text(i18n.tr('asmr_download_thread_count')), findsOneWidget);
-      expect(
-        find.text(i18n.tr('asmr_download_thread_count_hint')),
-        findsOneWidget,
-      );
 
       final retryDropdown = find.descendant(
         of: retryTile,
@@ -1111,21 +1110,6 @@ void main() {
     final i18n = harness.languageProvider;
     await tester.tap(find.text(i18n.tr('section_appearance')));
     await tester.pumpAndSettle();
-    final bottomNavigationStyleTile = find.widgetWithText(
-      SwitchListTile,
-      i18n.tr('bottom_navigation_style'),
-    );
-    await Scrollable.ensureVisible(
-      tester.element(bottomNavigationStyleTile),
-      alignment: 0.5,
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(bottomNavigationStyleTile);
-    await tester.pumpAndSettle();
-    expect(
-      harness.settingsRepository.bottomNavigationStyle,
-      BottomNavigationStyle.bar,
-    );
 
     final cardInfoTile = find.widgetWithText(
       ListTile,
@@ -1397,26 +1381,7 @@ void main() {
       const ValueKey('app_theme_color_tile'),
     );
     await tester.ensureVisible(appThemeColorTile);
-    await tester.pumpAndSettle();
-    final bottomNavigationTile = find.widgetWithText(
-      SwitchListTile,
-      i18n.tr('bottom_navigation_style'),
-    );
     expect(tester.getSize(appThemeColorTile).height, 78);
-    expect(tester.getSize(bottomNavigationTile).height, 78);
-    final appThemeColorCard = find.ancestor(
-      of: appThemeColorTile,
-      matching: find.byType(Card),
-    );
-    final bottomNavigationCard = find.ancestor(
-      of: bottomNavigationTile,
-      matching: find.byType(Card),
-    );
-    expect(
-      tester.getTopLeft(bottomNavigationCard).dy -
-          tester.getBottomLeft(appThemeColorCard).dy,
-      closeTo(3, 0.001),
-    );
 
     await Scrollable.ensureVisible(tester.element(switchTile), alignment: 0.5);
     await tester.pumpAndSettle();

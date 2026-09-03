@@ -25,6 +25,37 @@ class _AsmrVisibleItem {
   final bool animateInitialReveal;
 }
 
+class _CollapsingAsmrWork {
+  _CollapsingAsmrWork({
+    required this.work,
+    required this.originalIndex,
+    required TickerProvider vsync,
+    required VoidCallback onComplete,
+  }) {
+    controller = AnimationController(
+      vsync: vsync,
+      duration: const Duration(milliseconds: 260),
+      value: 1.0,
+    );
+    animation = CurvedAnimation(
+      parent: controller,
+      curve: Curves.easeOutCubic,
+    );
+    controller.reverse().then((_) {
+      onComplete();
+    });
+  }
+
+  final AsmrWork work;
+  final int originalIndex;
+  late final AnimationController controller;
+  late final Animation<double> animation;
+
+  void dispose() {
+    controller.dispose();
+  }
+}
+
 class _AsmrCategoryList extends ConsumerStatefulWidget {
   const _AsmrCategoryList({
     super.key,
@@ -60,7 +91,7 @@ class _AsmrCategoryList extends ConsumerStatefulWidget {
 }
 
 class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
-    with AutomaticKeepAliveClientMixin {
+    with AutomaticKeepAliveClientMixin, TickerProviderStateMixin {
   final GlobalKey<GlassRefreshIndicatorState> _refreshIndicatorKey =
       GlobalKey<GlassRefreshIndicatorState>();
   bool _refreshTriggeredInCurrentScroll = false;
@@ -70,6 +101,10 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
   final Map<int, Set<String>> _expandedFolderPaths = <int, Set<String>>{};
   final Map<String, bool> _treeExpansionMotions = <String, bool>{};
   final Map<String, Timer> _treeExpansionMotionTimers = <String, Timer>{};
+  final Map<int, _CollapsingAsmrWork> _collapsingWorks =
+      <int, _CollapsingAsmrWork>{};
+  List<AsmrWork>? _lastFavoritesWorks;
+  String? _lastFavoritesQuery;
   List<_AsmrVisibleItem> _visibleItems = const <_AsmrVisibleItem>[];
   List<AsmrWork>? _visibleItemsWorks;
   int? _visibleItemsCategoryRevision;
@@ -100,6 +135,12 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
         timer.cancel();
       }
       _treeExpansionMotionTimers.clear();
+      for (final entry in _collapsingWorks.values) {
+        entry.dispose();
+      }
+      _collapsingWorks.clear();
+      _lastFavoritesWorks = null;
+      _lastFavoritesQuery = null;
       _visibleItemsWorks = null;
       _visibleItemsExpansionVersion++;
     }
@@ -110,6 +151,10 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
     for (final timer in _treeExpansionMotionTimers.values) {
       timer.cancel();
     }
+    for (final entry in _collapsingWorks.values) {
+      entry.dispose();
+    }
+    _collapsingWorks.clear();
     super.dispose();
   }
 
@@ -198,8 +243,62 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
           revision: 0,
         );
     final works = state.works;
+    final isFavorites = widget.category == AsmrCategoryType.favorites;
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
+
+    if (isFavorites) {
+      if (_lastFavoritesQuery == normalizedSearchQuery &&
+          _lastFavoritesWorks != null &&
+          !state.isLoading &&
+          !state.isRefreshing &&
+          !reduceMotion) {
+        final currentWorkIds = <int>{for (final w in works) w.id};
+        _collapsingWorks.removeWhere((id, entry) {
+          if (currentWorkIds.contains(id)) {
+            entry.dispose();
+            return true;
+          }
+          return false;
+        });
+        for (var i = 0; i < _lastFavoritesWorks!.length; i++) {
+          final previousWork = _lastFavoritesWorks![i];
+          if (!currentWorkIds.contains(previousWork.id) &&
+              !_collapsingWorks.containsKey(previousWork.id)) {
+            _expandedWorkIds.remove(previousWork.id);
+            _expandedFolderPaths.remove(previousWork.id);
+            final workId = previousWork.id;
+            _collapsingWorks[workId] = _CollapsingAsmrWork(
+              work: previousWork,
+              originalIndex: i,
+              vsync: this,
+              onComplete: () {
+                if (!mounted) return;
+                setState(() {
+                  final entry = _collapsingWorks.remove(workId);
+                  entry?.dispose();
+                  _visibleItemsExpansionVersion++;
+                });
+              },
+            );
+          }
+        }
+      }
+      _lastFavoritesWorks = works;
+      _lastFavoritesQuery = normalizedSearchQuery;
+    }
+
+    final effectiveWorks = <AsmrWork>[...works];
+    if (_collapsingWorks.isNotEmpty) {
+      final sortedCollapsing = _collapsingWorks.values.toList()
+        ..sort((a, b) => a.originalIndex.compareTo(b.originalIndex));
+      for (final entry in sortedCollapsing) {
+        final insertIndex = entry.originalIndex.clamp(0, effectiveWorks.length);
+        effectiveWorks.insert(insertIndex, entry.work);
+      }
+    }
+
     final trackStates = <int, AsmrTrackTreeViewState>{};
-    final closingWorkIds = works
+    final closingWorkIds = effectiveWorks
         .where((work) => _treeExpansionMotions['work:${work.id}'] == false)
         .map((work) => work.id);
     for (final workId in <int>{..._expandedWorkIds, ...closingWorkIds}) {
@@ -213,13 +312,13 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
       if (trackState != null) trackStates[workId] = trackState;
     }
     final visibleItems = _buildVisibleItems(
-      works: works,
+      works: effectiveWorks,
       categoryRevision: state.revision,
       trackStates: trackStates,
     );
     final showPlaceholder =
         (widget.isLoadPending && normalizedSearchQuery.isNotEmpty) ||
-        (works.isEmpty &&
+        (effectiveWorks.isEmpty &&
             (widget.isLoadPending ||
                 state.isLoading ||
                 !state.hasAttemptedLoad));
@@ -342,12 +441,12 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
                     LibraryLikeCardMetrics.listHorizontalPadding,
                     widget.bottomInset + 24,
                   ),
-                  itemCount: works.isEmpty
+                  itemCount: effectiveWorks.isEmpty
                       ? 1
                       : visibleItems.length +
                             ((state.isLoadingMore || state.hasMore) ? 1 : 0),
                   itemBuilder: (context, index) {
-                    if (works.isEmpty) {
+                    if (effectiveWorks.isEmpty) {
                       final errorText = state.lastError == null
                           ? null
                           : localizedAsmrCatalogErrorText(
@@ -444,7 +543,8 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
     if (identical(_visibleItemsWorks, works) &&
         _visibleItemsCategoryRevision == categoryRevision &&
         _visibleItemsCacheExpansionVersion == _visibleItemsExpansionVersion &&
-        _visibleItemsTreeFingerprint == treeFingerprint) {
+        _visibleItemsTreeFingerprint == treeFingerprint &&
+        _collapsingWorks.isEmpty) {
       return _visibleItems;
     }
 
@@ -578,7 +678,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
 
     switch (item.kind) {
       case _AsmrVisibleItemKind.work:
-        return RepaintBoundary(
+        final workCard = RepaintBoundary(
           key: ValueKey<String>('asmr-work-${item.work.id}'),
           child: _AsmrWorkTreeCard(
             work: item.work,
@@ -593,6 +693,26 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
                 _handleWorkExpansion(item.work.id, expanded),
           ),
         );
+        final collapsing = _collapsingWorks[item.work.id];
+        if (collapsing != null) {
+          return AnimatedBuilder(
+            animation: collapsing.controller,
+            builder: (context, child) {
+              return SizeTransition(
+                sizeFactor: collapsing.animation,
+                axisAlignment: -1.0,
+                child: FadeTransition(
+                  opacity: collapsing.animation,
+                  child: IgnorePointer(
+                    child: ExcludeSemantics(child: child),
+                  ),
+                ),
+              );
+            },
+            child: workCard,
+          );
+        }
+        return workCard;
       case _AsmrVisibleItemKind.node:
         final node = item.node!;
         final expanded =

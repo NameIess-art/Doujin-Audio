@@ -58,6 +58,7 @@ analyze_output.txt
 # Local-only helper scripts and scratch work
 /script/*
 /scratch/
+/docs/
 /migrate_working_dir/
 diff.patch
 test.json

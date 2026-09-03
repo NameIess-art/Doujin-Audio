@@ -19,7 +19,7 @@ enum AppInteractionFeedbackType { tap, selection, confirmation, destructive }
 
 enum AppFeedbackDismissReason { timeout, action, swipe, replaced, updated }
 
-const Duration kUndoableRemovalFeedbackDuration = Duration(seconds: 4);
+const Duration kUndoableRemovalFeedbackDuration = Duration(seconds: 5);
 const String _undoableRemovalFeedbackGroup = 'undoable-removal';
 
 OverlayEntry? _activeFeedbackEntry;
@@ -104,7 +104,7 @@ void showAppSnackBar(
     duration:
         duration ??
         (tone == AppFeedbackTone.destructive
-            ? const Duration(seconds: 4)
+            ? const Duration(seconds: 5)
             : const Duration(seconds: 2)),
     actionLabel: actionLabel,
     onAction: onAction,

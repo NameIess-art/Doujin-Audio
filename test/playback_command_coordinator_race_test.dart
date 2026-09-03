@@ -338,6 +338,117 @@ void main() {
       expect(runtimeGraph.playback.activeSessions, isEmpty);
     });
 
+    test('recovers from unknown native session by re-preparing and playing', () async {
+      var playCallCount = 0;
+      var prepareCallCount = 0;
+      var failNextPlay = false;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(nativePlaybackChannel, (call) async {
+            final arguments = call.arguments as Map<Object?, Object?>?;
+            final sessionId = arguments?['sessionId'] as String? ?? '';
+            final path = arguments?['path'] as String? ?? '';
+            final commandId = arguments?['transportCommandId'] as int?;
+            if (call.method == NativePlaybackMethod.prepareSession) {
+              prepareCallCount++;
+              return <String, Object?>{
+                'ok': true,
+                'value': <String, Object?>{
+                  'sessionId': sessionId,
+                  'path': path,
+                  'uri': arguments?['uri'] as String?,
+                  'playing': false,
+                  'playWhenReady': false,
+                  'processingState': 'ready',
+                  'positionMs': 0,
+                  'bufferedPositionMs': 0,
+                  'durationMs': 1000,
+                  'volume': 1.0,
+                  'channelSwap': false,
+                },
+              };
+            }
+            if (call.method == NativePlaybackMethod.pause) {
+              return <String, Object?>{
+                'ok': true,
+                'value': <String, Object?>{
+                  'sessionId': sessionId,
+                  'path': path,
+                  'uri': arguments?['uri'] as String?,
+                  'playing': false,
+                  'playWhenReady': false,
+                  'processingState': 'ready',
+                  'positionMs': 0,
+                  'bufferedPositionMs': 0,
+                  'durationMs': 1000,
+                  'volume': 1.0,
+                  'channelSwap': false,
+                  'transportCommandId': commandId,
+                },
+              };
+            }
+            if (call.method == NativePlaybackMethod.play) {
+              playCallCount++;
+              if (failNextPlay) {
+                failNextPlay = false;
+                return <String, Object?>{
+                  'ok': false,
+                  'errorCode': 'unknown_session',
+                  'error': 'Unknown session.',
+                };
+              }
+              return <String, Object?>{
+                'ok': true,
+                'value': <String, Object?>{
+                  'sessionId': sessionId,
+                  'path': path,
+                  'uri': arguments?['uri'] as String?,
+                  'playing': true,
+                  'playWhenReady': true,
+                  'processingState': 'ready',
+                  'positionMs': 0,
+                  'bufferedPositionMs': 0,
+                  'durationMs': 1000,
+                  'volume': 1.0,
+                  'channelSwap': false,
+                  'transportCommandId': commandId,
+                },
+              };
+            }
+            return <String, Object?>{'ok': true, 'value': null};
+          });
+
+      final track = MusicTrack(
+        path: '/music/recoverable-track.mp3',
+        displayName: 'Recoverable',
+        groupKey: '/music',
+        groupTitle: 'Music',
+        groupSubtitle: '',
+        isSingle: true,
+      );
+
+      await runtimeGraph.playback.spawnSession(track, autoPlay: true);
+      final session = runtimeGraph.playback.activeSessions.single;
+      await runtimeGraph.playback.pendingSessionPreparation;
+
+      // Pause the session so it is in ready state and not playing
+      await runtimeGraph.playback.toggleSessionPlayPause(session.id);
+      expect(session.effectivePlaying, isFalse);
+      expect(session.state.processingState, ProcessingState.ready);
+
+      final initialPrepareCount = prepareCallCount;
+      final initialPlayCount = playCallCount;
+
+      // Simulate native service restart where native session was lost:
+      // Next play call will fail with unknown_session, triggering re-preparation and successful playback.
+      failNextPlay = true;
+      await runtimeGraph.playback.toggleSessionPlayPause(session.id);
+      await runtimeGraph.playback.pendingSessionPreparation;
+
+      expect(prepareCallCount, initialPrepareCount + 1);
+      expect(playCallCount, initialPlayCount + 2);
+      expect(session.effectivePlaying, isTrue);
+    });
+
     test('single-thread playback uses one exclusive native play', () async {
       Map<Object?, Object?>? playArguments;
       var pauseCalls = 0;

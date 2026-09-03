@@ -43,7 +43,6 @@ class SettingsRepository {
   bool showAsmrOne = true;
   StartupPage startupPage = StartupPage.library;
   bool portraitLockEnabled = false;
-  BottomNavigationStyle bottomNavigationStyle = BottomNavigationStyle.capsule;
   PlaybackDetailSubtitleStyle playbackDetailSubtitleStyle =
       PlaybackDetailSubtitleStyle.compact;
   CoverImageResolution coverImageResolution = CoverImageResolution.balanced;
@@ -91,10 +90,6 @@ class SettingsRepository {
         orElse: () => StartupPage.library,
       );
       portraitLockEnabled = playback['portraitLockEnabled'] as bool? ?? false;
-      bottomNavigationStyle = BottomNavigationStyle.values.firstWhere(
-        (value) => value.name == playback['bottomNavigationStyle'],
-        orElse: () => BottomNavigationStyle.capsule,
-      );
       playbackDetailSubtitleStyle = PlaybackDetailSubtitleStyle.values
           .firstWhere(
             (value) => value.name == playback['playbackDetailSubtitleStyle'],
@@ -234,7 +229,6 @@ class SettingsRepository {
       'showPlaybackCard': showPlaybackCard,
       'startupPage': startupPage.name,
       'portraitLockEnabled': portraitLockEnabled,
-      'bottomNavigationStyle': bottomNavigationStyle.name,
       'playbackDetailSubtitleStyle': playbackDetailSubtitleStyle.name,
       'autoPlayAddedSessions': autoPlayAddedSessions,
       'autoCheckUpdates': autoCheckUpdates,
@@ -490,12 +484,6 @@ class SettingsRepository {
     update: () => startupPage = page,
   );
 
-  Future<void> setBottomNavigationStyle(BottomNavigationStyle style) =>
-      _setValue(
-        unchanged: bottomNavigationStyle == style,
-        update: () => bottomNavigationStyle = style,
-      );
-
   Future<void> setPortraitLockEnabled(bool enabled) => _setValue(
     unchanged: portraitLockEnabled == enabled,
     update: () => portraitLockEnabled = enabled,
@@ -650,7 +638,6 @@ class SettingsRepository {
     showAsmrOne = true;
     startupPage = StartupPage.library;
     portraitLockEnabled = false;
-    bottomNavigationStyle = BottomNavigationStyle.capsule;
     playbackDetailSubtitleStyle = PlaybackDetailSubtitleStyle.compact;
     coverImageResolution = CoverImageResolution.balanced;
     coverImageDisplayMode = CoverImageDisplayMode.fill;
@@ -716,7 +703,6 @@ class SettingsRepository {
         showAsmrOne: showAsmrOne,
         startupPage: startupPage,
         portraitLockEnabled: portraitLockEnabled,
-        bottomNavigationStyle: bottomNavigationStyle,
         playbackDetailSubtitleStyle: playbackDetailSubtitleStyle,
         coverImageResolution: coverImageResolution,
         coverImageDisplayMode: coverImageDisplayMode,

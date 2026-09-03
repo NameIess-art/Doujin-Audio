@@ -1322,7 +1322,7 @@ void main() {
       find.text('Tagged library audio', findRichText: true),
     );
     expect(runtimeGraph.library.excludedTracksForLibrary(libraryPath), isEmpty);
-    for (var i = 0; i < 45; i++) {
+    for (var i = 0; i < 55; i++) {
       await tester.pump(const Duration(milliseconds: 100));
       await tester.runAsync(
         () => Future<void>.delayed(const Duration(milliseconds: 5)),

@@ -57,6 +57,7 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
     bool forceStartAtZero = false,
     bool showLoading = true,
     int? targetQueueIndex,
+    bool shouldStartTriggerCountdown = true,
   }) async {
     if (!_isRegisteredSession(session)) return false;
     final hadDetachedPlaybackQueueCurrent = _hasDetachedPlaybackQueueCurrent(
@@ -96,7 +97,12 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
         targetQueueIndex: targetQueueIndex,
       );
 
-      if (target.isNewTrack) {
+      final shouldPrepareNativeTrack =
+          target.isNewTrack ||
+          session.state.processingState == ProcessingState.idle ||
+          session.loadedPath == null;
+
+      if (shouldPrepareNativeTrack) {
         session.pendingNativeTrackPath = target.resolvedPath;
         final nativeResult = await _prepareNativeTrackWithRetry(
           session,
@@ -215,7 +221,11 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
     }
 
     if (autoPlay && prepared && session.playbackRequested) {
-      return _startSessionPlayback(session, shouldStartTriggerCountdown: true);
+      return _startSessionPlayback(
+        session,
+        shouldStartTriggerCountdown: shouldStartTriggerCountdown,
+        allowPreparationFallback: false,
+      );
     } else {
       if (autoPlay) {
         session.isPlaybackStarting = false;
@@ -431,6 +441,7 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
           !await _startSessionPlayback(
             session,
             shouldStartTriggerCountdown: false,
+            allowPreparationFallback: false,
           )) {
         session.loadedPath = null;
         return false;

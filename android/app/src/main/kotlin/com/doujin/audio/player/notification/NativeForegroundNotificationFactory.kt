@@ -92,7 +92,7 @@ internal class NativeForegroundNotificationFactory(
     fun buildBootstrapNotification(mediaSession: MediaSession?): Notification {
         val builder = baseBuilder()
             .setContentTitle(context.getString(R.string.app_name))
-            .setContentText(context.getString(R.string.keep_alive_timer_active))
+            .setContentText(context.getString(R.string.keep_alive_playback_active))
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
 
         val mediaStyle = if (mediaSession != null) {

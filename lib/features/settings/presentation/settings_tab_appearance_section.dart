@@ -118,30 +118,6 @@ List<Widget> _buildSettingsAppearanceSection({
               onSelected: themeProvider.setAsmrThemeColor,
             ),
           ),
-        Consumer(
-          builder: (context, ref, _) {
-            final style = ref.watch(
-              settingsStateProvider.select(
-                (state) =>
-                    state.value?.bottomNavigationStyle ??
-                    BottomNavigationStyle.capsule,
-              ),
-            );
-            return SwitchListTile(
-              value: style == BottomNavigationStyle.capsule,
-              onChanged: (value) {
-                settings.setBottomNavigationStyle(
-                  value
-                      ? BottomNavigationStyle.capsule
-                      : BottomNavigationStyle.bar,
-                );
-              },
-              title: _settingsTitle(i18n.tr('bottom_navigation_style')),
-              secondary: _settingsIcon(Icons.space_bar_rounded, cs.onSurface),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-            );
-          },
-        ),
       ],
     ),
     _SettingsSectionCard(

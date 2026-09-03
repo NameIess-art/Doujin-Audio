@@ -19,9 +19,16 @@ import '../../../core/widgets/top_page_header.dart';
 import 'asmr_download_details_page.dart';
 
 class AsmrDownloadPage extends ConsumerStatefulWidget {
-  const AsmrDownloadPage({super.key, required this.work});
+  const AsmrDownloadPage({
+    super.key,
+    required this.work,
+    this.batchIndex,
+    this.batchTotal,
+  });
 
   final AsmrWork work;
+  final int? batchIndex;
+  final int? batchTotal;
 
   @override
   ConsumerState<AsmrDownloadPage> createState() => _AsmrDownloadPageState();
@@ -356,90 +363,55 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
           ),
           Positioned(
             bottom: 16 + bottomInset,
-            left: 16,
             right: 16,
-            child: Row(
-              children: [
-                Expanded(
-                  child: HeaderFloatingSurface(
-                    height: 46,
-                    radius: 23,
-                    padding: EdgeInsets.zero,
-                    child: Material(
-                      color: Colors.transparent,
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(23),
-                        onTap: _starting
-                            ? null
-                            : () => Navigator.of(context).maybePop(),
-                        child: Center(
-                          child: Text(
-                            i18n.tr('cancel'),
-                            style: TextStyle(
-                              color: asmrBlue,
-                              fontSize: 15,
-                              fontWeight: FontWeight.w700,
+            child: HeaderFloatingSurface(
+              height: 46,
+              radius: 23,
+              padding: EdgeInsets.zero,
+              child: Material(
+                color: asmrBlue,
+                borderRadius: BorderRadius.circular(23),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(23),
+                  onTap: _starting ? null : _startDownload,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (_starting)
+                          SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: onAsmrBlue,
                             ),
+                          )
+                        else
+                          Icon(
+                            Icons.download_rounded,
+                            size: 18,
+                            color: onAsmrBlue,
+                          ),
+                        const SizedBox(width: 6),
+                        Text(
+                          _starting
+                              ? i18n.tr('asmr_download_starting')
+                              : i18n.tr('asmr_download_confirm'),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: onAsmrBlue,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
                           ),
                         ),
-                      ),
+                      ],
                     ),
                   ),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: HeaderFloatingSurface(
-                    height: 46,
-                    radius: 23,
-                    padding: EdgeInsets.zero,
-                    child: Material(
-                      color: asmrBlue,
-                      borderRadius: BorderRadius.circular(23),
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(23),
-                        onTap: _starting ? null : _startDownload,
-                        child: Center(
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              if (_starting)
-                                SizedBox(
-                                  width: 16,
-                                  height: 16,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: onAsmrBlue,
-                                  ),
-                                )
-                              else
-                                Icon(
-                                  Icons.download_rounded,
-                                  size: 18,
-                                  color: onAsmrBlue,
-                                ),
-                              const SizedBox(width: 6),
-                              Flexible(
-                                child: Text(
-                                  _starting
-                                      ? i18n.tr('asmr_download_starting')
-                                      : i18n.tr('asmr_download_confirm'),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    color: onAsmrBlue,
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
+              ),
             ),
           ),
           Positioned(
@@ -451,6 +423,21 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
               icon: Icons.download_rounded,
               leading: const BackButton(),
               title: i18n.tr('asmr_download_title'),
+              titleSuffix: (widget.batchIndex != null &&
+                      widget.batchTotal != null &&
+                      widget.batchTotal! > 1)
+                  ? Text(
+                      '${widget.batchIndex}/${widget.batchTotal}',
+                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onSurfaceVariant
+                                .withValues(alpha: 0.75),
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w700,
+                          ),
+                    )
+                  : null,
               trailing: HeaderFloatingSurface(
                 padding: const EdgeInsets.symmetric(horizontal: 12),
                 child: InkWell(

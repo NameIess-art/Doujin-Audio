@@ -813,7 +813,10 @@ class NativePlaybackService : MediaSessionService() {
         exclusive: Boolean = false
     ): Map<String, Any?> {
         restoreCoordinator.restoreMissingSessions(listOf(sessionId), sessions.keys)
-        val session = sessions[sessionId] ?: return errorResult("Unknown session.")
+        val session = sessions[sessionId] ?: run {
+            syncForegroundState()
+            return errorResult("Unknown session.")
+        }
         val pausedSessionIds = if (exclusive) {
             exclusivePlaybackSessionIdsToPause(
                 targetSessionId = sessionId,
@@ -836,8 +839,7 @@ class NativePlaybackService : MediaSessionService() {
         playbackSuspended = false
         val playerBeforePlay = session.playerOrNull()
         val needsImmediateRecovery = playerBeforePlay != null &&
-            (playerBeforePlay.playerError != null ||
-                playerBeforePlay.playbackState == Player.STATE_IDLE)
+            playerBeforePlay.playerError != null
         markPlaybackIntended(sessionId)
         session.applyFadeMultiplier(1f)
         session.applyFocusDuckMultiplier(1f)

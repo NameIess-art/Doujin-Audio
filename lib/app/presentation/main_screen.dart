@@ -830,12 +830,6 @@ class _MainScreenState extends ConsumerState<MainScreen>
             systemStatusBarContrastEnforced: false,
             systemNavigationBarContrastEnforced: false,
           );
-    final bottomNavigationStyle = ref.watch(
-      settingsStateProvider.select(
-        (value) =>
-            value.value?.bottomNavigationStyle ?? BottomNavigationStyle.capsule,
-      ),
-    );
     final hasNowPlaying = ref.watch(
       mainOverlayUiProvider.select((state) => state.hasNowPlaying),
     );
@@ -852,7 +846,6 @@ class _MainScreenState extends ConsumerState<MainScreen>
         : _mobileContentInset(
             hasNowPlaying: hasNowPlaying,
             previousHasNowPlaying: previousHasNowPlaying,
-            bottomNavigationStyle: bottomNavigationStyle,
           );
 
     final content = AnnotatedRegion<SystemUiOverlayStyle>(
@@ -912,7 +905,6 @@ class _MainScreenState extends ConsumerState<MainScreen>
                               context,
                               i18n: i18n,
                               overlaySessions: visibleSessions,
-                              style: bottomNavigationStyle,
                               tinyMode: isTinyWindow,
                             );
                           },

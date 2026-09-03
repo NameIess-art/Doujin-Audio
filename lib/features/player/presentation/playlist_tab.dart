@@ -556,6 +556,23 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
   bool _initialPlaceholderDismissScheduled = false;
   bool _isSelectionMode = false;
   final Set<String> _selectedSessionIds = <String>{};
+  final Set<String> _animatingQueueSessionIds = <String>{};
+
+  void _markQueueNewlyAdded(String sessionId) {
+    if (MediaQuery.disableAnimationsOf(context)) return;
+    setState(() {
+      _animatingQueueSessionIds.add(sessionId);
+    });
+    if (_scrollController.hasClients && _scrollController.offset > 0) {
+      unawaited(
+        _scrollController.animateTo(
+          0,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOutCubic,
+        ),
+      );
+    }
+  }
 
   void _enterSelectionMode(String initialSessionId) {
     AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
@@ -663,6 +680,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
         'number': (queueCount + 1).toString(),
       }),
     );
+    _markQueueNewlyAdded(queue.id);
     final coordinator = ref.read(playbackQueueCoordinatorProvider);
     for (final entry in visibleEntries) {
       if (!_selectedSessionIds.contains(entry.sessionId)) continue;
@@ -972,7 +990,22 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                 onOpen: () => _openSessionDetail(context, session.id),
               ),
       );
-      return KeyedSubtree(key: ValueKey(session.id), child: child);
+      Widget itemWidget = child;
+      if (structure.isPlaybackQueue &&
+          _animatingQueueSessionIds.contains(session.id)) {
+        itemWidget = _PlaybackQueueEntranceTransition(
+          key: ValueKey('queue_entrance_${session.id}'),
+          onComplete: () {
+            if (mounted) {
+              setState(() {
+                _animatingQueueSessionIds.remove(session.id);
+              });
+            }
+          },
+          child: child,
+        );
+      }
+      return KeyedSubtree(key: ValueKey(session.id), child: itemWidget);
     }
 
     return ScrollActivityGate(
@@ -1278,13 +1311,14 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
             final queueCount = structureState.entries
                 .where((entry) => entry.isPlaybackQueue)
                 .length;
-            ref
+            final queue = ref
                 .read(playbackFacadeProvider)
                 .createPlaybackQueue(
                   i18n.tr('default_playback_queue_name', {
                     'number': queueCount + 1,
                   }),
                 );
+            _markQueueNewlyAdded(queue.id);
           },
           icon: const Icon(Icons.playlist_add_rounded),
           tooltip: i18n.tr('add_playback_queue'),

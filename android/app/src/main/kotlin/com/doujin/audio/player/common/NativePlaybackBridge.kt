@@ -274,7 +274,7 @@ class NativePlaybackBridge(
 
     private companion object {
         const val SERVICE_READY_RETRY_DELAY_MS = 50L
-        const val SERVICE_READY_TIMEOUT_MS = 2_000L
+        const val SERVICE_READY_TIMEOUT_MS = 5_000L
     }
 }
 

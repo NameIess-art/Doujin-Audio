@@ -1,9 +1,13 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 
 import '../../../app/localization/app_language_provider.dart';
+import '../../../core/ui/ui_operation_service.dart';
+import '../application/asmr_library_controller.dart';
 import '../domain/asmr_models.dart';
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/presentation/app_presentation_providers.dart';
@@ -33,6 +37,11 @@ class _AsmrWorkDetailSheet extends ConsumerStatefulWidget {
 
 class _AsmrWorkDetailSheetState extends ConsumerState<_AsmrWorkDetailSheet> {
   late final Future<AsmrWorkDetail> _detailFuture;
+  AsmrLibraryController? _controller;
+
+  void _handleControllerChange() {
+    if (mounted) setState(() {});
+  }
 
   Future<void> _openDownloadPage(AsmrWork work) async {
     final navigator = Navigator.of(context);
@@ -47,17 +56,79 @@ class _AsmrWorkDetailSheetState extends ConsumerState<_AsmrWorkDetailSheet> {
     );
   }
 
+  Future<void> _toggleFavorite(BuildContext context, AsmrWork work) async {
+    final controller = ref.read(asmrLibraryControllerProvider);
+    if (controller == null) return;
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
+    final asmrBlue = AppDesignTokens.of(context).asmrAccent;
+    final isFav = controller.isFavorite(work.id);
+    final shouldFavorite = !isFav;
+    final scope = UiOperationScope.asmrWork(
+      AsmrOperationKind.favorite,
+      work.id,
+    );
+    final operations = ref.read(uiOperationServiceProvider);
+    if (operations.isBusy(scope)) return;
+    try {
+      await operations.run<void>(
+        scope: scope,
+        labelKey: 'loading_dot',
+        task: (_) => controller.toggleFavorite(work),
+        cancelPrevious: false,
+      );
+    } catch (_) {
+      if (!context.mounted) return;
+      showAppSnackBar(
+        context,
+        i18n.tr('operation_failed_retry'),
+        tone: AppFeedbackTone.warning,
+        icon: Icons.error_outline_rounded,
+      );
+      return;
+    }
+    if (!context.mounted) return;
+    if (!shouldFavorite) {
+      showAppSnackBar(
+        context,
+        i18n.tr('asmr_favorite_removed'),
+        actionLabel: i18n.tr('undo'),
+        onAction: () => unawaited(controller.toggleFavorite(work)),
+        duration: const Duration(seconds: 5),
+        showCountdown: true,
+        tone: AppFeedbackTone.warning,
+        icon: Icons.favorite_border_rounded,
+        iconColor: asmrBlue,
+      );
+    } else {
+      showAppSnackBar(
+        context,
+        i18n.tr('asmr_favorite_added'),
+        tone: AppFeedbackTone.success,
+        icon: Icons.favorite_rounded,
+        iconColor: asmrBlue,
+      );
+    }
+  }
+
   @override
   void initState() {
     super.initState();
-    final controller = ref.read(asmrLibraryControllerProvider);
+    _controller = ref.read(asmrLibraryControllerProvider);
+    final controller = _controller;
     if (controller != null) {
       _detailFuture = controller.loadWorkDetail(widget.work);
+      controller.addListener(_handleControllerChange);
     } else {
       _detailFuture = Future.error(
         StateError('ASMR library service is not configured.'),
       );
     }
+  }
+
+  @override
+  void dispose() {
+    _controller?.removeListener(_handleControllerChange);
+    super.dispose();
   }
 
   @override
@@ -75,6 +146,9 @@ class _AsmrWorkDetailSheetState extends ConsumerState<_AsmrWorkDetailSheet> {
       builder: (context, snapshot) {
         final detail = snapshot.data;
         final effectiveWork = detail?.work ?? widget.work;
+        final controller = ref.read(asmrLibraryControllerProvider);
+        final isFavorite =
+            controller?.isFavorite(effectiveWork.id) ?? effectiveWork.isFavorite;
         final coverCacheWidth = coverCacheWidthForResolution(
           ref.watch(coverImageResolutionProvider),
         );
@@ -99,6 +173,21 @@ class _AsmrWorkDetailSheetState extends ConsumerState<_AsmrWorkDetailSheet> {
                         style: Theme.of(context).textTheme.titleLarge?.copyWith(
                           fontWeight: FontWeight.w800,
                         ),
+                      ),
+                    ),
+                    IconButton(
+                      key: const ValueKey<String>('asmr_work_detail_favorite'),
+                      onPressed: () => _toggleFavorite(context, effectiveWork),
+                      tooltip: i18n.tr(
+                        isFavorite
+                            ? 'asmr_unfavorite_action'
+                            : 'asmr_favorite_action',
+                      ),
+                      icon: Icon(
+                        isFavorite
+                            ? Icons.favorite_rounded
+                            : Icons.favorite_border_rounded,
+                        color: isFavorite ? asmrBlue : null,
                       ),
                     ),
                     IconButton(

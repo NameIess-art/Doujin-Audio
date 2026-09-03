@@ -971,6 +971,16 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                                       animation: animation,
                                       child: child,
                                     ),
+                                layoutBuilder: (currentChild, previousChildren) {
+                                  return Stack(
+                                    alignment: Alignment.center,
+                                    fit: StackFit.expand,
+                                    children: [
+                                      ...previousChildren,
+                                      ?currentChild,
+                                    ],
+                                  );
+                                },
                                 child: KeyedSubtree(
                                   key: ValueKey('artwork_${session.id}'),
                                   child: _SessionHeroArtwork(

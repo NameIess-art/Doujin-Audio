@@ -14,15 +14,15 @@ void main() {
     await startAppForTest(tester, app.main);
     await enterMainScreen(tester);
 
-    for (final icons in <(IconData, IconData)>[
-      (Icons.library_music_outlined, Icons.library_music_rounded),
-      (Icons.graphic_eq_outlined, Icons.graphic_eq_rounded),
-      (Icons.settings_outlined, Icons.settings_rounded),
+    for (final key in <String>[
+      'music_library',
+      'nav_sessions',
+      'nav_settings',
     ]) {
-      final unselected = find.byIcon(icons.$1);
-      final destination = unselected.evaluate().isNotEmpty
-          ? unselected
-          : find.byIcon(icons.$2);
+      final ink = find.byKey(ValueKey<String>('main_destination_ink_$key'));
+      final destination = ink.evaluate().isNotEmpty
+          ? ink
+          : find.byKey(ValueKey<String>('main_destination_$key'));
       expect(destination, findsOneWidget);
       await tester.tap(destination);
       await tester.pumpAndSettle();

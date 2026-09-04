@@ -283,6 +283,8 @@ class _LibrarySearchPageState extends ConsumerState<_LibrarySearchPage> {
         _visibleSearchQuery = query;
         _visibleSearchRevision = structureRevision;
         _visibleSearchDetailRevision = categoryRevision;
+        _expandedSearchFolderPaths.clear();
+        _visibleSearchItemsVersion++;
         return;
       }
 

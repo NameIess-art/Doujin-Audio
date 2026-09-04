@@ -2556,9 +2556,9 @@ void main() {
       final fixture = AppRuntimeWidgetTestFixture();
       addTearDown(fixture.dispose);
       final runtimeGraph = fixture.runtimeGraph;
-      const libraryPath = r'\library\tree-height';
+      const libraryPath = '/library/tree-height';
       final rootTrack = MusicTrack(
-        path: r'\library\tree-height\disc\audio.mp3',
+        path: '/library/tree-height/disc/audio.mp3',
         displayName: 'audio.mp3',
         groupKey: libraryPath,
         groupTitle: 'tree-height',

@@ -1,5 +1,9 @@
 enum AppLanguage { zh, ja, en }
 
+abstract interface class AppTextTranslator {
+  String tr(String key, [Map<String, Object?> params = const {}]);
+}
+
 enum ContentLanguagePreference {
   followPage,
   zh,

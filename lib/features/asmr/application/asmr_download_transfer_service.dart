@@ -753,9 +753,44 @@ extension AsmrDownloadTransferService on AsmrDownloadManager {
   String _joinFolderPath(String basePath, String relativePath) {
     final normalizedRelative = _validatedDownloadRelativePath(relativePath);
     if (PathMatcher.isContentUri(basePath)) {
+      if (basePath.contains('::')) {
+        final prefix = _trimRightSlash(basePath);
+        return '$prefix/$normalizedRelative';
+      }
       return '${_trimRightSlash(basePath)}::$normalizedRelative';
     }
     return _resolveLocalPathWithin(basePath, normalizedRelative);
+  }
+
+  Future<bool> _targetFileExists(
+    String workRootPath,
+    _PlannedDownloadFile item, {
+    String? coverOutputPath,
+  }) async {
+    if (item.isCover) {
+      if (coverOutputPath != null && await _outputPathExists(coverOutputPath)) {
+        return true;
+      }
+      final knownExtension = _coverUrlExtension(item.url);
+      if (knownExtension != null) {
+        final targetPath = _joinFolderPath(
+          workRootPath,
+          'cover/${item.coverFileStem!}$knownExtension',
+        );
+        if (await _outputPathExists(targetPath)) return true;
+      }
+      for (final ext in const ['.jpg', '.png', '.webp', '.jpeg']) {
+        final targetPath = _joinFolderPath(
+          workRootPath,
+          'cover/${item.coverFileStem!}$ext',
+        );
+        if (await _outputPathExists(targetPath)) return true;
+      }
+      return false;
+    }
+    final normalized = _validatedDownloadRelativePath(item.relativePath);
+    final targetPath = _joinFolderPath(workRootPath, normalized);
+    return _outputPathExists(targetPath);
   }
 
   JsonDocumentLocation _jsonDownloadLocation(

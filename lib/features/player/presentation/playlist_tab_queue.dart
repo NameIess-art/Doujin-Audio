@@ -32,8 +32,10 @@ class _PlaybackQueueCard extends ConsumerWidget {
     required this.onEdit,
     this.isSelectionMode = false,
     this.isSelected = false,
+    this.isPinned = false,
     this.onLongPress,
     this.onToggleSelect,
+    this.onTogglePin,
   });
 
   final PlaybackSessionSnapshot session;
@@ -44,8 +46,10 @@ class _PlaybackQueueCard extends ConsumerWidget {
   final VoidCallback onEdit;
   final bool isSelectionMode;
   final bool isSelected;
+  final bool isPinned;
   final VoidCallback? onLongPress;
   final VoidCallback? onToggleSelect;
+  final VoidCallback? onTogglePin;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -134,16 +138,22 @@ class _PlaybackQueueCard extends ConsumerWidget {
       hidden: isHidden,
       child: SwipeRevealCard(
         key: ValueKey(session.id),
-      shape: _playlistRowShape,
-      color: revealActionColor,
-      closedColor: cs.surface,
-      enabled: !isSelectionMode,
-      destructive: false,
-      primaryActionIcon: Icons.edit_rounded,
-      actionLabel: i18n.tr('edit'),
-      removeTooltip: i18n.tr('edit_playback_queue'),
-      onRemove: onEdit,
-      child: ConstrainedBox(
+        shape: _playlistRowShape,
+        color: revealActionColor,
+        closedColor: cs.surface,
+        enabled: !isSelectionMode,
+        destructive: false,
+        primaryActionIcon: Icons.edit_rounded,
+        actionLabel: i18n.tr('edit'),
+        removeTooltip: i18n.tr('edit_playback_queue'),
+        onRemove: onEdit,
+        onLeadingAction: onTogglePin,
+        leadingActionLabel: i18n.tr(isPinned ? 'unpin_from_top' : 'pin_to_top'),
+        leadingActionTooltip:
+            i18n.tr(isPinned ? 'unpin_from_top' : 'pin_to_top'),
+        leadingActionIcon: Icons.push_pin_rounded,
+        leadingActionIconWidget: isPinned ? const _PushPinOffIcon() : null,
+        child: ConstrainedBox(
         constraints: const BoxConstraints(minHeight: _playlistRowHeight),
         child: Material(
           key: ValueKey('playback_queue_row_surface_${session.id}'),
@@ -204,6 +214,15 @@ class _PlaybackQueueCard extends ConsumerWidget {
                               isSelected: isSelected,
                             ),
                           ),
+                          if (isPinned)
+                            Positioned(
+                              top: 4,
+                              right: 4,
+                              child: _PlaylistPinnedIndicator(
+                                sessionId: session.id,
+                                color: activeColor,
+                              ),
+                            ),
                           Positioned(
                             right: 4,
                             bottom: 4,
@@ -247,9 +266,12 @@ class _PlaybackQueueCard extends ConsumerWidget {
                       ),
                       const SizedBox(width: AppSpacing.xs),
                     ] else ...[
-                      _PlaylistSelectionIndicatorAnchor(
+                      _PlaylistLeadingIndicators(
                         sessionId: session.id,
                         isSelected: isSelected,
+                        isPinned: isPinned,
+                        isSelectionMode: isSelectionMode,
+                        pinColor: activeColor,
                       ),
                     ],
                     Expanded(

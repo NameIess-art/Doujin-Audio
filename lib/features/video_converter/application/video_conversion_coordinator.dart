@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as path;
 
-import '../../../app/localization/app_language_provider.dart';
+import '../../../core/app_language.dart';
 import '../../../core/logging/app_log_service.dart';
 import '../../../core/platform/power_platform_service.dart';
 import '../../../core/ui/ui_operation_service.dart';
@@ -74,7 +74,7 @@ class VideoConversionCoordinator extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> pickVideo(AppLanguageProvider i18n) async {
+  Future<void> pickVideo(AppTextTranslator i18n) async {
     if (_isConverting) return;
     final uiOps = _uiOps;
     final selectedPath = uiOps != null
@@ -123,7 +123,7 @@ class VideoConversionCoordinator extends ChangeNotifier {
 
   Future<VideoConversionResult?> startConversion({
     required SettingsRepository settings,
-    required AppLanguageProvider i18n,
+    required AppTextTranslator i18n,
   }) async {
     if (_isConverting) return null;
     final inputPath = _selectedVideoPath;
@@ -160,7 +160,13 @@ class VideoConversionCoordinator extends ChangeNotifier {
           onProgress: (p) {
             try {
               progressReporter?.report(p);
-            } catch (_) {}
+            } catch (error, stackTrace) {
+              AppLogService.warning(
+                'video_conversion_progress_reporter_failed',
+                error: error,
+                stackTrace: stackTrace,
+              );
+            }
             if (generation != _conversionGeneration) return;
             _progress = p;
             _statusMessage = i18n.tr('converting_percent', {
@@ -225,7 +231,7 @@ class VideoConversionCoordinator extends ChangeNotifier {
     return result;
   }
 
-  Future<void> cancelConversion({required AppLanguageProvider i18n}) async {
+  Future<void> cancelConversion({required AppTextTranslator i18n}) async {
     if (!_isConverting || _isCanceling) return;
     _isCanceling = true;
     _statusMessage = i18n.tr('canceling_conversion');

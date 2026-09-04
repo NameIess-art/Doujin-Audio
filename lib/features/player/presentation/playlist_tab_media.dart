@@ -226,7 +226,11 @@ class _SessionCoverThumbnailState
 }
 
 class _SessionMetaChip extends StatelessWidget {
-  const _SessionMetaChip({super.key, required this.icon, required this.text});
+  const _SessionMetaChip({
+    super.key,
+    required this.icon,
+    required this.text,
+  });
 
   final IconData icon;
   final String text;
@@ -234,14 +238,16 @@ class _SessionMetaChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final fg = cs.onSurfaceVariant.withValues(alpha: 0.65);
     return Padding(
       padding: EdgeInsets.zero,
       child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
           Icon(
             icon,
             size: 11,
-            color: cs.onSurfaceVariant.withValues(alpha: 0.65),
+            color: fg,
           ),
           const SizedBox(width: 5),
           Flexible(
@@ -252,7 +258,7 @@ class _SessionMetaChip extends StatelessWidget {
               style: Theme.of(context).textTheme.labelSmall?.copyWith(
                 fontWeight: FontWeight.w600,
                 fontStyle: FontStyle.italic,
-                color: cs.onSurfaceVariant.withValues(alpha: 0.65),
+                color: fg,
                 fontSize: 11,
               ),
             ),

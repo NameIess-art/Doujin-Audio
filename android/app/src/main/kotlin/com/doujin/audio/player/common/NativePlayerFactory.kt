@@ -9,6 +9,7 @@ import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.common.audio.AudioProcessor
@@ -61,6 +62,26 @@ internal fun nativePlaybackAudioAttributes(): androidx.media3.common.AudioAttrib
         .setUsage(C.USAGE_MEDIA)
         .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
         .setSpatializationBehavior(C.SPATIALIZATION_BEHAVIOR_NEVER)
+        .build()
+
+/**
+ * Tailored LoadControl for long overnight screen-off playback.
+ * Buffers ahead up to 120s of audio with 30s back-buffer to prevent
+ * underruns during Doze mode network throttling and CPU sleep gaps.
+ */
+internal fun nativePlaybackLoadControl(): DefaultLoadControl =
+    DefaultLoadControl.Builder()
+        .setBufferDurationsMs(
+            /* minBufferMs = */ 60_000,
+            /* maxBufferMs = */ 120_000,
+            /* bufferForPlaybackMs = */ 2_500,
+            /* bufferForPlaybackAfterRebufferMs = */ 5_000
+        )
+        .setBackBuffer(
+            /* backBufferDurationMs = */ 30_000,
+            /* retainBackBufferFromKeyframe = */ false
+        )
+        .setPrioritizeTimeOverSizeThresholds(true)
         .build()
 
 private const val ASMR_ACCEPT_LANGUAGE = "zh-CN,zh;q=0.9,en;q=0.8"
@@ -134,6 +155,7 @@ internal class NativePlayerFactory(
 
         return ExoPlayer.Builder(context, renderersFactory)
             .setMediaSourceFactory(mediaSourceFactory)
+            .setLoadControl(nativePlaybackLoadControl())
             // The session applies the URI-specific mode before prepare().
             .setWakeMode(C.WAKE_MODE_LOCAL)
             .setHandleAudioBecomingNoisy(false)

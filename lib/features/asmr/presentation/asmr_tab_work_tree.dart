@@ -151,6 +151,7 @@ class _AsmrWorkTreeCardState extends ConsumerState<_AsmrWorkTreeCard> {
         onAction: () => unawaited(controller.toggleFavorite(widget.work)),
         duration: const Duration(seconds: 5),
         showCountdown: true,
+        showActionCountdown: true,
         tone: AppFeedbackTone.warning,
         icon: Icons.favorite_border_rounded,
         iconColor: asmrBlue,
@@ -336,96 +337,105 @@ class _AsmrTrackTreeNode extends ConsumerWidget {
                   ? ref.watch(operationProvider)
                   : ref.read(operationProvider))
               .isBusy;
+      final folderRadius = BorderRadius.circular(
+        AppDesignTokens.of(context).radiusSmall,
+      );
       return SizedBox(
         height: _childFolderTileHeight,
-        child: InkWell(
-          onTap: hasVisibleChildren
-              ? () => onExpansionChanged?.call(!expanded)
-              : null,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(6, 2, 4, 2),
-            child: Row(
-              children: [
-                Icon(
-                  expanded ? Icons.folder_open_rounded : Icons.folder_rounded,
-                  size: 20,
-                  color: asmrBlue.withValues(alpha: 0.8),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: SizedBox(
-                    height: _childFolderTitleBlockHeight,
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          node.title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context).textTheme.titleMedium
-                              ?.copyWith(
-                                fontWeight: FontWeight.w700,
-                                fontSize: 13,
-                                height: 1.06,
-                                color: cs.onSurface.withValues(alpha: 0.9),
-                              ),
-                        ),
-                      ],
+        child: Material(
+          color: Colors.transparent,
+          borderRadius: folderRadius,
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            borderRadius: folderRadius,
+            onTap: hasVisibleChildren
+                ? () => onExpansionChanged?.call(!expanded)
+                : null,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(6, 2, 4, 2),
+              child: Row(
+                children: [
+                  Icon(
+                    expanded ? Icons.folder_open_rounded : Icons.folder_rounded,
+                    size: 20,
+                    color: asmrBlue.withValues(alpha: 0.8),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: SizedBox(
+                      height: _childFolderTitleBlockHeight,
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            node.title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.titleMedium
+                                ?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 13,
+                                  height: 1.06,
+                                  color: cs.onSurface.withValues(alpha: 0.9),
+                                ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                ),
-                SizedBox(
-                  width: 62,
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      IconButton(
-                        onPressed: busy
-                            ? null
-                            : () => unawaited(_playFolder(context, ref)),
-                        visualDensity: VisualDensity.compact,
-                        tooltip: ref
-                            .read(appLanguageProviderInstanceProvider)
-                            .tr('asmr_add_to_playlist'),
-                        style: IconButton.styleFrom(
-                          foregroundColor: asmrBlue,
-                          minimumSize: const Size(40, 44),
-                          maximumSize: const Size(40, 44),
-                          padding: EdgeInsets.zero,
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  SizedBox(
+                    width: 62,
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        IconButton(
+                          onPressed: busy
+                              ? null
+                              : () => unawaited(_playFolder(context, ref)),
+                          visualDensity: VisualDensity.compact,
+                          tooltip: ref
+                              .read(appLanguageProviderInstanceProvider)
+                              .tr('asmr_add_to_playlist'),
+                          style: IconButton.styleFrom(
+                            foregroundColor: asmrBlue,
+                            minimumSize: const Size(40, 44),
+                            maximumSize: const Size(40, 44),
+                            padding: EdgeInsets.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                          icon: busy
+                              ? SizedBox.square(
+                                  dimension: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: asmrBlue,
+                                  ),
+                                )
+                              : const Icon(Icons.add_circle_rounded, size: 25),
                         ),
-                        icon: busy
-                            ? SizedBox.square(
-                                dimension: 18,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: asmrBlue,
+                        const SizedBox(width: 2),
+                        if (hasVisibleChildren)
+                          Padding(
+                            padding: const EdgeInsets.only(right: 6),
+                            child: IgnorePointer(
+                              child: AnimatedRotation(
+                                turns: expanded ? 0.5 : 0,
+                                duration: const Duration(milliseconds: 180),
+                                curve: Curves.easeOutCubic,
+                                child: Icon(
+                                  Icons.expand_more_rounded,
+                                  color: cs.onSurfaceVariant,
+                                  size: 20,
                                 ),
-                              )
-                            : const Icon(Icons.add_circle_rounded, size: 25),
-                      ),
-                      const SizedBox(width: 2),
-                      if (hasVisibleChildren)
-                        Padding(
-                          padding: const EdgeInsets.only(right: 6),
-                          child: IgnorePointer(
-                            child: AnimatedRotation(
-                              turns: expanded ? 0.5 : 0,
-                              duration: const Duration(milliseconds: 180),
-                              curve: Curves.easeOutCubic,
-                              child: Icon(
-                                Icons.expand_more_rounded,
-                                color: cs.onSurfaceVariant,
-                                size: 20,
                               ),
                             ),
                           ),
-                        ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),

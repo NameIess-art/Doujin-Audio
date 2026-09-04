@@ -385,6 +385,10 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp> {
               .setPortraitLockEnabled(portraitLockEnabled),
         );
       }
+      final hapticFeedbackEnabled = next.asData?.value.hapticFeedbackEnabled;
+      if (hapticFeedbackEnabled != null) {
+        AppInteractionFeedback.hapticFeedbackEnabled = hapticFeedbackEnabled;
+      }
     });
     ref.listen<(ThemeAccentPreset, ThemeMode)>(
       themeProviderInstanceProvider.select(

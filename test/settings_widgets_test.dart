@@ -19,6 +19,7 @@ import 'package:doujin_audio/core/widgets/top_page_header.dart';
 import 'package:doujin_audio/app/state/app_runtime_providers.dart';
 import 'package:doujin_audio/app/theme/theme_provider.dart';
 import 'package:doujin_audio/app/theme/app_styles.dart';
+import 'package:doujin_audio/core/widgets/app_feedback.dart';
 import 'package:doujin_audio/features/settings/application/app_preferences.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
@@ -198,7 +199,24 @@ void main() {
           .subtitle,
       isNull,
     );
-    expect(find.text(i18n.tr('haptic_feedback_enabled')), findsOneWidget);
+    final hapticFeedbackTile = find.widgetWithText(
+      SwitchListTile,
+      i18n.tr('haptic_feedback_enabled'),
+    );
+    expect(hapticFeedbackTile, findsOneWidget);
+    expect(tester.widget<SwitchListTile>(hapticFeedbackTile).value, isTrue);
+    await tester.ensureVisible(hapticFeedbackTile);
+    await tester.pumpAndSettle();
+    await tester.tap(hapticFeedbackTile);
+    await tester.pump();
+    expect(tester.widget<SwitchListTile>(hapticFeedbackTile).value, isFalse);
+    expect(harness.settingsRepository.hapticFeedbackEnabled, isFalse);
+    expect(AppInteractionFeedback.hapticFeedbackEnabled, isFalse);
+    await tester.tap(hapticFeedbackTile);
+    await tester.pump();
+    expect(tester.widget<SwitchListTile>(hapticFeedbackTile).value, isTrue);
+    expect(harness.settingsRepository.hapticFeedbackEnabled, isTrue);
+    expect(AppInteractionFeedback.hapticFeedbackEnabled, isTrue);
     final portraitLockTile = find.widgetWithText(
       SwitchListTile,
       i18n.tr('portrait_lock'),
@@ -1436,6 +1454,61 @@ void main() {
       findsOneWidget,
     );
   });
+
+  testWidgets(
+    'pure black theme switch is hidden in light appearance and visible in dark appearance',
+    (tester) async {
+      final harness = AppRuntimeWidgetTestFixture();
+      addTearDown(harness.dispose);
+
+      await tester.pumpWidget(harness.build(const SettingsTab()));
+      await tester.pump();
+      final themeProvider = ProviderScope.containerOf(
+        tester.element(find.byType(SettingsTab)),
+        listen: false,
+      ).read(themeProviderInstanceProvider);
+
+      final i18n = harness.languageProvider;
+      await tester.tap(find.text(i18n.tr('section_appearance')));
+      await tester.pumpAndSettle();
+
+      // 1. In default light appearance, the switch is not shown
+      expect(find.byKey(const ValueKey('pure_black_theme_tile')), findsNothing);
+
+      // 2. Switch to dark appearance
+      await themeProvider.setThemeMode(ThemeMode.dark);
+      await tester.pumpAndSettle();
+
+      final pureBlackSwitch = find.byKey(
+        const ValueKey('pure_black_theme_tile'),
+      );
+      expect(pureBlackSwitch, findsOneWidget);
+      expect(find.text(i18n.tr('black_theme')), findsOneWidget);
+      expect(themeProvider.pureBlackTheme, isFalse);
+
+      await Scrollable.ensureVisible(
+        tester.element(pureBlackSwitch),
+        alignment: 0.5,
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(pureBlackSwitch);
+      await tester.pumpAndSettle();
+
+      expect(themeProvider.pureBlackTheme, isTrue);
+
+      await tester.tap(pureBlackSwitch);
+      await tester.pumpAndSettle();
+
+      expect(themeProvider.pureBlackTheme, isFalse);
+
+      // 3. Switch back to light appearance, the switch is hidden again
+      await themeProvider.setThemeMode(ThemeMode.light);
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const ValueKey('pure_black_theme_tile')), findsNothing);
+    },
+  );
 
   testWidgets('disabling multi-thread playback closes facade sessions', (
     tester,

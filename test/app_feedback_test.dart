@@ -174,14 +174,14 @@ void main() {
 
     await tester.tap(find.text('Remove one'));
     await tester.pump();
-    expect(find.text('Undo (4s)'), findsOneWidget);
+    expect(find.text('Undo (5s)'), findsOneWidget);
     expect(find.text('Removed one'), findsOneWidget);
     await tester.pump(const Duration(seconds: 2));
     await tester.tap(find.text('Remove two'));
     await tester.pump();
-    expect(find.text('Undo (4s)'), findsOneWidget);
+    expect(find.text('Undo (5s)'), findsOneWidget);
     expect(find.text('Removed 2'), findsOneWidget);
-    for (var i = 0; i < 35; i++) {
+    for (var i = 0; i < 45; i++) {
       await tester.pump(const Duration(milliseconds: 100));
     }
     expect(committed, isEmpty);
@@ -227,7 +227,7 @@ void main() {
 
     await tester.tap(find.text('Remove'));
     await tester.pump();
-    await tester.tap(find.text('Undo (4s)'));
+    await tester.tap(find.text('Undo (5s)'));
     await tester.pump();
 
     expect(undos, 1);
@@ -610,9 +610,12 @@ void main() {
     await tester.tap(find.text('Delete'));
     await tester.pump();
 
-    expect(find.text('Item deleted (4s)'), findsOneWidget);
+    expect(find.text('Item deleted (5s)'), findsOneWidget);
 
     await tester.pump(const Duration(milliseconds: 1050));
+    expect(find.text('Item deleted (4s)'), findsOneWidget);
+
+    await tester.pump(const Duration(milliseconds: 1000));
     expect(find.text('Item deleted (3s)'), findsOneWidget);
 
     await tester.pump(const Duration(milliseconds: 1000));

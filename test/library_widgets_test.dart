@@ -1099,7 +1099,7 @@ void main() {
         runtimeGraph.library.excludedTracksForLibrary(libraryPath),
         isEmpty,
       );
-      for (var i = 0; i < 45; i++) {
+      for (var i = 0; i < 65; i++) {
         await tester.pump(const Duration(milliseconds: 100));
         await tester.runAsync(
           () => Future<void>.delayed(const Duration(milliseconds: 5)),
@@ -2549,4 +2549,112 @@ void main() {
     );
     await tester.pump();
   });
+
+  testWidgets(
+    'child folder tile height in library tree is exactly 44 and uses rounded border',
+    (WidgetTester tester) async {
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      final runtimeGraph = fixture.runtimeGraph;
+      const libraryPath = r'\library\tree-height';
+      final rootTrack = MusicTrack(
+        path: r'\library\tree-height\disc\audio.mp3',
+        displayName: 'audio.mp3',
+        groupKey: libraryPath,
+        groupTitle: 'tree-height',
+        groupSubtitle: '',
+        isSingle: false,
+        duration: const Duration(minutes: 1),
+      );
+      runtimeGraph.library
+        ..addWatchedLibrary(libraryPath, notify: false)
+        ..recordLibraryEntriesForTracks(libraryPath, <MusicTrack>[
+          rootTrack,
+        ], persist: false)
+        ..addTracks(<MusicTrack>[rootTrack], notify: false, persist: false);
+      fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 0);
+
+      await tester.pumpWidget(fixture.build(const LibraryTab()));
+      await tester.pump();
+      await pumpUntilLibraryTreeReady(tester, runtimeGraph.library);
+      await pumpUntilNotFound(tester, find.byType(LibraryLikeSkeletonCard));
+      await tester.pump(const Duration(milliseconds: 350));
+
+      final rootFolderTile = find.byType(ExpansionTile).first;
+      await tester.ensureVisible(rootFolderTile);
+      await tester.tap(rootFolderTile);
+      await tester.pumpAndSettle();
+
+      final discFolderFinder = find.text('disc', findRichText: true);
+      expect(discFolderFinder, findsOneWidget);
+
+      final childExpansionTileFinder = find.ancestor(
+        of: discFolderFinder,
+        matching: find.byType(ExpansionTile),
+      );
+      expect(childExpansionTileFinder, findsOneWidget);
+
+      final childExpansionTile = tester.widget<ExpansionTile>(childExpansionTileFinder);
+      expect(childExpansionTile.shape, isA<RoundedRectangleBorder>());
+      expect(childExpansionTile.collapsedShape, isA<RoundedRectangleBorder>());
+      final shape = childExpansionTile.shape as RoundedRectangleBorder;
+      expect(shape.borderRadius, isA<BorderRadius>());
+      expect((shape.borderRadius as BorderRadius).topLeft.x, 8.0);
+
+      final childListTileFinder = find.ancestor(
+        of: discFolderFinder,
+        matching: find.byType(ListTile),
+      );
+      final size = tester.getSize(childListTileFinder);
+      expect(size.height, 44.0);
+
+      final childAddButtonFinder = find.descendant(
+        of: childExpansionTileFinder,
+        matching: find.byType(IconButton),
+      );
+      expect(childAddButtonFinder, findsOneWidget);
+      final childIconButton = tester.widget<IconButton>(childAddButtonFinder);
+      expect(childIconButton.tooltip, fixture.languageProvider.tr('add_to_playlist'));
+      final iconWidget = tester.widget<Icon>(
+        find.descendant(of: childAddButtonFinder, matching: find.byType(Icon)),
+      );
+      expect(iconWidget.icon, Icons.add_circle_rounded);
+      expect(iconWidget.size, 25.0);
+
+      // Verify child folder is wrapped in SwipeRevealCard and swiping left reveals remove button
+      final childFolderSwipeCardFinder = find.ancestor(
+        of: discFolderFinder,
+        matching: find.byType(SwipeRevealCard),
+      );
+      expect(childFolderSwipeCardFinder, findsOneWidget);
+
+      final swipeCard = tester.widget<SwipeRevealCard>(childFolderSwipeCardFinder);
+      expect(swipeCard.actionLabel, fixture.languageProvider.tr('remove'));
+      expect(swipeCard.removeTooltip, fixture.languageProvider.tr('remove_audio_folder'));
+
+      await tester.drag(discFolderFinder, const Offset(-200, 0));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      final removeButtonFinder = find.byTooltip(
+        fixture.languageProvider.tr('remove_audio_folder'),
+      );
+      expect(removeButtonFinder, findsOneWidget);
+
+      await tester.tap(removeButtonFinder);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(
+        find.textContaining(fixture.languageProvider.tr('undo')),
+        findsOneWidget,
+      );
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 30)),
+      );
+      await tester.pump();
+    },
+  );
 }
+

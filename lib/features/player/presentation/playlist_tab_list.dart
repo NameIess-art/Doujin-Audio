@@ -75,31 +75,179 @@ class _PlaylistSelectionIndicator extends StatelessWidget {
   }
 }
 
-class _PlaylistSelectionIndicatorAnchor extends StatelessWidget {
-  const _PlaylistSelectionIndicatorAnchor({
+class _PlaylistPinnedIndicator extends StatelessWidget {
+  const _PlaylistPinnedIndicator({
+    required this.sessionId,
+    this.color,
+  });
+
+  final String sessionId;
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final pinColor = color ?? cs.primary;
+    return IgnorePointer(
+      child: ExcludeSemantics(
+        child: Container(
+          key: ValueKey<String>('playlist_session_pinned_$sessionId'),
+          width: 20,
+          height: 20,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: pinColor,
+            border: Border.all(color: Colors.white, width: 1.5),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.28),
+                blurRadius: 4,
+                offset: const Offset(0, 1),
+              ),
+            ],
+          ),
+          child: const Icon(
+            Icons.push_pin_rounded,
+            size: 11,
+            color: Colors.white,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PushPinOffIcon extends StatelessWidget {
+  const _PushPinOffIcon();
+
+  @override
+  Widget build(BuildContext context) {
+    final iconTheme = IconTheme.of(context);
+    final effectiveSize = iconTheme.size ?? 22.0;
+    final effectiveColor =
+        iconTheme.color ?? Theme.of(context).colorScheme.onSurface;
+
+    return SizedBox(
+      width: effectiveSize,
+      height: effectiveSize,
+      child: CustomPaint(
+        painter: _PushPinOffPainter(
+          iconColor: effectiveColor,
+          size: effectiveSize,
+        ),
+      ),
+    );
+  }
+}
+
+class _PushPinOffPainter extends CustomPainter {
+  const _PushPinOffPainter({
+    required this.iconColor,
+    required this.size,
+  });
+
+  final Color iconColor;
+  final double size;
+
+  @override
+  void paint(Canvas canvas, Size canvasSize) {
+    final rect = Offset.zero & canvasSize;
+    canvas.saveLayer(rect, Paint());
+
+    final textPainter = TextPainter(
+      textDirection: TextDirection.ltr,
+      text: TextSpan(
+        text: String.fromCharCode(Icons.push_pin_rounded.codePoint),
+        style: TextStyle(
+          fontSize: size,
+          fontFamily: Icons.push_pin_rounded.fontFamily,
+          package: Icons.push_pin_rounded.fontPackage,
+          color: iconColor,
+        ),
+      ),
+    )..layout();
+
+    final textOffset = Offset(
+      (canvasSize.width - textPainter.width) / 2,
+      (canvasSize.height - textPainter.height) / 2,
+    );
+    textPainter.paint(canvas, textOffset);
+
+    final scale = size / 24.0;
+    final p1 = Offset(3.5 * scale, 3.5 * scale);
+    final p2 = Offset(20.5 * scale, 20.5 * scale);
+
+    final clearPaint = Paint()
+      ..blendMode = BlendMode.clear
+      ..strokeWidth = 3.2 * scale
+      ..strokeCap = StrokeCap.round
+      ..style = PaintingStyle.stroke;
+    canvas.drawLine(p1, p2, clearPaint);
+
+    final linePaint = Paint()
+      ..color = iconColor
+      ..strokeWidth = 1.8 * scale
+      ..strokeCap = StrokeCap.round
+      ..style = PaintingStyle.stroke;
+    canvas.drawLine(p1, p2, linePaint);
+
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(covariant _PushPinOffPainter oldDelegate) {
+    return oldDelegate.iconColor != iconColor || oldDelegate.size != size;
+  }
+}
+
+class _PlaylistLeadingIndicators extends StatelessWidget {
+  const _PlaylistLeadingIndicators({
     required this.sessionId,
     required this.isSelected,
+    required this.isPinned,
+    this.isSelectionMode = false,
+    this.pinColor,
   });
 
   final String sessionId;
   final bool isSelected;
+  final bool isPinned;
+  final bool isSelectionMode;
+  final Color? pinColor;
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: isSelected ? 24 : 0,
-      height: _playlistCoverSize,
-      child: Stack(
-        children: [
-          Positioned(
-            left: 0,
-            bottom: 4,
-            child: _PlaylistSelectionIndicator(
-              sessionId: sessionId,
-              isSelected: isSelected,
+    final showLeading = isPinned || isSelected || isSelectionMode;
+    if (!showLeading) {
+      return const SizedBox.shrink();
+    }
+    return Padding(
+      padding: const EdgeInsets.only(right: AppSpacing.xs),
+      child: SizedBox(
+        width: 24,
+        height: _playlistCoverSize,
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            if (isPinned)
+              Positioned(
+                top: 4,
+                left: 2,
+                child: _PlaylistPinnedIndicator(
+                  sessionId: sessionId,
+                  color: pinColor,
+                ),
+              ),
+            Positioned(
+              bottom: 4,
+              left: 0,
+              child: _PlaylistSelectionIndicator(
+                sessionId: sessionId,
+                isSelected: isSelected,
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -354,8 +502,10 @@ class _SessionListCard extends ConsumerWidget {
     required this.onOpen,
     this.isSelectionMode = false,
     this.isSelected = false,
+    this.isPinned = false,
     this.onLongPress,
     this.onToggleSelect,
+    this.onTogglePin,
   });
 
   final String sessionId;
@@ -369,8 +519,10 @@ class _SessionListCard extends ConsumerWidget {
   final VoidCallback onOpen;
   final bool isSelectionMode;
   final bool isSelected;
+  final bool isPinned;
   final VoidCallback? onLongPress;
   final VoidCallback? onToggleSelect;
+  final VoidCallback? onTogglePin;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -424,13 +576,19 @@ class _SessionListCard extends ConsumerWidget {
       hidden: isHidden,
       child: SwipeRevealCard(
         key: ValueKey(sessionId),
-      shape: _playlistRowShape,
-      closedColor: cs.surface,
-      enabled: !isSelectionMode,
-      actionLabel: i18n.tr('remove'),
-      removeTooltip: i18n.tr('remove_audio'),
-      onRemove: () => _stagePlaybackSessionRemovals(context, ref, [sessionId]),
-      child: ConstrainedBox(
+        shape: _playlistRowShape,
+        closedColor: cs.surface,
+        enabled: !isSelectionMode,
+        actionLabel: i18n.tr('remove'),
+        removeTooltip: i18n.tr('remove_audio'),
+        onRemove: () => _stagePlaybackSessionRemovals(context, ref, [sessionId]),
+        onLeadingAction: onTogglePin,
+        leadingActionLabel: i18n.tr(isPinned ? 'unpin_from_top' : 'pin_to_top'),
+        leadingActionTooltip:
+            i18n.tr(isPinned ? 'unpin_from_top' : 'pin_to_top'),
+        leadingActionIcon: Icons.push_pin_rounded,
+        leadingActionIconWidget: isPinned ? const _PushPinOffIcon() : null,
+        child: ConstrainedBox(
         constraints: const BoxConstraints(minHeight: _playlistRowHeight),
         child: Material(
           color: Colors.transparent,
@@ -500,13 +658,25 @@ class _SessionListCard extends ConsumerWidget {
                                 isSelected: isSelected,
                               ),
                             ),
+                            if (isPinned)
+                              Positioned(
+                                top: 4,
+                                right: 4,
+                                child: _PlaylistPinnedIndicator(
+                                  sessionId: sessionId,
+                                  color: isAsmrOne ? asmrBlue : localPlayRose,
+                                ),
+                              ),
                           ],
                         ),
                         const SizedBox(width: AppSpacing.xs),
                       ] else ...[
-                        _PlaylistSelectionIndicatorAnchor(
+                        _PlaylistLeadingIndicators(
                           sessionId: sessionId,
                           isSelected: isSelected,
+                          isPinned: isPinned,
+                          isSelectionMode: isSelectionMode,
+                          pinColor: isAsmrOne ? asmrBlue : localPlayRose,
                         ),
                       ],
                       Expanded(

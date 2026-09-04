@@ -522,8 +522,13 @@ void main() {
 
     // Swipe left to exclude
     await tester.drag(item0, const Offset(-500, 0));
-    await tester.pumpAndSettle();
+    // While the swipe and rebound animation are underway, item is not yet excluded
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+    expect(session.items[0].isExcluded, isFalse);
 
+    // After rebound completely finishes, state changes
+    await tester.pumpAndSettle();
     expect(session.items[0].isExcluded, isTrue);
     expect(
       find.descendant(

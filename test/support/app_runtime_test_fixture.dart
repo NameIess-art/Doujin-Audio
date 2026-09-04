@@ -250,16 +250,24 @@ Widget buildAppRuntimeTestApp({
       appLanguageProviderInstanceProvider.overrideWithValue(languageProvider),
       ...overrides,
     ],
-    child: MaterialApp(
-      navigatorObservers: navigatorObservers,
-      home: Scaffold(
-        body: Consumer(
-          builder: (context, ref, _) {
-            ref.watch(appInteractionEffectsControllerProvider);
-            return child;
-          },
-        ),
-      ),
+    child: Consumer(
+      builder: (context, ref, _) {
+        final theme = ref.watch(themeProviderInstanceProvider);
+        return MaterialApp(
+          navigatorObservers: navigatorObservers,
+          theme: theme.lightTheme,
+          darkTheme: theme.darkTheme,
+          themeMode: theme.themeMode,
+          home: Scaffold(
+            body: Consumer(
+              builder: (context, ref, _) {
+                ref.watch(appInteractionEffectsControllerProvider);
+                return child;
+              },
+            ),
+          ),
+        );
+      },
     ),
   );
 }

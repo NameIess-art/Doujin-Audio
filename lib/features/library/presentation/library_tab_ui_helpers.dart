@@ -94,7 +94,10 @@ Future<void> _completeLibraryBatchSelectionsMetadata({
   await Navigator.of(context).push(
     buildAppPageRoute<void>(
       context: context,
-      child: DlsiteMetadataBatchPage(entries: entries),
+      child: DlsiteMetadataBatchPage(
+        entries: entries,
+        initialScope: DlsiteMetadataBatchScope.all,
+      ),
     ),
   );
 }

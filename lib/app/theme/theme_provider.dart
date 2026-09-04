@@ -53,7 +53,13 @@ extension ThemeAccentPresetValue on ThemeAccentPreset {
     _ => 'theme_color_$name',
   };
 
-  Color bootstrapSurfaceColor(Brightness brightness) {
+  Color bootstrapSurfaceColor(
+    Brightness brightness, {
+    bool pureBlack = false,
+  }) {
+    if (pureBlack && brightness == Brightness.dark) {
+      return const Color(0xFF000000);
+    }
     final dark = brightness == Brightness.dark;
     return switch (this) {
       ThemeAccentPreset.coral ||
@@ -65,7 +71,7 @@ extension ThemeAccentPresetValue on ThemeAccentPreset {
       ThemeAccentPreset.blue ||
       ThemeAccentPreset.sky ||
       ThemeAccentPreset.cyan =>
-        dark ? const Color(0xFF101417) : const Color(0xFFF5FBFF),
+        dark ? const Color(0xFF101218) : const Color(0xFFF7F9FF),
       ThemeAccentPreset.mint ||
       ThemeAccentPreset.green ||
       ThemeAccentPreset.lightGreen =>
@@ -80,9 +86,9 @@ extension ThemeAccentPresetValue on ThemeAccentPreset {
     };
   }
 
-  ColorScheme colorScheme(Brightness brightness) {
+  ColorScheme colorScheme(Brightness brightness, {bool pureBlack = false}) {
     if (this == ThemeAccentPreset.gray) {
-      return _grayColorScheme(brightness);
+      return _grayColorScheme(brightness, pureBlack: pureBlack);
     }
     final generated = ColorScheme.fromSeed(
       seedColor: primaryColor,
@@ -93,7 +99,10 @@ extension ThemeAccentPresetValue on ThemeAccentPreset {
         ThemeData.estimateBrightnessForColor(primaryColor) == Brightness.dark
         ? Colors.white
         : const Color(0xFF1B1B1F);
-    final darkSurface = bootstrapSurfaceColor(Brightness.dark);
+    final darkSurface = bootstrapSurfaceColor(
+      Brightness.dark,
+      pureBlack: pureBlack,
+    );
     final containerLowest = Color.alphaBlend(
       Colors.black.withValues(alpha: 0.35),
       darkSurface,
@@ -129,7 +138,10 @@ extension ThemeAccentPresetValue on ThemeAccentPreset {
     );
   }
 
-  static ColorScheme _grayColorScheme(Brightness brightness) {
+  static ColorScheme _grayColorScheme(
+    Brightness brightness, {
+    bool pureBlack = false,
+  }) {
     if (brightness == Brightness.dark) {
       const primary = Color(0xFFC7C6C6);
       const onPrimary = Color(0xFF1B1B1F);
@@ -147,7 +159,9 @@ extension ThemeAccentPresetValue on ThemeAccentPreset {
       const onError = Color(0xFF690005);
       const errorContainer = Color(0xFF93000A);
       const onErrorContainer = Color(0xFFFFDAD6);
-      const surface = Color(0xFF121315);
+      final surface = pureBlack
+          ? const Color(0xFF000000)
+          : const Color(0xFF121315);
       const onSurface = Color(0xFFE2E3E6);
       const onSurfaceVariant = Color(0xFFC4C7CB);
       const outline = Color(0xFF8E9195);
@@ -157,15 +171,29 @@ extension ThemeAccentPresetValue on ThemeAccentPreset {
       const inverseSurface = Color(0xFFE2E3E6);
       const onInverseSurface = Color(0xFF121315);
       const inversePrimary = Color(0xFF5C5F62);
-      const surfaceDim = Color(0xFF121315);
-      const surfaceBright = Color(0xFF27282A);
-      const surfaceContainerLowest = Color(0xFF0C0C0E);
-      const surfaceContainerLow = Color(0xFF1A1B1D);
-      const surfaceContainer = Color(0xFF202123);
-      const surfaceContainerHigh = Color(0xFF27282A);
-      const surfaceContainerHighest = Color(0xFF313233);
+      final surfaceDim = pureBlack
+          ? const Color(0xFF000000)
+          : const Color(0xFF121315);
+      final surfaceBright = pureBlack
+          ? const Color(0xFF171717)
+          : const Color(0xFF27282A);
+      final surfaceContainerLowest = pureBlack
+          ? const Color(0xFF000000)
+          : const Color(0xFF0C0C0E);
+      final surfaceContainerLow = pureBlack
+          ? const Color(0xFF090909)
+          : const Color(0xFF1A1B1D);
+      final surfaceContainer = pureBlack
+          ? const Color(0xFF0F0F0F)
+          : const Color(0xFF202123);
+      final surfaceContainerHigh = pureBlack
+          ? const Color(0xFF171717)
+          : const Color(0xFF27282A);
+      final surfaceContainerHighest = pureBlack
+          ? const Color(0xFF212121)
+          : const Color(0xFF313233);
 
-      return const ColorScheme(
+      return ColorScheme(
         brightness: Brightness.dark,
         primary: primary,
         onPrimary: onPrimary,
@@ -283,19 +311,23 @@ typedef ThemePreferenceWriter = Future<bool> Function(String key, Object value);
 class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
   static const _themeModeKey = 'themeMode';
   static const _differentiateAsmrThemeKey = 'differentiateAsmrTheme';
+  static const _pureBlackThemeKey = 'pureBlackTheme';
   static const _appThemeColorKey = 'appThemeColor';
   static const _asmrThemeColorKey = 'asmrThemeColor';
 
   ThemeMode _themeMode = ThemeMode.system;
   bool _differentiateAsmrTheme = true;
+  bool _pureBlackTheme = false;
   ThemeAccentPreset _appThemeColor = ThemeAccentPreset.rose;
   ThemeAccentPreset _asmrThemeColor = ThemeAccentPreset.blue;
   late ThemeMode _persistedThemeMode;
   late bool _persistedDifferentiateAsmrTheme;
+  late bool _persistedPureBlackTheme;
   late ThemeAccentPreset _persistedAppThemeColor;
   late ThemeAccentPreset _persistedAsmrThemeColor;
   int _themeModeMutation = 0;
   int _differentiateAsmrThemeMutation = 0;
+  int _pureBlackThemeMutation = 0;
   int _appThemeColorMutation = 0;
   int _asmrThemeColorMutation = 0;
   late ThemeData _lightTheme;
@@ -303,6 +335,7 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
 
   ThemeMode get themeMode => _themeMode;
   bool get differentiateAsmrTheme => _differentiateAsmrTheme;
+  bool get pureBlackTheme => _pureBlackTheme;
   ThemeAccentPreset get appThemeColor => _appThemeColor;
   ThemeAccentPreset get asmrThemeColor => _asmrThemeColor;
   ThemeData get lightTheme => _lightTheme;
@@ -356,6 +389,8 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
     _themeMode = readThemeModeSync();
     _differentiateAsmrTheme =
         AppPreferences.getBoolSync(_differentiateAsmrThemeKey) ?? true;
+    _pureBlackTheme =
+        AppPreferences.getBoolSync(_pureBlackThemeKey) ?? false;
     _appThemeColor = readAppThemeColorSync();
     _asmrThemeColor = _readThemeColor(
       AppPreferences.getStringSync(_asmrThemeColorKey),
@@ -363,6 +398,7 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
     );
     _persistedThemeMode = _themeMode;
     _persistedDifferentiateAsmrTheme = _differentiateAsmrTheme;
+    _persistedPureBlackTheme = _pureBlackTheme;
     _persistedAppThemeColor = _appThemeColor;
     _persistedAsmrThemeColor = _asmrThemeColor;
   }
@@ -421,6 +457,27 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
     }
     if (mutation != _differentiateAsmrThemeMutation) return false;
     _differentiateAsmrTheme = _persistedDifferentiateAsmrTheme;
+    _rebuildThemes();
+    notifyListeners();
+    return false;
+  }
+
+  Future<bool> setPureBlackTheme(bool value) async {
+    if (_pureBlackTheme == value) return true;
+    final mutation = ++_pureBlackThemeMutation;
+    _pureBlackTheme = value;
+    _rebuildThemes();
+    notifyListeners();
+    final persisted = await _writePreferenceInOrder(
+      _pureBlackThemeKey,
+      value,
+    );
+    if (persisted) {
+      _persistedPureBlackTheme = value;
+      return true;
+    }
+    if (mutation != _pureBlackThemeMutation) return false;
+    _pureBlackTheme = _persistedPureBlackTheme;
     _rebuildThemes();
     notifyListeners();
     return false;
@@ -492,9 +549,17 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
     _darkTheme = _buildTheme(_colorSchemeFor(Brightness.dark));
   }
 
-  ColorScheme _colorSchemeFor(Brightness brightness) => _appThemeColor
-      .colorScheme(brightness)
-      .copyWith(surface: _appThemeColor.bootstrapSurfaceColor(brightness));
+  ColorScheme _colorSchemeFor(Brightness brightness) {
+    final pureBlack = _pureBlackTheme && brightness == Brightness.dark;
+    return _appThemeColor
+        .colorScheme(brightness, pureBlack: pureBlack)
+        .copyWith(
+          surface: _appThemeColor.bootstrapSurfaceColor(
+            brightness,
+            pureBlack: pureBlack,
+          ),
+        );
+  }
 
   ThemeData _buildTheme(ColorScheme scheme) {
     final bodyText = const TextTheme().copyWith(
@@ -558,7 +623,10 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
         : AppDesignTokens.light;
 
     if (_differentiateAsmrTheme) {
-      final asmrScheme = _asmrThemeColor.colorScheme(scheme.brightness);
+      final asmrScheme = _asmrThemeColor.colorScheme(
+        scheme.brightness,
+        pureBlack: _pureBlackTheme && scheme.brightness == Brightness.dark,
+      );
       tokens = tokens.copyWith(
         asmrAccent: asmrScheme.primary,
         asmrContainer: asmrScheme.primaryContainer,

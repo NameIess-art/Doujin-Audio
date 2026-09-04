@@ -925,7 +925,9 @@ class _AsmrDownloadNodeTileState extends ConsumerState<_AsmrDownloadNodeTile> {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final asmrBlue = AppDesignTokens.of(context).asmrAccent;
+    final tokens = AppDesignTokens.of(context);
+    final asmrBlue = tokens.asmrAccent;
+    final folderRadius = BorderRadius.circular(tokens.radiusSmall);
     ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     final value = widget.selection.stateForPath(widget.node.track.relativePath);
@@ -939,8 +941,8 @@ class _AsmrDownloadNodeTileState extends ConsumerState<_AsmrDownloadNodeTile> {
           expansionAnimationStyle: appExpansionAnimationStyle(context),
           initiallyExpanded: _expanded,
           minTileHeight: _folderRowHeight,
-          shape: const RoundedRectangleBorder(),
-          collapsedShape: const RoundedRectangleBorder(),
+          shape: RoundedRectangleBorder(borderRadius: folderRadius),
+          collapsedShape: RoundedRectangleBorder(borderRadius: folderRadius),
           tilePadding: EdgeInsetsDirectional.only(start: indent, end: 2),
           childrenPadding: EdgeInsets.zero,
           onExpansionChanged: (expanded) {
@@ -1018,7 +1020,7 @@ class _AsmrDownloadNodeTileState extends ConsumerState<_AsmrDownloadNodeTile> {
 
     return InkWell(
       onTap: () => _toggleSelection(value == true ? false : true),
-      borderRadius: BorderRadius.circular(4),
+      borderRadius: folderRadius,
       child: SizedBox(
         height: _fileRowHeight,
         child: Padding(

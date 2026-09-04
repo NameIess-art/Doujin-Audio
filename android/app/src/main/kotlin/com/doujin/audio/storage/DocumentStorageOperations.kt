@@ -836,7 +836,7 @@ internal class DocumentStorageOperations(
             if (trimmed.contains("::")) {
                 val syntheticIndex = trimmed.indexOf("::")
                 val base = trimmed.substring(0, syntheticIndex)
-                val relative = trimmed.substring(syntheticIndex + 2).trim('/')
+                val relative = trimmed.substring(syntheticIndex + 2).replace("::", "/").trim('/')
                 val root = DocumentFile.fromTreeUri(context, Uri.parse(base)) ?: return false
                 return resolveRelativeDocument(root, relative)?.exists() == true
             }
@@ -945,8 +945,19 @@ internal class DocumentStorageOperations(
         }
 
         fun deleteDocumentPath(targetPath: String): Boolean {
-            val target = resolveDocumentFileForFolderPath(targetPath) ?: return false
-            return target.delete()
+            val trimmed = targetPath.trim()
+            if (!trimmed.startsWith("content://")) return false
+            if (trimmed.contains("::")) {
+                val syntheticIndex = trimmed.indexOf("::")
+                val base = trimmed.substring(0, syntheticIndex)
+                val relative = trimmed.substring(syntheticIndex + 2).replace("::", "/").trim('/')
+                val root = DocumentFile.fromTreeUri(context, Uri.parse(base)) ?: return false
+                return resolveRelativeDocument(root, relative)?.delete() == true
+            }
+            val uri = Uri.parse(trimmed)
+            val document = DocumentFile.fromSingleUri(context, uri)
+            if (document?.exists() == true) return document.delete()
+            return DocumentFile.fromTreeUri(context, uri)?.delete() == true
         }
 
         private fun ensureDocumentFileForFolderPath(
@@ -964,7 +975,7 @@ internal class DocumentStorageOperations(
             val syntheticIndex = trimmed.indexOf("::")
             if (syntheticIndex >= 0) {
                 val base = trimmed.substring(0, syntheticIndex)
-                val relative = trimmed.substring(syntheticIndex + 2).trim('/')
+                val relative = trimmed.substring(syntheticIndex + 2).replace("::", "/").trim('/')
                 val root = DocumentFile.fromTreeUri(context, Uri.parse(base)) ?: return null
                 return resolveRelativeDocumentDirectory(root, relative)
             }
@@ -1007,7 +1018,7 @@ internal class DocumentStorageOperations(
             val syntheticIndex = trimmed.indexOf("::")
             if (syntheticIndex >= 0) {
                 val base = trimmed.substring(0, syntheticIndex)
-                val relative = trimmed.substring(syntheticIndex + 2).trim('/')
+                val relative = trimmed.substring(syntheticIndex + 2).replace("::", "/").trim('/')
                 val rootUri = Uri.parse(base)
                 val targetUri = if (relative.isBlank()) {
                     documentUriForTreeRoot(rootUri)

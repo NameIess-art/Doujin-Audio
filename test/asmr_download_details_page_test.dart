@@ -40,6 +40,38 @@ void main() {
     expect(find.text('Download task not found'), findsNothing);
   });
 
+  testWidgets('folder tile uses rounded rectangle shape', (tester) async {
+    SharedPreferences.setMockInitialValues(const <String, Object>{});
+    final languageProvider = AppLanguageProvider();
+    addTearDown(languageProvider.dispose);
+    await languageProvider.setLanguage(AppLanguage.en);
+    final folder = AsmrTrackFile(
+      hash: 'folder_1',
+      title: 'Folder',
+      type: 'folder',
+      streamUrl: null,
+      downloadUrl: null,
+      lowQualityUrl: null,
+      duration: Duration.zero,
+      size: 0,
+      children: const <AsmrTrackFile>[],
+      workId: 1,
+      workTitle: 'Work',
+      sourceId: 'RJ123456',
+      relativePath: 'Folder',
+    );
+    final task = _downloadTask().copyWith(selectedRoots: <AsmrTrackFile>[folder]);
+    await tester.pumpWidget(_downloadDetailsApp(languageProvider, task));
+    await tester.pump();
+
+    final expansionTile = tester.widget<ExpansionTile>(find.byType(ExpansionTile));
+    expect(expansionTile.shape, isA<RoundedRectangleBorder>());
+    expect(expansionTile.collapsedShape, isA<RoundedRectangleBorder>());
+    final shape = expansionTile.shape as RoundedRectangleBorder;
+    expect(shape.borderRadius, isA<BorderRadius>());
+    expect((shape.borderRadius as BorderRadius).topLeft.x, greaterThan(0));
+  });
+
   testWidgets('completed file restores its size after a retry', (tester) async {
     SharedPreferences.setMockInitialValues(const <String, Object>{});
     final languageProvider = AppLanguageProvider();

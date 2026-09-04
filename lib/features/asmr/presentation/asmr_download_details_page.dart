@@ -156,7 +156,7 @@ class _AsmrDownloadDetailsPageState
                           ),
                           const SizedBox(width: 6),
                           Text(
-                            '${_formatBytes(task.downloadedBytes)} / ${_formatBytes(task.totalBytes)}',
+                            '${_formatBytes(task.totalBytes > 0 && task.downloadedBytes > task.totalBytes ? task.totalBytes : task.downloadedBytes)} / ${_formatBytes(task.totalBytes)}',
                             style: Theme.of(context).textTheme.bodySmall?.copyWith(
                               color: cs.onSurfaceVariant,
                               fontWeight: FontWeight.w600,
@@ -225,7 +225,9 @@ class _AsmrDownloadDetailsNodeTileState
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final asmrBlue = AppDesignTokens.of(context).asmrAccent;
+    final tokens = AppDesignTokens.of(context);
+    final asmrBlue = tokens.asmrAccent;
+    final folderRadius = BorderRadius.circular(tokens.radiusSmall);
     final indent = widget.depth * _indentWidth;
     const fileRowHeight = 44.0;
 
@@ -237,6 +239,8 @@ class _AsmrDownloadDetailsNodeTileState
           expansionAnimationStyle: appExpansionAnimationStyle(context),
           initiallyExpanded: _expanded,
           onExpansionChanged: (v) => _toggleExpanded(),
+          shape: RoundedRectangleBorder(borderRadius: folderRadius),
+          collapsedShape: RoundedRectangleBorder(borderRadius: folderRadius),
           tilePadding: EdgeInsetsDirectional.only(
             start: indent + _rootContentInset,
             end: 16,

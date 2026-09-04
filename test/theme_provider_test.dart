@@ -19,6 +19,7 @@ void main() {
     expect(provider.themeMode, ThemeMode.system);
     expect(provider.appThemeColor, ThemeAccentPreset.rose);
     expect(provider.asmrThemeColor, ThemeAccentPreset.blue);
+    expect(provider.pureBlackTheme, isFalse);
     expect(ThemeAccentPreset.values, hasLength(16));
   });
 
@@ -91,6 +92,20 @@ void main() {
     expect(preferences.getString('themeMode'), 'light');
   });
 
+  test('loads and saves pure black theme preference', () async {
+    SharedPreferences.setMockInitialValues(const <String, Object>{
+      'pureBlackTheme': true,
+    });
+    await AppPreferences.init();
+    final provider = ThemeProvider();
+
+    expect(provider.pureBlackTheme, isTrue);
+
+    await provider.setPureBlackTheme(false);
+    final preferences = await SharedPreferences.getInstance();
+    expect(preferences.getBool('pureBlackTheme'), isFalse);
+  });
+
   test(
     'failed preference writes roll back all optimistic theme changes',
     () async {
@@ -106,6 +121,10 @@ void main() {
 
       expect(await provider.setDifferentiateAsmrTheme(false), isFalse);
       expect(provider.differentiateAsmrTheme, isTrue);
+
+      expect(await provider.setPureBlackTheme(true), isFalse);
+      expect(provider.pureBlackTheme, isFalse);
+
       expect(
         await provider.setAsmrThemeColor(ThemeAccentPreset.amber),
         isFalse,
@@ -288,6 +307,52 @@ void main() {
     },
   );
 
+  test(
+    'pure black theme sets dark background and surfaces to pure black while keeping accents',
+    () async {
+      SharedPreferences.setMockInitialValues(const <String, Object>{});
+      await AppPreferences.init();
+      final provider = ThemeProvider();
+
+      await provider.setAppThemeColor(ThemeAccentPreset.blue);
+      await provider.setPureBlackTheme(true);
+
+      // Dark theme background is pure black
+      expect(
+        provider.darkTheme.scaffoldBackgroundColor,
+        const Color(0xFF000000),
+      );
+      expect(provider.darkTheme.colorScheme.surface, const Color(0xFF000000));
+      expect(
+        provider.darkTheme.colorScheme.surfaceDim,
+        const Color(0xFF000000),
+      );
+
+      // Primary accent and text remain consistent
+      expect(
+        provider.darkTheme.colorScheme.primary,
+        ThemeAccentPreset.blue.primaryColor,
+      );
+      expect(
+        _contrastRatio(
+          provider.darkTheme.colorScheme.onSurface,
+          const Color(0xFF000000),
+        ),
+        greaterThan(4.5),
+      );
+
+      // Light theme remains unchanged (not pure black)
+      expect(
+        provider.lightTheme.scaffoldBackgroundColor,
+        isNot(const Color(0xFF000000)),
+      );
+      expect(
+        provider.lightTheme.colorScheme.surface,
+        isNot(const Color(0xFF000000)),
+      );
+    },
+  );
+
   test('selected ASMR color updates independent design tokens', () async {
     SharedPreferences.setMockInitialValues(const <String, Object>{});
     await AppPreferences.init();
@@ -390,6 +455,26 @@ void main() {
       expect(_contrastRatio(titleColor, scheme.surface), greaterThan(4.5));
       expect(_contrastRatio(bodyColor, scheme.surface), greaterThan(4.5));
       expect(_contrastRatio(supportingColor, scheme.surface), greaterThan(4.5));
+    }
+  });
+
+  test('blue preset surfaces avoid greenish tint in dark and light modes', () {
+    const bluePresets = <ThemeAccentPreset>[
+      ThemeAccentPreset.blue,
+      ThemeAccentPreset.sky,
+      ThemeAccentPreset.cyan,
+    ];
+
+    for (final preset in bluePresets) {
+      final darkSurface = preset.bootstrapSurfaceColor(Brightness.dark);
+      expect(darkSurface, const Color(0xFF101218));
+      expect(darkSurface.b, greaterThan(darkSurface.g));
+      expect(darkSurface.b, greaterThan(darkSurface.r));
+
+      final lightSurface = preset.bootstrapSurfaceColor(Brightness.light);
+      expect(lightSurface, const Color(0xFFF7F9FF));
+      expect(lightSurface.b, greaterThan(lightSurface.g));
+      expect(lightSurface.b, greaterThan(lightSurface.r));
     }
   });
 }

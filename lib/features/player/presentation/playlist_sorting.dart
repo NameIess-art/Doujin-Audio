@@ -14,10 +14,16 @@ List<PlaybackSessionSnapshot> sortPlaylistSessions({
   required LibraryFacade library,
   required MusicTrack? Function(PlaybackSessionSnapshot session)
   trackForSession,
+  Set<String> pinnedSessionIds = const <String>{},
 }) {
   if (sessions.length < 2) return sessions;
   final sorted = List<PlaybackSessionSnapshot>.of(sessions);
   sorted.sort((left, right) {
+    final leftPinned = pinnedSessionIds.contains(left.id);
+    final rightPinned = pinnedSessionIds.contains(right.id);
+    if (leftPinned != rightPinned) {
+      return leftPinned ? -1 : 1;
+    }
     final leftValue = _playlistSortValue(left, library, trackForSession);
     final rightValue = _playlistSortValue(right, library, trackForSession);
     if (groupByLibrary) {

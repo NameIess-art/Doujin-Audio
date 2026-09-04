@@ -431,8 +431,8 @@ final class PlaybackFacade {
     final session = PlaybackSession(
       id: _nextSessionId(),
       currentTrackPath: '',
-      loopMode: SessionLoopMode.folderSequential,
-      nonSingleLoopMode: SessionLoopMode.folderSequential,
+      loopMode: SessionLoopMode.crossSequential,
+      nonSingleLoopMode: SessionLoopMode.crossSequential,
       volume: 1,
       createdAt: DateTime.now(),
       state: PlayerState(false, ProcessingState.idle),
@@ -608,6 +608,7 @@ final class PlaybackFacade {
       // the session still has a loaded source. Preparation is only needed when
       // the original native session was never created.
       if (session.loadedPath != null) {
+        session.beginLoadingIndicatorThreshold();
         await _startSession?.call(session, shouldStartTriggerCountdown: true);
       } else {
         await _prepareSession?.call(
@@ -622,7 +623,6 @@ final class PlaybackFacade {
       return;
     }
     session.lastPlayedAt = DateTime.now();
-    _onSessionStateChanged?.call();
     if (session.isLoading) {
       await _prepareSession?.call(session, nextPath: session.currentTrackPath);
       return;
@@ -637,6 +637,7 @@ final class PlaybackFacade {
       );
       return;
     }
+    session.beginLoadingIndicatorThreshold();
     await _startSession?.call(session, shouldStartTriggerCountdown: true);
   }
 

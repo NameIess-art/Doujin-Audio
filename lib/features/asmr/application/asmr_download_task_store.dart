@@ -219,10 +219,17 @@ final class AsmrDownloadTaskStore {
     if (_shutdown) return;
     final task = this[workId];
     if (task == null || chunkLength <= 0) return;
+    final maxBytes = task.totalBytes > 0 ? task.totalBytes : null;
     _liveDownloadedBytes.update(
       workId,
-      (value) => value + chunkLength,
-      ifAbsent: () => task.downloadedBytes + chunkLength,
+      (value) {
+        final next = value + chunkLength;
+        return maxBytes != null && next > maxBytes ? maxBytes : next;
+      },
+      ifAbsent: () {
+        final next = task.downloadedBytes + chunkLength;
+        return maxBytes != null && next > maxBytes ? maxBytes : next;
+      },
     );
     final fileProgress = _liveFileDownloadedBytes.putIfAbsent(
       workId,
@@ -248,7 +255,11 @@ final class AsmrDownloadTaskStore {
   int? liveDownloadedBytes(int workId) => _liveDownloadedBytes[workId];
 
   void setLiveDownloadedBytes(int workId, int value) {
-    _liveDownloadedBytes[workId] = value;
+    final task = this[workId];
+    final maxBytes =
+        task != null && task.totalBytes > 0 ? task.totalBytes : null;
+    _liveDownloadedBytes[workId] =
+        maxBytes != null && value > maxBytes ? maxBytes : value;
   }
 
   Map<String, int> liveFileDownloadedBytes(
@@ -451,12 +462,16 @@ final class AsmrDownloadTaskStore {
       final fileDownloadedBytes = Map<String, int>.unmodifiable(
         _liveFileDownloadedBytes[workId] ?? task.fileDownloadedBytes,
       );
-      if (task.downloadedBytes == downloadedBytes &&
+      final effectiveDownloadedBytes =
+          task.totalBytes > 0 && downloadedBytes > task.totalBytes
+              ? task.totalBytes
+              : downloadedBytes;
+      if (task.downloadedBytes == effectiveDownloadedBytes &&
           mapEquals(task.fileDownloadedBytes, fileDownloadedBytes)) {
         continue;
       }
       this[workId] = task.copyWith(
-        downloadedBytes: downloadedBytes,
+        downloadedBytes: effectiveDownloadedBytes,
         fileDownloadedBytes: fileDownloadedBytes,
       );
       changedWorkIds.add(workId);

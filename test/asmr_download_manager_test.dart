@@ -2944,6 +2944,120 @@ void main() {
   );
 
   test(
+    'SAF download pausing and resuming does not re-download completed files',
+    () async {
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      var fastRequests = 0;
+      var slowRequests = 0;
+      const fastBytes = 4096;
+      const slowBytes = 65536;
+      unawaited(
+        server.forEach((request) async {
+          if (request.uri.path == '/fast.mp3') {
+            fastRequests++;
+            request.response.contentLength = fastBytes;
+            request.response.add(List<int>.filled(fastBytes, 1));
+            await request.response.close();
+            return;
+          }
+          if (request.uri.path == '/slow.mp3') {
+            slowRequests++;
+            request.response.contentLength = slowBytes;
+            for (var offset = 0; offset < slowBytes; offset += 4096) {
+              request.response.add(List<int>.filled(4096, 2));
+              await request.response.flush();
+              await Future<void>.delayed(const Duration(milliseconds: 20));
+            }
+            await request.response.close();
+            return;
+          }
+          request.response.statusCode = HttpStatus.notFound;
+          await request.response.close();
+        }),
+      );
+
+      final gateway = _StatefulSafGateway();
+      final manager = AsmrDownloadManager(
+        fileCacheGateway: gateway,
+        temporaryDirectoryProvider: () async => Directory.systemTemp,
+        automaticFileRetryDelay: Duration.zero,
+        persistTasks: false,
+      );
+      const destinationRoot =
+          'content://com.android.externalstorage.documents/tree/primary%3ADownload';
+      final selectedRoots = <AsmrTrackFile>[
+        _file(
+          downloadUrl: 'http://${server.address.host}:${server.port}/fast.mp3',
+          size: fastBytes,
+          title: 'Fast.mp3',
+        ),
+        _file(
+          downloadUrl: 'http://${server.address.host}:${server.port}/slow.mp3',
+          size: slowBytes,
+          title: 'Slow.mp3',
+        ),
+      ];
+
+      try {
+        await manager.startDownload(
+          work: _work(),
+          selectedRoots: selectedRoots,
+          destinationRoot: destinationRoot,
+          conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
+          saveMetadata: false,
+        );
+
+        final deadline = DateTime.now().add(const Duration(seconds: 5));
+        while (!gateway.copiedRelativePaths.contains('Fast.mp3') &&
+            DateTime.now().isBefore(deadline)) {
+          await Future<void>.delayed(const Duration(milliseconds: 20));
+        }
+
+        await manager.pauseTask(1);
+        final paused = manager.getTask(1);
+        expect(paused?.status, AsmrDownloadTaskStatus.paused);
+        expect(paused?.completedFiles, 1);
+        expect(paused?.completedFilePaths, contains('Fast.mp3'));
+        expect(
+          gateway.copiedRelativePaths.where((p) => p == 'Fast.mp3').length,
+          1,
+        );
+
+        // Resume download
+        await manager.startDownload(
+          work: _work(),
+          selectedRoots: selectedRoots,
+          destinationRoot: destinationRoot,
+          conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
+          saveMetadata: false,
+        );
+        await _waitForTaskStatus(manager, 1, AsmrDownloadTaskStatus.completed);
+        final completed = manager.getTask(1);
+        expect(completed?.completedFiles, 2);
+        expect(completed?.skippedFiles, 0);
+        // Fast.mp3 must NOT have been requested again
+        expect(fastRequests, 1);
+        expect(slowRequests, greaterThanOrEqualTo(1));
+        // Fast.mp3 must NOT have been copied again
+        expect(
+          gateway.copiedRelativePaths.where((p) => p == 'Fast.mp3').length,
+          1,
+        );
+        // Downloaded bytes must match total bytes
+        expect(completed!.downloadedBytes, completed.totalBytes);
+        // Ensure no path checked had multiple ::
+        expect(
+          gateway.checkedPaths.any((p) => RegExp(r'::.*::').hasMatch(p)),
+          isFalse,
+        );
+      } finally {
+        manager.dispose();
+        await server.close(force: true);
+      }
+    },
+  );
+
+  test(
     'v0.18 redownloads a local file when completed-path state is stale',
     () async {
       final tempDir = await Directory.systemTemp.createTemp(
@@ -3513,6 +3627,48 @@ final class _RecordingSafGateway extends FileCachePlatformGateway {
   @override
   Future<bool> deleteDocumentPath(String path) async {
     deletedPaths.add(path);
+    return true;
+  }
+}
+
+final class _StatefulSafGateway extends FileCachePlatformGateway {
+  _StatefulSafGateway() : super(isAndroid: () => true);
+
+  final Set<String> existingPaths = <String>{};
+  final List<String> copiedRelativePaths = <String>[];
+  final List<String> checkedPaths = <String>[];
+
+  @override
+  Future<bool> documentPathExists(String path) async {
+    checkedPaths.add(path);
+    return existingPaths.contains(path);
+  }
+
+  @override
+  Future<bool> ensureFolderPath({
+    required String folder,
+    required String relativePath,
+    required bool overwrite,
+  }) async => true;
+
+  @override
+  Future<bool> copyFileToFolder({
+    required String sourcePath,
+    required String folder,
+    required String relativePath,
+    required bool overwrite,
+  }) async {
+    copiedRelativePaths.add(relativePath);
+    final targetPath = folder.contains('::')
+        ? '${folder.replaceAll(RegExp(r'/+$'), '')}/$relativePath'
+        : '${folder.replaceAll(RegExp(r'/+$'), '')}::$relativePath';
+    existingPaths.add(targetPath);
+    return true;
+  }
+
+  @override
+  Future<bool> deleteDocumentPath(String path) async {
+    existingPaths.remove(path);
     return true;
   }
 }

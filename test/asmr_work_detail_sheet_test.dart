@@ -128,7 +128,7 @@ void main() {
       expect(controller.isFavorite(work.id), isFalse);
 
       expect(find.text('已取消收藏。'), findsOneWidget);
-      final undoButtonFinder = find.text('撤销');
+      final undoButtonFinder = find.text('撤销 (5s)');
       expect(undoButtonFinder, findsOneWidget);
 
       await tester.tap(undoButtonFinder);

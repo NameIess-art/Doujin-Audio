@@ -59,6 +59,7 @@ class SettingsState {
     this.playlistSortCriterion = PlaylistSortCriterion.name,
     this.playlistSortAscending = true,
     this.playlistGroupByLibrary = false,
+    List<String> pinnedPlaylistSessionIds = const <String>[],
     List<EqPreset> customEqPresets = const <EqPreset>[],
     this.maxCacheBytes = 300 * 1024 * 1024,
     this.asmrPlaybackCacheEnabled = false,
@@ -92,6 +93,7 @@ class SettingsState {
     this.reduceAnimations = false,
     this.isInitialized = false,
   }) : cardInfoFields = immutableList(cardInfoFields),
+       pinnedPlaylistSessionIds = immutableList(pinnedPlaylistSessionIds),
        customEqPresets = immutableList(customEqPresets),
        asmrDownloadFolderNameFields = immutableList(
          asmrDownloadFolderNameFields,
@@ -113,6 +115,7 @@ class SettingsState {
   final PlaylistSortCriterion playlistSortCriterion;
   final bool playlistSortAscending;
   final bool playlistGroupByLibrary;
+  final List<String> pinnedPlaylistSessionIds;
   final List<EqPreset> customEqPresets;
   final int maxCacheBytes;
   final bool asmrPlaybackCacheEnabled;
@@ -164,6 +167,10 @@ class SettingsState {
         other.playlistSortCriterion == playlistSortCriterion &&
         other.playlistSortAscending == playlistSortAscending &&
         other.playlistGroupByLibrary == playlistGroupByLibrary &&
+        listEquals(
+          other.pinnedPlaylistSessionIds,
+          pinnedPlaylistSessionIds,
+        ) &&
         listEquals(other.customEqPresets, customEqPresets) &&
         other.maxCacheBytes == maxCacheBytes &&
         other.asmrPlaybackCacheEnabled == asmrPlaybackCacheEnabled &&
@@ -220,6 +227,7 @@ class SettingsState {
     playlistSortCriterion,
     playlistSortAscending,
     playlistGroupByLibrary,
+    Object.hashAll(pinnedPlaylistSessionIds),
     Object.hashAll(customEqPresets),
     maxCacheBytes,
     asmrPlaybackCacheEnabled,

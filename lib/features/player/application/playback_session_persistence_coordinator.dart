@@ -58,7 +58,9 @@ extension PlaybackSessionPersistenceCoordinator on PlaybackFacade {
         currentTrackPath: track?.path ?? '',
         loopMode: loopMode,
         nonSingleLoopMode: loopMode == SessionLoopMode.single
-            ? SessionLoopMode.folderSequential
+            ? (item.playbackQueue != null
+                ? SessionLoopMode.crossSequential
+                : SessionLoopMode.folderSequential)
             : loopMode,
         volume: item.volume.clamp(0.0, PlaybackFacade.maxSessionVolume),
         createdAt: item.createdAtMs == null

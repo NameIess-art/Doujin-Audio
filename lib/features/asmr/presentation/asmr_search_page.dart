@@ -174,6 +174,7 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
         onAction: () => unawaited(_toggleAsmrWorksFavorite(ref, selected)),
         duration: const Duration(seconds: 5),
         showCountdown: true,
+        showActionCountdown: true,
         tone: AppFeedbackTone.warning,
         icon: Icons.favorite_border_rounded,
         iconColor: asmrBlue,

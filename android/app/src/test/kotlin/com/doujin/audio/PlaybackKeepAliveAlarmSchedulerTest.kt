@@ -1,4 +1,4 @@
-package com.doujin.audio
+﻿package com.doujin.audio
 
 import com.doujin.audio.player.notification.PlaybackKeepAliveAlarmScheduler
 import org.junit.Assert.assertFalse
@@ -33,6 +33,32 @@ class PlaybackKeepAliveAlarmSchedulerTest {
                 nowMs = 62_001L,
                 lastArmedMs = 2_000L,
             )
+        )
+    }
+
+    @Test
+    fun `active alarm throttle window allows faster rearm`() {
+        assertFalse(
+            PlaybackKeepAliveAlarmScheduler.shouldSkipRearm(
+                nowMs = 32_000L,
+                lastArmedMs = 1_000L,
+                throttleMs = PlaybackKeepAliveAlarmScheduler.activeRearmThrottleMs
+            )
+        )
+        assertTrue(
+            PlaybackKeepAliveAlarmScheduler.shouldSkipRearm(
+                nowMs = 26_000L,
+                lastArmedMs = 1_000L,
+                throttleMs = PlaybackKeepAliveAlarmScheduler.activeRearmThrottleMs
+            )
+        )
+    }
+
+    @Test
+    fun `active interval is shorter than idle backstop interval`() {
+        assertTrue(
+            PlaybackKeepAliveAlarmScheduler.activeIntervalMs <
+                PlaybackKeepAliveAlarmScheduler.intervalMs
         )
     }
 }

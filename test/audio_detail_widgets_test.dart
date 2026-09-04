@@ -215,6 +215,56 @@ void main() {
     },
   );
 
+  testWidgets(
+    'batch metadata page defaults to all data scope when initialScope is set to all',
+    (WidgetTester tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(390, 800);
+      addTearDown(() {
+        tester.view.resetDevicePixelRatio();
+        tester.view.resetPhysicalSize();
+      });
+
+      final fixture = AppRuntimeWidgetTestFixture(
+        dlsiteMetadataService: _FakeDlsiteMetadataService(),
+        asmrMetadataService: _FakeAsmrMetadataService(),
+      );
+      addTearDown(fixture.dispose);
+
+      await tester.pumpWidget(
+        buildAppRuntimeTestApp(
+          runtimeGraph: fixture.runtimeGraph,
+          persistenceRepository: fixture.persistenceRepository,
+          nativePlaybackRepository: fixture.nativePlaybackRepository,
+          playbackCommandRunner:
+              AppRuntimeWidgetTestFixture.playbackCommandRunner,
+          libraryService: fixture.libraryService,
+          playbackService: fixture.playbackService,
+          timerService: fixture.timerService,
+          notificationCoordinatorService:
+              fixture.notificationCoordinatorService,
+          settingsRepository: fixture.settings,
+          languageProvider: fixture.languageProvider,
+          child: const DlsiteMetadataBatchPage(
+            entries: [],
+            initialScope: DlsiteMetadataBatchScope.all,
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      expect(
+        tester
+            .widget<RadioGroup<Object?>>(
+              find.byKey(const ValueKey('batch_metadata_scope_group')),
+            )
+            .groupValue,
+        DlsiteMetadataBatchScope.all,
+      );
+    },
+  );
+
   testWidgets('metadata review batch mode shows progress and skip action', (
     WidgetTester tester,
   ) async {

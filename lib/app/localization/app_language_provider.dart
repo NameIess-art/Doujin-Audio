@@ -63,7 +63,7 @@ class AppLanguageState {
 
 class AppLanguageProvider
     with ChangeNotifier, WidgetsBindingObserver
-    implements PersistedStateReloader {
+    implements PersistedStateReloader, AppTextTranslator {
   static const _prefsKey = 'app_language';
 
   static const supportedLocales = [Locale('zh'), Locale('ja'), Locale('en')];
@@ -178,6 +178,7 @@ class AppLanguageProvider
     super.dispose();
   }
 
+  @override
   String tr(String key, [Map<String, Object?> params = const {}]) {
     final table =
         _localizedValues[_language] ?? _localizedValues[AppLanguage.zh]!;

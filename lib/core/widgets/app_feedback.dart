@@ -93,6 +93,7 @@ void showAppSnackBar(
   ValueChanged<AppFeedbackDismissReason>? onDismissed,
   bool provideHapticFeedback = true,
   bool? showCountdown,
+  bool? showActionCountdown,
 }) {
   _showTopFeedback(
     context,
@@ -114,7 +115,11 @@ void showAppSnackBar(
     showCountdown:
         showCountdown ??
         (tone == AppFeedbackTone.destructive ||
-            replacementGroup == _undoableRemovalFeedbackGroup),
+            replacementGroup == _undoableRemovalFeedbackGroup ||
+            showActionCountdown == true),
+    showActionCountdown:
+        showActionCountdown ??
+        (replacementGroup == _undoableRemovalFeedbackGroup),
   );
 }
 
@@ -210,6 +215,7 @@ void _showTopFeedback(
   ValueChanged<AppFeedbackDismissReason>? onDismissed,
   required bool provideHapticFeedback,
   bool showCountdown = false,
+  bool showActionCountdown = false,
 }) {
   final overlay = Overlay.of(context, rootOverlay: true);
   final resolvedIcon = icon ?? _defaultIconForTone(tone);
@@ -313,7 +319,7 @@ void _showTopFeedback(
           builder: (wrapperContext, remainingSeconds) {
             final isRemovalAction =
                 hasAction &&
-                replacementGroup == _undoableRemovalFeedbackGroup &&
+                showActionCountdown &&
                 remainingSeconds != null;
             final resolvedActionLabel = hasAction
                 ? (isRemovalAction

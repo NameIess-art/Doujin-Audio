@@ -124,10 +124,16 @@ class PlaybackSession {
         : !snapshot.playWhenReady;
     if (pendingIntent == true && snapshot.playWhenReady) {
       isPlaybackStarting = false;
+      _loadingIndicatorTimer?.cancel();
+      _loadingIndicatorTimer = null;
+      _suppressTransientLoading = false;
     }
     if (snapshot.error != null || confirmsPendingIntent) {
       pendingPlayingIntent = null;
       isPlaybackStarting = false;
+      _loadingIndicatorTimer?.cancel();
+      _loadingIndicatorTimer = null;
+      _suppressTransientLoading = false;
     }
     final nativeProcessingState = _nativeProcessingState(
       snapshot.processingState,
@@ -178,19 +184,33 @@ class PlaybackSession {
     return true;
   }
 
-  void beginTransportCommand({required int commandId, required bool playing}) {
+  void beginTransportCommand({
+    required int commandId,
+    required bool playing,
+    Duration threshold = loadingIndicatorThreshold,
+  }) {
     if (commandId < transportCommandId) return;
     transportCommandId = commandId;
     playbackCommandGeneration = commandId;
     pendingPlayingIntent = playing;
     isPlaybackStarting = playing;
     playbackError = null;
+    if (playing) {
+      beginLoadingIndicatorThreshold(threshold: threshold);
+    } else {
+      _loadingIndicatorTimer?.cancel();
+      _loadingIndicatorTimer = null;
+      _suppressTransientLoading = false;
+    }
   }
 
   bool failTransportCommand(int commandId) {
     if (commandId != transportCommandId) return false;
     pendingPlayingIntent = null;
     isPlaybackStarting = false;
+    _loadingIndicatorTimer?.cancel();
+    _loadingIndicatorTimer = null;
+    _suppressTransientLoading = false;
     return true;
   }
 
@@ -234,6 +254,11 @@ class PlaybackSession {
   }) {
     if (isDisposed) return;
     _loadingIndicatorTimer?.cancel();
+    if (threshold <= Duration.zero) {
+      _loadingIndicatorTimer = null;
+      _suppressTransientLoading = false;
+      return;
+    }
     _suppressTransientLoading = true;
     _loadingIndicatorTimer = Timer(threshold, () {
       _loadingIndicatorTimer = null;

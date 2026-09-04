@@ -143,6 +143,9 @@ UndoableRemovalAction _playbackSessionRemovalAction(
         throw StateError('Failed to remove playback session $sessionId');
       }
       subtitles.resetForSession(sessionId);
+      await ref
+          .read(settingsRepositoryProvider)
+          .unpinPlaylistSession(sessionId);
     },
   );
 }
@@ -903,6 +906,13 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
         (state) => state.value?.playlistGroupByLibrary ?? false,
       ),
     );
+    final pinnedPlaylistSessionIds = _readOrWatch(
+      settingsStateProvider.select(
+        (state) =>
+            state.value?.pinnedPlaylistSessionIds.toSet() ??
+            const <String>{},
+      ),
+    );
     final coverImageResolution = _readOrWatch(
       settingsStateProvider.select(
         (state) =>
@@ -936,6 +946,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
       library: library,
       trackForSession: (session) =>
           paths.sessionTrackForPath(session.id, session.currentTrackPath),
+      pinnedSessionIds: pinnedPlaylistSessionIds,
     );
     final entriesBySessionId = <String, PlaylistStructureEntry>{
       for (final entry in structureState.entries) entry.sessionId: entry,
@@ -951,6 +962,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
       }
       final structure = visibleEntries[index];
       final session = structure.session;
+      final isPinned = pinnedPlaylistSessionIds.contains(session.id);
       final track = paths.sessionTrackForPath(session.id, structure.trackPath);
       final coverPath = library.resolvedPlaybackCoverPathForTrack(track);
       final child = RepaintBoundary(
@@ -962,8 +974,12 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                 coverCacheWidth: coverCacheWidth,
                 isSelectionMode: _isSelectionMode,
                 isSelected: _selectedSessionIds.contains(session.id),
+                isPinned: isPinned,
                 onLongPress: () => _enterSelectionMode(session.id),
                 onToggleSelect: () => _toggleSessionSelection(session.id),
+                onTogglePin: () => ref
+                    .read(settingsRepositoryProvider)
+                    .togglePlaylistSessionPinned(session.id),
                 onOpen: () => session.currentTrackPath.isEmpty
                     ? showAppSnackBar(
                         context,
@@ -985,8 +1001,12 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                 playback: playback,
                 isSelectionMode: _isSelectionMode,
                 isSelected: _selectedSessionIds.contains(session.id),
+                isPinned: isPinned,
                 onLongPress: () => _enterSelectionMode(session.id),
                 onToggleSelect: () => _toggleSessionSelection(session.id),
+                onTogglePin: () => ref
+                    .read(settingsRepositoryProvider)
+                    .togglePlaylistSessionPinned(session.id),
                 onOpen: () => _openSessionDetail(context, session.id),
               ),
       );

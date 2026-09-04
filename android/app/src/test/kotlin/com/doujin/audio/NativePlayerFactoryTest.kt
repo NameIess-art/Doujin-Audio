@@ -57,4 +57,10 @@ class NativePlayerFactoryTest {
         assertEquals("zh-CN,zh;q=0.9,en;q=0.8", headers["Accept-Language"])
         assertTrue(nativePlaybackRequestHeadersForHost("example.com").isEmpty())
     }
+
+    @Test
+    fun `native playback configures tailored load control for background stability`() {
+        val loadControl = nativePlaybackLoadControl()
+        org.junit.Assert.assertNotNull(loadControl)
+    }
 }

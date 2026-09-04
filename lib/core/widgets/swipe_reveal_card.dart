@@ -31,6 +31,7 @@ class SwipeRevealCard extends StatefulWidget {
     this.leadingActionLabel,
     this.leadingActionTooltip,
     this.leadingActionIcon = Icons.download_rounded,
+    this.leadingActionIconWidget,
   });
 
   final Widget child;
@@ -59,6 +60,7 @@ class SwipeRevealCard extends StatefulWidget {
   final String? leadingActionLabel;
   final String? leadingActionTooltip;
   final IconData leadingActionIcon;
+  final Widget? leadingActionIconWidget;
 
   @override
   State<SwipeRevealCard> createState() => _SwipeRevealCardState();
@@ -248,9 +250,11 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
     final cs = Theme.of(context).colorScheme;
     final actionWidth = _activeActionWidth;
     final revealProgress = (_revealedWidth / actionWidth).clamp(0.0, 1.0);
+    final effectiveDestructive =
+        _revealedFromStart ? false : widget.destructive;
     final baseColor =
         widget.color ??
-        (widget.destructive
+        (effectiveDestructive
             ? Theme.of(context).brightness == Brightness.dark
                   ? ColorScheme.fromSeed(seedColor: cs.primary).error
                   : cs.error
@@ -275,10 +279,10 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
     final tertiaryFg = onColor;
     final secondaryBg = onColor.withValues(alpha: 0.18);
     final secondaryFg = onColor;
-    final primaryBg = widget.destructive
+    final primaryBg = effectiveDestructive
         ? onColor
         : onColor.withValues(alpha: 0.3);
-    final primaryFg = widget.destructive ? baseColor : onColor;
+    final primaryFg = effectiveDestructive ? baseColor : onColor;
     final showVerticalActions =
         !_revealedFromStart && widget.verticalActions && _actionCount > 1;
     final leadingActionLabel = widget.leadingActionLabel ?? '';
@@ -603,6 +607,8 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                                             widget.leadingActionTooltip ??
                                             widget.leadingActionLabel,
                                         icon: widget.leadingActionIcon,
+                                        iconWidget:
+                                            widget.leadingActionIconWidget,
                                         tonal: true,
                                       )
                                     : LayoutBuilder(
@@ -760,6 +766,7 @@ class _SwipeRevealActionButton extends StatelessWidget {
     required this.foregroundColor,
     required this.tooltip,
     required this.icon,
+    this.iconWidget,
     this.tonal = false,
     this.size = 54,
   });
@@ -769,6 +776,7 @@ class _SwipeRevealActionButton extends StatelessWidget {
   final Color foregroundColor;
   final String? tooltip;
   final IconData icon;
+  final Widget? iconWidget;
   final bool tonal;
   final double size;
 
@@ -783,18 +791,24 @@ class _SwipeRevealActionButton extends StatelessWidget {
       tapTargetSize: MaterialTapTargetSize.shrinkWrap,
     );
     final iconSize = (size * 0.46).clamp(16.0, 22.0);
+    final effectiveIcon = iconWidget != null
+        ? IconTheme.merge(
+            data: IconThemeData(size: iconSize, color: foregroundColor),
+            child: iconWidget!,
+          )
+        : Icon(icon, size: iconSize);
     return tonal
         ? IconButton.filledTonal(
             onPressed: onPressed,
             style: style,
             tooltip: tooltip,
-            icon: Icon(icon, size: iconSize),
+            icon: effectiveIcon,
           )
         : IconButton.filled(
             onPressed: onPressed,
             style: style,
             tooltip: tooltip,
-            icon: Icon(icon, size: iconSize),
+            icon: effectiveIcon,
           );
   }
 }

@@ -267,18 +267,25 @@ class NativePlaybackService : MediaSessionService() {
                     get() = foregroundCoordinator.isStarted
                 override val focusInterrupted: Boolean
                     get() = focusRecovery.interruptionActive
-                override fun refreshWakeLock() = playbackWakeLock.refresh()
+                override fun refreshWakeLock() = this@NativePlaybackService.refreshWakeLock()
                 override fun triggerRecovery(reason: String) = playbackRecovery.trigger(reason)
                 override fun expireGraceIfOverdue(): Boolean =
                     foregroundCoordinator.expireGraceIfOverdue()
-                override fun syncForeground() = syncForegroundState()
+                override fun syncForeground() {
+                    syncForegroundState()
+                    foregroundCoordinator.triggerWatchdog()
+                }
                 override fun cancelAlarm() =
                     PlaybackKeepAliveAlarmScheduler.cancel(this@NativePlaybackService)
                 override fun ensureAlarm() =
-                    PlaybackKeepAliveAlarmScheduler.ensureScheduled(this@NativePlaybackService)
+                    PlaybackKeepAliveAlarmScheduler.ensureScheduled(
+                        this@NativePlaybackService,
+                        activePlayback = hasPlaybackToKeepAlive()
+                    )
                 override fun logHeartbeat() {
                     logInfo(
                         "keep_alive_heartbeat wakeLockHeld=${playbackWakeLock.isHeld()} " +
+                            "wifiLockHeld=${playbackWakeLock.isWifiLockHeld()} " +
                             "playback=${hasPlaybackToKeepAlive()} " +
                             "foregroundStarted=${foregroundCoordinator.isStarted}"
                     )
@@ -466,7 +473,8 @@ class NativePlaybackService : MediaSessionService() {
                 override fun onActiveSync() {
                     acquireWakeLock()
                     PlaybackKeepAliveAlarmScheduler.ensureScheduled(
-                        this@NativePlaybackService
+                        this@NativePlaybackService,
+                        activePlayback = true
                     )
                     if (!focusRecovery.interruptionActive) {
                         focusRecovery.requestIfNeeded()
@@ -480,7 +488,8 @@ class NativePlaybackService : MediaSessionService() {
                 override fun onIdleGraceBegan() {
                     releaseWakeLock()
                     PlaybackKeepAliveAlarmScheduler.ensureScheduled(
-                        this@NativePlaybackService
+                        this@NativePlaybackService,
+                        activePlayback = false
                     )
                     persistSessionStateNow()
                 }
@@ -498,9 +507,10 @@ class NativePlaybackService : MediaSessionService() {
                 }
 
                 override fun onWatchdog() {
-                    playbackWakeLock.refresh()
+                    refreshWakeLock()
                     PlaybackKeepAliveAlarmScheduler.ensureScheduled(
-                        this@NativePlaybackService
+                        this@NativePlaybackService,
+                        activePlayback = hasPlaybackToKeepAlive()
                     )
                     if (!focusRecovery.interruptionActive) {
                         playbackRecovery.trigger("foreground_watchdog")
@@ -1362,6 +1372,7 @@ class NativePlaybackService : MediaSessionService() {
             "player_media_item_transition reason=$reason",
             sessions[sessionId]
         )
+        acquireWakeLock()
         publishSessionState(sessionId)
         persistSessionStateNow()
         syncForegroundState()
@@ -1599,7 +1610,24 @@ class NativePlaybackService : MediaSessionService() {
         }
     }
 
-    private fun acquireWakeLock() = playbackWakeLock.acquire()
+    private fun updateWakeLockNetworkState() {
+        val hasNetwork = sessions.values.any { session ->
+            val p = session.playerOrNull()
+            (p?.isPlaying == true || p?.playWhenReady == true || playbackRecovery.isIntended(session.sessionId)) &&
+                isNativePlaybackNetworkUri(session.uri)
+        }
+        playbackWakeLock.setNetworkPlaybackActive(hasNetwork)
+    }
+
+    private fun acquireWakeLock() {
+        updateWakeLockNetworkState()
+        playbackWakeLock.acquire()
+    }
+
+    private fun refreshWakeLock() {
+        updateWakeLockNetworkState()
+        playbackWakeLock.refresh()
+    }
 
     private fun releaseWakeLock() = playbackWakeLock.release()
 
@@ -1642,6 +1670,7 @@ class NativePlaybackService : MediaSessionService() {
             "foregroundStarted=${foregroundCoordinator.isStarted} " +
             "notificationPosted=${isPlaybackNotificationPosted()} " +
             "wakeLockHeld=${playbackWakeLock.isHeld()} " +
+            "wifiLockHeld=${playbackWakeLock.isWifiLockHeld()} " +
             "audioFocusHeld=${audioFocusController.isHeld} " +
             "screenInteractive=${progressHeartbeat.isScreenInteractive()} " +
             "activePlayback=${hasActivePlayback()} " +

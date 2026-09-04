@@ -95,6 +95,7 @@ class _AsmrWorkDetailSheetState extends ConsumerState<_AsmrWorkDetailSheet> {
         onAction: () => unawaited(controller.toggleFavorite(work)),
         duration: const Duration(seconds: 5),
         showCountdown: true,
+        showActionCountdown: true,
         tone: AppFeedbackTone.warning,
         icon: Icons.favorite_border_rounded,
         iconColor: asmrBlue,

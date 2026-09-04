@@ -2493,6 +2493,247 @@ void main() {
     await tester.pumpAndSettle();
   });
 
+  testWidgets(
+    'swiping right pins item to top and swiping right again unpins',
+    (tester) async {
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+
+      final trackA = MusicTrack(
+        path: '/library/Work A/01.mp3',
+        displayName: 'Track A',
+        groupKey: '/library/Work A',
+        groupTitle: 'Work A',
+        groupSubtitle: '/library/Work A',
+        isSingle: false,
+      );
+      final trackB = MusicTrack(
+        path: '/library/Work B/01.mp3',
+        displayName: 'Track B',
+        groupKey: '/library/Work B',
+        groupTitle: 'Work B',
+        groupSubtitle: '/library/Work B',
+        isSingle: false,
+      );
+      fixture.runtimeGraph.library.addTracks(
+        <MusicTrack>[trackA, trackB],
+        notify: false,
+        persist: false,
+      );
+      final sessionA = fixture.runtimeGraph.playback.createTrackSession(
+        trackA,
+        customQueueTracks: <MusicTrack>[trackA],
+      );
+      final sessionB = fixture.runtimeGraph.playback.createTrackSession(
+        trackB,
+        customQueueTracks: <MusicTrack>[trackB],
+      );
+      addTearDown(sessionA.shutdown);
+      addTearDown(sessionB.shutdown);
+
+      fixture.playbackService.syncSlice(
+        activeSessions: <PlaybackSession>[sessionA, sessionB],
+        playingSessionCount: 0,
+        focusedSessionId: sessionA.id,
+        multiThreadPlaybackEnabled: false,
+        coverGeneration: 0,
+        isInitialized: true,
+      );
+
+      await tester.pumpWidget(
+        fixture.build(
+          const MobileOverlayInset(bottomInset: 132, child: PlaylistTab()),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Initially, Work A comes before Work B alphabetically.
+      expect(find.text('Work A'), findsOneWidget);
+      expect(find.text('Work B'), findsOneWidget);
+      expect(
+        find.byKey(ValueKey<String>('playlist_session_pinned_${sessionB.id}')),
+        findsNothing,
+      );
+
+      // Swipe right on Work B
+      await tester.drag(find.text('Work B'), const Offset(180, 0));
+      await tester.pumpAndSettle();
+
+      // The "置顶" button should be revealed
+      final pinButtonFinder = find.byTooltip('置顶');
+      expect(pinButtonFinder, findsOneWidget);
+      final pinIconFinder = find.descendant(
+        of: pinButtonFinder,
+        matching: find.byIcon(Icons.push_pin_rounded),
+      );
+      expect(pinIconFinder, findsOneWidget);
+
+      // Tap "置顶"
+      await tester.tap(pinButtonFinder);
+      await tester.pumpAndSettle();
+
+      // Work B should now have the pinned chip
+      expect(
+        find.byKey(ValueKey<String>('playlist_session_pinned_${sessionB.id}')),
+        findsOneWidget,
+      );
+
+      // Work B is now pinned to the top (its Y position is less than Work A)
+      final topB = tester.getTopLeft(find.text('Work B')).dy;
+      final topA = tester.getTopLeft(find.text('Work A')).dy;
+      expect(topB < topA, isTrue);
+
+      // Swipe right on Work B again
+      await tester.drag(find.text('Work B'), const Offset(180, 0));
+      await tester.pumpAndSettle();
+
+      // The "取消置顶" button should be revealed
+      final unpinButtonFinder = find.byTooltip('取消置顶');
+      expect(unpinButtonFinder, findsOneWidget);
+      expect(
+        find.descendant(
+          of: unpinButtonFinder,
+          matching: find.byIcon(Icons.vertical_align_bottom_rounded),
+        ),
+        findsNothing,
+      );
+      expect(
+        find.descendant(
+          of: unpinButtonFinder,
+          matching: find.byType(CustomPaint),
+        ),
+        findsWidgets,
+      );
+
+      // Tap "取消置顶"
+      await tester.tap(unpinButtonFinder);
+      await tester.pumpAndSettle();
+
+      // Pinned chip is gone
+      expect(
+        find.byKey(ValueKey<String>('playlist_session_pinned_${sessionB.id}')),
+        findsNothing,
+      );
+
+      // Work A is back to being before Work B
+      final topBAfter = tester.getTopLeft(find.text('Work B')).dy;
+      final topAAfter = tester.getTopLeft(find.text('Work A')).dy;
+      expect(topAAfter < topBAfter, isTrue);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpAndSettle();
+    },
+  );
+
+  testWidgets(
+    'playlist item pinned indicator displays on top-right of cover or top-left above selection checkmark when no cover',
+    (tester) async {
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+
+      final trackWithCover = MusicTrack(
+        path: '/library/CoverWork/01.mp3',
+        displayName: 'Track With Cover',
+        groupKey: '/library/CoverWork',
+        groupTitle: 'CoverWork',
+        groupSubtitle: '/library/CoverWork',
+        isSingle: false,
+      );
+      final trackWithoutCover = MusicTrack(
+        path: '/library/SingleTrack/single.mp3',
+        displayName: 'Track No Cover',
+        groupKey: '/library/SingleTrack',
+        groupTitle: 'SingleTrack',
+        groupSubtitle: '',
+        isSingle: true,
+      );
+
+      final sessionCover = fixture.runtimeGraph.playback.createTrackSession(
+        trackWithCover,
+        customQueueTracks: <MusicTrack>[trackWithCover],
+      );
+      final sessionNoCover = fixture.runtimeGraph.playback.createTrackSession(
+        trackWithoutCover,
+        customQueueTracks: <MusicTrack>[trackWithoutCover],
+      );
+      addTearDown(sessionCover.shutdown);
+      addTearDown(sessionNoCover.shutdown);
+
+      fixture.playbackService.syncSlice(
+        activeSessions: <PlaybackSession>[sessionCover, sessionNoCover],
+        playingSessionCount: 0,
+        focusedSessionId: sessionCover.id,
+        multiThreadPlaybackEnabled: false,
+        coverGeneration: 0,
+        isInitialized: true,
+      );
+
+      // Pin both sessions
+      await fixture.settingsRepository.togglePlaylistSessionPinned(sessionCover.id);
+      await fixture.settingsRepository.togglePlaylistSessionPinned(sessionNoCover.id);
+
+      await tester.pumpWidget(
+        fixture.build(
+          const MobileOverlayInset(bottomInset: 132, child: PlaylistTab()),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // 1. Session with cover: pushpin indicator is at top-right of the cover
+      final pinCoverFinder = find.byKey(
+        ValueKey<String>('playlist_session_pinned_${sessionCover.id}'),
+      );
+      expect(pinCoverFinder, findsOneWidget);
+      final coverFinder = find.byKey(
+        ValueKey<String>('playlist_cover_${sessionCover.id}'),
+      );
+      expect(coverFinder, findsOneWidget);
+      final coverRect = tester.getRect(coverFinder);
+      final pinCoverRect = tester.getRect(pinCoverFinder);
+      // Pinned icon is in the top-right quadrant of the cover
+      expect(pinCoverRect.center.dx > coverRect.center.dx, isTrue);
+      expect(pinCoverRect.center.dy < coverRect.center.dy, isTrue);
+
+      // Verify icon is push_pin_rounded
+      final pushPinIcon = tester.widget<Icon>(
+        find.descendant(of: pinCoverFinder, matching: find.byType(Icon)),
+      );
+      expect(pushPinIcon.icon, Icons.push_pin_rounded);
+
+      // Verify it is NOT displayed with text '置顶' next to loop mode
+      expect(find.text('置顶'), findsNothing);
+
+      // 2. Session without cover: pushpin indicator is at the top-left, text is shifted right
+      final pinNoCoverFinder = find.byKey(
+        ValueKey<String>('playlist_session_pinned_${sessionNoCover.id}'),
+      );
+      expect(pinNoCoverFinder, findsOneWidget);
+      final noCoverTextFinder = find.text('Track No Cover');
+      final pinNoCoverRect = tester.getRect(pinNoCoverFinder);
+      final noCoverTextRect = tester.getRect(noCoverTextFinder);
+      // Text is to the right of the pushpin indicator
+      expect(noCoverTextRect.left > pinNoCoverRect.right, isTrue);
+
+      // 3. In selection mode (更多模式), select the session without cover
+      // Enter selection mode by long-pressing session without cover
+      await tester.longPress(noCoverTextFinder);
+      await tester.pumpAndSettle();
+
+      final checkmarkFinder = find.byKey(
+        ValueKey<String>('playlist_selection_indicator_${sessionNoCover.id}'),
+      );
+      expect(checkmarkFinder, findsOneWidget);
+      final checkmarkRect = tester.getRect(checkmarkFinder);
+      final pinNoCoverRectAfter = tester.getRect(pinNoCoverFinder);
+
+      // The pushpin icon is ABOVE the green checkmark icon
+      expect(pinNoCoverRectAfter.bottom < checkmarkRect.top, isTrue);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpAndSettle();
+    },
+  );
+
   testWidgets('playlist cards show loading spinners without loading text', (
     tester,
   ) async {
@@ -3841,4 +4082,40 @@ void main() {
       expect(queueEntrance, findsNothing);
     },
   );
+
+  testWidgets('playback queue defaults to cross-folder loop mode', (
+    tester,
+  ) async {
+    final fixture = AppRuntimeWidgetTestFixture();
+    addTearDown(fixture.dispose);
+
+    final queueSession = fixture.runtimeGraph.playback.createPlaybackQueue(
+      'Test Queue',
+    );
+    addTearDown(queueSession.shutdown);
+    expect(queueSession.loopMode, SessionLoopMode.crossSequential);
+    expect(queueSession.nonSingleLoopMode, SessionLoopMode.crossSequential);
+
+    fixture.playbackService.syncSlice(
+      activeSessions: <PlaybackSession>[queueSession],
+      playingSessionCount: 0,
+      focusedSessionId: queueSession.id,
+      multiThreadPlaybackEnabled: false,
+      coverGeneration: 0,
+      isInitialized: true,
+    );
+
+    await tester.pumpWidget(
+      fixture.build(
+        const MobileOverlayInset(bottomInset: 132, child: PlaylistTab()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('顺序 - 跨文件夹'), findsOneWidget);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpAndSettle();
+  });
 }
+

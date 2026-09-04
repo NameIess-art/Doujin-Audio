@@ -108,7 +108,7 @@ class PlaybackQueueResolver {
     if (paths.isEmpty) return null;
     final effectiveLoopMode = scope.isPlaybackQueue
         ? (loopMode == SessionLoopMode.single
-              ? SessionLoopMode.folderSequential
+              ? SessionLoopMode.crossSequential
               : loopMode)
         : loopMode;
     if (effectiveLoopMode == SessionLoopMode.single || paths.length == 1) {

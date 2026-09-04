@@ -608,6 +608,14 @@ class AsmrDownloadManager {
       final fileDownloadedBytes = Map<String, int>.from(
         resumedTask.fileDownloadedBytes,
       );
+      if (resumedTask.totalBytes > 0 &&
+          downloadedBytes > resumedTask.totalBytes) {
+        final calculated = fileDownloadedBytes.values.fold<int>(
+          saveMetadata && completed > 0 ? backupBytes : 0,
+          (sum, b) => sum + b,
+        );
+        downloadedBytes = calculated.clamp(0, resumedTask.totalBytes);
+      }
       final completedFilePaths = Set<String>.from(
         resumedTask.completedFilePaths,
       );
@@ -658,7 +666,23 @@ class AsmrDownloadManager {
           ..maxConnectionsPerHost = _maxConcurrentFilesPerTask
           ..connectionTimeout = const Duration(seconds: 15);
         _activeHttpClients[workId] = client;
-        final pendingFiles = ListQueue<_PlannedDownloadFile>.of(plannedFiles);
+        final pendingFiles = ListQueue<_PlannedDownloadFile>();
+        for (final item in plannedFiles) {
+          if (completedFilePaths.contains(item.relativePath)) {
+            final exists = await _targetFileExists(
+              workRootPath,
+              item,
+              coverOutputPath: taskSnapshot.coverOutputPath,
+            );
+            if (exists) {
+              continue;
+            }
+            completedFilePaths.remove(item.relativePath);
+            fileDownloadedBytes.remove(item.relativePath);
+            if (completed > 0) completed--;
+          }
+          pendingFiles.add(item);
+        }
         final activeTransfers = <Future<void>>{};
         final transfersDone = Completer<void>();
         var transfersStopped = false;

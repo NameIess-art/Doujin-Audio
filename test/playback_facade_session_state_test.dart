@@ -703,6 +703,51 @@ void main() {
   });
 
   test(
+    'toggleSessionPlayPause suppresses transient loading when starting playback',
+    () async {
+      final library = _createLibraryFacade();
+      final playback = PlaybackFacade.create(
+        databaseRepository:
+            library.databaseRepository as PlaybackPersistenceRepository,
+      )..configurePersistence(enabled: false);
+      final session = _session('toggle_loading')
+        ..state = PlayerState(false, ProcessingState.ready);
+      addTearDown(() async {
+        await session.shutdown();
+        await playback.dispose();
+        await library.dispose();
+      });
+      playback
+        ..attachPlaybackCommands(
+          prepareSession:
+              (
+                session, {
+                required nextPath,
+                autoPlay = true,
+                forceStartAtZero = false,
+                showLoading = true,
+                targetQueueIndex,
+              }) async {
+                return true;
+              },
+          pauseSession: (_) async {},
+          startSession: (session, {required shouldStartTriggerCountdown}) async {
+            session.beginTransportCommand(commandId: 1, playing: true);
+            return true;
+          },
+          resolveAdvance: (_, {required forward}) => null,
+          hasAdjacent: (_, {required forward}) => false,
+        )
+        ..registerSession(session);
+
+      await playback.toggleSessionPlayPause(session.id);
+
+      expect(session.effectivePlaying, isTrue);
+      expect(session.isPlaybackLoading, isFalse);
+    },
+  );
+
+  test(
     'rapid adjacent track commands do not duplicate in-flight preparation',
     () async {
       final library = _createLibraryFacade();
@@ -1002,6 +1047,8 @@ void main() {
     expect(trackSession.customQueueTracks, <MusicTrack>[track]);
     expect(queueSession.currentTrackPath, isEmpty);
     expect(queueSession.playbackQueue?.name, 'Queue 1');
+    expect(queueSession.loopMode, SessionLoopMode.crossSequential);
+    expect(queueSession.nonSingleLoopMode, SessionLoopMode.crossSequential);
     expect(queueSession.customQueueTracks, isEmpty);
     expect(registered, <String>[trackSession.id, queueSession.id]);
     expect(trackSession.id, isNot(queueSession.id));

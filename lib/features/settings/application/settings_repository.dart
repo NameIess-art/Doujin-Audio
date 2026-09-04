@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import '../../../core/state/audio_state_slice.dart';
 import '../../../core/app_language.dart';
 import '../../../core/media/card_info_field.dart';
+import '../../../core/ui/app_interaction_feedback_settings.dart';
 import '../../asmr/domain/asmr_download.dart';
 import '../../player/domain/audio_effects.dart';
 import 'app_cache_service.dart';
@@ -31,6 +32,7 @@ class SettingsRepository {
   PlaylistSortCriterion playlistSortCriterion = PlaylistSortCriterion.name;
   bool playlistSortAscending = true;
   bool playlistGroupByLibrary = false;
+  List<String> pinnedPlaylistSessionIds = <String>[];
   List<EqPreset> customEqPresets = const <EqPreset>[];
   int maxCacheBytes = AppCacheService.defaultMaxCacheBytes;
   bool asmrPlaybackCacheEnabled = false;
@@ -108,6 +110,8 @@ class SettingsRepository {
       uiBlurEffectEnabled = playback['uiBlurEffectEnabled'] as bool? ?? true;
       hapticFeedbackEnabled =
           playback['hapticFeedbackEnabled'] as bool? ?? true;
+      AppInteractionFeedbackSettings.hapticFeedbackEnabled =
+          hapticFeedbackEnabled;
       showLocalLibrary = playback['showLocalLibrary'] as bool? ?? true;
       showAsmrOne = playback['showAsmrOne'] as bool? ?? true;
       if (!showLocalLibrary && !showAsmrOne) {
@@ -190,6 +194,13 @@ class SettingsRepository {
           playback['playlistSortAscending'] as bool? ?? true;
       playlistGroupByLibrary =
           playback['playlistGroupByLibrary'] as bool? ?? false;
+      final pinnedList = playback['pinnedPlaylistSessionIds'];
+      if (pinnedList is List) {
+        pinnedPlaylistSessionIds =
+            pinnedList.map((e) => e.toString()).toList();
+      } else {
+        pinnedPlaylistSessionIds = <String>[];
+      }
       customEqPresets = _decodeEqPresets(playback['customEqPresets']);
       maxCacheBytes =
           (playback['maxCacheBytes'] as num?)?.toInt() ??
@@ -262,6 +273,7 @@ class SettingsRepository {
       'playlistSortCriterion': playlistSortCriterion.name,
       'playlistSortAscending': playlistSortAscending,
       'playlistGroupByLibrary': playlistGroupByLibrary,
+      'pinnedPlaylistSessionIds': pinnedPlaylistSessionIds,
       'customEqPresets': customEqPresets
           .map((preset) => preset.toJson())
           .toList(growable: false),
@@ -395,6 +407,28 @@ class SettingsRepository {
     },
   );
 
+  Future<void> togglePlaylistSessionPinned(String sessionId) {
+    final updated = List<String>.of(pinnedPlaylistSessionIds);
+    if (updated.contains(sessionId)) {
+      updated.remove(sessionId);
+    } else {
+      updated.add(sessionId);
+    }
+    return _setValue(
+      unchanged: false,
+      update: () => pinnedPlaylistSessionIds = updated,
+    );
+  }
+
+  Future<void> unpinPlaylistSession(String sessionId) {
+    if (!pinnedPlaylistSessionIds.contains(sessionId)) return Future.value();
+    final updated = List<String>.of(pinnedPlaylistSessionIds)..remove(sessionId);
+    return _setValue(
+      unchanged: false,
+      update: () => pinnedPlaylistSessionIds = updated,
+    );
+  }
+
   Future<void> setMultiThreadPlaybackEnabled(bool enabled) => _setValue(
     unchanged: multiThreadPlaybackEnabled == enabled,
     update: () => multiThreadPlaybackEnabled = enabled,
@@ -453,7 +487,10 @@ class SettingsRepository {
 
   Future<void> setHapticFeedbackEnabled(bool enabled) => _setValue(
     unchanged: hapticFeedbackEnabled == enabled,
-    update: () => hapticFeedbackEnabled = enabled,
+    update: () {
+      hapticFeedbackEnabled = enabled;
+      AppInteractionFeedbackSettings.hapticFeedbackEnabled = enabled;
+    },
   );
 
   Future<void> setShowLocalLibrary(bool enabled) async {
@@ -626,6 +663,7 @@ class SettingsRepository {
     playlistSortCriterion = PlaylistSortCriterion.name;
     playlistSortAscending = true;
     playlistGroupByLibrary = false;
+    pinnedPlaylistSessionIds = <String>[];
     customEqPresets = const <EqPreset>[];
     maxCacheBytes = AppCacheService.defaultMaxCacheBytes;
     asmrPlaybackCacheEnabled = false;
@@ -634,6 +672,7 @@ class SettingsRepository {
     blurPlayerBackgroundEnabled = true;
     uiBlurEffectEnabled = true;
     hapticFeedbackEnabled = true;
+    AppInteractionFeedbackSettings.hapticFeedbackEnabled = true;
     showLocalLibrary = true;
     showAsmrOne = true;
     startupPage = StartupPage.library;
@@ -691,6 +730,8 @@ class SettingsRepository {
         playlistSortCriterion: playlistSortCriterion,
         playlistSortAscending: playlistSortAscending,
         playlistGroupByLibrary: playlistGroupByLibrary,
+        pinnedPlaylistSessionIds:
+            List<String>.unmodifiable(pinnedPlaylistSessionIds),
         customEqPresets: List<EqPreset>.unmodifiable(customEqPresets),
         maxCacheBytes: maxCacheBytes,
         asmrPlaybackCacheEnabled: asmrPlaybackCacheEnabled,

@@ -465,35 +465,45 @@ void main() {
     },
   );
 
-  test('prepared transport intent shows loading in detail and card state', () {
-    final detailSession = session(id: 'detail', path: '/tracks/detail.mp3')
-      ..loadedPath = '/tracks/detail.mp3'
-      ..beginTransportCommand(commandId: 1, playing: true);
-    addTearDown(detailSession.shutdown);
+  test(
+    'prepared transport intent suppresses transient loading in detail and card state',
+    () {
+      final detailSession = session(id: 'detail', path: '/tracks/detail.mp3')
+        ..loadedPath = '/tracks/detail.mp3'
+        ..beginTransportCommand(commandId: 1, playing: true);
+      addTearDown(detailSession.shutdown);
 
-    final detailState = sessionDetailViewStateFromPlaybackState(
-      PlaybackStateSliceData(activeSessions: [snapshot(detailSession)]),
-      'detail',
-    );
-    final cardState = playlistSessionCardStatesFromPlaybackState(
-      PlaybackStateSliceData(activeSessions: [snapshot(detailSession)]),
-    )['detail'];
+      final detailState = sessionDetailViewStateFromPlaybackState(
+        PlaybackStateSliceData(activeSessions: [snapshot(detailSession)]),
+        'detail',
+      );
+      final cardState = playlistSessionCardStatesFromPlaybackState(
+        PlaybackStateSliceData(activeSessions: [snapshot(detailSession)]),
+      )['detail'];
 
-    expect(detailState?.isPlaying, isTrue);
-    expect(detailState?.isLoading, isTrue);
-    expect(cardState?.isPlaying, isTrue);
-    expect(cardState?.isLoading, isTrue);
+      expect(detailState?.isPlaying, isTrue);
+      expect(detailState?.isLoading, isFalse);
+      expect(cardState?.isPlaying, isTrue);
+      expect(cardState?.isLoading, isFalse);
 
-    detailSession
-      ..beginTransportCommand(commandId: 2, playing: false)
-      ..isLoading = false
-      ..state = PlayerState(false, ProcessingState.buffering);
-    final loadingState = sessionDetailViewStateFromPlaybackState(
-      PlaybackStateSliceData(activeSessions: [snapshot(detailSession)]),
-      'detail',
-    );
-    expect(loadingState?.isLoading, isFalse);
-  });
+      detailSession.beginLoadingIndicatorThreshold(threshold: Duration.zero);
+      final delayedState = sessionDetailViewStateFromPlaybackState(
+        PlaybackStateSliceData(activeSessions: [snapshot(detailSession)]),
+        'detail',
+      );
+      expect(delayedState?.isLoading, isTrue);
+
+      detailSession
+        ..beginTransportCommand(commandId: 2, playing: false)
+        ..isLoading = false
+        ..state = PlayerState(false, ProcessingState.buffering);
+      final loadingState = sessionDetailViewStateFromPlaybackState(
+        PlaybackStateSliceData(activeSessions: [snapshot(detailSession)]),
+        'detail',
+      );
+      expect(loadingState?.isLoading, isFalse);
+    },
+  );
 
   test('session detail view state tracks console control inputs', () {
     final detailSession = session(id: 'detail', path: '/tracks/detail.mp3');

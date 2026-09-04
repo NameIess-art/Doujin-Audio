@@ -70,6 +70,23 @@ List<Widget> _buildSettingsAppearanceSection({
             );
           },
         ),
+        if (Theme.of(context).brightness == Brightness.dark)
+          SwitchListTile(
+            key: const ValueKey<String>('pure_black_theme_tile'),
+          title: _settingsTitle(i18n.tr('black_theme')),
+          value: themeProvider.pureBlackTheme,
+          onChanged: (value) {
+            unawaited(
+              _applyThemeChange(
+                context: context,
+                i18n: i18n,
+                change: () => themeProvider.setPureBlackTheme(value),
+              ),
+            );
+          },
+          secondary: _settingsIcon(Icons.contrast_rounded, cs.onSurface),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+        ),
         SwitchListTile(
           title: _settingsTitle(i18n.tr('differentiate_asmr_theme')),
           value: themeProvider.differentiateAsmrTheme,

@@ -292,9 +292,19 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
           )
         : const <CardInfoField>[];
     final useCompactRootCard = isRootFolder && rootCardInfoFields.isEmpty;
+    final tokens = AppDesignTokens.of(context);
+    final folderRadius = BorderRadius.circular(tokens.radiusSmall);
 
     Widget content = Theme(
-      data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+      data: Theme.of(context).copyWith(
+        dividerColor: Colors.transparent,
+        listTileTheme: isRootFolder
+            ? null
+            : const ListTileThemeData(
+                minVerticalPadding: 0,
+                visualDensity: VisualDensity(vertical: -4),
+              ),
+      ),
       child: ExpansionTile(
         expansionAnimationStyle: appExpansionAnimationStyle(context),
         key: PageStorageKey<String>('library-folder:${folder.path}'),
@@ -305,6 +315,7 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
                   ? LibraryLikeCardMetrics.compactRootTileHeight
                   : _rootFolderTileHeight)
             : _childFolderTileHeight,
+        visualDensity: isRootFolder ? null : const VisualDensity(vertical: -4),
         enabled: !widget.isSelectionMode,
         onExpansionChanged: (expanded) {
           if (_expanded == expanded) return;
@@ -322,18 +333,18 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
                   LibraryLikeCardMetrics.cardRadius,
                 ),
               )
-            : const RoundedRectangleBorder(),
+            : RoundedRectangleBorder(borderRadius: folderRadius),
         collapsedShape: isRootFolder
             ? RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(
                   LibraryLikeCardMetrics.cardRadius,
                 ),
               )
-            : const RoundedRectangleBorder(),
+            : RoundedRectangleBorder(borderRadius: folderRadius),
         showTrailingIcon: !isRootFolder,
         tilePadding: isRootFolder
             ? LibraryLikeCardMetrics.rootTilePadding
-            : const EdgeInsets.fromLTRB(6, 2, 4, 2),
+            : const EdgeInsets.fromLTRB(6, 0, 4, 0),
         childrenPadding: EdgeInsets.fromLTRB(isRootFolder ? 8 : 4, 0, 0, 0),
         title: isRootFolder
             ? _RootFolderCardContent(
@@ -348,47 +359,51 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
                 index: widget.index,
                 isSelected: widget.isSelected,
               )
-            : Row(
-                children: [
-                  Icon(
-                    _expanded
-                        ? Icons.folder_open_rounded
-                        : Icons.folder_rounded,
-                    size: 20,
-                    color: cs.primary.withValues(alpha: 0.8),
-                  ),
-                  const SizedBox(width: AppSpacing.sm),
-                  Expanded(
-                    child: SizedBox(
-                      height: _childFolderTitleBlockHeight,
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          SearchHighlightedText(
-                            text: folder.name,
-                            terms: extractSearchTerms(widget.searchQuery),
-                            style:
-                                Theme.of(
-                                  context,
-                                ).textTheme.titleMedium?.copyWith(
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 13,
-                                  height: 1.06,
-                                  color: cs.onSurface.withValues(alpha: 0.9),
-                                ) ??
-                                const TextStyle(),
-                          ),
-                        ],
+            : SizedBox(
+                height: _childFolderTileHeight,
+                child: Row(
+                  children: [
+                    Icon(
+                      _expanded
+                          ? Icons.folder_open_rounded
+                          : Icons.folder_rounded,
+                      size: 20,
+                      color: cs.primary.withValues(alpha: 0.8),
+                    ),
+                    const SizedBox(width: AppSpacing.sm),
+                    Expanded(
+                      child: SizedBox(
+                        height: _childFolderTitleBlockHeight,
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            SearchHighlightedText(
+                              text: folder.name,
+                              terms: extractSearchTerms(widget.searchQuery),
+                              style:
+                                  Theme.of(
+                                    context,
+                                  ).textTheme.titleMedium?.copyWith(
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 13,
+                                    height: 1.06,
+                                    color: cs.onSurface.withValues(alpha: 0.9),
+                                  ) ??
+                                  const TextStyle(),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
         trailing: isRootFolder
             ? null
             : SizedBox(
                 width: 62,
+                height: _childFolderTileHeight,
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
@@ -396,11 +411,11 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
                       onPressed: () =>
                           unawaited(_playFolder(context, playback)),
                       visualDensity: VisualDensity.compact,
-                      tooltip: i18n.tr('play'),
+                      tooltip: i18n.tr('add_to_playlist'),
                       style: IconButton.styleFrom(
                         foregroundColor: cs.primary,
-                        minimumSize: const Size(40, 44),
-                        maximumSize: const Size(40, 44),
+                        minimumSize: const Size(40, 40),
+                        maximumSize: const Size(40, 40),
                         padding: EdgeInsets.zero,
                         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       ),
@@ -472,42 +487,49 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
       ),
     );
 
-    final result = !isRootFolder
-        ? content
-        : GestureDetector(
-            onLongPress: widget.onLongPress,
-            onTap: widget.isSelectionMode ? widget.onToggleSelect : null,
-            child: SwipeRevealCard(
-              shape: cardShape,
-              enabled: !widget.isSelectionMode,
-              closedColor: cs.surface,
-              actionLabel: i18n.tr('remove'),
-              removeTooltip: i18n.tr('remove_audio_folder'),
-              secondaryActionLabel: i18n.tr('audio_detail'),
-              secondaryActionTooltip: i18n.tr('audio_detail'),
-              verticalActions: true,
-              onSecondaryAction: () => unawaited(
+    final folderShape = isRootFolder
+        ? cardShape
+        : RoundedRectangleBorder(borderRadius: folderRadius);
+    final cardContent = isRootFolder
+        ? Card(
+            margin: EdgeInsets.zero,
+            clipBehavior: Clip.antiAlias,
+            shape: cardShape,
+            color: widget.isSelected
+                ? cs.primaryContainer.withValues(alpha: 0.25)
+                : Colors.transparent,
+            elevation: 0,
+            shadowColor: Colors.transparent,
+            surfaceTintColor: Colors.transparent,
+            child: content,
+          )
+        : content;
+
+    final result = GestureDetector(
+      onLongPress: widget.onLongPress,
+      onTap: widget.isSelectionMode ? widget.onToggleSelect : null,
+      child: SwipeRevealCard(
+        shape: folderShape,
+        enabled: !widget.isSelectionMode,
+        closedColor: cs.surface,
+        actionLabel: i18n.tr('remove'),
+        removeTooltip: i18n.tr('remove_audio_folder'),
+        secondaryActionLabel: isRootFolder ? i18n.tr('audio_detail') : null,
+        secondaryActionTooltip: isRootFolder ? i18n.tr('audio_detail') : null,
+        verticalActions: isRootFolder,
+        onSecondaryAction: isRootFolder
+            ? () => unawaited(
                 showAudioDetailSheet(
                   context,
                   AudioDetailTarget.libraryRootFolder(widget.folder.path),
                 ),
-              ),
-              onRemove: () => _removeFolder(context),
-              onWillReveal: _expansionController.collapse,
-              child: Card(
-                margin: EdgeInsets.zero,
-                clipBehavior: Clip.antiAlias,
-                shape: cardShape,
-                color: widget.isSelected
-                    ? cs.primaryContainer.withValues(alpha: 0.25)
-                    : Colors.transparent,
-                elevation: 0,
-                shadowColor: Colors.transparent,
-                surfaceTintColor: Colors.transparent,
-                child: content,
-              ),
-            ),
-          );
+              )
+            : null,
+        onRemove: () => _removeFolder(context),
+        onWillReveal: _expansionController.collapse,
+        child: cardContent,
+      ),
+    );
 
     return UndoableRemovalTransition(
       hidden: isHidden,

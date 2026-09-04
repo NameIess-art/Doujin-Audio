@@ -7,6 +7,7 @@ import '../../app/state/app_runtime_providers.dart';
 import '../../app/theme/app_design_tokens.dart';
 import '../../app/theme/app_styles.dart';
 import 'app_edge_fade_mask.dart';
+import 'marquee_text.dart';
 
 class AppPageAppBar extends StatelessWidget implements PreferredSizeWidget {
   const AppPageAppBar({
@@ -61,7 +62,7 @@ class AppPageAppBar extends StatelessWidget implements PreferredSizeWidget {
       forceMaterialTransparency: true,
     );
     if (!useGlassSurface) return appBar;
-    return _AppHeaderGlassSurface(child: appBar);
+    return _AppHeaderGlassSurface(floating: false, child: appBar);
   }
 }
 
@@ -321,17 +322,30 @@ class _TopPageHeaderState extends ConsumerState<TopPageHeader> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Text(
-                        resolvedTitle,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.w800,
-                          color: cs.onSurface,
-                          fontSize: 13.5,
-                          letterSpacing: 0.1,
-                        ),
-                      ),
+                      widget.marqueeTitle
+                          ? MarqueeText(
+                              text: resolvedTitle,
+                              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                                fontWeight: FontWeight.w800,
+                                color: cs.onSurface,
+                                fontSize: 13.5,
+                                letterSpacing: 0.1,
+                              ),
+                              scrollSpeed: 24,
+                              edgePadding: 2,
+                              forceMarquee: widget.forceMarqueeTitle,
+                            )
+                          : Text(
+                              resolvedTitle,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                                fontWeight: FontWeight.w800,
+                                color: cs.onSurface,
+                                fontSize: 13.5,
+                                letterSpacing: 0.1,
+                              ),
+                            ),
                       if (widget.subtitle != null &&
                           widget.subtitle!.isNotEmpty)
                         Text(

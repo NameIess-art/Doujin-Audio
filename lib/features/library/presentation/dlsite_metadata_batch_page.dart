@@ -15,7 +15,7 @@ import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/operation_feedback.dart';
 import '../../../core/widgets/top_page_header.dart';
 
-enum _BatchMetadataScope { anyMissing, noMetadata, hasRjCode, all, specific }
+enum DlsiteMetadataBatchScope { anyMissing, noMetadata, hasRjCode, all, specific }
 
 double _headerContentTopInset(BuildContext context) =>
     MediaQuery.paddingOf(context).top +
@@ -25,9 +25,14 @@ double _headerContentTopInset(BuildContext context) =>
     AppPageHeaderMetrics.firstContentSpacing;
 
 class DlsiteMetadataBatchPage extends ConsumerStatefulWidget {
-  const DlsiteMetadataBatchPage({super.key, this.entries});
+  const DlsiteMetadataBatchPage({
+    super.key,
+    this.entries,
+    this.initialScope = DlsiteMetadataBatchScope.anyMissing,
+  });
 
   final List<AudioLibraryCategoryEntry>? entries;
+  final DlsiteMetadataBatchScope initialScope;
 
   @override
   ConsumerState<DlsiteMetadataBatchPage> createState() =>
@@ -40,7 +45,7 @@ class _DlsiteMetadataBatchPageState
       const <AudioLibraryCategoryEntry>[];
   List<AudioLibraryCategoryEntry> _specificEntries =
       const <AudioLibraryCategoryEntry>[];
-  _BatchMetadataScope _scope = _BatchMetadataScope.anyMissing;
+  late DlsiteMetadataBatchScope _scope;
   Object? _error;
   bool _loading = true;
 
@@ -56,16 +61,17 @@ class _DlsiteMetadataBatchPageState
       _entries.where((entry) => entry.detail.hasRjCode).toList(growable: false);
 
   List<AudioLibraryCategoryEntry> get _selectedEntries => switch (_scope) {
-    _BatchMetadataScope.anyMissing => _anyMissingEntries,
-    _BatchMetadataScope.noMetadata => _noMetadataEntries,
-    _BatchMetadataScope.hasRjCode => _hasRjCodeEntries,
-    _BatchMetadataScope.all => _entries,
-    _BatchMetadataScope.specific => _specificEntries,
+    DlsiteMetadataBatchScope.anyMissing => _anyMissingEntries,
+    DlsiteMetadataBatchScope.noMetadata => _noMetadataEntries,
+    DlsiteMetadataBatchScope.hasRjCode => _hasRjCodeEntries,
+    DlsiteMetadataBatchScope.all => _entries,
+    DlsiteMetadataBatchScope.specific => _specificEntries,
   };
 
   @override
   void initState() {
     super.initState();
+    _scope = widget.initialScope;
     final entries = widget.entries;
     if (entries != null) {
       _entries = entries;
@@ -92,7 +98,7 @@ class _DlsiteMetadataBatchPageState
     if (result != null) {
       setState(() {
         _specificEntries = result;
-        _scope = _BatchMetadataScope.specific;
+        _scope = DlsiteMetadataBatchScope.specific;
       });
     }
   }
@@ -187,7 +193,7 @@ class _DlsiteMetadataBatchPageState
                       setState(() {
                         _scope = scope;
                       });
-                      if (scope == _BatchMetadataScope.specific &&
+                      if (scope == DlsiteMetadataBatchScope.specific &&
                           _specificEntries.isEmpty) {
                         _pickSpecific();
                       }
@@ -241,13 +247,13 @@ class _BatchMetadataSetupView extends StatelessWidget {
     required this.onPickSpecific,
   });
 
-  final _BatchMetadataScope scope;
+  final DlsiteMetadataBatchScope scope;
   final int allCount;
   final int noMetadataCount;
   final int anyMissingCount;
   final int hasRjCodeCount;
   final int specificCount;
-  final ValueChanged<_BatchMetadataScope> onScopeChanged;
+  final ValueChanged<DlsiteMetadataBatchScope> onScopeChanged;
   final VoidCallback onPickSpecific;
 
   @override
@@ -280,7 +286,7 @@ class _BatchMetadataSetupView extends StatelessWidget {
             borderRadius: BorderRadius.circular(16),
           ),
           clipBehavior: Clip.antiAlias,
-          child: RadioGroup<_BatchMetadataScope>(
+          child: RadioGroup<DlsiteMetadataBatchScope>(
             key: const ValueKey('batch_metadata_scope_group'),
             groupValue: scope,
             onChanged: (value) {
@@ -288,42 +294,42 @@ class _BatchMetadataSetupView extends StatelessWidget {
             },
             child: Column(
               children: [
-                RadioListTile<_BatchMetadataScope>(
-                  value: _BatchMetadataScope.anyMissing,
+                RadioListTile<DlsiteMetadataBatchScope>(
+                  value: DlsiteMetadataBatchScope.anyMissing,
                   title: Text(
                     '${i18n.tr('batch_metadata_any_missing')} ($anyMissingCount)',
                     style: const TextStyle(fontWeight: FontWeight.w600),
                   ),
                 ),
-                RadioListTile<_BatchMetadataScope>(
-                  value: _BatchMetadataScope.noMetadata,
+                RadioListTile<DlsiteMetadataBatchScope>(
+                  value: DlsiteMetadataBatchScope.noMetadata,
                   title: Text(
                     '${i18n.tr('batch_metadata_no_metadata')} ($noMetadataCount)',
                     style: const TextStyle(fontWeight: FontWeight.w600),
                   ),
                 ),
-                RadioListTile<_BatchMetadataScope>(
-                  value: _BatchMetadataScope.hasRjCode,
+                RadioListTile<DlsiteMetadataBatchScope>(
+                  value: DlsiteMetadataBatchScope.hasRjCode,
                   title: Text(
                     '${i18n.tr('batch_metadata_has_rj_code')} ($hasRjCodeCount)',
                     style: const TextStyle(fontWeight: FontWeight.w600),
                   ),
                 ),
-                RadioListTile<_BatchMetadataScope>(
-                  value: _BatchMetadataScope.specific,
+                RadioListTile<DlsiteMetadataBatchScope>(
+                  value: DlsiteMetadataBatchScope.specific,
                   title: Text(
                     '${i18n.tr('batch_metadata_specific')} ($specificCount)',
                     style: const TextStyle(fontWeight: FontWeight.w600),
                   ),
-                  secondary: scope == _BatchMetadataScope.specific
+                  secondary: scope == DlsiteMetadataBatchScope.specific
                       ? IconButton(
                           icon: const Icon(Icons.edit_rounded),
                           onPressed: onPickSpecific,
                         )
                       : null,
                 ),
-                RadioListTile<_BatchMetadataScope>(
-                  value: _BatchMetadataScope.all,
+                RadioListTile<DlsiteMetadataBatchScope>(
+                  value: DlsiteMetadataBatchScope.all,
                   title: Text(
                     '${i18n.tr('batch_metadata_all')} ($allCount)',
                     style: const TextStyle(fontWeight: FontWeight.w600),
@@ -578,6 +584,7 @@ class DlsiteMetadataBatchResultsPage extends StatefulWidget {
 class _DlsiteMetadataBatchResultsPageState
     extends State<DlsiteMetadataBatchResultsPage> {
   bool _savingAll = false;
+  final List<Timer> _pendingTimers = <Timer>[];
 
   @override
   void initState() {
@@ -587,6 +594,10 @@ class _DlsiteMetadataBatchResultsPageState
 
   @override
   void dispose() {
+    for (final timer in _pendingTimers) {
+      timer.cancel();
+    }
+    _pendingTimers.clear();
     widget.session.dispose();
     super.dispose();
   }
@@ -669,7 +680,14 @@ class _DlsiteMetadataBatchResultsPageState
                       direction: DismissDirection.endToStart,
                       confirmDismiss: (direction) async {
                         if (direction == DismissDirection.endToStart) {
-                          widget.session.toggleExcluded(index);
+                          late final Timer timer;
+                          timer = Timer(const Duration(milliseconds: 220), () {
+                            _pendingTimers.remove(timer);
+                            if (mounted) {
+                              widget.session.toggleExcluded(index);
+                            }
+                          });
+                          _pendingTimers.add(timer);
                         }
                         return false;
                       },

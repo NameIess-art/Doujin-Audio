@@ -108,6 +108,20 @@ internal class NativePlaybackForegroundCoordinator(
         }
     }
 
+    fun triggerWatchdog() {
+        if (!host.hasPlaybackToKeepAlive) return
+        val foregroundStart = startOrUpdate(
+            forceRefresh = host.isForegroundNotificationPosted() == false
+        )
+        if (foregroundStart.playbackAllowed) {
+            host.onWatchdog()
+            if (watchdogScheduled) {
+                environment.remove(watchdogRunnable)
+                environment.postDelayed(watchdogRunnable, watchdogIntervalMs)
+            }
+        }
+    }
+
     fun sync(forceRefresh: Boolean = false) {
         if (host.hasPlaybackToKeepAlive) {
             cancelGrace()

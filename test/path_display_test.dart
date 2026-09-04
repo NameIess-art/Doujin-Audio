@@ -57,4 +57,10 @@ void main() {
       'Download/DoujinAudio-diagnostic.zip',
     );
   });
+
+  test('extracts folderName correctly when path has trailing slash or backslash', () {
+    expect(PathDisplay.folderName('/Music/Albums/MyAlbum/'), 'MyAlbum');
+    expect(PathDisplay.folderName(r'C:\Audio\Tracks\TrackFolder\'), 'TrackFolder');
+    expect(PathDisplay.fileName('/Music/Albums/MyAlbum/'), 'MyAlbum');
+  });
 }

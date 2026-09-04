@@ -60,7 +60,7 @@ extension _MainScreenNotifications on _MainScreenState {
       confirmIcon: Icons.settings_rounded,
       isDestructive: false,
     );
-    if (openSettings != true) return;
+    if (!mounted || openSettings != true) return;
     await _openBatteryOptimizationSettings();
   }
 
@@ -148,7 +148,7 @@ extension _MainScreenNotifications on _MainScreenState {
       isDestructive: false,
     );
     _notificationSettingsDialogVisible = false;
-    if (openSettings != true) return;
+    if (!mounted || openSettings != true) return;
     _notificationSettingsOpened = true;
     await _openNotificationSettings();
   }

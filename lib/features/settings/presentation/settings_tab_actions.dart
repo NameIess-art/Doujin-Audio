@@ -15,7 +15,7 @@ extension _SettingsTabActions on _SettingsTabState {
       icon: Icons.cleaning_services_rounded,
       confirmColor: Theme.of(context).colorScheme.error,
     );
-    if (!confirmed) return;
+    if (!confirmed || !mounted) return;
 
     final deletedBytes = await _runSettingsOperation<int>(
       scope: UiOperationScope.settingsCache,

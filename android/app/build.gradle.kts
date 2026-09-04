@@ -83,6 +83,12 @@ android {
         disable += "PropertyEscape"
     }
 
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
+
     signingConfigs {
         if (releaseSigningConfigured) {
             create("release") {

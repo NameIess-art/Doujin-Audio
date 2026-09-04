@@ -204,7 +204,9 @@ jobs:
           EOF
 
       - name: Build universal release APK
-        run: flutter build apk --release
+        run: >-
+          flutter build apk --release
+          --obfuscate --split-debug-info=build/app/outputs/symbols
 
       - name: Preserve universal release APK
         run: |
@@ -215,6 +217,7 @@ jobs:
         run: >-
           flutter build apk --release --split-per-abi
           --target-platform android-arm,android-arm64,android-x64
+          --obfuscate --split-debug-info=build/app/outputs/symbols
 
       - name: Prepare Android release assets
         run: |
@@ -290,6 +293,14 @@ jobs:
             DoujinAudio-android-armv7-${{ github.ref_name }}.apk.sha256
             DoujinAudio-android-x64-${{ github.ref_name }}.apk
             DoujinAudio-android-x64-${{ github.ref_name }}.apk.sha256
+
+      - name: Store release symbols
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-symbols-${{ github.ref_name }}
+          if-no-files-found: warn
+          retention-days: 30
+          path: build/app/outputs/symbols
 
   publish-release:
     if: startsWith(github.ref, 'refs/tags/')

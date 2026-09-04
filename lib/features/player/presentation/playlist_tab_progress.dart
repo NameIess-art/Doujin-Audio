@@ -1385,6 +1385,14 @@ class _TimelineSubtitleViewState extends State<_TimelineSubtitleView> {
   }
 
   void _updateLayoutMetrics(List<double> itemExtents) {
+    if (itemExtents.isEmpty) {
+      _itemExtents = const [];
+      _itemCenters = const [];
+      _viewportHeight = _minimumViewportHeight;
+      _leadingPadding = 0.0;
+      _trailingPadding = 0.0;
+      return;
+    }
     final viewportHeight = max(_minimumViewportHeight, itemExtents.reduce(max));
     final leadingPadding = max(0.0, (viewportHeight - itemExtents.first) / 2);
     final trailingPadding = max(0.0, (viewportHeight - itemExtents.last) / 2);
@@ -1434,6 +1442,9 @@ class _TimelineSubtitleViewState extends State<_TimelineSubtitleView> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.cues.isEmpty) {
+      return const SizedBox.shrink();
+    }
     final cs = Theme.of(context).colorScheme;
     final baseTextStyle =
         Theme.of(context).textTheme.bodyMedium ?? const TextStyle();

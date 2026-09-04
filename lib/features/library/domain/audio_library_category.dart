@@ -135,7 +135,10 @@ class AudioLibraryCategorySnapshot {
           frequencies[a] ?? 0,
         );
         if (frequencyResult != 0) return frequencyResult;
-        return a.toLowerCase().compareTo(b.toLowerCase());
+        final caseInsensitiveResult =
+            a.toLowerCase().compareTo(b.toLowerCase());
+        if (caseInsensitiveResult != 0) return caseInsensitiveResult;
+        return a.compareTo(b);
       });
     return List<String>.unmodifiable(terms);
   }

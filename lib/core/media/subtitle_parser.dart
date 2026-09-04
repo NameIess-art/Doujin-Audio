@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:path/path.dart' as path;
 
+import '../logging/app_log_service.dart';
 import '../immutable_collections.dart';
 
 class SubtitleCue {
@@ -84,15 +85,25 @@ Future<SubtitleTrack?> loadSubtitleTrackForAudio(String audioPath) async {
   final subtitleFile = await _findSubtitleFile(audioPath);
   if (subtitleFile == null) return null;
 
-  final raw = await subtitleFile.readAsString();
-  final extension = path.extension(subtitleFile.path).toLowerCase();
-  return Isolate.run(
-    () => _parseSubtitleTrack(
-      sourcePath: subtitleFile.path,
-      raw: raw,
-      extension: extension,
-    ),
-  );
+  try {
+    final bytes = await subtitleFile.readAsBytes();
+    final raw = utf8.decode(bytes, allowMalformed: true);
+    final extension = path.extension(subtitleFile.path).toLowerCase();
+    return await Isolate.run(
+      () => _parseSubtitleTrack(
+        sourcePath: subtitleFile.path,
+        raw: raw,
+        extension: extension,
+      ),
+    );
+  } catch (error, stackTrace) {
+    AppLogService.warning(
+      'subtitle_file_load_failed',
+      error: error,
+      stackTrace: stackTrace,
+    );
+    return null;
+  }
 }
 
 Future<SubtitleTrack?> loadSubtitleTrackFromUrl({
@@ -127,7 +138,7 @@ Future<SubtitleTrack?> loadSubtitleTrackFromUrl({
     }
     final raw = await response
         .timeout(downloadIdleTimeout)
-        .transform(utf8.decoder)
+        .transform(const Utf8Decoder(allowMalformed: true))
         .join();
     if (raw.trim().isEmpty) return null;
     return parseSubtitleTrackFromRaw(

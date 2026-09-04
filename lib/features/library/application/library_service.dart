@@ -91,6 +91,7 @@ class LibraryService {
       return false;
     }
     watchedLibraries.add(folderPath);
+    markStructureChanged();
     onPersist?.call();
     return true;
   }
@@ -114,6 +115,7 @@ class LibraryService {
           PathMatcher.equalsNormalized(watchedLibrary, folderPath),
     );
     if (watchedLibraries.length == previousLength) return false;
+    markStructureChanged();
     onPersist?.call();
     return true;
   }

@@ -242,9 +242,8 @@ class _TimerTabState extends ConsumerState<TimerTab>
       confirmIcon: Icons.settings_rounded,
       isDestructive: false,
     );
-    if (openSettings) {
-      await _openExactAlarmSettings();
-    }
+    if (!mounted || !openSettings) return;
+    await _openExactAlarmSettings();
   }
 
   @override

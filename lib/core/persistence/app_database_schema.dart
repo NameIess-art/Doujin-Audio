@@ -57,6 +57,13 @@ Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
   if (oldVersion < 6 && newVersion >= 6) {
     await _migrateAudioDetailsToV6(db);
   }
+  await _createTrackDetailTables(db);
+  await _createTrackIndexes(db);
+  await _createSessionDetailTables(db);
+  await _createAsmrTables(db);
+  await _createAudioDetailsTable(db);
+  await _createLibraryEntriesTable(db);
+  await _createTimeSegmentLabelsTable(db);
 }
 
 Future<void> _addColumnIfMissing(

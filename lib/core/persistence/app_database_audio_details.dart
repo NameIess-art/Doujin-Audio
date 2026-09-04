@@ -53,11 +53,13 @@ extension AppDatabaseAudioDetails on AppDatabase {
     required String targetPath,
   }) async {
     await _runDatabaseWrite((db) async {
-      await _deleteAudioDetailRows(
-        db,
-        targetType,
-        PathMatcher.normalize(targetPath),
-      );
+      await db.transaction((transaction) async {
+        await _deleteAudioDetailRows(
+          transaction,
+          targetType,
+          PathMatcher.normalize(targetPath),
+        );
+      });
     });
   }
 

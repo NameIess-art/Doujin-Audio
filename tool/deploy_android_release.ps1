@@ -115,6 +115,8 @@ try {
         '--target-platform', 'android-arm64',
         '--release',
         '--split-per-abi',
+        '--obfuscate',
+        '--split-debug-info=build\app\outputs\symbols',
         '--no-pub',
         '--no-version-check'
     )

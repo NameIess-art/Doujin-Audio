@@ -7,7 +7,11 @@ import 'path_matcher.dart';
 abstract final class PathDisplay {
   static String fileName(String value, {bool withoutExtension = false}) {
     final displayPath = displayPathFor(value);
-    final name = displayPath.split(RegExp(r'[\\/]')).last.trim();
+    final segments = displayPath
+        .split(RegExp(r'[\\/]'))
+        .where((segment) => segment.trim().isNotEmpty)
+        .toList(growable: false);
+    final name = segments.isEmpty ? displayPath.trim() : segments.last.trim();
     if (withoutExtension) {
       return path.basenameWithoutExtension(name);
     }

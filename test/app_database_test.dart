@@ -142,6 +142,23 @@ void main() {
     );
   });
 
+  test('upgrade ensures all required tables and indexes exist from older versions', () async {
+    await db.execute('DROP TABLE IF EXISTS library_entries');
+    await db.execute('DROP TABLE IF EXISTS playback_queues');
+    await db.execute('DROP TABLE IF EXISTS time_segment_labels');
+
+    await AppDatabase.upgradeSchemaForTest(db, 1, 6);
+
+    final tables = await db.rawQuery(
+      "SELECT name FROM sqlite_master WHERE type = 'table'",
+    );
+    final tableNames = tables.map((row) => row['name'] as String).toSet();
+    expect(tableNames, contains('library_entries'));
+    expect(tableNames, contains('playback_queues'));
+    expect(tableNames, contains('time_segment_labels'));
+    expect(tableNames, contains('track_scan_info'));
+  });
+
   test(
     'ASMR work list and outbox roll back together on write failure',
     () async {

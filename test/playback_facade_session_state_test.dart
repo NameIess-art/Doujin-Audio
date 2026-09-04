@@ -525,6 +525,31 @@ void main() {
     expect(playback.hasSessionAdjacentTrack(session.id, forward: true), isTrue);
   });
 
+  test('seekSession clamps negative positions and positions past duration', () async {
+    final library = _createLibraryFacade();
+    final native = _RecordingNativePlaybackRepository();
+    final playback = PlaybackFacade.create(
+      databaseRepository:
+          library.databaseRepository as PlaybackPersistenceRepository,
+      nativeRepository: native,
+    );
+    final session = _session('clamped-seek')
+      ..duration = const Duration(seconds: 100);
+    playback.registerSession(session);
+    addTearDown(() async {
+      await playback.dispose();
+      await library.dispose();
+    });
+
+    await playback.seekSession(session.id, const Duration(seconds: -10));
+    expect(session.position, Duration.zero);
+    expect(native.seekPositions.last, Duration.zero);
+
+    await playback.seekSession(session.id, const Duration(seconds: 150));
+    expect(session.position, const Duration(seconds: 100));
+    expect(native.seekPositions.last, const Duration(seconds: 100));
+  });
+
   test(
     'playback error retries an existing native source through transport',
     () async {

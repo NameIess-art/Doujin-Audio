@@ -93,4 +93,20 @@ void main() {
       );
     },
   );
+
+  test('addWatchedLibrary and removeWatchedLibrary increment structureRevision', () {
+    final service = LibraryService();
+    addTearDown(service.dispose);
+    const libraryPath = '/library/test';
+
+    final initialRevision = service.structureRevision;
+    final added = service.addWatchedLibrary(libraryPath);
+    expect(added, isTrue);
+    expect(service.structureRevision, greaterThan(initialRevision));
+
+    final afterAddRevision = service.structureRevision;
+    final removed = service.removeWatchedLibrary(libraryPath);
+    expect(removed, isTrue);
+    expect(service.structureRevision, greaterThan(afterAddRevision));
+  });
 }

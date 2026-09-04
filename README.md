@@ -180,8 +180,8 @@ dart run tool/verify_release.dart --tag $tag
 Release 构建必须配置正式签名。缺少 `android/key.properties` 或对应 keystore 时构建会失败，不会回退到 debug 签名。
 
 ```powershell
-flutter build apk --release
-flutter build apk --release --split-per-abi --target-platform android-arm,android-arm64,android-x64
+flutter build apk --release --obfuscate --split-debug-info=build/app/outputs/symbols
+flutter build apk --release --split-per-abi --target-platform android-arm,android-arm64,android-x64 --obfuscate --split-debug-info=build/app/outputs/symbols
 ```
 
 ## 发布流程

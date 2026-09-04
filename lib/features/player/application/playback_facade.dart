@@ -571,12 +571,18 @@ final class PlaybackFacade {
         !identical(_service.sessions[session.id], session)) {
       return;
     }
+    final maxDuration = session.duration;
+    final clamped = maxDuration != null && maxDuration > Duration.zero
+        ? (position < Duration.zero
+              ? Duration.zero
+              : (position > maxDuration ? maxDuration : position))
+        : (position < Duration.zero ? Duration.zero : position);
     session.beginLoadingIndicatorThreshold();
-    session.setOptimisticPosition(position);
+    session.setOptimisticPosition(clamped);
     session.lastPersistedPositionBucket =
-        position.inSeconds ~/ positionBucketSeconds;
-    _onSessionPositionChanged?.call(session, position);
-    await nativeRepository.seek(session.id, position);
+        clamped.inSeconds ~/ positionBucketSeconds;
+    _onSessionPositionChanged?.call(session, clamped);
+    await nativeRepository.seek(session.id, clamped);
   }
 
   Future<void> seekSessionByOffset(String sessionId, Duration offset) async {

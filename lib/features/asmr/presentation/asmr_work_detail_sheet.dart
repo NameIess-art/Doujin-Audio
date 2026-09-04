@@ -12,6 +12,7 @@ import '../domain/asmr_models.dart';
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/presentation/app_presentation_providers.dart';
 import '../../../app/theme/app_design_tokens.dart';
+import '../../../core/media/time_text_formatters.dart';
 import '../../../core/widgets/app_bottom_sheet.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/async_cover_image.dart';
@@ -149,7 +150,8 @@ class _AsmrWorkDetailSheetState extends ConsumerState<_AsmrWorkDetailSheet> {
         final effectiveWork = detail?.work ?? widget.work;
         final controller = ref.read(asmrLibraryControllerProvider);
         final isFavorite =
-            controller?.isFavorite(effectiveWork.id) ?? effectiveWork.isFavorite;
+            controller?.isFavorite(effectiveWork.id) ??
+            effectiveWork.isFavorite;
         final coverCacheWidth = coverCacheWidthForResolution(
           ref.watch(coverImageResolutionProvider),
         );
@@ -563,24 +565,12 @@ String _formatDate(AppLanguageProvider i18n, DateTime? value) {
   if (value == null) {
     return i18n.tr('asmr_unknown');
   }
-  final local = value.toLocal();
-  return '${local.year.toString().padLeft(4, '0')}-'
-      '${local.month.toString().padLeft(2, '0')}-'
-      '${local.day.toString().padLeft(2, '0')}';
+  return formatDateYmd(value.toLocal());
 }
 
 String _formatDuration(AppLanguageProvider i18n, Duration value) {
   if (value == Duration.zero) {
     return i18n.tr('asmr_unknown');
   }
-  final hours = value.inHours;
-  final minutes = value.inMinutes.remainder(60);
-  final seconds = value.inSeconds.remainder(60);
-  if (hours > 0) {
-    return '${hours.toString().padLeft(2, '0')}:'
-        '${minutes.toString().padLeft(2, '0')}:'
-        '${seconds.toString().padLeft(2, '0')}';
-  }
-  return '${value.inMinutes.toString().padLeft(2, '0')}:'
-      '${seconds.toString().padLeft(2, '0')}';
+  return formatDurationCompact(value);
 }

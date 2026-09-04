@@ -754,10 +754,10 @@ extension AsmrDownloadTransferService on AsmrDownloadManager {
     final normalizedRelative = _validatedDownloadRelativePath(relativePath);
     if (PathMatcher.isContentUri(basePath)) {
       if (basePath.contains('::')) {
-        final prefix = _trimRightSlash(basePath);
+        final prefix = PathMatcher.trimRightSlash(basePath);
         return '$prefix/$normalizedRelative';
       }
-      return '${_trimRightSlash(basePath)}::$normalizedRelative';
+      return '${PathMatcher.trimRightSlash(basePath)}::$normalizedRelative';
     }
     return _resolveLocalPathWithin(basePath, normalizedRelative);
   }
@@ -886,13 +886,5 @@ extension AsmrDownloadTransferService on AsmrDownloadManager {
         .convert(utf8.encode('$workRootPath|$relativePath'))
         .toString();
     return File(path.join(root.path, 'asmr_downloads', '$key.doujin.part'));
-  }
-
-  String _trimRightSlash(String value) {
-    var result = value.trim();
-    while (result.endsWith('/')) {
-      result = result.substring(0, result.length - 1);
-    }
-    return result;
   }
 }

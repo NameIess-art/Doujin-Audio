@@ -390,9 +390,8 @@ class FileCachePlatformGateway {
     return result.valueOrNull;
   }
 
-  Future<bool> documentPathExists(String path) async {
-    return await documentPathExistence(path) ?? false;
-  }
+  Future<bool> documentPathExists(String path) async =>
+      (await documentPathExistence(path)) ?? false;
 
   Future<String?> resolveDocumentFileSystemPath(String path) async {
     final result = await _client.invoke<String?>(

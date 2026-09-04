@@ -217,7 +217,7 @@ class _PlaybackQueueCard extends ConsumerWidget {
                           if (isPinned)
                             Positioned(
                               top: 4,
-                              right: 4,
+                              left: 4,
                               child: _PlaylistPinnedIndicator(
                                 sessionId: session.id,
                                 color: activeColor,

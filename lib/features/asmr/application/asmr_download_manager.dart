@@ -185,38 +185,7 @@ class AsmrDownloadManager {
 
   Future<void> _initializeOnce() async {
     if (_persistTasks) {
-      final raw = await AppPreferences.getString(
-        AppPreferences.asmrDownloadTasksKey,
-      );
-      if (!_disposed && raw != null && raw.isNotEmpty) {
-        try {
-          final decoded = jsonDecode(raw);
-          if (decoded is Map && decoded['tasks'] is List) {
-            for (final value in decoded['tasks'] as List) {
-              if (value is! Map) continue;
-              final restored = _downloadTaskFromJson(
-                Map<String, dynamic>.from(value),
-              );
-              final task = restored.task;
-              _store[task.work.id] = task.copyWith(
-                status: AsmrDownloadTaskStatus.paused,
-                fileRetryAttempts: const <String, int>{},
-                manuallyRetryingFilePaths: const <String>{},
-                message: 'paused',
-              );
-              _createdOutputPaths[task.work.id] = restored.createdOutputPaths;
-              _createdJsonDocuments[task.work.id] =
-                  restored.createdJsonDocuments;
-            }
-          }
-        } catch (error, stackTrace) {
-          AppLogService.warning(
-            'asmr_download_restore_failed',
-            error: error,
-            stackTrace: stackTrace,
-          );
-        }
-      }
+      await _restorePersistedTasksFromPreferences();
     }
     if (_disposed) return;
     _initialized = true;
@@ -917,23 +886,6 @@ class AsmrDownloadManager {
         AppCacheService.scheduleEnforce();
         _processQueue();
       }
-    }
-  }
-
-  Map<String, Object?> _persistedTaskToJson(AsmrDownloadTaskSnapshot task) =>
-      _downloadTaskToJson(
-        task,
-        createdOutputPaths:
-            _createdOutputPaths[task.work.id] ?? const <String>{},
-        createdJsonDocuments:
-            _createdJsonDocuments[task.work.id] ??
-            const <String, _CreatedJsonDocument>{},
-      );
-
-  void _retainOnlyLatestCompletedTask(int workId) {
-    for (final obsoleteWorkId in _store.retainOnlyLatestCompletedTask(workId)) {
-      _createdOutputPaths.remove(obsoleteWorkId);
-      _createdJsonDocuments.remove(obsoleteWorkId);
     }
   }
 

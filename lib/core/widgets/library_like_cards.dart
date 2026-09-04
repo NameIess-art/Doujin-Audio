@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../app/theme/app_styles.dart';
 import '../media/card_info_field.dart';
+import '../media/time_text_formatters.dart';
 import 'async_cover_image.dart';
 import 'app_feedback.dart';
 import 'marquee_text.dart';
@@ -175,15 +176,9 @@ class _CompactLibraryLikeSkeletonCard extends StatelessWidget {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            ShimmerContainer(
-                              height: 12,
-                              borderRadius: 4,
-                            ),
+                            ShimmerContainer(height: 12, borderRadius: 4),
                             SizedBox(height: 4),
-                            ShimmerContainer(
-                              height: 12,
-                              borderRadius: 4,
-                            ),
+                            ShimmerContainer(height: 12, borderRadius: 4),
                             SizedBox(height: 4),
                             ShimmerContainer(
                               width: 140,
@@ -226,9 +221,8 @@ class _CompactLibraryLikeSkeletonCard extends StatelessWidget {
                             Align(
                               alignment: Alignment.bottomRight,
                               child: _LibraryLikeSkeletonActions(
-                                actionHeight:
-                                    LibraryLikeCardMetrics
-                                        .compactActionButtonLayoutSize,
+                                actionHeight: LibraryLikeCardMetrics
+                                    .compactActionButtonLayoutSize,
                               ),
                             ),
                           ],
@@ -410,9 +404,7 @@ List<LibraryLikeInfoLineData> buildLibraryLikeInfoLines({
 
 String formatLibraryLikeDate(DateTime? value) {
   if (value == null) return '';
-  return '${value.year.toString().padLeft(4, '0')}-'
-      '${value.month.toString().padLeft(2, '0')}-'
-      '${value.day.toString().padLeft(2, '0')}';
+  return formatDateYmd(value);
 }
 
 String formatLibraryLikeRating(double? value) {
@@ -1123,9 +1115,6 @@ bool _isLibraryLikeSplitChar(String char) {
   };
   return separators.contains(char);
 }
-
-bool shouldReserveTwoLibraryLikeInfoLines(String text) =>
-    text.characters.length > 18;
 
 @visibleForTesting
 (String, String) splitCompactCardTitle({

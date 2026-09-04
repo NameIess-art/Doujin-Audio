@@ -105,4 +105,10 @@ void main() {
       isFalse,
     );
   });
+
+  test('trimRightSlash removes trailing slashes and trims whitespace', () {
+    expect(PathMatcher.trimRightSlash('foo/bar///'), 'foo/bar');
+    expect(PathMatcher.trimRightSlash('  foo/bar/  '), 'foo/bar');
+    expect(PathMatcher.trimRightSlash('foo/bar'), 'foo/bar');
+  });
 }

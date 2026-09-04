@@ -531,10 +531,7 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
       ),
     );
 
-    return UndoableRemovalTransition(
-      hidden: isHidden,
-      child: result,
-    );
+    return UndoableRemovalTransition(hidden: isHidden, child: result);
   }
 }
 
@@ -793,10 +790,7 @@ class _TrackNodeWidget extends ConsumerWidget {
             ),
           );
 
-    return UndoableRemovalTransition(
-      hidden: isHidden,
-      child: result,
-    );
+    return UndoableRemovalTransition(hidden: isHidden, child: result);
   }
 }
 
@@ -868,24 +862,20 @@ class _LibraryCoverThumbnailState
               borderRadius: BorderRadius.circular(
                 LibraryLikeCardMetrics.coverRadius,
               ),
-              child: Hero(
-                tag: 'cover_${widget.folderPath}',
-                placeholderBuilder: (context, heroSize, child) => child,
-                child: AsyncLocalCoverImage(
-                  future: coverPathFuture,
-                  requestKey: widget.folderPath,
-                  initialPath: libraryFacade.resolvedCoverPathForFolder(
-                    widget.folderPath,
-                  ),
-                  retryFutureBuilder: () =>
-                      coverUi.deferredFolderCover(widget.folderPath),
-                  seed: widget.folderPath,
-                  cacheWidth: coverCacheWidth,
-                  useDefaultCacheWidth: false,
-                  fit: BoxFit.cover,
-                  compact: true,
-                  iconSize: 28,
+              child: AsyncLocalCoverImage(
+                future: coverPathFuture,
+                requestKey: widget.folderPath,
+                initialPath: libraryFacade.resolvedCoverPathForFolder(
+                  widget.folderPath,
                 ),
+                retryFutureBuilder: () =>
+                    coverUi.deferredFolderCover(widget.folderPath),
+                seed: widget.folderPath,
+                cacheWidth: coverCacheWidth,
+                useDefaultCacheWidth: false,
+                fit: BoxFit.cover,
+                compact: true,
+                iconSize: 28,
               ),
             ),
           ),
@@ -968,21 +958,17 @@ class _LibraryTrackCoverThumbnailState
             borderRadius: BorderRadius.circular(
               LibraryLikeCardMetrics.coverRadius,
             ),
-            child: Hero(
-              tag: 'cover_${track.path}',
-              placeholderBuilder: (context, heroSize, child) => child,
-              child: AsyncLocalCoverImage(
-                future: coverPathFuture,
-                requestKey: track.path,
-                initialPath: libraryFacade.resolvedCoverPathForTrack(track),
-                retryFutureBuilder: () => coverUi.deferredTrackCover(track),
-                seed: track.displayName,
-                cacheWidth: coverCacheWidth,
-                useDefaultCacheWidth: false,
-                fit: BoxFit.cover,
-                compact: true,
-                iconSize: 28,
-              ),
+            child: AsyncLocalCoverImage(
+              future: coverPathFuture,
+              requestKey: track.path,
+              initialPath: libraryFacade.resolvedCoverPathForTrack(track),
+              retryFutureBuilder: () => coverUi.deferredTrackCover(track),
+              seed: track.displayName,
+              cacheWidth: coverCacheWidth,
+              useDefaultCacheWidth: false,
+              fit: BoxFit.cover,
+              compact: true,
+              iconSize: 28,
             ),
           ),
         ),

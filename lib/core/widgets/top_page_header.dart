@@ -283,9 +283,7 @@ class _TopPageHeaderState extends ConsumerState<TopPageHeader> {
 
       Widget wrapButton(Widget button) {
         if (button is IconButton || button is BackButton) {
-          return HeaderFloatingButton(
-            child: button,
-          );
+          return HeaderFloatingButton(child: button);
         }
         return button;
       }
@@ -325,12 +323,13 @@ class _TopPageHeaderState extends ConsumerState<TopPageHeader> {
                       widget.marqueeTitle
                           ? MarqueeText(
                               text: resolvedTitle,
-                              style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                                fontWeight: FontWeight.w800,
-                                color: cs.onSurface,
-                                fontSize: 13.5,
-                                letterSpacing: 0.1,
-                              ),
+                              style: Theme.of(context).textTheme.titleSmall
+                                  ?.copyWith(
+                                    fontWeight: FontWeight.w800,
+                                    color: cs.onSurface,
+                                    fontSize: 13.5,
+                                    letterSpacing: 0.1,
+                                  ),
                               scrollSpeed: 24,
                               edgePadding: 2,
                               forceMarquee: widget.forceMarqueeTitle,
@@ -339,12 +338,13 @@ class _TopPageHeaderState extends ConsumerState<TopPageHeader> {
                               resolvedTitle,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                                fontWeight: FontWeight.w800,
-                                color: cs.onSurface,
-                                fontSize: 13.5,
-                                letterSpacing: 0.1,
-                              ),
+                              style: Theme.of(context).textTheme.titleSmall
+                                  ?.copyWith(
+                                    fontWeight: FontWeight.w800,
+                                    color: cs.onSurface,
+                                    fontSize: 13.5,
+                                    letterSpacing: 0.1,
+                                  ),
                             ),
                       if (widget.subtitle != null &&
                           widget.subtitle!.isNotEmpty)
@@ -352,13 +352,14 @@ class _TopPageHeaderState extends ConsumerState<TopPageHeader> {
                           widget.subtitle!,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: cs.onSurfaceVariant.withValues(
-                              alpha: 0.85,
-                            ),
-                            fontSize: 11.5,
-                            fontWeight: FontWeight.w600,
-                          ),
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                color: cs.onSurfaceVariant.withValues(
+                                  alpha: 0.85,
+                                ),
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w600,
+                              ),
                         ),
                     ],
                   ),
@@ -401,12 +402,14 @@ class _TopPageHeaderState extends ConsumerState<TopPageHeader> {
         );
       }
 
-      final topCapsuleWidget = widget.topCapsuleChild ??
+      final topCapsuleWidget =
+          widget.topCapsuleChild ??
           (widget.topCapsuleTitle != null
               ? HeaderTopCapsule(
                   title: widget.topCapsuleTitle!,
                   data: widget.topCapsuleData,
-                  leading: widget.topCapsuleLeading ??
+                  leading:
+                      widget.topCapsuleLeading ??
                       (widget.icon != null
                           ? Icon(widget.icon, size: 16, color: cs.primary)
                           : null),
@@ -443,8 +446,8 @@ class _TopPageHeaderState extends ConsumerState<TopPageHeader> {
         );
       }
 
-      final topCapsuleOpacity =
-          (1.0 - Curves.easeIn.transform(collapseT)).clamp(0.0, 1.0);
+      final topCapsuleOpacity = (1.0 - Curves.easeIn.transform(collapseT))
+          .clamp(0.0, 1.0);
 
       const topCapsuleHeight = 38.0;
       const rowGap = 6.0;
@@ -462,11 +465,7 @@ class _TopPageHeaderState extends ConsumerState<TopPageHeader> {
         0.0,
         collapseT,
       )!;
-      final topCapsuleTop = dart_ui.lerpDouble(
-        0.0,
-        -12.0,
-        collapseT,
-      )!;
+      final topCapsuleTop = dart_ui.lerpDouble(0.0, -12.0, collapseT)!;
 
       return Padding(
         padding: widget.padding,
@@ -544,11 +543,28 @@ class _TopPageHeaderState extends ConsumerState<TopPageHeader> {
   }
 }
 
-class _AppHeaderGlassSurface extends ConsumerWidget {
-  const _AppHeaderGlassSurface({
-    required this.child,
-    this.floating = true,
+class _AppHeaderScope extends InheritedWidget {
+  const _AppHeaderScope({
+    required this.hasBlurBackground,
+    required super.child,
   });
+
+  final bool hasBlurBackground;
+
+  static bool hasBlurBackgroundOf(BuildContext context) {
+    return context
+            .dependOnInheritedWidgetOfExactType<_AppHeaderScope>()
+            ?.hasBlurBackground ??
+        false;
+  }
+
+  @override
+  bool updateShouldNotify(_AppHeaderScope oldWidget) =>
+      hasBlurBackground != oldWidget.hasBlurBackground;
+}
+
+class _AppHeaderGlassSurface extends ConsumerWidget {
+  const _AppHeaderGlassSurface({required this.child, this.floating = true});
 
   final Widget child;
   final bool floating;
@@ -556,16 +572,17 @@ class _AppHeaderGlassSurface extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     if (floating) {
-      return Stack(
-        fit: StackFit.passthrough,
-        children: [
-          const Positioned.fill(
-            child: AppEdgeFadeMask(
-              direction: AppEdgeFadeDirection.towardTop,
+      return _AppHeaderScope(
+        hasBlurBackground: false,
+        child: Stack(
+          fit: StackFit.passthrough,
+          children: [
+            const Positioned.fill(
+              child: AppEdgeFadeMask(direction: AppEdgeFadeDirection.towardTop),
             ),
-          ),
-          child,
-        ],
+            child,
+          ],
+        ),
       );
     }
     final cs = Theme.of(context).colorScheme;
@@ -588,7 +605,7 @@ class _AppHeaderGlassSurface extends ConsumerWidget {
           ),
         ),
       ),
-      child: child,
+      child: _AppHeaderScope(hasBlurBackground: blurEnabled, child: child),
     );
     if (!blurEnabled) return surface;
     return RepaintBoundary(
@@ -611,6 +628,7 @@ class HeaderFloatingSurface extends ConsumerWidget {
     this.height = 38,
     this.width,
     this.padding,
+    this.enableBlur,
   });
 
   final Widget child;
@@ -618,6 +636,7 @@ class HeaderFloatingSurface extends ConsumerWidget {
   final double? height;
   final double? width;
   final EdgeInsetsGeometry? padding;
+  final bool? enableBlur;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -626,6 +645,9 @@ class HeaderFloatingSurface extends ConsumerWidget {
     final blurEnabled = ref.watch(
       settingsStateProvider.select((s) => s.value?.uiBlurEffectEnabled ?? true),
     );
+    final shouldBlur =
+        (enableBlur ?? !_AppHeaderScope.hasBlurBackgroundOf(context)) &&
+        blurEnabled;
     final background = isDark ? cs.surfaceBright : cs.surfaceContainerHigh;
     final borderRadius = BorderRadius.circular(radius);
     final surface = DecoratedBox(
@@ -655,7 +677,7 @@ class HeaderFloatingSurface extends ConsumerWidget {
       ),
       child: ClipRRect(
         borderRadius: borderRadius,
-        child: blurEnabled
+        child: shouldBlur
             ? BackdropFilter(
                 filter: dart_ui.ImageFilter.blur(sigmaX: 16, sigmaY: 16),
                 child: surface,
@@ -665,22 +687,14 @@ class HeaderFloatingSurface extends ConsumerWidget {
     );
 
     if (width != null || height != null) {
-      return SizedBox(
-        width: width,
-        height: height,
-        child: content,
-      );
+      return SizedBox(width: width, height: height, child: content);
     }
     return content;
   }
 }
 
 class HeaderFloatingButton extends StatelessWidget {
-  const HeaderFloatingButton({
-    super.key,
-    required this.child,
-    this.size = 38,
-  });
+  const HeaderFloatingButton({super.key, required this.child, this.size = 38});
 
   final Widget child;
   final double size;
@@ -729,10 +743,7 @@ class HeaderActionPill extends StatelessWidget {
       alignment: Alignment.centerLeft,
       child: HeaderFloatingSurface(
         padding: padding,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: children,
-        ),
+        child: Row(mainAxisSize: MainAxisSize.min, children: children),
       ),
     );
   }
@@ -766,44 +777,48 @@ class HeaderSegmentedCategoryBar<T> extends StatelessWidget {
           physics: const BouncingScrollPhysics(),
           child: Row(
             mainAxisSize: MainAxisSize.min,
-            children: items.map((item) {
-              final isSelected = item == selected;
-              final label = labelBuilder(item);
-              return Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 1.5),
-                child: Material(
-                  color: isSelected
-                      ? cs.primary.withValues(alpha: 0.16)
-                      : Colors.transparent,
-                  borderRadius: BorderRadius.circular(15),
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(15),
-                    onTap: () => onSelected(item),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8.5,
-                        vertical: 4,
-                      ),
-                      child: Center(
-                        child: Text(
-                          label,
-                          style: textTheme.labelMedium?.copyWith(
-                            color: isSelected
-                                ? cs.primary
-                                : cs.onSurfaceVariant.withValues(alpha: 0.85),
-                            fontWeight: isSelected
-                                ? FontWeight.w700
-                                : FontWeight.w500,
-                            fontSize: 12.5,
-                            letterSpacing: 0,
+            children: items
+                .map((item) {
+                  final isSelected = item == selected;
+                  final label = labelBuilder(item);
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 1.5),
+                    child: Material(
+                      color: isSelected
+                          ? cs.primary.withValues(alpha: 0.16)
+                          : Colors.transparent,
+                      borderRadius: BorderRadius.circular(15),
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(15),
+                        onTap: () => onSelected(item),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8.5,
+                            vertical: 4,
+                          ),
+                          child: Center(
+                            child: Text(
+                              label,
+                              style: textTheme.labelMedium?.copyWith(
+                                color: isSelected
+                                    ? cs.primary
+                                    : cs.onSurfaceVariant.withValues(
+                                        alpha: 0.85,
+                                      ),
+                                fontWeight: isSelected
+                                    ? FontWeight.w700
+                                    : FontWeight.w500,
+                                fontSize: 12.5,
+                                letterSpacing: 0,
+                              ),
+                            ),
                           ),
                         ),
                       ),
                     ),
-                  ),
-                ),
-              );
-            }).toList(growable: false),
+                  );
+                })
+                .toList(growable: false),
           ),
         ),
       ),
@@ -843,10 +858,7 @@ class HeaderTopCapsule extends StatelessWidget {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                if (leading != null) ...[
-                  leading!,
-                  const SizedBox(width: 6),
-                ],
+                if (leading != null) ...[leading!, const SizedBox(width: 6)],
                 Flexible(
                   child: Text(
                     title,
@@ -886,4 +898,3 @@ class HeaderTopCapsule extends StatelessWidget {
     );
   }
 }
-

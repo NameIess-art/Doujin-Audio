@@ -2626,7 +2626,7 @@ void main() {
   );
 
   testWidgets(
-    'playlist item pinned indicator displays on top-right of cover or top-left above selection checkmark when no cover',
+    'playlist item pinned indicator displays on top-left of cover or top-left above selection checkmark when no cover',
     (tester) async {
       final fixture = AppRuntimeWidgetTestFixture();
       addTearDown(fixture.dispose);
@@ -2656,11 +2656,30 @@ void main() {
         trackWithoutCover,
         customQueueTracks: <MusicTrack>[trackWithoutCover],
       );
+      final sessionQueueCover =
+          fixture.runtimeGraph.playback.createPlaybackQueue('Cover Queue')
+            ..currentTrackPath = trackWithCover.path
+            ..playbackQueue = PlaybackQueueDefinition(
+              name: 'Cover Queue',
+              entries: <PlaybackQueueEntry>[
+                PlaybackQueueEntry(
+                  id: 'cover-entry',
+                  kind: PlaybackQueueEntryKind.track,
+                  title: trackWithCover.displayName,
+                  tracks: <MusicTrack>[trackWithCover],
+                ),
+              ],
+            );
       addTearDown(sessionCover.shutdown);
       addTearDown(sessionNoCover.shutdown);
+      addTearDown(sessionQueueCover.shutdown);
 
       fixture.playbackService.syncSlice(
-        activeSessions: <PlaybackSession>[sessionCover, sessionNoCover],
+        activeSessions: <PlaybackSession>[
+          sessionCover,
+          sessionNoCover,
+          sessionQueueCover,
+        ],
         playingSessionCount: 0,
         focusedSessionId: sessionCover.id,
         multiThreadPlaybackEnabled: false,
@@ -2668,9 +2687,10 @@ void main() {
         isInitialized: true,
       );
 
-      // Pin both sessions
+      // Pin all three sessions
       await fixture.settingsRepository.togglePlaylistSessionPinned(sessionCover.id);
       await fixture.settingsRepository.togglePlaylistSessionPinned(sessionNoCover.id);
+      await fixture.settingsRepository.togglePlaylistSessionPinned(sessionQueueCover.id);
 
       await tester.pumpWidget(
         fixture.build(
@@ -2679,7 +2699,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      // 1. Session with cover: pushpin indicator is at top-right of the cover
+      // 1. Session with cover: pushpin indicator is at top-left of the cover
       final pinCoverFinder = find.byKey(
         ValueKey<String>('playlist_session_pinned_${sessionCover.id}'),
       );
@@ -2690,9 +2710,23 @@ void main() {
       expect(coverFinder, findsOneWidget);
       final coverRect = tester.getRect(coverFinder);
       final pinCoverRect = tester.getRect(pinCoverFinder);
-      // Pinned icon is in the top-right quadrant of the cover
-      expect(pinCoverRect.center.dx > coverRect.center.dx, isTrue);
+      // Pinned icon is in the top-left quadrant of the cover
+      expect(pinCoverRect.center.dx < coverRect.center.dx, isTrue);
       expect(pinCoverRect.center.dy < coverRect.center.dy, isTrue);
+
+      // Queue session with cover: pushpin indicator is at top-left of the queue cover grid
+      final pinQueueFinder = find.byKey(
+        ValueKey<String>('playlist_session_pinned_${sessionQueueCover.id}'),
+      );
+      expect(pinQueueFinder, findsOneWidget);
+      final queueCoverFinder = find.byKey(
+        const ValueKey('playback_queue_cover_grid'),
+      );
+      expect(queueCoverFinder, findsOneWidget);
+      final queueCoverRect = tester.getRect(queueCoverFinder);
+      final pinQueueRect = tester.getRect(pinQueueFinder);
+      expect(pinQueueRect.center.dx < queueCoverRect.center.dx, isTrue);
+      expect(pinQueueRect.center.dy < queueCoverRect.center.dy, isTrue);
 
       // Verify icon is push_pin_rounded
       final pushPinIcon = tester.widget<Icon>(

@@ -51,45 +51,6 @@ class PlaylistHeaderState {
 }
 
 @immutable
-class PlaylistListState {
-  const PlaylistListState({
-    required this.sessions,
-    required this.cardStates,
-    required this.coverGeneration,
-    required this.isInitialized,
-  });
-
-  final List<PlaybackSessionSnapshot> sessions;
-  final Map<String, PlaylistSessionCardState> cardStates;
-  final int coverGeneration;
-  final bool isInitialized;
-
-  bool get hasSessions => sessions.isNotEmpty;
-
-  PlaylistSessionCardState? cardStateFor(String sessionId) =>
-      cardStates[sessionId];
-
-  @override
-  bool operator ==(Object other) {
-    return other is PlaylistListState &&
-        listEquals(other.sessions, sessions) &&
-        mapEquals(other.cardStates, cardStates) &&
-        other.coverGeneration == coverGeneration &&
-        other.isInitialized == isInitialized;
-  }
-
-  @override
-  int get hashCode => Object.hash(
-    Object.hashAll(sessions),
-    Object.hashAllUnordered(
-      cardStates.entries.map((entry) => Object.hash(entry.key, entry.value)),
-    ),
-    coverGeneration,
-    isInitialized,
-  );
-}
-
-@immutable
 class PlaylistStructureEntry {
   const PlaylistStructureEntry({
     required this.session,
@@ -490,29 +451,6 @@ PlaylistStructureState playlistStructureStateFromPlaybackState(
     ),
     coverGeneration: playbackState.coverGeneration,
     isInitialized: playbackState.isInitialized,
-  );
-}
-
-PlaylistStructureState playlistStructureStateFromListState(
-  PlaylistListState listState,
-) {
-  return PlaylistStructureState(
-    entries: List<PlaylistStructureEntry>.unmodifiable(
-      listState.sessions.map((session) {
-        final cardState = listState.cardStateFor(session.id);
-        return PlaylistStructureEntry(
-          session: session,
-          sessionId: session.id,
-          trackPath: cardState?.trackPath ?? session.currentTrackPath,
-          isPlaybackQueue: session.isPlaybackQueue,
-          queueColorValue:
-              cardState?.queueColorValue ?? session.playbackQueue?.colorValue,
-          queueContentSignature: _playlistQueueContentSignature(session),
-        );
-      }),
-    ),
-    coverGeneration: listState.coverGeneration,
-    isInitialized: listState.isInitialized,
   );
 }
 

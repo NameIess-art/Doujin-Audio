@@ -37,10 +37,7 @@ class _CollapsingAsmrWork {
       duration: const Duration(milliseconds: 260),
       value: 1.0,
     );
-    animation = CurvedAnimation(
-      parent: controller,
-      curve: Curves.easeOutCubic,
-    );
+    animation = CurvedAnimation(parent: controller, curve: Curves.easeOutCubic);
     controller.reverse().then((_) {
       onComplete();
     });
@@ -455,14 +452,14 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
                             );
                       return Padding(
                         padding: const EdgeInsets.only(top: 80),
-                        child: AppEmptyView(
+                        child: AppEmptyState(
                           icon: state.lastError != null
                               ? Icons.error_outline_rounded
                               : Icons.search_off_rounded,
                           title: state.lastError != null
                               ? i18n.tr('error')
                               : i18n.tr('asmr_empty_category'),
-                          subtitle: errorText,
+                          message: errorText ?? '',
                         ),
                       );
                     }
@@ -703,9 +700,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
                 axisAlignment: -1.0,
                 child: FadeTransition(
                   opacity: collapsing.animation,
-                  child: IgnorePointer(
-                    child: ExcludeSemantics(child: child),
-                  ),
+                  child: IgnorePointer(child: ExcludeSemantics(child: child)),
                 ),
               );
             },

@@ -73,23 +73,6 @@ bool shouldShowPlaylistCoverArtwork(
   return track != null;
 }
 
-class PulsingPlaceholder extends StatelessWidget {
-  const PulsingPlaceholder({super.key, required this.child, this.borderRadius});
-
-  final Widget child;
-  final BorderRadius? borderRadius;
-
-  @override
-  Widget build(BuildContext context) {
-    Widget result = child;
-    final radius = borderRadius;
-    if (radius != null) {
-      result = ClipRRect(borderRadius: radius, child: result);
-    }
-    return result;
-  }
-}
-
 class AsyncCoverImage extends StatefulWidget {
   const AsyncCoverImage({
     super.key,

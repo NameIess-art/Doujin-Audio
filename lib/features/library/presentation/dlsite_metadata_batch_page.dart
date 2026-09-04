@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/theme/app_styles.dart';
+import '../../../core/media/audio_detail.dart';
 import '../../../core/ui/ui_operation_service.dart';
 import '../../../core/widgets/app_buttons.dart';
 import '../../../core/widgets/app_dialog.dart';
@@ -15,7 +16,13 @@ import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/operation_feedback.dart';
 import '../../../core/widgets/top_page_header.dart';
 
-enum DlsiteMetadataBatchScope { anyMissing, noMetadata, hasRjCode, all, specific }
+enum DlsiteMetadataBatchScope {
+  anyMissing,
+  noMetadata,
+  hasRjCode,
+  all,
+  specific,
+}
 
 double _headerContentTopInset(BuildContext context) =>
     MediaQuery.paddingOf(context).top +
@@ -28,10 +35,12 @@ class DlsiteMetadataBatchPage extends ConsumerStatefulWidget {
   const DlsiteMetadataBatchPage({
     super.key,
     this.entries,
+    this.initialTargets,
     this.initialScope = DlsiteMetadataBatchScope.anyMissing,
   });
 
   final List<AudioLibraryCategoryEntry>? entries;
+  final Set<AudioDetailTarget>? initialTargets;
   final DlsiteMetadataBatchScope initialScope;
 
   @override
@@ -118,8 +127,14 @@ class _DlsiteMetadataBatchPageState
                 ref.read(libraryFacadeProvider).audioLibraryCategorySnapshot(),
           );
       if (!mounted) return;
+      final initialTargets = widget.initialTargets;
+      final loadedEntries = initialTargets == null
+          ? snapshot.entries
+          : snapshot.entries
+                .where((entry) => initialTargets.contains(entry.target))
+                .toList(growable: false);
       setState(() {
-        _entries = snapshot.entries;
+        _entries = loadedEntries;
         _loading = false;
       });
     } catch (error) {
@@ -733,10 +748,26 @@ class _DlsiteMetadataBatchResultsPageState
                       child: ColorFiltered(
                         colorFilter: isExcluded
                             ? const ColorFilter.matrix(<double>[
-                                0.2126, 0.7152, 0.0722, 0, 0,
-                                0.2126, 0.7152, 0.0722, 0, 0,
-                                0.2126, 0.7152, 0.0722, 0, 0,
-                                0,      0,      0,      1, 0,
+                                0.2126,
+                                0.7152,
+                                0.0722,
+                                0,
+                                0,
+                                0.2126,
+                                0.7152,
+                                0.0722,
+                                0,
+                                0,
+                                0.2126,
+                                0.7152,
+                                0.0722,
+                                0,
+                                0,
+                                0,
+                                0,
+                                0,
+                                1,
+                                0,
                               ])
                             : const ColorFilter.mode(
                                 Colors.transparent,
@@ -748,8 +779,9 @@ class _DlsiteMetadataBatchResultsPageState
                             key: ValueKey<String>(
                               'batch_metadata_result_$index',
                             ),
-                            contentPadding:
-                                const EdgeInsets.symmetric(horizontal: 8),
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                            ),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(12),
                             ),
@@ -759,8 +791,9 @@ class _DlsiteMetadataBatchResultsPageState
                               overflow: TextOverflow.ellipsis,
                               style: isExcluded
                                   ? TextStyle(
-                                      color:
-                                          cs.onSurface.withValues(alpha: 0.38),
+                                      color: cs.onSurface.withValues(
+                                        alpha: 0.38,
+                                      ),
                                     )
                                   : null,
                             ),

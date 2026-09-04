@@ -1176,7 +1176,7 @@ class _QueueTrackLeaf extends StatelessWidget {
                   Text(
                     track.duration <= Duration.zero
                         ? '--:--'
-                        : _formatSegmentTime(track.duration),
+                        : formatDurationCompact(track.duration),
                     style: Theme.of(context).textTheme.labelSmall?.copyWith(
                       color: cs.onSurfaceVariant,
                       fontWeight: FontWeight.w700,

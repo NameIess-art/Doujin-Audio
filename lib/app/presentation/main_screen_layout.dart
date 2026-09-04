@@ -157,9 +157,14 @@ extension _MainScreenLayout on _MainScreenState {
   }
 
   Widget _buildBottomBar(BuildContext context) {
-    final settingsState = ref.watch(settingsStateProvider).value;
-    final showLocal = settingsState?.showLocalLibrary ?? true;
-    final showAsmr = settingsState?.showAsmrOne ?? true;
+    final (:showLocal, :showAsmr) = ref.watch(
+      settingsStateProvider.select(
+        (s) => (
+          showLocal: s.value?.showLocalLibrary ?? true,
+          showAsmr: s.value?.showAsmrOne ?? true,
+        ),
+      ),
+    );
     final destinations = _resolveMainDestinations(
       showLocalLibrary: showLocal,
       showAsmrOne: showAsmr,

@@ -12,6 +12,7 @@ import '../../../core/media/time_text_formatters.dart';
 import '../../../core/ui/ui_operation_service.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/async_cover_image.dart';
+import '../../../core/widgets/library_like_cards.dart';
 import '../../../core/widgets/operation_feedback.dart';
 import '../../../core/widgets/top_page_header.dart';
 
@@ -189,12 +190,14 @@ class _DlsiteMetadataReviewPageState
     _circleController.text = metadata.circleName;
     _voiceActorsController.text = metadata.voiceActors.join('\uFF0C');
     _tagsController.text = metadata.tags.join('\uFF0C');
-    _releaseDateController.text = _formatDateValue(metadata.releaseDate);
+    _releaseDateController.text = metadata.releaseDate == null
+        ? ''
+        : formatDateYmd(metadata.releaseDate!);
     _durationController.text = metadata.duration == null
         ? ''
         : formatDurationHms(metadata.duration!);
     _salesController.text = metadata.salesCount?.toString() ?? '';
-    _ratingController.text = _formatRatingValue(metadata.rating);
+    _ratingController.text = formatLibraryLikeRating(metadata.rating);
     setState(() {
       _candidateIndex = nextIndex;
       _candidates = nextCandidates;
@@ -220,8 +223,8 @@ class _DlsiteMetadataReviewPageState
         _voiceActorsController.text.split('\uFF0C'),
       ),
       tags: AudioDetail.normalizeList(_tagsController.text.split('\uFF0C')),
-      releaseDate: _parseDateValue(_releaseDateController.text.trim()),
-      duration: _parseDurationValue(_durationController.text.trim()),
+      releaseDate: parseDateYmd(_releaseDateController.text.trim()),
+      duration: parseDurationCompact(_durationController.text.trim()),
       salesCount: _salesController.text.trim().isEmpty
           ? null
           : int.tryParse(_salesController.text.trim()),
@@ -684,46 +687,6 @@ class _ReviewConfirmButton extends StatelessWidget {
   }
 }
 
-String _formatDateValue(DateTime? value) {
-  if (value == null) return '';
-  return '${value.year.toString().padLeft(4, '0')}-'
-      '${value.month.toString().padLeft(2, '0')}-'
-      '${value.day.toString().padLeft(2, '0')}';
-}
-
-DateTime? _parseDateValue(String value) {
-  if (value.isEmpty) return null;
-  final match = RegExp(r'^(\d{4})-(\d{1,2})-(\d{1,2})$').firstMatch(value);
-  if (match == null) return DateTime.tryParse(value);
-  final year = int.parse(match.group(1)!);
-  final month = int.parse(match.group(2)!);
-  final day = int.parse(match.group(3)!);
-  return DateTime(year, month, day);
-}
-
-Duration? _parseDurationValue(String value) {
-  if (value.isEmpty) return null;
-  final parts = value.split(':').map(int.tryParse).toList(growable: false);
-  if (parts.length < 2 ||
-      parts.length > 3 ||
-      parts.any((part) => part == null)) {
-    return null;
-  }
-  final values = parts.cast<int>();
-  if (values.any((part) => part < 0) ||
-      values.skip(1).any((part) => part >= 60)) {
-    return null;
-  }
-  final seconds = values.length == 3
-      ? values[0] * 3600 + values[1] * 60 + values[2]
-      : values[0] * 60 + values[1];
-  return seconds > 0 ? Duration(seconds: seconds) : null;
-}
-
-String _formatRatingValue(double? value) {
-  if (value == null || value <= 0) return '';
-  return value.toStringAsFixed(value.truncateToDouble() == value ? 0 : 1);
-}
 
 class _ReviewInfoLine extends StatelessWidget {
   const _ReviewInfoLine({required this.label, required this.value});

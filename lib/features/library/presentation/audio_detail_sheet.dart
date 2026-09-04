@@ -20,6 +20,7 @@ import '../../../core/widgets/app_buttons.dart';
 import '../../../core/widgets/app_dialog.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/async_cover_image.dart';
+import '../../../core/widgets/library_like_cards.dart';
 import '../../../core/widgets/operation_feedback.dart';
 import '../../../core/widgets/app_bottom_sheet.dart';
 import 'dlsite_metadata_review_page.dart';
@@ -75,6 +76,11 @@ class _AudioDetailSheetState extends ConsumerState<AudioDetailSheet> {
   @override
   void initState() {
     super.initState();
+    final cached = ref.read(libraryFacadeProvider).resolvedAudioDetail(_target);
+    if (cached != null) {
+      _detail = cached;
+      _loading = false;
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) unawaited(_load());
     });

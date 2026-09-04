@@ -88,4 +88,11 @@ extension AsmrDownloadCleanup on AsmrDownloadManager {
       }
     }
   }
+
+  void _retainOnlyLatestCompletedTask(int workId) {
+    for (final obsoleteWorkId in _store.retainOnlyLatestCompletedTask(workId)) {
+      _createdOutputPaths.remove(obsoleteWorkId);
+      _createdJsonDocuments.remove(obsoleteWorkId);
+    }
+  }
 }

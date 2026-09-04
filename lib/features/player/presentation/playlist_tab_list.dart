@@ -661,7 +661,7 @@ class _SessionListCard extends ConsumerWidget {
                             if (isPinned)
                               Positioned(
                                 top: 4,
-                                right: 4,
+                                left: 4,
                                 child: _PlaylistPinnedIndicator(
                                   sessionId: sessionId,
                                   color: isAsmrOne ? asmrBlue : localPlayRose,

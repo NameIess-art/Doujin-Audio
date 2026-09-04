@@ -41,9 +41,17 @@ abstract final class PathMatcher {
     return segments.last;
   }
 
+  static String trimRightSlash(String value) {
+    var result = value.trim();
+    while (result.endsWith('/')) {
+      result = result.substring(0, result.length - 1);
+    }
+    return result;
+  }
+
   static String normalize(String value) {
     if (isContentUri(value) || isRemoteUri(value)) {
-      return value.trimRightSlash();
+      return trimRightSlash(value);
     }
     return _contextFor(value).normalize(value);
   }
@@ -386,13 +394,7 @@ final class PathMembershipIndex {
 }
 
 extension _TrimSlash on String {
-  String trimRightSlash() {
-    var result = this;
-    while (result.endsWith('/')) {
-      result = result.substring(0, result.length - 1);
-    }
-    return result;
-  }
+  String trimRightSlash() => PathMatcher.trimRightSlash(this);
 
   String trimLeftSlash() {
     var result = this;

@@ -17,15 +17,20 @@ List<PlaybackSessionSnapshot> sortPlaylistSessions({
   Set<String> pinnedSessionIds = const <String>{},
 }) {
   if (sessions.length < 2) return sessions;
-  final sorted = List<PlaybackSessionSnapshot>.of(sessions);
-  sorted.sort((left, right) {
-    final leftPinned = pinnedSessionIds.contains(left.id);
-    final rightPinned = pinnedSessionIds.contains(right.id);
-    if (leftPinned != rightPinned) {
-      return leftPinned ? -1 : 1;
+  final items = [
+    for (final session in sessions)
+      (
+        session: session,
+        value: _playlistSortValue(session, library, trackForSession),
+        pinned: pinnedSessionIds.contains(session.id),
+      ),
+  ];
+  items.sort((left, right) {
+    if (left.pinned != right.pinned) {
+      return left.pinned ? -1 : 1;
     }
-    final leftValue = _playlistSortValue(left, library, trackForSession);
-    final rightValue = _playlistSortValue(right, library, trackForSession);
+    final leftValue = left.value;
+    final rightValue = right.value;
     if (groupByLibrary) {
       final groupResult = compareGroupedSortStrings(
         leftValue.libraryKey,
@@ -43,9 +48,15 @@ List<PlaybackSessionSnapshot> sortPlaylistSessions({
     if (valueResult != 0) return valueResult;
     final nameResult = compareNatural(leftValue.name, rightValue.name);
     if (nameResult != 0) return nameResult;
-    return compareNatural(left.id, right.id, caseSensitive: true);
+    return compareNatural(
+      left.session.id,
+      right.session.id,
+      caseSensitive: true,
+    );
   });
-  return List<PlaybackSessionSnapshot>.unmodifiable(sorted);
+  return List<PlaybackSessionSnapshot>.unmodifiable(
+    items.map((e) => e.session),
+  );
 }
 
 class PlaylistSortValue {

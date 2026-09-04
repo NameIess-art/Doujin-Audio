@@ -130,12 +130,6 @@ final libraryDetailRevisionProvider = Provider<int>((ref) {
       serviceState.detailRevision;
 });
 
-final libraryCategoryRevisionProvider = Provider<int>((ref) {
-  final serviceState = ref.watch(libraryFacadeProvider).state;
-  return ref.watch(libraryStateProvider).value?.categorySnapshotRevision ??
-      serviceState.categorySnapshotRevision;
-});
-
 final libraryDetailForTargetProvider = FutureProvider.autoDispose
     .family<AudioDetail, AudioDetailTarget>((ref, target) async {
       ref.watch(libraryDetailRevisionProvider);
@@ -169,17 +163,6 @@ final playlistHeaderUiProvider = Provider<PlaylistHeaderState>((ref) {
       ref.watch(timerStateProvider).value ??
       ref.watch(timerFacadeProvider).state;
   return playlistHeaderStateFromSlices(playbackState, timerState);
-});
-
-final playlistListUiProvider = Provider<PlaylistListState>((ref) {
-  ref.watch(playbackStateProvider);
-  final playbackState = ref.watch(playbackFacadeProvider).state;
-  return PlaylistListState(
-    sessions: playbackState.activeSessions,
-    cardStates: playlistSessionCardStatesFromPlaybackState(playbackState),
-    coverGeneration: playbackState.coverGeneration,
-    isInitialized: playbackState.isInitialized,
-  );
 });
 
 final playlistStructureUiProvider = Provider<PlaylistStructureState>((ref) {

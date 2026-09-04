@@ -150,17 +150,6 @@ class _SettingsTileTheme extends StatelessWidget {
   }
 }
 
-class _SettingsGroupCard extends StatelessWidget {
-  const _SettingsGroupCard({required this.children});
-
-  final List<Widget> children;
-
-  @override
-  Widget build(BuildContext context) {
-    return AppSettingsGroupCard(children: children);
-  }
-}
-
 class _SettingsSectionCard extends StatelessWidget {
   const _SettingsSectionCard({
     required this.title,
@@ -211,7 +200,7 @@ class _SettingsSectionCard extends StatelessWidget {
               children: children,
             )
           else
-            _SettingsGroupCard(children: children),
+            AppSettingsGroupCard(children: children),
         ],
       ),
     );
@@ -527,7 +516,7 @@ class _SubtitleWindowSettingsSheet extends StatelessWidget {
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      _SettingsGroupCard(
+                      AppSettingsGroupCard(
                         children: [
                           Padding(
                             padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
@@ -634,7 +623,7 @@ class _SubtitleWindowSettingsSheet extends StatelessWidget {
                         ],
                       ),
                       const SizedBox(height: 24),
-                      _SettingsGroupCard(
+                      AppSettingsGroupCard(
                         children: [
                           Padding(
                             padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),

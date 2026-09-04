@@ -91,7 +91,8 @@ enum _AudioDetailField {
         _multiValueSeparator,
       ),
       _AudioDetailField.tags => detail.tags.join(_multiValueSeparator),
-      _AudioDetailField.releaseDate => _formatDateValue(detail.releaseDate),
+      _AudioDetailField.releaseDate =>
+        detail.releaseDate == null ? '' : formatDateYmd(detail.releaseDate!),
       _AudioDetailField.duration =>
         detail.duration != null
             ? formatDurationHms(detail.duration!)
@@ -99,7 +100,7 @@ enum _AudioDetailField {
                   ? formatDurationHms(fallbackDuration)
                   : ''),
       _AudioDetailField.salesCount => detail.salesCount?.toString() ?? '',
-      _AudioDetailField.rating => _formatRatingValue(detail.rating),
+      _AudioDetailField.rating => formatLibraryLikeRating(detail.rating),
     };
   }
 
@@ -133,10 +134,10 @@ enum _AudioDetailField {
         tags: _splitMultiValue(rawValue),
       ),
       _AudioDetailField.releaseDate => detail.copyWith(
-        releaseDate: _parseDateValue(trimmed),
+        releaseDate: parseDateYmd(trimmed),
       ),
       _AudioDetailField.duration => detail.copyWith(
-        duration: _parseDurationValue(trimmed),
+        duration: parseDurationCompact(trimmed),
       ),
       _AudioDetailField.salesCount => detail.copyWith(
         salesCount: trimmed.isEmpty ? null : int.tryParse(trimmed),
@@ -146,55 +147,6 @@ enum _AudioDetailField {
       ),
     };
   }
-}
-
-String _formatDateValue(DateTime? value) {
-  if (value == null) return '';
-  return '${value.year.toString().padLeft(4, '0')}-'
-      '${value.month.toString().padLeft(2, '0')}-'
-      '${value.day.toString().padLeft(2, '0')}';
-}
-
-DateTime? _parseDateValue(String value) {
-  if (value.isEmpty) return null;
-  final match = RegExp(r'^(\d{4})-(\d{1,2})-(\d{1,2})$').firstMatch(value);
-  if (match == null) return DateTime.tryParse(value);
-  final year = int.parse(match.group(1)!);
-  final month = int.parse(match.group(2)!);
-  final day = int.parse(match.group(3)!);
-  return DateTime(year, month, day);
-}
-
-Duration? _parseDurationValue(String value) {
-  if (value.isEmpty) return null;
-  final parts = value.split(':');
-  if (parts.isEmpty || parts.length > 3) return null;
-  try {
-    if (parts.length == 3) {
-      return Duration(
-        hours: int.parse(parts[0]),
-        minutes: int.parse(parts[1]),
-        seconds: int.parse(parts[2]),
-      );
-    } else if (parts.length == 2) {
-      return Duration(
-        minutes: int.parse(parts[0]),
-        seconds: int.parse(parts[1]),
-      );
-    } else {
-      return Duration(seconds: int.parse(parts[0]));
-    }
-  } catch (_) {
-    return null;
-  }
-}
-
-String _formatRatingValue(double? value) {
-  if (value == null || value <= 0) return '';
-  final rounded = value.toStringAsFixed(
-    value.truncateToDouble() == value ? 0 : 1,
-  );
-  return rounded;
 }
 
 String _targetDisplayName(AudioDetailTarget target) {

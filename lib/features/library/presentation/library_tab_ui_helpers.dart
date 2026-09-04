@@ -83,19 +83,13 @@ Future<void> _completeLibraryBatchSelectionsMetadata({
   required VoidCallback exitSelectionMode,
 }) async {
   final targets = selections.map((selection) => selection.target).toSet();
-  final snapshot = await ref
-      .read(libraryFacadeProvider)
-      .audioLibraryCategorySnapshot();
-  final entries = snapshot.entries
-      .where((entry) => targets.contains(entry.target))
-      .toList(growable: false);
-  if (!context.mounted || entries.isEmpty) return;
+  if (targets.isEmpty) return;
   exitSelectionMode();
   await Navigator.of(context).push(
     buildAppPageRoute<void>(
       context: context,
       child: DlsiteMetadataBatchPage(
-        entries: entries,
+        initialTargets: targets,
         initialScope: DlsiteMetadataBatchScope.all,
       ),
     ),

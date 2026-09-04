@@ -540,7 +540,5 @@ class _AsmrAccountPanelState extends ConsumerState<_AsmrAccountPanel> {
 
 String _formatAsmrSyncTime(DateTime value) {
   final local = value.toLocal();
-  String twoDigits(int number) => number.toString().padLeft(2, '0');
-  return '${local.year}-${twoDigits(local.month)}-${twoDigits(local.day)} '
-      '${twoDigits(local.hour)}:${twoDigits(local.minute)}';
+  return '${formatDateYmd(local)} ${formatClockTime(local.hour, local.minute)}';
 }

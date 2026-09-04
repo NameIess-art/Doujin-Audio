@@ -273,7 +273,7 @@ class _LibrarySearchPageState extends ConsumerState<_LibrarySearchPage> {
       return;
     }
 
-    if (query.isEmpty && _visibleSearchResult == null) {
+    if (query.isEmpty) {
       final currentTree = libraryFacade.snapshotCacheService.tree;
       if (currentTree.isNotEmpty) {
         _visibleSearchResult = FilteredLibraryTreeResult(
@@ -283,15 +283,58 @@ class _LibrarySearchPageState extends ConsumerState<_LibrarySearchPage> {
         _visibleSearchQuery = query;
         _visibleSearchRevision = structureRevision;
         _visibleSearchDetailRevision = categoryRevision;
+        return;
       }
+
+      _pendingSearchKey = requestKey;
+      unawaited(
+        libraryFacade.loadLibraryTree().then<void>(
+          (tree) {
+            if (!mounted || _pendingSearchKey != requestKey) return;
+            UiInteractionCoordinator.instance.scheduleCommit(
+              key: _searchCommitKey,
+              priority: 5,
+              commit: () {
+                if (!mounted || _pendingSearchKey != requestKey) return;
+                setState(() {
+                  _visibleSearchResult = FilteredLibraryTreeResult(
+                    tree: tree,
+                    matchCount: libraryTreeTrackCount(tree),
+                  );
+                  _visibleSearchQuery = query;
+                  _visibleSearchRevision = structureRevision;
+                  _visibleSearchDetailRevision = categoryRevision;
+                  _pendingSearchKey = null;
+                  _clearSearchError();
+                  _expandedSearchFolderPaths.clear();
+                  _visibleSearchItemsVersion++;
+                });
+              },
+            );
+          },
+          onError: (Object error, StackTrace stackTrace) {
+            if (!mounted || _pendingSearchKey != requestKey) return;
+            AppLogService.error(
+              'library_search_snapshot_failed',
+              error: error,
+              stackTrace: stackTrace,
+            );
+            setState(() {
+              _pendingSearchKey = null;
+              _visibleSearchError = error;
+              _visibleSearchErrorKey = requestKey;
+            });
+          },
+        ),
+      );
+      return;
     }
 
     _pendingSearchKey = requestKey;
     final searchFuture = () async {
-      final effectiveCategorySnapshot = query.isEmpty
-          ? categorySnapshot
-          : categorySnapshot ??
-                await libraryFacade.audioLibraryCategorySnapshot();
+      final effectiveCategorySnapshot =
+          categorySnapshot ??
+          await libraryFacade.audioLibraryCategorySnapshot();
       final tree = await libraryFacade.loadLibraryTree();
       final request = LibrarySearchSnapshotRequest(
         tree: tree,

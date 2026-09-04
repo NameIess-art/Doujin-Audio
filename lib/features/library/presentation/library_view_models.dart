@@ -238,7 +238,7 @@ class LibrarySearchIndex {
     if (searchTerms.isEmpty) {
       return FilteredLibraryTreeResult(
         tree: tree,
-        matchCount: _countTrackNodes(tree),
+        matchCount: libraryTreeTrackCount(tree),
       );
     }
 
@@ -367,18 +367,6 @@ class LibrarySearchIndex {
       '',
       terms: searchTerms,
     );
-  }
-
-  int _countTrackNodes(List<LibraryNode> nodes) {
-    var count = 0;
-    for (final node in nodes) {
-      if (node is TrackNode) {
-        count++;
-      } else if (node is FolderNode) {
-        count += node.totalTrackCount;
-      }
-    }
-    return count;
   }
 }
 

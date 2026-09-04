@@ -170,3 +170,48 @@ T _enumByName<T extends Enum>(List<T> values, Object? name, T fallback) {
   }
   return fallback;
 }
+
+extension AsmrDownloadSerialization on AsmrDownloadManager {
+  Map<String, Object?> _persistedTaskToJson(AsmrDownloadTaskSnapshot task) =>
+      _downloadTaskToJson(
+        task,
+        createdOutputPaths:
+            _createdOutputPaths[task.work.id] ?? const <String>{},
+        createdJsonDocuments:
+            _createdJsonDocuments[task.work.id] ??
+            const <String, _CreatedJsonDocument>{},
+      );
+
+  Future<void> _restorePersistedTasksFromPreferences() async {
+    final raw = await AppPreferences.getString(
+      AppPreferences.asmrDownloadTasksKey,
+    );
+    if (_disposed || raw == null || raw.isEmpty) return;
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is Map && decoded['tasks'] is List) {
+        for (final value in decoded['tasks'] as List) {
+          if (value is! Map) continue;
+          final restored = _downloadTaskFromJson(
+            Map<String, dynamic>.from(value),
+          );
+          final task = restored.task;
+          _store[task.work.id] = task.copyWith(
+            status: AsmrDownloadTaskStatus.paused,
+            fileRetryAttempts: const <String, int>{},
+            manuallyRetryingFilePaths: const <String>{},
+            message: 'paused',
+          );
+          _createdOutputPaths[task.work.id] = restored.createdOutputPaths;
+          _createdJsonDocuments[task.work.id] = restored.createdJsonDocuments;
+        }
+      }
+    } catch (error, stackTrace) {
+      AppLogService.warning(
+        'asmr_download_restore_failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+  }
+}

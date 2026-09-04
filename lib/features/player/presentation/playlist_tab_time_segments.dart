@@ -579,7 +579,7 @@ class _SegmentTimeRow extends StatelessWidget {
                 onTap: onEdit,
                 child: Center(
                   child: Text(
-                    value == null ? '--:--' : _formatSegmentTime(value!),
+                    value == null ? '--:--' : formatDurationCompact(value!),
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
                       color: value == null ? cs.onSurfaceVariant : cs.onSurface,
                       fontWeight: FontWeight.w800,
@@ -605,7 +605,7 @@ Future<Duration?> _showSegmentTimeInputDialog(
     listen: false,
   ).read(appLanguageProviderInstanceProvider);
   final controller = TextEditingController(
-    text: initial == null ? '' : _formatSegmentTime(initial),
+    text: initial == null ? '' : formatDurationCompact(initial),
   );
   return showAppDialog<Duration>(
     context: context,
@@ -621,7 +621,7 @@ Future<Duration?> _showSegmentTimeInputDialog(
           border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
         ),
         onSubmitted: (value) {
-          final parsed = _parseSegmentTime(value);
+          final parsed = parseDurationCompact(value);
           if (parsed != null) Navigator.of(dialogContext).pop(parsed);
         },
       ),
@@ -633,7 +633,7 @@ Future<Duration?> _showSegmentTimeInputDialog(
           ),
           AppPrimaryButton(
             onPressed: () {
-              final parsed = _parseSegmentTime(controller.text);
+              final parsed = parseDurationCompact(controller.text);
               if (parsed != null) Navigator.of(dialogContext).pop(parsed);
             },
             label: i18n.tr('confirm'),
@@ -642,30 +642,6 @@ Future<Duration?> _showSegmentTimeInputDialog(
       ),
     ),
   ).whenComplete(controller.dispose);
-}
-
-Duration? _parseSegmentTime(String raw) {
-  final parts = raw
-      .trim()
-      .split(':')
-      .map((part) => int.tryParse(part.trim()))
-      .toList(growable: false);
-  if (parts.length != 2 && parts.length != 3) return null;
-  if (parts.any((part) => part == null || part < 0)) return null;
-  final hours = parts.length == 3 ? parts[0]! : 0;
-  final minutes = parts.length == 3 ? parts[1]! : parts[0]!;
-  final seconds = parts.length == 3 ? parts[2]! : parts[1]!;
-  if (minutes >= 60 || seconds >= 60) return null;
-  return Duration(hours: hours, minutes: minutes, seconds: seconds);
-}
-
-String _formatSegmentTime(Duration value) {
-  final totalSeconds = value.inSeconds < 0 ? 0 : value.inSeconds;
-  final hours = totalSeconds ~/ 3600;
-  final minutes = (totalSeconds ~/ 60).remainder(60).toString().padLeft(2, '0');
-  final seconds = totalSeconds.remainder(60).toString().padLeft(2, '0');
-  if (hours > 0) return '${hours.toString().padLeft(2, '0')}:$minutes:$seconds';
-  return '$minutes:$seconds';
 }
 
 String _formatSpeedValue(double value) {

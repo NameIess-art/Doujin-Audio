@@ -1,5 +1,7 @@
 part of 'library_tab.dart';
 
+final _categoryTermSplitRegex = RegExp(r'[\s,，;；|]+');
+
 extension _LibrarySearchPageCategoryView on _LibrarySearchPageState {
   Set<String> get _selectedTermsForCurrentCategory {
     return switch (_categoryType) {
@@ -13,7 +15,7 @@ extension _LibrarySearchPageCategoryView on _LibrarySearchPageState {
   List<String> get _termSearchKeywords {
     return _termSearchQuery
         .toLowerCase()
-        .split(RegExp(r'[\s,，;；|]+'))
+        .split(_categoryTermSplitRegex)
         .where((s) => s.isNotEmpty)
         .toList(growable: false);
   }
@@ -825,10 +827,7 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
       cardWidget = buildEntryCard(entry.isFolder);
     }
 
-    return UndoableRemovalTransition(
-      hidden: isHidden,
-      child: cardWidget,
-    );
+    return UndoableRemovalTransition(hidden: isHidden, child: cardWidget);
   }
 
   Widget _buildEntryContent(

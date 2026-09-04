@@ -372,10 +372,7 @@ class _UndoableRemovalTransitionState extends State<UndoableRemovalTransition>
             opacity: _animation,
             child: IgnorePointer(
               ignoring: widget.hidden,
-              child: ExcludeSemantics(
-                excluding: widget.hidden,
-                child: child,
-              ),
+              child: ExcludeSemantics(excluding: widget.hidden, child: child),
             ),
           ),
         );
@@ -422,18 +419,6 @@ Widget buildAppFadeTransition({
     reverseCurve: reverseCurve,
   );
   return FadeTransition(opacity: curved, child: child);
-}
-
-Widget buildCenterExpandTransition({
-  required BuildContext context,
-  required Animation<double> animation,
-  required Widget child,
-}) {
-  return buildAppScaleFadeTransition(
-    context: context,
-    animation: animation,
-    child: child,
-  );
 }
 
 Widget _buildSharedAxisTransition({

@@ -389,15 +389,11 @@ final settingsStateProvider = StreamProvider<SettingsState>((ref) {
   return ref.watch(settingsRepositoryProvider).slice.stream;
 });
 
-final notificationStateProvider = StreamProvider<NotificationState>((ref) {
-  return ref.watch(notificationFacadeProvider).states;
-});
-
 final videoConversionCoordinatorProvider =
     ChangeNotifierProvider<VideoConversionCoordinator>((ref) {
-  final uiOps = ref.watch(uiOperationServiceProvider);
-  return VideoConversionCoordinator(uiOperationService: uiOps);
-});
+      final uiOps = ref.watch(uiOperationServiceProvider);
+      return VideoConversionCoordinator(uiOperationService: uiOps);
+    });
 
 List<Override> createAppRuntimeOverrides({
   required AppPersistenceCoordinator persistence,

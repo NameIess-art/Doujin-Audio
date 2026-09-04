@@ -238,6 +238,7 @@ class AppDialog extends StatelessWidget {
       label: title,
       child: Container(
         key: const ValueKey('app_dialog_surface'),
+        padding: const EdgeInsets.all(AppSpacing.lg),
         decoration: BoxDecoration(
           color: cs.surfaceContainerLow,
           borderRadius: AppRadius.borderDialog,
@@ -258,54 +259,51 @@ class AppDialog extends StatelessWidget {
             ),
           ],
         ),
-        child: Padding(
-          padding: const EdgeInsets.all(AppSpacing.lg),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (icon != null) ...[
-                    Container(
-                      width: 42,
-                      height: 42,
-                      decoration: BoxDecoration(
-                        color: resolvedAccentColor.withValues(alpha: 0.12),
-                        borderRadius: AppRadius.borderMedium,
-                      ),
-                      child: Icon(icon, color: resolvedAccentColor),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (icon != null) ...[
+                  Container(
+                    width: 42,
+                    height: 42,
+                    decoration: BoxDecoration(
+                      color: resolvedAccentColor.withValues(alpha: 0.12),
+                      borderRadius: AppRadius.borderMedium,
                     ),
-                    const SizedBox(width: AppSpacing.md),
-                  ],
-                  Expanded(
-                    child: Padding(
-                      padding: EdgeInsets.only(top: icon == null ? 0 : 8),
-                      child: Text(
-                        title,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
+                    child: Icon(icon, color: resolvedAccentColor),
+                  ),
+                  const SizedBox(width: AppSpacing.md),
+                ],
+                Expanded(
+                  child: Padding(
+                    padding: EdgeInsets.only(top: icon == null ? 0 : 8),
+                    child: Text(
+                      title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
                       ),
                     ),
                   ),
-                ],
-              ),
-              const SizedBox(height: AppSpacing.md),
-              Flexible(
-                child: scrollable
-                    ? SingleChildScrollView(child: content)
-                    : content,
-              ),
-              if (actions != null) ...[
-                const SizedBox(height: AppSpacing.lg),
-                actions!,
+                ),
               ],
+            ),
+            const SizedBox(height: AppSpacing.md),
+            Flexible(
+              child: scrollable
+                  ? SingleChildScrollView(child: content)
+                  : content,
+            ),
+            if (actions != null) ...[
+              const SizedBox(height: AppSpacing.lg),
+              actions!,
             ],
-          ),
+          ],
         ),
       ),
     );

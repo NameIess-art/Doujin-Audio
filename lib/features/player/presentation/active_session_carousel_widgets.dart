@@ -87,9 +87,7 @@ class _ActiveSessionCard extends ConsumerWidget {
                 .withValues(alpha: useBlur ? (isDark ? 0.72 : 0.78) : 1.0),
             borderRadius: BorderRadius.circular(cardRadius),
             border: Border.all(
-              color: cs.outlineVariant.withValues(
-                alpha: isDark ? 0.24 : 0.42,
-              ),
+              color: cs.outlineVariant.withValues(alpha: isDark ? 0.24 : 0.42),
             ),
             boxShadow: isTinyWindow
                 ? null
@@ -664,8 +662,10 @@ class _ActiveSessionCover extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final library = ref.read(libraryFacadeProvider);
-    final coverCacheWidth = coverCacheWidthForResolution(
-      ref.watch(
+    final coverCacheWidth = coverCacheWidthForLogicalSize(
+      logicalWidth: dimension,
+      devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
+      resolution: ref.watch(
         settingsStateProvider.select(
           (s) => s.value?.coverImageResolution ?? CoverImageResolution.balanced,
         ),
@@ -685,7 +685,7 @@ class _ActiveSessionCover extends ConsumerWidget {
           retryFutureBuilder: () => _sessionCoverFutureForTrack(library, track),
           seed: track?.displayName ?? track?.path ?? sessionId,
           cacheWidth: coverCacheWidth,
-          useDefaultCacheWidth: coverCacheWidth != null,
+          useDefaultCacheWidth: false,
           fit: BoxFit.cover,
           displayMode: CoverImageDisplayMode.fill,
           compact: true,

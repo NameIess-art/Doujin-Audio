@@ -93,9 +93,8 @@ class AsmrPreferencesStore {
     await _repository.saveSetting(_lastSyncAtKey, value.toIso8601String());
   }
 
-  Future<bool> isSyncOutboxSeeded() async {
-    return await _repository.loadSetting(_syncOutboxSeededKey) == 'true';
-  }
+  Future<bool> isSyncOutboxSeeded() async =>
+      await _repository.loadSetting(_syncOutboxSeededKey) == 'true';
 
   Future<void> markSyncOutboxSeeded() async {
     await _repository.saveSetting(_syncOutboxSeededKey, 'true');

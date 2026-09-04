@@ -14,10 +14,13 @@ List<LibraryNode> sortLibraryNodes({
   required LibraryFacade library,
 }) {
   if (nodes.length < 2) return nodes;
-  final sorted = List<LibraryNode>.of(nodes);
-  sorted.sort((left, right) {
-    final leftValue = _librarySortValue(left, library);
-    final rightValue = _librarySortValue(right, library);
+  final items = [
+    for (final node in nodes)
+      (node: node, value: _librarySortValue(node, library)),
+  ];
+  items.sort((left, right) {
+    final leftValue = left.value;
+    final rightValue = right.value;
     if (groupByLibrary) {
       final groupResult = compareGroupedSortStrings(
         leftValue.libraryKey,
@@ -35,9 +38,9 @@ List<LibraryNode> sortLibraryNodes({
     if (valueResult != 0) return valueResult;
     final nameResult = compareNatural(leftValue.name, rightValue.name);
     if (nameResult != 0) return nameResult;
-    return compareNatural(left.path, right.path, caseSensitive: true);
+    return compareNatural(left.node.path, right.node.path, caseSensitive: true);
   });
-  return List<LibraryNode>.unmodifiable(sorted);
+  return List<LibraryNode>.unmodifiable(items.map((e) => e.node));
 }
 
 class LibrarySortValue {

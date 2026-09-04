@@ -149,7 +149,9 @@ class LibraryExclusionMatcher {
       if (relativePath == null || relativePath.isEmpty) {
         return;
       }
-      var current = _trimRightSlash(relativePath.replaceAll('\\', '/'));
+      var current = PathMatcher.trimRightSlash(
+        relativePath.replaceAll('\\', '/'),
+      );
       while (current.isNotEmpty) {
         yield '$libraryPath::$current';
         final slashIndex = current.lastIndexOf('/');
@@ -170,14 +172,6 @@ class LibraryExclusionMatcher {
       }
       current = parent;
     }
-  }
-
-  static String _trimRightSlash(String value) {
-    var result = value;
-    while (result.endsWith('/')) {
-      result = result.substring(0, result.length - 1);
-    }
-    return result;
   }
 }
 

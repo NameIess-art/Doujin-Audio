@@ -14,24 +14,15 @@ void main() {
     await startAppForTest(tester, app.main);
     await enterMainScreen(tester);
 
-    final navigationContainer = find.byWidgetPredicate(
-      (w) => w is NavigationBar || w is NavigationRail,
-    );
     for (final icons in <(IconData, IconData)>[
       (Icons.library_music_outlined, Icons.library_music_rounded),
       (Icons.graphic_eq_outlined, Icons.graphic_eq_rounded),
       (Icons.settings_outlined, Icons.settings_rounded),
     ]) {
-      final unselected = find.descendant(
-        of: navigationContainer,
-        matching: find.byIcon(icons.$1),
-      );
+      final unselected = find.byIcon(icons.$1);
       final destination = unselected.evaluate().isNotEmpty
           ? unselected
-          : find.descendant(
-              of: navigationContainer,
-              matching: find.byIcon(icons.$2),
-            );
+          : find.byIcon(icons.$2);
       expect(destination, findsOneWidget);
       await tester.tap(destination);
       await tester.pumpAndSettle();

@@ -7,7 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../core/media/time_text_formatters.dart';
-import '../../../core/platform/power_platform_service.dart';
+import '../../../core/platform/power_platform_gateway.dart';
 import '../../../core/platform/video_display_platform_gateway.dart';
 import '../application/playback_session.dart';
 
@@ -34,7 +34,7 @@ class BedtimeCanvasPage extends ConsumerStatefulWidget {
 
 class _BedtimeCanvasPageState extends ConsumerState<BedtimeCanvasPage>
     with TickerProviderStateMixin {
-  late final PowerPlatformService _powerService;
+  late final PowerPlatformGateway _powerGateway;
   late final VideoDisplayPlatformGateway _displayGateway;
   late final AnimationController _breathingController;
   late final Animation<double> _breathingAnimation;
@@ -57,10 +57,10 @@ class _BedtimeCanvasPageState extends ConsumerState<BedtimeCanvasPage>
   void initState() {
     super.initState();
     BedtimeCanvasPage.isCanvasActive = true;
-    _powerService = ref.read(timerFacadeProvider).powerPlatformService;
+    _powerGateway = ref.read(powerPlatformGatewayProvider);
     _displayGateway = ref.read(videoDisplayPlatformGatewayProvider);
     _isKeepScreenOn = true;
-    unawaited(_powerService.setKeepScreenOn(true));
+    unawaited(_powerGateway.setKeepScreenOn(true));
     unawaited(_initBrightness());
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
 
@@ -137,7 +137,7 @@ class _BedtimeCanvasPageState extends ConsumerState<BedtimeCanvasPage>
       _brightnessToken = null;
       unawaited(_displayGateway.endBrightnessControl(token));
     }
-    unawaited(_powerService.setKeepScreenOn(false));
+    unawaited(_powerGateway.setKeepScreenOn(false));
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     super.dispose();
   }
@@ -201,14 +201,14 @@ class _BedtimeCanvasPageState extends ConsumerState<BedtimeCanvasPage>
       _screenTimeoutTimer = null;
       if (!_isKeepScreenOn) {
         _isKeepScreenOn = true;
-        unawaited(_powerService.setKeepScreenOn(true));
+        unawaited(_powerGateway.setKeepScreenOn(true));
       }
     } else {
       if (_isKeepScreenOn && _screenTimeoutTimer == null) {
         _screenTimeoutTimer = Timer(BedtimeCanvasPage.screenTimeoutDelay, () {
           if (mounted && !_disposed) {
             _isKeepScreenOn = false;
-            unawaited(_powerService.setKeepScreenOn(false));
+            unawaited(_powerGateway.setKeepScreenOn(false));
           }
         });
       }
@@ -235,7 +235,7 @@ class _BedtimeCanvasPageState extends ConsumerState<BedtimeCanvasPage>
     _screenTimeoutTimer = null;
     if (!_isKeepScreenOn) {
       _isKeepScreenOn = true;
-      unawaited(_powerService.setKeepScreenOn(true));
+      unawaited(_powerGateway.setKeepScreenOn(true));
     }
     final playback = ref.read(playbackFacadeProvider);
     final timer = ref.read(timerFacadeProvider);
@@ -246,7 +246,7 @@ class _BedtimeCanvasPageState extends ConsumerState<BedtimeCanvasPage>
       _screenTimeoutTimer = Timer(BedtimeCanvasPage.screenTimeoutDelay, () {
         if (mounted && !_disposed) {
           _isKeepScreenOn = false;
-          unawaited(_powerService.setKeepScreenOn(false));
+          unawaited(_powerGateway.setKeepScreenOn(false));
         }
       });
     }

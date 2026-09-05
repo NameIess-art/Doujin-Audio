@@ -21,7 +21,6 @@ final class NotificationRuntimeBinding implements RuntimeBinding {
     required PlaybackCommandCoordinator playbackCommands,
     required PlaybackKeepAliveCoordinator keepAlive,
     required PlaybackSubtitleService subtitles,
-    required void Function() syncAllState,
     required void Function() syncPlaybackState,
   }) {
     final existing = _attached[notifications];
@@ -43,7 +42,7 @@ final class NotificationRuntimeBinding implements RuntimeBinding {
       ),
       multiThreadPlaybackEnabled: () => settings.multiThreadPlaybackEnabled,
       setFocusSessionId: notifications.setFocusedSession,
-      notify: syncAllState,
+      notify: syncPlaybackState,
       syncKeepAlive: keepAlive.sync,
       hasPlaybackToKeepAlive: () => keepAlive.hasPlaybackToKeepAlive,
       clearUnifiedNotifications:

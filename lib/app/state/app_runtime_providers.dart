@@ -39,6 +39,8 @@ import '../../features/asmr/domain/asmr_models.dart';
 import 'interaction_deferred_stream.dart';
 import '../../core/platform/file_cache_platform_gateway.dart';
 import '../../core/platform/app_lifecycle_platform_service.dart';
+import '../../core/platform/power_platform_gateway.dart';
+import '../../core/platform/power_platform_service.dart';
 import '../../core/platform/video_display_platform_gateway.dart';
 import '../../core/platform/video_display_platform_service.dart';
 import '../../features/video_converter/application/video_conversion_coordinator.dart';
@@ -100,6 +102,9 @@ final appLifecyclePlatformServiceProvider =
 
 final videoDisplayPlatformGatewayProvider =
     Provider<VideoDisplayPlatformGateway>((_) => VideoDisplayPlatformService());
+
+final powerPlatformGatewayProvider =
+    Provider<PowerPlatformGateway>((_) => PowerPlatformService());
 
 final dataBackupServiceProvider = Provider<DataBackupService>((ref) {
   return DataBackupService(
@@ -410,6 +415,7 @@ List<Override> createAppRuntimeOverrides({
   required SettingsRepository settings,
   UiOperationService? uiOperationService,
   UndoableRemovalService? undoableRemovalService,
+  PowerPlatformGateway? powerPlatformGateway,
 }) {
   return <Override>[
     appPersistenceCoordinatorProvider.overrideWithValue(persistence),
@@ -423,6 +429,9 @@ List<Override> createAppRuntimeOverrides({
     timerFacadeProvider.overrideWithValue(timer),
     notificationFacadeProvider.overrideWithValue(notifications),
     settingsRepositoryProvider.overrideWithValue(settings),
+    powerPlatformGatewayProvider.overrideWithValue(
+      powerPlatformGateway ?? timer.powerPlatformService,
+    ),
     uiOperationServiceProvider.overrideWithValue(
       uiOperationService ?? UiOperationService.instance,
     ),

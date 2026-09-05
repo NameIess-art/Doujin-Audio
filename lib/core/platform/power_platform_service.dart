@@ -6,6 +6,7 @@ import '../logging/app_log_service.dart';
 import 'app_platform.dart';
 import 'platform_channels.dart';
 import 'platform_method_client.dart';
+import 'power_platform_gateway.dart';
 
 class BackgroundRunDiagnostics {
   const BackgroundRunDiagnostics({
@@ -58,7 +59,7 @@ class BackgroundRunDiagnostics {
   }
 }
 
-class PowerPlatformService {
+class PowerPlatformService implements PowerPlatformGateway {
   PowerPlatformService({
     MethodChannel? channel,
     @visibleForTesting bool? isAndroidOverride,

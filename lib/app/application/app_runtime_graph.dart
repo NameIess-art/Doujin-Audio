@@ -150,7 +150,6 @@ AppRuntimeGraph createAppRuntimeGraph({
       playbackCommands: playbackCommands,
       keepAlive: keepAlive,
       subtitles: subtitles,
-      syncAllState: syncAllState,
       syncPlaybackState: syncPlaybackState,
     ),
   ];

@@ -75,7 +75,7 @@ class TimeSegmentLabel {
   }
 
   static String trackKeyFor(MusicTrack track) {
-    if (track.remoteMetadataKind == 'asmr.one') {
+    if (track.isRemoteAsmr) {
       final metadata = track.remoteMetadata ?? const <String, Object?>{};
       final sourceId = (metadata['sourceId'] as String? ?? track.groupSubtitle)
           .trim();

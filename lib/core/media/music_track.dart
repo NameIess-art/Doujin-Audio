@@ -48,6 +48,15 @@ class MusicTrack {
   final Map<String, Object?>? remoteMetadata;
   final Duration duration;
 
+  static const String remoteMetadataKindAsmrOne = 'asmr.one';
+
+  /// Whether this track originates from the remote ASMR catalog.
+  bool get isRemoteAsmr => remoteMetadataKind == remoteMetadataKindAsmrOne;
+
+  /// Whether this track uses specialized ASMR visual styling and accent.
+  bool get usesAsmrVisualTheme => isRemoteAsmr;
+
+
   MusicTrack copyWith({
     Duration? duration,
     Duration? lastPlayedPosition,

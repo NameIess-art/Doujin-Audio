@@ -87,7 +87,7 @@ final class AudioPathCoordinator implements PlaybackTrackResolver {
     final track = trackByPath(trackPath);
     if (track == null) return const <MusicTrack>[];
     if (track.isSingle) return <MusicTrack>[track];
-    if (track.remoteMetadataKind == 'asmr.one' ||
+    if (track.isRemoteAsmr ||
         PathMatcher.isRemoteUri(track.path)) {
       return tracksInSameGroup(trackPath);
     }

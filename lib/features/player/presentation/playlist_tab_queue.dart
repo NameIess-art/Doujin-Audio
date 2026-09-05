@@ -124,7 +124,7 @@ class _PlaybackQueueCard extends ConsumerWidget {
         ? i18n.tr('empty_playback_queue')
         : currentTrack?.displayName ??
               path.basenameWithoutExtension(cardState.trackPath);
-    final isAsmrOne = currentTrack?.remoteMetadataKind == 'asmr.one';
+    final isAsmrOne = currentTrack?.isRemoteAsmr ?? false;
     final trackDuration = currentTrack?.duration;
     final hasKnownDuration =
         trackDuration != null && trackDuration > Duration.zero;

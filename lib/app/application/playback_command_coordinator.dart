@@ -14,6 +14,7 @@ import '../../features/library/application/library_facade.dart';
 import '../../features/player/application/native_playback_bridge.dart';
 import '../../features/player/application/native_playback_repository.dart';
 import '../../features/player/application/notification_facade.dart';
+import '../../features/player/application/playback_command_port.dart';
 import '../../features/player/application/playback_command_runner.dart';
 import '../../features/player/application/playback_facade.dart';
 import '../../features/player/application/playback_queue_resolver.dart';
@@ -39,7 +40,8 @@ typedef PlaybackNotificationSynchronizer =
 /// Owns playback command serialization and native preparation coordination.
 ///
 /// Mutable playback state remains owned by [PlaybackFacade].
-final class PlaybackCommandCoordinator implements NotificationPlaybackCommands {
+final class PlaybackCommandCoordinator
+    implements NotificationPlaybackCommands, PlaybackCommandPort {
   PlaybackCommandCoordinator({
     required LibraryFacade library,
     required PlaybackFacade playback,
@@ -161,6 +163,23 @@ final class PlaybackCommandCoordinator implements NotificationPlaybackCommands {
   }
 
   @override
+  Future<bool> prepareSession(
+    PlaybackSession session, {
+    required String nextPath,
+    bool autoPlay = true,
+    bool forceStartAtZero = false,
+    bool showLoading = true,
+    int? targetQueueIndex,
+  }) => prepareAndPlay(
+    session,
+    nextPath: nextPath,
+    autoPlay: autoPlay,
+    forceStartAtZero: forceStartAtZero,
+    showLoading: showLoading,
+    targetQueueIndex: targetQueueIndex,
+  );
+
+  @override
   Future<bool> prepareAndPlay(
     PlaybackSession session, {
     required String nextPath,
@@ -186,6 +205,7 @@ final class PlaybackCommandCoordinator implements NotificationPlaybackCommands {
     shouldStartTriggerCountdown: shouldStartTriggerCountdown,
   );
 
+  @override
   Future<bool> pauseSession(PlaybackSession session) =>
       _pauseSessionPlayback(session);
 
@@ -214,6 +234,7 @@ final class PlaybackCommandCoordinator implements NotificationPlaybackCommands {
     }
   }
 
+  @override
   PlaybackAdvanceResult? resolveAdvance(
     PlaybackSession session, {
     required bool forward,

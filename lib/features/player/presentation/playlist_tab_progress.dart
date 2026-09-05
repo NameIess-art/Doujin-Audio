@@ -33,7 +33,7 @@ class _ProgressBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final track = paths.trackByPath(session.currentTrackPath);
-    final isAsmr = track?.remoteMetadataKind == 'asmr.one';
+    final isAsmr = track?.usesAsmrVisualTheme ?? false;
     final primaryColor = isAsmr
         ? AppDesignTokens.of(context).asmrAccent
         : cs.primary;

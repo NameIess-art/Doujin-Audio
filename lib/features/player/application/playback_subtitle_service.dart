@@ -105,14 +105,14 @@ final class PlaybackSubtitleService {
     if (trackPath.startsWith('content://')) {
       return _loadContentTrack(trackPath, track);
     }
-    if (track?.remoteMetadataKind == 'asmr.one' && track != null) {
+    if (track?.isRemoteAsmr == true && track != null) {
       return _loadAsmrTrack(track);
     }
     return loadSubtitleTrackForAudio(trackPath);
   }
 
   bool _hasRemoteSubtitleUrl(MusicTrack? track) {
-    if (track?.remoteMetadataKind != 'asmr.one') return false;
+    if (track?.isRemoteAsmr != true) return false;
     return track?.remoteMetadata?['subtitleUrl']
             ?.toString()
             .trim()

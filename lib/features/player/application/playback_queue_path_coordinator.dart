@@ -267,16 +267,15 @@ extension PlaybackQueuePathCoordinator on PlaybackFacade {
       coverGeneration: current.coverGeneration,
       isInitialized: current.isInitialized,
     );
-    final prepare = _prepareSession;
-    if (prepare != null) {
+    final commandPort = _commandPort;
+    if (commandPort != null) {
       for (final session in sessionsToReload) {
         _service.enqueueSessionPreparation(() async {
           if (!isRegisteredSession(session)) return;
-          await prepare(
+          await commandPort.prepareSession(
             session,
             nextPath: session.currentTrackPath,
             autoPlay: session.effectivePlaying,
-            forceStartAtZero: false,
             showLoading: false,
             targetQueueIndex: session.currentQueueIndex,
           );
@@ -378,7 +377,7 @@ extension PlaybackQueuePathCoordinator on PlaybackFacade {
   }) {
     _service.enqueueSessionPreparation(() async {
       if (!_service.sessions.containsKey(session.id)) return;
-      await _prepareSession?.call(session, nextPath: nextPath, autoPlay: true);
+      await _commandPort?.prepareSession(session, nextPath: nextPath);
     });
     return _service.sessionPreparationQueue;
   }

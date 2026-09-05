@@ -462,7 +462,7 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
   }
 
   List<Uri>? _candidatePlaybackUrisForTrack(MusicTrack? track) {
-    if (track?.remoteMetadataKind != 'asmr.one') return null;
+    if (track?.isRemoteAsmr != true) return null;
     final raw = track?.remoteMetadata?['playbackUrls'];
     if (raw is! List) return null;
     final candidates = raw
@@ -495,7 +495,7 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
   }) async {
     if (!_settingsRepository.asmrPlaybackCacheEnabled ||
         track == null ||
-        track.remoteMetadataKind != 'asmr.one' ||
+        !track.isRemoteAsmr ||
         !PathMatcher.isRemoteUri(track.path) ||
         !PathMatcher.isRemoteUri(playedPath)) {
       return;

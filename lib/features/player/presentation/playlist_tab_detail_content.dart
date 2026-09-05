@@ -430,7 +430,7 @@ class _SessionDetailContentState extends ConsumerState<_SessionDetailContent> {
         ? rootFolderName
         : (track != null && !track.isSingle && track.groupTitle.isNotEmpty)
         ? track.groupTitle
-        : track?.remoteMetadataKind == 'asmr.one'
+        : track?.isRemoteAsmr == true
         ? i18n.tr('asmr_online_playback')
         : i18n.tr('imported_files');
     final hasSiblings = session.isPlaybackQueue
@@ -822,7 +822,7 @@ class _SessionDetailContentState extends ConsumerState<_SessionDetailContent> {
       var queueIndex = 0;
       for (final entry in widget.session.playbackQueue!.entries) {
         final firstTrack = entry.tracks.firstOrNull;
-        final isAsmrEntry = firstTrack?.remoteMetadataKind == 'asmr.one';
+        final isAsmrEntry = firstTrack?.isRemoteAsmr ?? false;
         final fallbackRoot = firstTrack == null
             ? null
             : _paths.workRootForTrack(firstTrack.path);
@@ -897,7 +897,7 @@ class _SessionDetailContentState extends ConsumerState<_SessionDetailContent> {
       );
     }
     if (widget.session.customQueueTracks == null ||
-        tracks.every((track) => track.remoteMetadataKind == 'asmr.one')) {
+        tracks.every((track) => track.isRemoteAsmr)) {
       root.sortChildrenNaturally();
     }
     return root.children;

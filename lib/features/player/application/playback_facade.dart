@@ -19,6 +19,7 @@ import 'playback_session_snapshot.dart';
 import 'audio_state_services.dart';
 import 'native_playback_repository.dart';
 import 'native_playback_bridge.dart';
+import 'playback_command_port.dart';
 import 'playback_command_runner.dart';
 import 'playback_queue_resolver.dart';
 
@@ -124,11 +125,7 @@ final class PlaybackFacade {
   void Function(String sessionId)? _onSessionDurationChanged;
   void Function()? _onSessionSettingsChanged;
   PlaybackQueueSessionSynchronizer? _synchronizePlaybackQueueSession;
-  PlaybackSessionPreparer? _prepareSession;
-  PlaybackSessionPauser? _pauseSession;
-  PlaybackSessionStarter? _startSession;
-  PlaybackAdvanceResolver? _resolveAdvance;
-  PlaybackAdjacentResolver? _hasAdjacent;
+  PlaybackCommandPort? _commandPort;
   PlaybackLoopModeSynchronizer? _synchronizeLoopMode;
   bool Function() _autoPlayAddedSessions = _defaultAutoPlayAddedSessions;
   bool Function() _allowDuplicateWorks = _defaultAllowDuplicateWorks;
@@ -272,6 +269,14 @@ final class PlaybackFacade {
     _synchronizePlaybackQueueSession ??= synchronize;
   }
 
+  void attachCommandPort(PlaybackCommandPort port) {
+    _commandPort ??= port;
+  }
+
+  void detachCommandPort() {
+    _commandPort = null;
+  }
+
   void attachPlaybackCommands({
     required PlaybackSessionPreparer prepareSession,
     required PlaybackSessionPauser pauseSession,
@@ -279,11 +284,15 @@ final class PlaybackFacade {
     required PlaybackAdvanceResolver resolveAdvance,
     required PlaybackAdjacentResolver hasAdjacent,
   }) {
-    _prepareSession ??= prepareSession;
-    _pauseSession ??= pauseSession;
-    _startSession ??= startSession;
-    _resolveAdvance ??= resolveAdvance;
-    _hasAdjacent ??= hasAdjacent;
+    attachCommandPort(
+      _DelegatePlaybackCommandPort(
+        prepareSession: prepareSession,
+        pauseSession: pauseSession,
+        startSession: startSession,
+        resolveAdvance: resolveAdvance,
+        hasAdjacent: hasAdjacent,
+      ),
+    );
   }
 
   void attachLoopModeSynchronizer(PlaybackLoopModeSynchronizer synchronize) {
@@ -306,11 +315,7 @@ final class PlaybackFacade {
     _onSessionDurationChanged = null;
     _onSessionSettingsChanged = null;
     _synchronizePlaybackQueueSession = null;
-    _prepareSession = null;
-    _pauseSession = null;
-    _startSession = null;
-    _resolveAdvance = null;
-    _hasAdjacent = null;
+    detachCommandPort();
     _synchronizeLoopMode = null;
     _autoPlayAddedSessions = _defaultAutoPlayAddedSessions;
     _allowDuplicateWorks = _defaultAllowDuplicateWorks;
@@ -348,7 +353,7 @@ final class PlaybackFacade {
           !session.isLoading &&
           !session.isAdvancingAfterCompletion &&
           session.playbackError == null &&
-          _resolveAdvance?.call(session, forward: true) != null &&
+          _commandPort?.resolveAdvance(session, forward: true) != null &&
           session.lastHandledCompletionGeneration != currentGeneration;
       if (shouldAutoAdvanceAfterCompletion) {
         session.isLoading = true;
@@ -615,9 +620,9 @@ final class PlaybackFacade {
       // the original native session was never created.
       if (session.loadedPath != null) {
         session.beginLoadingIndicatorThreshold();
-        await _startSession?.call(session, shouldStartTriggerCountdown: true);
+        await _commandPort?.startSession(session, shouldStartTriggerCountdown: true);
       } else {
-        await _prepareSession?.call(
+        await _commandPort?.prepareSession(
           session,
           nextPath: session.currentTrackPath,
         );
@@ -625,17 +630,17 @@ final class PlaybackFacade {
       return;
     }
     if (session.playbackRequested) {
-      await _pauseSession?.call(session);
+      await _commandPort?.pauseSession(session);
       return;
     }
     session.lastPlayedAt = DateTime.now();
     if (session.isLoading) {
-      await _prepareSession?.call(session, nextPath: session.currentTrackPath);
+      await _commandPort?.prepareSession(session, nextPath: session.currentTrackPath);
       return;
     }
     if (session.state.processingState == ProcessingState.completed ||
         session.state.processingState == ProcessingState.idle) {
-      await _prepareSession?.call(
+      await _commandPort?.prepareSession(
         session,
         nextPath: session.currentTrackPath,
         forceStartAtZero:
@@ -644,13 +649,13 @@ final class PlaybackFacade {
       return;
     }
     session.beginLoadingIndicatorThreshold();
-    await _startSession?.call(session, shouldStartTriggerCountdown: true);
+    await _commandPort?.startSession(session, shouldStartTriggerCountdown: true);
   }
 
   Future<void> switchSessionTrack(String sessionId, String newPath) async {
     final session = _service.sessions[sessionId];
     if (session == null) return;
-    await _prepareSession?.call(
+    await _commandPort?.prepareSession(
       session,
       nextPath: newPath,
       autoPlay: session.effectivePlaying,
@@ -668,7 +673,7 @@ final class PlaybackFacade {
         : session.customQueueTracks;
     if (tracks == null || tracks.isEmpty) return;
     final index = queueIndex.clamp(0, tracks.length - 1);
-    await _prepareSession?.call(
+    await _commandPort?.prepareSession(
       session,
       nextPath: tracks[index].path,
       autoPlay: session.effectivePlaying,
@@ -682,10 +687,10 @@ final class PlaybackFacade {
   Future<void> seekSessionToNext(String sessionId) async {
     final session = _service.sessions[sessionId];
     if (session == null || session.pendingNativeTrackPath != null) return;
-    final target = _resolveAdvance?.call(session, forward: true);
+    final target = _commandPort?.resolveAdvance(session, forward: true);
     if (target == null) return;
     session.beginLoadingIndicatorThreshold();
-    await _prepareSession?.call(
+    await _commandPort?.prepareSession(
       session,
       nextPath: target.path,
       autoPlay: session.effectivePlaying,
@@ -702,10 +707,10 @@ final class PlaybackFacade {
       await seekSession(sessionId, Duration.zero);
       return;
     }
-    final target = _resolveAdvance?.call(session, forward: false);
+    final target = _commandPort?.resolveAdvance(session, forward: false);
     if (target == null) return;
     session.beginLoadingIndicatorThreshold();
-    await _prepareSession?.call(
+    await _commandPort?.prepareSession(
       session,
       nextPath: target.path,
       autoPlay: session.effectivePlaying,
@@ -745,7 +750,7 @@ final class PlaybackFacade {
     final session = _service.sessions[sessionId];
     return session != null &&
         !session.isLoading &&
-        (_hasAdjacent?.call(session, forward: forward) ?? false);
+        (_commandPort?.hasAdjacent(session, forward: forward) ?? false);
   }
 
   Future<void> setSessionLoopMode(
@@ -1229,4 +1234,66 @@ final class PlaybackNativeSnapshotApplication {
   final bool playbackIntentChanged;
 
   bool get applied => session != null;
+}
+
+final class _DelegatePlaybackCommandPort implements PlaybackCommandPort {
+  const _DelegatePlaybackCommandPort({
+    required PlaybackSessionPreparer prepareSession,
+    required PlaybackSessionPauser pauseSession,
+    required PlaybackSessionStarter startSession,
+    required PlaybackAdvanceResolver resolveAdvance,
+    required PlaybackAdjacentResolver hasAdjacent,
+  })  : _prepareSession = prepareSession,
+        _pauseSession = pauseSession,
+        _startSession = startSession,
+        _resolveAdvance = resolveAdvance,
+        _hasAdjacent = hasAdjacent;
+
+  final PlaybackSessionPreparer _prepareSession;
+  final PlaybackSessionPauser _pauseSession;
+  final PlaybackSessionStarter _startSession;
+  final PlaybackAdvanceResolver _resolveAdvance;
+  final PlaybackAdjacentResolver _hasAdjacent;
+
+  @override
+  Future<bool> prepareSession(
+    PlaybackSession session, {
+    required String nextPath,
+    bool autoPlay = true,
+    bool forceStartAtZero = false,
+    bool showLoading = true,
+    int? targetQueueIndex,
+  }) => _prepareSession(
+    session,
+    nextPath: nextPath,
+    autoPlay: autoPlay,
+    forceStartAtZero: forceStartAtZero,
+    showLoading: showLoading,
+    targetQueueIndex: targetQueueIndex,
+  );
+
+  @override
+  Future<bool> startSession(
+    PlaybackSession session, {
+    required bool shouldStartTriggerCountdown,
+  }) => _startSession(
+    session,
+    shouldStartTriggerCountdown: shouldStartTriggerCountdown,
+  );
+
+  @override
+  Future<bool> pauseSession(PlaybackSession session) async {
+    await _pauseSession(session);
+    return true;
+  }
+
+  @override
+  PlaybackAdvanceResult? resolveAdvance(
+    PlaybackSession session, {
+    required bool forward,
+  }) => _resolveAdvance(session, forward: forward);
+
+  @override
+  bool hasAdjacent(PlaybackSession session, {required bool forward}) =>
+      _hasAdjacent(session, forward: forward);
 }

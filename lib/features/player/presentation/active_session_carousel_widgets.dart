@@ -200,11 +200,11 @@ class _ActiveSessionCard extends ConsumerWidget {
     required EdgeInsets contentPadding,
   }) {
     final asmrBlue = AppDesignTokens.of(context).asmrAccent;
-    final activeColor = currentTrack?.remoteMetadataKind == 'asmr.one'
+    final activeColor = (currentTrack?.usesAsmrVisualTheme ?? false)
         ? asmrBlue
         : cs.primary;
     final hasAsmrOnePlaybackError =
-        view.error != null && currentTrack?.remoteMetadataKind == 'asmr.one';
+        view.error != null && (currentTrack?.isRemoteAsmr ?? false);
 
     return Padding(
       padding: contentPadding,

@@ -227,7 +227,7 @@ List<MusicTrack> orderTracksForSessionSwitcher(
 }) {
   if (preserveQueueOrder ||
       tracks.length < 2 ||
-      !tracks.every((track) => track.remoteMetadataKind == 'asmr.one')) {
+      !tracks.every((track) => track.isRemoteAsmr)) {
     return tracks;
   }
   final sorted = List<MusicTrack>.of(tracks);
@@ -261,7 +261,7 @@ MusicTrack? resolveSessionSwitcherSelectedTrack({
     return null;
   }
   final queuedTrack = queueTracks[currentQueueIndex];
-  if (queuedTrack.remoteMetadataKind != 'asmr.one') return null;
+  if (!queuedTrack.isRemoteAsmr) return null;
   for (final track in displayedTracks) {
     if (_sameSessionSwitcherTrack(track, queuedTrack)) return track;
   }
@@ -291,8 +291,7 @@ bool _sameSessionSwitcherTrack(MusicTrack left, MusicTrack right) {
       PathMatcher.equalsNormalized(left.path, right.path)) {
     return true;
   }
-  if (left.remoteMetadataKind != 'asmr.one' ||
-      right.remoteMetadataKind != 'asmr.one') {
+  if (!left.isRemoteAsmr || !right.isRemoteAsmr) {
     return false;
   }
   final leftRelative = left.remoteMetadata?['trackRelativePath']

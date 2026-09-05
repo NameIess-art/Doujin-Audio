@@ -162,7 +162,7 @@ class _PlaybackPrimaryControls extends StatelessWidget {
     ).read(appLanguageProviderInstanceProvider);
     final enabled = session.currentTrackPath.isNotEmpty;
     final track = paths.trackByPath(session.currentTrackPath);
-    final isAsmr = track?.remoteMetadataKind == 'asmr.one';
+    final isAsmr = track?.usesAsmrVisualTheme ?? false;
     final primaryColor = isAsmr
         ? AppDesignTokens.of(context).asmrAccent
         : cs.primary;

@@ -236,6 +236,7 @@ class PowerPlatformService implements PowerPlatformGateway {
     return result.valueOrNull ?? false;
   }
 
+  @override
   Future<bool> setKeepScreenOn(bool enabled) async {
     if (!_isAndroid) return true;
     final result = await _client.invoke<bool>(

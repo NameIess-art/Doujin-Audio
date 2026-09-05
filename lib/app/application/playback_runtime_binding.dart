@@ -80,15 +80,7 @@ final class PlaybackRuntimeBinding implements RuntimeBinding {
     playback.attachPlaybackQueueSynchronizer(
       playbackCommands.syncPlaybackQueueSession,
     );
-    playback.attachPlaybackCommands(
-      prepareSession: playbackCommands.prepareAndPlay,
-      pauseSession: playbackCommands.pauseSession,
-      startSession: playbackCommands.startSession,
-      resolveAdvance: (session, {required forward}) =>
-          playbackCommands.resolveAdvance(session, forward: forward),
-      hasAdjacent: (session, {required forward}) =>
-          playbackCommands.hasAdjacent(session, forward: forward),
-    );
+    playback.attachCommandPort(playbackCommands);
     playback.attachLoopModeSynchronizer((session, mode) async {
       final nativeQueue = playbackCommands.nativePlaybackQueueFor(
         session,

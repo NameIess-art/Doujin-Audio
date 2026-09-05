@@ -2,7 +2,7 @@ part of 'playback_command_coordinator.dart';
 
 const PlaybackQueueResolver _playbackQueueResolver = PlaybackQueueResolver();
 String _folderKeyForTrack(MusicTrack track) {
-  if (track.remoteMetadataKind == 'asmr.one' ||
+  if (track.isRemoteAsmr ||
       PathMatcher.isRemoteUri(track.path)) {
     final remotePath = track.remoteMetadata?['trackDirectoryPath']?.toString();
     if (remotePath != null && remotePath.isNotEmpty && remotePath != '.') {

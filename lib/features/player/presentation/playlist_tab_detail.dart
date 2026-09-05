@@ -565,7 +565,7 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
         Color(queueColorValue),
       );
     }
-    if (track?.remoteMetadataKind != 'asmr.one') return base;
+    if (track?.usesAsmrVisualTheme != true) return base;
     final tokens = AppDesignTokens.of(context);
     if (identical(_cachedBaseTheme, base) &&
         identical(_cachedDesignTokens, tokens) &&
@@ -639,8 +639,7 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
     PlaybackSessionSnapshot session,
     MusicTrack? track,
   ) {
-    if (track?.remoteMetadataKind == 'asmr.one' &&
-        track?.remoteMetadata != null) {
+    if (track?.isRemoteAsmr == true && track?.remoteMetadata != null) {
       unawaited(
         showAsmrWorkDetailSheet(
           context,
@@ -671,7 +670,7 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
     final onVerticalDragCancel = widget.onVerticalDragCancel;
 
     final track = paths.trackByPath(session.currentTrackPath);
-    final isAsmrTrack = track?.remoteMetadataKind == 'asmr.one';
+    final isAsmrTrack = track?.usesAsmrVisualTheme ?? false;
     final detailTheme = _detailThemeForSession(context, session, track);
     final cs = detailTheme.colorScheme;
     final requestedBackgroundCacheWidth = coverCacheWidthForResolution(

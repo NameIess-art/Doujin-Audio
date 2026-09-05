@@ -92,11 +92,11 @@ extension PlaybackEffectsCoordinator on PlaybackFacade {
         loadedPath == null ||
         !PathMatcher.equalsNormalized(loadedPath, session.currentTrackPath);
     if (needsPrepare) {
-      final prepare = _prepareSession;
-      if (prepare == null) {
+      final commandPort = _commandPort;
+      if (commandPort == null) {
         return const NativeFailure('Playback session preparation unavailable.');
       }
-      await prepare(
+      await commandPort.prepareSession(
         session,
         nextPath: session.currentTrackPath,
         autoPlay: shouldKeepPlaying,
@@ -123,9 +123,9 @@ extension PlaybackEffectsCoordinator on PlaybackFacade {
     }
 
     session.loadedPath = null;
-    final prepare = _prepareSession;
-    if (prepare == null) return response;
-    await prepare(
+    final commandPort = _commandPort;
+    if (commandPort == null) return response;
+    await commandPort.prepareSession(
       session,
       nextPath: session.currentTrackPath,
       autoPlay: shouldKeepPlaying,

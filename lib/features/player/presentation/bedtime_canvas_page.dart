@@ -8,12 +8,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../core/media/time_text_formatters.dart';
 import '../../../core/platform/power_platform_service.dart';
+import '../../../core/platform/video_display_platform_gateway.dart';
 import '../application/playback_session.dart';
 
 class BedtimeCanvasPage extends ConsumerStatefulWidget {
   const BedtimeCanvasPage({super.key});
 
   static bool isCanvasActive = false;
+  static Duration idleDimDelay = const Duration(seconds: 15);
+  static Duration screenTimeoutDelay = const Duration(minutes: 2);
 
   static Route<void> route() {
     return PageRouteBuilder<void>(
@@ -32,24 +35,33 @@ class BedtimeCanvasPage extends ConsumerStatefulWidget {
 class _BedtimeCanvasPageState extends ConsumerState<BedtimeCanvasPage>
     with TickerProviderStateMixin {
   late final PowerPlatformService _powerService;
+  late final VideoDisplayPlatformGateway _displayGateway;
   late final AnimationController _breathingController;
   late final Animation<double> _breathingAnimation;
   late final AnimationController _holdExitController;
 
   Timer? _clockTimer;
+  Timer? _idleDimTimer;
+  Timer? _screenTimeoutTimer;
   Timer? _feedbackTimer;
   IconData? _feedbackIcon;
   String? _feedbackText;
   Offset? _touchPosition;
   Offset? _touchStartPosition;
   final Set<String> _targetSessionIds = <String>{};
+  String? _brightnessToken;
+  bool _isKeepScreenOn = true;
+  bool _disposed = false;
 
   @override
   void initState() {
     super.initState();
     BedtimeCanvasPage.isCanvasActive = true;
     _powerService = ref.read(timerFacadeProvider).powerPlatformService;
+    _displayGateway = ref.read(videoDisplayPlatformGatewayProvider);
+    _isKeepScreenOn = true;
     unawaited(_powerService.setKeepScreenOn(true));
+    unawaited(_initBrightness());
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
 
     final playback = ref.read(playbackFacadeProvider);
@@ -77,7 +89,7 @@ class _BedtimeCanvasPageState extends ConsumerState<BedtimeCanvasPage>
     _breathingController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 4500),
-    )..repeat(reverse: true);
+    );
 
     _breathingAnimation = Tween<double>(begin: 0.16, end: 0.42).animate(
       CurvedAnimation(
@@ -85,6 +97,7 @@ class _BedtimeCanvasPageState extends ConsumerState<BedtimeCanvasPage>
         curve: Curves.easeInOutSine,
       ),
     );
+    _wakeBreathingAnimation();
 
     _holdExitController = AnimationController(
       vsync: this,
@@ -100,21 +113,143 @@ class _BedtimeCanvasPageState extends ConsumerState<BedtimeCanvasPage>
       }
     });
 
-    _clockTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (mounted) setState(() {});
-    });
+    _scheduleNextMinuteClock();
+
+    final timer = ref.read(timerFacadeProvider);
+    final isInitialActive = playback.state.playingSessionCount > 0 ||
+        timer.state.active ||
+        timer.state.stopAfterCurrentTrack;
+    _updateKeepScreenOnState(isInitialActive);
   }
 
   @override
   void dispose() {
+    _disposed = true;
     BedtimeCanvasPage.isCanvasActive = false;
     _clockTimer?.cancel();
+    _idleDimTimer?.cancel();
+    _screenTimeoutTimer?.cancel();
     _feedbackTimer?.cancel();
     _breathingController.dispose();
     _holdExitController.dispose();
+    if (_brightnessToken != null) {
+      final token = _brightnessToken!;
+      _brightnessToken = null;
+      unawaited(_displayGateway.endBrightnessControl(token));
+    }
     unawaited(_powerService.setKeepScreenOn(false));
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     super.dispose();
+  }
+
+  Future<void> _initBrightness() async {
+    try {
+      final result = await _displayGateway.beginBrightnessControl();
+      final lease = result.valueOrNull;
+      if (lease != null) {
+        if (_disposed) {
+          unawaited(_displayGateway.endBrightnessControl(lease.token));
+        } else {
+          _brightnessToken = lease.token;
+          await _displayGateway.setBrightness(lease.token, 0.01);
+        }
+      }
+    } catch (_) {
+      // Gracefully handle platform channel errors/unsupported platforms
+    }
+  }
+
+  void _wakeBreathingAnimation() {
+    if (_idleDimTimer?.isActive != true) {
+      _breathingController.repeat(reverse: true);
+    }
+    _resetIdleDimTimer();
+  }
+
+  void _resetIdleDimTimer() {
+    _idleDimTimer?.cancel();
+    _idleDimTimer = Timer(BedtimeCanvasPage.idleDimDelay, () {
+      if (mounted && !_disposed) {
+        _breathingController.animateTo(
+          0.0,
+          duration: const Duration(milliseconds: 1200),
+          curve: Curves.easeOut,
+        );
+      }
+    });
+  }
+
+  void _scheduleNextMinuteClock() {
+    _clockTimer?.cancel();
+    if (_disposed) return;
+    final now = DateTime.now();
+    final msUntilNextMinute = (60 - now.second) * 1000 - now.millisecond + 50;
+    _clockTimer = Timer(
+      Duration(milliseconds: math.max(100, msUntilNextMinute)),
+      () {
+        if (mounted && !_disposed) {
+          setState(() {});
+          _scheduleNextMinuteClock();
+        }
+      },
+    );
+  }
+
+  void _updateKeepScreenOnState(bool isAudioOrTimerActive) {
+    if (isAudioOrTimerActive) {
+      _screenTimeoutTimer?.cancel();
+      _screenTimeoutTimer = null;
+      if (!_isKeepScreenOn) {
+        _isKeepScreenOn = true;
+        unawaited(_powerService.setKeepScreenOn(true));
+      }
+    } else {
+      if (_isKeepScreenOn && _screenTimeoutTimer == null) {
+        _screenTimeoutTimer = Timer(BedtimeCanvasPage.screenTimeoutDelay, () {
+          if (mounted && !_disposed) {
+            _isKeepScreenOn = false;
+            unawaited(_powerService.setKeepScreenOn(false));
+          }
+        });
+      }
+    }
+  }
+
+  void _checkAudioOrTimerState({
+    int? playingCount,
+    bool? timerActive,
+    bool? stopAfterTrack,
+  }) {
+    final count = playingCount ??
+        ref.read(playbackFacadeProvider).state.playingSessionCount;
+    final active = timerActive ??
+        ref.read(timerFacadeProvider).state.active;
+    final stop = stopAfterTrack ??
+        ref.read(timerFacadeProvider).state.stopAfterCurrentTrack;
+    _updateKeepScreenOnState(count > 0 || active || stop);
+  }
+
+  void _onUserInteraction() {
+    _wakeBreathingAnimation();
+    _screenTimeoutTimer?.cancel();
+    _screenTimeoutTimer = null;
+    if (!_isKeepScreenOn) {
+      _isKeepScreenOn = true;
+      unawaited(_powerService.setKeepScreenOn(true));
+    }
+    final playback = ref.read(playbackFacadeProvider);
+    final timer = ref.read(timerFacadeProvider);
+    final isAudioOrTimerActive = playback.state.playingSessionCount > 0 ||
+        timer.state.active ||
+        timer.state.stopAfterCurrentTrack;
+    if (!isAudioOrTimerActive) {
+      _screenTimeoutTimer = Timer(BedtimeCanvasPage.screenTimeoutDelay, () {
+        if (mounted && !_disposed) {
+          _isKeepScreenOn = false;
+          unawaited(_powerService.setKeepScreenOn(false));
+        }
+      });
+    }
   }
 
   void _showFeedback({required IconData icon, String? text}) {
@@ -180,6 +315,7 @@ class _BedtimeCanvasPageState extends ConsumerState<BedtimeCanvasPage>
   }
 
   Future<void> _handleDoubleTap() async {
+    _onUserInteraction();
     final playback = ref.read(playbackFacadeProvider);
     final sessions = playback.sessions.values;
     final anyPlaying = sessions.any((s) => s.effectivePlaying);
@@ -206,6 +342,7 @@ class _BedtimeCanvasPageState extends ConsumerState<BedtimeCanvasPage>
   }
 
   void _handleVerticalDrag(DragUpdateDetails details) {
+    _onUserInteraction();
     final delta = details.primaryDelta ?? 0.0;
     if (delta.abs() < 0.5) return;
 
@@ -239,6 +376,7 @@ class _BedtimeCanvasPageState extends ConsumerState<BedtimeCanvasPage>
   }
 
   void _onPointerDown(PointerDownEvent event) {
+    _onUserInteraction();
     _touchStartPosition = event.position;
     _touchPosition = event.position;
     _holdExitController.forward(from: 0.0);
@@ -273,6 +411,22 @@ class _BedtimeCanvasPageState extends ConsumerState<BedtimeCanvasPage>
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     final timerState = ref.watch(timerStateProvider).value ??
         ref.read(timerFacadeProvider).state;
+
+    ref.listen(playbackStateProvider, (_, next) {
+      final slice = next.value;
+      if (slice != null) {
+        _checkAudioOrTimerState(playingCount: slice.playingSessionCount);
+      }
+    });
+    ref.listen(timerStateProvider, (_, next) {
+      final slice = next.value;
+      if (slice != null) {
+        _checkAudioOrTimerState(
+          timerActive: slice.active,
+          stopAfterTrack: slice.stopAfterCurrentTrack,
+        );
+      }
+    });
 
     final now = DateTime.now();
     final timeStr =

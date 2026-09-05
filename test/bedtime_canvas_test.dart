@@ -3,7 +3,10 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:doujin_audio/app/presentation/main_screen.dart';
+import 'package:doujin_audio/app/state/app_runtime_providers.dart';
+import 'package:doujin_audio/core/errors/native_result.dart';
 import 'package:doujin_audio/core/platform/power_platform_service.dart';
+import 'package:doujin_audio/core/platform/video_display_platform_gateway.dart';
 import 'package:doujin_audio/features/player/application/playback_session.dart';
 import 'package:doujin_audio/features/player/domain/playback_mode.dart';
 import 'package:doujin_audio/features/player/presentation/bedtime_canvas_page.dart';
@@ -25,6 +28,39 @@ final class _RecordingBedtimePowerPlatformService
   }
 }
 
+final class _RecordingBedtimeVideoDisplayGateway
+    implements VideoDisplayPlatformGateway {
+  int beginCalls = 0;
+  final List<double> brightnessValues = <double>[];
+  final List<String> endTokens = <String>[];
+
+  @override
+  Future<NativeResult<PlatformBrightnessLease>> beginBrightnessControl() async {
+    beginCalls++;
+    return const NativeSuccess<PlatformBrightnessLease>(
+      PlatformBrightnessLease(
+        token: 'bedtime-brightness-token',
+        brightness: 0.5,
+      ),
+    );
+  }
+
+  @override
+  Future<NativeResult<void>> setBrightness(
+    String token,
+    double brightness,
+  ) async {
+    brightnessValues.add(brightness);
+    return const NativeSuccess<void>();
+  }
+
+  @override
+  Future<NativeResult<void>> endBrightnessControl(String token) async {
+    endTokens.add(token);
+    return const NativeSuccess<void>();
+  }
+}
+
 void main() {
   AppRuntimeTestFixture.initialize();
 
@@ -33,6 +69,8 @@ void main() {
     late AppRuntimeWidgetTestFixture fixture;
 
     setUp(() {
+      BedtimeCanvasPage.idleDimDelay = const Duration(seconds: 15);
+      BedtimeCanvasPage.screenTimeoutDelay = const Duration(minutes: 2);
       powerService = _RecordingBedtimePowerPlatformService();
       fixture = AppRuntimeWidgetTestFixture(
         powerPlatformService: powerService,
@@ -54,6 +92,8 @@ void main() {
           .setMockMethodCallHandler(nativePlaybackChannel, null);
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(SystemChannels.platform, null);
+      BedtimeCanvasPage.idleDimDelay = const Duration(seconds: 15);
+      BedtimeCanvasPage.screenTimeoutDelay = const Duration(minutes: 2);
       fixture.dispose();
     });
 
@@ -359,6 +399,138 @@ void main() {
       await tester.pump(const Duration(milliseconds: 400));
       expect(BedtimeCanvasPage.isCanvasActive, isFalse);
     });
+
+    testWidgets(
+      'acquires brightness lease at 0.01 and restores it on dispose',
+      (tester) async {
+        final display = _RecordingBedtimeVideoDisplayGateway();
+        await tester.pumpWidget(
+          fixture.build(
+            Navigator(
+              onGenerateRoute: (settings) => MaterialPageRoute(
+                builder: (context) => const BedtimeCanvasPage(),
+              ),
+            ),
+            overrides: [
+              videoDisplayPlatformGatewayProvider.overrideWithValue(display),
+            ],
+          ),
+        );
+        await tester.pump();
+
+        expect(display.beginCalls, equals(1));
+        expect(display.brightnessValues, equals([0.01]));
+        expect(display.endTokens, isEmpty);
+
+        Navigator.of(tester.element(find.byType(BedtimeCanvasPage))).pop();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 400));
+
+        expect(display.endTokens, equals(['bedtime-brightness-token']));
+      },
+    );
+
+    testWidgets(
+      'stops breathing animation after idleDimDelay and wakes upon touch',
+      (tester) async {
+        BedtimeCanvasPage.idleDimDelay = const Duration(seconds: 15);
+
+        await tester.pumpWidget(fixture.build(const BedtimeCanvasPage()));
+        await tester.pump();
+
+        // Initially breathing animation is active
+        // Fast forward 15 seconds: idle timeout triggers animateTo(0.0)
+        await tester.pump(const Duration(seconds: 15));
+        // Wait for animateTo(0.0) duration (1200ms) to complete
+        await tester.pump(const Duration(milliseconds: 1300));
+
+        // After stopping at 0.0, the opacity should be at baseline 0.16
+        final textFinder = find.textContaining(':');
+        expect(textFinder, findsOneWidget);
+        final textWidget = tester.widget<Text>(textFinder);
+        expect(textWidget.style?.color?.a, closeTo(0.16, 0.01));
+
+        // Touch the screen (PointerDown) to wake breathing animation
+        final center = tester.getCenter(find.byType(BedtimeCanvasPage));
+        final gesture = await tester.startGesture(center);
+        await tester.pump();
+        await gesture.up();
+        await tester.pump();
+
+        // Advance 2 seconds into breathing animation (tween between 0.16 and 0.42)
+        await tester.pump(const Duration(seconds: 2));
+        final textWidgetAfterTouch = tester.widget<Text>(find.textContaining(':'));
+        expect(textWidgetAfterTouch.style?.color?.a, greaterThan(0.18));
+      },
+    );
+
+    testWidgets(
+      'releases keepScreenOn after screenTimeoutDelay if no audio playing and no active timer',
+      (tester) async {
+        BedtimeCanvasPage.screenTimeoutDelay = const Duration(minutes: 2);
+
+        await tester.pumpWidget(fixture.build(const BedtimeCanvasPage()));
+        await tester.pump();
+
+        expect(powerService.keepScreenOnCalls, equals([true]));
+
+        // Advance 1 minute (less than 2 min timeout): keepScreenOn still true
+        await tester.pump(const Duration(minutes: 1));
+        expect(powerService.keepScreenOnCalls, equals([true]));
+
+        // Advance past 2 minutes: keepScreenOn is released (false)
+        await tester.pump(const Duration(minutes: 1, seconds: 5));
+        expect(powerService.keepScreenOnCalls, equals([true, false]));
+
+        // Tap on screen: wake up and re-acquire keepScreenOn
+        final center = tester.getCenter(find.byType(BedtimeCanvasPage));
+        final gesture = await tester.startGesture(center);
+        await tester.pump();
+        await gesture.up();
+        await tester.pump();
+
+        expect(powerService.keepScreenOnCalls, equals([true, false, true]));
+
+        // Drain gesture double tap timeout before test teardown
+        await tester.pump(const Duration(seconds: 1));
+      },
+    );
+
+    testWidgets(
+      'audio playback keeps screen on and prevents inactivity timeout',
+      (tester) async {
+        BedtimeCanvasPage.screenTimeoutDelay = const Duration(minutes: 2);
+
+        final session = PlaybackSession(
+          id: 'test-session-power',
+          currentTrackPath: '/music/test.mp3',
+          loopMode: SessionLoopMode.single,
+          nonSingleLoopMode: SessionLoopMode.single,
+          volume: 0.8,
+          createdAt: DateTime(2026),
+          state: PlayerState(true, ProcessingState.ready),
+        );
+        fixture.playbackService.registerSession(session);
+        fixture.playbackService.syncSlice(
+          activeSessions: <PlaybackSession>[session],
+          playingSessionCount: 1,
+          focusedSessionId: session.id,
+          multiThreadPlaybackEnabled: false,
+          coverGeneration: 0,
+          isInitialized: true,
+        );
+
+        await tester.pumpWidget(fixture.build(const BedtimeCanvasPage()));
+        await tester.pump();
+
+        expect(powerService.keepScreenOnCalls, equals([true]));
+
+        // Advance 5 minutes while audio is playing
+        await tester.pump(const Duration(minutes: 5));
+        // Screen should still be on, no keepScreenOn(false) call
+        expect(powerService.keepScreenOnCalls, equals([true]));
+      },
+    );
   });
 
   group('SettingsRepository SleepModeAutoTrigger', () {

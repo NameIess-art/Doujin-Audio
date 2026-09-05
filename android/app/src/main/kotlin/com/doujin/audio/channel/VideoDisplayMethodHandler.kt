@@ -27,12 +27,12 @@ internal class WindowBrightnessLeaseController(
         val effective = if (original >= 0f) original else readSystemBrightness()
         val token = nextToken()
         activeLease = ActiveLease(token, original)
-        return WindowBrightnessLease(token, effective.coerceIn(0.05f, 1f))
+        return WindowBrightnessLease(token, effective.coerceIn(0.01f, 1f))
     }
 
     fun set(token: String, brightness: Float): Boolean {
         if (activeLease?.token != token) return false
-        writeWindowBrightness(brightness.coerceIn(0.05f, 1f))
+        writeWindowBrightness(brightness.coerceIn(0.01f, 1f))
         return true
     }
 
@@ -88,8 +88,8 @@ internal class VideoDisplayMethodHandler(
                     val reader = call.argumentReader()
                     val token = reader.requiredString("token")
                     val brightness = reader.requiredDouble("brightness")
-                    require(brightness in 0.05..1.0) {
-                        "brightness must be between 0.05 and 1.0."
+                    require(brightness in 0.01..1.0) {
+                        "brightness must be between 0.01 and 1.0."
                     }
                     require(brightnessController.set(token, brightness.toFloat())) {
                         "Brightness lease is no longer active."

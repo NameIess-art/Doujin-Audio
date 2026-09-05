@@ -6,7 +6,6 @@ import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/features/player/application/notification_facade.dart';
-import 'package:just_audio/just_audio.dart';
 import 'package:doujin_audio/app/application/audio_path_coordinator.dart';
 import 'support/runtime_test_models.dart';
 import 'package:doujin_audio/core/app_language.dart';

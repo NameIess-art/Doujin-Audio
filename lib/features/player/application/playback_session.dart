@@ -1,7 +1,5 @@
 import 'dart:async';
 
-import 'package:just_audio/just_audio.dart';
-
 import '../../../core/media/music_track.dart';
 import '../domain/audio_effects.dart';
 import '../domain/playback_mode.dart';

@@ -1,15 +1,14 @@
+import 'dart:async';
 import 'dart:ui';
-import 'package:flutter_riverpod/legacy.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/immutable_collections.dart';
 import '../../core/persistence/persisted_state_reloader.dart';
 import '../../features/settings/application/app_preferences.dart';
 
 final subtitleSettingsProvider =
-    StateNotifierProvider<SubtitleSettingsNotifier, SubtitleSettingsState>((
-      ref,
-    ) {
-      return SubtitleSettingsNotifier();
-    });
+    NotifierProvider<SubtitleSettingsNotifier, SubtitleSettingsState>(
+      SubtitleSettingsNotifier.new,
+    );
 
 class SubtitleSettingsState {
   final Map<String, bool> showSubtitlesMap;
@@ -70,19 +69,64 @@ class SubtitleSettingsState {
   }
 }
 
-class SubtitleSettingsNotifier extends StateNotifier<SubtitleSettingsState>
+class SubtitleSettingsNotifier extends Notifier<SubtitleSettingsState>
     implements PersistedStateReloader {
   SubtitleSettingsNotifier({
     Future<SubtitleSettingsState> Function()? loadState,
-  }) : super(SubtitleSettingsState()) {
-    _loadState = loadState ?? _loadPersistedState;
+  }) : _initialLoadState = loadState {
+    _loadState = _initialLoadState ?? _loadPersistedState;
     _loadFuture = _load();
   }
 
+  final Future<SubtitleSettingsState> Function()? _initialLoadState;
   late final Future<SubtitleSettingsState> Function() _loadState;
   late Future<void> _loadFuture;
   int _loadRevision = 0;
   bool _disposed = false;
+  SubtitleSettingsState? _standaloneState;
+  final StreamController<SubtitleSettingsState> _streamController =
+      StreamController<SubtitleSettingsState>.broadcast();
+
+  Stream<SubtitleSettingsState> get stream => _streamController.stream;
+
+  @override
+  SubtitleSettingsState get state {
+    try {
+      return super.state;
+    } on StateError {
+      return _standaloneState ??= SubtitleSettingsState();
+    }
+  }
+
+  @override
+  set state(SubtitleSettingsState value) {
+    _standaloneState = value;
+    try {
+      super.state = value;
+    } on StateError {
+      _standaloneState = value;
+    }
+    if (!_streamController.isClosed) {
+      _streamController.add(value);
+    }
+  }
+
+  void dispose() {
+    _disposed = true;
+    _loadRevision++;
+    _streamController.close();
+  }
+
+  @override
+  SubtitleSettingsState build() {
+    _loadState = _initialLoadState ?? _loadPersistedState;
+    _disposed = false;
+    ref.onDispose(dispose);
+    _loadFuture = _load();
+    final initial = _standaloneState ?? SubtitleSettingsState();
+    _standaloneState = initial;
+    return initial;
+  }
 
   Future<void> _load() async {
     final revision = _loadRevision;
@@ -340,12 +384,5 @@ class SubtitleSettingsNotifier extends StateNotifier<SubtitleSettingsState>
         color.toARGB32().toRadixString(16).padLeft(8, '0'),
       );
     }
-  }
-
-  @override
-  void dispose() {
-    _disposed = true;
-    _loadRevision++;
-    super.dispose();
   }
 }

@@ -32,6 +32,9 @@ final class SettingsCommandController {
 
   SettingsRepository get settings => _settings;
 
+  Future<void> togglePlaylistSessionsPinned(Iterable<String> sessionIds) =>
+      _settings.togglePlaylistSessionsPinned(sessionIds);
+
   Future<bool> setMultiThreadPlaybackEnabled(bool enabled) async {
     if (_settings.multiThreadPlaybackEnabled == enabled) return true;
     if (!enabled && !await _playback.pauseAllSessions()) return false;

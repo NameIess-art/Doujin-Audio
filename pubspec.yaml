@@ -19,7 +19,6 @@ dependencies:
   flutter_localizations:
     sdk: flutter
 
-  just_audio: ^0.10.6
   file_picker: ^11.0.2
   permission_handler: ^12.0.1
   path: ^1.9.1

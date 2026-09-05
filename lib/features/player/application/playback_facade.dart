@@ -2,8 +2,6 @@ import 'dart:async';
 import 'dart:collection';
 import 'dart:math';
 
-import 'package:just_audio/just_audio.dart';
-
 import '../../../core/errors/native_result.dart';
 import '../../../core/media/music_track.dart';
 import '../../../core/media/path_matcher.dart';
@@ -421,7 +419,7 @@ final class PlaybackFacade {
                 : loopMode,
             volume: (volume ?? 1.0).clamp(0.0, maxSessionVolume).toDouble(),
             createdAt: DateTime.now(),
-            state: PlayerState(false, ProcessingState.idle),
+            state: const PlayerState(false, ProcessingState.idle),
             customQueueTracks: customQueueTracks,
           )
           ..speed = 1.0
@@ -440,7 +438,7 @@ final class PlaybackFacade {
       nonSingleLoopMode: SessionLoopMode.crossSequential,
       volume: 1,
       createdAt: DateTime.now(),
-      state: PlayerState(false, ProcessingState.idle),
+      state: const PlayerState(false, ProcessingState.idle),
       customQueueTracks: const <MusicTrack>[],
       playbackQueue: PlaybackQueueDefinition(name: name, entries: const []),
     );

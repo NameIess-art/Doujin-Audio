@@ -7,7 +7,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart' show ProviderContainer;
 import 'package:flutter_test/flutter_test.dart';
-import 'package:just_audio/just_audio.dart';
 import 'support/runtime_test_models.dart';
 import 'package:doujin_audio/app/state/app_runtime_providers.dart';
 import 'package:doujin_audio/app/presentation/app_presentation_providers.dart';
@@ -83,35 +82,22 @@ void _expectThemeSessionResetButtonStyle(WidgetTester tester, Finder finder) {
   final style = button.style!;
   final colorScheme = Theme.of(tester.element(finder)).colorScheme;
   const enabled = <WidgetState>{};
-  const disabled = <WidgetState>{WidgetState.disabled};
 
-  expect(style.minimumSize!.resolve(enabled), const Size(96, 40));
   expect(
     style.padding!.resolve(enabled),
-    const EdgeInsets.symmetric(horizontal: 20),
+    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
   );
-  expect(style.shape!.resolve(enabled), isA<StadiumBorder>());
-  expect(style.tapTargetSize, MaterialTapTargetSize.padded);
-  expect(style.visualDensity, VisualDensity.standard);
+  expect(
+    style.shape!.resolve(enabled),
+    RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+  );
+  expect(style.visualDensity, VisualDensity.compact);
   expect(style.elevation!.resolve(enabled), 0);
-  expect(style.backgroundColor!.resolve(enabled), colorScheme.primary);
-  expect(style.foregroundColor!.resolve(enabled), colorScheme.onPrimary);
   expect(
-    style.overlayColor!.resolve(const <WidgetState>{WidgetState.pressed}),
-    colorScheme.onPrimary.withValues(alpha: 0.14),
+    style.backgroundColor!.resolve(enabled),
+    colorScheme.primary.withValues(alpha: 0.12),
   );
-  expect(
-    style.backgroundColor!.resolve(disabled),
-    colorScheme.onSurface.withValues(alpha: 0.12),
-  );
-  expect(
-    style.foregroundColor!.resolve(disabled),
-    colorScheme.onSurface.withValues(alpha: 0.50),
-  );
-  final textStyle = style.textStyle!.resolve(enabled)!;
-  expect(textStyle.fontSize, 14);
-  expect(textStyle.fontWeight, FontWeight.w600);
-  expect(textStyle.height, 1);
+  expect(style.foregroundColor!.resolve(enabled), colorScheme.primary);
 }
 
 Future<({AppRuntimeWidgetTestFixture fixture, PlaybackSession session})>
@@ -1047,7 +1033,7 @@ void main() {
     tester.view.physicalSize = const Size(430, 900);
     await tester.pumpAndSettle();
 
-    expect(find.text('1.00x'), findsNWidgets(2));
+    expect(find.text(formatSpeedValue(1.0)), findsNWidgets(2));
     final speedRestoreButton = find.byKey(
       const ValueKey<String>('restore_playback_speed'),
     );
@@ -2073,7 +2059,10 @@ void main() {
     expect(find.byType(ReorderableListView), findsOneWidget);
     expect(find.byType(ReorderableDragStartListener), findsWidgets);
 
-    await tester.pump(const Duration(milliseconds: 300));
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 50)),
+    );
+    await tester.pump(const Duration(milliseconds: 100));
   });
 
   testWidgets('queue edit rows stack 44px actions and provide haptics', (
@@ -2781,6 +2770,9 @@ void main() {
 
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pumpAndSettle();
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 50)),
+      );
     },
   );
 

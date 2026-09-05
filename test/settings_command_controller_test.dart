@@ -1,7 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:just_audio/just_audio.dart';
+import 'package:doujin_audio/features/player/domain/playback_mode.dart';
 import 'package:doujin_audio/core/errors/native_result.dart';
 import 'package:doujin_audio/features/player/application/native_playback_repository.dart';
 import 'package:doujin_audio/features/player/application/native_playback_bridge.dart';
@@ -13,7 +13,6 @@ import 'package:doujin_audio/features/player/application/playback_notification_s
 import 'package:doujin_audio/features/player/application/playback_facade.dart';
 import 'package:doujin_audio/features/player/application/playback_session.dart';
 import 'package:doujin_audio/features/player/domain/audio_effects.dart';
-import 'package:doujin_audio/features/player/domain/playback_mode.dart';
 import 'package:doujin_audio/features/settings/application/settings_command_controller.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 

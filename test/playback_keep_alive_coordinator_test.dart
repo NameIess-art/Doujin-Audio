@@ -1,5 +1,4 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:just_audio/just_audio.dart';
 import 'package:doujin_audio/app/application/playback_keep_alive_coordinator.dart';
 import 'package:doujin_audio/core/errors/native_result.dart';
 import 'support/test_persistence_repository.dart';

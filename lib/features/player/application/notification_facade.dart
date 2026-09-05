@@ -1,8 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:just_audio/just_audio.dart';
 import 'package:path/path.dart' as path;
+
+import '../domain/playback_mode.dart';
 
 import '../../../core/media/music_track.dart';
 import '../../../core/media/subtitle_parser.dart';

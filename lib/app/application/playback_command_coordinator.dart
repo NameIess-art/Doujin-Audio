@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:math';
 
-import 'package:just_audio/just_audio.dart';
 import 'package:path/path.dart' as path;
 
 import '../../core/immutable_collections.dart';

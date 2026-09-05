@@ -4,7 +4,6 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:just_audio/just_audio.dart';
 import 'support/runtime_test_models.dart';
 import 'package:doujin_audio/core/app_language.dart';
 import 'package:doujin_audio/core/persistence/app_database.dart';

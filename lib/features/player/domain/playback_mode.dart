@@ -12,6 +12,45 @@ enum SessionLoopMode {
 
 enum TimerMode { manual, trigger }
 
+enum ProcessingState {
+  idle,
+  loading,
+  buffering,
+  ready,
+  completed,
+}
+
+class PlayerState {
+  const PlayerState(this.playing, this.processingState);
+
+  final bool playing;
+  final ProcessingState processingState;
+
+  PlayerState copyWith({
+    bool? playing,
+    ProcessingState? processingState,
+  }) =>
+      PlayerState(
+        playing ?? this.playing,
+        processingState ?? this.processingState,
+      );
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is PlayerState &&
+          runtimeType == other.runtimeType &&
+          playing == other.playing &&
+          processingState == other.processingState;
+
+  @override
+  int get hashCode => Object.hash(playing, processingState);
+
+  @override
+  String toString() =>
+      'PlayerState(playing: $playing, processingState: $processingState)';
+}
+
 extension SessionLoopModeExtension on SessionLoopMode {
   bool get isShuffle =>
       this == SessionLoopMode.crossRandom ||

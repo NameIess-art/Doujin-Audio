@@ -25,8 +25,8 @@ import '../../../core/widgets/top_page_header.dart';
 import '../../settings/application/settings_state.dart';
 import '../application/playback_facade.dart';
 import '../domain/playback_mode.dart';
-import '../domain/playback_queue.dart';
 import 'bedtime_canvas_page.dart';
+import 'playlist/playlist_batch_controller.dart';
 import 'playlist/playlist_list_view.dart';
 import 'playlist/playlist_queue_widgets.dart';
 import 'playlist/playlist_shared_helpers.dart';
@@ -36,6 +36,7 @@ import 'playlist_sorting.dart';
 import 'playlist_view_models.dart';
 
 export 'playlist/playlist_audio_features.dart';
+export 'playlist/playlist_batch_controller.dart';
 export 'playlist/playlist_feature_icons.dart';
 export 'playlist/playlist_list_view.dart';
 export 'playlist/playlist_loop_widgets.dart';
@@ -128,61 +129,33 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
     });
   }
 
-  Future<void> _handleBatchPlay() async {
-    if (_selectedSessionIds.isEmpty) return;
-    final multiThreadEnabled =
-        ref.read(settingsStateProvider).value?.multiThreadPlaybackEnabled ??
-        false;
-    if (!multiThreadEnabled && _selectedSessionIds.length > 1) return;
+  Future<void> _handleBatchPlay() => PlaylistBatchActions.playSelected(
+        ref: ref,
+        selectedSessionIds: _selectedSessionIds,
+      );
 
-    final playback = ref.read(playbackFacadeProvider);
-    unawaited(
-      AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection),
-    );
-    final sessionIds = _selectedSessionIds.toList();
-    for (final id in sessionIds) {
-      final cardState = ref.read(playlistSessionCardStateProvider(id));
-      if (cardState != null && !cardState.isPlaying) {
-        await playback.toggleSessionPlayPause(id);
-      }
-    }
-  }
-
-  Future<void> _handleBatchPause() async {
-    if (_selectedSessionIds.isEmpty) return;
-    final playback = ref.read(playbackFacadeProvider);
-    unawaited(
-      AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection),
-    );
-    final sessionIds = _selectedSessionIds.toList();
-    for (final id in sessionIds) {
-      final cardState = ref.read(playlistSessionCardStateProvider(id));
-      if (cardState != null && cardState.isPlaying) {
-        await playback.toggleSessionPlayPause(id);
-      }
-    }
-  }
+  Future<void> _handleBatchPause() => PlaylistBatchActions.pauseSelected(
+        ref: ref,
+        selectedSessionIds: _selectedSessionIds,
+      );
 
   Future<void> _handleBatchPin() async {
-    if (_selectedSessionIds.isEmpty) return;
-    unawaited(
-      AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection),
-    );
     final sessionIds = _selectedSessionIds.toList(growable: false);
     _exitSelectionMode();
-    await ref
-        .read(settingsRepositoryProvider)
-        .togglePlaylistSessionsPinned(sessionIds);
+    await PlaylistBatchActions.pinSelected(
+      ref: ref,
+      selectedSessionIds: sessionIds,
+    );
   }
 
   Future<void> _handleBatchRemove() async {
-    if (_selectedSessionIds.isEmpty) return;
-    unawaited(
-      AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection),
-    );
-    final toRemove = _selectedSessionIds.toList();
+    final toRemove = _selectedSessionIds.toList(growable: false);
     _exitSelectionMode();
-    await stagePlaybackSessionRemovals(context, ref, toRemove);
+    await PlaylistBatchActions.removeSelected(
+      context: context,
+      ref: ref,
+      selectedSessionIds: toRemove,
+    );
   }
 
   Future<void> _handleCreatePlaybackQueue(
@@ -190,79 +163,27 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
     PlaybackFacade playback,
     AudioPathCoordinator paths,
   ) async {
-    if (!_hasSelectedPlaybackQueueSource(visibleEntries, paths)) return;
-
-    final queueCount = playback.sessions.values
-        .where((session) => session.isPlaybackQueue)
-        .length;
-    final i18n = ref.read(appLanguageProviderInstanceProvider);
-    final queue = playback.createPlaybackQueue(
-      i18n.tr('default_playback_queue_name', {
-        'number': (queueCount + 1).toString(),
-      }),
+    await PlaylistBatchActions.createPlaybackQueue(
+      ref: ref,
+      visibleEntries: visibleEntries,
+      selectedSessionIds: _selectedSessionIds,
+      playback: playback,
+      paths: paths,
+      onQueueAdded: _scrollToTopOnQueueAdded,
     );
-    _scrollToTopOnQueueAdded();
-    final coordinator = ref.read(playbackQueueCoordinatorProvider);
-    for (final entry in visibleEntries) {
-      if (!_selectedSessionIds.contains(entry.sessionId)) continue;
-      if (entry.isPlaybackQueue) {
-        for (final sourceEntry
-            in entry.session.playbackQueue?.entries ??
-                const <PlaybackQueueEntry>[]) {
-          if (sourceEntry.tracks.isEmpty) continue;
-          if (sourceEntry.kind == PlaybackQueueEntryKind.work) {
-            for (final track in sourceEntry.tracks.take(4)) {
-              unawaited(
-                ref
-                    .read(libraryFacadeProvider)
-                    .playbackCoverPathFutureForTrack(track),
-              );
-            }
-            await playback.addWorkToPlaybackQueue(
-              queue.id,
-              title: sourceEntry.title,
-              tracks: sourceEntry.tracks,
-              workRootPath: sourceEntry.workRootPath,
-            );
-          } else {
-            for (final track in sourceEntry.tracks) {
-              await coordinator.addTrack(queue.id, track);
-            }
-          }
-        }
-        continue;
-      }
-      final track = paths.sessionTrackForPath(
-        entry.session.id,
-        entry.trackPath,
-      );
-      if (track != null) {
-        await coordinator.addWork(queue.id, track);
-      }
-    }
     if (mounted) _exitSelectionMode();
   }
 
   bool _hasSelectedPlaybackQueueSource(
     List<PlaylistStructureEntry> visibleEntries,
     AudioPathCoordinator paths,
-  ) {
-    for (final entry in visibleEntries) {
-      if (!_selectedSessionIds.contains(entry.sessionId)) continue;
-      if (entry.isPlaybackQueue) {
-        if (entry.session.playbackQueue?.entries.any(
-              (sourceEntry) => sourceEntry.tracks.isNotEmpty,
-            ) ??
-            false) {
-          return true;
-        }
-      } else if (paths.sessionTrackForPath(entry.session.id, entry.trackPath) !=
-          null) {
-        return true;
-      }
-    }
-    return false;
-  }
+  ) =>
+      PlaylistBatchActions.hasSelectedPlaybackQueueSource(
+        visibleEntries: visibleEntries,
+        paths: paths,
+        selectedSessionIds: _selectedSessionIds,
+      );
+
 
   @override
   int get tabIndex => widget.tabIndex;

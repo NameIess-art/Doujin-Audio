@@ -1,7 +1,17 @@
-part of 'playlist_tab.dart';
+import 'dart:async';
 
-class _SpeedWheelPage extends ConsumerStatefulWidget {
-  const _SpeedWheelPage({
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../../../app/presentation/app_presentation_providers.dart';
+import '../../../../app/state/app_runtime_providers.dart';
+import '../../../../core/widgets/app_feedback.dart';
+import '../../application/playback_facade.dart';
+import '../../application/playback_session_snapshot.dart';
+import 'playlist_shared_helpers.dart';
+
+class SpeedWheelPage extends ConsumerStatefulWidget {
+  const SpeedWheelPage({
     super.key,
     required this.session,
     required this.playback,
@@ -11,10 +21,10 @@ class _SpeedWheelPage extends ConsumerStatefulWidget {
   final PlaybackFacade playback;
 
   @override
-  ConsumerState<_SpeedWheelPage> createState() => _SpeedWheelPageState();
+  ConsumerState<SpeedWheelPage> createState() => _SpeedWheelPageState();
 }
 
-class _SpeedWheelPageState extends ConsumerState<_SpeedWheelPage> {
+class _SpeedWheelPageState extends ConsumerState<SpeedWheelPage> {
   late FixedExtentScrollController _controller;
   late int _selectedIndex;
 
@@ -28,7 +38,7 @@ class _SpeedWheelPageState extends ConsumerState<_SpeedWheelPage> {
   }
 
   @override
-  void didUpdateWidget(covariant _SpeedWheelPage oldWidget) {
+  void didUpdateWidget(covariant SpeedWheelPage oldWidget) {
     super.didUpdateWidget(oldWidget);
     final nextIndex = _nearestSpeedIndex(widget.session.speed);
     if (oldWidget.session.id != widget.session.id ||
@@ -109,7 +119,7 @@ class _SpeedWheelPageState extends ConsumerState<_SpeedWheelPage> {
         const SizedBox(height: 8),
         Center(
           child: Text(
-            _formatSpeedValue(selectedSpeed),
+            formatSpeedValue(selectedSpeed),
             key: ValueKey<double>(selectedSpeed),
             style: Theme.of(context).textTheme.displaySmall?.copyWith(
               color: cs.onSurface,
@@ -177,7 +187,7 @@ class _SpeedWheelPageState extends ConsumerState<_SpeedWheelPage> {
                                   FontFeature.tabularFigures(),
                                 ],
                               ),
-                        child: Text(_formatSpeedValue(speed)),
+                        child: Text(formatSpeedValue(speed)),
                       ),
                     ),
                   );
@@ -190,7 +200,7 @@ class _SpeedWheelPageState extends ConsumerState<_SpeedWheelPage> {
         Center(
           child: FilledButton.tonal(
             key: const ValueKey<String>('restore_playback_speed'),
-            style: _sessionDetailResetButtonStyle(context),
+            style: sessionDetailResetButtonStyle(context),
             onPressed: (selectedSpeed - 1.0).abs() < 0.001 ? null : _resetSpeed,
             child: Text(i18n.tr('speed_reset')),
           ),

@@ -1,9 +1,24 @@
-part of 'playlist_tab.dart';
+import 'dart:math';
 
-const _kSegmentPanelCollapseDragThreshold = 120.0;
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-class _TimeSegmentPanel extends StatefulWidget {
-  const _TimeSegmentPanel({
+import '../../../../app/state/app_runtime_providers.dart';
+import '../../../../core/media/time_text_formatters.dart';
+import '../../../../core/widgets/app_buttons.dart';
+import '../../../../core/widgets/app_dialog.dart';
+import '../../../../core/widgets/app_feedback.dart';
+import '../../../../core/widgets/scroll_activity_gate.dart';
+import '../../application/playback_facade.dart';
+import '../../application/playback_session_snapshot.dart';
+import '../../domain/time_segment_label.dart';
+import 'playlist_audio_features.dart';
+import 'playlist_speed_controls.dart';
+
+const double kSegmentPanelCollapseDragThreshold = 120.0;
+
+class TimeSegmentPanel extends StatefulWidget {
+  const TimeSegmentPanel({
     super.key,
     required this.session,
     required this.playback,
@@ -49,10 +64,10 @@ class _TimeSegmentPanel extends StatefulWidget {
   final VoidCallback? onClose;
 
   @override
-  State<_TimeSegmentPanel> createState() => _TimeSegmentPanelState();
+  State<TimeSegmentPanel> createState() => _TimeSegmentPanelState();
 }
 
-class _TimeSegmentPanelState extends State<_TimeSegmentPanel> {
+class _TimeSegmentPanelState extends State<TimeSegmentPanel> {
   late final PageController _pageController;
   int _pageIndex = 2;
   int? _dismissPointer;
@@ -77,7 +92,7 @@ class _TimeSegmentPanelState extends State<_TimeSegmentPanel> {
     _clearDismissPointer();
     if (origin == null) return;
     final delta = position - origin;
-    if (delta.dy > _kSegmentPanelCollapseDragThreshold &&
+    if (delta.dy > kSegmentPanelCollapseDragThreshold &&
         delta.dy.abs() > delta.dx.abs()) {
       widget.onClose?.call();
     }
@@ -160,7 +175,7 @@ class _TimeSegmentPanelState extends State<_TimeSegmentPanel> {
             children: [
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 28),
-                child: _SegmentPanelPageHeader(
+                child: SegmentPanelPageHeader(
                   pageIndex: _pageIndex,
                   onSelected: _animateToPanelPage,
                   labels: [
@@ -197,15 +212,15 @@ class _TimeSegmentPanelState extends State<_TimeSegmentPanel> {
                 controller: _pageController,
                 onPageChanged: _handlePageChanged,
                 children: [
-                  _EqualizerPage(
+                  EqualizerPage(
                     session: widget.session,
                     playback: widget.playback,
                   ),
-                  _AudioFeaturesPage(
+                  AudioFeaturesPage(
                     session: widget.session,
                     playback: widget.playback,
                   ),
-                  _SpeedWheelPage(
+                  SpeedWheelPage(
                     key: ValueKey<String>('speed_${widget.session.id}'),
                     session: widget.session,
                     playback: widget.playback,
@@ -216,7 +231,7 @@ class _TimeSegmentPanelState extends State<_TimeSegmentPanel> {
                     activeColor: activeColor,
                     loopActive: loopActive,
                   ),
-                  _VolumeBalancePage(
+                  VolumeBalancePage(
                     session: widget.session,
                     playback: widget.playback,
                   ),
@@ -290,7 +305,7 @@ class _TimeSegmentPanelState extends State<_TimeSegmentPanel> {
                         separatorBuilder: (_, _) => const SizedBox(width: 8),
                         itemBuilder: (context, index) {
                           final label = widget.labels[index];
-                          return _TimeSegmentChip(
+                          return TimeSegmentChip(
                             label: label,
                             selected: label.id == widget.selectedId,
                             onTap: () => widget.onSelect(label),
@@ -316,7 +331,7 @@ class _TimeSegmentPanelState extends State<_TimeSegmentPanel> {
           const SizedBox(height: 16),
           Row(
             children: [
-              _SegmentTimeRow(
+              SegmentTimeRow(
                 label: i18n.tr('segment_start'),
                 value: widget.draftStart,
                 color: activeColor,
@@ -324,7 +339,7 @@ class _TimeSegmentPanelState extends State<_TimeSegmentPanel> {
                 onEdit: widget.onEditStart,
               ),
               const SizedBox(width: 12),
-              _SegmentTimeRow(
+              SegmentTimeRow(
                 label: i18n.tr('segment_end'),
                 value: widget.draftEnd,
                 color: activeColor,
@@ -441,8 +456,9 @@ class _TimeSegmentPanelState extends State<_TimeSegmentPanel> {
   }
 }
 
-class _SegmentPanelPageHeader extends StatelessWidget {
-  const _SegmentPanelPageHeader({
+class SegmentPanelPageHeader extends StatelessWidget {
+  const SegmentPanelPageHeader({
+    super.key,
     required this.pageIndex,
     required this.onSelected,
     required this.labels,
@@ -492,8 +508,9 @@ class _SegmentPanelPageHeader extends StatelessWidget {
   }
 }
 
-class _TimeSegmentChip extends StatelessWidget {
-  const _TimeSegmentChip({
+class TimeSegmentChip extends StatelessWidget {
+  const TimeSegmentChip({
+    super.key,
     required this.label,
     required this.selected,
     required this.onTap,
@@ -526,8 +543,9 @@ class _TimeSegmentChip extends StatelessWidget {
   }
 }
 
-class _SegmentTimeRow extends StatelessWidget {
-  const _SegmentTimeRow({
+class SegmentTimeRow extends StatelessWidget {
+  const SegmentTimeRow({
+    super.key,
     required this.label,
     required this.value,
     required this.color,
@@ -596,7 +614,7 @@ class _SegmentTimeRow extends StatelessWidget {
   }
 }
 
-Future<Duration?> _showSegmentTimeInputDialog(
+Future<Duration?> showSegmentTimeInputDialog(
   BuildContext context, {
   Duration? initial,
 }) async {
@@ -642,20 +660,4 @@ Future<Duration?> _showSegmentTimeInputDialog(
       ),
     ),
   ).whenComplete(controller.dispose);
-}
-
-String _formatSpeedValue(double value) {
-  return '${value.toStringAsFixed(2)}x';
-}
-
-String _formatFrequency(int frequencyHz) {
-  if (frequencyHz >= 1000) {
-    final khz = frequencyHz / 1000;
-    return '${khz.toStringAsFixed(khz >= 10 ? 0 : 1)}k';
-  }
-  return '${frequencyHz}Hz';
-}
-
-String _presetLabel(AppLanguageProvider i18n, EqPreset preset) {
-  return preset.isCustom ? preset.labelKey : i18n.tr(preset.labelKey);
 }

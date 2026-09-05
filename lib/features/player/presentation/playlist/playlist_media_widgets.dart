@@ -1,7 +1,22 @@
-part of 'playlist_tab.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-class _SessionHeroArtwork extends ConsumerWidget {
-  const _SessionHeroArtwork({
+import '../../../../app/state/app_runtime_providers.dart';
+import '../../../../core/media/music_track.dart';
+import '../../../../core/widgets/async_cover_image.dart';
+import '../../../../core/widgets/duration_overlay.dart';
+import '../../../../core/widgets/library_like_cards.dart';
+import '../../../library/application/library_facade.dart';
+import '../../../settings/application/settings_state.dart';
+import '../../application/playback_session_snapshot.dart';
+import '../session_video_surface.dart';
+import '../session_video_viewport.dart';
+import 'playlist_shared_helpers.dart';
+import 'playlist_video_widgets.dart';
+
+class SessionHeroArtwork extends ConsumerWidget {
+  const SessionHeroArtwork({
+    super.key,
     required this.session,
     required this.height,
     required this.track,
@@ -104,10 +119,10 @@ class _SessionHeroArtwork extends ConsumerWidget {
                 child: SessionVideoViewport(
                   videoReady:
                       allowVideoPlayback &&
-                      _isSessionVideoReady(session, track),
+                      isSessionVideoReady(session, track),
                   surfaceBuilder: (_) =>
                       NativeSessionVideoSurface(sessionId: sessionId),
-                  onFullscreen: () => _showSessionVideoFullscreen(
+                  onFullscreen: () => showSessionVideoFullscreen(
                     context,
                     ref,
                     sessionId: sessionId,
@@ -129,8 +144,9 @@ class _SessionHeroArtwork extends ConsumerWidget {
   }
 }
 
-class _SessionCoverThumbnail extends ConsumerStatefulWidget {
-  const _SessionCoverThumbnail({
+class SessionCoverThumbnail extends ConsumerStatefulWidget {
+  const SessionCoverThumbnail({
+    super.key,
     required this.sessionId,
     required this.track,
     required this.coverPath,
@@ -149,12 +165,12 @@ class _SessionCoverThumbnail extends ConsumerStatefulWidget {
   final Duration? detailDuration;
 
   @override
-  ConsumerState<_SessionCoverThumbnail> createState() =>
+  ConsumerState<SessionCoverThumbnail> createState() =>
       _SessionCoverThumbnailState();
 }
 
 class _SessionCoverThumbnailState
-    extends ConsumerState<_SessionCoverThumbnail> {
+    extends ConsumerState<SessionCoverThumbnail> {
   Future<String?>? _coverFuture;
   String? _lastTrackPath;
   int _lastCoverGeneration = -1;
@@ -194,8 +210,8 @@ class _SessionCoverThumbnailState
       children: [
         SizedBox(
           key: ValueKey<String>('playlist_cover_${widget.sessionId}'),
-          width: _playlistCoverSize,
-          height: _playlistCoverSize,
+          width: playlistCoverSize,
+          height: playlistCoverSize,
           child: Material(
             type: MaterialType.transparency,
             borderRadius: BorderRadius.circular(
@@ -225,8 +241,8 @@ class _SessionCoverThumbnailState
   }
 }
 
-class _SessionMetaChip extends StatelessWidget {
-  const _SessionMetaChip({
+class SessionMetaChip extends StatelessWidget {
+  const SessionMetaChip({
     super.key,
     required this.icon,
     required this.text,

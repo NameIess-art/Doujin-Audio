@@ -1,4 +1,13 @@
-part of 'playlist_tab.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../../../app/state/app_runtime_providers.dart';
+import '../../../../core/widgets/app_bottom_sheet.dart';
+import '../../../../core/widgets/app_feedback.dart';
+import '../../application/playback_facade.dart';
+import '../../application/playback_session_snapshot.dart';
+import '../../domain/playback_mode.dart';
+import 'playlist_shared_helpers.dart';
 
 Future<void> showLoopModeBottomSheet({
   required BuildContext context,
@@ -8,21 +17,25 @@ Future<void> showLoopModeBottomSheet({
   return AppBottomSheet.show<void>(
     context: context,
     builder: (sheetContext) =>
-        _LoopModeSheet(session: session, playback: playback),
+        LoopModeSheet(session: session, playback: playback),
   );
 }
 
-class _LoopModeSheet extends StatefulWidget {
-  const _LoopModeSheet({required this.session, required this.playback});
+class LoopModeSheet extends StatefulWidget {
+  const LoopModeSheet({
+    super.key,
+    required this.session,
+    required this.playback,
+  });
 
   final PlaybackSessionSnapshot session;
   final PlaybackFacade playback;
 
   @override
-  State<_LoopModeSheet> createState() => _LoopModeSheetState();
+  State<LoopModeSheet> createState() => _LoopModeSheetState();
 }
 
-class _LoopModeSheetState extends State<_LoopModeSheet> {
+class _LoopModeSheetState extends State<LoopModeSheet> {
   late bool _single;
   late bool _pauseAfterPlay;
   late bool _shuffle;
@@ -260,8 +273,12 @@ class _LoopModeSheetState extends State<_LoopModeSheet> {
 
 enum _PlaybackOption { loop, shuffle }
 
-class _SessionLoopModeButton extends StatelessWidget {
-  const _SessionLoopModeButton({required this.session, required this.playback});
+class SessionLoopModeButton extends StatelessWidget {
+  const SessionLoopModeButton({
+    super.key,
+    required this.session,
+    required this.playback,
+  });
 
   final PlaybackSessionSnapshot session;
   final PlaybackFacade playback;
@@ -283,9 +300,9 @@ class _SessionLoopModeButton extends StatelessWidget {
         Icons.repeat_one_rounded,
         key: const ValueKey<String>('single_main'),
         size: 20,
-        color: _sessionDetailForeground(
+        color: sessionDetailForeground(
           cs,
-          _SessionDetailForegroundLevel.muted,
+          SessionDetailForegroundLevel.muted,
         ),
       );
     }
@@ -327,9 +344,9 @@ class _SessionLoopModeButton extends StatelessWidget {
         style: IconButton.styleFrom(
           shape: const CircleBorder(),
           backgroundColor: Colors.transparent,
-          foregroundColor: _sessionDetailForeground(
+          foregroundColor: sessionDetailForeground(
             Theme.of(context).colorScheme,
-            _SessionDetailForegroundLevel.muted,
+            SessionDetailForegroundLevel.muted,
           ),
         ),
         onPressed: () {

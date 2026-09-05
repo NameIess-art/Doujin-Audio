@@ -131,11 +131,11 @@ class NativePlaybackService : MediaSessionService() {
         }
     }
 
-    private val sessions = linkedMapOf<String, NativePlaybackSession>()
+    private val sessionManager by lazy { NativePlaybackSessionManager(::createNativePlaybackSession) }
     private val fileCacheOperations by lazy { FileCacheOperations(applicationContext) }
     private val stateListeners = ConcurrentHashMap<String, (Map<String, Any?>) -> Unit>()
     private val videoOutputs = NativeVideoOutputRegistry<Player>(
-        playerForSession = { sessionId -> sessions[sessionId]?.playerOrNull() },
+        playerForSession = { sessionId -> sessionManager.playerForSession(sessionId) },
         shouldKeepScreenOn = { player ->
             player.playWhenReady &&
                 player.playbackState != Player.STATE_IDLE &&
@@ -148,10 +148,8 @@ class NativePlaybackService : MediaSessionService() {
     private val progressPublisher by lazy {
         NativePlaybackProgressPublisher(
             mainHandler = mainHandler,
-            anchors = { sessions.values.map(NativePlaybackSession::progressAnchorSnapshot) },
-            currentAnchors = {
-                sessions.mapValues { (_, session) -> session.progressAnchorSnapshot() }
-            },
+            anchors = { sessionManager.progressAnchors() },
+            currentAnchors = { sessionManager.progressAnchorsMap() },
             listeners = { stateListeners.values }
         )
     }
@@ -161,11 +159,11 @@ class NativePlaybackService : MediaSessionService() {
             mainHandler = mainHandler,
             intervalMs = STATE_PERSISTENCE_INTERVAL_MS,
             debounceMs = STATE_PERSISTENCE_DEBOUNCE_MS,
-            hasSessions = { sessions.isNotEmpty() },
+            hasSessions = { sessionManager.isNotEmpty },
             hasActivePlayback = ::hasActivePlayback,
             storedSessions = {
                 val intendedSessionIds = playbackRecovery.intendedSessionIds
-                sessions.values.map { session ->
+                sessionManager.allSessions.map { session ->
                     session.storedSnapshot().let { stored ->
                         if (session.sessionId in intendedSessionIds) {
                             stored.copy(playWhenReady = true)
@@ -228,9 +226,9 @@ class NativePlaybackService : MediaSessionService() {
     private val sessionRestorer by lazy {
         NativePlaybackSessionRestorer(
             getOrCreateSession = { sessionId ->
-                sessions.getOrPut(sessionId) { createNativePlaybackSession(sessionId) }
+                sessionManager.getOrCreate(sessionId)
             },
-            removeSession = { sessionId -> sessions.remove(sessionId) },
+            removeSession = { sessionId -> sessionManager.remove(sessionId) },
             focusSession = ::focusSession,
             logRestoreFailure = { sessionId, error ->
                 logWarn("restore_session_failed sessionId=$sessionId", error = error)
@@ -251,7 +249,7 @@ class NativePlaybackService : MediaSessionService() {
         NativePlaybackProgressHeartbeatCoordinator(
             host = object : NativePlaybackProgressHeartbeatHost {
                 override fun shouldRunProgressHeartbeat(): Boolean =
-                    stateListeners.isNotEmpty() && sessions.isNotEmpty()
+                    stateListeners.isNotEmpty() && sessionManager.isNotEmpty
 
                 override fun publishProgress(nowElapsedRealtimeMs: Long) {
                     progressPublisher.publishAsync(nowElapsedRealtimeMs)
@@ -324,7 +322,7 @@ class NativePlaybackService : MediaSessionService() {
                 persistSessionStateNow()
                 syncForegroundState()
             },
-            hasSessions = { sessions.isNotEmpty() },
+            hasSessions = { sessionManager.isNotEmpty },
             hasPlaybackToKeepAlive = ::hasPlaybackToKeepAlive,
             hasPendingCommandDelivery = ::hasPendingCommandDelivery,
             stopIdleService = ::stopIdleServiceAfterRestore,
@@ -340,8 +338,9 @@ class NativePlaybackService : MediaSessionService() {
 
     fun currentMediaSession(): MediaSession? = mediaSessionHost.current()
 
-    var focusedSessionId: String? = null
-        private set
+    var focusedSessionId: String?
+        get() = sessionManager.focusedSessionId
+        internal set(value) { sessionManager.focusedSessionId = value }
     private var playbackSuspended = false
     private val audioFocusController: NativeAudioFocusController by lazy {
         NativeAudioFocusController(
@@ -359,25 +358,22 @@ class NativePlaybackService : MediaSessionService() {
                     get() = playbackBehavior
                 override val playbackSuspended: Boolean
                     get() = this@NativePlaybackService.playbackSuspended
-                override fun activePlaybackSessionIds(): List<String> = sessions.values
-                    .filter { it.playerOrNull()?.let { player ->
-                        player.isPlaying || player.playWhenReady
-                    } == true }
-                    .map(NativePlaybackSession::sessionId)
+                override fun activePlaybackSessionIds(): List<String> =
+                    sessionManager.activePlaybackSessionIds()
                 override fun sessionExists(sessionId: String): Boolean =
-                    sessions.containsKey(sessionId)
+                    sessionManager.contains(sessionId)
                 override fun pause(sessionId: String) {
-                    sessions[sessionId]?.playerOrNull()?.pause()
+                    sessionManager.get(sessionId)?.playerOrNull()?.pause()
                 }
                 override fun play(sessionId: String) {
-                    sessions[sessionId]?.let { ensureFocusedPlayer(it).play() }
+                    sessionManager.get(sessionId)?.let { ensureFocusedPlayer(it).play() }
                 }
                 override fun focus(sessionId: String) = focusSession(sessionId)
                 override fun clearPlaybackIntent(sessionId: String) =
                     this@NativePlaybackService.clearPlaybackIntent(sessionId)
                 override fun clearAllPlaybackRecovery() = playbackRecovery.clearAll()
                 override fun applyFocusDuckMultiplier(multiplier: Float) {
-                    sessions.values.forEach { it.applyFocusDuckMultiplier(multiplier) }
+                    sessionManager.applyFocusDuckMultiplier(multiplier)
                 }
                 override fun publishAllSessions() = publishAllSessionStates()
                 override fun persistNow() = persistSessionStateNow()
@@ -398,14 +394,14 @@ class NativePlaybackService : MediaSessionService() {
     private val playbackRecovery: NativePlaybackRecoveryController by lazy {
         NativePlaybackRecoveryController(
             host = object : NativePlaybackRecoveryHost {
-                override fun session(sessionId: String) = sessions[sessionId]
+                override fun session(sessionId: String) = sessionManager.get(sessionId)
                 override fun requestAudioFocus() = focusRecovery.requestIfNeeded()
                 override fun establishForegroundPlayback(sessionId: String): Boolean =
                     foregroundCoordinator.startOrUpdate().playbackAllowed
                 override fun focusSession(sessionId: String) = this@NativePlaybackService.focusSession(sessionId)
                 override fun ensurePlayer(session: NativePlaybackSession) = ensureFocusedPlayer(session)
                 override fun onRecoveryTimedOut(sessionId: String) {
-                    val session = sessions[sessionId] ?: return
+                    val session = sessionManager.get(sessionId) ?: return
                     session.playerOrNull()?.pause()
                     session.releasePlayer()
                     if (focusedSessionId == sessionId) updateMediaSessionPlayer()
@@ -454,7 +450,7 @@ class NativePlaybackService : MediaSessionService() {
                 override val hasPlaybackToKeepAlive: Boolean
                     get() = this@NativePlaybackService.hasPlaybackToKeepAlive()
                 override val hasSessions: Boolean
-                    get() = sessions.isNotEmpty()
+                    get() = sessionManager.isNotEmpty
                 override val playbackSuspended: Boolean
                     get() = this@NativePlaybackService.playbackSuspended
                 override val foregroundSuppressed: Boolean
@@ -640,7 +636,7 @@ class NativePlaybackService : MediaSessionService() {
             foregroundCoordinator.startBootstrap()
         }
         if (startDecision.shouldAttemptRestore &&
-            shouldAttemptStickyPlaybackRestore(sessions.isNotEmpty(), attemptedStickyPlaybackRestore)
+            shouldAttemptStickyPlaybackRestore(sessionManager.isNotEmpty, attemptedStickyPlaybackRestore)
         ) {
             attemptedStickyPlaybackRestore = true
             restoreCoordinator.restoreAfterServiceRestart(startId)
@@ -649,7 +645,7 @@ class NativePlaybackService : MediaSessionService() {
     }
 
     private fun rejectedStartResult(startId: Int): Int {
-        if (sessions.isNotEmpty() || hasPlaybackToKeepAlive() || foregroundCoordinator.isStarted) {
+        if (sessionManager.isNotEmpty || hasPlaybackToKeepAlive() || foregroundCoordinator.isStarted) {
             return START_STICKY
         }
         stopSelfResult(startId)
@@ -674,7 +670,7 @@ class NativePlaybackService : MediaSessionService() {
 
     override fun onDestroy() {
         logInfo(
-            "on_destroy_begin sessions=${sessions.size} " +
+            "on_destroy_begin sessions=${sessionManager.size} " +
                 "foregroundStarted=${foregroundCoordinator.isStarted} " +
                 "wakeLockHeld=${playbackWakeLock.isHeld()}"
         )
@@ -690,10 +686,10 @@ class NativePlaybackService : MediaSessionService() {
                 playbackRecovery::dispose,
                 { mediaSessionHost.release("on_destroy") },
                 {
-                    runPlaybackShutdownActions(sessions.values.map { session -> session::release })
+                    runPlaybackShutdownActions(sessionManager.releaseAll())
                         ?.let { throw it }
                 },
-                sessions::clear,
+                sessionManager::clear,
                 foregroundCoordinator::shutdown,
                 { focusRecovery.abandon(reason = "on_destroy") },
                 ::releaseWakeLock,
@@ -717,7 +713,7 @@ class NativePlaybackService : MediaSessionService() {
 
     fun addStateListener(ownerId: String, listener: (Map<String, Any?>) -> Unit) {
         stateListeners[ownerId] = listener
-        sessions.values.forEach { listener(it.snapshot()) }
+        sessionManager.forEach { listener(it.snapshot()) }
         progressHeartbeat.ensure()
     }
 
@@ -758,9 +754,7 @@ class NativePlaybackService : MediaSessionService() {
             queue[currentIndex] = queue[currentIndex]
                 .withPlaybackCandidateUris(args.candidateUris)
         }
-        val nativeSession = sessions.getOrPut(sessionId) {
-            createNativePlaybackSession(sessionId)
-        }
+        val nativeSession = sessionManager.getOrCreate(sessionId)
         focusRecovery.removePending(sessionId)
         return try {
             nativeSession.applyAudioEffects(args.audioEffects)
@@ -805,11 +799,11 @@ class NativePlaybackService : MediaSessionService() {
             syncForegroundState()
             okResult(nativeSession.snapshot())
         } catch (e: Exception) {
-            sessions.remove(sessionId)
+            val wasFocused = focusedSessionId == sessionId
+            sessionManager.remove(sessionId)
             nativeSession.release()
             clearPlaybackIntent(sessionId)
-            if (focusedSessionId == sessionId) {
-                focusedSessionId = sessions.keys.firstOrNull()
+            if (wasFocused) {
                 updateMediaSessionPlayer()
             }
             syncForegroundState()
@@ -822,19 +816,21 @@ class NativePlaybackService : MediaSessionService() {
         transportCommandId: Long = 0L,
         exclusive: Boolean = false
     ): Map<String, Any?> {
-        restoreCoordinator.restoreMissingSessions(listOf(sessionId), sessions.keys)
-        val session = sessions[sessionId] ?: run {
+        restoreCoordinator.restoreMissingSessions(listOf(sessionId), sessionManager.sessionIds)
+        val session = sessionManager.get(sessionId) ?: run {
             syncForegroundState()
             return errorResult("Unknown session.")
         }
         val pausedSessionIds = if (exclusive) {
             exclusivePlaybackSessionIdsToPause(
                 targetSessionId = sessionId,
-                sessionPlaybackIntent = sessions.mapValues { (candidateId, candidate) ->
+                sessionPlaybackIntent = sessionManager.allSessions.associate { candidate ->
                     val player = candidate.playerOrNull()
-                    playbackRecovery.isIntended(candidateId) ||
-                        player?.isPlaying == true ||
-                        player?.playWhenReady == true
+                    candidate.sessionId to (
+                        playbackRecovery.isIntended(candidate.sessionId) ||
+                            player?.isPlaying == true ||
+                            player?.playWhenReady == true
+                    )
                 }
             )
         } else {
@@ -862,7 +858,7 @@ class NativePlaybackService : MediaSessionService() {
             return errorResult("Audio focus was denied.")
         }
         pausedSessionIds.forEach { pausedSessionId ->
-            val pausedSession = sessions[pausedSessionId] ?: return@forEach
+            val pausedSession = sessionManager.get(pausedSessionId) ?: return@forEach
             if (transportCommandId > 0L) {
                 pausedSession.transportCommandId = transportCommandId
             }
@@ -888,7 +884,7 @@ class NativePlaybackService : MediaSessionService() {
         sessionId: String,
         transportCommandId: Long = 0L
     ): Map<String, Any?> {
-        val session = sessions[sessionId] ?: return errorResult("Unknown session.")
+        val session = sessionManager.get(sessionId) ?: return errorResult("Unknown session.")
         session.lastUsedMs = System.currentTimeMillis()
         if (transportCommandId > 0L) {
             session.transportCommandId = transportCommandId
@@ -904,7 +900,7 @@ class NativePlaybackService : MediaSessionService() {
     }
 
     fun stop(sessionId: String): Map<String, Any?> {
-        val session = sessions[sessionId] ?: return errorResult("Unknown session.")
+        val session = sessionManager.get(sessionId) ?: return errorResult("Unknown session.")
         session.lastUsedMs = System.currentTimeMillis()
         focusRecovery.removePending(sessionId)
         clearPlaybackIntent(sessionId)
@@ -919,7 +915,7 @@ class NativePlaybackService : MediaSessionService() {
     }
 
     fun skipToNext(sessionId: String): Map<String, Any?> {
-        val session = sessions[sessionId] ?: return errorResult("Session not found")
+        val session = sessionManager.get(sessionId) ?: return errorResult("Session not found")
         session.lastUsedMs = System.currentTimeMillis()
         focusSession(sessionId)
         playbackRecovery.resetHealth(sessionId, "skip_next", cancelRecovery = true)
@@ -932,7 +928,7 @@ class NativePlaybackService : MediaSessionService() {
     }
 
     fun skipToPrevious(sessionId: String): Map<String, Any?> {
-        val session = sessions[sessionId] ?: return errorResult("Session not found")
+        val session = sessionManager.get(sessionId) ?: return errorResult("Session not found")
         session.lastUsedMs = System.currentTimeMillis()
         focusSession(sessionId)
         playbackRecovery.resetHealth(sessionId, "skip_previous", cancelRecovery = true)
@@ -945,7 +941,7 @@ class NativePlaybackService : MediaSessionService() {
     }
 
     fun togglePlayPause(sessionId: String): Map<String, Any?> {
-        val session = sessions[sessionId] ?: return errorResult("Session not found")
+        val session = sessionManager.get(sessionId) ?: return errorResult("Session not found")
         session.lastUsedMs = System.currentTimeMillis()
         focusRecovery.removePending(sessionId)
         notificationsDismissed = false
@@ -983,7 +979,7 @@ class NativePlaybackService : MediaSessionService() {
     ): Map<String, Any?> {
         val storedSessions = if (
             requestedSessionId.isBlank() ||
-            !sessions.containsKey(requestedSessionId)
+            !sessionManager.contains(requestedSessionId)
         ) {
             NativePlaybackStateStore.loadSessions(this)
         } else {
@@ -992,10 +988,10 @@ class NativePlaybackService : MediaSessionService() {
         val sessionId = resolveNotificationSessionId(
             requestedSessionId = requestedSessionId,
             focusedSessionId = focusedSessionId,
-            activeSessionIds = sessions.values
+            activeSessionIds = sessionManager.allSessions
                 .filter { it.isPlaying() }
                 .map { it.sessionId },
-            existingSessionIds = sessions.keys,
+            existingSessionIds = sessionManager.sessionIds,
             storedActiveSessionIds = storedSessions
                 .filter { it.playing || it.playWhenReady }
                 .map { it.sessionId },
@@ -1005,7 +1001,7 @@ class NativePlaybackService : MediaSessionService() {
         restoreCoordinator.restoreSessionForNotification(
             sessionId = sessionId,
             loadedSessions = storedSessions,
-            sessionExists = sessions.containsKey(sessionId)
+            sessionExists = sessionManager.contains(sessionId)
         )
         return when (action) {
             NotificationCommand.toggle.actionName -> togglePlayPause(sessionId)
@@ -1016,7 +1012,7 @@ class NativePlaybackService : MediaSessionService() {
     }
 
     fun seek(sessionId: String, positionMs: Long): Map<String, Any?> {
-        val session = sessions[sessionId] ?: return errorResult("Unknown session.")
+        val session = sessionManager.get(sessionId) ?: return errorResult("Unknown session.")
         playbackRecovery.resetHealth(sessionId, "seek", cancelRecovery = true)
         session.seekTo(positionMs)
         publishSessionState(sessionId)
@@ -1025,7 +1021,7 @@ class NativePlaybackService : MediaSessionService() {
     }
 
     fun setVolume(sessionId: String, volume: Float): Map<String, Any?> {
-        val session = sessions[sessionId] ?: return errorResult("Unknown session.")
+        val session = sessionManager.get(sessionId) ?: return errorResult("Unknown session.")
         session.applyVolume(volume)
         publishSessionState(sessionId)
         schedulePersistSessionState()
@@ -1033,13 +1029,13 @@ class NativePlaybackService : MediaSessionService() {
     }
 
     fun setFadeMultiplier(sessionId: String, multiplier: Float): Map<String, Any?> {
-        val session = sessions[sessionId] ?: return errorResult("Unknown session.")
+        val session = sessionManager.get(sessionId) ?: return errorResult("Unknown session.")
         session.applyFadeMultiplier(multiplier)
         return okResult(session.snapshot())
     }
 
     fun setSpeed(sessionId: String, speed: Float): Map<String, Any?> {
-        val session = sessions[sessionId] ?: return errorResult("Unknown session.")
+        val session = sessionManager.get(sessionId) ?: return errorResult("Unknown session.")
         session.applySpeed(speed)
         publishSessionState(sessionId)
         schedulePersistSessionState()
@@ -1047,21 +1043,21 @@ class NativePlaybackService : MediaSessionService() {
     }
 
     fun setTemporarySpeed(sessionId: String, speed: Float?): Map<String, Any?> {
-        val session = sessions[sessionId] ?: return errorResult("Unknown session.")
+        val session = sessionManager.get(sessionId) ?: return errorResult("Unknown session.")
         session.applyTemporarySpeed(speed)
         publishSessionState(sessionId)
         return okResult(session.snapshot())
     }
 
     fun clearTemporarySpeeds() {
-        sessions.values.forEach { session ->
+        sessionManager.forEach { session ->
             session.applyTemporarySpeed(null)
             session.snapshot()
         }
     }
 
     internal fun setAudioEffects(sessionId: String, effects: NativeAudioEffects): Map<String, Any?> {
-        val session = sessions[sessionId] ?: return errorResult("Unknown session.")
+        val session = sessionManager.get(sessionId) ?: return errorResult("Unknown session.")
         val previousChannelSwap = session.channelSwapEnabled
         session.applyAudioEffects(effects)
         if (shouldEnsurePlayerForAudioEffects(effects, session.hasPlayer())) {
@@ -1079,7 +1075,7 @@ class NativePlaybackService : MediaSessionService() {
     internal fun setRepeatOne(args: NativeRepeatOneArguments): Map<String, Any?> {
         val sessionId = args.sessionId
         val repeatOne = args.repeatOne
-        val session = sessions[sessionId] ?: return errorResult("Unknown session.")
+        val session = sessionManager.get(sessionId) ?: return errorResult("Unknown session.")
         session.lastUsedMs = System.currentTimeMillis()
         session.repeatOne = repeatOne
         val queue = args.queue
@@ -1108,13 +1104,13 @@ class NativePlaybackService : MediaSessionService() {
     fun removeSession(sessionId: String): Map<String, Any?> {
         focusRecovery.removePending(sessionId)
         clearPlaybackIntent(sessionId)
-        val removed = sessions.remove(sessionId) ?: return okResult(null)
+        val wasFocused = focusedSessionId == sessionId
+        val removed = sessionManager.remove(sessionId) ?: return okResult(null)
         removed.release()
-        if (focusedSessionId == sessionId) {
-            focusedSessionId = sessions.keys.firstOrNull()
+        if (wasFocused) {
             updateMediaSessionPlayer()
         }
-        if (sessions.isEmpty()) {
+        if (sessionManager.isEmpty) {
             foregroundCoordinator.cancelGrace()
             foregroundCoordinator.stopWatchdog()
             stopStatePersistenceTicker()
@@ -1139,7 +1135,7 @@ class NativePlaybackService : MediaSessionService() {
         notificationsDismissed = true
         focusRecovery.clearInterruptionState()
         playbackRecovery.clearAll()
-        sessions.values.forEach { it.playerOrNull()?.pause() }
+        sessionManager.forEach { it.playerOrNull()?.pause() }
         evictPlayersIfNeeded()
         publishAllSessionStates()
         persistSessionStateNow()
@@ -1149,7 +1145,7 @@ class NativePlaybackService : MediaSessionService() {
         focusRecovery.abandon(reason = "pause_all")
         releaseWakeLock()
         PlaybackKeepAliveAlarmScheduler.cancel(this)
-        foregroundCoordinator.stop(reason = "pause_all", removeNotification = sessions.isEmpty())
+        foregroundCoordinator.stop(reason = "pause_all", removeNotification = sessionManager.isEmpty)
         return okResult(null)
     }
 
@@ -1157,9 +1153,8 @@ class NativePlaybackService : MediaSessionService() {
         notificationsDismissed = true
         focusRecovery.clearInterruptionState()
         playbackRecovery.clearAll()
-        sessions.values.forEach { it.release() }
-        sessions.clear()
-        focusedSessionId = null
+        sessionManager.forEach { it.release() }
+        sessionManager.clear()
         mediaSessionHost.release("clear_all")
         foregroundCoordinator.cancelGrace()
         foregroundCoordinator.stopWatchdog()
@@ -1179,7 +1174,7 @@ class NativePlaybackService : MediaSessionService() {
     fun snapshot(): Map<String, Any?> {
         val response = okResult(
             mapOf(
-                "sessions" to sessions.values.map {
+                "sessions" to sessionManager.allSessions.map {
                     it.snapshot(includeRetainedUris = true)
                 },
                 "focusedSessionId" to focusedSessionId
@@ -1260,9 +1255,7 @@ class NativePlaybackService : MediaSessionService() {
     }
 
     fun pausePlayingSessionsForTimer(): List<String> {
-        val pausedSessionIds = sessions.values
-            .filter { val p = it.playerOrNull(); p != null && (p.isPlaying || p.playWhenReady) }
-            .map { it.sessionId }
+        val pausedSessionIds = sessionManager.activePlaybackSessionIds()
         if (pausedSessionIds.isEmpty()) {
             syncForegroundState()
             return emptyList()
@@ -1271,7 +1264,7 @@ class NativePlaybackService : MediaSessionService() {
         pausedSessionIds.forEach { sessionId ->
             focusRecovery.removePending(sessionId)
             clearPlaybackIntent(sessionId)
-            sessions[sessionId]?.let { session ->
+            sessionManager.get(sessionId)?.let { session ->
                 session.playerOrNull()?.pause()
                 session.applyFadeMultiplier(1f)
             }
@@ -1287,12 +1280,12 @@ class NativePlaybackService : MediaSessionService() {
         if (sessionIds.isEmpty()) {
             return NativeTimerResumeResult(emptyList(), audioFocusDenied = false)
         }
-        restoreCoordinator.restoreMissingSessions(sessionIds, sessions.keys)
+        restoreCoordinator.restoreMissingSessions(sessionIds, sessionManager.sessionIds)
         notificationsDismissed = false
         playbackSuspended = false
         val resumableSessions = sessionIds.mapNotNull { sessionId ->
             focusRecovery.removePending(sessionId)
-            sessions[sessionId]?.also { session ->
+            sessionManager.get(sessionId)?.also { session ->
                 markPlaybackIntended(sessionId)
                 session.applyFadeMultiplier(1f)
                 focusSession(sessionId)
@@ -1324,23 +1317,11 @@ class NativePlaybackService : MediaSessionService() {
     }
 
     private fun evictPlayersIfNeeded() {
-        val idleSessions = sessions.values
-            .filter { session ->
-                val player = session.playerOrNull() ?: return@filter false
-                !player.isPlaying &&
-                    !player.playWhenReady &&
-                    !playbackRecovery.isIntended(session.sessionId) &&
-                    !focusRecovery.isPending(session.sessionId) &&
-                    !playbackRecovery.isPending(session.sessionId)
-            }
-        val releaseIds = idlePlaybackSessionIdsToRelease(
-            focusedSessionId = focusedSessionId,
-            idleSessionIds = idleSessions.map { it.sessionId }
+        sessionManager.evictIdlePlayers(
+            isIntended = playbackRecovery::isIntended,
+            isFocusPending = focusRecovery::isPending,
+            isRecoveryPending = playbackRecovery::isPending
         )
-        idleSessions
-            .filter { it.sessionId in releaseIds }
-            .sortedBy { it.lastUsedMs }
-            .forEach(NativePlaybackSession::releasePlayer)
     }
 
     private fun createNativePlaybackSession(sessionId: String): NativePlaybackSession {
@@ -1358,7 +1339,7 @@ class NativePlaybackService : MediaSessionService() {
         }
         logInfo(
             "player_state_changed state=${playbackStateName(playbackState)}",
-            sessions[sessionId]
+            sessionManager.get(sessionId)
         )
         publishSessionState(sessionId)
         schedulePersistSessionState()
@@ -1366,11 +1347,11 @@ class NativePlaybackService : MediaSessionService() {
     }
 
     private fun handleMediaItemTransition(sessionId: String, reason: Int) {
-        sessions[sessionId]?.syncCurrentMediaItemFromPlayer()
+        sessionManager.get(sessionId)?.syncCurrentMediaItemFromPlayer()
         playbackRecovery.resetHealth(sessionId, "media_item_transition")
         logInfo(
             "player_media_item_transition reason=$reason",
-            sessions[sessionId]
+            sessionManager.get(sessionId)
         )
         acquireWakeLock()
         publishSessionState(sessionId)
@@ -1391,7 +1372,7 @@ class NativePlaybackService : MediaSessionService() {
         logInfo(
             "player_play_when_ready_changed playWhenReady=$playWhenReady " +
                 "reason=${playWhenReadyReasonName(reason)}",
-            sessions[sessionId]
+            sessionManager.get(sessionId)
         )
         publishSessionState(sessionId)
         schedulePersistSessionState()
@@ -1399,7 +1380,7 @@ class NativePlaybackService : MediaSessionService() {
     }
 
     private fun handleIsPlayingChanged(sessionId: String, isPlaying: Boolean) {
-        logInfo("player_is_playing_changed isPlaying=$isPlaying", sessions[sessionId])
+        logInfo("player_is_playing_changed isPlaying=$isPlaying", sessionManager.get(sessionId))
         if (isPlaying) {
             playbackRecovery.onPlaying(sessionId)
             PlaybackTimerAlarmScheduler.onPlaybackStarted(this, sessionId)
@@ -1423,7 +1404,7 @@ class NativePlaybackService : MediaSessionService() {
     }
 
     private fun focusSession(sessionId: String) {
-        val session = sessions[sessionId] ?: return
+        val session = sessionManager.get(sessionId) ?: return
         session.lastUsedMs = System.currentTimeMillis()
         if (focusedSessionId == sessionId) return
         focusedSessionId = sessionId
@@ -1432,22 +1413,17 @@ class NativePlaybackService : MediaSessionService() {
 
     private fun ensureMediaSession(): MediaSession? = mediaSessionHost.ensure()
 
-    private fun updateMediaSessionPlayer() = mediaSessionHost.update(sessions.isNotEmpty())
+    private fun updateMediaSessionPlayer() = mediaSessionHost.update(sessionManager.isNotEmpty)
 
     private fun ensureFocusedPlayer(session: NativePlaybackSession): ExoPlayer =
-        mediaSessionHost.ensurePlayer(session, sessions.isNotEmpty())
+        mediaSessionHost.ensurePlayer(session, sessionManager.isNotEmpty)
 
     private fun ensureFocusedMediaSession(): MediaSession? {
         updateMediaSessionPlayer()
         return ensureMediaSession()
     }
 
-    private fun mediaSessionCandidate(): NativePlaybackSession? {
-        sessions[focusedSessionId]?.takeIf { it.playerOrNull() != null }?.let {
-            return it
-        }
-        return sessions.values.firstOrNull { it.playerOrNull() != null }
-    }
+    private fun mediaSessionCandidate(): NativePlaybackSession? = sessionManager.mediaSessionCandidate()
 
     private fun handleMediaSessionPlayerCommandRequest(
         command: Int,
@@ -1482,12 +1458,7 @@ class NativePlaybackService : MediaSessionService() {
         )
     }
 
-    private fun hasActivePlayback(): Boolean {
-        return sessions.values.any { 
-            val p = it.playerOrNull()
-            p != null && (p.isPlaying || p.playWhenReady)
-        }
-    }
+    private fun hasActivePlayback(): Boolean = sessionManager.hasActivePlayback()
 
     private fun markPlaybackIntended(sessionId: String) {
         playbackRecovery.markIntended(sessionId)
@@ -1501,13 +1472,7 @@ class NativePlaybackService : MediaSessionService() {
             focusRecovery.hasPendingResume() ||
             playbackRecovery.shouldKeepAlive()
     }
-    private fun foregroundSession(): NativePlaybackSession? =
-        sessions[focusedSessionId]
-            ?: sessions.values.firstOrNull { session ->
-                val player = session.playerOrNull()
-                player != null && (player.isPlaying || player.playWhenReady)
-            }
-            ?: sessions.values.firstOrNull()
+    private fun foregroundSession(): NativePlaybackSession? = sessionManager.foregroundSessionCandidate()
 
     private fun usesUnifiedForegroundNotification(): Boolean =
         !notificationsDismissed &&
@@ -1532,7 +1497,7 @@ class NativePlaybackService : MediaSessionService() {
         sessionIds.forEach { sessionId ->
             focusRecovery.removePending(sessionId)
             clearPlaybackIntent(sessionId)
-            sessions[sessionId]?.playerOrNull()?.pause()
+            sessionManager.get(sessionId)?.playerOrNull()?.pause()
             publishSessionState(sessionId)
         }
         if (!hasPlaybackToKeepAlive()) {
@@ -1548,7 +1513,7 @@ class NativePlaybackService : MediaSessionService() {
         stopStatePersistenceTicker()
         cancelScheduledPersistSessionState()
         playbackRecovery.clearAll()
-        sessions.values.forEach(NativePlaybackSession::releasePlayer)
+        sessionManager.forEach(NativePlaybackSession::releasePlayer)
         mediaSessionHost.release(reason)
     }
 
@@ -1611,7 +1576,7 @@ class NativePlaybackService : MediaSessionService() {
     }
 
     private fun updateWakeLockNetworkState() {
-        val hasNetwork = sessions.values.any { session ->
+        val hasNetwork = sessionManager.allSessions.any { session ->
             val p = session.playerOrNull()
             (p?.isPlaying == true || p?.playWhenReady == true || playbackRecovery.isIntended(session.sessionId)) &&
                 isNativePlaybackNetworkUri(session.uri)
@@ -1649,13 +1614,7 @@ class NativePlaybackService : MediaSessionService() {
     }
 
     private fun playbackLogState(session: NativePlaybackSession? = null): String {
-        val target = session
-            ?: sessions[focusedSessionId]
-            ?: sessions.values.firstOrNull { candidate ->
-                val player = candidate.playerOrNull()
-                player != null && (player.isPlaying || player.playWhenReady)
-            }
-            ?: sessions.values.firstOrNull()
+        val target = session ?: sessionManager.foregroundSessionCandidate()
         val player = target?.playerOrNull()
         val title = target?.title
             ?.replace('\n', ' ')
@@ -1686,12 +1645,12 @@ class NativePlaybackService : MediaSessionService() {
     }
 
     private fun publishSessionState(sessionId: String): Map<String, Any?>? {
-        val session = sessions[sessionId] ?: return null
+        val session = sessionManager.get(sessionId) ?: return null
         return publishNativePlaybackSessionState(session, stateListeners.values)
     }
 
     private fun publishAllSessionStates() {
-        sessions.keys.toList().forEach { publishSessionState(it) }
+        sessionManager.sessionIds.toList().forEach { publishSessionState(it) }
     }
 
     private fun okResult(value: Any?): Map<String, Any?> = channelSuccess(value)

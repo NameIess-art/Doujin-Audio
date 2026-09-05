@@ -1,19 +1,33 @@
-part of 'playlist_tab.dart';
+import 'dart:math';
 
-const double _playlistRowHeight = 88;
-const double _playlistCoverSize = 72;
-const double _playlistListHorizontalPadding = AppSpacing.xs;
-const EdgeInsets _playlistRowPadding = EdgeInsets.all(AppSpacing.xs);
-const RoundedRectangleBorder _playlistRowShape = RoundedRectangleBorder(
-  borderRadius: BorderRadius.all(
-    Radius.circular(LibraryLikeCardMetrics.cardRadius),
-  ),
-);
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path/path.dart' as path;
+
+import '../../../../app/presentation/app_presentation_providers.dart';
+import '../../../../app/state/app_runtime_providers.dart';
+import '../../../../app/theme/app_design_tokens.dart';
+import '../../../../app/theme/app_styles.dart';
+import '../../../../core/media/music_track.dart';
+import '../../../../core/widgets/app_feedback.dart';
+import '../../../../core/widgets/app_transitions.dart';
+import '../../../../core/widgets/async_cover_image.dart';
+import '../../../../core/widgets/library_like_cards.dart';
+import '../../../../core/widgets/shimmer_loading.dart';
+import '../../../../core/widgets/swipe_reveal_card.dart';
+import '../../../library/application/library_facade.dart';
+import '../../application/playback_facade.dart';
+import 'playlist_feature_icons.dart';
+import 'playlist_media_widgets.dart';
+import 'playlist_shared_helpers.dart';
+
+const double playlistListHorizontalPadding = AppSpacing.xs;
 
 const Color _playlistSelectionCheckmarkColor = Color(0xFF4CAF50);
 
-class _PlaylistSelectionIndicator extends StatelessWidget {
-  const _PlaylistSelectionIndicator({
+class PlaylistSelectionIndicator extends StatelessWidget {
+  const PlaylistSelectionIndicator({
+    super.key,
     required this.sessionId,
     required this.isSelected,
   });
@@ -75,8 +89,9 @@ class _PlaylistSelectionIndicator extends StatelessWidget {
   }
 }
 
-class _PlaylistPinnedIndicator extends StatelessWidget {
-  const _PlaylistPinnedIndicator({
+class PlaylistPinnedIndicator extends StatelessWidget {
+  const PlaylistPinnedIndicator({
+    super.key,
     required this.sessionId,
     this.color,
   });
@@ -117,8 +132,9 @@ class _PlaylistPinnedIndicator extends StatelessWidget {
   }
 }
 
-class _PlaylistLeadingIndicators extends StatelessWidget {
-  const _PlaylistLeadingIndicators({
+class PlaylistLeadingIndicators extends StatelessWidget {
+  const PlaylistLeadingIndicators({
+    super.key,
     required this.sessionId,
     required this.isSelected,
     required this.isPinned,
@@ -142,7 +158,7 @@ class _PlaylistLeadingIndicators extends StatelessWidget {
       padding: const EdgeInsets.only(right: AppSpacing.xs),
       child: SizedBox(
         width: 24,
-        height: _playlistCoverSize,
+        height: playlistCoverSize,
         child: Stack(
           clipBehavior: Clip.none,
           children: [
@@ -150,7 +166,7 @@ class _PlaylistLeadingIndicators extends StatelessWidget {
               Positioned(
                 top: 4,
                 left: 2,
-                child: _PlaylistPinnedIndicator(
+                child: PlaylistPinnedIndicator(
                   sessionId: sessionId,
                   color: pinColor,
                 ),
@@ -158,7 +174,7 @@ class _PlaylistLeadingIndicators extends StatelessWidget {
             Positioned(
               bottom: 4,
               left: 0,
-              child: _PlaylistSelectionIndicator(
+              child: PlaylistSelectionIndicator(
                 sessionId: sessionId,
                 isSelected: isSelected,
               ),
@@ -170,29 +186,8 @@ class _PlaylistLeadingIndicators extends StatelessWidget {
   }
 }
 
-LinearGradient _playlistActiveHighlightGradient(
-  bool isPlaying,
-  Color highlightColor,
-) => LinearGradient(
-  begin: Alignment.topLeft,
-  end: Alignment.bottomRight,
-  colors: isPlaying
-      ? <Color>[
-          highlightColor,
-          Colors.transparent,
-          Colors.transparent,
-          Colors.transparent,
-        ]
-      : const <Color>[
-          Colors.transparent,
-          Colors.transparent,
-          Colors.transparent,
-          Colors.transparent,
-        ],
-);
-
-class _PlaylistLoadingSkeleton extends StatelessWidget {
-  const _PlaylistLoadingSkeleton({
+class PlaylistLoadingSkeleton extends StatelessWidget {
+  const PlaylistLoadingSkeleton({
     super.key,
     required this.topPadding,
     required this.bottomPadding,
@@ -210,26 +205,26 @@ class _PlaylistLoadingSkeleton extends StatelessWidget {
           0.0,
           constraints.maxHeight - topPadding - bottomPadding,
         );
-        final cardCount = max(1, (contentHeight / _playlistRowHeight).ceil());
+        final cardCount = max(1, (contentHeight / playlistRowHeight).ceil());
         return ListView.builder(
           physics: const NeverScrollableScrollPhysics(),
           padding: EdgeInsets.fromLTRB(
-            _playlistListHorizontalPadding,
+            playlistListHorizontalPadding,
             topPadding,
-            _playlistListHorizontalPadding,
+            playlistListHorizontalPadding,
             bottomPadding,
           ),
           itemCount: cardCount,
           itemBuilder: (context, index) => Container(
             key: ValueKey<String>('playlist_skeleton_card_$index'),
-            height: _playlistRowHeight,
-            padding: _playlistRowPadding,
+            height: playlistRowHeight,
+            padding: playlistRowPadding,
             child: ShimmerLoader(
               child: Row(
                 children: [
                   Container(
-                    width: _playlistCoverSize,
-                    height: _playlistCoverSize,
+                    width: playlistCoverSize,
+                    height: playlistCoverSize,
                     decoration: BoxDecoration(
                       color: cs.surfaceContainerHigh,
                       borderRadius: AppRadius.borderCard,
@@ -280,8 +275,8 @@ class _PlaylistLoadingSkeleton extends StatelessWidget {
   }
 }
 
-class _SessionsEmptyState extends StatelessWidget {
-  const _SessionsEmptyState({
+class SessionsEmptyState extends StatelessWidget {
+  const SessionsEmptyState({
     super.key,
     required this.bottomInset,
     this.onOpenLibrary,
@@ -406,8 +401,9 @@ class _SessionsEmptyState extends StatelessWidget {
   }
 }
 
-class _SessionListCard extends ConsumerWidget {
-  const _SessionListCard({
+class SessionListCard extends ConsumerWidget {
+  const SessionListCard({
+    super.key,
     required this.sessionId,
     required this.track,
     required this.coverPath,
@@ -444,7 +440,7 @@ class _SessionListCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final isHidden = ref.watch(
-      isUndoableRemovalHiddenProvider(_playbackSessionRemovalKey(sessionId)),
+      isUndoableRemovalHiddenProvider(playbackSessionRemovalKey(sessionId)),
     );
     final cardState = ref.watch(playlistSessionCardStateProvider(sessionId));
     if (cardState == null) return const SizedBox.shrink();
@@ -493,12 +489,12 @@ class _SessionListCard extends ConsumerWidget {
       hidden: isHidden,
       child: SwipeRevealCard(
         key: ValueKey(sessionId),
-        shape: _playlistRowShape,
+        shape: playlistRowShape,
         closedColor: cs.surface,
         enabled: !isSelectionMode,
         actionLabel: i18n.tr('remove'),
         removeTooltip: i18n.tr('remove_audio'),
-        onRemove: () => _stagePlaybackSessionRemovals(context, ref, [sessionId]),
+        onRemove: () => stagePlaybackSessionRemovals(context, ref, [sessionId]),
         onLeadingAction: onTogglePin,
         leadingActionLabel: i18n.tr(isPinned ? 'unpin_from_top' : 'pin_to_top'),
         leadingActionTooltip:
@@ -506,20 +502,20 @@ class _SessionListCard extends ConsumerWidget {
         leadingActionIcon: Icons.push_pin_rounded,
         leadingActionIconWidget: isPinned ? const PushPinOffIcon() : null,
         child: ConstrainedBox(
-        constraints: const BoxConstraints(minHeight: _playlistRowHeight),
+        constraints: const BoxConstraints(minHeight: playlistRowHeight),
         child: Material(
           color: Colors.transparent,
           child: Card(
             margin: EdgeInsets.zero,
             clipBehavior: Clip.antiAlias,
-            shape: _playlistRowShape,
+            shape: playlistRowShape,
             color: Colors.transparent,
             elevation: 0,
             shadowColor: Colors.transparent,
             child: DecoratedBox(
               key: ValueKey<String>('playlist_card_highlight_$sessionId'),
               decoration: BoxDecoration(
-                gradient: _playlistActiveHighlightGradient(
+                gradient: playlistActiveHighlightGradient(
                   isPlaying,
                   highlightColor,
                 ),
@@ -551,14 +547,14 @@ class _SessionListCard extends ConsumerWidget {
                 },
                 child: Padding(
                   key: ValueKey<String>('playlist_card_content_$sessionId'),
-                  padding: _playlistRowPadding,
+                  padding: playlistRowPadding,
                   child: Row(
                     children: [
                       if (showCover) ...[
                         Stack(
                           clipBehavior: Clip.none,
                           children: [
-                            _SessionCoverThumbnail(
+                            SessionCoverThumbnail(
                               sessionId: sessionId,
                               track: track,
                               coverPath: coverPath,
@@ -570,7 +566,7 @@ class _SessionListCard extends ConsumerWidget {
                             Positioned(
                               left: 4,
                               bottom: 4,
-                              child: _PlaylistSelectionIndicator(
+                              child: PlaylistSelectionIndicator(
                                 sessionId: sessionId,
                                 isSelected: isSelected,
                               ),
@@ -579,7 +575,7 @@ class _SessionListCard extends ConsumerWidget {
                               Positioned(
                                 top: 4,
                                 left: 4,
-                                child: _PlaylistPinnedIndicator(
+                                child: PlaylistPinnedIndicator(
                                   sessionId: sessionId,
                                   color: isAsmrOne ? asmrBlue : localPlayRose,
                                 ),
@@ -588,7 +584,7 @@ class _SessionListCard extends ConsumerWidget {
                         ),
                         const SizedBox(width: AppSpacing.xs),
                       ] else ...[
-                        _PlaylistLeadingIndicators(
+                        PlaylistLeadingIndicators(
                           sessionId: sessionId,
                           isSelected: isSelected,
                           isPinned: isPinned,
@@ -633,9 +629,9 @@ class _SessionListCard extends ConsumerWidget {
                                 spacing: 10,
                                 runSpacing: 2,
                                 children: [
-                                  _SessionMetaChip(
+                                  SessionMetaChip(
                                     icon: Icons.repeat_rounded,
-                                    text: _playlistLoopModeSummary(
+                                    text: playlistLoopModeSummary(
                                       context,
                                       cardState.loopMode,
                                     ),

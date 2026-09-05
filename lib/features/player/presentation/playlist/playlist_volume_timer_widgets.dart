@@ -1,7 +1,14 @@
-part of 'playlist_tab.dart';
+import 'package:flutter/material.dart';
 
-class _TimerCountdownCapsule extends StatelessWidget {
-  const _TimerCountdownCapsule({
+import '../../../../core/media/time_text_formatters.dart';
+import '../../../../core/widgets/app_feedback.dart';
+import '../../../../core/widgets/target_countdown_builder.dart';
+import '../../../../core/widgets/top_page_header.dart';
+import 'playlist_shared_helpers.dart';
+
+class TimerCountdownCapsule extends StatelessWidget {
+  const TimerCountdownCapsule({
+    super.key,
     required this.remaining,
     required this.active,
     required this.autoResumeAt,
@@ -87,8 +94,8 @@ class _TimerCountdownCapsule extends StatelessWidget {
   }
 }
 
-class _TimecodeLabel extends StatelessWidget {
-  const _TimecodeLabel({required this.text, this.alignEnd = false});
+class TimecodeLabel extends StatelessWidget {
+  const TimecodeLabel({super.key, required this.text, this.alignEnd = false});
 
   final String text;
   final bool alignEnd;
@@ -101,9 +108,9 @@ class _TimecodeLabel extends StatelessWidget {
       text,
       textAlign: alignEnd ? TextAlign.end : TextAlign.start,
       style: Theme.of(context).textTheme.labelMedium?.copyWith(
-        color: _sessionDetailForeground(
+        color: sessionDetailForeground(
           cs,
-          _SessionDetailForegroundLevel.muted,
+          SessionDetailForegroundLevel.muted,
           darkFallback: cs.onSurface.withValues(alpha: 0.8),
         ),
         fontWeight: FontWeight.w800,

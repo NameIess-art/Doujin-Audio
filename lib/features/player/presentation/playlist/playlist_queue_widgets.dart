@@ -1,4 +1,35 @@
-part of 'playlist_tab.dart';
+import 'dart:async';
+
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path/path.dart' as path;
+
+import '../../../../app/presentation/app_presentation_providers.dart';
+import '../../../../app/state/app_runtime_providers.dart';
+import '../../../../app/theme/app_design_tokens.dart';
+import '../../../../app/theme/app_styles.dart';
+import '../../../../core/media/cover_image_resolution.dart';
+import '../../../../core/media/music_track.dart';
+import '../../../../core/media/path_matcher.dart';
+import '../../../../core/ui/undoable_removal_service.dart';
+import '../../../../core/widgets/app_bottom_sheet.dart';
+import '../../../../core/widgets/app_buttons.dart';
+import '../../../../core/widgets/app_dialog.dart';
+import '../../../../core/widgets/app_edge_fade_mask.dart';
+import '../../../../core/widgets/app_feedback.dart';
+import '../../../../core/widgets/app_transitions.dart';
+import '../../../../core/widgets/async_cover_image.dart';
+import '../../../../core/widgets/duration_overlay.dart';
+import '../../../../core/widgets/library_like_cards.dart';
+import '../../../../core/widgets/swipe_reveal_card.dart';
+import '../../../../core/widgets/top_page_header.dart';
+import '../../../library/application/library_facade.dart';
+import '../../application/playback_facade.dart';
+import '../../application/playback_session_snapshot.dart';
+import 'playlist_feature_icons.dart';
+import 'playlist_list_view.dart';
+import 'playlist_media_widgets.dart';
+import 'playlist_shared_helpers.dart';
 
 Future<void> _stagePlaybackQueueEntryRemoval(
   BuildContext context,
@@ -10,20 +41,21 @@ Future<void> _stagePlaybackQueueEntryRemoval(
   final service = ref.read(undoableRemovalServiceProvider);
   final staged = await service.stage(
     UndoableRemovalAction(
-      key: _playbackQueueEntryRemovalKey(sessionId, entryId),
+      key: playbackQueueEntryRemovalKey(sessionId, entryId),
       commit: () => playback.removePlaybackQueueEntry(sessionId, entryId),
       undo: () {},
     ),
   );
   if (staged && context.mounted) {
-    _showPlaybackRemovalFeedback(context, service);
+    showPlaybackRemovalFeedback(context, service);
   } else if (staged) {
     await service.commitPending();
   }
 }
 
-class _PlaybackQueueCard extends ConsumerWidget {
-  const _PlaybackQueueCard({
+class PlaybackQueueCard extends ConsumerWidget {
+  const PlaybackQueueCard({
+    super.key,
     required this.session,
     required this.library,
     required this.playback,
@@ -54,7 +86,7 @@ class _PlaybackQueueCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final isHidden = ref.watch(
-      isUndoableRemovalHiddenProvider(_playbackSessionRemovalKey(session.id)),
+      isUndoableRemovalHiddenProvider(playbackSessionRemovalKey(session.id)),
     );
     final cardState = ref.watch(playlistSessionCardStateProvider(session.id));
     if (cardState == null) return const SizedBox.shrink();
@@ -145,7 +177,7 @@ class _PlaybackQueueCard extends ConsumerWidget {
       hidden: isHidden,
       child: SwipeRevealCard(
         key: ValueKey(session.id),
-        shape: _playlistRowShape,
+        shape: playlistRowShape,
         color: revealActionColor,
         closedColor: cs.surface,
         enabled: !isSelectionMode,
@@ -161,14 +193,14 @@ class _PlaybackQueueCard extends ConsumerWidget {
         leadingActionIcon: Icons.push_pin_rounded,
         leadingActionIconWidget: isPinned ? const PushPinOffIcon() : null,
         child: ConstrainedBox(
-        constraints: const BoxConstraints(minHeight: _playlistRowHeight),
+        constraints: const BoxConstraints(minHeight: playlistRowHeight),
         child: Material(
           key: ValueKey('playback_queue_row_surface_${session.id}'),
           color: Colors.transparent,
           child: DecoratedBox(
             key: ValueKey('playback_queue_active_highlight_${session.id}'),
             decoration: BoxDecoration(
-              gradient: _playlistActiveHighlightGradient(
+              gradient: playlistActiveHighlightGradient(
                 isPlaying,
                 highlightColor,
               ),
@@ -202,7 +234,7 @@ class _PlaybackQueueCard extends ConsumerWidget {
                 key: ValueKey<String>(
                   'playback_queue_card_content_${session.id}',
                 ),
-                padding: _playlistRowPadding,
+                padding: playlistRowPadding,
                 child: Row(
                   children: [
                     if (coverItems.isNotEmpty) ...[
@@ -216,7 +248,7 @@ class _PlaybackQueueCard extends ConsumerWidget {
                           Positioned(
                             left: 4,
                             bottom: 4,
-                            child: _PlaylistSelectionIndicator(
+                            child: PlaylistSelectionIndicator(
                               sessionId: session.id,
                               isSelected: isSelected,
                             ),
@@ -225,7 +257,7 @@ class _PlaybackQueueCard extends ConsumerWidget {
                             Positioned(
                               top: 4,
                               left: 4,
-                              child: _PlaylistPinnedIndicator(
+                              child: PlaylistPinnedIndicator(
                                 sessionId: session.id,
                                 color: activeColor,
                               ),
@@ -273,7 +305,7 @@ class _PlaybackQueueCard extends ConsumerWidget {
                       ),
                       const SizedBox(width: AppSpacing.xs),
                     ] else ...[
-                      _PlaylistLeadingIndicators(
+                      PlaylistLeadingIndicators(
                         sessionId: session.id,
                         isSelected: isSelected,
                         isPinned: isPinned,
@@ -324,12 +356,12 @@ class _PlaybackQueueCard extends ConsumerWidget {
                               spacing: 10,
                               runSpacing: 2,
                               children: [
-                                _SessionMetaChip(
+                                SessionMetaChip(
                                   key: ValueKey<String>(
                                     'playback_queue_loop_mode_${session.id}',
                                   ),
                                   icon: Icons.repeat_rounded,
-                                  text: _playlistLoopModeSummary(
+                                  text: playlistLoopModeSummary(
                                     context,
                                     cardState.loopMode,
                                   ),
@@ -484,7 +516,7 @@ class _QueueCoverGrid extends StatelessWidget {
     return ClipRRect(
       key: const ValueKey('playback_queue_cover_grid'),
       borderRadius: BorderRadius.circular(LibraryLikeCardMetrics.coverRadius),
-      child: SizedBox.square(dimension: _playlistCoverSize, child: content),
+      child: SizedBox.square(dimension: playlistCoverSize, child: content),
     );
   }
 
@@ -893,7 +925,7 @@ class _PlaybackQueueEditPageState extends ConsumerState<PlaybackQueueEditPage> {
   }
 
   Future<void> _removeQueue(BuildContext context, WidgetRef ref) async {
-    if (await _stagePlaybackSessionRemovals(context, ref, [sessionId]) &&
+    if (await stagePlaybackSessionRemovals(context, ref, [sessionId]) &&
         context.mounted) {
       Navigator.of(context).pop();
     }
@@ -987,7 +1019,7 @@ class _PlaybackQueueAudioEditPageState
                 final queueEntries = queue.entries
                     .where(
                       (entry) => !removalState.isHidden(
-                        _playbackQueueEntryRemovalKey(sessionId, entry.id),
+                        playbackQueueEntryRemovalKey(sessionId, entry.id),
                       ),
                     )
                     .toList(growable: false);
@@ -1291,7 +1323,7 @@ class _QueueSourceAudioTile extends ConsumerWidget {
       track: track,
       title: track.displayName,
       subtitle: track.groupTitle,
-      rowHeight: track.isSingle ? _playlistRowHeight : 88.0,
+      rowHeight: track.isSingle ? playlistRowHeight : 88.0,
       color: playlistAreaBackground,
       trailing: Column(
         mainAxisSize: MainAxisSize.min,
@@ -1346,7 +1378,7 @@ class _QueueAudioEditCard extends ConsumerWidget {
     required this.title,
     required this.subtitle,
     required this.trailing,
-    this.rowHeight = _playlistRowHeight,
+    this.rowHeight = playlistRowHeight,
     this.color,
   });
 
@@ -1380,7 +1412,7 @@ class _QueueAudioEditCard extends ConsumerWidget {
       color: color ?? cs.surface,
       shadowColor: Colors.transparent,
       surfaceTintColor: Colors.transparent,
-      shape: _playlistRowShape,
+      shape: playlistRowShape,
       clipBehavior: Clip.antiAlias,
       child: SizedBox(
         height: rowHeight,
@@ -1402,7 +1434,7 @@ class _QueueAudioEditCard extends ConsumerWidget {
                           LibraryLikeCardMetrics.coverRadius,
                         ),
                         child: SizedBox.square(
-                          dimension: _playlistCoverSize,
+                          dimension: playlistCoverSize,
                           child: track == null
                               ? CoverFallbackArtwork(seed: title)
                               : _QueueTrackCover(

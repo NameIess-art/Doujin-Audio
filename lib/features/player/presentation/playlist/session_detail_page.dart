@@ -1,4 +1,104 @@
-part of 'playlist_tab.dart';
+import 'dart:async';
+import 'dart:io';
+import 'dart:math';
+import 'dart:ui';
+
+import 'package:flutter/material.dart';
+import 'package:flutter/physics.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../../../app/presentation/app_presentation_providers.dart';
+import '../../../../app/state/app_runtime_providers.dart';
+import '../../../../app/state/subtitle_settings_provider.dart';
+import '../../../../app/theme/app_design_tokens.dart';
+import '../../../../core/media/music_track.dart';
+import '../../../../core/ui/permission_action_controller.dart';
+import '../../../../core/ui/ui_interaction_coordinator.dart';
+import '../../../../core/widgets/app_transitions.dart';
+import '../../../../core/widgets/async_cover_image.dart';
+import '../../../../core/widgets/marquee_text.dart';
+import '../../../asmr/domain/asmr_models.dart';
+import '../../../asmr/presentation/asmr_work_detail_sheet.dart';
+import '../../../library/presentation/audio_detail_sheet.dart';
+import '../../../settings/application/settings_state.dart';
+import '../../application/playback_session_snapshot.dart';
+import '../../application/subtitle_overlay_controller.dart';
+import 'playlist_feature_icons.dart';
+import 'playlist_media_widgets.dart';
+import 'playlist_shared_helpers.dart';
+import 'playlist_time_segments.dart';
+import 'session_detail_content.dart';
+
+
+PageRoute<void> buildSessionDetailRoute({required String sessionId}) {
+  return SessionDetailRoute(sessionId: sessionId);
+}
+
+class SessionDetailRoute extends PageRoute<void> {
+  SessionDetailRoute({required this.sessionId}) {
+    _revealBehindNotifier.addListener(_handleRevealBehindChanged);
+  }
+
+  final String sessionId;
+  final ValueNotifier<bool> _revealBehindNotifier = ValueNotifier<bool>(false);
+
+  void _handleRevealBehindChanged() {
+    if (overlayEntries.isNotEmpty) {
+      overlayEntries.first.opaque = opaque;
+    }
+    changedInternalState();
+  }
+
+  @override
+  bool get opaque => !_revealBehindNotifier.value;
+
+  @override
+  Color? get barrierColor => Colors.transparent;
+
+  @override
+  bool get barrierDismissible => false;
+
+  @override
+  String? get barrierLabel => null;
+
+  @override
+  bool get maintainState => true;
+
+  @override
+  Duration get transitionDuration => const Duration(milliseconds: 220);
+
+  @override
+  Duration get reverseTransitionDuration => Duration.zero;
+
+  @override
+  Widget buildPage(
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+  ) {
+    return SessionDetailPage(
+      sessionId: sessionId,
+      revealBehindNotifier: _revealBehindNotifier,
+    );
+  }
+
+  @override
+  Widget buildTransitions(
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    Widget child,
+  ) {
+    return child;
+  }
+
+  @override
+  void dispose() {
+    _revealBehindNotifier.removeListener(_handleRevealBehindChanged);
+    _revealBehindNotifier.dispose();
+    super.dispose();
+  }
+}
 
 const double _kSessionDetailBackgroundBlurSigma = 32;
 const int _kAsmrSessionDetailBackgroundCacheWidth = 300;
@@ -78,30 +178,6 @@ ThemeData _createPlaybackQueueSessionDetailTheme(
   );
 }
 
-ButtonStyle _sessionDetailResetButtonStyle(BuildContext context) {
-  final colorScheme = Theme.of(context).colorScheme;
-  return FilledButton.styleFrom(
-    backgroundColor: colorScheme.primary,
-    foregroundColor: colorScheme.onPrimary,
-    disabledBackgroundColor: colorScheme.onSurface.withValues(alpha: 0.12),
-    disabledForegroundColor: colorScheme.onSurface.withValues(alpha: 0.50),
-    minimumSize: const Size(96, 40),
-    padding: const EdgeInsets.symmetric(horizontal: 20),
-    tapTargetSize: MaterialTapTargetSize.padded,
-    visualDensity: VisualDensity.standard,
-    shape: const StadiumBorder(),
-    elevation: 0,
-    textStyle: const TextStyle(
-      fontSize: 14,
-      fontWeight: FontWeight.w600,
-      height: 1,
-    ),
-  ).copyWith(
-    overlayColor: WidgetStatePropertyAll(
-      colorScheme.onPrimary.withValues(alpha: 0.14),
-    ),
-  );
-}
 
 class SessionDetailPage extends ConsumerStatefulWidget {
   const SessionDetailPage({
@@ -402,7 +478,7 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
                 final detailTrack = paths.trackByPath(
                   pageSession.currentTrackPath,
                 );
-                final coverPathFuture = _coverFutureForTrack(
+                final coverPathFuture = coverFutureForTrack(
                   ref.read(libraryFacadeProvider),
                   detailTrack,
                 );
@@ -532,7 +608,7 @@ class _SessionDetailScaffold extends ConsumerStatefulWidget {
 
 class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
     with WidgetsBindingObserver {
-  final _detailContentKey = GlobalKey<_SessionDetailContentState>();
+  final _detailContentKey = GlobalKey<SessionDetailContentState>();
   final PermissionActionController _permissionActionController =
       PermissionActionController();
   ThemeData? _cachedBaseTheme;
@@ -752,7 +828,7 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
               final shouldCollapse =
                   panelExpanded &&
                   (_segmentPanelDragDelta >
-                          _kSegmentPanelCollapseDragThreshold ||
+                          kSegmentPanelCollapseDragThreshold ||
                       velocity > 800);
               _segmentPanelDragDelta = 0;
               if (shouldCollapse) detailState?.collapseSegmentPanel();
@@ -817,7 +893,7 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                                 requestKey: session.id,
                                 initialPath: library
                                     .resolvedPlaybackCoverPathForTrack(track),
-                                retryFutureBuilder: () => _coverFutureForTrack(
+                                retryFutureBuilder: () => coverFutureForTrack(
                                   ref.read(libraryFacadeProvider),
                                   track,
                                 ),
@@ -886,9 +962,9 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                                     tooltip: i18n.tr('close'),
                                     icon: Icon(
                                       Icons.keyboard_arrow_down_rounded,
-                                      color: _sessionDetailForeground(
+                                      color: sessionDetailForeground(
                                         cs,
-                                        _SessionDetailForegroundLevel.muted,
+                                        SessionDetailForegroundLevel.muted,
                                       ),
                                       size: 32,
                                     ),
@@ -899,9 +975,9 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                                       settings.isGlobalEnabled(session.id)) ...[
                                     Icon(
                                       Icons.subtitles_rounded,
-                                      color: _sessionDetailForeground(
+                                      color: sessionDetailForeground(
                                         cs,
-                                        _SessionDetailForegroundLevel.muted,
+                                        SessionDetailForegroundLevel.muted,
                                       ),
                                       size: 20,
                                     ),
@@ -935,9 +1011,9 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                                         children: [
                                           SessionFeatureIconRow(
                                             featureIcons: featureIcons,
-                                            color: _sessionDetailForeground(
+                                            color: sessionDetailForeground(
                                               cs,
-                                              _SessionDetailForegroundLevel
+                                              SessionDetailForegroundLevel
                                                   .muted,
                                             ),
                                             iconSize: 20,
@@ -982,7 +1058,7 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                                 },
                                 child: KeyedSubtree(
                                   key: ValueKey('artwork_${session.id}'),
-                                  child: _SessionHeroArtwork(
+                                  child: SessionHeroArtwork(
                                     session: session,
                                     height: constraints.maxHeight,
                                     track: track,
@@ -1024,7 +1100,7 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                                 subtitleSettingsProvider,
                               );
 
-                              return _SessionDetailContent(
+                              return SessionDetailContent(
                                 key: _detailContentKey,
                                 session: session,
                                 segmentPanelExpandedNotifier:

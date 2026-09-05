@@ -1,7 +1,36 @@
-part of 'playlist_tab.dart';
+import 'dart:async';
+import 'dart:math';
+import 'dart:ui';
 
-class _SessionDetailContent extends ConsumerStatefulWidget {
-  const _SessionDetailContent({
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path/path.dart' as path;
+
+import '../../../../app/application/audio_path_coordinator.dart';
+import '../../../../app/state/app_runtime_providers.dart';
+import '../../../../core/media/music_track.dart';
+import '../../../../core/media/natural_sort.dart';
+import '../../../../core/media/path_display.dart';
+import '../../../../core/media/path_matcher.dart';
+import '../../../../core/media/time_text_formatters.dart';
+import '../../../../core/ui/undoable_removal_service.dart';
+import '../../../../core/widgets/app_bottom_sheet.dart';
+import '../../../../core/widgets/app_feedback.dart';
+import '../../../../core/widgets/app_transitions.dart';
+import '../../../../core/widgets/marquee_text.dart';
+import '../../../../core/widgets/scroll_activity_gate.dart';
+import '../../application/playback_facade.dart';
+import '../../application/playback_session_snapshot.dart';
+import '../../application/playback_time_segment_service.dart';
+import '../../domain/playback_queue.dart';
+import '../../domain/time_segment_label.dart';
+import 'playlist_progress_widgets.dart';
+import 'playlist_shared_helpers.dart';
+import 'playlist_time_segments.dart';
+import 'playlist_transport_controls.dart';
+
+class SessionDetailContent extends ConsumerStatefulWidget {
+  const SessionDetailContent({
     super.key,
     required this.session,
     required this.artworkWidget,
@@ -29,11 +58,11 @@ class _SessionDetailContent extends ConsumerStatefulWidget {
   final VoidCallback? onShowAudioDetail;
 
   @override
-  ConsumerState<_SessionDetailContent> createState() =>
-      _SessionDetailContentState();
+  ConsumerState<SessionDetailContent> createState() =>
+      SessionDetailContentState();
 }
 
-class _SessionDetailContentState extends ConsumerState<_SessionDetailContent> {
+class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
   late final TextEditingController _segmentNameController;
   bool _wasPlaying = false;
   bool _segmentPanelExpanded = false;
@@ -95,7 +124,7 @@ class _SessionDetailContentState extends ConsumerState<_SessionDetailContent> {
   }
 
   @override
-  void didUpdateWidget(covariant _SessionDetailContent oldWidget) {
+  void didUpdateWidget(covariant SessionDetailContent oldWidget) {
     super.didUpdateWidget(oldWidget);
     _syncSegmentTrack();
   }
@@ -285,7 +314,7 @@ class _SessionDetailContentState extends ConsumerState<_SessionDetailContent> {
 
   Future<void> _editDraftTime({required bool isStart}) async {
     final current = isStart ? _draftStart : _draftEnd;
-    final next = await _showSegmentTimeInputDialog(context, initial: current);
+    final next = await showSegmentTimeInputDialog(context, initial: current);
     if (next == null || !mounted) return;
     setState(() {
       if (isStart) {
@@ -376,7 +405,7 @@ class _SessionDetailContentState extends ConsumerState<_SessionDetailContent> {
     final service = ref.read(undoableRemovalServiceProvider);
     final staged = await service.stage(
       UndoableRemovalAction(
-        key: _timeSegmentRemovalKey(selected.id),
+        key: timeSegmentRemovalKey(selected.id),
         undo: () {},
         commit: () async {
           await _timeSegments.deleteLabel(selected.id);
@@ -395,7 +424,7 @@ class _SessionDetailContentState extends ConsumerState<_SessionDetailContent> {
       return;
     }
     setState(_clearSegmentDraft);
-    _showPlaybackRemovalFeedback(context, service, icon: Icons.sell_rounded);
+    showPlaybackRemovalFeedback(context, service, icon: Icons.sell_rounded);
   }
 
   @override
@@ -403,7 +432,7 @@ class _SessionDetailContentState extends ConsumerState<_SessionDetailContent> {
     final removalState = ref.watch(undoableRemovalStateProvider);
     final visibleSegmentLabels = _segmentLabels
         .where(
-          (label) => !removalState.isHidden(_timeSegmentRemovalKey(label.id)),
+          (label) => !removalState.isHidden(timeSegmentRemovalKey(label.id)),
         )
         .toList(growable: false);
     final cs = Theme.of(context).colorScheme;
@@ -439,7 +468,7 @@ class _SessionDetailContentState extends ConsumerState<_SessionDetailContent> {
     final selectedSegmentId = _segmentPanelExpanded ? _selectedSegmentId : null;
 
     Widget buildProgressBar() {
-      return _ProgressBar(
+      return SessionProgressBar(
         key: ValueKey('progress_${session.id}'),
         session: session,
         playback: playback,
@@ -451,7 +480,7 @@ class _SessionDetailContentState extends ConsumerState<_SessionDetailContent> {
     }
 
     Widget buildTransportControls() {
-      return _TransportPlaybackControlPanel(
+      return TransportPlaybackControlPanel(
         key: ValueKey(widget.isLandscape ? 'controls_landscape' : 'controls'),
         session: session,
         playback: playback,
@@ -503,9 +532,9 @@ class _SessionDetailContentState extends ConsumerState<_SessionDetailContent> {
                     text: folderName,
                     allowAndroidMarquee: true,
                     style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                      color: _sessionDetailForeground(
+                      color: sessionDetailForeground(
                         cs,
-                        _SessionDetailForegroundLevel.medium,
+                        SessionDetailForegroundLevel.medium,
                         darkFallback: cs.onSurface.withValues(alpha: 0.8),
                       ),
                       fontWeight: FontWeight.w700,
@@ -520,9 +549,9 @@ class _SessionDetailContentState extends ConsumerState<_SessionDetailContent> {
                       allowAndroidMarquee: true,
                       style: Theme.of(context).textTheme.headlineMedium
                           ?.copyWith(
-                            color: _sessionDetailForeground(
+                            color: sessionDetailForeground(
                               cs,
-                              _SessionDetailForegroundLevel.strong,
+                              SessionDetailForegroundLevel.strong,
                             ),
                             fontWeight: FontWeight.w900,
                             letterSpacing: -0.5,
@@ -536,7 +565,7 @@ class _SessionDetailContentState extends ConsumerState<_SessionDetailContent> {
           ),
           if (!_segmentPanelExpanded)
             RepaintBoundary(
-              child: _SessionSubtitlePanel(
+              child: SessionSubtitlePanel(
                 session: session,
                 subtitleEnabled: widget.subtitleEnabled,
               ),
@@ -613,7 +642,7 @@ class _SessionDetailContentState extends ConsumerState<_SessionDetailContent> {
                                         horizontal: 16,
                                         vertical: 16,
                                       ),
-                                      child: _TimeSegmentPanel(
+                                      child: TimeSegmentPanel(
                                         key: const ValueKey(
                                           'segments_landscape',
                                         ),
@@ -694,7 +723,7 @@ class _SessionDetailContentState extends ConsumerState<_SessionDetailContent> {
     required List<TimeSegmentLabel> labels,
     required Key key,
   }) {
-    return _TimeSegmentPanel(
+    return TimeSegmentPanel(
       key: key,
       session: session,
       playback: playback,

@@ -1,10 +1,29 @@
-part of 'playlist_tab.dart';
+import 'dart:async';
+import 'dart:math';
+import 'dart:ui';
+
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../../../app/application/audio_path_coordinator.dart';
+import '../../../../app/presentation/app_presentation_providers.dart';
+import '../../../../app/state/app_runtime_providers.dart';
+import '../../../../app/theme/app_design_tokens.dart';
+import '../../../../core/ui/ui_interaction_coordinator.dart';
+import '../../../../core/widgets/app_buttons.dart';
+import '../../../../core/widgets/app_dialog.dart';
+import '../../../../core/widgets/app_feedback.dart';
+import '../../../../core/widgets/app_transitions.dart';
+import '../../application/playback_facade.dart';
+import '../../application/playback_session_snapshot.dart';
+import 'playlist_loop_widgets.dart';
+import 'playlist_shared_helpers.dart';
 
 // Seven 50px controls plus the scroll view's 8px horizontal insets.
 const double _kPlaybackSecondaryControlsWidth = 366;
 
-class _TransportPlaybackControlPanel extends ConsumerWidget {
-  const _TransportPlaybackControlPanel({
+class TransportPlaybackControlPanel extends ConsumerWidget {
+  const TransportPlaybackControlPanel({
     super.key,
     required this.session,
     required this.playback,
@@ -457,9 +476,9 @@ class _PlaybackSecondaryControlsState
               icon: Icon(
                 Icons.close_rounded,
                 size: 20,
-                color: _sessionDetailForeground(
+                color: sessionDetailForeground(
                   cs,
-                  _SessionDetailForegroundLevel.muted,
+                  SessionDetailForegroundLevel.muted,
                 ),
               ),
               onPressed: () {
@@ -483,9 +502,9 @@ class _PlaybackSecondaryControlsState
                 size: 18,
                 color: isBoosted
                     ? cs.primary
-                    : _sessionDetailForeground(
+                    : sessionDetailForeground(
                         cs,
-                        _SessionDetailForegroundLevel.muted,
+                        SessionDetailForegroundLevel.muted,
                       ),
               ),
               onPressed: _toggleMute,
@@ -576,7 +595,7 @@ class _PlaybackSecondaryControlsState
             ),
             child: Row(
               children: [
-                _SessionLoopModeButton(
+                SessionLoopModeButton(
                   session: widget.session,
                   playback: widget.playback,
                 ),
@@ -711,9 +730,9 @@ class _PrimaryTransportButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final color = _sessionDetailForeground(
+    final color = sessionDetailForeground(
       cs,
-      _SessionDetailForegroundLevel.medium,
+      SessionDetailForegroundLevel.medium,
     );
     return IconButton(
       tooltip: tooltip,
@@ -760,9 +779,9 @@ class _SecondaryControlButton extends StatelessWidget {
               : Colors.transparent,
           foregroundColor: active
               ? cs.onPrimaryContainer
-              : _sessionDetailForeground(
+              : sessionDetailForeground(
                   cs,
-                  _SessionDetailForegroundLevel.muted,
+                  SessionDetailForegroundLevel.muted,
                 ),
           disabledForegroundColor: cs.onSurface.withValues(alpha: 0.35),
         ),

@@ -1,4 +1,25 @@
-part of 'playlist_tab.dart';
+import 'dart:async';
+import 'dart:math';
+
+import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../../../app/application/audio_path_coordinator.dart';
+import '../../../../app/presentation/app_presentation_providers.dart';
+import '../../../../app/state/app_runtime_providers.dart';
+import '../../../../app/theme/app_design_tokens.dart';
+import '../../../../core/media/subtitle_parser.dart';
+import '../../../../core/media/time_text_formatters.dart';
+import '../../../../core/widgets/app_feedback.dart';
+import '../../../settings/application/settings_state.dart';
+import '../../application/playback_facade.dart';
+import '../../application/playback_session_snapshot.dart';
+import '../../domain/time_segment_label.dart';
+import '../playback_error_text.dart';
+import '../playback_position_ui_gate.dart';
+import 'playlist_shared_helpers.dart';
+import 'playlist_volume_timer_widgets.dart';
 
 typedef _ProgressSliderValue = ({
   double maxMillis,
@@ -11,8 +32,8 @@ typedef _ProgressSliderValue = ({
 
 typedef _ProgressTimecodeValue = ({String elapsedText, String remainingText});
 
-class _ProgressBar extends StatelessWidget {
-  const _ProgressBar({
+class SessionProgressBar extends StatelessWidget {
+  const SessionProgressBar({
     super.key,
     required this.session,
     required this.playback,
@@ -574,8 +595,8 @@ class _ProgressTimecodeRow extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          _TimecodeLabel(text: value.elapsedText),
-          _TimecodeLabel(text: value.remainingText, alignEnd: true),
+          TimecodeLabel(text: value.elapsedText),
+          TimecodeLabel(text: value.remainingText, alignEnd: true),
         ],
       ),
     );
@@ -808,8 +829,9 @@ class _TimeSegmentDragTooltip extends StatelessWidget {
   }
 }
 
-class _SessionSubtitlePanel extends ConsumerStatefulWidget {
-  const _SessionSubtitlePanel({
+class SessionSubtitlePanel extends ConsumerStatefulWidget {
+  const SessionSubtitlePanel({
+    super.key,
     required this.session,
     this.subtitleEnabled = true,
   });
@@ -818,11 +840,11 @@ class _SessionSubtitlePanel extends ConsumerStatefulWidget {
   final bool subtitleEnabled;
 
   @override
-  ConsumerState<_SessionSubtitlePanel> createState() =>
+  ConsumerState<SessionSubtitlePanel> createState() =>
       _SessionSubtitlePanelState();
 }
 
-class _SessionSubtitlePanelState extends ConsumerState<_SessionSubtitlePanel> {
+class _SessionSubtitlePanelState extends ConsumerState<SessionSubtitlePanel> {
   late final PlaybackPositionUiGate _positionGate;
   final SubtitleTextCache _subtitleTextCache = SubtitleTextCache();
   SubtitleTrack? _subtitleTrack;
@@ -844,7 +866,7 @@ class _SessionSubtitlePanelState extends ConsumerState<_SessionSubtitlePanel> {
   }
 
   @override
-  void didUpdateWidget(covariant _SessionSubtitlePanel oldWidget) {
+  void didUpdateWidget(covariant SessionSubtitlePanel oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.session != widget.session) {
       _positionGate.updateSession(widget.session);
@@ -1080,9 +1102,9 @@ class _SubtitleChip extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
             textAlign: TextAlign.center,
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              color: _sessionDetailForeground(
+              color: sessionDetailForeground(
                 cs,
-                _SessionDetailForegroundLevel.medium,
+                SessionDetailForegroundLevel.medium,
                 darkFallback: cs.onSurface.withValues(alpha: 0.85),
               ),
               fontWeight: FontWeight.w600,
@@ -1449,9 +1471,9 @@ class _TimelineSubtitleViewState extends State<_TimelineSubtitleView> {
     final baseTextStyle =
         Theme.of(context).textTheme.bodyMedium ?? const TextStyle();
     final focusedTextStyle = baseTextStyle.copyWith(
-      color: _sessionDetailForeground(
+      color: sessionDetailForeground(
         cs,
-        _SessionDetailForegroundLevel.medium,
+        SessionDetailForegroundLevel.medium,
         darkFallback: cs.onSurface.withValues(alpha: 0.85),
       ),
       fontWeight: FontWeight.w600,
@@ -1459,9 +1481,9 @@ class _TimelineSubtitleViewState extends State<_TimelineSubtitleView> {
       height: 1.3,
     );
     final unfocusedTextStyle = focusedTextStyle.copyWith(
-      color: _sessionDetailForeground(
+      color: sessionDetailForeground(
         cs,
-        _SessionDetailForegroundLevel.muted,
+        SessionDetailForegroundLevel.muted,
         darkFallback: cs.onSurface.withValues(alpha: 0.72),
       ),
       fontWeight: FontWeight.w500,
@@ -1590,9 +1612,9 @@ class _TimelineSubtitleViewState extends State<_TimelineSubtitleView> {
                                       onPressed: _seekToFocusedSubtitle,
                                       icon: Icon(
                                         Icons.play_arrow_rounded,
-                                        color: _sessionDetailForeground(
+                                        color: sessionDetailForeground(
                                           cs,
-                                          _SessionDetailForegroundLevel.medium,
+                                          SessionDetailForegroundLevel.medium,
                                         ),
                                       ),
                                     ),

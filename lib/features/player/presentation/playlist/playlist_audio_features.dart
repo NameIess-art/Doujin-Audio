@@ -1,4 +1,22 @@
-part of 'playlist_tab.dart';
+import 'dart:async';
+
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../../../app/localization/app_language_provider.dart';
+import '../../../../app/presentation/app_presentation_providers.dart';
+import '../../../../app/state/app_runtime_providers.dart';
+import '../../../../core/ui/ui_interaction_coordinator.dart';
+import '../../../../core/ui/undoable_removal_service.dart';
+import '../../../../core/widgets/app_buttons.dart';
+import '../../../../core/widgets/app_dialog.dart';
+import '../../../../core/widgets/app_feedback.dart';
+import '../../../../core/widgets/unified_dropdown.dart';
+import '../../../settings/application/settings_command_controller.dart';
+import '../../application/playback_facade.dart';
+import '../../application/playback_session_snapshot.dart';
+import '../../domain/audio_effects.dart';
+import 'playlist_shared_helpers.dart';
 
 Future<void> _stageEqualizerPresetRemoval(
   BuildContext context,
@@ -15,7 +33,7 @@ Future<void> _stageEqualizerPresetRemoval(
   final flat = builtInEqPresets.first;
   final staged = await service.stage(
     UndoableRemovalAction(
-      key: _equalizerPresetRemovalKey(preset.id),
+      key: equalizerPresetRemovalKey(preset.id),
       prepare: () async {
         for (final sessionId in referencingSessionIds) {
           if (playback.hasSession(sessionId)) {
@@ -35,14 +53,18 @@ Future<void> _stageEqualizerPresetRemoval(
     ),
   );
   if (staged && context.mounted) {
-    _showPlaybackRemovalFeedback(context, service, icon: Icons.tune_rounded);
+    showPlaybackRemovalFeedback(context, service, icon: Icons.tune_rounded);
   } else if (staged) {
     await service.commitPending();
   }
 }
 
-class _AudioFeaturesPage extends ConsumerWidget {
-  const _AudioFeaturesPage({required this.session, required this.playback});
+class AudioFeaturesPage extends ConsumerWidget {
+  const AudioFeaturesPage({
+    super.key,
+    required this.session,
+    required this.playback,
+  });
 
   final PlaybackSessionSnapshot session;
   final PlaybackFacade playback;
@@ -60,7 +82,7 @@ class _AudioFeaturesPage extends ConsumerWidget {
     return ListView(
       padding: const EdgeInsets.only(top: 6),
       children: [
-        _FeatureSwitchTile(
+        FeatureSwitchTile(
           title: i18n.tr('skip_silence'),
           subtitle: i18n.tr('skip_silence_desc'),
           icon: Icons.fast_forward_rounded,
@@ -73,7 +95,7 @@ class _AudioFeaturesPage extends ConsumerWidget {
           },
         ),
         const SizedBox(height: 10),
-        _FeatureSwitchTile(
+        FeatureSwitchTile(
           title: i18n.tr('noise_reduction'),
           subtitle: i18n.tr('noise_reduction_desc'),
           icon: Icons.graphic_eq_rounded,
@@ -86,7 +108,7 @@ class _AudioFeaturesPage extends ConsumerWidget {
           },
         ),
         const SizedBox(height: 10),
-        _FeatureSwitchTile(
+        FeatureSwitchTile(
           title: i18n.tr('volume_normalization'),
           subtitle: i18n.tr('volume_normalization_desc'),
           icon: Icons.compress_rounded,
@@ -101,7 +123,7 @@ class _AudioFeaturesPage extends ConsumerWidget {
           },
         ),
         const SizedBox(height: 10),
-        _FeatureSwitchTile(
+        FeatureSwitchTile(
           title: i18n.tr('channel_swap'),
           subtitle: i18n.tr('channel_swap_desc'),
           icon: Icons.swap_horiz_rounded,
@@ -118,8 +140,9 @@ class _AudioFeaturesPage extends ConsumerWidget {
   }
 }
 
-class _FeatureSwitchTile extends StatelessWidget {
-  const _FeatureSwitchTile({
+class FeatureSwitchTile extends StatelessWidget {
+  const FeatureSwitchTile({
+    super.key,
     required this.title,
     required this.subtitle,
     required this.icon,
@@ -195,8 +218,12 @@ class _FeatureSwitchTile extends StatelessWidget {
   }
 }
 
-class _VolumeBalancePage extends ConsumerWidget {
-  const _VolumeBalancePage({required this.session, required this.playback});
+class VolumeBalancePage extends ConsumerWidget {
+  const VolumeBalancePage({
+    super.key,
+    required this.session,
+    required this.playback,
+  });
 
   final PlaybackSessionSnapshot session;
   final PlaybackFacade playback;
@@ -283,7 +310,7 @@ class _VolumeBalancePage extends ConsumerWidget {
             Center(
               child: FilledButton.tonal(
                 key: const ValueKey<String>('restore_volume_balance'),
-                style: _sessionDetailResetButtonStyle(context),
+                style: sessionDetailResetButtonStyle(context),
                 onPressed: panning.abs() < 0.001
                     ? null
                     : () {
@@ -305,8 +332,12 @@ class _VolumeBalancePage extends ConsumerWidget {
   }
 }
 
-class _EqualizerPage extends ConsumerWidget {
-  const _EqualizerPage({required this.session, required this.playback});
+class EqualizerPage extends ConsumerWidget {
+  const EqualizerPage({
+    super.key,
+    required this.session,
+    required this.playback,
+  });
 
   final PlaybackSessionSnapshot session;
   final PlaybackFacade playback;
@@ -328,7 +359,7 @@ class _EqualizerPage extends ConsumerWidget {
                 ref.read(settingsRepositoryProvider).customEqPresets)
             .where(
               (preset) =>
-                  !removalState.isHidden(_equalizerPresetRemovalKey(preset.id)),
+                  !removalState.isHidden(equalizerPresetRemovalKey(preset.id)),
             )
             .toList(growable: false);
     final presets = <EqPreset>[...builtInEqPresets, ...customPresets];
@@ -405,7 +436,7 @@ class _EqualizerPage extends ConsumerWidget {
         else
           ...eqCapabilities.bands.map((band) {
             final value = effects.eqBandLevels[band.frequencyHz] ?? 0.0;
-            return _EqBandSlider(
+            return EqBandSlider(
               label: _formatFrequency(band.frequencyHz),
               value: value.clamp(
                 eqCapabilities.minGainDb,
@@ -452,7 +483,7 @@ class _EqualizerPage extends ConsumerWidget {
               child: Center(
                 child: FilledButton.tonal(
                   key: const ValueKey<String>('reset_equalizer'),
-                  style: _sessionDetailResetButtonStyle(context),
+                  style: sessionDetailResetButtonStyle(context),
                   onPressed: hasAdjustedEqBands
                       ? () {
                           final flat = builtInEqPresets.first;
@@ -474,7 +505,7 @@ class _EqualizerPage extends ConsumerWidget {
                         ? 'delete_equalizer_preset'
                         : 'save_equalizer_preset',
                   ),
-                  style: _sessionDetailResetButtonStyle(context),
+                  style: sessionDetailResetButtonStyle(context),
                   onPressed: isCustomPresetSelected && selectedPresetId != null
                       ? () {
                           final selectedPreset = customPresets
@@ -562,8 +593,9 @@ class _EqualizerPage extends ConsumerWidget {
   }
 }
 
-class _EqBandSlider extends StatelessWidget {
-  const _EqBandSlider({
+class EqBandSlider extends StatelessWidget {
+  const EqBandSlider({
+    super.key,
     required this.label,
     required this.value,
     required this.min,
@@ -617,4 +649,16 @@ class _EqBandSlider extends StatelessWidget {
       ],
     );
   }
+}
+
+String _formatFrequency(int frequencyHz) {
+  if (frequencyHz >= 1000) {
+    final khz = frequencyHz / 1000;
+    return '${khz.toStringAsFixed(khz >= 10 ? 0 : 1)}k';
+  }
+  return '${frequencyHz}Hz';
+}
+
+String _presetLabel(AppLanguageProvider i18n, EqPreset preset) {
+  return preset.isCustom ? preset.labelKey : i18n.tr(preset.labelKey);
 }

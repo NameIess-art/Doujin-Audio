@@ -1,6 +1,29 @@
-part of 'playlist_tab.dart';
+import 'dart:async';
+import 'dart:io';
+import 'dart:math';
 
-bool _isSessionVideoReady(PlaybackSessionSnapshot session, MusicTrack? track) {
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../../../app/presentation/app_orientation_controller.dart';
+import '../../../../app/presentation/app_presentation_providers.dart';
+import '../../../../app/state/app_runtime_providers.dart';
+import '../../../../core/media/music_track.dart';
+import '../../../../core/media/path_matcher.dart';
+import '../../../../core/media/time_text_formatters.dart';
+import '../../../../core/ui/ui_interaction_coordinator.dart';
+import '../../../../core/widgets/app_feedback.dart';
+import '../../../../core/widgets/async_cover_image.dart';
+import '../../../settings/application/settings_state.dart';
+import '../../application/playback_facade.dart';
+import '../../application/playback_session_snapshot.dart';
+import '../playback_position_ui_gate.dart';
+import '../playlist_view_models.dart';
+import '../session_video_surface.dart';
+import '../session_video_viewport.dart';
+import 'playlist_shared_helpers.dart';
+
+bool isSessionVideoReady(PlaybackSessionSnapshot session, MusicTrack? track) {
   final loadedPath = session.loadedPath;
   return Platform.isAndroid &&
       track?.isVideo == true &&
@@ -13,7 +36,7 @@ bool shouldKeepSessionVideoFullscreen({
   required bool currentTrackIsVideo,
 }) => sessionExists && currentTrackIsVideo;
 
-Future<void> _showSessionVideoFullscreen(
+Future<void> showSessionVideoFullscreen(
   BuildContext context,
   WidgetRef ref, {
   required String sessionId,
@@ -30,7 +53,7 @@ Future<void> _showSessionVideoFullscreen(
     await Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
         fullscreenDialog: true,
-        builder: (_) => _SessionVideoFullscreenPage(
+        builder: (_) => SessionVideoFullscreenPage(
           sessionId: sessionId,
           trackPath: trackPath,
           fullscreenLease: lease,
@@ -45,8 +68,9 @@ Future<void> _showSessionVideoFullscreen(
 
 enum _FullscreenVideoPanMode { horizontalSeek, brightness, volume, ignored }
 
-class _SessionVideoFullscreenPage extends ConsumerStatefulWidget {
-  const _SessionVideoFullscreenPage({
+class SessionVideoFullscreenPage extends ConsumerStatefulWidget {
+  const SessionVideoFullscreenPage({
+    super.key,
     required this.sessionId,
     required this.trackPath,
     required this.fullscreenLease,
@@ -57,12 +81,12 @@ class _SessionVideoFullscreenPage extends ConsumerStatefulWidget {
   final AppVideoFullscreenLease fullscreenLease;
 
   @override
-  ConsumerState<_SessionVideoFullscreenPage> createState() =>
+  ConsumerState<SessionVideoFullscreenPage> createState() =>
       _SessionVideoFullscreenPageState();
 }
 
 class _SessionVideoFullscreenPageState
-    extends ConsumerState<_SessionVideoFullscreenPage>
+    extends ConsumerState<SessionVideoFullscreenPage>
     with WidgetsBindingObserver {
   static const _controlsTimeout = Duration(seconds: 3);
   static const _feedbackTimeout = Duration(milliseconds: 800);
@@ -616,7 +640,7 @@ class _SessionVideoFullscreenPageState
                     ),
                   ),
                 ),
-                if (_isSessionVideoReady(activeSession, track))
+                if (isSessionVideoReady(activeSession, track))
                   NativeSessionVideoSurface(sessionId: widget.sessionId),
                 Positioned.fromRect(
                   rect: gestureRect,

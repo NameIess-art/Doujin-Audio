@@ -224,6 +224,15 @@ extension PlaybackCommandTransport on PlaybackCommandCoordinator {
   Future<void> _handleSessionCompleted(String sessionId) async {
     final session = _sessions[sessionId];
     if (session == null) return;
+    if (_timerFacade.stopAfterCurrentTrack) {
+      _timerFacade.setStopAfterCurrentTrack(false);
+      session.isAdvancingAfterCompletion = false;
+      session.isLoading = false;
+      await _pauseSessionPlayback(session);
+      _syncNotificationState();
+      _notifyPlaybackChanged();
+      return;
+    }
     final nextTarget = _nextPathFor(session, forward: true);
     if (nextTarget == null) {
       session.isAdvancingAfterCompletion = false;

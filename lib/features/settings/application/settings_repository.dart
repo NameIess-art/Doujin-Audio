@@ -70,6 +70,7 @@ class SettingsRepository {
       InterruptionResumeBehavior.resume;
   StartupPlaybackRestoreBehavior startupPlaybackRestoreBehavior =
       StartupPlaybackRestoreBehavior.resume;
+  SleepModeAutoTrigger sleepModeAutoTrigger = SleepModeAutoTrigger.manual;
   bool allowDuplicateWorks = false;
   bool reduceAnimations = false;
   final AudioStateSlice<SettingsState> slice = AudioStateSlice<SettingsState>(
@@ -175,6 +176,10 @@ class SettingsRepository {
             (value) => value.name == playback['startupPlaybackRestoreBehavior'],
             orElse: () => StartupPlaybackRestoreBehavior.resume,
           );
+      sleepModeAutoTrigger = SleepModeAutoTrigger.values.firstWhere(
+        (value) => value.name == playback['sleepModeAutoTrigger'],
+        orElse: () => SleepModeAutoTrigger.manual,
+      );
       allowDuplicateWorks = playback['allowDuplicateWorks'] as bool? ?? false;
       reduceAnimations = playback['reduceAnimations'] as bool? ?? false;
       dlsiteMetadataLanguage = ContentLanguagePreference.fromName(
@@ -295,6 +300,7 @@ class SettingsRepository {
       'startupPlaybackRestoreBehavior': startupPlaybackRestoreBehavior.name,
       'allowDuplicateWorks': allowDuplicateWorks,
       'reduceAnimations': reduceAnimations,
+      'sleepModeAutoTrigger': sleepModeAutoTrigger.name,
     });
   }
 
@@ -707,6 +713,12 @@ class SettingsRepository {
     update: () => reduceAnimations = enabled,
   );
 
+  Future<void> setSleepModeAutoTrigger(SleepModeAutoTrigger trigger) =>
+      _setValue(
+        unchanged: sleepModeAutoTrigger == trigger,
+        update: () => sleepModeAutoTrigger = trigger,
+      );
+
   Future<void> _setValue({
     required bool unchanged,
     required void Function() update,
@@ -767,6 +779,7 @@ class SettingsRepository {
     startupPlaybackRestoreBehavior = StartupPlaybackRestoreBehavior.resume;
     allowDuplicateWorks = false;
     reduceAnimations = false;
+    sleepModeAutoTrigger = SleepModeAutoTrigger.manual;
   }
 
   String? _optionalString(Object? value) {
@@ -838,6 +851,7 @@ class SettingsRepository {
         startupPlaybackRestoreBehavior: startupPlaybackRestoreBehavior,
         allowDuplicateWorks: allowDuplicateWorks,
         reduceAnimations: reduceAnimations,
+        sleepModeAutoTrigger: sleepModeAutoTrigger,
         isInitialized: isInitialized,
       ),
     );

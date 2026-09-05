@@ -235,6 +235,17 @@ class PowerPlatformService {
     return result.valueOrNull ?? false;
   }
 
+  Future<bool> setKeepScreenOn(bool enabled) async {
+    if (!_isAndroid) return true;
+    final result = await _client.invoke<bool>(
+      PowerMethod.setKeepScreenOn,
+      arguments: <String, Object?>{'enabled': enabled},
+      decode: (value) => value as bool? ?? false,
+    );
+    _logFailure(PowerMethod.setKeepScreenOn, result);
+    return result.valueOrNull ?? false;
+  }
+
   Future<T?> _invokeBestEffort<T>(String method, [Object? arguments]) async {
     if (!_isAndroid) return null;
     final result = await _client.invoke<T?>(

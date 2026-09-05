@@ -260,6 +260,37 @@ extension _TimerTabBody on _TimerTabState {
             });
           },
         ),
+        const SizedBox(height: 8),
+        SwitchListTile(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+          tileColor: cs.surfaceContainerLow,
+          secondary: Icon(
+            Icons.music_note_rounded,
+            color: timerSlice.stopAfterCurrentTrack ? cs.primary : null,
+          ),
+          title: Text(
+            i18n.tr('stop_after_current_track'),
+            style: TextStyle(
+              fontSize: compactMode ? 13 : 14,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          subtitle: Text(
+            i18n.tr('stop_after_current_track_subtitle'),
+            style: TextStyle(
+              fontSize: compactMode ? 10 : 11,
+            ),
+          ),
+          value: timerSlice.stopAfterCurrentTrack,
+          onChanged: (enabled) {
+            AppInteractionFeedback.trigger(
+              AppInteractionFeedbackType.selection,
+            );
+            timer.setStopAfterCurrentTrack(enabled);
+          },
+        ),
       ];
       final confirmButton = FilledButton.icon(
         onPressed: _durationIsZero
@@ -511,6 +542,24 @@ extension _TimerTabBody on _TimerTabState {
                                 ),
                               ),
                             ],
+                            const Divider(height: 1),
+                            SwitchListTile(
+                              title: Text(i18n.tr('stop_after_current_track')),
+                              subtitle: Text(
+                                i18n.tr('stop_after_current_track_subtitle'),
+                              ),
+                              secondary: const Icon(Icons.music_note_rounded),
+                              value: timerSlice.stopAfterCurrentTrack,
+                              onChanged: (value) {
+                                AppInteractionFeedback.trigger(
+                                  AppInteractionFeedbackType.selection,
+                                );
+                                timer.setStopAfterCurrentTrack(value);
+                              },
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                            ),
                           ],
                         ),
                       ),

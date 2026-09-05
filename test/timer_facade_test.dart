@@ -267,6 +267,45 @@ void main() {
       _expectNewTimer(timerService, newGeneration);
       await _expectPersistedGeneration(newGeneration);
     });
+
+    test('stopAfterCurrentTrack toggles state and resets on cancel', () {
+      final timerService = TimerService();
+      final timer = TimerFacade.create(service: timerService);
+      addTearDown(timer.dispose);
+      var stateChanges = 0;
+      final fadeMultipliers = <double>[];
+      timer.attachRuntime(
+        hasPlayingSession: () => false,
+        sessions: () => const [],
+        pauseSession: (_) async => false,
+        activateAudioSession: () async => false,
+        resumeSession: (_) async => false,
+        onStateChanged: () {
+          stateChanges++;
+          timerService.syncSlice(isInitialized: true);
+        },
+        onRuntimeRestored: () {},
+        applyFadeMultiplier: fadeMultipliers.add,
+      );
+
+      expect(timer.stopAfterCurrentTrack, isFalse);
+      expect(timer.state.stopAfterCurrentTrack, isFalse);
+
+      timer.setStopAfterCurrentTrack(true);
+      expect(timer.stopAfterCurrentTrack, isTrue);
+      expect(timer.state.stopAfterCurrentTrack, isTrue);
+      expect(stateChanges, 1);
+
+      timer.setStopAfterCurrentTrack(false);
+      expect(timer.stopAfterCurrentTrack, isFalse);
+      expect(timer.state.stopAfterCurrentTrack, isFalse);
+      expect(fadeMultipliers, contains(1.0));
+
+      timer.setStopAfterCurrentTrack(true);
+      timer.cancelTimer();
+      expect(timer.stopAfterCurrentTrack, isFalse);
+      expect(timer.state.stopAfterCurrentTrack, isFalse);
+    });
   });
 }
 

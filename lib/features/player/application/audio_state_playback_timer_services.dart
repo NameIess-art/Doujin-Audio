@@ -156,6 +156,7 @@ class TimerService {
   int autoResumeMinute = 0;
   Timer? autoResumeTimer;
   DateTime? autoResumeAt;
+  bool stopAfterCurrentTrack = false;
   final AudioStateSlice<TimerStateSliceData> slice =
       AudioStateSlice<TimerStateSliceData>(TimerStateSliceData());
 
@@ -173,6 +174,7 @@ class TimerService {
         autoResumeMinute: autoResumeMinute,
         autoResumeAt: autoResumeAt,
         pausedByTimerSessionIds: pausedByTimerSessionIds,
+        stopAfterCurrentTrack: stopAfterCurrentTrack,
         isInitialized: isInitialized,
       ),
     );

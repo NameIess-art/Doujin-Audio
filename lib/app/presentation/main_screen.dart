@@ -38,6 +38,7 @@ import '../../core/widgets/mobile_overlay_inset.dart';
 import '../../features/library/presentation/library_tab.dart';
 import '../../features/asmr/presentation/asmr_tab.dart';
 import '../../features/player/application/playback_session.dart';
+import '../../features/player/presentation/bedtime_canvas_page.dart';
 
 part 'main_screen_notifications.dart';
 part 'main_screen_layout.dart';
@@ -106,6 +107,9 @@ List<_MainDestination> _resolveMainDestinations({
 class MainScreen extends ConsumerStatefulWidget {
   const MainScreen({super.key});
 
+  @visibleForTesting
+  static Duration sleepModeAutoTriggerDelay = const Duration(minutes: 5);
+
   @override
   ConsumerState<MainScreen> createState() => _MainScreenState();
 }
@@ -152,6 +156,9 @@ class _MainScreenState extends ConsumerState<MainScreen>
   String? _globalSubtitleOverlaySessionId;
   String? _globalSubtitleOverlayTrackPath;
   String? _lastGlobalSubtitleOverlayText;
+  Timer? _sleepModeAutoEntryTimer;
+  bool _sleepModeAutoEntryTriggeredThisRun = false;
+  SleepModeAutoTrigger? _lastSleepModeTrigger;
 
   @override
   void initState() {
@@ -178,6 +185,19 @@ class _MainScreenState extends ConsumerState<MainScreen>
     ref.listenManual<bool>(
       mainOverlayUiProvider.select((state) => state.hasPlayingSession),
       (_, hasPlayingSession) => _handlePlayingSessionChanged(hasPlayingSession),
+      fireImmediately: true,
+    );
+    ref.listenManual<SleepModeAutoTrigger>(
+      settingsStateProvider.select(
+        (value) =>
+            value.value?.sleepModeAutoTrigger ?? SleepModeAutoTrigger.manual,
+      ),
+      (_, _) => _evaluateSleepModeAutoTrigger(),
+      fireImmediately: true,
+    );
+    ref.listenManual<bool>(
+      timerStateProvider.select((state) => state.value?.active ?? false),
+      (_, _) => _evaluateSleepModeAutoTrigger(),
       fireImmediately: true,
     );
     ref.listenManual<bool>(
@@ -267,6 +287,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
 
   void _handlePlayingSessionChanged(bool hasPlayingSession) {
     if (!mounted) return;
+    _evaluateSleepModeAutoTrigger();
     if (Platform.isAndroid &&
         hasPlayingSession &&
         !_backgroundPlaybackPromptShownThisLaunch &&
@@ -276,6 +297,69 @@ class _MainScreenState extends ConsumerState<MainScreen>
         unawaited(_maybePromptForBackgroundPlaybackReliability());
       });
     }
+  }
+
+  void _evaluateSleepModeAutoTrigger() {
+    if (!mounted) return;
+    final settings = ref.read(settingsStateProvider).value;
+    final trigger =
+        settings?.sleepModeAutoTrigger ?? SleepModeAutoTrigger.manual;
+    if (_lastSleepModeTrigger != trigger) {
+      _sleepModeAutoEntryTimer?.cancel();
+      _sleepModeAutoEntryTimer = null;
+      _sleepModeAutoEntryTriggeredThisRun = false;
+      _lastSleepModeTrigger = trigger;
+    }
+
+    final hasPlaying = ref.read(mainOverlayUiProvider).hasPlayingSession;
+    final timerActive =
+        ref.read(timerStateProvider).value?.active ??
+        ref.read(timerFacadeProvider).state.active;
+
+    final shouldRun = switch (trigger) {
+      SleepModeAutoTrigger.manual => false,
+      SleepModeAutoTrigger.afterPlayback5min => hasPlaying,
+      SleepModeAutoTrigger.afterCountdown5min => timerActive,
+    };
+
+    if (!shouldRun) {
+      _sleepModeAutoEntryTimer?.cancel();
+      _sleepModeAutoEntryTimer = null;
+      _sleepModeAutoEntryTriggeredThisRun = false;
+      return;
+    }
+
+    if (_sleepModeAutoEntryTriggeredThisRun || BedtimeCanvasPage.isCanvasActive) {
+      return;
+    }
+
+    _sleepModeAutoEntryTimer ??= Timer(
+      MainScreen.sleepModeAutoTriggerDelay,
+      _onSleepModeAutoEntryTimerFired,
+    );
+  }
+
+  void _onSleepModeAutoEntryTimerFired() {
+    _sleepModeAutoEntryTimer = null;
+    if (!mounted) return;
+    final settings = ref.read(settingsStateProvider).value;
+    final trigger =
+        settings?.sleepModeAutoTrigger ?? SleepModeAutoTrigger.manual;
+    final hasPlaying = ref.read(mainOverlayUiProvider).hasPlayingSession;
+    final timerActive =
+        ref.read(timerStateProvider).value?.active ??
+        ref.read(timerFacadeProvider).state.active;
+
+    final conditionMet = switch (trigger) {
+      SleepModeAutoTrigger.manual => false,
+      SleepModeAutoTrigger.afterPlayback5min => hasPlaying,
+      SleepModeAutoTrigger.afterCountdown5min => timerActive,
+    };
+
+    if (!conditionMet) return;
+    _sleepModeAutoEntryTriggeredThisRun = true;
+    if (BedtimeCanvasPage.isCanvasActive) return;
+    Navigator.of(context).push(BedtimeCanvasPage.route());
   }
 
   void _queueAutoUpdateCheckIfReady() {
@@ -326,6 +410,8 @@ class _MainScreenState extends ConsumerState<MainScreen>
   @override
   void dispose() {
     UiInteractionCoordinator.instance.cancelInteraction(_pageSwitchInteraction);
+    _sleepModeAutoEntryTimer?.cancel();
+    _sleepModeAutoEntryTimer = null;
     _metricsRecoveryTimer?.cancel();
     _notificationSessionNavigationTimer?.cancel();
     _notificationSessionNavigationTimer = null;

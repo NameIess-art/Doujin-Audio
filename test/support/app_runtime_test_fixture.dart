@@ -280,6 +280,7 @@ final class AppRuntimeWidgetTestFixture {
     NativePlaybackRepository? providedNativePlaybackRepository,
     SettingsRepository? providedSettingsRepository,
     LibraryTreeSnapshotBuilder? libraryTreeSnapshotBuilder,
+    PowerPlatformService? powerPlatformService,
     void Function(SettingsRepository settingsRepository)?
     configureSettingsRepository,
   }) : notificationService = PlaybackNotificationService(),
@@ -324,7 +325,11 @@ final class AppRuntimeWidgetTestFixture {
       nativeRepository: nativePlaybackRepository,
       service: playbackService,
     );
-    timer = TimerFacade.create(service: timerService);
+    timer = TimerFacade.create(
+      service: timerService,
+      powerPlatformService: powerPlatformService ??
+          PowerPlatformService(isAndroidOverride: false),
+    );
     notifications = NotificationFacade.create(
       service: notificationService,
       stateService: notificationCoordinatorService,

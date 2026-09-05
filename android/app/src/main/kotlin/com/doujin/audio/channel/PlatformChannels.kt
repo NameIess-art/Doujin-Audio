@@ -61,6 +61,7 @@ internal object PowerMethods {
     const val SYNC_PLAYBACK_TIMER_ALARMS = "syncPlaybackTimerAlarms"
     const val ACQUIRE_WAKE_LOCK = "acquireWakeLock"
     const val RELEASE_WAKE_LOCK = "releaseWakeLock"
+    const val SET_KEEP_SCREEN_ON = "setKeepScreenOn"
 }
 
 internal object UpdateMethods {

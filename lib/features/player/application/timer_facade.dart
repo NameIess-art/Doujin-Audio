@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -159,6 +160,20 @@ final class TimerFacade {
     unawaited(saveSettings());
   }
 
+  bool get stopAfterCurrentTrack => _service.stopAfterCurrentTrack;
+
+  void setStopAfterCurrentTrack(bool enabled) {
+    if (_service.stopAfterCurrentTrack == enabled) return;
+    _service.stopAfterCurrentTrack = enabled;
+    if (!enabled) {
+      _applyFadeMultiplier(1.0);
+    }
+    _changed();
+  }
+
+  void applyFadeMultiplier(double multiplier) =>
+      _applyFadeMultiplier(multiplier);
+
   void setAutoResume(bool enabled, int hour, int minute) {
     _service.autoResumeEnabled = enabled;
     _service.autoResumeHour = hour;
@@ -248,6 +263,7 @@ final class TimerFacade {
     if (clearPausedSessions) {
       _service.pausedByTimerSessionIds.clear();
     }
+    _service.stopAfterCurrentTrack = false;
     _applyFadeMultiplier(1.0);
   }
 
@@ -361,6 +377,7 @@ final class TimerFacade {
   }
 
   void _maybeResetTimerAfterExpiry() {
+    _applyFadeMultiplier(1.0);
     if (_service.autoResumeAt != null ||
         _service.pausedByTimerSessionIds.isNotEmpty &&
             _service.autoResumeEnabled) {
@@ -795,7 +812,7 @@ final class TimerFacade {
     );
     if (tick.expired) {
       _service.timerRemaining = tick.remaining;
-      _applyFadeMultiplier(1.0);
+      _applyFadeMultiplier(0.0);
       _changed();
       _expireTimer();
       return;
@@ -803,10 +820,15 @@ final class TimerFacade {
     if (!tick.changed) return;
     _service.timerRemaining = tick.remaining;
     final duration = _service.timerDuration;
-    if (duration != null && duration.inMinutes >= 2) {
+    if (duration != null) {
       final remainingMs = _service.timerRemaining!.inMilliseconds;
-      if (remainingMs <= 120000) {
-        _applyFadeMultiplier((remainingMs / 120000.0).clamp(0.0, 1.0));
+      final fadeDurationMs = math.min(30000, duration.inMilliseconds ~/ 2);
+      if (fadeDurationMs > 0 && remainingMs <= fadeDurationMs) {
+        _applyFadeMultiplier(
+          (remainingMs / fadeDurationMs.toDouble()).clamp(0.0, 1.0),
+        );
+      } else if (remainingMs > fadeDurationMs) {
+        _applyFadeMultiplier(1.0);
       }
     }
     _changed();

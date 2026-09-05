@@ -59,6 +59,7 @@ final class PlaybackRuntimeBinding implements RuntimeBinding {
         notifications.syncPlaybackState();
       },
       onSessionPositionChanged: (session, position) {
+        playbackCommands.handleSessionPositionChanged(session, position);
         if (!notifications.isFocusedSessionId(session.id)) return;
         final changed = notifications.refreshSessionSubtitle(
           session,

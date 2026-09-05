@@ -23,6 +23,12 @@ enum InterruptionResumeBehavior { stayPaused, resume }
 
 enum StartupPlaybackRestoreBehavior { resume, pause }
 
+enum SleepModeAutoTrigger {
+  manual,
+  afterPlayback5min,
+  afterCountdown5min,
+}
+
 enum LibrarySortCriterion {
   name,
   voiceActor,
@@ -90,6 +96,7 @@ class SettingsState {
     this.transientAudioFocusLossBehavior = TransientAudioFocusLossBehavior.duck,
     this.interruptionResumeBehavior = InterruptionResumeBehavior.resume,
     this.startupPlaybackRestoreBehavior = StartupPlaybackRestoreBehavior.resume,
+    this.sleepModeAutoTrigger = SleepModeAutoTrigger.manual,
     this.allowDuplicateWorks = false,
     this.reduceAnimations = false,
     this.isInitialized = false,
@@ -147,6 +154,7 @@ class SettingsState {
   final TransientAudioFocusLossBehavior transientAudioFocusLossBehavior;
   final InterruptionResumeBehavior interruptionResumeBehavior;
   final StartupPlaybackRestoreBehavior startupPlaybackRestoreBehavior;
+  final SleepModeAutoTrigger sleepModeAutoTrigger;
   final bool allowDuplicateWorks;
   final bool reduceAnimations;
   final bool isInitialized;
@@ -211,6 +219,7 @@ class SettingsState {
         other.interruptionResumeBehavior == interruptionResumeBehavior &&
         other.startupPlaybackRestoreBehavior ==
             startupPlaybackRestoreBehavior &&
+        other.sleepModeAutoTrigger == sleepModeAutoTrigger &&
         other.allowDuplicateWorks == allowDuplicateWorks &&
         other.reduceAnimations == reduceAnimations &&
         other.isInitialized == isInitialized;
@@ -264,6 +273,7 @@ class SettingsState {
     transientAudioFocusLossBehavior,
     interruptionResumeBehavior,
     startupPlaybackRestoreBehavior,
+    sleepModeAutoTrigger,
     allowDuplicateWorks,
     reduceAnimations,
     isInitialized,

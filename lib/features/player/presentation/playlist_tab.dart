@@ -58,6 +58,7 @@ import '../../asmr/domain/asmr_models.dart';
 import '../../library/presentation/audio_detail_sheet.dart';
 import '../../library/application/library_facade.dart';
 import 'playlist_sorting.dart';
+import 'bedtime_canvas_page.dart';
 import '../../settings/application/settings_command_controller.dart';
 import '../../asmr/presentation/asmr_work_detail_sheet.dart';
 import '../../../app/presentation/screen_view_models.dart';
@@ -1234,17 +1235,28 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                                   active: headerState.timerActive,
                                   autoResumeAt: headerState.autoResumeAt,
                                   onTap: widget.onTimerTap,
+                                  onLongPress: () =>
+                                      _openTimerQuickMenu(context),
                                 )
                               : HeaderFloatingButton(
-                                  child: IconButton(
-                                    onPressed: widget.onTimerTap,
-                                    icon: const Icon(Icons.alarm_rounded),
-                                    tooltip: i18n.tr('timer'),
-                                    iconSize: 20,
-                                    padding: EdgeInsets.zero,
-                                    constraints: const BoxConstraints.tightFor(
-                                      width: 38,
-                                      height: 38,
+                                  child: GestureDetector(
+                                    onLongPress: () {
+                                      AppInteractionFeedback.trigger(
+                                        AppInteractionFeedbackType.selection,
+                                      );
+                                      _openTimerQuickMenu(context);
+                                    },
+                                    child: IconButton(
+                                      onPressed: widget.onTimerTap,
+                                      icon: const Icon(Icons.alarm_rounded),
+                                      tooltip: i18n.tr('timer'),
+                                      iconSize: 20,
+                                      padding: EdgeInsets.zero,
+                                      constraints:
+                                          const BoxConstraints.tightFor(
+                                        width: 38,
+                                        height: 38,
+                                      ),
                                     ),
                                   ),
                                 ),
@@ -1252,6 +1264,28 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                         const SizedBox(width: 8),
                         AppHeaderActionTransition(
                           delayIndex: 1,
+                          child: HeaderFloatingButton(
+                            child: IconButton(
+                              key: const ValueKey<String>(
+                                'playlist_sleep_canvas_button',
+                              ),
+                              onPressed: () {
+                                Navigator.of(context).push(BedtimeCanvasPage.route());
+                              },
+                              icon: const Icon(Icons.bedtime_outlined),
+                              tooltip: i18n.tr('sleep_mode'),
+                              iconSize: 20,
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints.tightFor(
+                                width: 38,
+                                height: 38,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        AppHeaderActionTransition(
+                          delayIndex: 2,
                           child: HeaderFloatingButton(
                             child: IconButton(
                               key: const ValueKey<String>(
@@ -1277,6 +1311,151 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  void _openTimerQuickMenu(BuildContext context) {
+    final timer = ref.read(timerFacadeProvider);
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
+    final cs = Theme.of(context).colorScheme;
+
+    unawaited(
+      AppBottomSheet.show<void>(
+        context: context,
+        builder: (sheetContext) => Consumer(
+          builder: (context, ref, _) {
+            final timerState =
+                ref.watch(timerStateProvider).value ?? timer.state;
+            return SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 16,
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.timer_outlined, color: cs.primary, size: 22),
+                        const SizedBox(width: 10),
+                        Text(
+                          i18n.tr('timer_title'),
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                    SwitchListTile(
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      tileColor: cs.surfaceContainerLow,
+                      secondary: Icon(
+                        Icons.music_note_rounded,
+                        color: timerState.stopAfterCurrentTrack
+                            ? cs.primary
+                            : null,
+                      ),
+                      title: Text(
+                        i18n.tr('stop_after_current_track'),
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      subtitle: Text(
+                        i18n.tr('stop_after_current_track_subtitle'),
+                        style: const TextStyle(fontSize: 11),
+                      ),
+                      value: timerState.stopAfterCurrentTrack,
+                      onChanged: (enabled) {
+                        AppInteractionFeedback.trigger(
+                          AppInteractionFeedbackType.selection,
+                        );
+                        timer.setStopAfterCurrentTrack(enabled);
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        ActionChip(
+                          avatar: const Icon(Icons.timer_10_rounded, size: 16),
+                          label: const Text('15 min'),
+                          onPressed: () {
+                            timer.configureTimer(
+                              TimerMode.manual,
+                              const Duration(minutes: 15),
+                            );
+                            timer.startCountdown();
+                            Navigator.of(sheetContext).pop();
+                          },
+                        ),
+                        ActionChip(
+                          avatar: const Icon(Icons.timer_rounded, size: 16),
+                          label: const Text('30 min'),
+                          onPressed: () {
+                            timer.configureTimer(
+                              TimerMode.manual,
+                              const Duration(minutes: 30),
+                            );
+                            timer.startCountdown();
+                            Navigator.of(sheetContext).pop();
+                          },
+                        ),
+                        ActionChip(
+                          avatar: const Icon(Icons.timer_rounded, size: 16),
+                          label: const Text('60 min'),
+                          onPressed: () {
+                            timer.configureTimer(
+                              TimerMode.manual,
+                              const Duration(minutes: 60),
+                            );
+                            timer.startCountdown();
+                            Navigator.of(sheetContext).pop();
+                          },
+                        ),
+                        ActionChip(
+                          avatar: const Icon(Icons.tune_rounded, size: 16),
+                          label: Text(i18n.tr('set_countdown')),
+                          onPressed: () {
+                            Navigator.of(sheetContext).pop();
+                            widget.onTimerTap?.call();
+                          },
+                        ),
+                      ],
+                    ),
+                    if (timerState.active || timerState.duration != null) ...[
+                      const SizedBox(height: 14),
+                      OutlinedButton.icon(
+                        onPressed: () {
+                          AppInteractionFeedback.trigger(
+                            AppInteractionFeedbackType.destructive,
+                          );
+                          timer.cancelTimer();
+                          Navigator.of(sheetContext).pop();
+                        },
+                        icon: const Icon(Icons.stop_circle_outlined),
+                        label: Text(i18n.tr('cancel_timer')),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: cs.error,
+                          side: BorderSide(color: cs.error),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
       ),
     );
   }

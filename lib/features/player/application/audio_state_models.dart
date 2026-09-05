@@ -55,6 +55,7 @@ class TimerStateSliceData {
     this.autoResumeMinute = 0,
     this.autoResumeAt,
     List<String> pausedByTimerSessionIds = const <String>[],
+    this.stopAfterCurrentTrack = false,
     this.isInitialized = false,
   }) : pausedByTimerSessionIds = immutableList(pausedByTimerSessionIds);
 
@@ -71,6 +72,7 @@ class TimerStateSliceData {
   /// Wall-clock time at which auto-resume will fire, or null if not scheduled.
   final DateTime? autoResumeAt;
   final List<String> pausedByTimerSessionIds;
+  final bool stopAfterCurrentTrack;
   final bool isInitialized;
 
   @override
@@ -87,6 +89,7 @@ class TimerStateSliceData {
         other.autoResumeMinute == autoResumeMinute &&
         other.autoResumeAt == autoResumeAt &&
         listEquals(other.pausedByTimerSessionIds, pausedByTimerSessionIds) &&
+        other.stopAfterCurrentTrack == stopAfterCurrentTrack &&
         other.isInitialized == isInitialized;
   }
 
@@ -103,6 +106,7 @@ class TimerStateSliceData {
     autoResumeMinute,
     autoResumeAt,
     Object.hashAll(pausedByTimerSessionIds),
+    stopAfterCurrentTrack,
     isInitialized,
   );
 }

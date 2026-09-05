@@ -13,6 +13,7 @@ import android.os.Build
 import android.os.Environment
 import android.os.PowerManager
 import android.provider.Settings
+import android.view.WindowManager
 import androidx.annotation.RequiresApi
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
@@ -116,6 +117,7 @@ internal class PowerMethodHandler(
             }
             PowerMethods.ACQUIRE_WAKE_LOCK -> envelope.success(acquireWakeLock(call))
             PowerMethods.RELEASE_WAKE_LOCK -> envelope.success(releaseWakeLock(call))
+            PowerMethods.SET_KEEP_SCREEN_ON -> envelope.success(setKeepScreenOn(call))
             else -> result.notImplemented()
             }
         } catch (error: IllegalArgumentException) {
@@ -314,7 +316,29 @@ internal class PowerMethodHandler(
         }
     }
 
+    private fun setKeepScreenOn(call: MethodCall): Boolean {
+        val enabled = call.argument<Boolean>("enabled") ?: false
+        return try {
+            activity.runOnUiThread {
+                if (enabled) {
+                    activity.window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                } else {
+                    activity.window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                }
+            }
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
     fun dispose() {
+        try {
+            activity.runOnUiThread {
+                activity.window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            }
+        } catch (_: Exception) {
+        }
         synchronized(activeWakeLocks) {
             for (lock in activeWakeLocks.values) {
                 try {

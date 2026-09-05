@@ -131,6 +131,41 @@ List<Widget> _buildSettingsPlaybackSection({
             );
           },
         ),
+        Consumer(
+          builder: (context, ref, _) {
+            final trigger = ref.watch(
+              settingsStateProvider.select(
+                (state) =>
+                    state.value?.sleepModeAutoTrigger ??
+                    SleepModeAutoTrigger.manual,
+              ),
+            );
+            return ListTile(
+              title: _settingsTitle(i18n.tr('sleep_mode_auto_trigger')),
+              leading: _settingsIcon(Icons.bedtime_outlined, cs.onSurface),
+              trailing: _settingsDropdown<SleepModeAutoTrigger>(
+                context,
+                value: trigger,
+                onChanged: (value) {
+                  if (value != null) {
+                    settings.setSleepModeAutoTrigger(value);
+                  }
+                },
+                items: SleepModeAutoTrigger.values
+                    .map(
+                      (value) => DropdownMenuItem<SleepModeAutoTrigger>(
+                        value: value,
+                        child: _settingsDropdownText(
+                          i18n.tr('sleep_mode_auto_trigger_${value.name}'),
+                        ),
+                      ),
+                    )
+                    .toList(),
+              ),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+            );
+          },
+        ),
       ],
     ),
     _SettingsSectionCard(

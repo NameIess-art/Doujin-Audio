@@ -6,12 +6,14 @@ class _TimerCountdownCapsule extends StatelessWidget {
     required this.active,
     required this.autoResumeAt,
     required this.onTap,
+    this.onLongPress,
   });
 
   final Duration remaining;
   final bool active;
   final DateTime? autoResumeAt;
   final VoidCallback? onTap;
+  final VoidCallback? onLongPress;
 
   @override
   Widget build(BuildContext context) {
@@ -40,6 +42,12 @@ class _TimerCountdownCapsule extends StatelessWidget {
                   AppInteractionFeedbackType.selection,
                 );
                 onTap?.call();
+              },
+              onLongPress: () {
+                AppInteractionFeedback.trigger(
+                  AppInteractionFeedbackType.selection,
+                );
+                onLongPress?.call();
               },
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),

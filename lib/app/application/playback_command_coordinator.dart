@@ -197,6 +197,23 @@ final class PlaybackCommandCoordinator implements NotificationPlaybackCommands {
   Future<void> handleSessionCompleted(String sessionId) =>
       _handleSessionCompleted(sessionId);
 
+  void handleSessionPositionChanged(
+    PlaybackSession session,
+    Duration position,
+  ) {
+    if (_timerFacade.stopAfterCurrentTrack &&
+        session.duration != null &&
+        session.duration! > Duration.zero) {
+      final remaining = session.duration! - position;
+      if (remaining <= const Duration(seconds: 15) &&
+          remaining > Duration.zero) {
+        _timerFacade.applyFadeMultiplier(
+          (remaining.inMilliseconds / 15000.0).clamp(0.0, 1.0),
+        );
+      }
+    }
+  }
+
   PlaybackAdvanceResult? resolveAdvance(
     PlaybackSession session, {
     required bool forward,

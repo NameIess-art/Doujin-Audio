@@ -237,6 +237,20 @@ class _LibrarySearchPageState extends ConsumerState<_LibrarySearchPage> {
     );
   }
 
+  Future<void> _toggleCurrentSelectionsPinned() async {
+    final selections = await _currentSelections();
+    if (!mounted || selections.isEmpty) return;
+    unawaited(
+      AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection),
+    );
+    final paths =
+        selections.map((selection) => selection.path).toList(growable: false);
+    _exitSelectionMode();
+    await ref
+        .read(settingsRepositoryProvider)
+        .toggleLibraryPathsPinned(paths);
+  }
+
   Future<void> _removeCurrentSelections() async {
     final selections = await _currentSelections();
     if (!mounted) return;
@@ -605,6 +619,12 @@ class _LibrarySearchPageState extends ConsumerState<_LibrarySearchPage> {
               AppPageHeaderMetrics.bottomSpacing
         : AppSearchPageScaffold.controlsTopInset(context);
 
+    final pinnedLibraryPaths = ref.watch(
+      settingsStateProvider.select(
+        (s) => s.value?.pinnedLibraryPaths.toSet() ?? const <String>{},
+      ),
+    );
+
     final Widget body;
     if (_categoryType == AudioLibraryCategoryType.all) {
       body = _buildAllResults(
@@ -622,8 +642,14 @@ class _LibrarySearchPageState extends ConsumerState<_LibrarySearchPage> {
         bottomPadding: MediaQuery.paddingOf(context).bottom + 16,
         cacheExtent: 320,
         detailRevision: detailRevision,
+        pinnedPaths: pinnedLibraryPaths,
       );
     }
+
+    final isAllPinned = _selectedLibraryPaths.isNotEmpty &&
+        _selectedLibraryPaths.every(
+          (p) => pinnedLibraryPaths.contains(PathMatcher.normalize(p)),
+        );
 
     return AppSearchPageScaffold<AudioLibraryCategoryType>(
       controller: _controller,
@@ -646,12 +672,16 @@ class _LibrarySearchPageState extends ConsumerState<_LibrarySearchPage> {
               keyPrefix: 'library_search',
               i18n: i18n,
               selectedCount: _selectedLibraryPaths.length,
+              isPinned: isAllPinned,
               onAddToPlaylist: _selectedLibraryPaths.isEmpty
                   ? null
                   : () => unawaited(_addCurrentSelectionsToPlaylist()),
               onCompleteMetadata: _selectedLibraryPaths.isEmpty
                   ? null
                   : () => unawaited(_completeCurrentSelectionsMetadata()),
+              onTogglePin: _selectedLibraryPaths.isEmpty
+                  ? null
+                  : () => unawaited(_toggleCurrentSelectionsPinned()),
               onRemove: _selectedLibraryPaths.isEmpty
                   ? null
                   : () => unawaited(_removeCurrentSelections()),

@@ -819,23 +819,21 @@ class LibraryLikeSingleAudioCardContent extends StatelessWidget {
           enableMarquee: enableTitleMarquee,
         ),
         if (lines.isNotEmpty) ...[
-          const SizedBox(height: 8),
+          const SizedBox(height: 4),
           Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              for (var i = 0; i < lines.length; i++) ...[
-                if (i > 0) const SizedBox(height: 4),
+              for (final line in lines)
                 LibraryLikeDetailInfoLine(
-                  label: lines[i].label,
-                  text: lines[i].text,
+                  label: line.label,
+                  text: line.text,
                   style: infoStyle,
                   loading: false,
-                  lines: lines[i].lines,
+                  lines: line.lines,
                   accentColor: accentColor,
                   enableMarquee: enableMarquee,
                 ),
-              ],
             ],
           ),
         ],

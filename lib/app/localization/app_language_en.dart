@@ -564,8 +564,6 @@ const Map<String, String> appLanguageEn = {
       'Shows background playback status and media controls.',
   'permission_background_description':
       'Reduces the chance of some devices restricting playback while the screen is off.',
-  'permission_exact_alarm_description':
-      'Improves sleep timer auto-resume reliability.',
   'permission_manage_files_description':
       'Only needed for advanced direct filesystem library scans. Prefer the system folder picker.',
   'permission_overlay_description':
@@ -630,14 +628,10 @@ const Map<String, String> appLanguageEn = {
   'notification_settings_open_failed':
       'Could not open notification settings. Please change it manually in system settings.',
   'open_notification_settings': 'Open notification settings',
-  'exact_alarm_permission_status': 'Exact alarm status',
   'exact_alarm_permission_ready':
       'Exact alarms are available, which improves long-running background auto-resume reliability.',
   'exact_alarm_permission_missing':
       'Exact alarms are disabled, so auto-resume after long background time may be unreliable.',
-  'exact_alarm_permission_checking': 'Checking exact alarm status...',
-  'exact_alarm_settings_open_failed':
-      'Could not open exact alarm settings. Please change it manually in system settings.',
   'clear_app_cache': 'Clear app cache',
   'clear_app_cache_confirm':
       'This clears cache files created by the app. Library source files will not be deleted. Continue?',

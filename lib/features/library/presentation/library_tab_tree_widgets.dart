@@ -16,6 +16,88 @@ class _LibrarySelectionIndicator extends StatelessWidget {
   );
 }
 
+class _LibraryPinnedIndicator extends StatelessWidget {
+  const _LibraryPinnedIndicator({this.path});
+
+  final String? path;
+
+  @override
+  Widget build(BuildContext context) {
+    final pinColor = Theme.of(context).colorScheme.primary;
+    final normalizedPath = path == null ? null : PathMatcher.normalize(path!);
+    return IgnorePointer(
+      child: ExcludeSemantics(
+        child: Container(
+          key: normalizedPath == null
+              ? null
+              : ValueKey<String>('library_pinned_$normalizedPath'),
+          width: 20,
+          height: 20,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: pinColor,
+            border: Border.all(color: Colors.white, width: 1.5),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.28),
+                blurRadius: 4,
+                offset: const Offset(0, 1),
+              ),
+            ],
+          ),
+          child: const Icon(
+            Icons.push_pin_rounded,
+            size: 12,
+            color: Colors.white,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _LibraryLeadingIndicators extends StatelessWidget {
+  const _LibraryLeadingIndicators({
+    this.path,
+    required this.isSelected,
+    required this.isPinned,
+  });
+
+  final String? path;
+  final bool isSelected;
+  final bool isPinned;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!isPinned && !isSelected) {
+      return const SizedBox.shrink();
+    }
+    return Padding(
+      padding: const EdgeInsets.only(right: AppSpacing.xs),
+      child: SizedBox(
+        width: 24,
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            if (isPinned)
+              Positioned(
+                top: 0,
+                left: 2,
+                child: _LibraryPinnedIndicator(path: path),
+              ),
+            if (isSelected)
+              const Positioned(
+                bottom: 0,
+                left: 0,
+                child: _LibrarySelectionIndicator(),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _LibraryTreeItem extends StatelessWidget {
   const _LibraryTreeItem({
     super.key,
@@ -272,6 +354,16 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
     final cs = Theme.of(context).colorScheme;
     final folder = _loadedFolder ?? widget.folder;
     final isRootFolder = folder.depth == 0;
+    final isPinned = isRootFolder &&
+        ref.watch(
+          settingsStateProvider.select(
+            (s) =>
+                s.value?.pinnedLibraryPaths.contains(
+                  PathMatcher.normalize(folder.path),
+                ) ??
+                false,
+          ),
+        );
     final rootDetailState = isRootFolder
         ? ref.watch(
             libraryDetailForTargetProvider(
@@ -358,6 +450,7 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
                 onPlay: () => unawaited(_playFolder(context, playback)),
                 index: widget.index,
                 isSelected: widget.isSelected,
+                isPinned: isPinned,
               )
             : SizedBox(
                 height: _childFolderTileHeight,
@@ -525,6 +618,21 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
                 ),
               )
             : null,
+        onLeadingAction: isRootFolder
+            ? () => unawaited(
+                ref
+                    .read(settingsRepositoryProvider)
+                    .toggleLibraryPathPinned(widget.folder.path),
+              )
+            : null,
+        leadingActionLabel: isRootFolder
+            ? i18n.tr(isPinned ? 'unpin_from_top' : 'pin_to_top')
+            : null,
+        leadingActionTooltip: isRootFolder
+            ? i18n.tr(isPinned ? 'unpin_from_top' : 'pin_to_top')
+            : null,
+        leadingActionIcon: Icons.push_pin_rounded,
+        leadingActionIconWidget: isPinned ? const PushPinOffIcon() : null,
         onRemove: () => _removeFolder(context),
         onWillReveal: _expansionController.collapse,
         child: cardContent,
@@ -580,6 +688,16 @@ class _TrackNodeWidget extends ConsumerWidget {
     final playback = ref.read(playbackFacadeProvider);
     final cs = Theme.of(context).colorScheme;
     final track = trackNode.track;
+    final isPinned = track.isSingle &&
+        ref.watch(
+          settingsStateProvider.select(
+            (s) =>
+                s.value?.pinnedLibraryPaths.contains(
+                  PathMatcher.normalize(track.path),
+                ) ??
+                false,
+          ),
+        );
     final singleDetailState = track.isSingle
         ? ref.watch(
             libraryDetailForTargetProvider(
@@ -645,6 +763,16 @@ class _TrackNodeWidget extends ConsumerWidget {
               AudioDetailTarget.singleAudioFile(track.path),
             ),
           ),
+          onLeadingAction: () => unawaited(
+            ref
+                .read(settingsRepositoryProvider)
+                .toggleLibraryPathPinned(track.path),
+          ),
+          leadingActionLabel: i18n.tr(isPinned ? 'unpin_from_top' : 'pin_to_top'),
+          leadingActionTooltip:
+              i18n.tr(isPinned ? 'unpin_from_top' : 'pin_to_top'),
+          leadingActionIcon: Icons.push_pin_rounded,
+          leadingActionIconWidget: isPinned ? const PushPinOffIcon() : null,
           onRemove: () => _removeTrack(context, ref, track),
           child: Card(
             margin: EdgeInsets.zero,
@@ -652,7 +780,7 @@ class _TrackNodeWidget extends ConsumerWidget {
             shape: cardShape,
             color: isSelected
                 ? cs.primaryContainer.withValues(alpha: 0.25)
-                : (isAlreadyPlaying && !track.isVideo)
+                : (isAlreadyPlaying && !track.isVideo && useFeaturedCard)
                 ? Color.alphaBlend(
                     cs.primaryContainer.withValues(alpha: 0.40),
                     cs.surface,
@@ -672,36 +800,43 @@ class _TrackNodeWidget extends ConsumerWidget {
                       detailLoading: isSingleDetailLoading,
                       index: index,
                       isSelected: isSelected,
+                      isPinned: isPinned,
                       onPlay: () => unawaited(playSingleTrack()),
                     ),
                   )
                 : Padding(
                     padding: const EdgeInsets.fromLTRB(12, 12, 6, 12),
-                    child: Row(
-                      children: [
-                        if (isSelected) ...[
-                          const _LibrarySelectionIndicator(),
-                          const SizedBox(width: AppSpacing.xs),
+                    child: IntrinsicHeight(
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          _LibraryLeadingIndicators(
+                            path: track.path,
+                            isSelected: isSelected,
+                            isPinned: isPinned,
+                          ),
+                          Expanded(
+                            child: _SingleAudioFileCardContent(
+                              title: track.displayName,
+                              detail: singleDetail,
+                              detailLoading: isSingleDetailLoading,
+                            ),
+                          ),
+                          Center(
+                            child: IconButton(
+                              onPressed: () => unawaited(playSingleTrack()),
+                              style: IconButton.styleFrom(
+                                foregroundColor: cs.primary,
+                                minimumSize: const Size(40, 44),
+                                maximumSize: const Size(40, 44),
+                                padding: EdgeInsets.zero,
+                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              ),
+                              icon: const Icon(Icons.add_circle_rounded, size: 25),
+                            ),
+                          ),
                         ],
-                        Expanded(
-                          child: _SingleAudioFileCardContent(
-                            title: track.displayName,
-                            detail: singleDetail,
-                            detailLoading: isSingleDetailLoading,
-                          ),
-                        ),
-                        IconButton(
-                          onPressed: () => unawaited(playSingleTrack()),
-                          style: IconButton.styleFrom(
-                            foregroundColor: cs.primary,
-                            minimumSize: const Size(40, 44),
-                            maximumSize: const Size(40, 44),
-                            padding: EdgeInsets.zero,
-                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                          ),
-                          icon: const Icon(Icons.add_circle_rounded, size: 25),
-                        ),
-                      ],
+                      ),
                     ),
                   ),
           ),
@@ -994,6 +1129,7 @@ class _RootFolderCardContent extends StatelessWidget {
     required this.hasChildren,
     required this.onPlay,
     this.isSelected = false,
+    this.isPinned = false,
     this.index,
   });
 
@@ -1006,6 +1142,7 @@ class _RootFolderCardContent extends StatelessWidget {
   final bool hasChildren;
   final VoidCallback onPlay;
   final bool isSelected;
+  final bool isPinned;
   final int? index;
 
   @override
@@ -1031,6 +1168,12 @@ class _RootFolderCardContent extends StatelessWidget {
               left: 4,
               bottom: 4,
               child: _LibrarySelectionIndicator(),
+            ),
+          if (isPinned)
+            Positioned(
+              left: 4,
+              top: 4,
+              child: _LibraryPinnedIndicator(path: folderPath),
             ),
         ],
       ),
@@ -1130,6 +1273,7 @@ class _SingleMediaFileCardContent extends StatelessWidget {
     required this.detailLoading,
     required this.onPlay,
     this.isSelected = false,
+    this.isPinned = false,
     this.index,
   });
 
@@ -1139,6 +1283,7 @@ class _SingleMediaFileCardContent extends StatelessWidget {
   final bool detailLoading;
   final VoidCallback onPlay;
   final bool isSelected;
+  final bool isPinned;
   final int? index;
 
   @override
@@ -1162,6 +1307,12 @@ class _SingleMediaFileCardContent extends StatelessWidget {
               left: 4,
               bottom: 4,
               child: _LibrarySelectionIndicator(),
+            ),
+          if (isPinned)
+            Positioned(
+              left: 4,
+              top: 4,
+              child: _LibraryPinnedIndicator(path: track.path),
             ),
         ],
       ),

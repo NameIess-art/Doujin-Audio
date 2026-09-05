@@ -228,8 +228,17 @@ class CoverArtworkCacheService {
 
   String? resolvedForFolder(String folderPath) {
     final normalizedFolderPath = PathMatcher.normalize(folderPath);
-    return _resolvedFolderCovers[normalizedFolderPath] ??
+    final resolved = _resolvedFolderCovers[normalizedFolderPath] ??
         _artworkStore.resolvedPath(_folderStoreKey(normalizedFolderPath));
+    if (resolved != null) return resolved;
+    final selected = _folderCoverSelections[normalizedFolderPath];
+    if (selected != null &&
+        !PathMatcher.isContentUri(selected) &&
+        !PathMatcher.isRemoteUri(selected) &&
+        path.isAbsolute(selected)) {
+      return selected;
+    }
+    return null;
   }
 
   String? resolvedForRemoteCover(String url) {
@@ -282,6 +291,7 @@ class CoverArtworkCacheService {
     MusicTrack? track, {
     String? trackPath,
   }) async {
+    await _ensureFolderCoverSelections();
     final folderScope = _preferTrackEmbeddedCover(track, trackPath: trackPath)
         ? null
         : _playbackFallbackFolderScopeForTrack(track, trackPath: trackPath);
@@ -403,6 +413,21 @@ class CoverArtworkCacheService {
     return directoryPath;
   }
 
+  String? _enclosingFolderForTrack(
+    MusicTrack? track, {
+    String? trackPath,
+  }) {
+    final pathValue = trackPath ?? track?.path;
+    if (pathValue == null || pathValue.isEmpty) return null;
+    if (PathMatcher.isRemoteUri(pathValue) ||
+        PathMatcher.isContentUri(pathValue)) {
+      return null;
+    }
+    final directoryPath = path.dirname(pathValue);
+    if (directoryPath.isEmpty || directoryPath == '.') return null;
+    return PathMatcher.normalize(directoryPath);
+  }
+
   String? _playbackFallbackFolderScopeForTrack(
     MusicTrack? track, {
     String? trackPath,
@@ -411,11 +436,32 @@ class CoverArtworkCacheService {
     final pathValue = trackPath ?? track.path;
     if (pathValue.isEmpty) return null;
     if (PathMatcher.isRemoteUri(pathValue)) return null;
+
+    final folderScope = coverScopeFolderForTrack(track, trackPath: trackPath);
+    final enclosingFolder = _enclosingFolderForTrack(
+      track,
+      trackPath: trackPath,
+    );
+    final explicitScope = (folderScope != null &&
+            _folderCoverSelections.containsKey(
+              PathMatcher.normalize(folderScope),
+            ))
+        ? folderScope
+        : ((enclosingFolder != null &&
+                _folderCoverSelections.containsKey(
+                  PathMatcher.normalize(enclosingFolder),
+                ))
+            ? enclosingFolder
+            : null);
+    if (explicitScope != null) {
+      return explicitScope;
+    }
+
     if (_isVideoTrack(track, trackPath: trackPath) ||
         _isStandaloneAudioTrack(track, trackPath: trackPath)) {
       return null;
     }
-    return coverScopeFolderForTrack(track, trackPath: trackPath);
+    return folderScope;
   }
 
   bool _preferTrackEmbeddedCover(MusicTrack? track, {String? trackPath}) {
@@ -1015,13 +1061,13 @@ class CoverArtworkCacheService {
     MusicTrack? track, {
     String? trackPath,
   }) async {
+    await _ensureFolderCoverSelections();
     final folderScope = _playbackFallbackFolderScopeForTrack(
       track,
       trackPath: trackPath,
     );
     if (folderScope == null) return null;
     final normalizedFolderScope = PathMatcher.normalize(folderScope);
-    await _ensureFolderCoverSelections();
     var selectedCover = _folderCoverSelections[normalizedFolderScope];
     var selectedCoverPath = await _displayPathForStoredCover(
       AudioDetailTarget.libraryRootFolder(normalizedFolderScope),

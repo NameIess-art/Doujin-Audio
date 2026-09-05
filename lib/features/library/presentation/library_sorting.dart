@@ -2,6 +2,7 @@ import '../../../core/media/audio_detail.dart';
 import '../../../core/media/list_sorting_utils.dart';
 import '../../../core/media/natural_sort.dart';
 import '../../../core/media/music_track.dart';
+import '../../../core/media/path_matcher.dart';
 import '../../settings/application/settings_state.dart';
 import '../application/library_facade.dart';
 import '../domain/library_node.dart';
@@ -12,13 +13,24 @@ List<LibraryNode> sortLibraryNodes({
   required bool ascending,
   required bool groupByLibrary,
   required LibraryFacade library,
+  Set<String> pinnedPaths = const <String>{},
 }) {
   if (nodes.length < 2) return nodes;
+  final normalizedPinned = pinnedPaths.isEmpty
+      ? const <String>{}
+      : pinnedPaths.map(PathMatcher.normalize).toSet();
   final items = [
     for (final node in nodes)
-      (node: node, value: _librarySortValue(node, library)),
+      (
+        node: node,
+        value: _librarySortValue(node, library),
+        pinned: normalizedPinned.contains(PathMatcher.normalize(node.path)),
+      ),
   ];
   items.sort((left, right) {
+    if (left.pinned != right.pinned) {
+      return left.pinned ? -1 : 1;
+    }
     final leftValue = left.value;
     final rightValue = right.value;
     if (groupByLibrary) {

@@ -128,6 +128,8 @@ class _LibraryBatchSelectionHeader extends StatelessWidget {
     required this.selectedCount,
     required this.onAddToPlaylist,
     required this.onCompleteMetadata,
+    this.onTogglePin,
+    this.isPinned = false,
     required this.onRemove,
     required this.onExit,
   });
@@ -137,6 +139,8 @@ class _LibraryBatchSelectionHeader extends StatelessWidget {
   final int selectedCount;
   final VoidCallback? onAddToPlaylist;
   final VoidCallback? onCompleteMetadata;
+  final VoidCallback? onTogglePin;
+  final bool isPinned;
   final VoidCallback? onRemove;
   final VoidCallback onExit;
 
@@ -158,9 +162,9 @@ class _LibraryBatchSelectionHeader extends StatelessWidget {
               onPressed: onAddToPlaylist,
               icon: const Icon(Icons.playlist_add_rounded),
               tooltip: i18n.tr('batch_add_to_playlist'),
-              iconSize: 18,
+              iconSize: 20,
               padding: EdgeInsets.zero,
-              constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+              constraints: HeaderActionPill.buttonConstraints,
             ),
           ),
           AppHeaderActionTransition(
@@ -172,21 +176,35 @@ class _LibraryBatchSelectionHeader extends StatelessWidget {
               onPressed: onCompleteMetadata,
               icon: const Icon(Icons.library_add_check_rounded),
               tooltip: i18n.tr('batch_metadata'),
-              iconSize: 18,
+              iconSize: 20,
               padding: EdgeInsets.zero,
-              constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+              constraints: HeaderActionPill.buttonConstraints,
             ),
           ),
           AppHeaderActionTransition(
             delayIndex: 2,
             child: IconButton(
+              key: ValueKey<String>('${keyPrefix}_batch_pin_button'),
+              onPressed: onTogglePin,
+              icon: isPinned
+                  ? const PushPinOffIcon()
+                  : const Icon(Icons.push_pin_rounded),
+              tooltip: i18n.tr(isPinned ? 'unpin_from_top' : 'pin_to_top'),
+              iconSize: 20,
+              padding: EdgeInsets.zero,
+              constraints: HeaderActionPill.buttonConstraints,
+            ),
+          ),
+          AppHeaderActionTransition(
+            delayIndex: 3,
+            child: IconButton(
               key: ValueKey<String>('${keyPrefix}_batch_remove_button'),
               onPressed: onRemove,
               icon: const Icon(Icons.delete_outline_rounded),
               tooltip: i18n.tr('remove'),
-              iconSize: 18,
+              iconSize: 20,
               padding: EdgeInsets.zero,
-              constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+              constraints: HeaderActionPill.buttonConstraints,
             ),
           ),
         ],
@@ -299,6 +317,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
   int? _sortedTreeStructureRevision;
   int? _sortedTreeContentRevision;
   int? _sortedTreeDetailRevision;
+  Set<String>? _sortedTreePinnedPaths;
 
   @override
   int get tabIndex => widget.tabIndex;
@@ -944,6 +963,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     required int structureRevision,
     required int contentRevision,
     required int detailRevision,
+    required Set<String> pinnedPaths,
   }) {
     if (identical(_sortedTreeSource, rawTree) &&
         _sortedTreeCriterion == criterion &&
@@ -951,7 +971,8 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
         _sortedTreeGroupByLibrary == groupByLibrary &&
         _sortedTreeStructureRevision == structureRevision &&
         _sortedTreeContentRevision == contentRevision &&
-        _sortedTreeDetailRevision == detailRevision) {
+        _sortedTreeDetailRevision == detailRevision &&
+        setEquals(_sortedTreePinnedPaths, pinnedPaths)) {
       return _sortedTreeCache!;
     }
 
@@ -961,6 +982,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
       ascending: ascending,
       groupByLibrary: groupByLibrary,
       library: libraryFacade,
+      pinnedPaths: pinnedPaths,
     );
     _sortedTreeSource = rawTree;
     _sortedTreeCriterion = criterion;
@@ -969,6 +991,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     _sortedTreeStructureRevision = structureRevision;
     _sortedTreeContentRevision = contentRevision;
     _sortedTreeDetailRevision = detailRevision;
+    _sortedTreePinnedPaths = Set<String>.unmodifiable(pinnedPaths);
     return _sortedTreeCache = sortedTree;
   }
 
@@ -1041,6 +1064,12 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
         (state) => state.value?.libraryGroupByLibrary ?? false,
       ),
     );
+    final pinnedLibraryPaths = _readOrWatch(
+      settingsStateProvider.select(
+        (state) =>
+            state.value?.pinnedLibraryPaths.toSet() ?? const <String>{},
+      ),
+    );
     final libraryRefreshOperationBusy = _readOrWatch(
       uiOperationForScopeProvider(
         UiOperationScope.libraryRefresh,
@@ -1073,6 +1102,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
       structureRevision: listStateStructureRevision,
       contentRevision: libraryFacade.contentRevision,
       detailRevision: libraryDetailRevision,
+      pinnedPaths: pinnedLibraryPaths,
     );
     final visibleItems = _visibleLibraryItems(
       tree: tree,
@@ -1335,6 +1365,20 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                               selections: selectedSelections,
                               exitSelectionMode: _exitSelectionMode,
                             ),
+                      onTogglePin: selectedSelections.isEmpty
+                          ? null
+                          : () => _toggleLibraryBatchSelectionsPinned(
+                              context: context,
+                              ref: ref,
+                              selections: selectedSelections,
+                              exitSelectionMode: _exitSelectionMode,
+                            ),
+                      isPinned: selectedSelections.isNotEmpty &&
+                          selectedSelections.every(
+                            (s) => pinnedLibraryPaths.contains(
+                              PathMatcher.normalize(s.path),
+                            ),
+                          ),
                       onRemove: selectedSelections.isEmpty
                           ? null
                           : () => _removeLibraryBatchSelections(
@@ -1455,7 +1499,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
           tooltip: i18n.tr('add'),
           iconSize: 20,
           padding: EdgeInsets.zero,
-          constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+          constraints: HeaderActionPill.buttonConstraints,
           entries: [
             UnifiedMenuEntry<_LibraryAddAction>.action(
               value: _LibraryAddAction.importFolder,
@@ -1494,7 +1538,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
           tooltip: i18n.tr('edit_library'),
           iconSize: 20,
           padding: EdgeInsets.zero,
-          constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+          constraints: HeaderActionPill.buttonConstraints,
         ),
         IconButton(
           key: const ValueKey<String>('library_batch_metadata_button'),
@@ -1503,7 +1547,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
           tooltip: i18n.tr('batch_metadata'),
           iconSize: 20,
           padding: EdgeInsets.zero,
-          constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+          constraints: HeaderActionPill.buttonConstraints,
         ),
         IconButton(
           key: const ValueKey<String>('library_video_to_audio_button'),
@@ -1512,7 +1556,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
           tooltip: i18n.tr('video_to_audio'),
           iconSize: 20,
           padding: EdgeInsets.zero,
-          constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+          constraints: HeaderActionPill.buttonConstraints,
         ),
       ],
     );

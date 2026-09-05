@@ -2047,6 +2047,22 @@ void main() {
     );
     expect(find.byType(BottomSheet), findsOneWidget);
     expect(find.byType(Slider), findsNWidgets(3));
+    final presetColorButtons = find.descendant(
+      of: find.byKey(const ValueKey('playback_queue_color_panel')),
+      matching: find.byWidgetPredicate(
+        (w) => w is InkWell && w.customBorder is CircleBorder,
+      ),
+    );
+    expect(presetColorButtons, findsNWidgets(10));
+    final row1Y = tester.getCenter(presetColorButtons.at(0)).dy;
+    final row2Y = tester.getCenter(presetColorButtons.at(5)).dy;
+    expect(row2Y, greaterThan(row1Y));
+    for (var i = 1; i < 5; i++) {
+      expect(tester.getCenter(presetColorButtons.at(i)).dy, closeTo(row1Y, 0.5));
+    }
+    for (var i = 6; i < 10; i++) {
+      expect(tester.getCenter(presetColorButtons.at(i)).dy, closeTo(row2Y, 0.5));
+    }
     expect(find.text(languageProvider.tr('edit_queue_audio')), findsNothing);
     await tester.tap(find.byKey(const ValueKey('playback_queue_color_back')));
     await tester.pump();
@@ -3589,6 +3605,7 @@ void main() {
       addTearDown(tester.view.resetPhysicalSize);
 
       final fixture = AppRuntimeWidgetTestFixture(
+        coverArtworkCacheService: _RecordingPlaybackCoverCacheService(),
         configureSettingsRepository: (settings) {
           settings.multiThreadPlaybackEnabled = true;
           settings.syncSlice(isInitialized: true);
@@ -3857,6 +3874,9 @@ void main() {
       final createQueueIconButton = find.byKey(
         const ValueKey<String>('batch_create_queue_button'),
       );
+      final pinIconButton = find.byKey(
+        const ValueKey<String>('batch_pin_button'),
+      );
       expect(createQueueIconButton, findsOneWidget);
       expect(
         tester.widget<IconButton>(createQueueIconButton).tooltip,
@@ -3864,6 +3884,15 @@ void main() {
       );
       expect(
         tester.widget<IconButton>(createQueueIconButton).onPressed,
+        isNotNull,
+      );
+      expect(pinIconButton, findsOneWidget);
+      expect(
+        tester.widget<IconButton>(pinIconButton).tooltip,
+        fixture.languageProvider.tr('pin_to_top'),
+      );
+      expect(
+        tester.widget<IconButton>(pinIconButton).onPressed,
         isNotNull,
       );
       expect(
@@ -3877,15 +3906,16 @@ void main() {
         ),
         findsOneWidget,
       );
-      for (final actionButton in <Finder>[
+      for (final actionButton in [
         playIconButton,
         pauseIconButton,
+        pinIconButton,
         removeIconButton,
       ]) {
-        expect(tester.widget<IconButton>(actionButton).iconSize, 18);
+        expect(tester.widget<IconButton>(actionButton).iconSize, 20);
         expect(
           tester.widget<IconButton>(actionButton).constraints,
-          const BoxConstraints.tightFor(width: 32, height: 32),
+          HeaderActionPill.buttonConstraints,
         );
       }
       expect(
@@ -4011,7 +4041,120 @@ void main() {
   );
 
   testWidgets(
-    'adding playback queue animates entrance by expanding size first then fading in',
+    'playlist multiselect batch pin pins and unpins selected sessions',
+    (WidgetTester tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(500, 1000);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPhysicalSize);
+
+      final fixture = AppRuntimeWidgetTestFixture(
+        coverArtworkCacheService: _RecordingPlaybackCoverCacheService(),
+      );
+      addTearDown(fixture.dispose);
+
+      final track1 = testMusicTrack(
+        name: 'Track 1',
+        path: PathMatcher.normalize('/library/work1/01.mp3'),
+        groupKey: PathMatcher.normalize('/library/work1'),
+        groupTitle: 'Work 1',
+      );
+      final track2 = testMusicTrack(
+        name: 'Track 2',
+        path: PathMatcher.normalize('/library/work2/02.mp3'),
+        groupKey: PathMatcher.normalize('/library/work2'),
+        groupTitle: 'Work 2',
+      );
+      fixture.runtimeGraph.library.addTracks(
+        <MusicTrack>[track1, track2],
+        notify: false,
+        persist: false,
+      );
+      final session1 = fixture.runtimeGraph.playback.createTrackSession(track1);
+      final session2 = fixture.runtimeGraph.playback.createTrackSession(track2);
+      fixture.playbackService.syncSlice(
+        activeSessions: <PlaybackSession>[session1, session2],
+        playingSessionCount: 0,
+        focusedSessionId: session1.id,
+        multiThreadPlaybackEnabled: false,
+        coverGeneration: 0,
+        isInitialized: true,
+      );
+
+      await tester.pumpWidget(fixture.build(const PlaylistTab()));
+      await tester.pumpAndSettle();
+
+      final track1Title = find.text('Track 1');
+      final track2Title = find.text('Track 2');
+
+      // 1. Long press Track 1 to enter selection mode
+      await tester.longPress(track1Title);
+      await tester.pumpAndSettle();
+
+      final batchHeader = find.byKey(
+        const ValueKey<String>('playlist_batch_selection_header'),
+      );
+      expect(batchHeader, findsOneWidget);
+
+      // Select Track 2 as well
+      await tester.tap(track2Title);
+      await tester.pumpAndSettle();
+
+      final batchPinButton = find.byKey(
+        const ValueKey<String>('batch_pin_button'),
+      );
+      expect(batchPinButton, findsOneWidget);
+      expect(
+        tester.widget<IconButton>(batchPinButton).tooltip,
+        fixture.languageProvider.tr('pin_to_top'),
+      );
+
+      // Tap batch pin button -> both sessions should be pinned and selection mode exits
+      await tester.tap(batchPinButton);
+      await tester.pumpAndSettle();
+
+      expect(batchHeader, findsNothing);
+      expect(
+        fixture.settingsRepository.pinnedPlaylistSessionIds,
+        containsAll(<String>[session1.id, session2.id]),
+      );
+
+      // 2. Long press Track 1 again and select Track 2
+      await tester.longPress(track1Title);
+      await tester.pumpAndSettle();
+      expect(batchHeader, findsOneWidget);
+
+      await tester.tap(track2Title);
+      await tester.pumpAndSettle();
+
+      // Since both are pinned, tooltip should be 'unpin_from_top'
+      final batchUnpinButton = find.byKey(
+        const ValueKey<String>('batch_pin_button'),
+      );
+      expect(batchUnpinButton, findsOneWidget);
+      expect(
+        tester.widget<IconButton>(batchUnpinButton).tooltip,
+        fixture.languageProvider.tr('unpin_from_top'),
+      );
+
+      // Tap batch unpin button -> both should be unpinned and selection mode exits
+      await tester.tap(batchUnpinButton);
+      await tester.pumpAndSettle();
+
+      expect(batchHeader, findsNothing);
+      expect(
+        fixture.settingsRepository.pinnedPlaylistSessionIds,
+        isNot(contains(session1.id)),
+      );
+      expect(
+        fixture.settingsRepository.pinnedPlaylistSessionIds,
+        isNot(contains(session2.id)),
+      );
+    },
+  );
+
+  testWidgets(
+    'adding playback queue enters immediately without entrance animation',
     (WidgetTester tester) async {
       tester.view.devicePixelRatio = 1;
       tester.view.physicalSize = const Size(500, 1000);
@@ -4085,35 +4228,21 @@ void main() {
             widget.key != null &&
             widget.key.toString().contains('queue_entrance_'),
       );
-      expect(queueEntrance, findsOneWidget);
-
-      await tester.pump(const Duration(milliseconds: 100));
-      final sizeTransitionFinder = find.descendant(
-        of: queueEntrance,
-        matching: find.byType(SizeTransition),
-      );
-      expect(sizeTransitionFinder, findsOneWidget);
-      final sizeTransition = tester.widget<SizeTransition>(
-        sizeTransitionFinder,
-      );
-      expect(sizeTransition.sizeFactor.value, greaterThan(0.0));
-      expect(sizeTransition.sizeFactor.value, lessThan(1.0));
-
-      final fadeTransitionFinder = find.descendant(
-        of: queueEntrance,
-        matching: find.byType(FadeTransition),
-      );
-      final fadeTransition = tester.widget<FadeTransition>(
-        fadeTransitionFinder.first,
-      );
-      expect(fadeTransition.opacity.value, 0.0);
-
-      await tester.pump(const Duration(milliseconds: 200));
-      expect(sizeTransition.sizeFactor.value, 1.0);
-      expect(fadeTransition.opacity.value, greaterThan(0.0));
-
-      await tester.pumpAndSettle();
       expect(queueEntrance, findsNothing);
+
+      final queueSessions = fixture.runtimeGraph.playback.activeSessions
+          .where((session) => session.isPlaybackQueue)
+          .toList();
+      expect(queueSessions, hasLength(1));
+      expect(
+        find.byWidgetPredicate(
+          (widget) =>
+              widget is KeyedSubtree &&
+              widget.key == ValueKey(queueSessions.first.id),
+        ),
+        findsOneWidget,
+      );
+      await tester.pumpAndSettle();
     },
   );
 
@@ -4147,6 +4276,18 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('顺序 - 跨文件夹'), findsOneWidget);
+
+    unawaited(
+      Navigator.of(
+        tester.element(find.byType(PlaylistTab)),
+      ).push(buildSessionDetailRoute(sessionId: queueSession.id)),
+    );
+    await tester.pumpAndSettle();
+
+    final compositeKey = ValueKey<String>(
+      'composite_${Icons.repeat_rounded.codePoint}_${Icons.folder_copy_rounded.codePoint}',
+    );
+    expect(find.byKey(compositeKey), findsOneWidget);
 
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pumpAndSettle();

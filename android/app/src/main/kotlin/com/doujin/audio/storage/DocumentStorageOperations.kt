@@ -841,10 +841,15 @@ internal class DocumentStorageOperations(
                 return resolveRelativeDocument(root, relative)?.exists() == true
             }
             val uri = Uri.parse(trimmed)
-            val document = DocumentFile.fromSingleUri(context, uri)
-            val documentExists = document?.exists() == true
-            if (documentExists) return true
-            return DocumentFile.fromTreeUri(context, uri)?.exists() == true
+            return runCatching {
+                if (DocumentsContract.isTreeUri(uri)) {
+                    val treeDoc = DocumentFile.fromTreeUri(context, uri)
+                    treeDoc != null && (treeDoc.exists() || treeDoc.canRead() || treeDoc.canWrite())
+                } else {
+                    val singleDoc = DocumentFile.fromSingleUri(context, uri)
+                    singleDoc != null && (singleDoc.exists() || singleDoc.canRead())
+                }
+            }.getOrDefault(false)
         }
 
         fun copyFileToFolder(

@@ -852,6 +852,38 @@ void main() {
     expect(valueText.overflow, TextOverflow.ellipsis);
   });
 
+  testWidgets(
+    'single audio card keeps info line vertical spacing consistent with with-cover cards',
+    (tester) async {
+      await tester.pumpWidget(
+        _buildSurface(
+          const LibraryLikeSingleAudioCardContent(
+            title: 'Track Title',
+            lines: [
+              LibraryLikeInfoLineData('CV', '圣纯シオ'),
+              LibraryLikeInfoLineData('社团', 'えたーなるわーくす'),
+              LibraryLikeInfoLineData('销量', '2070'),
+            ],
+            enableMarquee: false,
+            enableTitleMarquee: false,
+          ),
+        ),
+      );
+
+      final titleRect = tester.getRect(find.text('Track Title'));
+      final cvRect = tester.getRect(find.text('CV'));
+      final circleRect = tester.getRect(find.text('社团'));
+      final salesRect = tester.getRect(find.text('销量'));
+
+      // 4px spacing between title and info block
+      expect(cvRect.top - titleRect.bottom, closeTo(4.0, 0.5));
+
+      // 0 gap between consecutive info lines (each line is 16px high)
+      expect(circleRect.top - cvRect.top, 16.0);
+      expect(salesRect.top - circleRect.top, 16.0);
+    },
+  );
+
   test('settings, feedback, and recovery labels stay available', () {
     for (final table in [appLanguageZh, appLanguageEn]) {
       for (final key in [

@@ -96,6 +96,24 @@ Future<void> _completeLibraryBatchSelectionsMetadata({
   );
 }
 
+Future<void> _toggleLibraryBatchSelectionsPinned({
+  required BuildContext context,
+  required WidgetRef ref,
+  required List<_LibraryBatchSelection> selections,
+  required VoidCallback exitSelectionMode,
+}) async {
+  if (selections.isEmpty) return;
+  unawaited(
+    AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection),
+  );
+  final paths =
+      selections.map((selection) => selection.path).toList(growable: false);
+  exitSelectionMode();
+  await ref
+      .read(settingsRepositoryProvider)
+      .toggleLibraryPathsPinned(paths);
+}
+
 Future<void> _removeLibraryBatchSelections({
   required BuildContext context,
   required WidgetRef ref,

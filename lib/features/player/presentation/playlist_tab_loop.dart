@@ -289,14 +289,6 @@ class _SessionLoopModeButton extends StatelessWidget {
         ),
       );
     }
-    if (session.isPlaybackQueue) {
-      return Icon(
-        _orderIcon,
-        key: ValueKey<String>('queue_order_${_orderIcon.codePoint}'),
-        size: 20,
-        color: cs.onSurfaceVariant,
-      );
-    }
     return SizedBox(
       key: ValueKey<String>(
         'composite_${_orderIcon.codePoint}_${_scopeIcon.codePoint}',

@@ -73,9 +73,6 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
                   savedDestination != null &&
                   savedDestination.trim().isNotEmpty &&
                   !await downloadManager.destinationExists(savedDestination);
-              if (destinationMissing) {
-                await settings.setAsmrDownloadDestinationRoot(null);
-              }
               return (
                 tree: tree,
                 destinationRoot: destinationMissing ? null : savedDestination,
@@ -197,7 +194,6 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
       }
     }
     if (!await downloadManager.destinationExists(destination)) {
-      await settings.setAsmrDownloadDestinationRoot(null);
       if (!mounted) return;
       setState(() {
         _destinationRoot = null;

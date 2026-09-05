@@ -3,7 +3,6 @@ package com.doujin.audio.storage
 import android.content.ContentResolver
 import android.content.Intent
 import android.net.Uri
-import java.net.URI
 import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
 import java.util.concurrent.locks.ReentrantLock
@@ -225,15 +224,19 @@ internal fun persistedGrantCoversReference(
     persistedGrantUri: String,
     retainedReferenceUri: String
 ): Boolean {
-    val grant = parsedContentReference(persistedGrantUri) ?: return false
-    val reference = parsedContentReference(retainedReferenceUri) ?: return false
+    val trimmedGrant = persistedGrantUri.trim()
+    val trimmedRef = retainedReferenceUri.trim()
+    if (trimmedGrant.equals(trimmedRef, ignoreCase = true)) return true
+    val grant = parsedContentReference(trimmedGrant) ?: return false
+    val reference = parsedContentReference(trimmedRef) ?: return false
     if (!grant.authority.equals(reference.authority, ignoreCase = true)) return false
-    if (grant.canonicalBase == reference.canonicalBase) return true
+    if (grant.canonicalBase.equals(reference.canonicalBase, ignoreCase = true)) return true
     if (grant.documentId != null) return false
     val treeId = grant.treeDocumentId ?: return false
     if (reference.treeDocumentId == treeId) return true
     val referenceId = reference.documentId ?: reference.treeDocumentId ?: return false
-    return referenceId == treeId || referenceId.startsWith("${treeId.trimEnd('/')}/")
+    val childPrefix = if (treeId.endsWith(':')) treeId else "${treeId.trimEnd('/')}/"
+    return referenceId == treeId || referenceId.startsWith(childPrefix)
 }
 
 internal fun shouldMigratePermissionAfterRename(
@@ -252,24 +255,49 @@ private data class ParsedContentReference(
 )
 
 private fun parsedContentReference(raw: String): ParsedContentReference? {
-    val base = raw.trim().substringBefore("::")
-    val uri = runCatching { URI(base) }.getOrNull() ?: return null
-    if (!uri.scheme.equals("content", ignoreCase = true)) return null
-    val authority = uri.authority?.takeIf { it.isNotBlank() } ?: return null
-    val rawSegments = uri.rawPath.orEmpty().split('/').filter(String::isNotEmpty)
+    val base = raw.trim().substringBefore("::").trim()
+    if (!base.startsWith("content://", ignoreCase = true)) return null
+    val afterScheme = base.substring(10)
+    if (afterScheme.isEmpty()) return null
+    val pathStart = afterScheme.indexOfAny(charArrayOf('/', '?', '#'))
+    val (authority, rest) = if (pathStart == -1) {
+        afterScheme to ""
+    } else {
+        afterScheme.substring(0, pathStart) to afterScheme.substring(pathStart)
+    }
+    if (authority.isBlank()) return null
+    val queryStart = rest.indexOf('?')
+    val fragmentStart = rest.indexOf('#')
+    val rawPath = when {
+        queryStart != -1 -> rest.substring(0, queryStart)
+        fragmentStart != -1 -> rest.substring(0, fragmentStart)
+        else -> rest
+    }
+    val rawQuery = when {
+        queryStart != -1 -> {
+            val queryEnd = if (fragmentStart != -1 && fragmentStart > queryStart) fragmentStart else rest.length
+            rest.substring(queryStart + 1, queryEnd)
+        }
+        else -> null
+    }
+    val rawSegments = rawPath.split('/').filter(String::isNotEmpty)
     fun decodedSegmentAfter(marker: String): String? {
         val index = rawSegments.indexOf(marker)
         if (index < 0 || index + 1 >= rawSegments.size) return null
-        return URLDecoder.decode(rawSegments[index + 1], StandardCharsets.UTF_8.name())
+        return try {
+            URLDecoder.decode(rawSegments[index + 1], StandardCharsets.UTF_8.name())
+        } catch (_: Exception) {
+            rawSegments[index + 1]
+        }
     }
     val treeId = decodedSegmentAfter("tree")
     val documentId = decodedSegmentAfter("document")
+    val normalizedPath = if (rawPath.length > 1) rawPath.trimEnd('/') else rawPath
     val canonicalBase = buildString {
-        append(uri.scheme.lowercase())
-        append("://")
+        append("content://")
         append(authority.lowercase())
-        append(uri.rawPath.orEmpty())
-        if (!uri.rawQuery.isNullOrEmpty()) append('?').append(uri.rawQuery)
+        append(normalizedPath)
+        if (!rawQuery.isNullOrEmpty()) append('?').append(rawQuery)
     }
     return ParsedContentReference(authority, canonicalBase, treeId, documentId)
 }

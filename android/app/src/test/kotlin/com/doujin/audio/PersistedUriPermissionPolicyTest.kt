@@ -159,4 +159,46 @@ class PersistedUriPermissionPolicyTest {
             )
         )
     }
+
+    @Test
+    fun `tree grant covers tree uri with brackets and special characters`() {
+        val tree = "content://com.android.externalstorage.documents/tree/primary%3AASMR%2F[RJ123456]"
+
+        assertTrue(
+            persistedGrantCoversReference(
+                tree,
+                "$tree::[RJ123456] Title/track.mp3"
+            )
+        )
+        assertTrue(
+            persistedGrantCoversReference(
+                tree,
+                tree
+            )
+        )
+        assertTrue(
+            persistedGrantCoversReference(
+                "$tree/",
+                tree
+            )
+        )
+    }
+
+    @Test
+    fun `storage root tree grant covers child document ids`() {
+        val rootTree = "content://com.android.externalstorage.documents/tree/primary%3A"
+
+        assertTrue(
+            persistedGrantCoversReference(
+                rootTree,
+                "content://com.android.externalstorage.documents/tree/primary%3A/document/primary%3AMusic%2Faudio.mp3"
+            )
+        )
+        assertTrue(
+            persistedGrantCoversReference(
+                rootTree,
+                "content://com.android.externalstorage.documents/document/primary%3ADownload%2FASMR"
+            )
+        )
+    }
 }

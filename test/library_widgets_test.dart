@@ -905,18 +905,62 @@ void main() {
       ),
       findsOneWidget,
     );
+    final batchAddButton = find.byKey(
+      const ValueKey<String>('library_search_batch_add_button'),
+    );
+    expect(batchAddButton, findsOneWidget);
+    expect(tester.widget<IconButton>(batchAddButton).iconSize, 20);
+    final batchPinButton = find.byKey(
+      const ValueKey<String>('library_search_batch_pin_button'),
+    );
+    expect(batchPinButton, findsOneWidget);
+    expect(tester.widget<IconButton>(batchPinButton).iconSize, 20);
     expect(
-      find.byKey(const ValueKey<String>('library_search_batch_add_button')),
-      findsOneWidget,
+      tester.widget<IconButton>(batchPinButton).tooltip,
+      fixture.languageProvider.tr('pin_to_top'),
     );
 
-    await tester.tap(searchFolderTitle);
+    await tester.tap(batchPinButton);
     await tester.pumpAndSettle();
     expect(
       find.byKey(
         const ValueKey<String>('library_search_batch_selection_header'),
       ),
       findsNothing,
+    );
+    expect(
+      fixture.settingsRepository.pinnedLibraryPaths,
+      contains(PathMatcher.normalize(folderPath)),
+    );
+
+    await tester.longPress(searchFolderTitle);
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(
+        const ValueKey<String>('library_search_batch_selection_header'),
+      ),
+      findsOneWidget,
+    );
+    final batchUnpinButton = find.byKey(
+      const ValueKey<String>('library_search_batch_pin_button'),
+    );
+    expect(batchUnpinButton, findsOneWidget);
+    expect(
+      tester.widget<IconButton>(batchUnpinButton).tooltip,
+      fixture.languageProvider.tr('unpin_from_top'),
+    );
+
+    await tester.tap(batchUnpinButton);
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(
+        const ValueKey<String>('library_search_batch_selection_header'),
+      ),
+      findsNothing,
+    );
+    expect(
+      fixture.settingsRepository.pinnedLibraryPaths,
+      isNot(contains(PathMatcher.normalize(folderPath))),
     );
   });
 
@@ -2648,6 +2692,196 @@ void main() {
         find.textContaining(fixture.languageProvider.tr('undo')),
         findsOneWidget,
       );
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 30)),
+      );
+      await tester.pump();
+    },
+  );
+
+  testWidgets(
+    'root folder card supports right-swipe pin and displays pin badge on cover',
+    (WidgetTester tester) async {
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      final runtimeGraph = fixture.runtimeGraph;
+      const libraryPath = '/library/pinned-test';
+      final rootTrack = MusicTrack(
+        path: '/library/pinned-test/audio.mp3',
+        displayName: 'audio.mp3',
+        groupKey: libraryPath,
+        groupTitle: 'pinned-test',
+        groupSubtitle: '',
+        isSingle: false,
+        duration: const Duration(minutes: 1),
+      );
+      runtimeGraph.library
+        ..addWatchedLibrary(libraryPath, notify: false)
+        ..recordLibraryEntriesForTracks(libraryPath, <MusicTrack>[
+          rootTrack,
+        ], persist: false)
+        ..addTracks(<MusicTrack>[rootTrack], notify: false, persist: false);
+      fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 0);
+
+      await tester.pumpWidget(fixture.build(const LibraryTab()));
+      await tester.pump();
+      await pumpUntilLibraryTreeReady(tester, runtimeGraph.library);
+      await pumpUntilNotFound(tester, find.byType(LibraryLikeSkeletonCard));
+      await tester.pump(const Duration(milliseconds: 350));
+
+      final rootFolderFinder = find.text('pinned-test', findRichText: true);
+      final swipeCardFinder = find.ancestor(
+        of: rootFolderFinder,
+        matching: find.byType(SwipeRevealCard),
+      );
+      expect(swipeCardFinder, findsOneWidget);
+
+      final swipeCard = tester.widget<SwipeRevealCard>(swipeCardFinder);
+      expect(swipeCard.onLeadingAction, isNotNull);
+      expect(
+        swipeCard.leadingActionLabel,
+        fixture.languageProvider.tr('pin_to_top'),
+      );
+      expect(swipeCard.leadingActionIcon, Icons.push_pin_rounded);
+      expect(swipeCard.leadingActionIconWidget, isNull);
+
+      // Pin badge not shown initially
+      expect(
+        find.byKey(ValueKey<String>('library_pinned_${PathMatcher.normalize(libraryPath)}')),
+        findsNothing,
+      );
+
+      // Toggle pin
+      swipeCard.onLeadingAction!();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      // Pin badge is now shown on cover
+      expect(
+        fixture.settings.pinnedLibraryPaths,
+        contains(PathMatcher.normalize(libraryPath)),
+      );
+      expect(
+        find.byKey(ValueKey<String>('library_pinned_${PathMatcher.normalize(libraryPath)}')),
+        findsOneWidget,
+      );
+
+      // Swipe card now shows unpin
+      final updatedSwipeCard = tester.widget<SwipeRevealCard>(swipeCardFinder);
+      expect(
+        updatedSwipeCard.leadingActionLabel,
+        fixture.languageProvider.tr('unpin_from_top'),
+      );
+      expect(updatedSwipeCard.leadingActionIconWidget, isA<PushPinOffIcon>());
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 30)),
+      );
+      await tester.pump();
+    },
+  );
+
+  testWidgets(
+    'single track without cover shows pin in leading indicator and checkmark at bottom-left when selected',
+    (WidgetTester tester) async {
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      final runtimeGraph = fixture.runtimeGraph;
+      const libraryPath = '/library/single-track-test';
+      final singleTrack = MusicTrack(
+        path: '/library/single-track-test/single.mp3',
+        displayName: 'single.mp3',
+        groupKey: libraryPath,
+        groupTitle: 'single-track-test',
+        groupSubtitle: '',
+        isSingle: true,
+        duration: const Duration(minutes: 2),
+      );
+      runtimeGraph.library
+        ..addWatchedLibrary(libraryPath, notify: false)
+        ..recordLibraryEntriesForTracks(libraryPath, <MusicTrack>[
+          singleTrack,
+        ], persist: false)
+        ..addTracks(<MusicTrack>[singleTrack], notify: false, persist: false);
+      fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 0);
+
+      // Pre-pin the single track
+      await fixture.settings.toggleLibraryPathPinned(singleTrack.path);
+
+      await tester.pumpWidget(fixture.build(const LibraryTab()));
+      await tester.pump();
+      await pumpUntilLibraryTreeReady(tester, runtimeGraph.library);
+      await pumpUntilNotFound(tester, find.byType(LibraryLikeSkeletonCard));
+      await tester.pump(const Duration(milliseconds: 350));
+
+      // Pin indicator should be inside _LibraryLeadingIndicators
+      final pinBadge = find.byKey(
+        ValueKey<String>('library_pinned_${PathMatcher.normalize(singleTrack.path)}'),
+      );
+      expect(pinBadge, findsOneWidget);
+
+      // Long press on single track to enter multi-select
+      final trackFinder = find.text('single.mp3', findRichText: true);
+      await tester.longPress(trackFinder);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      // Selection checkmark should be displayed
+      expect(find.byIcon(Icons.check_rounded), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 30)),
+      );
+      await tester.pump();
+    },
+  );
+
+  testWidgets(
+    'single track without cover added to playlist is not highlighted',
+    (WidgetTester tester) async {
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      final runtimeGraph = fixture.runtimeGraph;
+      const libraryPath = '/library/single-track-active-test';
+      final singleTrack = MusicTrack(
+        path: '$libraryPath/single.mp3',
+        displayName: 'single.mp3',
+        groupKey: libraryPath,
+        groupTitle: 'single-track-active-test',
+        groupSubtitle: '',
+        isSingle: true,
+      );
+
+      runtimeGraph.library
+        ..addWatchedLibrary(libraryPath, notify: false)
+        ..recordLibraryEntriesForTracks(libraryPath, <MusicTrack>[
+          singleTrack,
+        ], persist: false)
+        ..addTracks(<MusicTrack>[singleTrack], notify: false, persist: false);
+      fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 0);
+
+      await tester.pumpWidget(fixture.build(const LibraryTab()));
+      await tester.pump();
+      await pumpUntilLibraryTreeReady(tester, runtimeGraph.library);
+      await pumpUntilNotFound(tester, find.byType(LibraryLikeSkeletonCard));
+      await tester.pump(const Duration(milliseconds: 350));
+
+      final addButton = find.byIcon(Icons.add_circle_rounded);
+      expect(addButton, findsOneWidget);
+      await tester.tap(addButton);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      final cardFinder = find.ancestor(
+        of: find.text('single.mp3', findRichText: true),
+        matching: find.byType(Card),
+      );
+      final card = tester.widget<Card>(cardFinder.first);
+      expect(card.color, Colors.transparent);
 
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.runAsync(

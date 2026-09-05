@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -133,24 +135,20 @@ class _PermissionSettingsControlsState
           enabled: _enabled(PermissionCapability.backgroundRun),
           enabledLabel: i18n.tr('permission_enabled'),
           disabledLabel: i18n.tr('permission_not_enabled'),
-          onTap: () => _open(
-            title: i18n.tr('allow_background_run'),
-            description: i18n.tr('permission_background_description'),
-            capability: PermissionCapability.backgroundRun,
-          ),
-        ),
-        _PermissionActionTile(
-          title: i18n.tr('exact_alarm_permission_status'),
-          description: i18n.tr('permission_exact_alarm_description'),
-          icon: Icons.alarm_on_rounded,
-          enabled: _enabled(PermissionCapability.exactAlarms),
-          enabledLabel: i18n.tr('permission_enabled'),
-          disabledLabel: i18n.tr('permission_not_enabled'),
-          onTap: () => _open(
-            title: i18n.tr('exact_alarm_permission_status'),
-            description: i18n.tr('permission_exact_alarm_description'),
-            capability: PermissionCapability.exactAlarms,
-          ),
+          onTap: () {
+            final capability = (_status != null &&
+                    _status!.backgroundRunAllowed &&
+                    !_status!.exactAlarmsAllowed)
+                ? PermissionCapability.exactAlarms
+                : PermissionCapability.backgroundRun;
+            unawaited(
+              _open(
+                title: i18n.tr('allow_background_run'),
+                description: i18n.tr('permission_background_description'),
+                capability: capability,
+              ),
+            );
+          },
         ),
         _PermissionActionTile(
           title: i18n.tr('manage_files_permission_title'),
@@ -200,7 +198,8 @@ class _PermissionSettingsControlsState
     if (status == null) return null;
     return switch (capability) {
       PermissionCapability.notifications => status.notificationsEnabled,
-      PermissionCapability.backgroundRun => status.backgroundRunAllowed,
+      PermissionCapability.backgroundRun =>
+        status.backgroundRunAllowed && status.exactAlarmsAllowed,
       PermissionCapability.exactAlarms => status.exactAlarmsAllowed,
       PermissionCapability.manageFiles => status.manageFilesAllowed,
       PermissionCapability.overlay => status.overlayAllowed,

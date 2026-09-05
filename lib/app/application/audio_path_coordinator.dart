@@ -17,6 +17,8 @@ final class AudioPathCoordinator implements PlaybackTrackResolver {
   final LibraryFacade _library;
   final PlaybackFacade _playback;
 
+  LibraryFacade get library => _library;
+
   MusicTrack? trackByPath(String trackPath) {
     final resolvedPath = _playback.resolveRetargetedPath(trackPath);
     final libraryTrack = _library.trackByPath(resolvedPath);

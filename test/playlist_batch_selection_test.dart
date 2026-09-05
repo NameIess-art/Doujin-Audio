@@ -14,6 +14,7 @@ void main() {
     }
 
     bool isPauseEnabled(int count) => count > 0;
+    bool isPinEnabled(int count) => count > 0;
     bool isRemoveEnabled(int count) => count > 0;
 
     test('Play button is disabled when selected count is 0', () {
@@ -26,6 +27,7 @@ void main() {
         isFalse,
       );
       expect(isPauseEnabled(0), isFalse);
+      expect(isPinEnabled(0), isFalse);
       expect(isRemoveEnabled(0), isFalse);
     });
 
@@ -39,6 +41,7 @@ void main() {
         isTrue,
       );
       expect(isPauseEnabled(1), isTrue);
+      expect(isPinEnabled(1), isTrue);
       expect(isRemoveEnabled(1), isTrue);
     });
 
@@ -52,6 +55,7 @@ void main() {
         isFalse,
       );
       expect(isPauseEnabled(2), isTrue);
+      expect(isPinEnabled(2), isTrue);
       expect(isRemoveEnabled(2), isTrue);
     });
 
@@ -65,6 +69,7 @@ void main() {
         isTrue,
       );
       expect(isPauseEnabled(2), isTrue);
+      expect(isPinEnabled(2), isTrue);
       expect(isRemoveEnabled(2), isTrue);
     });
   });
@@ -103,6 +108,11 @@ void main() {
                             onPressed: null,
                             icon: Icon(Icons.play_arrow_rounded),
                           ),
+                          IconButton(
+                            key: ValueKey('batch_pin_button'),
+                            onPressed: null,
+                            icon: Icon(Icons.push_pin_rounded),
+                          ),
                         ],
                       ),
                     ),
@@ -117,6 +127,7 @@ void main() {
       expect(find.byKey(const ValueKey('playlist_batch_selection_header')), findsOneWidget);
       expect(find.byKey(const ValueKey('exit_selection_button')), findsOneWidget);
       expect(find.byKey(const ValueKey('batch_play_button')), findsOneWidget);
+      expect(find.byKey(const ValueKey('batch_pin_button')), findsOneWidget);
       expect(find.text('1'), findsOneWidget);
       expect(find.byType(AppRollingNumber), findsOneWidget);
 

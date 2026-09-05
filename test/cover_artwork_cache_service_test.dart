@@ -1196,6 +1196,47 @@ void main() {
   );
 
   test(
+    'video frame set as folder cover is actively resolved for video and playback tracks',
+    () async {
+      final directory = await Directory.systemTemp.createTemp(
+        'cover_cache_video_frame_folder_',
+      );
+      addTearDown(() async {
+        if (await directory.exists()) await directory.delete(recursive: true);
+      });
+      final videoPath = '${directory.path}${Platform.pathSeparator}video.mp4';
+      final frameCover =
+          '${directory.path}${Platform.pathSeparator}selected_frame.jpg';
+      await File(videoPath).writeAsBytes(<int>[1]);
+      await File(frameCover).writeAsBytes(<int>[0xff, 0xd8, 0xff, 0xd9]);
+
+      final track = _track(
+        path: videoPath,
+        groupKey: directory.path,
+        isVideo: true,
+      );
+      final library = LibraryService()
+        ..watchedFolders.add(directory.path)
+        ..library.add(track);
+      final gateway = _FakeFileCachePlatformGateway(
+        coversByPath: const {},
+        videoFramesByPath: {videoPath: '/cache/default_frame.jpg'},
+      );
+      final cache = CoverArtworkCacheService(
+        libraryService: library,
+        fileCacheGateway: gateway,
+      );
+
+      await cache.setFolderCoverSelection(directory.path, frameCover);
+
+      expect(await cache.futureForTrack(track), frameCover);
+      expect(cache.resolvedForTrack(track), frameCover);
+      expect(await cache.futureForPlaybackTrack(track), frameCover);
+      expect(cache.resolvedForPlaybackTrack(track), frameCover);
+    },
+  );
+
+  test(
     'embedded audio preference falls back to the normal group cover lookup',
     () async {
       const trackPath = '/work/voice.flac';

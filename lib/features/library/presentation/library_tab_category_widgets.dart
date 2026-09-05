@@ -76,8 +76,9 @@ extension _LibrarySearchPageCategoryView on _LibrarySearchPageState {
   }
 
   List<AudioLibraryCategoryEntry> _filterCategoryEntries(
-    AudioLibraryCategorySnapshot snapshot,
-  ) {
+    AudioLibraryCategorySnapshot snapshot, {
+    Set<String> pinnedPaths = const <String>{},
+  }) {
     final selectedTerms = _selectedTermsForCurrentCategory;
     final queryTerms = extractSearchTerms(
       _effectiveSearchQuery,
@@ -90,6 +91,7 @@ extension _LibrarySearchPageCategoryView on _LibrarySearchPageState {
       queryTerms.join('\n'),
       termKeywords.join('\n'),
       normalizedSelectedTerms.join('\n'),
+      pinnedPaths.join('\n'),
     ].join('|');
     if (identical(snapshot, _lastCategoryFilterSnapshot) &&
         _categoryType == _lastCategoryFilterType &&
@@ -101,7 +103,7 @@ extension _LibrarySearchPageCategoryView on _LibrarySearchPageState {
     final hasElementQuery =
         normalizedSelectedTerms.isNotEmpty || termKeywords.isNotEmpty;
 
-    final result = snapshot.entries
+    final filtered = snapshot.entries
         .where((entry) {
           final entryTerms = entry.normalizedTermsForCategory(_categoryType);
           final matchesSelected = normalizedSelectedTerms.every(
@@ -124,7 +126,19 @@ extension _LibrarySearchPageCategoryView on _LibrarySearchPageState {
           }
           return true;
         })
-        .toList(growable: false);
+        .toList(growable: true);
+    final normalizedPinned = pinnedPaths.isEmpty
+        ? const <String>{}
+        : pinnedPaths.map(PathMatcher.normalize).toSet();
+    if (normalizedPinned.isNotEmpty) {
+      filtered.sort((a, b) {
+        final aPinned = normalizedPinned.contains(PathMatcher.normalize(a.path));
+        final bPinned = normalizedPinned.contains(PathMatcher.normalize(b.path));
+        if (aPinned != bPinned) return aPinned ? -1 : 1;
+        return 0;
+      });
+    }
+    final result = List<AudioLibraryCategoryEntry>.unmodifiable(filtered);
     _lastCategoryFilterSnapshot = snapshot;
     _lastCategoryFilterType = _categoryType;
     _lastCategoryFilterKey = filterKey;
@@ -152,6 +166,7 @@ extension _LibrarySearchPageCategoryView on _LibrarySearchPageState {
     required double bottomPadding,
     required double cacheExtent,
     required int detailRevision,
+    Set<String> pinnedPaths = const <String>{},
   }) {
     return FutureBuilder<AudioLibraryCategorySnapshot>(
       key: ValueKey('category_future_${_categoryType.name}_$detailRevision'),
@@ -171,7 +186,10 @@ extension _LibrarySearchPageCategoryView on _LibrarySearchPageState {
         }
 
         final terms = _termsForCategory(snapshot);
-        final entries = _filterCategoryEntries(snapshot);
+        final entries = _filterCategoryEntries(
+          snapshot,
+          pinnedPaths: pinnedPaths,
+        );
         final hasTermBox = _categoryType != AudioLibraryCategoryType.all;
         final itemCount = entries.length + (hasTermBox ? 1 : 0) + 1;
 
@@ -751,6 +769,15 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
     final playback = ref.read(playbackFacadeProvider);
     final cs = Theme.of(context).colorScheme;
     final firstTrack = entry.firstTrack;
+    final isPinned = ref.watch(
+      settingsStateProvider.select(
+        (s) =>
+            s.value?.pinnedLibraryPaths.contains(
+              PathMatcher.normalize(entry.path),
+            ) ??
+            false,
+      ),
+    );
     final isAlreadyPlaying = firstTrack == null
         ? false
         : ref.watch(isTrackActiveProvider(firstTrack.path));
@@ -787,6 +814,17 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
           verticalActions: useFeaturedCard,
           onSecondaryAction: () =>
               unawaited(showAudioDetailSheet(context, entry.target)),
+          onLeadingAction: () => unawaited(
+            ref
+                .read(settingsRepositoryProvider)
+                .toggleLibraryPathPinned(entry.path),
+          ),
+          leadingActionLabel:
+              i18n.tr(isPinned ? 'unpin_from_top' : 'pin_to_top'),
+          leadingActionTooltip:
+              i18n.tr(isPinned ? 'unpin_from_top' : 'pin_to_top'),
+          leadingActionIcon: Icons.push_pin_rounded,
+          leadingActionIconWidget: isPinned ? const PushPinOffIcon() : null,
           onRemove: () => _remove(context, ref),
           child: Card(
             margin: EdgeInsets.zero,
@@ -794,7 +832,7 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
             shape: cardShape,
             color: isSelected
                 ? cs.primaryContainer.withValues(alpha: 0.25)
-                : (isAlreadyPlaying
+                : (isAlreadyPlaying && useFeaturedCard
                       ? Color.alphaBlend(
                           cs.primaryContainer.withValues(alpha: 0.40),
                           cs.surface,
@@ -809,6 +847,7 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
               playback,
               firstTrack,
               cardHeight,
+              isPinned: isPinned,
               useFeaturedCardOverride: useFeaturedCard,
             ),
           ),
@@ -836,6 +875,7 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
     PlaybackFacade playback,
     MusicTrack? firstTrack,
     double cardHeight, {
+    required bool isPinned,
     bool? useFeaturedCardOverride,
   }) {
     if (entry.isFolder) {
@@ -849,6 +889,8 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
           detailLoading: false,
           expanded: false,
           hasChildren: false,
+          isSelected: isSelected,
+          isPinned: isPinned,
           onPlay: firstTrack == null
               ? () {}
               : () => unawaited(_play(context, playback)),
@@ -866,6 +908,8 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
             title: entry.title,
             detail: entry.detail,
             detailLoading: false,
+            isSelected: isSelected,
+            isPinned: isPinned,
             onPlay: () => unawaited(_play(context, playback)),
           ),
         );
@@ -873,29 +917,39 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
 
       return Padding(
         padding: const EdgeInsets.fromLTRB(12, 12, 6, 12),
-        child: Row(
-          children: [
-            Expanded(
-              child: _SingleAudioFileCardContent(
-                title: entry.title,
-                detail: entry.detail,
-                detailLoading: false,
+        child: IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _LibraryLeadingIndicators(
+                path: entry.path,
+                isSelected: isSelected,
+                isPinned: isPinned,
               ),
-            ),
-            IconButton(
-              onPressed: firstTrack == null
-                  ? null
-                  : () => unawaited(_play(context, playback)),
-              style: IconButton.styleFrom(
-                foregroundColor: Theme.of(context).colorScheme.primary,
-                minimumSize: const Size(40, 44),
-                maximumSize: const Size(40, 44),
-                padding: EdgeInsets.zero,
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              Expanded(
+                child: _SingleAudioFileCardContent(
+                  title: entry.title,
+                  detail: entry.detail,
+                  detailLoading: false,
+                ),
               ),
-              icon: const Icon(Icons.add_circle_rounded, size: 25),
-            ),
-          ],
+              Center(
+                child: IconButton(
+                  onPressed: firstTrack == null
+                      ? null
+                      : () => unawaited(_play(context, playback)),
+                  style: IconButton.styleFrom(
+                    foregroundColor: Theme.of(context).colorScheme.primary,
+                    minimumSize: const Size(40, 44),
+                    maximumSize: const Size(40, 44),
+                    padding: EdgeInsets.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  icon: const Icon(Icons.add_circle_rounded, size: 25),
+                ),
+              ),
+            ],
+          ),
         ),
       );
     }

@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import '../../../core/state/audio_state_slice.dart';
 import '../../../core/app_language.dart';
 import '../../../core/media/card_info_field.dart';
+import '../../../core/media/path_matcher.dart';
 import '../../../core/ui/app_interaction_feedback_settings.dart';
 import '../../asmr/domain/asmr_download.dart';
 import '../../player/domain/audio_effects.dart';
@@ -29,6 +30,7 @@ class SettingsRepository {
   LibrarySortCriterion librarySortCriterion = LibrarySortCriterion.name;
   bool librarySortAscending = true;
   bool libraryGroupByLibrary = false;
+  List<String> pinnedLibraryPaths = <String>[];
   PlaylistSortCriterion playlistSortCriterion = PlaylistSortCriterion.name;
   bool playlistSortAscending = true;
   bool playlistGroupByLibrary = false;
@@ -194,6 +196,13 @@ class SettingsRepository {
           playback['playlistSortAscending'] as bool? ?? true;
       playlistGroupByLibrary =
           playback['playlistGroupByLibrary'] as bool? ?? false;
+      final pinnedLibList = playback['pinnedLibraryPaths'];
+      if (pinnedLibList is List) {
+        pinnedLibraryPaths =
+            pinnedLibList.map((e) => e.toString()).toList();
+      } else {
+        pinnedLibraryPaths = <String>[];
+      }
       final pinnedList = playback['pinnedPlaylistSessionIds'];
       if (pinnedList is List) {
         pinnedPlaylistSessionIds =
@@ -270,6 +279,7 @@ class SettingsRepository {
       'librarySortCriterion': librarySortCriterion.name,
       'librarySortAscending': librarySortAscending,
       'libraryGroupByLibrary': libraryGroupByLibrary,
+      'pinnedLibraryPaths': pinnedLibraryPaths,
       'playlistSortCriterion': playlistSortCriterion.name,
       'playlistSortAscending': playlistSortAscending,
       'playlistGroupByLibrary': playlistGroupByLibrary,
@@ -407,27 +417,88 @@ class SettingsRepository {
     },
   );
 
-  Future<void> togglePlaylistSessionPinned(String sessionId) {
-    final updated = List<String>.of(pinnedPlaylistSessionIds);
-    if (updated.contains(sessionId)) {
-      updated.remove(sessionId);
-    } else {
-      updated.add(sessionId);
+  Future<void> pinLibraryPaths(Iterable<String> paths) {
+    final normalizedList = paths.map(PathMatcher.normalize).toList(growable: false);
+    final updated = List<String>.of(pinnedLibraryPaths);
+    var changed = false;
+    for (final p in normalizedList) {
+      if (!updated.contains(p)) {
+        updated.add(p);
+        changed = true;
+      }
     }
     return _setValue(
-      unchanged: false,
+      unchanged: !changed,
+      update: () => pinnedLibraryPaths = updated,
+    );
+  }
+
+  Future<void> unpinLibraryPaths(Iterable<String> paths) {
+    final targetSet = paths.map(PathMatcher.normalize).toSet();
+    final updated = pinnedLibraryPaths.where((p) => !targetSet.contains(p)).toList();
+    return _setValue(
+      unchanged: updated.length == pinnedLibraryPaths.length,
+      update: () => pinnedLibraryPaths = updated,
+    );
+  }
+
+  Future<void> toggleLibraryPathsPinned(Iterable<String> paths) {
+    final normalizedList = paths.map(PathMatcher.normalize).toList(growable: false);
+    if (normalizedList.isEmpty) return Future.value();
+    final allPinned = normalizedList.every(pinnedLibraryPaths.contains);
+    if (allPinned) {
+      return unpinLibraryPaths(normalizedList);
+    } else {
+      return pinLibraryPaths(normalizedList);
+    }
+  }
+
+  Future<void> toggleLibraryPathPinned(String path) =>
+      toggleLibraryPathsPinned([path]);
+
+  Future<void> unpinLibraryPath(String path) =>
+      unpinLibraryPaths([path]);
+
+  Future<void> pinPlaylistSessions(Iterable<String> sessionIds) {
+    final updated = List<String>.of(pinnedPlaylistSessionIds);
+    var changed = false;
+    for (final id in sessionIds) {
+      if (!updated.contains(id)) {
+        updated.add(id);
+        changed = true;
+      }
+    }
+    return _setValue(
+      unchanged: !changed,
       update: () => pinnedPlaylistSessionIds = updated,
     );
   }
 
-  Future<void> unpinPlaylistSession(String sessionId) {
-    if (!pinnedPlaylistSessionIds.contains(sessionId)) return Future.value();
-    final updated = List<String>.of(pinnedPlaylistSessionIds)..remove(sessionId);
+  Future<void> unpinPlaylistSessions(Iterable<String> sessionIds) {
+    final targetSet = sessionIds.toSet();
+    final updated = pinnedPlaylistSessionIds.where((id) => !targetSet.contains(id)).toList();
     return _setValue(
-      unchanged: false,
+      unchanged: updated.length == pinnedPlaylistSessionIds.length,
       update: () => pinnedPlaylistSessionIds = updated,
     );
   }
+
+  Future<void> togglePlaylistSessionsPinned(Iterable<String> sessionIds) {
+    final ids = sessionIds.toList(growable: false);
+    if (ids.isEmpty) return Future.value();
+    final allPinned = ids.every(pinnedPlaylistSessionIds.contains);
+    if (allPinned) {
+      return unpinPlaylistSessions(ids);
+    } else {
+      return pinPlaylistSessions(ids);
+    }
+  }
+
+  Future<void> togglePlaylistSessionPinned(String sessionId) =>
+      togglePlaylistSessionsPinned([sessionId]);
+
+  Future<void> unpinPlaylistSession(String sessionId) =>
+      unpinPlaylistSessions([sessionId]);
 
   Future<void> setMultiThreadPlaybackEnabled(bool enabled) => _setValue(
     unchanged: multiThreadPlaybackEnabled == enabled,
@@ -660,6 +731,7 @@ class SettingsRepository {
     librarySortCriterion = LibrarySortCriterion.name;
     librarySortAscending = true;
     libraryGroupByLibrary = false;
+    pinnedLibraryPaths = <String>[];
     playlistSortCriterion = PlaylistSortCriterion.name;
     playlistSortAscending = true;
     playlistGroupByLibrary = false;
@@ -727,6 +799,7 @@ class SettingsRepository {
         librarySortCriterion: librarySortCriterion,
         librarySortAscending: librarySortAscending,
         libraryGroupByLibrary: libraryGroupByLibrary,
+        pinnedLibraryPaths: List<String>.unmodifiable(pinnedLibraryPaths),
         playlistSortCriterion: playlistSortCriterion,
         playlistSortAscending: playlistSortAscending,
         playlistGroupByLibrary: playlistGroupByLibrary,

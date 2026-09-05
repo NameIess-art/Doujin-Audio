@@ -79,6 +79,9 @@ class _PlaybackQueueCard extends ConsumerWidget {
         .where((entry) => entry.tracks.isNotEmpty)
         .map((entry) => entry.tracks.first)
         .toList(growable: false);
+    for (final track in coverTracks.take(4)) {
+      unawaited(library.playbackCoverPathFutureForTrack(track));
+    }
     final coverItems = coverTracks
         .map(
           (track) => (
@@ -87,7 +90,11 @@ class _PlaybackQueueCard extends ConsumerWidget {
           ),
         )
         .where(
-          (item) => shouldShowPlaylistCoverArtwork(item.track, item.coverPath),
+          (item) =>
+              shouldShowPlaylistCoverArtwork(item.track, item.coverPath) ||
+              item.track.isVideo ||
+              !item.track.isSingle ||
+              item.coverPath != null,
         )
         .take(4)
         .toList(growable: false);
@@ -152,7 +159,7 @@ class _PlaybackQueueCard extends ConsumerWidget {
         leadingActionTooltip:
             i18n.tr(isPinned ? 'unpin_from_top' : 'pin_to_top'),
         leadingActionIcon: Icons.push_pin_rounded,
-        leadingActionIconWidget: isPinned ? const _PushPinOffIcon() : null,
+        leadingActionIconWidget: isPinned ? const PushPinOffIcon() : null,
         child: ConstrainedBox(
         constraints: const BoxConstraints(minHeight: _playlistRowHeight),
         child: Material(
@@ -512,7 +519,7 @@ class _QueueCoverGrid extends StatelessWidget {
   }
 }
 
-class _QueueTrackCover extends StatelessWidget {
+class _QueueTrackCover extends ConsumerWidget {
   const _QueueTrackCover({
     super.key,
     required this.track,
@@ -525,17 +532,16 @@ class _QueueTrackCover extends StatelessWidget {
   final int? coverCacheWidth;
 
   @override
-  Widget build(BuildContext context) {
-    if (coverPath == null || coverPath!.isEmpty) {
-      return CoverFallbackArtwork(seed: track.displayName);
-    }
-    return RetryingFileImage(
-      path: coverPath!,
-      fit: BoxFit.cover,
-      displayMode: CoverImageDisplayMode.fill,
+  Widget build(BuildContext context, WidgetRef ref) {
+    final library = ref.watch(libraryFacadeProvider);
+    return AsyncLocalCoverImage(
+      future: library.playbackCoverPathFutureForTrack(track),
+      initialPath: coverPath,
+      seed: track.displayName,
       cacheWidth: coverCacheWidth,
       useDefaultCacheWidth: coverCacheWidth != null,
-      fallbackBuilder: (_) => CoverFallbackArtwork(seed: track.displayName),
+      fit: BoxFit.cover,
+      displayMode: CoverImageDisplayMode.fill,
     );
   }
 }
@@ -1269,7 +1275,6 @@ class _QueueSourceAudioTile extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final library = ref.read(libraryFacadeProvider);
-    final playback = ref.read(playbackFacadeProvider);
     final queueCoordinator = ref.read(playbackQueueCoordinatorProvider);
     final track = library.trackByPath(source.currentTrackPath);
     if (track == null) return const SizedBox.shrink();
@@ -1307,7 +1312,7 @@ class _QueueSourceAudioTile extends ConsumerWidget {
                   AppInteractionFeedbackType.selection,
                 ),
               );
-              playback.addTrackToPlaybackQueue(queueSessionId, track);
+              queueCoordinator.addTrack(queueSessionId, track);
             },
           ),
           if (!track.isSingle)
@@ -1356,13 +1361,19 @@ class _QueueAudioEditCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final library = ref.read(libraryFacadeProvider);
     final cs = Theme.of(context).colorScheme;
-    final resolvedCoverPath = track == null
+    final resolvedTrack = track;
+    final resolvedCoverPath = resolvedTrack == null
         ? null
-        : library.resolvedPlaybackCoverPathForTrack(track);
-    if (track != null && resolvedCoverPath == null) {
-      unawaited(library.playbackCoverPathFutureForTrack(track!));
+        : library.resolvedPlaybackCoverPathForTrack(resolvedTrack);
+    if (resolvedTrack != null && resolvedCoverPath == null) {
+      unawaited(library.playbackCoverPathFutureForTrack(resolvedTrack));
     }
-    final showCover = shouldShowPlaylistCoverArtwork(track, resolvedCoverPath);
+    final showCover =
+        shouldShowPlaylistCoverArtwork(resolvedTrack, resolvedCoverPath) ||
+        (resolvedTrack != null &&
+            (resolvedTrack.isVideo ||
+                !resolvedTrack.isSingle ||
+                resolvedCoverPath != null));
     return Card(
       margin: EdgeInsets.zero,
       elevation: 0,
@@ -1464,6 +1475,7 @@ const List<Color> _queuePresetColors = [
   Color(0xFFD81B60), // Rose Pink
   Color(0xFFE53935), // Red
   Color(0xFFFB8C00), // Orange
+  Color(0xFFFFB300), // Amber
   Color(0xFF43A047), // Green
 ];
 
@@ -1565,70 +1577,45 @@ class _PlaybackQueueColorPanel extends ConsumerWidget {
                     ),
                   ],
                 ),
-                const SizedBox(height: 14),
-                // Preset color palette
-                SizedBox(
-                  height: 38,
-                  child: ListView.separated(
-                    scrollDirection: Axis.horizontal,
-                    itemCount: _queuePresetColors.length,
-                    separatorBuilder: (_, _) => const SizedBox(width: 8),
-                    itemBuilder: (context, index) {
-                      final presetColor = _queuePresetColors[index];
-                      final isSelected =
-                          (color.toARGB32() & 0xFFFFFF) ==
-                          (presetColor.toARGB32() & 0xFFFFFF);
-                      return Semantics(
-                        button: true,
-                        selected: isSelected,
-                        child: InkWell(
-                          onTap: () => playback.setPlaybackQueueColorValue(
-                            sessionId,
-                            presetColor.toARGB32(),
-                          ),
-                          customBorder: const CircleBorder(),
-                          child: AnimatedContainer(
-                            duration: const Duration(milliseconds: 180),
-                            width: 36,
-                            height: 36,
-                            decoration: BoxDecoration(
-                              color: presetColor,
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                color: isSelected
-                                    ? cs.onSurface
-                                    : cs.outlineVariant.withValues(alpha: 0.4),
-                                width: isSelected ? 2.5 : 1,
-                              ),
-                              boxShadow: isSelected
-                                  ? [
-                                      BoxShadow(
-                                        color: presetColor.withValues(alpha: 0.45),
-                                        blurRadius: 6,
-                                        offset: const Offset(0, 2),
-                                      ),
-                                    ]
-                                  : null,
-                            ),
-                            child: isSelected
-                                ? Icon(
-                                    Icons.check_rounded,
-                                    size: 18,
-                                    color: ThemeData.estimateBrightnessForColor(
-                                                  presetColor,
-                                                ) ==
-                                                Brightness.dark
-                                        ? Colors.white
-                                        : Colors.black87,
-                                  )
-                                : null,
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                ),
                 const SizedBox(height: 12),
+                // Preset color palette: two rows of five
+                Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row(
+                      children: [
+                        for (int i = 0; i < 5; i++)
+                          Expanded(
+                            child: Center(
+                              child: _buildPresetColorButton(
+                                playback: playback,
+                                cs: cs,
+                                presetColor: _queuePresetColors[i],
+                                currentColor: color,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        for (int i = 5; i < 10; i++)
+                          Expanded(
+                            child: Center(
+                              child: _buildPresetColorButton(
+                                playback: playback,
+                                cs: cs,
+                                presetColor: _queuePresetColors[i],
+                                currentColor: color,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
                 for (final channel in <(String, int)>[
                   ('R', (color.r * 255).round()),
                   ('G', (color.g * 255).round()),
@@ -1667,6 +1654,62 @@ class _PlaybackQueueColorPanel extends ConsumerWidget {
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPresetColorButton({
+    required PlaybackFacade playback,
+    required ColorScheme cs,
+    required Color presetColor,
+    required Color currentColor,
+  }) {
+    final isSelected =
+        (currentColor.toARGB32() & 0xFFFFFF) ==
+        (presetColor.toARGB32() & 0xFFFFFF);
+    return Semantics(
+      button: true,
+      selected: isSelected,
+      child: InkWell(
+        onTap: () => playback.setPlaybackQueueColorValue(
+          sessionId,
+          presetColor.toARGB32(),
+        ),
+        customBorder: const CircleBorder(),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          width: 36,
+          height: 36,
+          decoration: BoxDecoration(
+            color: presetColor,
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: isSelected
+                  ? cs.onSurface
+                  : cs.outlineVariant.withValues(alpha: 0.4),
+              width: isSelected ? 2.5 : 1,
+            ),
+            boxShadow: isSelected
+                ? [
+                    BoxShadow(
+                      color: presetColor.withValues(alpha: 0.45),
+                      blurRadius: 6,
+                      offset: const Offset(0, 2),
+                    ),
+                  ]
+                : null,
+          ),
+          child: isSelected
+              ? Icon(
+                  Icons.check_rounded,
+                  size: 18,
+                  color: ThemeData.estimateBrightnessForColor(presetColor) ==
+                          Brightness.dark
+                      ? Colors.white
+                      : Colors.black87,
+                )
+              : null,
         ),
       ),
     );
@@ -1788,87 +1831,6 @@ class _AnimatedQueueEntryCardState extends State<_AnimatedQueueEntryCard> {
       hidden: _isRemoving,
       duration: const Duration(milliseconds: 250),
       child: widget.builder(context, _triggerRemove),
-    );
-  }
-}
-
-class _PlaybackQueueEntranceTransition extends StatefulWidget {
-  const _PlaybackQueueEntranceTransition({
-    super.key,
-    required this.child,
-    this.onComplete,
-  });
-
-  final Widget child;
-  final VoidCallback? onComplete;
-
-  @override
-  State<_PlaybackQueueEntranceTransition> createState() =>
-      _PlaybackQueueEntranceTransitionState();
-}
-
-class _PlaybackQueueEntranceTransitionState
-    extends State<_PlaybackQueueEntranceTransition>
-    with SingleTickerProviderStateMixin {
-  static const Duration _entranceDuration = Duration(milliseconds: 420);
-  late final AnimationController _controller;
-  late final Animation<double> _sizeAnimation;
-  late final Animation<double> _fadeAnimation;
-  late final Animation<double> _scaleAnimation;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: _entranceDuration,
-    );
-    _sizeAnimation = CurvedAnimation(
-      parent: _controller,
-      curve: const Interval(0.0, 0.55, curve: Curves.easeOutCubic),
-    );
-    _fadeAnimation = CurvedAnimation(
-      parent: _controller,
-      curve: const Interval(0.40, 1.0, curve: Curves.easeOutCubic),
-    );
-    _scaleAnimation = Tween<double>(begin: 0.94, end: 1.0).animate(
-      CurvedAnimation(
-        parent: _controller,
-        curve: const Interval(0.40, 1.0, curve: Curves.easeOutBack),
-      ),
-    );
-    _controller.forward().then((_) {
-      if (mounted) widget.onComplete?.call();
-    });
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (MediaQuery.disableAnimationsOf(context)) {
-      return widget.child;
-    }
-    return AnimatedBuilder(
-      animation: _controller,
-      builder: (context, child) {
-        return SizeTransition(
-          sizeFactor: _sizeAnimation,
-          axisAlignment: -1.0,
-          child: FadeTransition(
-            opacity: _fadeAnimation,
-            child: ScaleTransition(
-              scale: _scaleAnimation,
-              child: child,
-            ),
-          ),
-        );
-      },
-      child: widget.child,
     );
   }
 }

@@ -279,6 +279,7 @@ final playbackQueueCoordinatorProvider = Provider<PlaybackQueueCoordinator>((
   return PlaybackQueueCoordinator(
     playback: ref.watch(playbackFacadeProvider),
     paths: ref.watch(audioPathCoordinatorProvider),
+    library: ref.watch(libraryFacadeProvider),
   );
 });
 

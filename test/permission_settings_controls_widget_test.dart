@@ -42,7 +42,6 @@ void main() {
     final titles = [
       'notification_permission_status',
       'allow_background_run',
-      'exact_alarm_permission_status',
       'manage_files_permission_title',
       'overlay_permission_title',
       'install_permission_title',
@@ -61,7 +60,7 @@ void main() {
       );
     }
     expect(find.byType(TextButton), findsNWidgets(titles.length));
-    expect(find.text(language.tr('permission_enabled')), findsNWidgets(4));
+    expect(find.text(language.tr('permission_enabled')), findsNWidgets(3));
     expect(find.text(language.tr('permission_not_enabled')), findsNWidgets(2));
     final cards = find.byType(Card);
     for (var index = 0; index < titles.length - 1; index++) {
@@ -97,4 +96,71 @@ void main() {
       findsNothing,
     );
   });
+
+  testWidgets(
+    'allow_background_run requires both battery optimizations and exact alarms',
+    (tester) async {
+      final language = AppLanguageProvider();
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            appLanguageProviderInstanceProvider.overrideWithValue(language),
+          ],
+          child: MaterialApp(
+            home: Scaffold(
+              body: PermissionSettingsControls(
+                statusService: PermissionStatusService(
+                  isAndroidOverride: true,
+                  powerService: _PartialPowerService(
+                    ignoringBattery: true,
+                    exactAlarms: false,
+                  ),
+                  notificationsService: NotificationsPlatformService(
+                    isAndroidOverride: false,
+                  ),
+                  overlayCheck: () async => false,
+                  updateInstallCheck: () async => false,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final backgroundRunTile = find.widgetWithText(
+        ListTile,
+        language.tr('allow_background_run'),
+      );
+      expect(backgroundRunTile, findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.ancestor(of: backgroundRunTile, matching: find.byType(Card)),
+          matching: find.text(language.tr('permission_not_enabled')),
+        ),
+        findsOneWidget,
+      );
+    },
+  );
+}
+
+class _PartialPowerService extends PowerPlatformService {
+  _PartialPowerService({
+    required this.ignoringBattery,
+    required this.exactAlarms,
+  });
+
+  final bool ignoringBattery;
+  final bool exactAlarms;
+
+  @override
+  Future<bool> isIgnoringBatteryOptimizations({
+    bool errorDefault = false,
+  }) async => ignoringBattery;
+
+  @override
+  Future<bool> canScheduleExactAlarms() async => exactAlarms;
+
+  @override
+  Future<bool> canManageAllFilesAccess() async => true;
 }

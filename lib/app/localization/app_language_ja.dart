@@ -523,7 +523,6 @@ const Map<String, String> appLanguageJa = {
   'system_settings_open_failed': 'システム設定を開けませんでした。アプリ設定から手動で変更してください。',
   'permission_notification_description': 'バックグラウンド再生状態とメディア操作を表示します。',
   'permission_background_description': '画面オフ時に一部端末が再生を制限する可能性を減らします。',
-  'permission_exact_alarm_description': 'スリープタイマーの自動再開の信頼性を高めます。',
   'permission_manage_files_description':
       'ファイルシステムを直接走査する高度な曲庫スキャンでのみ必要です。通常はシステムのフォルダ選択を推奨します。',
   'permission_overlay_description': '他のアプリ上にグローバル字幕を表示する場合のみ必要です。',
@@ -575,12 +574,9 @@ const Map<String, String> appLanguageJa = {
   'notification_permission_checking': '通知権限を確認しています...',
   'notification_settings_open_failed': '通知設定を開けませんでした。システム設定から手動で変更してください。',
   'open_notification_settings': '通知設定を開く',
-  'exact_alarm_permission_status': '正確なアラームの状態',
   'exact_alarm_permission_ready': '正確なアラームは利用可能です。長時間バックグラウンド後の自動再開がより安定します。',
   'exact_alarm_permission_missing':
       '正確なアラームが無効です。長時間バックグラウンド後の自動再開が不安定になる場合があります。',
-  'exact_alarm_permission_checking': '正確なアラームの状態を確認しています...',
-  'exact_alarm_settings_open_failed': '正確なアラーム設定を開けませんでした。システム設定から手動で変更してください。',
   'clear_app_cache': 'アプリキャッシュを削除',
   'clear_app_cache_confirm':
       'このアプリが作成したキャッシュを削除します。ライブラリの元ファイルは削除されません。続行しますか？',

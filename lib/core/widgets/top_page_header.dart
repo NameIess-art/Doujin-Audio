@@ -734,6 +734,13 @@ class HeaderActionPill extends StatelessWidget {
     this.padding = const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
   });
 
+  static const double buttonWidth = 28;
+  static const double buttonHeight = 32;
+  static const BoxConstraints buttonConstraints = BoxConstraints.tightFor(
+    width: buttonWidth,
+    height: buttonHeight,
+  );
+
   final List<Widget> children;
   final EdgeInsetsGeometry padding;
 

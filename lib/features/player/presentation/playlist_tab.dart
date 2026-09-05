@@ -559,21 +559,10 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
   bool _initialPlaceholderDismissScheduled = false;
   bool _isSelectionMode = false;
   final Set<String> _selectedSessionIds = <String>{};
-  final Set<String> _animatingQueueSessionIds = <String>{};
 
-  void _markQueueNewlyAdded(String sessionId) {
-    if (MediaQuery.disableAnimationsOf(context)) return;
-    setState(() {
-      _animatingQueueSessionIds.add(sessionId);
-    });
+  void _scrollToTopOnQueueAdded() {
     if (_scrollController.hasClients && _scrollController.offset > 0) {
-      unawaited(
-        _scrollController.animateTo(
-          0,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeOutCubic,
-        ),
-      );
+      _scrollController.jumpTo(0);
     }
   }
 
@@ -657,6 +646,18 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
     }
   }
 
+  Future<void> _handleBatchPin() async {
+    if (_selectedSessionIds.isEmpty) return;
+    unawaited(
+      AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection),
+    );
+    final sessionIds = _selectedSessionIds.toList(growable: false);
+    _exitSelectionMode();
+    await ref
+        .read(settingsRepositoryProvider)
+        .togglePlaylistSessionsPinned(sessionIds);
+  }
+
   Future<void> _handleBatchRemove() async {
     if (_selectedSessionIds.isEmpty) return;
     unawaited(
@@ -683,7 +684,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
         'number': (queueCount + 1).toString(),
       }),
     );
-    _markQueueNewlyAdded(queue.id);
+    _scrollToTopOnQueueAdded();
     final coordinator = ref.read(playbackQueueCoordinatorProvider);
     for (final entry in visibleEntries) {
       if (!_selectedSessionIds.contains(entry.sessionId)) continue;
@@ -693,6 +694,13 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                 const <PlaybackQueueEntry>[]) {
           if (sourceEntry.tracks.isEmpty) continue;
           if (sourceEntry.kind == PlaybackQueueEntryKind.work) {
+            for (final track in sourceEntry.tracks.take(4)) {
+              unawaited(
+                ref
+                    .read(libraryFacadeProvider)
+                    .playbackCoverPathFutureForTrack(track),
+              );
+            }
             await playback.addWorkToPlaybackQueue(
               queue.id,
               title: sourceEntry.title,
@@ -701,7 +709,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
             );
           } else {
             for (final track in sourceEntry.tracks) {
-              await playback.addTrackToPlaybackQueue(queue.id, track);
+              await coordinator.addTrack(queue.id, track);
             }
           }
         }
@@ -1010,22 +1018,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                 onOpen: () => _openSessionDetail(context, session.id),
               ),
       );
-      Widget itemWidget = child;
-      if (structure.isPlaybackQueue &&
-          _animatingQueueSessionIds.contains(session.id)) {
-        itemWidget = _PlaybackQueueEntranceTransition(
-          key: ValueKey('queue_entrance_${session.id}'),
-          onComplete: () {
-            if (mounted) {
-              setState(() {
-                _animatingQueueSessionIds.remove(session.id);
-              });
-            }
-          },
-          child: child,
-        );
-      }
-      return KeyedSubtree(key: ValueKey(session.id), child: itemWidget);
+      return KeyedSubtree(key: ValueKey(session.id), child: child);
     }
 
     return ScrollActivityGate(
@@ -1102,6 +1095,10 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                   final isPlayEnabled =
                       count > 0 && (multiThreadEnabled || count <= 1);
                   final isPauseEnabled = count > 0;
+                  final isPinEnabled = count > 0;
+                  final isAllPinned = count > 0 &&
+                      _selectedSessionIds
+                          .every(pinnedPlaylistSessionIds.contains);
                   final isRemoveEnabled = count > 0;
                   final canCreateQueue = _hasSelectedPlaybackQueueSource(
                     visibleEntries,
@@ -1124,12 +1121,9 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                             onPressed: isPlayEnabled ? _handleBatchPlay : null,
                             icon: const Icon(Icons.play_arrow_rounded),
                             tooltip: i18n.tr('play'),
-                            iconSize: 18,
+                            iconSize: 20,
                             padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints.tightFor(
-                              width: 32,
-                              height: 32,
-                            ),
+                            constraints: HeaderActionPill.buttonConstraints,
                           ),
                         ),
                         AppHeaderActionTransition(
@@ -1141,12 +1135,9 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                                 : null,
                             icon: const Icon(Icons.pause_rounded),
                             tooltip: i18n.tr('pause'),
-                            iconSize: 18,
+                            iconSize: 20,
                             padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints.tightFor(
-                              width: 32,
-                              height: 32,
-                            ),
+                            constraints: HeaderActionPill.buttonConstraints,
                           ),
                         ),
                         AppHeaderActionTransition(
@@ -1162,16 +1153,29 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                                 : null,
                             icon: const Icon(Icons.playlist_add_rounded),
                             tooltip: i18n.tr('add_playback_queue'),
-                            iconSize: 18,
+                            iconSize: 20,
                             padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints.tightFor(
-                              width: 32,
-                              height: 32,
-                            ),
+                            constraints: HeaderActionPill.buttonConstraints,
                           ),
                         ),
                         AppHeaderActionTransition(
                           delayIndex: 3,
+                          child: IconButton(
+                            key: const ValueKey('batch_pin_button'),
+                            onPressed: isPinEnabled ? _handleBatchPin : null,
+                            icon: isAllPinned
+                                ? const PushPinOffIcon()
+                                : const Icon(Icons.push_pin_rounded),
+                            tooltip: i18n.tr(
+                              isAllPinned ? 'unpin_from_top' : 'pin_to_top',
+                            ),
+                            iconSize: 20,
+                            padding: EdgeInsets.zero,
+                            constraints: HeaderActionPill.buttonConstraints,
+                          ),
+                        ),
+                        AppHeaderActionTransition(
+                          delayIndex: 4,
                           child: IconButton(
                             key: const ValueKey('batch_remove_button'),
                             onPressed: isRemoveEnabled
@@ -1179,12 +1183,9 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                                 : null,
                             icon: const Icon(Icons.delete_outline_rounded),
                             tooltip: i18n.tr('remove'),
-                            iconSize: 18,
+                            iconSize: 20,
                             padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints.tightFor(
-                              width: 32,
-                              height: 32,
-                            ),
+                            constraints: HeaderActionPill.buttonConstraints,
                           ),
                         ),
                       ],
@@ -1311,7 +1312,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
           tooltip: i18n.tr('pause_all_sessions'),
           iconSize: 20,
           padding: EdgeInsets.zero,
-          constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+          constraints: HeaderActionPill.buttonConstraints,
         ),
         IconButton(
           key: const ValueKey<String>('playlist_clear_all_button'),
@@ -1323,7 +1324,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
           tooltip: i18n.tr('clear_all_sessions'),
           iconSize: 20,
           padding: EdgeInsets.zero,
-          constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+          constraints: HeaderActionPill.buttonConstraints,
         ),
         IconButton(
           key: const ValueKey<String>('playlist_add_queue_button'),
@@ -1331,20 +1332,20 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
             final queueCount = structureState.entries
                 .where((entry) => entry.isPlaybackQueue)
                 .length;
-            final queue = ref
+            ref
                 .read(playbackFacadeProvider)
                 .createPlaybackQueue(
                   i18n.tr('default_playback_queue_name', {
                     'number': queueCount + 1,
                   }),
                 );
-            _markQueueNewlyAdded(queue.id);
+            _scrollToTopOnQueueAdded();
           },
           icon: const Icon(Icons.playlist_add_rounded),
           tooltip: i18n.tr('add_playback_queue'),
           iconSize: 20,
           padding: EdgeInsets.zero,
-          constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+          constraints: HeaderActionPill.buttonConstraints,
         ),
       ],
     );

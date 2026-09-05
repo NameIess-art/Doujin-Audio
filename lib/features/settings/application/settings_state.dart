@@ -56,6 +56,7 @@ class SettingsState {
     this.librarySortCriterion = LibrarySortCriterion.name,
     this.librarySortAscending = true,
     this.libraryGroupByLibrary = false,
+    List<String> pinnedLibraryPaths = const <String>[],
     this.playlistSortCriterion = PlaylistSortCriterion.name,
     this.playlistSortAscending = true,
     this.playlistGroupByLibrary = false,
@@ -93,6 +94,7 @@ class SettingsState {
     this.reduceAnimations = false,
     this.isInitialized = false,
   }) : cardInfoFields = immutableList(cardInfoFields),
+       pinnedLibraryPaths = immutableList(pinnedLibraryPaths),
        pinnedPlaylistSessionIds = immutableList(pinnedPlaylistSessionIds),
        customEqPresets = immutableList(customEqPresets),
        asmrDownloadFolderNameFields = immutableList(
@@ -112,6 +114,7 @@ class SettingsState {
   final LibrarySortCriterion librarySortCriterion;
   final bool librarySortAscending;
   final bool libraryGroupByLibrary;
+  final List<String> pinnedLibraryPaths;
   final PlaylistSortCriterion playlistSortCriterion;
   final bool playlistSortAscending;
   final bool playlistGroupByLibrary;
@@ -164,6 +167,10 @@ class SettingsState {
         other.librarySortCriterion == librarySortCriterion &&
         other.librarySortAscending == librarySortAscending &&
         other.libraryGroupByLibrary == libraryGroupByLibrary &&
+        listEquals(
+          other.pinnedLibraryPaths,
+          pinnedLibraryPaths,
+        ) &&
         other.playlistSortCriterion == playlistSortCriterion &&
         other.playlistSortAscending == playlistSortAscending &&
         other.playlistGroupByLibrary == playlistGroupByLibrary &&
@@ -224,6 +231,7 @@ class SettingsState {
     librarySortCriterion,
     librarySortAscending,
     libraryGroupByLibrary,
+    Object.hashAll(pinnedLibraryPaths),
     playlistSortCriterion,
     playlistSortAscending,
     playlistGroupByLibrary,

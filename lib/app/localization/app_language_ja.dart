@@ -661,7 +661,6 @@ const Map<String, String> appLanguageJa = {
   'no_timer_set': 'タイマー未設定',
   'sleep_countdown': 'スリープタイマー',
   'double_tap_to_play_pause': 'ダブルタップで再生 / 一時停止',
-  'swipe_to_adjust_track_volume': '上下で音量微調整',
   'start_mode': '開始方法',
   'confirm_start_now': '確定してすぐ開始',
   'confirm_wait_playback': '確定して再生開始を待つ',

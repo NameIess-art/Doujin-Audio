@@ -725,7 +725,6 @@ const Map<String, String> appLanguageEn = {
   'no_timer_set': 'No countdown set',
   'sleep_countdown': 'Sleep timer',
   'double_tap_to_play_pause': 'Double tap to play / pause',
-  'swipe_to_adjust_track_volume': 'Swipe up/down for volume',
   'start_mode': 'Start mode',
   'confirm_start_now': 'Confirm and start now',
   'confirm_wait_playback': 'Confirm and wait for playback',

@@ -20,10 +20,8 @@ class BedtimeCanvasPage extends ConsumerStatefulWidget {
 
   static Route<void> route() {
     return PageRouteBuilder<void>(
-      pageBuilder: (context, animation, secondaryAnimation) => FadeTransition(
-        opacity: animation,
-        child: const BedtimeCanvasPage(),
-      ),
+      pageBuilder: (context, animation, secondaryAnimation) =>
+          FadeTransition(opacity: animation, child: const BedtimeCanvasPage()),
       transitionDuration: const Duration(milliseconds: 350),
     );
   }
@@ -45,7 +43,6 @@ class _BedtimeCanvasPageState extends ConsumerState<BedtimeCanvasPage>
   Timer? _screenTimeoutTimer;
   Timer? _feedbackTimer;
   IconData? _feedbackIcon;
-  String? _feedbackText;
   Offset? _touchPosition;
   Offset? _touchStartPosition;
   final Set<String> _targetSessionIds = <String>{};
@@ -72,10 +69,9 @@ class _BedtimeCanvasPageState extends ConsumerState<BedtimeCanvasPage>
     if (playing.isNotEmpty) {
       _targetSessionIds.addAll(playing);
     } else {
-      final withLastPlayed = playback.sessions.values
-          .where((s) => s.lastPlayedAt != null)
-          .toList()
-        ..sort((a, b) => b.lastPlayedAt!.compareTo(a.lastPlayedAt!));
+      final withLastPlayed =
+          playback.sessions.values.where((s) => s.lastPlayedAt != null).toList()
+            ..sort((a, b) => b.lastPlayedAt!.compareTo(a.lastPlayedAt!));
       if (withLastPlayed.isNotEmpty) {
         _targetSessionIds.add(withLastPlayed.first.id);
       } else if (playback.state.focusedSessionId != null &&
@@ -116,7 +112,8 @@ class _BedtimeCanvasPageState extends ConsumerState<BedtimeCanvasPage>
     _scheduleNextMinuteClock();
 
     final timer = ref.read(timerFacadeProvider);
-    final isInitialActive = playback.state.playingSessionCount > 0 ||
+    final isInitialActive =
+        playback.state.playingSessionCount > 0 ||
         timer.state.active ||
         timer.state.stopAfterCurrentTrack;
     _updateKeepScreenOnState(isInitialActive);
@@ -220,11 +217,12 @@ class _BedtimeCanvasPageState extends ConsumerState<BedtimeCanvasPage>
     bool? timerActive,
     bool? stopAfterTrack,
   }) {
-    final count = playingCount ??
+    final count =
+        playingCount ??
         ref.read(playbackFacadeProvider).state.playingSessionCount;
-    final active = timerActive ??
-        ref.read(timerFacadeProvider).state.active;
-    final stop = stopAfterTrack ??
+    final active = timerActive ?? ref.read(timerFacadeProvider).state.active;
+    final stop =
+        stopAfterTrack ??
         ref.read(timerFacadeProvider).state.stopAfterCurrentTrack;
     _updateKeepScreenOnState(count > 0 || active || stop);
   }
@@ -239,7 +237,8 @@ class _BedtimeCanvasPageState extends ConsumerState<BedtimeCanvasPage>
     }
     final playback = ref.read(playbackFacadeProvider);
     final timer = ref.read(timerFacadeProvider);
-    final isAudioOrTimerActive = playback.state.playingSessionCount > 0 ||
+    final isAudioOrTimerActive =
+        playback.state.playingSessionCount > 0 ||
         timer.state.active ||
         timer.state.stopAfterCurrentTrack;
     if (!isAudioOrTimerActive) {
@@ -252,17 +251,15 @@ class _BedtimeCanvasPageState extends ConsumerState<BedtimeCanvasPage>
     }
   }
 
-  void _showFeedback({required IconData icon, String? text}) {
+  void _showFeedback({required IconData icon}) {
     _feedbackTimer?.cancel();
     setState(() {
       _feedbackIcon = icon;
-      _feedbackText = text;
     });
     _feedbackTimer = Timer(const Duration(milliseconds: 900), () {
       if (mounted) {
         setState(() {
           _feedbackIcon = null;
-          _feedbackText = null;
         });
       }
     });
@@ -288,10 +285,9 @@ class _BedtimeCanvasPageState extends ConsumerState<BedtimeCanvasPage>
       return cached;
     }
 
-    final withLastPlayed = playback.sessions.values
-        .where((s) => s.lastPlayedAt != null)
-        .toList()
-      ..sort((a, b) => b.lastPlayedAt!.compareTo(a.lastPlayedAt!));
+    final withLastPlayed =
+        playback.sessions.values.where((s) => s.lastPlayedAt != null).toList()
+          ..sort((a, b) => b.lastPlayedAt!.compareTo(a.lastPlayedAt!));
     if (withLastPlayed.isNotEmpty) {
       final mostRecent = withLastPlayed.first;
       _targetSessionIds.add(mostRecent.id);
@@ -341,40 +337,6 @@ class _BedtimeCanvasPageState extends ConsumerState<BedtimeCanvasPage>
     }
   }
 
-  void _handleVerticalDrag(DragUpdateDetails details) {
-    _onUserInteraction();
-    final delta = details.primaryDelta ?? 0.0;
-    if (delta.abs() < 0.5) return;
-
-    final targets = _resolveTargetSessions();
-    if (targets.isEmpty) return;
-    final playback = ref.read(playbackFacadeProvider);
-
-    // Drag up decreases screen Y (negative delta), so delta > 0 is volume down, delta < 0 is volume up
-    final volumeChange = -delta / 320.0;
-    var anyChanged = false;
-    double? feedbackVolume;
-
-    for (final session in targets) {
-      final newVolume = (session.volume + volumeChange).clamp(0.0, 1.0);
-      feedbackVolume ??= newVolume;
-      if ((newVolume - session.volume).abs() >= 0.005) {
-        unawaited(playback.setSessionVolume(session.id, newVolume));
-        anyChanged = true;
-      }
-    }
-
-    if (anyChanged && feedbackVolume != null) {
-      final percent = (feedbackVolume * 100).round();
-      final icon = feedbackVolume == 0
-          ? Icons.volume_off_rounded
-          : feedbackVolume < 0.5
-              ? Icons.volume_down_rounded
-              : Icons.volume_up_rounded;
-      _showFeedback(icon: icon, text: '$percent%');
-    }
-  }
-
   void _onPointerDown(PointerDownEvent event) {
     _onUserInteraction();
     _touchStartPosition = event.position;
@@ -409,7 +371,8 @@ class _BedtimeCanvasPageState extends ConsumerState<BedtimeCanvasPage>
   Widget build(BuildContext context) {
     ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
-    final timerState = ref.watch(timerStateProvider).value ??
+    final timerState =
+        ref.watch(timerStateProvider).value ??
         ref.read(timerFacadeProvider).state;
 
     ref.listen(playbackStateProvider, (_, next) {
@@ -455,7 +418,6 @@ class _BedtimeCanvasPageState extends ConsumerState<BedtimeCanvasPage>
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
           onDoubleTap: _handleDoubleTap,
-          onVerticalDragUpdate: _handleVerticalDrag,
           child: Stack(
             fit: StackFit.expand,
             children: [
@@ -488,18 +450,20 @@ class _BedtimeCanvasPageState extends ConsumerState<BedtimeCanvasPage>
                               timerState.stopAfterCurrentTrack
                                   ? Icons.music_note_rounded
                                   : timerState.active
-                                      ? Icons.timer_outlined
-                                      : Icons.nights_stay_outlined,
+                                  ? Icons.timer_outlined
+                                  : Icons.nights_stay_outlined,
                               size: 14,
-                              color: Colors.white
-                                  .withValues(alpha: opacity * 0.85),
+                              color: Colors.white.withValues(
+                                alpha: opacity * 0.85,
+                              ),
                             ),
                             const SizedBox(width: 6),
                             Text(
                               timerText,
                               style: TextStyle(
-                                color: Colors.white
-                                    .withValues(alpha: opacity * 0.85),
+                                color: Colors.white.withValues(
+                                  alpha: opacity * 0.85,
+                                ),
                                 fontSize: 13,
                                 fontWeight: FontWeight.w400,
                                 letterSpacing: 0.5,
@@ -521,16 +485,6 @@ class _BedtimeCanvasPageState extends ConsumerState<BedtimeCanvasPage>
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(
-                      i18n.tr('swipe_to_adjust_track_volume'),
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.12),
-                        fontSize: 11,
-                        letterSpacing: 0.4,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
                     Text(
                       i18n.tr('hold_to_exit_sleep_mode'),
                       textAlign: TextAlign.center,
@@ -564,17 +518,6 @@ class _BedtimeCanvasPageState extends ConsumerState<BedtimeCanvasPage>
                           color: Colors.white.withValues(alpha: 0.35),
                           size: 26,
                         ),
-                        if (_feedbackText != null) ...[
-                          const SizedBox(width: 8),
-                          Text(
-                            _feedbackText!,
-                            style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.35),
-                              fontSize: 14,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ],
                       ],
                     ),
                   ),
@@ -587,7 +530,8 @@ class _BedtimeCanvasPageState extends ConsumerState<BedtimeCanvasPage>
                   final progress = _holdExitController.value;
                   if (progress <= 0.0) return const SizedBox.shrink();
 
-                  final pos = _touchPosition ??
+                  final pos =
+                      _touchPosition ??
                       Offset(
                         MediaQuery.sizeOf(context).width / 2,
                         MediaQuery.sizeOf(context).height / 2,
@@ -609,8 +553,9 @@ class _BedtimeCanvasPageState extends ConsumerState<BedtimeCanvasPage>
                               valueColor: AlwaysStoppedAnimation<Color>(
                                 Colors.white.withValues(alpha: 0.4),
                               ),
-                              backgroundColor:
-                                  Colors.white.withValues(alpha: 0.1),
+                              backgroundColor: Colors.white.withValues(
+                                alpha: 0.1,
+                              ),
                             ),
                             Icon(
                               Icons.lock_open_rounded,

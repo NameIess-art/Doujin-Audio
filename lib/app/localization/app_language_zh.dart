@@ -648,7 +648,6 @@ const Map<String, String> appLanguageZh = {
   'no_timer_set': '未设置倒计时',
   'sleep_countdown': '睡眠倒计时',
   'double_tap_to_play_pause': '双击播放 / 暂停',
-  'swipe_to_adjust_track_volume': '上下滑动调节音量',
   'start_mode': '启动方式',
   'confirm_start_now': '确认并立即开始',
   'confirm_wait_playback': '确认并等待播放触发',

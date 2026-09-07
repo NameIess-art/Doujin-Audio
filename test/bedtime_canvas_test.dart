@@ -14,8 +14,7 @@ import 'package:doujin_audio/features/settings/application/settings_state.dart';
 
 import 'support/app_runtime_test_fixture.dart';
 
-final class _RecordingBedtimePowerPlatformService
-    extends PowerPlatformService {
+final class _RecordingBedtimePowerPlatformService extends PowerPlatformService {
   _RecordingBedtimePowerPlatformService() : super(isAndroidOverride: false);
 
   final List<bool> keepScreenOnCalls = <bool>[];
@@ -71,19 +70,14 @@ void main() {
       BedtimeCanvasPage.idleDimDelay = const Duration(seconds: 15);
       BedtimeCanvasPage.screenTimeoutDelay = const Duration(minutes: 2);
       powerService = _RecordingBedtimePowerPlatformService();
-      fixture = AppRuntimeWidgetTestFixture(
-        powerPlatformService: powerService,
-      );
+      fixture = AppRuntimeWidgetTestFixture(powerPlatformService: powerService);
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(
             nativePlaybackChannel,
             (_) async => <String, Object?>{'ok': true, 'value': null},
           );
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(
-            SystemChannels.platform,
-            (_) async => null,
-          );
+          .setMockMethodCallHandler(SystemChannels.platform, (_) async => null);
     });
 
     tearDown(() {
@@ -158,34 +152,38 @@ void main() {
       expect(powerService.keepScreenOnCalls, equals([true, false]));
     });
 
-    testWidgets('shows correct timer text for stopAfterCurrentTrack and active timer', (
-      tester,
-    ) async {
-      final i18n = fixture.languageProvider;
+    testWidgets(
+      'shows correct timer text for stopAfterCurrentTrack and active timer',
+      (tester) async {
+        final i18n = fixture.languageProvider;
 
-      // 1. Initially no timer set
-      await tester.pumpWidget(fixture.build(const BedtimeCanvasPage()));
-      await tester.pump();
+        // 1. Initially no timer set
+        await tester.pumpWidget(fixture.build(const BedtimeCanvasPage()));
+        await tester.pump();
 
-      expect(find.text(i18n.tr('no_timer_set')), findsOneWidget);
+        expect(find.text(i18n.tr('no_timer_set')), findsOneWidget);
 
-      // 2. stopAfterCurrentTrack enabled
-      fixture.timer.setStopAfterCurrentTrack(true);
-      await tester.pump();
+        // 2. stopAfterCurrentTrack enabled
+        fixture.timer.setStopAfterCurrentTrack(true);
+        await tester.pump();
 
-      expect(find.text(i18n.tr('stop_after_current_track')), findsOneWidget);
+        expect(find.text(i18n.tr('stop_after_current_track')), findsOneWidget);
 
-      // 3. active countdown timer
-      fixture.timer.setStopAfterCurrentTrack(false);
-      fixture.timer.configureTimer(TimerMode.manual, const Duration(minutes: 30));
-      fixture.timer.startCountdown();
-      await tester.pump();
+        // 3. active countdown timer
+        fixture.timer.setStopAfterCurrentTrack(false);
+        fixture.timer.configureTimer(
+          TimerMode.manual,
+          const Duration(minutes: 30),
+        );
+        fixture.timer.startCountdown();
+        await tester.pump();
 
-      expect(find.textContaining(i18n.tr('sleep_countdown')), findsOneWidget);
+        expect(find.textContaining(i18n.tr('sleep_countdown')), findsOneWidget);
 
-      fixture.timer.cancelTimer();
-      await tester.pump();
-    });
+        fixture.timer.cancelTimer();
+        await tester.pump();
+      },
+    );
 
     testWidgets(
       'double tap pauses and resumes multiple selected/playing sessions (not first in playlist)',
@@ -270,55 +268,51 @@ void main() {
       },
     );
 
-    testWidgets(
-      'vertical drag adjusts volume for multiple selected/playing sessions',
-      (tester) async {
-        final sessionA = PlaybackSession(
-          id: 'test-session-a',
-          currentTrackPath: '/music/a.mp3',
-          loopMode: SessionLoopMode.single,
-          nonSingleLoopMode: SessionLoopMode.single,
-          volume: 0.5,
-          createdAt: DateTime(2026),
-          state: PlayerState(true, ProcessingState.ready),
-        );
-        final sessionB = PlaybackSession(
-          id: 'test-session-b',
-          currentTrackPath: '/music/b.mp3',
-          loopMode: SessionLoopMode.single,
-          nonSingleLoopMode: SessionLoopMode.single,
-          volume: 0.6,
-          createdAt: DateTime(2026),
-          state: PlayerState(true, ProcessingState.ready),
-        );
-        fixture.playbackService.registerSession(sessionA);
-        fixture.playbackService.registerSession(sessionB);
-        fixture.playbackService.syncSlice(
-          activeSessions: <PlaybackSession>[sessionA, sessionB],
-          playingSessionCount: 2,
-          focusedSessionId: sessionA.id,
-          multiThreadPlaybackEnabled: true,
-          coverGeneration: 0,
-          isInitialized: true,
-        );
+    testWidgets('vertical drag does not adjust volume', (tester) async {
+      final sessionA = PlaybackSession(
+        id: 'test-session-a',
+        currentTrackPath: '/music/a.mp3',
+        loopMode: SessionLoopMode.single,
+        nonSingleLoopMode: SessionLoopMode.single,
+        volume: 0.5,
+        createdAt: DateTime(2026),
+        state: PlayerState(true, ProcessingState.ready),
+      );
+      final sessionB = PlaybackSession(
+        id: 'test-session-b',
+        currentTrackPath: '/music/b.mp3',
+        loopMode: SessionLoopMode.single,
+        nonSingleLoopMode: SessionLoopMode.single,
+        volume: 0.6,
+        createdAt: DateTime(2026),
+        state: PlayerState(true, ProcessingState.ready),
+      );
+      fixture.playbackService.registerSession(sessionA);
+      fixture.playbackService.registerSession(sessionB);
+      fixture.playbackService.syncSlice(
+        activeSessions: <PlaybackSession>[sessionA, sessionB],
+        playingSessionCount: 2,
+        focusedSessionId: sessionA.id,
+        multiThreadPlaybackEnabled: true,
+        coverGeneration: 0,
+        isInitialized: true,
+      );
 
-        await tester.pumpWidget(fixture.build(const BedtimeCanvasPage()));
-        await tester.pump();
+      await tester.pumpWidget(fixture.build(const BedtimeCanvasPage()));
+      await tester.pump();
 
-        // Drag up (negative delta Y) increases volume for both sessions
-        await tester.drag(
-          find.byType(BedtimeCanvasPage),
-          const Offset(0, -100),
-        );
-        await tester.pump();
+      final initialVolumeA = sessionA.volume;
+      final initialVolumeB = sessionB.volume;
 
-        expect(sessionA.volume, greaterThan(0.5));
-        expect(sessionB.volume, greaterThan(0.6));
+      await tester.drag(find.byType(BedtimeCanvasPage), const Offset(0, -100));
+      await tester.pump();
 
-        // Drain feedback timer before test end
-        await tester.pump(const Duration(seconds: 1));
-      },
-    );
+      expect(sessionA.volume, initialVolumeA);
+      expect(sessionB.volume, initialVolumeB);
+
+      // Drain the double-tap recognizer timer before test teardown.
+      await tester.pump(const Duration(seconds: 1));
+    });
 
     testWidgets('horizontal swipe does not perform track skipping', (
       tester,
@@ -356,9 +350,8 @@ void main() {
       expect(find.byIcon(Icons.skip_next_rounded), findsNothing);
       expect(find.byIcon(Icons.skip_previous_rounded), findsNothing);
 
-      // Verify updated bottom hints
+      // Only the long-press exit hint remains.
       final i18n = fixture.languageProvider;
-      expect(find.text(i18n.tr('swipe_to_adjust_track_volume')), findsOneWidget);
       expect(find.text(i18n.tr('hold_to_exit_sleep_mode')), findsOneWidget);
 
       await tester.pump(const Duration(seconds: 1));
@@ -458,7 +451,9 @@ void main() {
 
         // Advance 2 seconds into breathing animation (tween between 0.16 and 0.42)
         await tester.pump(const Duration(seconds: 2));
-        final textWidgetAfterTouch = tester.widget<Text>(find.textContaining(':'));
+        final textWidgetAfterTouch = tester.widget<Text>(
+          find.textContaining(':'),
+        );
         expect(textWidgetAfterTouch.style?.color?.a, greaterThan(0.18));
       },
     );
@@ -569,19 +564,14 @@ void main() {
 
     setUp(() {
       powerService = _RecordingBedtimePowerPlatformService();
-      fixture = AppRuntimeWidgetTestFixture(
-        powerPlatformService: powerService,
-      );
+      fixture = AppRuntimeWidgetTestFixture(powerPlatformService: powerService);
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(
             nativePlaybackChannel,
             (_) async => <String, Object?>{'ok': true, 'value': null},
           );
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(
-            SystemChannels.platform,
-            (_) async => null,
-          );
+          .setMockMethodCallHandler(SystemChannels.platform, (_) async => null);
       MainScreen.sleepModeAutoTriggerDelay = const Duration(minutes: 5);
     });
 
@@ -637,57 +627,56 @@ void main() {
       },
     );
 
-    testWidgets(
-      'cancels auto-entry if playback is paused before 5 min',
-      (tester) async {
-        await fixture.settings.setSleepModeAutoTrigger(
-          SleepModeAutoTrigger.afterPlayback5min,
-        );
+    testWidgets('cancels auto-entry if playback is paused before 5 min', (
+      tester,
+    ) async {
+      await fixture.settings.setSleepModeAutoTrigger(
+        SleepModeAutoTrigger.afterPlayback5min,
+      );
 
-        final session = PlaybackSession(
-          id: 'test-session-pause',
-          currentTrackPath: '/music/test.mp3',
-          loopMode: SessionLoopMode.single,
-          nonSingleLoopMode: SessionLoopMode.single,
-          volume: 0.8,
-          createdAt: DateTime(2026),
-          state: PlayerState(true, ProcessingState.ready),
-        );
-        fixture.playbackService.registerSession(session);
-        fixture.playbackService.syncSlice(
-          activeSessions: <PlaybackSession>[session],
-          playingSessionCount: 1,
-          focusedSessionId: session.id,
-          multiThreadPlaybackEnabled: false,
-          coverGeneration: 0,
-          isInitialized: true,
-        );
+      final session = PlaybackSession(
+        id: 'test-session-pause',
+        currentTrackPath: '/music/test.mp3',
+        loopMode: SessionLoopMode.single,
+        nonSingleLoopMode: SessionLoopMode.single,
+        volume: 0.8,
+        createdAt: DateTime(2026),
+        state: PlayerState(true, ProcessingState.ready),
+      );
+      fixture.playbackService.registerSession(session);
+      fixture.playbackService.syncSlice(
+        activeSessions: <PlaybackSession>[session],
+        playingSessionCount: 1,
+        focusedSessionId: session.id,
+        multiThreadPlaybackEnabled: false,
+        coverGeneration: 0,
+        isInitialized: true,
+      );
 
-        await tester.pumpWidget(fixture.build(const MainScreen()));
-        await tester.pump();
-        await tester.pump(const Duration(milliseconds: 900));
+      await tester.pumpWidget(fixture.build(const MainScreen()));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 900));
 
-        // Advance 2 minutes
-        await tester.pump(const Duration(minutes: 2));
+      // Advance 2 minutes
+      await tester.pump(const Duration(minutes: 2));
 
-        // Pause playback
-        session.state = PlayerState(false, ProcessingState.ready);
-        fixture.playbackService.syncSlice(
-          activeSessions: <PlaybackSession>[session],
-          playingSessionCount: 0,
-          focusedSessionId: session.id,
-          multiThreadPlaybackEnabled: false,
-          coverGeneration: 0,
-          isInitialized: true,
-        );
-        await tester.pump();
+      // Pause playback
+      session.state = PlayerState(false, ProcessingState.ready);
+      fixture.playbackService.syncSlice(
+        activeSessions: <PlaybackSession>[session],
+        playingSessionCount: 0,
+        focusedSessionId: session.id,
+        multiThreadPlaybackEnabled: false,
+        coverGeneration: 0,
+        isInitialized: true,
+      );
+      await tester.pump();
 
-        // Advance another 4 minutes (total elapsed > 5 min, but paused)
-        await tester.pump(const Duration(minutes: 4));
-        await tester.pump(const Duration(milliseconds: 400));
-        expect(find.byType(BedtimeCanvasPage), findsNothing);
-      },
-    );
+      // Advance another 4 minutes (total elapsed > 5 min, but paused)
+      await tester.pump(const Duration(minutes: 4));
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(find.byType(BedtimeCanvasPage), findsNothing);
+    });
 
     testWidgets(
       'automatically enters BedtimeCanvasPage after 5 min of countdown',

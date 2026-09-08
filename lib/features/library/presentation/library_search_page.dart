@@ -351,7 +351,9 @@ class _LibrarySearchPageState extends ConsumerState<_LibrarySearchPage> {
       final effectiveCategorySnapshot =
           categorySnapshot ??
           await libraryFacade.audioLibraryCategorySnapshot();
+      if (!mounted || _pendingSearchKey != requestKey) return null;
       final tree = await libraryFacade.loadLibraryTree();
+      if (!mounted || _pendingSearchKey != requestKey) return null;
       final request = LibrarySearchSnapshotRequest(
         tree: tree,
         query: query,
@@ -365,7 +367,9 @@ class _LibrarySearchPageState extends ConsumerState<_LibrarySearchPage> {
     unawaited(
       searchFuture.then<void>(
         (result) {
-          if (!mounted || _pendingSearchKey != requestKey) return;
+          if (result == null || !mounted || _pendingSearchKey != requestKey) {
+            return;
+          }
           UiInteractionCoordinator.instance.scheduleCommit(
             key: _searchCommitKey,
             priority: 5,

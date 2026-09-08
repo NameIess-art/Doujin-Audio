@@ -1,4 +1,5 @@
 import 'dart:collection';
+import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 
@@ -208,9 +209,9 @@ class LibrarySearchIndex {
     required int structureRevision,
     AudioLibraryCategorySnapshot? categorySnapshot,
   }) {
-    final searchTerms = extractSearchTerms(query);
+    final searchTerms = normalizedSearchTerms(query);
     final detailRevision = categorySnapshot?.detailRevision ?? 0;
-    final normalizedQuery = '$detailRevision|${searchTerms.join(' ')}';
+    final normalizedQuery = '$detailRevision|${jsonEncode(searchTerms)}';
     if (_cachedRevision != structureRevision) {
       _cache.clear();
       _cachedRevision = structureRevision;
@@ -295,7 +296,7 @@ class LibrarySearchIndex {
         ...folderEntries.map((e) => e.searchableText),
       ],
       '',
-      terms: searchTerms,
+      normalizedTerms: searchTerms,
     );
     if (matchesFolderName) {
       return _FilteredFolderNodeResult(
@@ -365,7 +366,7 @@ class LibrarySearchIndex {
         if (trackEntry != null) trackEntry.searchableText,
       ],
       '',
-      terms: searchTerms,
+      normalizedTerms: searchTerms,
     );
   }
 }

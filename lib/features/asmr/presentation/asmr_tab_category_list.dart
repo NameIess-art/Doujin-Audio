@@ -109,6 +109,9 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
   int _visibleItemsCacheExpansionVersion = -1;
   int _visibleItemsTreeFingerprint = 0;
 
+  @visibleForTesting
+  Object get visibleItemsCache => _visibleItems;
+
   @override
   void didUpdateWidget(covariant _AsmrCategoryList oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -284,7 +287,9 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
       _lastFavoritesQuery = normalizedSearchQuery;
     }
 
-    final effectiveWorks = <AsmrWork>[...works];
+    final effectiveWorks = _collapsingWorks.isEmpty
+        ? works
+        : <AsmrWork>[...works];
     if (_collapsingWorks.isNotEmpty) {
       final sortedCollapsing = _collapsingWorks.values.toList()
         ..sort((a, b) => a.originalIndex.compareTo(b.originalIndex));
@@ -516,16 +521,6 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
     required int categoryRevision,
     required Map<int, AsmrTrackTreeViewState> trackStates,
   }) {
-    final currentWorkIds = works.map((work) => work.id).toSet();
-    final previousExpandedWorkCount = _expandedWorkIds.length;
-    _expandedWorkIds.removeWhere((workId) => !currentWorkIds.contains(workId));
-    _expandedFolderPaths.removeWhere(
-      (workId, _) => !currentWorkIds.contains(workId),
-    );
-    if (_expandedWorkIds.length != previousExpandedWorkCount) {
-      _visibleItemsExpansionVersion++;
-    }
-
     var treeFingerprint = 0;
     for (final entry in trackStates.entries) {
       treeFingerprint = Object.hash(
@@ -543,6 +538,16 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
         _visibleItemsTreeFingerprint == treeFingerprint &&
         _collapsingWorks.isEmpty) {
       return _visibleItems;
+    }
+
+    final currentWorkIds = works.map((work) => work.id).toSet();
+    final previousExpandedWorkCount = _expandedWorkIds.length;
+    _expandedWorkIds.removeWhere((workId) => !currentWorkIds.contains(workId));
+    _expandedFolderPaths.removeWhere(
+      (workId, _) => !currentWorkIds.contains(workId),
+    );
+    if (_expandedWorkIds.length != previousExpandedWorkCount) {
+      _visibleItemsExpansionVersion++;
     }
 
     final result = <_AsmrVisibleItem>[];

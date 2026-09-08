@@ -198,6 +198,7 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
 
   Future<void> _refresh({bool showSearchPlaceholder = false}) async {
     final query = _query;
+    final category = _category;
     final requestSerial = ++_requestSerial;
     setState(() {
       _showSearchPlaceholder = showSearchPlaceholder && query.isNotEmpty;
@@ -213,13 +214,14 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
     await controller.initialize(
       defaultLanguage: AsmrContentLanguage.fromAppLanguageName(language.name),
     );
+    if (!mounted || requestSerial != _requestSerial) return;
     await UiOperationService.instance.run<void>(
       scope: UiOperationScope.asmrCategory(
         AsmrOperationKind.refresh,
-        _category.name,
+        category.name,
       ),
       labelKey: 'loading_dot',
-      task: (_) => controller.refreshCategory(_category, searchQuery: query),
+      task: (_) => controller.refreshCategory(category, searchQuery: query),
     );
     if (!mounted || requestSerial != _requestSerial) return;
     setState(() => _showSearchPlaceholder = false);

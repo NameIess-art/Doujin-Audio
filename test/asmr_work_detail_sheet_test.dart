@@ -1,6 +1,8 @@
 import 'package:doujin_audio/app/localization/app_language_provider.dart';
 import 'package:doujin_audio/app/state/app_runtime_providers.dart';
 import 'package:doujin_audio/core/persistence/app_database.dart';
+import 'package:doujin_audio/core/immutable_collections.dart';
+import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/widgets/top_page_header.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_library_controller.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_preferences.dart';
@@ -16,6 +18,60 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'support/app_runtime_test_fixture.dart';
 
 void main() {
+  setUp(UiInteractionCoordinator.instance.resetForTest);
+  tearDown(UiInteractionCoordinator.instance.resetForTest);
+
+  for (final count in <int>[100, 1000, 5000]) {
+    testWidgets('selection reuses visible rows for $count ASMR works', (
+      tester,
+    ) async {
+      SharedPreferences.setMockInitialValues(const <String, Object>{});
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      await fixture.languageProvider.setLanguage(AppLanguage.zh);
+      final controller = _TestFavoritesAsmrLibraryController(const []);
+      controller.favoriteWorks = immutableList(
+        List.generate(count, (index) => _work(id: index, title: 'Work $index')),
+      );
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(
+        fixture.build(
+          const AsmrTab(),
+          overrides: [
+            asmrLibraryControllerProvider.overrideWithValue(controller),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('收藏'));
+      await tester.pumpAndSettle();
+      await tester.longPress(find.text('Work 0'));
+      await tester.pumpAndSettle();
+
+      final dynamic listState = tester.state(
+        find.byWidgetPredicate(
+          (widget) => widget.runtimeType.toString() == '_AsmrCategoryList',
+        ),
+      );
+      final Object cachedRows = listState.visibleItemsCache as Object;
+      await tester.tap(find.text('Work 1'));
+      await tester.pumpAndSettle();
+      expect(identical(listState.visibleItemsCache, cachedRows), isTrue);
+      expect(find.text('Work 0'), findsOneWidget);
+      expect(find.text('Work 1'), findsOneWidget);
+      expect(find.text('Work ${count - 1}'), findsNothing);
+
+      controller.updateFavorites(<AsmrWork>[
+        _work(id: count, title: 'New work'),
+      ]);
+      await tester.pumpAndSettle();
+      expect(identical(listState.visibleItemsCache, cachedRows), isFalse);
+      expect(find.text('New work'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+    });
+  }
+
   testWidgets('detail download button opens the work download page', (
     tester,
   ) async {
@@ -257,6 +313,15 @@ class _TestFavoritesAsmrLibraryController extends AsmrLibraryController {
 
   @override
   Future<void> initialize({AsmrContentLanguage? defaultLanguage}) async {}
+
+  @override
+  Future<void> refreshCategory(
+    AsmrCategoryType category, {
+    String searchQuery = '',
+  }) async {}
+
+  @override
+  Future<void> restoreAsmrAccountSession({bool force = false}) async {}
 
   @override
   AsmrLibraryGlobalViewState get globalViewState => AsmrLibraryGlobalViewState(

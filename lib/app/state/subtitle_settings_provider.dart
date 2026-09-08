@@ -73,14 +73,12 @@ class SubtitleSettingsNotifier extends Notifier<SubtitleSettingsState>
     implements PersistedStateReloader {
   SubtitleSettingsNotifier({
     Future<SubtitleSettingsState> Function()? loadState,
-  }) : _initialLoadState = loadState {
-    _loadState = _initialLoadState ?? _loadPersistedState;
-    _loadFuture = _load();
+  }) {
+    _loadState = loadState ?? _loadPersistedState;
+    unawaited(_load());
   }
 
-  final Future<SubtitleSettingsState> Function()? _initialLoadState;
   late final Future<SubtitleSettingsState> Function() _loadState;
-  late Future<void> _loadFuture;
   int _loadRevision = 0;
   bool _disposed = false;
   SubtitleSettingsState? _standaloneState;
@@ -119,10 +117,8 @@ class SubtitleSettingsNotifier extends Notifier<SubtitleSettingsState>
 
   @override
   SubtitleSettingsState build() {
-    _loadState = _initialLoadState ?? _loadPersistedState;
     _disposed = false;
     ref.onDispose(dispose);
-    _loadFuture = _load();
     final initial = _standaloneState ?? SubtitleSettingsState();
     _standaloneState = initial;
     return initial;
@@ -210,8 +206,7 @@ class SubtitleSettingsNotifier extends Notifier<SubtitleSettingsState>
   @override
   Future<void> reloadPersistedState() {
     _loadRevision++;
-    _loadFuture = _load();
-    return _loadFuture;
+    return _load();
   }
 
   void _invalidatePendingLoad() {

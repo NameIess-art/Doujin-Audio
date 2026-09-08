@@ -16,6 +16,7 @@ import 'package:doujin_audio/core/media/subtitle_parser.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/features/player/application/playback_subtitle_service.dart';
 import 'package:doujin_audio/features/player/application/playback_session_snapshot.dart';
+import 'package:doujin_audio/features/player/application/native_playback_bridge.dart';
 import 'package:doujin_audio/features/player/presentation/playlist_tab.dart';
 import 'package:doujin_audio/features/player/presentation/active_session_carousel.dart';
 import 'package:doujin_audio/features/player/presentation/session_video_viewport.dart';
@@ -197,6 +198,96 @@ void main() {
   tearDownAll(() async {
     await AppRuntimeTestFixture.disposeSharedDatabase(testDatabase);
   });
+
+  for (final hidden in [true, false]) {
+    testWidgets(
+      'buffered progress defers while ${hidden ? 'hidden' : 'interacting'} and resumes with the latest value',
+      (tester) async {
+        final fixture = AppRuntimeWidgetTestFixture();
+        addTearDown(fixture.dispose);
+        final interactions = UiInteractionCoordinator.instance;
+        interactions.resetForTest();
+        addTearDown(interactions.resetForTest);
+        final visible = ValueNotifier(true);
+        addTearDown(visible.dispose);
+        final session = PlaybackSession(
+          id: 'buffered-session',
+          currentTrackPath: '/library/track.mp3',
+          loopMode: SessionLoopMode.single,
+          nonSingleLoopMode: SessionLoopMode.single,
+          volume: 1,
+          createdAt: DateTime(2026),
+          state: const PlayerState(false, ProcessingState.ready),
+        )..setOptimisticDuration(const Duration(minutes: 1));
+        addTearDown(session.shutdown);
+        await tester.pumpWidget(
+          fixture.build(
+            ValueListenableBuilder<bool>(
+              valueListenable: visible,
+              builder: (_, enabled, child) =>
+                  TickerMode(enabled: enabled, child: child!),
+              child: SessionProgressBar(
+                session: PlaybackSessionSnapshot.fromRuntime(session),
+                playback: fixture.runtimeGraph.playback,
+                paths: fixture.runtimeGraph.audioPaths,
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        if (hidden) {
+          visible.value = false;
+          await tester.pump();
+        } else {
+          interactions.beginInteraction('buffered-test');
+        }
+        final originalSlider = tester.widget<Slider>(find.byType(Slider));
+        for (final seconds in [10, 20]) {
+          session.applyNativeProgress(
+            NativePlaybackProgressUpdate(
+              sessionId: session.id,
+              position: Duration.zero,
+              duration: const Duration(minutes: 1),
+              bufferedPosition: Duration(seconds: seconds),
+              nativeElapsedRealtimeMs: seconds * 1000,
+            ),
+          );
+          await tester.pump(const Duration(milliseconds: 150));
+        }
+        expect(
+          tester.widget<Slider>(find.byType(Slider)),
+          same(originalSlider),
+        );
+        if (hidden) {
+          visible.value = true;
+        } else {
+          interactions.cancelInteraction('buffered-test');
+        }
+        await tester.pumpAndSettle();
+        expect(
+          tester.widget<Slider>(find.byType(Slider)).secondaryTrackValue,
+          20000,
+        );
+        final slider = tester.widget<Slider>(find.byType(Slider));
+        slider.onChangeStart!(0);
+        slider.onChanged!(30000);
+        await tester.pump();
+        expect(tester.widget<Slider>(find.byType(Slider)).value, 30000);
+        session.applyNativeProgress(
+          NativePlaybackProgressUpdate(
+            sessionId: session.id,
+            position: const Duration(seconds: 3),
+            duration: const Duration(minutes: 1),
+            bufferedPosition: const Duration(seconds: 40),
+            nativeElapsedRealtimeMs: 30000,
+          ),
+        );
+        await tester.pump(const Duration(milliseconds: 150));
+        expect(tester.widget<Slider>(find.byType(Slider)).value, 30000);
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+    );
+  }
 
   testWidgets(
     'mounted playback card refreshes when the cover generation changes',

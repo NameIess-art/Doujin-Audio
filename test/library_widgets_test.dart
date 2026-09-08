@@ -33,6 +33,17 @@ class _QueuedEntryEditorService extends LibraryEntryEditorService {
   }
 }
 
+class _ReadCountingTrackNode extends TrackNode {
+  _ReadCountingTrackNode(super.track);
+  int reads = 0;
+
+  @override
+  MusicTrack get track {
+    reads++;
+    return super.track;
+  }
+}
+
 Set<String> _selectedSortControls(WidgetTester tester) {
   final controls =
       tester.widget(
@@ -717,70 +728,113 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('large search results only build visible track rows', (
-    WidgetTester tester,
+  testWidgets('search stops filtering after leaving while the tree loads', (
+    tester,
   ) async {
-    final fixture = AppRuntimeWidgetTestFixture();
+    final pending = Completer<LibraryTreeSnapshot>();
+    final fixture = AppRuntimeWidgetTestFixture(
+      libraryTreeSnapshotBuilder: (_) => pending.future,
+    );
     addTearDown(fixture.dispose);
-    const folderPath = '/library/search-large';
-    final tracks = List<MusicTrack>.generate(
-      2000,
-      (index) => testMusicTrack(
-        name: 'Search track ${index.toString().padLeft(4, '0')}',
-        path: '$folderPath/track-$index.mp3',
-        groupKey: folderPath,
-        groupTitle: 'Search folder',
-      ),
-      growable: false,
+    final track = testMusicTrack(
+      name: 'Search track',
+      path: '/library/track.mp3',
+      isSingle: true,
+      groupKey: '/library/track.mp3',
+      groupTitle: 'Search track',
     );
-    fixture.runtimeGraph.library.addWatchedFolder(folderPath, notify: false);
-    fixture.runtimeGraph.library.addTracks(
-      tracks,
-      notify: false,
-      persist: false,
-    );
+    fixture.library.addTracks([track], notify: false, persist: false);
     fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 0);
-
+    // Finish category I/O first so the search waits specifically on the tree.
+    await tester.runAsync(fixture.library.audioLibraryCategorySnapshot);
     await tester.pumpWidget(fixture.build(const LibraryTab()));
-    await tester.pump();
-    await pumpUntilLibraryTreeReady(tester, fixture.runtimeGraph.library);
+    await tester.pump(const Duration(milliseconds: 550));
     await tester.tap(
       find.byKey(const ValueKey<String>('library_search_button')),
     );
-    await pumpUntilFound(
-      tester,
-      find.byKey(const ValueKey<String>('app_search_field')),
-    );
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 550));
     await tester.enterText(
       find.byKey(const ValueKey<String>('app_search_field')),
-      'Search track',
+      'Search',
     );
     await tester.pump(const Duration(milliseconds: 250));
-    await pumpUntilFound(
-      tester,
-      find.text('Search track 0000', findRichText: true),
-    );
-
-    final builtRows = find.textContaining('Search track', findRichText: true);
-    expect(builtRows.evaluate().length, lessThan(100));
-    expect(find.text('Search track 1999', findRichText: true), findsNothing);
-
-    await tester.scrollUntilVisible(
-      find.text('Search track 1999', findRichText: true),
-      600,
-      scrollable: find
-          .descendant(
-            of: find.byKey(
-              const ValueKey<String>('library_search_results_all'),
-            ),
-            matching: find.byType(Scrollable),
-          )
-          .first,
-      maxScrolls: 400,
-    );
-    expect(find.text('Search track 1999', findRichText: true), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+    final node = _ReadCountingTrackNode(track);
+    pending.complete(LibraryTreeSnapshot(tree: [node], leafFolderCount: 0));
+    await tester.pumpAndSettle();
+    expect(node.reads, 0);
+    expect(tester.takeException(), isNull);
   });
+
+  for (final count in [100, 1000, 5000]) {
+    testWidgets('$count search results only build visible track rows', (
+      WidgetTester tester,
+    ) async {
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      const folderPath = '/library/search-large';
+      final tracks = List<MusicTrack>.generate(
+        count,
+        (index) => testMusicTrack(
+          name: 'Search track ${index.toString().padLeft(4, '0')}',
+          path: '$folderPath/track-$index.mp3',
+          groupKey: folderPath,
+          groupTitle: 'Search folder',
+        ),
+        growable: false,
+      );
+      fixture.runtimeGraph.library.addWatchedFolder(folderPath, notify: false);
+      fixture.runtimeGraph.library.addTracks(
+        tracks,
+        notify: false,
+        persist: false,
+      );
+      fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 0);
+
+      await tester.pumpWidget(fixture.build(const LibraryTab()));
+      await tester.pump();
+      await pumpUntilLibraryTreeReady(tester, fixture.runtimeGraph.library);
+      await tester.tap(
+        find.byKey(const ValueKey<String>('library_search_button')),
+      );
+      await pumpUntilFound(
+        tester,
+        find.byKey(const ValueKey<String>('app_search_field')),
+      );
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey<String>('app_search_field')),
+        'Search track',
+      );
+      await tester.pump(const Duration(milliseconds: 250));
+      await pumpUntilFound(
+        tester,
+        find.text('Search track 0000', findRichText: true),
+      );
+
+      final builtRows = find.textContaining('Search track', findRichText: true);
+      expect(builtRows.evaluate().length, lessThan(100));
+      final lastTrack =
+          'Search track ${(count - 1).toString().padLeft(4, '0')}';
+      expect(find.text(lastTrack, findRichText: true), findsNothing);
+
+      await tester.scrollUntilVisible(
+        find.text(lastTrack, findRichText: true),
+        600,
+        scrollable: find
+            .descendant(
+              of: find.byKey(
+                const ValueKey<String>('library_search_results_all'),
+              ),
+              matching: find.byType(Scrollable),
+            )
+            .first,
+        maxScrolls: count,
+      );
+      expect(find.text(lastTrack, findRichText: true), findsOneWidget);
+    });
+  }
 
   testWidgets('library search exposes retry and recovers after tree failure', (
     WidgetTester tester,
@@ -2843,6 +2897,44 @@ void main() {
   testWidgets(
     'single track without cover added to playlist is not highlighted',
     (WidgetTester tester) async {
+      var prepareCalls = 0;
+      Map<String, Object?>? preparedSnapshot;
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(nativePlaybackChannel, (call) async {
+        if (call.method == NativePlaybackMethod.prepareSession) {
+          prepareCalls++;
+          final arguments = call.arguments as Map<Object?, Object?>;
+          preparedSnapshot = <String, Object?>{
+            'sessionId': arguments['sessionId'],
+            'path': arguments['path'],
+            'uri': arguments['uri'],
+            'playing': false,
+            'playWhenReady': false,
+            'processingState': 'ready',
+            'positionMs': 0,
+            'bufferedPositionMs': 0,
+            'volume': 1.0,
+          };
+          return <String, Object?>{'ok': true, 'value': preparedSnapshot};
+        }
+        if (call.method == NativePlaybackMethod.play) {
+          final arguments = call.arguments as Map<Object?, Object?>;
+          return <String, Object?>{
+            'ok': true,
+            'value': <String, Object?>{
+              ...preparedSnapshot!,
+              'playing': true,
+              'playWhenReady': true,
+              'transportCommandId': arguments['transportCommandId'],
+            },
+          };
+        }
+        return <String, Object?>{'ok': true, 'value': null};
+      });
+      addTearDown(
+        () => messenger.setMockMethodCallHandler(nativePlaybackChannel, null),
+      );
       final fixture = AppRuntimeWidgetTestFixture();
       addTearDown(fixture.dispose);
       final runtimeGraph = fixture.runtimeGraph;
@@ -2882,6 +2974,13 @@ void main() {
       );
       final card = tester.widget<Card>(cardFinder.first);
       expect(card.color, Colors.transparent);
+      expect(prepareCalls, 1);
+      expect(
+        PathMatcher.normalize(
+          runtimeGraph.playback.activeSessions.single.currentTrackPath,
+        ),
+        PathMatcher.normalize(singleTrack.path),
+      );
 
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.runAsync(

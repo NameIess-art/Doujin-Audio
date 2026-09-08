@@ -26,24 +26,19 @@ String normalizeSearchQuery(String query) {
   return extractSearchTerms(query).join(' ');
 }
 
+List<String> normalizedSearchTerms(String query) => extractSearchTerms(
+  query,
+).map((term) => term.toLowerCase()).toList(growable: false);
+
 bool matchesSearchTerms(
   Iterable<String> haystacks,
   String query, {
-  List<String>? terms,
+  List<String>? normalizedTerms,
 }) {
-  final effectiveTerms = terms ?? extractSearchTerms(query);
+  final effectiveTerms = normalizedTerms ?? normalizedSearchTerms(query);
   if (effectiveTerms.isEmpty) {
     return true;
   }
-  final normalizedTerms = effectiveTerms
-      .map(
-        (term) => term
-            .replaceAll(_searchQueryWhitespacePattern, ' ')
-            .trim()
-            .toLowerCase(),
-      )
-      .where((term) => term.isNotEmpty)
-      .toList(growable: false);
   final mergedHaystack = haystacks
       .map(
         (value) => value
@@ -52,5 +47,5 @@ bool matchesSearchTerms(
             .toLowerCase(),
       )
       .join('\n');
-  return normalizedTerms.every(mergedHaystack.contains);
+  return effectiveTerms.every(mergedHaystack.contains);
 }

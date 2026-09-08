@@ -123,6 +123,19 @@ void main() {
       final catalog = _RefreshCatalog(
         watchedFolders: <String>['C:/music'],
         initialTracks: <MusicTrack>[removed],
+        initialEntries: <LibraryEntry>[
+          LibraryEntry.track(
+            libraryPath: 'C:/music',
+            track: _musicTrack('C:/music/one.mp3'),
+            parentPath: 'C:/music',
+            state: LibraryEntryState.active,
+          ),
+          LibraryEntry.folder(
+            libraryPath: 'C:/music',
+            path: 'C:/music/empty',
+            state: LibraryEntryState.active,
+          ),
+        ],
       );
       final dataSource = _ChunkedRefreshDataSource(
         catalog: catalog,
@@ -130,6 +143,7 @@ void main() {
           FolderScanChunk(
             tracks: <ScannedTrack>[_scannedTrack('C:/music/one.mp3')],
             paths: <String>{PathMatcher.normalize('C:/music/one.mp3')},
+            folders: <String>['C:/music/empty'],
           ),
           FolderScanChunk(
             tracks: <ScannedTrack>[_scannedTrack('C:/music/two.mp3')],
@@ -156,6 +170,7 @@ void main() {
       expect(dataSource.firstChunkWasCommittedBeforeSecond, isTrue);
       expect(catalog.library, hasLength(2));
       expect(catalog.removedTrackPaths, <String>[removed.path]);
+      expect(catalog.removedEntryPaths, isEmpty);
     },
   );
 

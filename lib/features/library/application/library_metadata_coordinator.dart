@@ -241,7 +241,7 @@ final class LibraryMetadataCoordinator {
           tracks.every((track) => track.duration > Duration.zero)) {
         continue;
       }
-      final probe = await _probeDurations(tracks, durationReader);
+      final probe = await _probeDurations(tracks, durationReader, epoch: epoch);
       if (!await _commitDurations(probe.updatedTracks, epoch)) return;
       if (!_isCurrent(epoch) ||
           probe.totalDuration == null ||
@@ -283,7 +283,7 @@ final class LibraryMetadataCoordinator {
                         PathMatcher.isWithinOrEqual(track.path, targetPath)),
               )
               .toList(growable: false);
-    final probe = await _probeDurations(tracks, durationReader);
+    final probe = await _probeDurations(tracks, durationReader, epoch: epoch);
     return await _commitDurations(probe.updatedTracks, epoch)
         ? probe.totalDuration
         : null;
@@ -292,9 +292,10 @@ final class LibraryMetadataCoordinator {
   Future<({Duration? totalDuration, List<MusicTrack> updatedTracks})>
   _probeDurations(
     List<MusicTrack> tracks,
-    Future<Duration?> Function(String path)? durationReader,
-  ) async {
-    if (tracks.isEmpty) {
+    Future<Duration?> Function(String path)? durationReader, {
+    required int epoch,
+  }) async {
+    if (tracks.isEmpty || !_isCurrent(epoch)) {
       return (totalDuration: null, updatedTracks: const <MusicTrack>[]);
     }
     var total = Duration.zero;
@@ -331,6 +332,9 @@ final class LibraryMetadataCoordinator {
         (start + concurrency).clamp(0, missing.length),
       );
       final durations = await Future.wait(chunk.map(resolve));
+      if (!_isCurrent(epoch)) {
+        return (totalDuration: null, updatedTracks: const <MusicTrack>[]);
+      }
       for (var index = 0; index < chunk.length; index++) {
         final duration = durations[index] ?? Duration.zero;
         if (duration > Duration.zero) {

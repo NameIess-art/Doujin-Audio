@@ -366,9 +366,7 @@ class LibraryScannerService {
         retainedTrackPaths.add(PathMatcher.normalize(track.path));
       }
       allFolderPaths.addAll(chunk.folders);
-      retainedEntryPaths
-        ..addAll(retainedTrackPaths)
-        ..addAll(chunk.folders.map(PathMatcher.normalize));
+      retainedEntryPaths.addAll(chunk.folders.map(PathMatcher.normalize));
       if (chunk.tracks.isEmpty) {
         return provider.isScanGenerationActive(generation);
       }

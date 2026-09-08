@@ -630,7 +630,7 @@ class AsmrLibraryController extends ChangeNotifier
       _filteredWorksCache[cacheKey] = cached;
       return cached;
     }
-    final terms = extractSearchTerms(normalizedQuery);
+    final terms = normalizedSearchTerms(normalizedQuery);
     final filtered = immutableList(
       works.where((work) => _matchesQuery(work, normalizedQuery, terms: terms)),
     );
@@ -1626,7 +1626,7 @@ class AsmrLibraryController extends ChangeNotifier
       ...work.tags,
       ...work.voiceActors,
     ];
-    return matchesSearchTerms(haystacks, query, terms: terms);
+    return matchesSearchTerms(haystacks, query, normalizedTerms: terms);
   }
 
   void _updateLocalCategoryCounts() {

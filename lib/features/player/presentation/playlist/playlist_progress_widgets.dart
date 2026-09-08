@@ -102,28 +102,19 @@ class _ProgressSliderAndTimecodes extends StatefulWidget {
 
 class _ProgressSliderAndTimecodesState
     extends State<_ProgressSliderAndTimecodes> {
-  static const Duration _bufferedUpdateInterval = Duration(milliseconds: 120);
-
   late final PlaybackPositionUiGate _positionGate;
   late final ValueNotifier<_ProgressSliderValue> _sliderValue;
   late final ValueNotifier<_ProgressTimecodeValue> _timecodeValue;
   late final ValueNotifier<_ProgressTooltipState?> _tooltipValue;
-  StreamSubscription<Duration>? _bufferedSub;
-  Timer? _bufferedUpdateTimer;
   bool _isDragging = false;
   double? _dragValueMs;
   bool _tickerModeEnabled = true;
-  bool _bufferedUpdateQueued = false;
-  Duration _bufferedPosition = Duration.zero;
 
   @override
   void initState() {
     super.initState();
-    _bufferedPosition = widget.session.bufferedPosition;
-    _positionGate = PlaybackPositionUiGate(
-      session: widget.session,
-      includeBufferedPosition: false,
-    )..addListener(_handlePositionTick);
+    _positionGate = PlaybackPositionUiGate(session: widget.session)
+      ..addListener(_handlePositionTick);
     _sliderValue = ValueNotifier<_ProgressSliderValue>(
       _buildSliderValue(_positionGate.value),
     );
@@ -131,16 +122,13 @@ class _ProgressSliderAndTimecodesState
       _buildTimecodeValue(_sliderValue.value),
     );
     _tooltipValue = ValueNotifier<_ProgressTooltipState?>(null);
-    _bindBufferedPosition();
   }
 
   @override
   void didUpdateWidget(covariant _ProgressSliderAndTimecodes oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.session != widget.session) {
-      _bufferedPosition = widget.session.bufferedPosition;
       _positionGate.updateSession(widget.session);
-      _bindBufferedPosition();
       _publishProgressValue(force: true);
     } else if (oldWidget.timeSegmentLabels != widget.timeSegmentLabels ||
         oldWidget.selectedSegmentId != widget.selectedSegmentId) {
@@ -161,8 +149,6 @@ class _ProgressSliderAndTimecodesState
 
   @override
   void dispose() {
-    _bufferedUpdateTimer?.cancel();
-    unawaited(_bufferedSub?.cancel());
     _positionGate
       ..removeListener(_handlePositionTick)
       ..dispose();
@@ -194,30 +180,6 @@ class _ProgressSliderAndTimecodesState
     );
   }
 
-  void _bindBufferedPosition() {
-    unawaited(_bufferedSub?.cancel());
-    _bufferedSub = widget.session.bufferedPositionStream.listen(
-      _handleBufferedPosition,
-    );
-  }
-
-  void _handleBufferedPosition(Duration buffered) {
-    if (_bufferedPosition == buffered) return;
-    _bufferedPosition = buffered;
-    if (_isDragging) return;
-    if (_bufferedUpdateTimer?.isActive ?? false) {
-      _bufferedUpdateQueued = true;
-      return;
-    }
-    _publishProgressValue();
-    _bufferedUpdateQueued = false;
-    _bufferedUpdateTimer = Timer(_bufferedUpdateInterval, () {
-      if (!_bufferedUpdateQueued || !mounted || _isDragging) return;
-      _bufferedUpdateQueued = false;
-      _publishProgressValue();
-    });
-  }
-
   void _publishProgressValue({bool force = false}) {
     final nextSlider = _buildSliderValue(_positionGate.value);
     if (force || _sliderValue.value != nextSlider) {
@@ -231,6 +193,7 @@ class _ProgressSliderAndTimecodesState
 
   _ProgressSliderValue _buildSliderValue(PlaybackPositionUiSnapshot snapshot) {
     final duration = snapshot.duration;
+    final bufferedPosition = snapshot.bufferedPosition;
     final hasKnownDuration = duration != null;
     final effectiveDuration = duration ?? Duration.zero;
     var position = snapshot.position;
@@ -239,10 +202,7 @@ class _ProgressSliderAndTimecodesState
     }
     final durationMs = hasKnownDuration
         ? max(1, effectiveDuration.inMilliseconds)
-        : max(
-            1,
-            max(position.inMilliseconds, _bufferedPosition.inMilliseconds),
-          );
+        : max(1, max(position.inMilliseconds, bufferedPosition.inMilliseconds));
     final maxMillis = durationMs.toDouble();
     final basePositionMs = position.inMilliseconds
         .clamp(0, durationMs)
@@ -254,8 +214,8 @@ class _ProgressSliderAndTimecodesState
         );
     final bufferedValue =
         (_isDragging
-                ? max(_bufferedPosition.inMilliseconds, sliderValue.round())
-                : _bufferedPosition.inMilliseconds)
+                ? max(bufferedPosition.inMilliseconds, sliderValue.round())
+                : bufferedPosition.inMilliseconds)
             .clamp(0, durationMs)
             .toDouble();
     return (

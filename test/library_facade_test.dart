@@ -658,16 +658,17 @@ void main() {
     final trackPath = path.join(workDir.path, '01.mp3');
     runtimeGraph.library.addWatchedFolder(workDir.path, notify: false);
     runtimeGraph.library.addTracks(
-      <MusicTrack>[
-        MusicTrack(
-          path: trackPath,
-          displayName: '01',
+      List<MusicTrack>.generate(
+        5,
+        (index) => MusicTrack(
+          path: path.join(workDir.path, '0${index + 1}.mp3'),
+          displayName: '0${index + 1}',
           groupKey: workDir.path,
           groupTitle: 'Work',
           groupSubtitle: workDir.path,
           isSingle: false,
         ),
-      ],
+      ),
       notify: false,
       persist: false,
     );
@@ -676,9 +677,11 @@ void main() {
     );
     final durationReadStarted = Completer<void>();
     final releaseDurationRead = Completer<void>();
+    final probedPaths = <String>[];
     final backfill = runtimeGraph.library.backfillMissingLibraryDurations(
-      durationReader: (_) async {
-        durationReadStarted.complete();
+      durationReader: (trackPath) async {
+        probedPaths.add(trackPath);
+        if (probedPaths.length == 2) durationReadStarted.complete();
         await releaseDurationRead.future;
         return const Duration(minutes: 5);
       },
@@ -695,6 +698,8 @@ void main() {
     );
     releaseDurationRead.complete();
     await backfill;
+
+    expect(probedPaths, hasLength(2));
 
     final persisted =
         await (runtimeGraph.library.databaseRepository as AudioDetailStore)

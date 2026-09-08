@@ -937,6 +937,50 @@ void main() {
     },
   );
 
+  for (final leavePage in [false, true]) {
+    testWidgets(
+      'ASMR search skips initialization waits superseded by ${leavePage ? 'page exit' : 'new input'}',
+      (tester) async {
+        final controller = _QueuedEmptyAsmrLibraryController();
+        addTearDown(controller.dispose);
+        final harness = AppRuntimeWidgetTestFixture();
+        addTearDown(harness.dispose);
+        await tester.pumpWidget(
+          harness.build(
+            const AsmrTab(),
+            overrides: [
+              asmrLibraryControllerProvider.overrideWithValue(controller),
+            ],
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const ValueKey<String>('asmr_search_button')),
+        );
+        await tester.pumpAndSettle();
+        controller.refreshRequests.clear();
+        final initialization = Completer<void>();
+        controller.initializationWait = initialization.future;
+        final field = find.byKey(const ValueKey<String>('app_search_field'));
+        await tester.enterText(field, 'old');
+        await tester.pump(const Duration(milliseconds: 250));
+        if (leavePage) {
+          await tester.pumpWidget(const SizedBox.shrink());
+        } else {
+          await tester.enterText(field, 'new');
+          await tester.pump(const Duration(milliseconds: 250));
+        }
+        initialization.complete();
+        await tester.pumpAndSettle();
+        expect(
+          controller.refreshRequests,
+          leavePage ? isEmpty : [(AsmrCategoryType.collected, 'new')],
+        );
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
   testWidgets('ASMR search loading and manual refresh keep expected content', (
     tester,
   ) async {
@@ -2918,6 +2962,8 @@ final class _QueuedEmptyAsmrLibraryController extends AsmrLibraryController {
        );
 
   final Completer<void> _recommendationRefresh = Completer<void>();
+  Future<void>? initializationWait;
+  final refreshRequests = <(AsmrCategoryType, String)>[];
   final List<Completer<void>> _collectedSearchRefreshes = <Completer<void>>[];
   final Completer<void> _initialCollectedRefresh = Completer<void>();
   final bool collectedHasMore;
@@ -3021,6 +3067,7 @@ final class _QueuedEmptyAsmrLibraryController extends AsmrLibraryController {
   @override
   Future<void> initialize({AsmrContentLanguage? defaultLanguage}) async {
     initializeCount++;
+    await initializationWait;
     scheduleMicrotask(notifyListeners);
   }
 
@@ -3103,6 +3150,7 @@ final class _QueuedEmptyAsmrLibraryController extends AsmrLibraryController {
     AsmrCategoryType category, {
     String searchQuery = '',
   }) async {
+    refreshRequests.add((category, searchQuery));
     if (category == AsmrCategoryType.collected &&
         searchQuery.isEmpty &&
         delayInitialCollectedRefresh) {

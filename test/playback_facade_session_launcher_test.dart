@@ -1,3 +1,4 @@
+import 'support/test_playback_commands.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
 import 'support/test_persistence_repository.dart';

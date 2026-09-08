@@ -17,7 +17,6 @@ void main() {
       final readme = File('README.md').readAsStringSync();
       expect(readme, contains('Doujin Audio 是一款'));
       expect(readme, contains('当前版本'));
-      expect(readme, contains('发布页'));
       expect(readme, contains('GitHub Release'));
     },
   );

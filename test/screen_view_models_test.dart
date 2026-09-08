@@ -144,6 +144,27 @@ void main() {
     );
   });
 
+  test('library search cache distinguishes phrases from separate terms', () {
+    final index = LibrarySearchIndex();
+    final tree = buildTree();
+    final terms = index.resolve(
+      tree: tree,
+      query: 'rain/soft',
+      structureRevision: 1,
+    );
+    final phrase = index.resolve(
+      tree: tree,
+      query: 'rain soft',
+      structureRevision: 1,
+    );
+    expect(terms.matchCount, 1);
+    expect(phrase.matchCount, 0);
+    expect(
+      index.resolve(tree: tree, query: 'rain/soft', structureRevision: 1),
+      same(terms),
+    );
+  });
+
   test('library search snapshot returns only ancestors that must expand', () {
     final root = FolderNode('Work', '/library/work');
     final disc = FolderNode('Disc', '/library/work/disc', depth: 1)

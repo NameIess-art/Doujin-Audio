@@ -2,11 +2,36 @@ import 'dart:ui';
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:doujin_audio/app/state/subtitle_settings_provider.dart';
 import 'package:doujin_audio/features/settings/application/app_preferences.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
+  test('provider attachment starts only one persisted subtitle load', () async {
+    final pending = Completer<SubtitleSettingsState>();
+    var loads = 0;
+    final container = ProviderContainer(
+      overrides: [
+        subtitleSettingsProvider.overrideWith(
+          () => SubtitleSettingsNotifier(
+            loadState: () {
+              loads++;
+              return pending.future;
+            },
+          ),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+    expect(container.read(subtitleSettingsProvider).fontSize, 16);
+    expect(loads, 1);
+    pending.complete(SubtitleSettingsState(fontSize: 22));
+    await Future<void>.delayed(Duration.zero);
+    expect(container.read(subtitleSettingsProvider).fontSize, 22);
+    expect(loads, 1);
+  });
+
   test(
     'copyWith preserves, updates, and explicitly clears subtitle colors',
     () {

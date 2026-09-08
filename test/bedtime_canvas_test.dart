@@ -525,6 +525,24 @@ void main() {
         expect(powerService.keepScreenOnCalls, equals([true]));
       },
     );
+
+    testWidgets(
+      'scheduled playback resume keeps sleep mode active after countdown ends',
+      (tester) async {
+        BedtimeCanvasPage.screenTimeoutDelay = const Duration(minutes: 2);
+        fixture.timerService
+          ..autoResumeAt = DateTime.now().add(const Duration(hours: 1))
+          ..pausedByTimerSessionIds.add('paused-by-timer');
+        fixture.timer.syncPresentationState();
+
+        await tester.pumpWidget(fixture.build(const BedtimeCanvasPage()));
+        await tester.pump();
+
+        await tester.pump(const Duration(minutes: 2, seconds: 5));
+
+        expect(powerService.keepScreenOnCalls, equals([true]));
+      },
+    );
   });
 
   group('SettingsRepository SleepModeAutoTrigger', () {

@@ -114,7 +114,7 @@ class _BedtimeCanvasPageState extends ConsumerState<BedtimeCanvasPage>
     final timer = ref.read(timerFacadeProvider);
     final isInitialActive =
         playback.state.playingSessionCount > 0 ||
-        timer.state.active ||
+        timer.hasArmedRuntime ||
         timer.state.stopAfterCurrentTrack;
     _updateKeepScreenOnState(isInitialActive);
   }
@@ -220,11 +220,12 @@ class _BedtimeCanvasPageState extends ConsumerState<BedtimeCanvasPage>
     final count =
         playingCount ??
         ref.read(playbackFacadeProvider).state.playingSessionCount;
-    final active = timerActive ?? ref.read(timerFacadeProvider).state.active;
-    final stop =
-        stopAfterTrack ??
-        ref.read(timerFacadeProvider).state.stopAfterCurrentTrack;
-    _updateKeepScreenOnState(count > 0 || active || stop);
+    final timer = ref.read(timerFacadeProvider);
+    final active = timerActive ?? timer.state.active;
+    final stop = stopAfterTrack ?? timer.state.stopAfterCurrentTrack;
+    _updateKeepScreenOnState(
+      count > 0 || active || stop || timer.hasArmedRuntime,
+    );
   }
 
   void _onUserInteraction() {
@@ -239,7 +240,7 @@ class _BedtimeCanvasPageState extends ConsumerState<BedtimeCanvasPage>
     final timer = ref.read(timerFacadeProvider);
     final isAudioOrTimerActive =
         playback.state.playingSessionCount > 0 ||
-        timer.state.active ||
+        timer.hasArmedRuntime ||
         timer.state.stopAfterCurrentTrack;
     if (!isAudioOrTimerActive) {
       _screenTimeoutTimer = Timer(BedtimeCanvasPage.screenTimeoutDelay, () {

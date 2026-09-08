@@ -132,6 +132,8 @@ class NativePlaybackService : MediaSessionService() {
     }
 
     private val sessionManager by lazy { NativePlaybackSessionManager(::createNativePlaybackSession) }
+    private val timerStopAfterCurrentTrackSessionIds = mutableSetOf<String>()
+    private var timerStopAfterCurrentTrackGeneration: Int? = null
     private val fileCacheOperations by lazy { FileCacheOperations(applicationContext) }
     private val stateListeners = ConcurrentHashMap<String, (Map<String, Any?>) -> Unit>()
     private val videoOutputs = NativeVideoOutputRegistry<Player>(
@@ -1248,26 +1250,39 @@ class NativePlaybackService : MediaSessionService() {
         return okResult(null)
     }
 
-    fun pausePlayingSessionsForTimer(): List<String> {
-        val pausedSessionIds = sessionManager.activePlaybackSessionIds()
-        if (pausedSessionIds.isEmpty()) {
+    fun stopPlayingSessionsAfterCurrentTrackForTimer(generation: Int): List<String> {
+        val sessionIds = sessionManager.activePlaybackSessionIds()
+        if (sessionIds.isEmpty()) {
             syncForegroundState()
             return emptyList()
         }
         focusRecovery.clearTransientLoss()
-        pausedSessionIds.forEach { sessionId ->
+        timerStopAfterCurrentTrackSessionIds
+            .apply {
+                clear()
+                addAll(sessionIds)
+            }
+        timerStopAfterCurrentTrackGeneration = generation
+        sessionIds.forEach { sessionId ->
             focusRecovery.removePending(sessionId)
             clearPlaybackIntent(sessionId)
             sessionManager.get(sessionId)?.let { session ->
-                session.playerOrNull()?.pause()
+                session.playerOrNull()?.pauseAtEndOfMediaItems = true
                 session.applyFadeMultiplier(1f)
             }
         }
-        evictPlayersIfNeeded()
         publishAllSessionStates()
         persistSessionStateNow()
         syncForegroundState()
-        return pausedSessionIds
+        return sessionIds
+    }
+
+    fun cancelTimerStopAfterCurrentTrack() {
+        timerStopAfterCurrentTrackSessionIds.forEach { sessionId ->
+            sessionManager.get(sessionId)?.playerOrNull()?.pauseAtEndOfMediaItems = false
+        }
+        timerStopAfterCurrentTrackSessionIds.clear()
+        timerStopAfterCurrentTrackGeneration = null
     }
 
     internal fun resumeSessionsForTimer(sessionIds: List<String>): NativeTimerResumeResult {
@@ -1297,7 +1312,10 @@ class NativePlaybackService : MediaSessionService() {
         }
         val resumedSessionIds = mutableListOf<String>()
         resumableSessions.forEach { session ->
-            ensureFocusedPlayer(session).play()
+            ensureFocusedPlayer(session).apply {
+                pauseAtEndOfMediaItems = false
+                play()
+            }
             resumedSessionIds += session.sessionId
         }
         if (resumedSessionIds.isNotEmpty()) {
@@ -1361,6 +1379,19 @@ class NativePlaybackService : MediaSessionService() {
         if (shouldClearPlaybackIntentForPlayWhenReadyChange(playWhenReady, reason)) {
             focusRecovery.removePending(sessionId)
             clearPlaybackIntent(sessionId)
+        }
+        if (!playWhenReady &&
+            reason == Player.PLAY_WHEN_READY_CHANGE_REASON_END_OF_MEDIA_ITEM &&
+            timerStopAfterCurrentTrackSessionIds.remove(sessionId)
+        ) {
+            sessionManager.get(sessionId)?.playerOrNull()?.pauseAtEndOfMediaItems = false
+            if (timerStopAfterCurrentTrackSessionIds.isEmpty()) {
+                PlaybackTimerAlarmScheduler.completeTimerStopAfterCurrentTracks(
+                    applicationContext,
+                    timerStopAfterCurrentTrackGeneration
+                )
+                timerStopAfterCurrentTrackGeneration = null
+            }
         }
         focusRecovery.onPlayWhenReadyChanged(sessionId, playWhenReady, reason)
         logInfo(

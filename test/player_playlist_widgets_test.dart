@@ -3510,6 +3510,45 @@ void main() {
     },
   );
 
+  for (final style in PlaybackDetailSubtitleStyle.values) {
+    testWidgets('detail subtitle follows native progress without input $style', (
+      tester,
+    ) async {
+      final harness = await _pumpSubtitleDetail(
+        tester: tester,
+        style: style,
+        subtitleTrack: SubtitleTrack(
+          sourcePath: 'automatic.srt',
+          cues: List.generate(4, (index) => SubtitleCue(
+            start: Duration(seconds: index * 2),
+            end: Duration(seconds: (index + 1) * 2),
+            text: 'Automatic cue $index',
+          )),
+        ),
+        initialPosition: Duration.zero,
+      );
+      for (var index = 1; index < 4; index++) {
+        harness.session.applyNativeProgress(NativePlaybackProgressUpdate(
+          sessionId: harness.session.id,
+          position: Duration(seconds: index * 2),
+          bufferedPosition: const Duration(seconds: 8),
+          nativeElapsedRealtimeMs: index * 2000,
+        ));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 400));
+        await tester.pump();
+        if (style == PlaybackDetailSubtitleStyle.compact) {
+          expect(find.text('Automatic cue $index'), findsOneWidget);
+          expect(find.text('Automatic cue ${index - 1}'), findsNothing);
+        } else {
+          final cue = find.byKey(ValueKey('subtitle_timeline_cue_$index'));
+          final viewport = find.byKey(const ValueKey('subtitle_timeline_viewport'));
+          expect(tester.getCenter(cue).dy, closeTo(tester.getCenter(viewport).dy, 0.5));
+        }
+      }
+    });
+  }
+
   testWidgets('compact playback subtitle centers wrapped text', (tester) async {
     const subtitleText = 'First line\nsecond centered line';
     final subtitleTrack = SubtitleTrack(

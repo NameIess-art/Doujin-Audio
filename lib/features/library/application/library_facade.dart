@@ -439,9 +439,13 @@ final class LibraryFacade implements LibraryCatalog {
     return updated;
   }
 
-  List<MusicTrack> tracksInGroup(String groupKey) =>
+  List<MusicTrack> tracksInGroup(String groupKey, {int? limit}) =>
       List<MusicTrack>.unmodifiable(
-        _service.tracksByGroup[groupKey] ?? const <MusicTrack>[],
+        limit == null
+            ? _service.tracksByGroup[groupKey] ?? const <MusicTrack>[]
+            : (_service.tracksByGroup[groupKey] ?? const <MusicTrack>[]).take(
+                limit,
+              ),
       );
   int compareTracks(MusicTrack first, MusicTrack second) =>
       _service.compareTracks(first, second);

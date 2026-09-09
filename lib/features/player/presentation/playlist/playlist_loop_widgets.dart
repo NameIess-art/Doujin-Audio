@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../app/state/app_runtime_providers.dart';
+import '../../../../app/presentation/app_presentation_providers.dart';
 import '../../../../core/widgets/app_bottom_sheet.dart';
 import '../../../../core/widgets/app_feedback.dart';
 import '../../application/playback_facade.dart';
@@ -273,7 +274,7 @@ class _LoopModeSheetState extends State<LoopModeSheet> {
 
 enum _PlaybackOption { loop, shuffle }
 
-class SessionLoopModeButton extends StatelessWidget {
+class SessionLoopModeButton extends ConsumerWidget {
   const SessionLoopModeButton({
     super.key,
     required this.session,
@@ -283,32 +284,28 @@ class SessionLoopModeButton extends StatelessWidget {
   final PlaybackSessionSnapshot session;
   final PlaybackFacade playback;
 
-  IconData get _orderIcon {
-    if (session.loopMode.isShuffle) return Icons.shuffle_rounded;
-    if (session.loopMode.isOneShot) return Icons.play_arrow_rounded;
+  IconData _orderIcon(SessionLoopMode mode) {
+    if (mode.isShuffle) return Icons.shuffle_rounded;
+    if (mode.isOneShot) return Icons.play_arrow_rounded;
     return Icons.repeat_rounded;
   }
 
-  IconData get _scopeIcon => session.loopMode.isCrossFolder
-      ? Icons.folder_copy_rounded
-      : Icons.folder_rounded;
+  IconData _scopeIcon(SessionLoopMode mode) =>
+      mode.isCrossFolder ? Icons.folder_copy_rounded : Icons.folder_rounded;
 
-  Widget _buildIcon(BuildContext context) {
+  Widget _buildIcon(BuildContext context, SessionLoopMode mode) {
     final cs = Theme.of(context).colorScheme;
-    if (session.loopMode == SessionLoopMode.single) {
+    if (mode == SessionLoopMode.single) {
       return Icon(
         Icons.repeat_one_rounded,
         key: const ValueKey<String>('single_main'),
         size: 20,
-        color: sessionDetailForeground(
-          cs,
-          SessionDetailForegroundLevel.muted,
-        ),
+        color: sessionDetailForeground(cs, SessionDetailForegroundLevel.muted),
       );
     }
     return SizedBox(
       key: ValueKey<String>(
-        'composite_${_orderIcon.codePoint}_${_scopeIcon.codePoint}',
+        'composite_${_orderIcon(mode).codePoint}_${_scopeIcon(mode).codePoint}',
       ),
       width: 20,
       height: 20,
@@ -318,17 +315,30 @@ class SessionLoopModeButton extends StatelessWidget {
           Positioned.fill(
             child: Opacity(
               opacity: 0.28,
-              child: Icon(_scopeIcon, size: 20, color: cs.onSurfaceVariant),
+              child: Icon(
+                _scopeIcon(mode),
+                size: 20,
+                color: cs.onSurfaceVariant,
+              ),
             ),
           ),
-          Center(child: Icon(_orderIcon, size: 13, color: cs.onSurfaceVariant)),
+          Center(
+            child: Icon(_orderIcon(mode), size: 13, color: cs.onSurfaceVariant),
+          ),
         ],
       ),
     );
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final loopMode =
+        ref.watch(
+          sessionDetailTransportProvider(
+            session.id,
+          ).select((state) => state?.loopMode),
+        ) ??
+        session.loopMode;
     final i18n = ProviderScope.containerOf(
       context,
       listen: false,
@@ -353,11 +363,11 @@ class SessionLoopModeButton extends StatelessWidget {
           AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
           showLoopModeBottomSheet(
             context: context,
-            session: session,
+            session: playback.sessionSnapshotById(session.id) ?? session,
             playback: playback,
           );
         },
-        icon: _buildIcon(context),
+        icon: _buildIcon(context, loopMode),
       ),
     );
   }

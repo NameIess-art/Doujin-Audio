@@ -96,8 +96,13 @@ class _SpeedWheelPageState extends ConsumerState<SpeedWheelPage> {
 
   @override
   Widget build(BuildContext context) {
-    final detail = ref.watch(sessionDetailTransportProvider(widget.session.id));
-    final speed = detail?.speed ?? widget.session.speed;
+    final speed =
+        ref.watch(
+          sessionDetailTransportProvider(
+            widget.session.id,
+          ).select((state) => state?.speed),
+        ) ??
+        widget.session.speed;
 
     final nextIndex = _nearestSpeedIndex(speed);
     if (nextIndex != _selectedIndex) {

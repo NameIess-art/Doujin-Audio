@@ -7,6 +7,7 @@ import 'dart:math';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/physics.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -31,7 +32,7 @@ import 'playlist_media_widgets.dart';
 import 'playlist_shared_helpers.dart';
 import 'playlist_time_segments.dart';
 import 'session_detail_content.dart';
-
+import '../playlist_view_models.dart';
 
 PageRoute<void> buildSessionDetailRoute({required String sessionId}) {
   return SessionDetailRoute(sessionId: sessionId);
@@ -196,6 +197,39 @@ class SessionDetailPage extends ConsumerStatefulWidget {
   ConsumerState<SessionDetailPage> createState() => _SessionDetailPageState();
 }
 
+// A projection of the existing snapshot; transport changes belong to controls.
+class _DetailStructure {
+  const _DetailStructure(this.session, this.order, this.coverGeneration);
+
+  final PlaybackSessionSnapshot? session;
+  final SessionOrderState order;
+  final int coverGeneration;
+
+  @override
+  bool operator ==(Object other) =>
+      other is _DetailStructure &&
+      order == other.order &&
+      coverGeneration == other.coverGeneration &&
+      session?.id == other.session?.id &&
+      session?.currentTrackPath == other.session?.currentTrackPath &&
+      session?.currentQueueIndex == other.session?.currentQueueIndex &&
+      session?.playbackQueue == other.session?.playbackQueue &&
+      session?.positionStream == other.session?.positionStream &&
+      listEquals(session?.customQueueTracks, other.session?.customQueueTracks);
+
+  @override
+  int get hashCode => Object.hash(
+    order,
+    coverGeneration,
+    session?.id,
+    session?.currentTrackPath,
+    session?.currentQueueIndex,
+    session?.playbackQueue,
+    session?.positionStream,
+    Object.hashAll(session?.customQueueTracks ?? const []),
+  );
+}
+
 class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
     with TickerProviderStateMixin {
   late final AnimationController _dismissController;
@@ -203,6 +237,9 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
   late String _currentSessionId;
   double _horizontalDragDelta = 0;
   bool _contentEnterStarted = false;
+  final ValueNotifier<bool> _transitionActive = ValueNotifier(true);
+  int _dismissOperation = 0;
+  bool _closing = false;
   final Object _dismissInteractionSource = Object();
   bool _dismissInteractionActive = false;
   final ValueNotifier<bool> _dismissInteractionNotifier = ValueNotifier(false);
@@ -222,17 +259,26 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
     _contentEnterController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 220),
-    );
+    )..addStatusListener(_handleEnterStatus);
+  }
+
+  void _handleEnterStatus(AnimationStatus status) {
+    _transitionActive.value =
+        status != AnimationStatus.completed ||
+        _dismissInteractionActive ||
+        _closing;
   }
 
   @override
   void dispose() {
+    _dismissOperation++;
     UiInteractionCoordinator.instance.cancelInteraction(
       _dismissInteractionSource,
     );
     widget.revealBehindNotifier.value = false;
     _dismissInteractionNotifier.dispose();
     _segmentPanelExpandedNotifier.dispose();
+    _transitionActive.dispose();
     _dismissController.dispose();
     _contentEnterController.dispose();
     super.dispose();
@@ -291,6 +337,7 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
   void _beginDismissInteraction() {
     if (_dismissInteractionActive) return;
     _dismissInteractionActive = true;
+    _transitionActive.value = true;
     UiInteractionCoordinator.instance.beginInteraction(
       _dismissInteractionSource,
     );
@@ -305,6 +352,7 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
       _setRevealBehind(false);
     }
     _dismissInteractionNotifier.value = false;
+    _transitionActive.value = !_contentEnterController.isCompleted || _closing;
     UiInteractionCoordinator.instance.endInteraction(_dismissInteractionSource);
   }
 
@@ -323,9 +371,20 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
       _endDismissInteraction();
       return;
     }
+    await _returnFromDismiss();
+  }
+
+  Future<void> _returnFromDismiss() async {
+    if (_closing) return;
+    final operation = ++_dismissOperation;
     _beginDismissInteraction();
-    await _animateDismissBack();
-    _endDismissInteraction();
+    try {
+      await _animateDismissBack();
+    } on TickerCanceled {
+      // A new drag owns the animation and its interaction lifetime.
+    } finally {
+      if (mounted && operation == _dismissOperation) _endDismissInteraction();
+    }
   }
 
   Future<void> _animateDismissToEnd({double velocity = 0}) {
@@ -335,14 +394,16 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
     }
     final normalizedVelocity = (velocity / MediaQuery.sizeOf(context).height)
         .clamp(-4.0, 4.0);
-    return _dismissController.animateWith(
-      SpringSimulation(
-        const SpringDescription(mass: 1, stiffness: 420, damping: 34),
-        _dismissController.value,
-        1,
-        normalizedVelocity,
-      ),
-    );
+    return _dismissController
+        .animateWith(
+          SpringSimulation(
+            const SpringDescription(mass: 1, stiffness: 420, damping: 34),
+            _dismissController.value,
+            1,
+            normalizedVelocity,
+          ),
+        )
+        .orCancel;
   }
 
   Future<void> _animateDismissBack() {
@@ -350,44 +411,70 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
       _dismissController.value = 0;
       return Future<void>.value();
     }
-    return _dismissController.animateWith(
-      SpringSimulation(
-        const SpringDescription(mass: 1, stiffness: 420, damping: 34),
-        _dismissController.value,
-        0,
-        0,
-      ),
-    );
+    return _dismissController
+        .animateWith(
+          SpringSimulation(
+            const SpringDescription(mass: 1, stiffness: 420, damping: 34),
+            _dismissController.value,
+            0,
+            0,
+          ),
+        )
+        .orCancel;
   }
 
   Future<void> _dismissAndPop({
     double velocity = 0,
     required NavigatorState navigator,
   }) async {
+    if (_closing) return;
+    _closing = true;
+    final operation = ++_dismissOperation;
     ref
         .read(playlistUiControllerProvider)
         .requestCarouselSnap(_currentSessionId);
     _beginDismissInteraction();
     try {
       await _animateDismissToEnd(velocity: velocity);
+      if (mounted && operation == _dismissOperation) {
+        await navigator.maybePop();
+      }
+    } on TickerCanceled {
+      // Disposal or replacement invalidates the pending close.
     } finally {
-      _endDismissInteraction();
+      if (mounted && operation == _dismissOperation) {
+        _closing = false;
+        _endDismissInteraction();
+      }
     }
-    if (mounted) await navigator.maybePop();
   }
 
   @override
   Widget build(BuildContext context) {
     final playback = ref.read(playbackFacadeProvider);
     final paths = ref.read(audioPathCoordinatorProvider);
-    final detailState = ref.watch(sessionDetailUiProvider(_currentSessionId));
-    final sessionIds = detailState.sessionOrder.sessionIds;
+    final structure = ref.watch(
+      playbackStateProvider.select((_) {
+        final state = playback.state;
+        return _DetailStructure(
+          state.activeSessions
+              .where((session) => session.id == _currentSessionId)
+              .firstOrNull,
+          sessionOrderStateFromPlaybackState(state),
+          state.coverGeneration,
+        );
+      }),
+    );
+    ref.watch(
+      libraryStateProvider.select((state) => state.value?.contentRevision),
+    );
+    final sessionIds = structure.order.sessionIds;
 
     if (sessionIds.isEmpty) {
       return const Scaffold(body: SizedBox.shrink());
     }
 
-    if (detailState.detail == null && sessionIds.isNotEmpty) {
+    if (structure.session == null && sessionIds.isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         setState(() {
@@ -489,6 +576,7 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
                 return _SessionDetailScaffold(
                   session: pageSession,
                   coverPathFuture: coverPathFuture,
+                  transitionActive: _transitionActive,
                   dismissAnimation: _dismissController,
                   segmentPanelExpandedNotifier: _segmentPanelExpandedNotifier,
                   onClose: () =>
@@ -506,6 +594,11 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
                     _horizontalDragDelta = 0;
                   },
                   onVerticalDragUpdate: (delta) {
+                    if (_closing) return;
+                    if (_dismissController.isAnimating) {
+                      _dismissOperation++;
+                      _dismissController.stop();
+                    }
                     final screenHeight = MediaQuery.sizeOf(context).height;
                     if (screenHeight <= 0) return;
                     final nextValue =
@@ -522,12 +615,7 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
                       _endDismissInteraction();
                       return;
                     }
-                    _beginDismissInteraction();
-                    unawaited(
-                      _animateDismissBack().whenComplete(
-                        _endDismissInteraction,
-                      ),
-                    );
+                    unawaited(_returnFromDismiss());
                   },
                 );
               },
@@ -578,6 +666,7 @@ class _SessionDetailBackdrop extends StatelessWidget {
 }
 
 class _SessionDetailScaffold extends ConsumerStatefulWidget {
+  final ValueListenable<bool> transitionActive;
   final PlaybackSessionSnapshot session;
   final Future<String?> coverPathFuture;
   final Animation<double> dismissAnimation;
@@ -591,6 +680,7 @@ class _SessionDetailScaffold extends ConsumerStatefulWidget {
   final ValueNotifier<bool>? segmentPanelExpandedNotifier;
 
   const _SessionDetailScaffold({
+    required this.transitionActive,
     required this.session,
     required this.coverPathFuture,
     required this.onClose,
@@ -955,7 +1045,12 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                                 session.currentTrackPath,
                               );
                               final settings = ref.watch(
-                                subtitleSettingsProvider,
+                                subtitleSettingsProvider.select(
+                                  (state) => (
+                                    state.isShowEnabled(session.id),
+                                    state.isGlobalEnabled(session.id),
+                                  ),
+                                ),
                               );
 
                               return Row(
@@ -974,8 +1069,8 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                                   ),
                                   const Expanded(child: SizedBox(height: 48)),
                                   if (hasSubtitle &&
-                                      settings.isShowEnabled(session.id) &&
-                                      settings.isGlobalEnabled(session.id)) ...[
+                                      settings.$1 &&
+                                      settings.$2) ...[
                                     Icon(
                                       Icons.subtitles_rounded,
                                       color: sessionDetailForeground(
@@ -1100,10 +1195,16 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                                 session.currentTrackPath,
                               );
                               final subtitleSettings = ref.watch(
-                                subtitleSettingsProvider,
+                                subtitleSettingsProvider.select(
+                                  (state) => (
+                                    state.isShowEnabled(session.id),
+                                    state.isGlobalEnabled(session.id),
+                                  ),
+                                ),
                               );
 
                               return SessionDetailContent(
+                                transitionActive: widget.transitionActive,
                                 key: _detailContentKey,
                                 session: session,
                                 segmentPanelExpandedNotifier:
@@ -1112,11 +1213,8 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                                 artworkWidget: artwork,
                                 detailPadding: detailPadding,
                                 hasSubtitle: hasSubtitle,
-                                subtitleEnabled: subtitleSettings.isShowEnabled(
-                                  session.id,
-                                ),
-                                subtitleGlobalEnabled: subtitleSettings
-                                    .isGlobalEnabled(session.id),
+                                subtitleEnabled: subtitleSettings.$1,
+                                subtitleGlobalEnabled: subtitleSettings.$2,
                                 onToggleSubtitle: hasSubtitle
                                     ? () {
                                         ref
@@ -1134,7 +1232,7 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                                         unawaited(
                                           _toggleGlobalSubtitleDisplay(
                                             notifier,
-                                            subtitleSettings,
+                                            ref.read(subtitleSettingsProvider),
                                             session.id,
                                           ),
                                         );

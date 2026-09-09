@@ -4,6 +4,7 @@ import 'dart:math';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as path;
 
@@ -14,6 +15,8 @@ import '../../../../core/media/natural_sort.dart';
 import '../../../../core/media/path_display.dart';
 import '../../../../core/media/path_matcher.dart';
 import '../../../../core/media/time_text_formatters.dart';
+import '../../../../core/ui/ui_interaction_coordinator.dart';
+import '../../../../core/logging/app_log_service.dart';
 import '../../../../core/widgets/app_bottom_sheet.dart';
 import '../../../../core/widgets/app_feedback.dart';
 import '../../../../core/widgets/app_transitions.dart';
@@ -36,6 +39,7 @@ class SessionDetailContent extends ConsumerStatefulWidget {
     required this.session,
     required this.artworkWidget,
     this.segmentPanelExpandedNotifier,
+    this.transitionActive,
     this.isLandscape = false,
     this.detailPadding = EdgeInsets.zero,
     this.hasSubtitle = false,
@@ -49,6 +53,7 @@ class SessionDetailContent extends ConsumerStatefulWidget {
   final PlaybackSessionSnapshot session;
   final Widget artworkWidget;
   final ValueNotifier<bool>? segmentPanelExpandedNotifier;
+  final ValueListenable<bool>? transitionActive;
   final bool isLandscape;
   final EdgeInsetsGeometry detailPadding;
   final bool hasSubtitle;
@@ -65,7 +70,6 @@ class SessionDetailContent extends ConsumerStatefulWidget {
 
 class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
   late final TextEditingController _segmentNameController;
-  bool _wasPlaying = false;
   bool _segmentPanelExpanded = false;
   bool _segmentEditorVisible = false;
   bool _segmentLoading = false;
@@ -76,7 +80,10 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
   Duration? _draftEnd;
   int? _draftColorValue;
   Timer? _segmentNameDebounce;
-  Timer? _segmentLoadTimer;
+  int _segmentLoadGeneration = 0;
+  late final String _segmentCommitKey =
+      'detail_segments_${identityHashCode(this)}';
+  VoidCallback? _pendingSegmentResult;
   bool _segmentLabelsLoaded = false;
   bool _syncingSegmentText = false;
   bool _savingSegment = false;
@@ -95,8 +102,6 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
     if (_segmentPanelExpanded) return;
     final trackKey = _segmentTrackKey;
     if (trackKey != null && !_segmentLabelsLoaded && !_segmentLoading) {
-      _segmentLoadTimer?.cancel();
-      _segmentLoadTimer = null;
       unawaited(_loadSegmentLabels(trackKey));
     }
     setState(() {
@@ -117,6 +122,7 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
   @override
   void initState() {
     super.initState();
+    widget.transitionActive?.addListener(_scheduleSegmentResult);
     _segmentNameController = TextEditingController();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _syncSegmentTrack();
@@ -127,13 +133,22 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
   @override
   void didUpdateWidget(covariant SessionDetailContent oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.transitionActive != widget.transitionActive) {
+      oldWidget.transitionActive?.removeListener(_scheduleSegmentResult);
+      widget.transitionActive?.addListener(_scheduleSegmentResult);
+      _scheduleSegmentResult();
+    }
+    if (oldWidget.session.id != widget.session.id) _segmentTrackKey = null;
     _syncSegmentTrack();
   }
 
   @override
   void dispose() {
     _segmentNameDebounce?.cancel();
-    _segmentLoadTimer?.cancel();
+    _segmentLoadGeneration++;
+    widget.transitionActive?.removeListener(_scheduleSegmentResult);
+    UiInteractionCoordinator.instance.cancelCommit(_segmentCommitKey);
+    _pendingSegmentResult = null;
     _segmentNameController.removeListener(_handleSegmentNameChanged);
     _segmentNameController.dispose();
     super.dispose();
@@ -145,6 +160,9 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
         ? PathMatcher.normalize(widget.session.currentTrackPath)
         : _timeSegments.trackKeyForTrack(track);
     if (nextKey == _segmentTrackKey) return;
+    _segmentLoadGeneration++;
+    UiInteractionCoordinator.instance.cancelCommit(_segmentCommitKey);
+    _pendingSegmentResult = null;
     _segmentTrackKey = nextKey;
     _segmentLabelsLoaded = false;
     _segmentLabels = const <TimeSegmentLabel>[];
@@ -156,31 +174,61 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
     _draftEnd = null;
     _draftColorValue = null;
     _setSegmentNameText('');
-    _segmentLoadTimer?.cancel();
-    _segmentLoadTimer = Timer(const Duration(milliseconds: 220), () {
-      _segmentLoadTimer = null;
-      if (!mounted || _segmentTrackKey != nextKey) return;
-      unawaited(_loadSegmentLabels(nextKey));
-    });
+    unawaited(_loadSegmentLabels(nextKey));
   }
 
   Future<void> _loadSegmentLabels(String trackKey) async {
+    if (_segmentLoading) return;
+    final generation = ++_segmentLoadGeneration;
     setState(() {
       _segmentLoading = true;
     });
-    final labels = await _timeSegments.loadLabels(trackKey);
-    if (!mounted || _segmentTrackKey != trackKey) return;
-    final selected = labels
-        .where((label) => label.id == _selectedSegmentId)
-        .firstOrNull;
-    setState(() {
-      _segmentLabels = labels;
-      _segmentLabelsLoaded = true;
-      _segmentLoading = false;
-      if (selected != null) {
-        _applySelectedSegment(selected);
-      }
-    });
+    try {
+      final labels = await _timeSegments.loadLabels(trackKey);
+      if (!mounted || generation != _segmentLoadGeneration) return;
+      _pendingSegmentResult = () {
+        final selected = labels
+            .where((label) => label.id == _selectedSegmentId)
+            .firstOrNull;
+        setState(() {
+          _segmentLabels = labels;
+          _segmentLabelsLoaded = true;
+          _segmentLoading = false;
+          if (selected != null) _applySelectedSegment(selected);
+        });
+      };
+      _scheduleSegmentResult();
+    } catch (error, stack) {
+      if (!mounted || generation != _segmentLoadGeneration) return;
+      AppLogService.warning(
+        'Time segment labels failed to load',
+        error: error,
+        stackTrace: stack,
+      );
+      _pendingSegmentResult = () => setState(() => _segmentLoading = false);
+      _scheduleSegmentResult();
+    }
+  }
+
+  void _scheduleSegmentResult() {
+    if (_pendingSegmentResult == null ||
+        widget.transitionActive?.value == true) {
+      return;
+    }
+    final generation = _segmentLoadGeneration;
+    UiInteractionCoordinator.instance.scheduleCommit(
+      key: _segmentCommitKey,
+      commit: () {
+        if (!mounted ||
+            generation != _segmentLoadGeneration ||
+            widget.transitionActive?.value == true) {
+          return;
+        }
+        final apply = _pendingSegmentResult;
+        _pendingSegmentResult = null;
+        apply?.call();
+      },
+    );
   }
 
   void _handleSegmentNameChanged() {
@@ -434,11 +482,6 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
     final paths = _paths;
     final timeSegments = _timeSegments;
 
-    final isPlaying = session.effectivePlaying;
-    if (_wasPlaying != isPlaying) {
-      _wasPlaying = isPlaying;
-    }
-
     final track = paths.trackByPath(session.currentTrackPath);
     final displayName =
         track?.displayName ??
@@ -456,8 +499,8 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
         ? i18n.tr('asmr_online_playback')
         : i18n.tr('imported_files');
     final hasSiblings = session.isPlaybackQueue
-        ? session.playbackQueue!.expandedTracks.isNotEmpty
-        : paths.tracksInSameWork(session.currentTrackPath).length > 1;
+        ? session.playbackQueue!.entries.any((entry) => entry.tracks.isNotEmpty)
+        : paths.hasOtherTracksInSameWork(session.currentTrackPath);
     final selectedSegmentId = _segmentPanelExpanded ? _selectedSegmentId : null;
 
     Widget buildProgressBar() {
@@ -559,6 +602,7 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
           if (!_segmentPanelExpanded)
             RepaintBoundary(
               child: SessionSubtitlePanel(
+                transitionActive: widget.transitionActive,
                 session: session,
                 subtitleEnabled: widget.subtitleEnabled,
               ),
@@ -745,23 +789,27 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
   }
 
   void _showTrackSwitcher(BuildContext context) {
+    final session = _playback.sessionSnapshotById(widget.session.id);
+    if (session == null) return;
     final i18n = ProviderScope.containerOf(
       context,
       listen: false,
     ).read(appLanguageProviderInstanceProvider);
     final tracks = orderTracksForSessionSwitcher(
-      widget.session.isPlaybackQueue
-          ? widget.session.playbackQueue!.expandedTracks
-          : _paths.tracksForSessionSwitcher(widget.session.id),
-      preserveQueueOrder: widget.session.isPlaybackQueue,
+      session.isPlaybackQueue
+          ? session.playbackQueue!.expandedTracks
+          : _paths.tracksForSessionSwitcher(session.id),
+      preserveQueueOrder: session.isPlaybackQueue,
     );
     if (tracks.isEmpty) return;
-    final workRoot = _paths.workRootForTrack(widget.session.currentTrackPath);
+    final workRoot = _paths.workRootForTrack(session.currentTrackPath);
     final tree = _buildQueueTree(
       tracks,
+      session: session,
       workRoot: workRoot,
-      currentPath: widget.session.currentTrackPath,
+      currentPath: session.currentTrackPath,
     );
+    var selectionStarted = false;
     AppBottomSheet.show<void>(
       context: context,
       builder: (ctx) {
@@ -784,6 +832,9 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
                 key: ValueKey<String>(node.stableKey),
                 node: node,
                 onTrackTap: (selectedNode) {
+                  if (selectionStarted) return;
+                  selectionStarted = true;
+                  final route = ModalRoute.of(ctx)!;
                   unawaited(() async {
                     unawaited(
                       AppInteractionFeedback.trigger(
@@ -792,24 +843,31 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
                       ),
                     );
                     Navigator.of(ctx).pop();
-                    await Future<void>.delayed(
-                      const Duration(milliseconds: 200),
-                    );
-                    if (!context.mounted) return;
-                    if (widget.session.isPlaybackQueue) {
+                    await route.completed;
+                    if (!mounted) return;
+                    final current = _playback.sessionSnapshotById(session.id);
+                    if (current == null ||
+                        current.playbackQueue != session.playbackQueue ||
+                        !listEquals(
+                          current.customQueueTracks,
+                          session.customQueueTracks,
+                        )) {
+                      return;
+                    }
+                    if (session.isPlaybackQueue) {
                       await _playback.switchSessionQueueTrack(
-                        widget.session.id,
+                        session.id,
                         selectedNode.queueIndex,
                       );
                     } else {
                       await _playback.switchSessionTrack(
-                        widget.session.id,
+                        session.id,
                         selectedNode.track!.path,
                       );
                     }
-                    if (context.mounted) {
+                    if (mounted) {
                       showAppSnackBar(
-                        context,
+                        this.context,
                         i18n.tr('switch_audio'),
                         tone: AppFeedbackTone.success,
                         icon: Icons.queue_music_rounded,
@@ -827,25 +885,27 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
 
   List<_QueueTreeNode> _buildQueueTree(
     List<MusicTrack> tracks, {
+    required PlaybackSessionSnapshot session,
     required String? workRoot,
     required String currentPath,
   }) {
     final root = _QueueTreeNode.folder('');
-    final queueTracks = widget.session.isPlaybackQueue
-        ? widget.session.playbackQueue!.expandedTracks
-        : widget.session.customQueueTracks;
+    final queueTracks = session.isPlaybackQueue
+        ? tracks
+        : session.customQueueTracks;
     final selectedTrack = resolveSessionSwitcherSelectedTrack(
       displayedTracks: tracks,
       queueTracks: queueTracks,
       currentPath: currentPath,
-      currentQueueIndex: widget.session.currentQueueIndex,
+      currentQueueIndex: session.currentQueueIndex,
     );
-    if (widget.session.isPlaybackQueue) {
+    if (session.isPlaybackQueue) {
       var queueIndex = 0;
-      for (final entry in widget.session.playbackQueue!.entries) {
+      final resolvedTracks = <String, MusicTrack?>{};
+      for (final entry in session.playbackQueue!.entries) {
         final firstTrack = entry.tracks.firstOrNull;
         final isAsmrEntry = firstTrack?.isRemoteAsmr ?? false;
-        final fallbackRoot = firstTrack == null
+        final fallbackRoot = entry.workRootPath != null || firstTrack == null
             ? null
             : _paths.workRootForTrack(firstTrack.path);
         final groupRoot = firstTrack?.groupKey.trim();
@@ -875,7 +935,10 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
           root.children.add(parent);
         }
         for (final track in entry.tracks) {
-          final latestTrack = _paths.trackByPath(track.path);
+          final latestTrack = resolvedTracks.putIfAbsent(
+            track.path,
+            () => _paths.trackByPath(track.path),
+          );
           final displayTrack =
               latestTrack != null && latestTrack.duration > Duration.zero
               ? latestTrack
@@ -918,7 +981,7 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
         ),
       );
     }
-    if (widget.session.customQueueTracks == null ||
+    if (session.customQueueTracks == null ||
         tracks.every((track) => track.isRemoteAsmr)) {
       root.sortChildrenNaturally();
     }
@@ -1061,6 +1124,12 @@ class _QueueTreeNodeTileState extends State<_QueueTreeNodeTile> {
   late bool _expanded = widget.node.containsSelected;
 
   @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
   void didUpdateWidget(covariant _QueueTreeNodeTile oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.node.stableKey != widget.node.stableKey ||
@@ -1126,12 +1195,20 @@ class _QueueTreeNodeTileState extends State<_QueueTreeNodeTile> {
           ),
         ),
         children: [
-          for (final child in node.children)
-            _QueueTreeNodeTile(
-              key: ValueKey<String>(child.stableKey),
-              node: child,
-              onTrackTap: widget.onTrackTap,
+          // ExpansionTile mounts this builder only while its body is visible,
+          // including the reverse animation when collapsing.
+          Builder(
+            builder: (_) => Column(
+              children: [
+                for (final child in node.children)
+                  _QueueTreeNodeTile(
+                    key: ValueKey<String>(child.stableKey),
+                    node: child,
+                    onTrackTap: widget.onTrackTap,
+                  ),
+              ],
             ),
+          ),
         ],
       ),
     );

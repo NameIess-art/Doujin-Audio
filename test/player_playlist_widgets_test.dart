@@ -35,6 +35,7 @@ import 'package:doujin_audio/core/widgets/top_page_header.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'support/app_runtime_test_fixture.dart';
+import 'support/test_playback_commands.dart';
 
 class _RecordingPlaybackCoverCacheService extends CoverArtworkCacheService {
   _RecordingPlaybackCoverCacheService()
@@ -102,27 +103,40 @@ void _expectThemeSessionResetButtonStyle(WidgetTester tester, Finder finder) {
   expect(style.foregroundColor!.resolve(enabled), colorScheme.primary);
 }
 
-Future<({AppRuntimeWidgetTestFixture fixture, PlaybackSession session})>
+Future<
+  ({
+    AppRuntimeWidgetTestFixture fixture,
+    PlaybackSession session,
+    _RecordingPlaybackCoverCacheService coverCache,
+  })
+>
 _pumpSubtitleDetail({
   required WidgetTester tester,
   required PlaybackDetailSubtitleStyle style,
   required SubtitleTrack subtitleTrack,
   required Duration initialPosition,
   Size physicalSize = const Size(1080, 2400),
+  Future<SubtitleTrack?>? subtitleResult,
+  Widget Function(PlaybackSessionSnapshot)? detailBuilder,
+  List<MusicTrack>? queueTracks,
+  bool preloadSubtitle = false,
+  void Function(AppRuntimeWidgetTestFixture)? configureFixture,
 }) async {
   tester.view.devicePixelRatio = 3;
   tester.view.physicalSize = physicalSize;
   addTearDown(tester.view.resetDevicePixelRatio);
   addTearDown(tester.view.resetPhysicalSize);
 
-  final track = MusicTrack(
-    path: '/library/subtitles/track.mp3',
-    displayName: 'Subtitle track',
-    groupKey: '/library/subtitles',
-    groupTitle: 'Subtitle album',
-    groupSubtitle: '/library/subtitles',
-    isSingle: false,
-  );
+  final track =
+      queueTracks?.first ??
+      MusicTrack(
+        path: '/library/subtitles/track.mp3',
+        displayName: 'Subtitle track',
+        groupKey: '/library/subtitles',
+        groupTitle: 'Subtitle album',
+        groupSubtitle: '/library/subtitles',
+        isSingle: false,
+      );
   final coverCache = _RecordingPlaybackCoverCacheService();
   final fixture = AppRuntimeWidgetTestFixture(
     coverArtworkCacheService: coverCache,
@@ -132,8 +146,9 @@ _pumpSubtitleDetail({
     },
   );
   addTearDown(fixture.dispose);
+  configureFixture?.call(fixture);
   fixture.runtimeGraph.library.addTracks(
-    <MusicTrack>[track],
+    queueTracks ?? <MusicTrack>[track],
     notify: false,
     persist: false,
   );
@@ -143,8 +158,23 @@ _pumpSubtitleDetail({
     loopMode: SessionLoopMode.single,
     nonSingleLoopMode: SessionLoopMode.single,
     volume: 1,
+    customQueueTracks: queueTracks,
+    playbackQueue: queueTracks == null
+        ? null
+        : PlaybackQueueDefinition(
+            name: 'Test queue',
+            entries: [
+              for (var index = 0; index < queueTracks.length; index++)
+                PlaybackQueueEntry(
+                  id: '$index',
+                  kind: PlaybackQueueEntryKind.track,
+                  title: queueTracks[index].displayName,
+                  tracks: [queueTracks[index]],
+                ),
+            ],
+          ),
     createdAt: DateTime(2026),
-    state: PlayerState(false, ProcessingState.ready),
+    state: const PlayerState(false, ProcessingState.ready),
   )..setOptimisticPosition(initialPosition);
   fixture.playbackService.registerSession(session);
   fixture.playbackService.syncSlice(
@@ -152,13 +182,14 @@ _pumpSubtitleDetail({
     playingSessionCount: 0,
     focusedSessionId: session.id,
     multiThreadPlaybackEnabled: false,
-    coverGeneration: 0,
+    coverGeneration: coverCache.generation,
     isInitialized: true,
   );
   final subtitleService = PlaybackSubtitleService(
     trackResolver: (_) => track,
-    subtitleLoader: (_, _) async => subtitleTrack,
+    subtitleLoader: (_, _) => subtitleResult ?? Future.value(subtitleTrack),
   );
+  if (preloadSubtitle) await subtitleService.load(track.path);
   TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
       .setMockMethodCallHandler(
         nativePlaybackChannel,
@@ -170,22 +201,33 @@ _pumpSubtitleDetail({
   });
 
   await tester.pumpWidget(
-    fixture.build(const PlaylistTab(), subtitleService: subtitleService),
+    fixture.build(
+      detailBuilder == null
+          ? const PlaylistTab()
+          : Scaffold(
+              body: detailBuilder(
+                fixture.runtimeGraph.playback.sessionSnapshotById(session.id)!,
+              ),
+            ),
+      subtitleService: subtitleService,
+    ),
   );
   await tester.pumpAndSettle();
   coverCache.requestedPaths.clear();
-  unawaited(
-    Navigator.of(
-      tester.element(find.byType(PlaylistTab)),
-    ).push(buildSessionDetailRoute(sessionId: session.id)),
-  );
+  if (detailBuilder == null) {
+    unawaited(
+      Navigator.of(
+        tester.element(find.byType(PlaylistTab)),
+      ).push(buildSessionDetailRoute(sessionId: session.id)),
+    );
+  }
   await tester.pumpAndSettle();
   await tester.runAsync(
     () => Future<void>.delayed(const Duration(milliseconds: 200)),
   );
   await tester.pump();
 
-  return (fixture: fixture, session: session);
+  return (fixture: fixture, session: session, coverCache: coverCache);
 }
 
 void main() {
@@ -199,6 +241,367 @@ void main() {
   tearDownAll(() async {
     await AppRuntimeTestFixture.disposeSharedDatabase(testDatabase);
   });
+
+  testWidgets('detail repeated close only pops its own route', (tester) async {
+    await _pumpSubtitleDetail(
+      tester: tester,
+      style: PlaybackDetailSubtitleStyle.timeline,
+      subtitleTrack: SubtitleTrack(sourcePath: 'empty.srt', cues: const []),
+      initialPosition: Duration.zero,
+    );
+    final close = tester.widget<IconButton>(
+      find.widgetWithIcon(IconButton, Icons.keyboard_arrow_down_rounded),
+    );
+    close.onPressed!();
+    close.onPressed!();
+    await tester.pumpAndSettle();
+    expect(find.byType(SessionDetailPage), findsNothing);
+    expect(find.byType(PlaylistTab), findsOneWidget);
+    expect(UiInteractionCoordinator.instance.isInteracting, isFalse);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+    'detail drag takes over a running spring and releases interaction',
+    (tester) async {
+      await _pumpSubtitleDetail(
+        tester: tester,
+        style: PlaybackDetailSubtitleStyle.timeline,
+        subtitleTrack: SubtitleTrack(sourcePath: 'empty.srt', cues: const []),
+        initialPosition: Duration.zero,
+      );
+      final drag = tester.widget<GestureDetector>(
+        find
+            .descendant(
+              of: find.byType(SessionDetailPage),
+              matching: find.byWidgetPredicate(
+                (widget) =>
+                    widget is GestureDetector &&
+                    widget.onVerticalDragUpdate != null,
+              ),
+            )
+            .first,
+      );
+      void move(double delta) => drag.onVerticalDragUpdate!(
+        DragUpdateDetails(
+          globalPosition: Offset.zero,
+          delta: Offset(0, delta),
+          primaryDelta: delta,
+        ),
+      );
+      drag.onVerticalDragStart!(DragStartDetails());
+      move(120);
+      drag.onVerticalDragEnd!(DragEndDetails(primaryVelocity: 0));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 30));
+      drag.onVerticalDragStart!(DragStartDetails());
+      move(40);
+      await tester.pump();
+      expect(UiInteractionCoordinator.instance.isInteracting, isTrue);
+      drag.onVerticalDragCancel!();
+      await tester.pumpAndSettle();
+      expect(find.byType(SessionDetailPage), findsOneWidget);
+      expect(UiInteractionCoordinator.instance.isInteracting, isFalse);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  for (final replaceQueue in [false, true]) {
+    testWidgets(
+      'switcher waits for actual exit and validates queue, replaced=$replaceQueue',
+      (tester) async {
+        final tracks = List.generate(
+          2,
+          (i) => MusicTrack(
+            path: '/queue/$i.mp3',
+            displayName: 'Queue track $i',
+            groupKey: '__single_files__',
+            groupTitle: '',
+            groupSubtitle: '',
+            isSingle: true,
+          ),
+        );
+        final harness = await _pumpSubtitleDetail(
+          tester: tester,
+          style: PlaybackDetailSubtitleStyle.timeline,
+          queueTracks: tracks,
+          subtitleTrack: SubtitleTrack(sourcePath: 'empty.srt', cues: const []),
+          initialPosition: Duration.zero,
+        );
+        final commands = <(String, String, int?)>[];
+        harness.fixture.runtimeGraph.playback.detachCommandPort();
+        harness.fixture.runtimeGraph.playback.attachPlaybackCommands(
+          prepareSession:
+              (
+                session, {
+                required nextPath,
+                autoPlay = true,
+                forceStartAtZero = false,
+                showLoading = true,
+                targetQueueIndex,
+              }) async {
+                commands.add((session.id, nextPath, targetQueueIndex));
+                return true;
+              },
+          pauseSession: (_) async {},
+          startSession: (_, {required shouldStartTriggerCountdown}) async =>
+              true,
+          resolveAdvance: (_, {required forward}) => null,
+          hasAdjacent: (_, {required forward}) => true,
+        );
+        await tester.tap(
+          find.byTooltip(harness.fixture.languageProvider.tr('switch_audio')),
+        );
+        await tester.pumpAndSettle();
+        final row = find.byKey(
+          ValueKey('queue_switcher_track_${tracks[1].path}'),
+        );
+        await tester.tap(row);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 210));
+        expect(commands, isEmpty);
+        expect(harness.session.currentTrackPath, tracks.first.path);
+        if (replaceQueue) {
+          harness.session.playbackQueue = harness.session.playbackQueue!
+              .copyWith(entries: []);
+        }
+        await tester.pump(const Duration(milliseconds: 100));
+        await tester.pumpAndSettle();
+        if (replaceQueue) {
+          expect(harness.session.currentTrackPath, tracks.first.path);
+          expect(commands, isEmpty);
+        } else {
+          expect(commands, [(harness.session.id, tracks[1].path, 1)]);
+        }
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
+  testWidgets('detail transport updates do not request artwork again', (
+    tester,
+  ) async {
+    final harness = await _pumpSubtitleDetail(
+      tester: tester,
+      style: PlaybackDetailSubtitleStyle.timeline,
+      subtitleTrack: SubtitleTrack(sourcePath: 'empty.srt', cues: const []),
+      initialPosition: Duration.zero,
+    );
+    // This fixture deliberately has no cover. Finish its bounded retries
+    // before counting work caused by transport changes.
+    for (var i = 0; i < 13; i++) {
+      await tester.pump(const Duration(seconds: 2));
+      await tester.pumpAndSettle();
+    }
+    harness.coverCache.requestedPaths.clear();
+    await harness.fixture.runtimeGraph.playback.setSessionVolume(
+      harness.session.id,
+      1.2,
+      persist: false,
+    );
+    await tester.pumpAndSettle();
+    expect(harness.coverCache.requestedPaths, isEmpty);
+    await tester.tap(
+      find.byKey(const ValueKey('session_volume_button_anchor')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('105%'), findsOneWidget);
+    expect(harness.coverCache.requestedPaths, isEmpty);
+  });
+
+  for (final cueCount in [100, 1000, 5000]) {
+    testWidgets('timeline reuses measured overlap for $cueCount cues', (
+      tester,
+    ) async {
+      final track = SubtitleTrack(
+        sourcePath: 'large.srt',
+        cues: List.generate(
+          cueCount,
+          (i) => SubtitleCue(
+            start: Duration(seconds: i * 2),
+            end: Duration(seconds: i * 2 + 2),
+            text: 'Cue $i',
+          ),
+        ),
+      );
+      await _pumpSubtitleDetail(
+        tester: tester,
+        style: PlaybackDetailSubtitleStyle.timeline,
+        subtitleTrack: track,
+        initialPosition: Duration(seconds: cueCount),
+      );
+      final timeline = find.byWidgetPredicate(
+        (widget) => widget.runtimeType.toString() == '_TimelineSubtitleView',
+      );
+      final dynamic state = tester.state(timeline);
+      final listFinder = find.byKey(const ValueKey('subtitle_timeline_list'));
+      final initialCount = tester
+          .widget<ListView>(listFinder)
+          .childrenDelegate
+          .estimatedChildCount!;
+      expect(initialCount, 61);
+      final measuredBefore = state.debugMeasuredCueCount as int;
+      await tester.drag(listFinder, const Offset(0, -10000));
+      await tester.pumpAndSettle();
+      final expandedCount = tester
+          .widget<ListView>(listFinder)
+          .childrenDelegate
+          .estimatedChildCount!;
+      expect(
+        state.debugMeasuredCueCount - measuredBefore,
+        expandedCount - initialCount,
+      );
+      final beforeResize = state.debugMeasuredCueCount as int;
+      tester.view.physicalSize = const Size(1200, 2400);
+      await tester.pumpAndSettle();
+      expect(state.debugMeasuredCueCount - beforeResize, expandedCount);
+      expect(
+        find
+            .byWidgetPredicate(
+              (widget) =>
+                  widget.key is ValueKey<String> &&
+                  (widget.key! as ValueKey<String>).value.startsWith(
+                    'subtitle_timeline_text_',
+                  ),
+            )
+            .evaluate()
+            .length,
+        lessThan(20),
+      );
+      await tester.pump(const Duration(seconds: 3));
+      await tester.pumpAndSettle();
+    });
+  }
+
+  testWidgets('cached subtitles remain visible during entry', (tester) async {
+    final busy = ValueNotifier(true);
+    addTearDown(busy.dispose);
+    final track = SubtitleTrack(
+      sourcePath: 'cached.srt',
+      cues: [
+        const SubtitleCue(
+          start: Duration.zero,
+          end: Duration(seconds: 10),
+          text: 'Cached line',
+        ),
+      ],
+    );
+    await _pumpSubtitleDetail(
+      tester: tester,
+      style: PlaybackDetailSubtitleStyle.timeline,
+      subtitleTrack: track,
+      initialPosition: Duration.zero,
+      preloadSubtitle: true,
+      detailBuilder: (session) =>
+          SessionSubtitlePanel(session: session, transitionActive: busy),
+    );
+    expect(find.text('Cached line'), findsOneWidget);
+  });
+
+  for (final disposeBeforeResult in [false, true]) {
+    testWidgets(
+      'segment loading is shared and invalidated, disposed=$disposeBeforeResult',
+      (tester) async {
+        final busy = ValueNotifier(true);
+        addTearDown(busy.dispose);
+        final pending = Completer<void>();
+        var reads = 0;
+        await _pumpSubtitleDetail(
+          tester: tester,
+          style: PlaybackDetailSubtitleStyle.timeline,
+          subtitleTrack: SubtitleTrack(sourcePath: 'empty.srt', cues: const []),
+          initialPosition: Duration.zero,
+          configureFixture: (fixture) {
+            fixture.persistenceRepository.beforeTimeSegmentLabelLoad = () {
+              reads++;
+              return reads == 1 ? pending.future : Future.value();
+            };
+          },
+          detailBuilder: (session) => SessionDetailContent(
+            session: session,
+            artworkWidget: const SizedBox.shrink(),
+            transitionActive: busy,
+          ),
+        );
+        final state = tester.state<SessionDetailContentState>(
+          find.byType(SessionDetailContent),
+        );
+        state.expandSegmentPanel();
+        await tester.pumpAndSettle();
+        expect(reads, 1);
+        if (disposeBeforeResult) {
+          await tester.pumpWidget(const SizedBox.shrink());
+        }
+        pending.completeError(StateError('label read failure'));
+        await tester.pumpAndSettle();
+        busy.value = false;
+        await tester.pumpAndSettle();
+        if (!disposeBeforeResult) {
+          state.collapseSegmentPanel();
+          state.expandSegmentPanel();
+          await tester.pump();
+          expect(reads, 2);
+        }
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
+  for (final disposeBeforeCommit in [false, true]) {
+    testWidgets(
+      'cold subtitle waits for animation, disposed=$disposeBeforeCommit',
+      (tester) async {
+        final busy = ValueNotifier(true);
+        addTearDown(busy.dispose);
+        final result = Completer<SubtitleTrack?>();
+        final track = SubtitleTrack(
+          sourcePath: 'deferred.srt',
+          cues: [
+            const SubtitleCue(
+              start: Duration.zero,
+              end: Duration(seconds: 2),
+              text: 'Old line',
+            ),
+            const SubtitleCue(
+              start: Duration(seconds: 2),
+              end: Duration(seconds: 10),
+              text: 'Latest line',
+            ),
+          ],
+        );
+        final harness = await _pumpSubtitleDetail(
+          tester: tester,
+          style: PlaybackDetailSubtitleStyle.timeline,
+          subtitleTrack: track,
+          subtitleResult: result.future,
+          initialPosition: Duration.zero,
+          detailBuilder: (session) =>
+              SessionSubtitlePanel(session: session, transitionActive: busy),
+        );
+        result.complete(track);
+        await tester.pumpAndSettle();
+        expect(find.text('Old line'), findsNothing);
+        harness.session.setOptimisticPosition(const Duration(seconds: 3));
+        await tester.pump();
+        if (disposeBeforeCommit) {
+          await tester.pumpWidget(const SizedBox.shrink());
+        }
+        busy.value = false;
+        await tester.pumpAndSettle();
+        if (disposeBeforeCommit) {
+          expect(find.text('Latest line'), findsNothing);
+        } else {
+          expect(find.text('Latest line'), findsOneWidget);
+          final list = tester.widget<ListView>(
+            find.byKey(const ValueKey('subtitle_timeline_list')),
+          );
+          expect(list.controller!.offset, greaterThan(0));
+        }
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
 
   for (final hidden in [true, false]) {
     testWidgets(

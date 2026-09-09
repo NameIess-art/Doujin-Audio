@@ -57,14 +57,18 @@ class TransportPlaybackControlPanel extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final transport = ref.watch(sessionDetailTransportProvider(session.id));
+    final transport = ref.watch(
+      sessionDetailTransportProvider(
+        session.id,
+      ).select((state) => (state?.showPauseIcon, state?.isLoading)),
+    );
     return _PlaybackControlPanel(
       session: session,
       playback: playback,
       paths: paths,
-      showPauseIcon: transport?.showPauseIcon ?? session.playbackRequested,
+      showPauseIcon: transport.$1 ?? session.playbackRequested,
       isLoading:
-          transport?.isLoading ??
+          transport.$2 ??
           (session.isPlaybackLoading && session.playbackRequested),
       hasSiblings: hasSiblings,
       segmentPanelExpanded: segmentPanelExpanded,
@@ -358,6 +362,9 @@ class _PlaybackSecondaryControls extends ConsumerStatefulWidget {
 
 class _PlaybackSecondaryControlsState
     extends ConsumerState<_PlaybackSecondaryControls> {
+  double get _currentVolume =>
+      widget.playback.sessionById(widget.session.id)?.volume ??
+      widget.session.volume;
   bool _volumeMode = false;
   double? _dragVolume;
   double? _preMuteVolume;
@@ -372,7 +379,7 @@ class _PlaybackSecondaryControlsState
 
   void _toggleMute() {
     AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
-    final currentVolume = (_dragVolume ?? widget.session.volume)
+    final currentVolume = (_dragVolume ?? _currentVolume)
         .clamp(0.0, PlaybackFacade.maxSessionVolume)
         .toDouble();
     if (currentVolume > 0.001) {
@@ -395,7 +402,7 @@ class _PlaybackSecondaryControlsState
       listen: false,
     ).read(appLanguageProviderInstanceProvider);
     var inputValue =
-        '${(sessionVolumeDisplayValueFromGain(_dragVolume ?? widget.session.volume) * 100).round()}';
+        '${(sessionVolumeDisplayValueFromGain(_dragVolume ?? _currentVolume) * 100).round()}';
     unawaited(
       showAppDialog<void>(
         context: context,
@@ -457,7 +464,12 @@ class _PlaybackSecondaryControlsState
       listen: false,
     ).read(appLanguageProviderInstanceProvider);
 
-    final volumeGain = (_dragVolume ?? widget.session.volume)
+    ref.watch(
+      sessionDetailTransportProvider(
+        widget.session.id,
+      ).select((state) => state?.volume),
+    );
+    final volumeGain = (_dragVolume ?? _currentVolume)
         .clamp(0.0, PlaybackFacade.maxSessionVolume)
         .toDouble();
     final displayVolume = sessionVolumeDisplayValueFromGain(volumeGain);
@@ -602,7 +614,7 @@ class _PlaybackSecondaryControlsState
                 ),
                 _SecondaryControlButton(
                   key: const ValueKey('session_volume_button_anchor'),
-                  icon: _getIconForVolume(widget.session.volume),
+                  icon: _getIconForVolume(_currentVolume),
                   tooltip: i18n.tr('volume'),
                   onPressed: () {
                     setState(() => _volumeMode = true);
@@ -638,12 +650,7 @@ class _PlaybackSecondaryControlsState
                   icon: Icons.queue_music_rounded,
                   tooltip: i18n.tr('switch_audio'),
                   onPressed: widget.hasSiblings
-                      ? () {
-                          AppInteractionFeedback.trigger(
-                            AppInteractionFeedbackType.selection,
-                          );
-                          widget.onShowTrackSwitcher();
-                        }
+                      ? widget.onShowTrackSwitcher
                       : null,
                 ),
                 _SecondaryControlButton(
@@ -780,10 +787,7 @@ class _SecondaryControlButton extends StatelessWidget {
               : Colors.transparent,
           foregroundColor: active
               ? cs.onPrimaryContainer
-              : sessionDetailForeground(
-                  cs,
-                  SessionDetailForegroundLevel.muted,
-                ),
+              : sessionDetailForeground(cs, SessionDetailForegroundLevel.muted),
           disabledForegroundColor: cs.onSurface.withValues(alpha: 0.35),
         ),
         onPressed: onPressed != null

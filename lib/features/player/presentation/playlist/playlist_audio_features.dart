@@ -73,10 +73,13 @@ class AudioFeaturesPage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final detail = ref.watch(sessionDetailTransportProvider(session.id));
-    final effects = detail?.audioEffects ?? session.audioEffects;
-    final channelSwapEnabled =
-        detail?.channelSwapEnabled ?? session.channelSwapEnabled;
+    final detail = ref.watch(
+      sessionDetailTransportProvider(
+        session.id,
+      ).select((state) => (state?.audioEffects, state?.channelSwapEnabled)),
+    );
+    final effects = detail.$1 ?? session.audioEffects;
+    final channelSwapEnabled = detail.$2 ?? session.channelSwapEnabled;
     final i18n = ProviderScope.containerOf(
       context,
       listen: false,
@@ -232,9 +235,13 @@ class VolumeBalancePage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final detail = ref.watch(sessionDetailTransportProvider(session.id));
     final panning =
-        detail?.audioEffects.panning ?? session.audioEffects.panning;
+        ref.watch(
+          sessionDetailTransportProvider(
+            session.id,
+          ).select((state) => state?.audioEffects.panning),
+        ) ??
+        session.audioEffects.panning;
     final i18n = ProviderScope.containerOf(
       context,
       listen: false,
@@ -346,9 +353,13 @@ class EqualizerPage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final detail = ref.watch(sessionDetailTransportProvider(session.id));
-    final effects = detail?.audioEffects ?? session.audioEffects;
-    final eqCapabilities = detail?.eqCapabilities ?? session.eqCapabilities;
+    final detail = ref.watch(
+      sessionDetailTransportProvider(
+        session.id,
+      ).select((state) => (state?.audioEffects, state?.eqCapabilities)),
+    );
+    final effects = detail.$1 ?? session.audioEffects;
+    final eqCapabilities = detail.$2 ?? session.eqCapabilities;
 
     final i18n = ProviderScope.containerOf(
       context,

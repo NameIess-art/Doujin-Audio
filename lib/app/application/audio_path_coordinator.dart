@@ -61,10 +61,10 @@ final class AudioPathCoordinator implements PlaybackTrackResolver {
     return _library.trackByPath(resolvedPath);
   }
 
-  List<MusicTrack> tracksInSameGroup(String trackPath) {
+  List<MusicTrack> tracksInSameGroup(String trackPath, {int? limit}) {
     final track = trackByPath(trackPath);
     if (track == null) return const <MusicTrack>[];
-    final libraryTracks = _library.tracksInGroup(track.groupKey);
+    final libraryTracks = _library.tracksInGroup(track.groupKey, limit: limit);
     if (libraryTracks.isNotEmpty) return libraryTracks;
     for (final session in _playback.sessions.values) {
       final queue = session.customQueueTracks;
@@ -80,31 +80,41 @@ final class AudioPathCoordinator implements PlaybackTrackResolver {
           )) {
         continue;
       }
-      return queue
-          .where((candidate) => candidate.groupKey == track.groupKey)
-          .toList(growable: false);
+      final matches = queue.where(
+        (candidate) => candidate.groupKey == track.groupKey,
+      );
+      return (limit == null ? matches : matches.take(limit)).toList(
+        growable: false,
+      );
     }
     return const <MusicTrack>[];
   }
 
-  List<MusicTrack> tracksInSameWork(String trackPath) {
+  List<MusicTrack> tracksInSameWork(String trackPath) =>
+      _tracksInSameWork(trackPath);
+
+  bool hasOtherTracksInSameWork(String trackPath) =>
+      _tracksInSameWork(trackPath, limit: 2).length > 1;
+
+  List<MusicTrack> _tracksInSameWork(String trackPath, {int? limit}) {
     final track = trackByPath(trackPath);
     if (track == null) return const <MusicTrack>[];
     if (track.isSingle) return <MusicTrack>[track];
     if (track.isRemoteAsmr || PathMatcher.isRemoteUri(track.path)) {
-      return tracksInSameGroup(trackPath);
+      return tracksInSameGroup(trackPath, limit: limit);
     }
     final root = workRootForTrack(trackPath);
-    if (root == null) return tracksInSameGroup(trackPath);
-    final tracks = _library.library
-        .where(
-          (candidate) =>
-              PathMatcher.isWithinOrEqual(candidate.path, root) ||
-              PathMatcher.isWithinOrEqual(candidate.groupKey, root),
-        )
-        .toList(growable: false);
-    if (tracks.isEmpty) return tracksInSameGroup(trackPath);
-    tracks.sort(_library.compareTracks);
+    if (root == null) return tracksInSameGroup(trackPath, limit: limit);
+    final matches = _library.library.where(
+      (candidate) =>
+          PathMatcher.isWithinOrEqual(candidate.path, root) ||
+          PathMatcher.isWithinOrEqual(candidate.groupKey, root),
+    );
+    final tracks = (limit == null ? matches : matches.take(limit)).toList(
+      growable: false,
+    );
+    if (tracks.isEmpty) return tracksInSameGroup(trackPath, limit: limit);
+    if (limit == null) tracks.sort(_library.compareTracks);
     return tracks;
   }
 

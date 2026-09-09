@@ -2,12 +2,15 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../app/presentation/app_presentation_providers.dart';
 import '../../../../app/state/app_runtime_providers.dart';
 import '../../../../app/theme/app_design_tokens.dart';
 import '../../../../core/media/subtitle_parser.dart';
+import '../../../../core/logging/app_log_service.dart';
+import '../../../../core/ui/ui_interaction_coordinator.dart';
 import '../../../../core/widgets/app_feedback.dart';
 import '../../../settings/application/settings_state.dart';
 import '../../../settings/presentation/settings_providers.dart';
@@ -22,10 +25,12 @@ class SessionSubtitlePanel extends ConsumerStatefulWidget {
     super.key,
     required this.session,
     this.subtitleEnabled = true,
+    this.transitionActive,
   });
 
   final PlaybackSessionSnapshot session;
   final bool subtitleEnabled;
+  final ValueListenable<bool>? transitionActive;
 
   @override
   ConsumerState<SessionSubtitlePanel> createState() =>
@@ -40,10 +45,14 @@ class _SessionSubtitlePanelState extends ConsumerState<SessionSubtitlePanel> {
   int? _playbackSubtitleIndex;
   String? _loadedPath;
   bool _tickerModeEnabled = true;
+  int _loadGeneration = 0;
+  late final String _commitKey = 'detail_subtitle_${identityHashCode(this)}';
+  VoidCallback? _pendingSubtitle;
 
   @override
   void initState() {
     super.initState();
+    widget.transitionActive?.addListener(_schedulePendingSubtitle);
     _positionGate = PlaybackPositionUiGate(
       session: widget.session,
       includeBufferedPosition: false,
@@ -56,10 +65,23 @@ class _SessionSubtitlePanelState extends ConsumerState<SessionSubtitlePanel> {
   @override
   void didUpdateWidget(covariant SessionSubtitlePanel oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.transitionActive != widget.transitionActive) {
+      oldWidget.transitionActive?.removeListener(_schedulePendingSubtitle);
+      widget.transitionActive?.addListener(_schedulePendingSubtitle);
+      _schedulePendingSubtitle();
+    }
     if (oldWidget.session != widget.session) {
       _positionGate.updateSession(widget.session);
     }
-    if (_loadedPath != widget.session.currentTrackPath ||
+    if (oldWidget.session.id != widget.session.id ||
+        _loadedPath != widget.session.currentTrackPath ||
+        oldWidget.subtitleEnabled != widget.subtitleEnabled) {
+      _loadGeneration++;
+      _pendingSubtitle = null;
+      UiInteractionCoordinator.instance.cancelCommit(_commitKey);
+    }
+    if (oldWidget.session.id != widget.session.id ||
+        _loadedPath != widget.session.currentTrackPath ||
         (!oldWidget.subtitleEnabled && widget.subtitleEnabled)) {
       if (widget.subtitleEnabled) {
         _scheduleSubtitleTrackLoad();
@@ -74,10 +96,15 @@ class _SessionSubtitlePanelState extends ConsumerState<SessionSubtitlePanel> {
     if (_tickerModeEnabled == nextTickerMode) return;
     _tickerModeEnabled = nextTickerMode;
     _positionGate.tickerModeEnabled = nextTickerMode;
+    if (nextTickerMode) _handlePositionTick();
   }
 
   @override
   void dispose() {
+    _loadGeneration++;
+    _pendingSubtitle = null;
+    widget.transitionActive?.removeListener(_schedulePendingSubtitle);
+    UiInteractionCoordinator.instance.cancelCommit(_commitKey);
     _positionGate
       ..removeListener(_handlePositionTick)
       ..dispose();
@@ -89,6 +116,10 @@ class _SessionSubtitlePanelState extends ConsumerState<SessionSubtitlePanel> {
   }
 
   void _scheduleSubtitleTrackLoad() {
+    final generation = ++_loadGeneration;
+    final sessionId = widget.session.id;
+    _pendingSubtitle = null;
+    UiInteractionCoordinator.instance.cancelCommit(_commitKey);
     final trackPath = widget.session.currentTrackPath;
     _loadedPath = trackPath;
     _subtitleTextCache.clear();
@@ -103,9 +134,48 @@ class _SessionSubtitlePanelState extends ConsumerState<SessionSubtitlePanel> {
       return;
     }
     unawaited(
-      subtitles.load(trackPath).then((track) {
-        _applySubtitleTrack(trackPath, track);
-      }),
+      subtitles
+          .load(trackPath)
+          .then(
+            (track) {
+              if (!mounted ||
+                  generation != _loadGeneration ||
+                  sessionId != widget.session.id ||
+                  !widget.subtitleEnabled) {
+                return;
+              }
+              _pendingSubtitle = () => _applySubtitleTrack(trackPath, track);
+              _schedulePendingSubtitle();
+            },
+            onError: (Object error, StackTrace stack) {
+              if (!mounted || generation != _loadGeneration) return;
+              AppLogService.warning(
+                'Detail subtitle failed to load',
+                error: error,
+                stackTrace: stack,
+              );
+            },
+          ),
+    );
+  }
+
+  void _schedulePendingSubtitle() {
+    if (_pendingSubtitle == null || widget.transitionActive?.value == true) {
+      return;
+    }
+    final generation = _loadGeneration;
+    UiInteractionCoordinator.instance.scheduleCommit(
+      key: _commitKey,
+      commit: () {
+        if (!mounted ||
+            generation != _loadGeneration ||
+            widget.transitionActive?.value == true) {
+          return;
+        }
+        final apply = _pendingSubtitle;
+        _pendingSubtitle = null;
+        apply?.call();
+      },
     );
   }
 
@@ -156,9 +226,16 @@ class _SessionSubtitlePanelState extends ConsumerState<SessionSubtitlePanel> {
 
   @override
   Widget build(BuildContext context) {
-    final detail = ref.watch(sessionDetailTransportProvider(widget.session.id));
-    final playbackError = detail?.playbackError ?? widget.session.playbackError;
-    final isLoading = detail?.isLoading ?? widget.session.isPlaybackLoading;
+    final detail = ref.watch(
+      sessionDetailTransportProvider(widget.session.id).select(
+        (state) => (
+          state == null ? widget.session.playbackError : state.playbackError,
+          state?.isLoading,
+        ),
+      ),
+    );
+    final playbackError = detail.$1;
+    final isLoading = detail.$2 ?? widget.session.isPlaybackLoading;
     ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     final transitionDuration = MediaQuery.disableAnimationsOf(context)
@@ -323,6 +400,8 @@ class _TimelineSubtitleView extends StatefulWidget {
 }
 
 class _TimelineSubtitleViewState extends State<_TimelineSubtitleView> {
+  @visibleForTesting
+  int debugMeasuredCueCount = 0;
   static const int _initialWindowRadius = 30;
   static const int _windowExpansionSize = 30;
   static const int _windowExpansionThreshold = 4;
@@ -354,6 +433,9 @@ class _TimelineSubtitleViewState extends State<_TimelineSubtitleView> {
 
   int get _lastIndex => widget.cues.length - 1;
   int get _windowLength => _windowEnd - _windowStart;
+  bool get _hasCurrentWindowLayout =>
+      _layoutSignature?.$2 == _windowStart &&
+      _layoutSignature?.$3 == _windowEnd;
 
   @override
   void initState() {
@@ -420,7 +502,11 @@ class _TimelineSubtitleViewState extends State<_TimelineSubtitleView> {
   }
 
   void _handleScrollOffsetChanged() {
-    if (!_scrollController.hasClients || _itemCenters.isEmpty) return;
+    if (!_scrollController.hasClients ||
+        _itemCenters.isEmpty ||
+        !_hasCurrentWindowLayout) {
+      return;
+    }
     final viewportCenter = _scrollController.offset + (_viewportHeight / 2);
     final nextIndex = _windowStart + _nearestWindowItemIndex(viewportCenter);
     if (nextIndex == _focusedIndex || !mounted) return;
@@ -491,7 +577,9 @@ class _TimelineSubtitleViewState extends State<_TimelineSubtitleView> {
         }
       });
     }
-    if (!_scrollController.hasClients || _itemCenters.isEmpty) {
+    if (!_scrollController.hasClients ||
+        _itemCenters.isEmpty ||
+        !_hasCurrentWindowLayout) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _scrollToIndex(targetIndex);
       });
@@ -565,7 +653,6 @@ class _TimelineSubtitleViewState extends State<_TimelineSubtitleView> {
     setState(() {
       _windowStart = nextStart;
       _windowEnd = nextEnd;
-      _invalidateLayoutMetrics();
     });
   }
 
@@ -582,6 +669,10 @@ class _TimelineSubtitleViewState extends State<_TimelineSubtitleView> {
     required TextDirection textDirection,
     required TextScaler textScaler,
   }) {
+    assert(() {
+      debugMeasuredCueCount++;
+      return true;
+    }());
     final painter = TextPainter(
       text: TextSpan(text: cue.text, style: textStyle),
       textAlign: TextAlign.center,
@@ -699,16 +790,27 @@ class _TimelineSubtitleViewState extends State<_TimelineSubtitleView> {
           focusedTextStyle,
         );
         if (_layoutSignature != layoutSignature) {
+          final previous = _layoutSignature;
+          final canReuse =
+              previous != null &&
+              identical(previous.$1, widget.cues) &&
+              previous.$4 == textWidth &&
+              previous.$5 == textScaler &&
+              previous.$6 == textDirection &&
+              previous.$7 == focusedTextStyle;
           _layoutSignature = layoutSignature;
           final itemExtents = <double>[
             for (var index = _windowStart; index < _windowEnd; index++)
-              _measureCueExtent(
-                widget.cues[index],
-                textWidth: textWidth,
-                textStyle: focusedTextStyle,
-                textDirection: textDirection,
-                textScaler: textScaler,
-              ),
+              if (canReuse && index >= previous.$2 && index < previous.$3)
+                _itemExtents[index - previous.$2]
+              else
+                _measureCueExtent(
+                  widget.cues[index],
+                  textWidth: textWidth,
+                  textStyle: focusedTextStyle,
+                  textDirection: textDirection,
+                  textScaler: textScaler,
+                ),
           ];
           _updateLayoutMetrics(itemExtents);
         }

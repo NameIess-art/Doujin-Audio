@@ -135,7 +135,12 @@ class _AppOverlayPanelShell extends StatelessWidget {
                       child: buildAppScaleFadeTransition(
                         context: context,
                         animation: animation,
-                        child: child!,
+                        // Ink must paint inside the transition so tile backgrounds
+                        // and splashes fade and scale with the panel content.
+                        child: Material(
+                          type: MaterialType.transparency,
+                          child: child!,
+                        ),
                       ),
                     ),
                   ),

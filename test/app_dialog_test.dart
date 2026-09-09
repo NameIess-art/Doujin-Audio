@@ -1,10 +1,68 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/core/widgets/app_buttons.dart';
 import 'package:doujin_audio/core/widgets/app_dialog.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
 
 void main() {
+  testWidgets('overlay ink background fades with the panel on dismissal', (
+    tester,
+  ) async {
+    final captureKey = GlobalKey();
+    await tester.pumpWidget(
+      RepaintBoundary(
+        key: captureKey,
+        child: MaterialApp(
+          home: Scaffold(
+            backgroundColor: Colors.black,
+            body: Builder(
+              builder: (context) => TextButton(
+                onPressed: () => showAppOverlayPanel<void>(
+                  context: context,
+                  builder: (_) => Ink(
+                    key: const ValueKey('fading_ink'),
+                    width: 200,
+                    height: 100,
+                    decoration: BoxDecoration(
+                      color: Colors.red,
+                      borderRadius: BorderRadius.circular(24),
+                    ),
+                  ),
+                ),
+                child: const Text('Open'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Open'));
+    await tester.pumpAndSettle();
+    final center = tester.getCenter(find.byKey(const ValueKey('fading_ink')));
+    Future<int> redAtCenter() async {
+      final boundary =
+          captureKey.currentContext!.findRenderObject()!
+              as RenderRepaintBoundary;
+      final image = boundary.toImageSync();
+      final bytes = await tester.runAsync(() => image.toByteData());
+      final red = bytes!.getUint8(
+        (center.dy.floor() * image.width + center.dx.floor()) * 4,
+      );
+      image.dispose();
+      return red;
+    }
+
+    final initialRed = await redAtCenter();
+    expect(initialRed, greaterThan(0));
+    await tester.tapAt(const Offset(1, 1));
+    await tester.pump();
+    await tester.pump(kSecondaryOverlayConfig.transitionDuration * 0.75);
+    expect(await redAtCenter(), lessThan(initialRed / 2));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('fading_ink')), findsNothing);
+  });
+
   testWidgets('shared app dialog renders content and returns a typed result', (
     tester,
   ) async {

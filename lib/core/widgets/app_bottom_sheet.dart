@@ -4,6 +4,11 @@ import '../../app/theme/app_styles.dart';
 
 class AppBottomSheet {
   /// Shows a standardized bottom sheet with a drag handle and rounded top corners.
+  static Duration reverseAnimationDurationOf(BuildContext context) =>
+      MediaQuery.disableAnimationsOf(context)
+      ? Duration.zero
+      : const Duration(milliseconds: 250);
+
   static Future<T?> show<T>({
     required BuildContext context,
     required WidgetBuilder builder,
@@ -22,9 +27,9 @@ class AppBottomSheet {
         sheetAnimationStyle ??
         (MediaQuery.disableAnimationsOf(context)
             ? AnimationStyle.noAnimation
-            : const AnimationStyle(
-                duration: Duration(milliseconds: 320),
-                reverseDuration: Duration(milliseconds: 250),
+            : AnimationStyle(
+                duration: const Duration(milliseconds: 320),
+                reverseDuration: reverseAnimationDurationOf(context),
                 curve: Curves.fastOutSlowIn,
                 reverseCurve: Curves.fastOutSlowIn,
               ));

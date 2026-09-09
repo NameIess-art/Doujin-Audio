@@ -12,7 +12,7 @@ void registerAsmrRemoteCatalogTests({
     () async {
       await resetPrefs();
       final api = _FakeAsmrApiService();
-      final controller = AsmrLibraryController(
+      final controller = createTestAsmrController(
         preferencesStore: preferences,
         apiService: api,
         persistenceRepository: _FakeTestPersistenceRepository(<MusicTrack>[
@@ -42,7 +42,7 @@ void registerAsmrRemoteCatalogTests({
     final api = _FakeAsmrApiService(
       failingFetchOrders: const <String>{'release'},
     );
-    final controller = AsmrLibraryController(
+    final controller = createTestAsmrController(
       preferencesStore: preferences,
       apiService: api,
       persistenceRepository: _FakeTestPersistenceRepository(
@@ -76,7 +76,7 @@ void registerAsmrRemoteCatalogTests({
   test('ASMR review count category uses review count ordering', () async {
     await resetPrefs();
     final api = _FakeAsmrApiService();
-    final controller = AsmrLibraryController(
+    final controller = createTestAsmrController(
       preferencesStore: preferences,
       apiService: api,
       persistenceRepository: _FakeTestPersistenceRepository(
@@ -97,7 +97,7 @@ void registerAsmrRemoteCatalogTests({
   test('ASMR category marks first load attempt before empty state', () async {
     await resetPrefs();
     final api = _FakeAsmrApiService();
-    final controller = AsmrLibraryController(
+    final controller = createTestAsmrController(
       preferencesStore: preferences,
       apiService: api,
       persistenceRepository: _FakeTestPersistenceRepository(
@@ -122,7 +122,7 @@ void registerAsmrRemoteCatalogTests({
   test('ASMR category retries transient handshake failures', () async {
     await resetPrefs();
     final api = _FakeAsmrApiService(transientFetchFailuresRemaining: 1);
-    final controller = AsmrLibraryController(
+    final controller = createTestAsmrController(
       preferencesStore: preferences,
       apiService: api,
       persistenceRepository: _FakeTestPersistenceRepository(
@@ -153,7 +153,7 @@ void registerAsmrRemoteCatalogTests({
       await resetPrefs();
       final api = _FakeAsmrApiService();
       final auth = _BlockingAsmrAuthService();
-      final controller = AsmrLibraryController(
+      final controller = createTestAsmrController(
         preferencesStore: preferences,
         apiService: api,
         authService: auth,
@@ -191,7 +191,7 @@ void registerAsmrRemoteCatalogTests({
   test('ASMR refresh commits business state while interacting', () async {
     await resetPrefs();
     final api = _FakeAsmrApiService();
-    final controller = AsmrLibraryController(
+    final controller = createTestAsmrController(
       preferencesStore: preferences,
       apiService: api,
       persistenceRepository: _FakeTestPersistenceRepository(
@@ -232,7 +232,7 @@ void registerAsmrRemoteCatalogTests({
   test('ASMR recommendation search uses ordinary search candidates', () async {
     await resetPrefs();
     final api = _FakeAsmrApiService();
-    final controller = AsmrLibraryController(
+    final controller = createTestAsmrController(
       preferencesStore: preferences,
       apiService: api,
       persistenceRepository: _FakeTestPersistenceRepository(
@@ -259,7 +259,7 @@ void registerAsmrRemoteCatalogTests({
   test('ASMR recommendation refresh changes full result order', () async {
     await resetPrefs();
     final api = _FakeAsmrApiService(largeRecommendationPool: true);
-    final controller = AsmrLibraryController(
+    final controller = createTestAsmrController(
       preferencesStore: preferences,
       apiService: api,
       persistenceRepository: _FakeTestPersistenceRepository(
@@ -289,7 +289,7 @@ void registerAsmrRemoteCatalogTests({
   test('ASMR recommendation loads extra candidate pages', () async {
     await resetPrefs();
     final api = _FakeAsmrApiService(largeRecommendationPool: true);
-    final controller = AsmrLibraryController(
+    final controller = createTestAsmrController(
       preferencesStore: preferences,
       apiService: api,
       persistenceRepository: _FakeTestPersistenceRepository(
@@ -331,7 +331,7 @@ void registerAsmrRemoteCatalogTests({
         await blocker.future;
       },
     );
-    final controller = AsmrLibraryController(
+    final controller = createTestAsmrController(
       preferencesStore: preferences,
       apiService: api,
       persistenceRepository: _FakeTestPersistenceRepository(
@@ -377,7 +377,7 @@ void registerAsmrRemoteCatalogTests({
         largeRecommendationPool: true,
         recommendationPageCount: 20,
       );
-      final controller = AsmrLibraryController(
+      final controller = createTestAsmrController(
         preferencesStore: preferences,
         apiService: api,
         persistenceRepository: _FakeTestPersistenceRepository(
@@ -420,7 +420,7 @@ void registerAsmrRemoteCatalogTests({
           _work(id: 34, title: 'Visible Sleep', tags: <String>['sleep']),
         ],
       );
-      final controller = AsmrLibraryController(
+      final controller = createTestAsmrController(
         preferencesStore: preferences,
         apiService: api,
         persistenceRepository: _FakeTestPersistenceRepository(<MusicTrack>[
@@ -454,7 +454,7 @@ void registerAsmrRemoteCatalogTests({
       );
       await resetPrefs();
       await preferences.saveFavoriteWorks(<AsmrWork>[favorite]);
-      final controller = AsmrLibraryController(
+      final controller = createTestAsmrController(
         preferencesStore: preferences,
         persistenceRepository: _FakeTestPersistenceRepository(
           const <MusicTrack>[],
@@ -502,7 +502,7 @@ void registerAsmrRemoteCatalogTests({
         favoriteMiss,
       ]);
       await preferences.saveHistoryWorks(<AsmrWork>[historyMatch, historyMiss]);
-      final controller = AsmrLibraryController(
+      final controller = createTestAsmrController(
         preferencesStore: preferences,
         persistenceRepository: _FakeTestPersistenceRepository(
           const <MusicTrack>[],

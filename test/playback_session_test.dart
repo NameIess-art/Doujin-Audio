@@ -6,6 +6,195 @@ import 'package:doujin_audio/features/player/application/native_playback_bridge.
 import 'package:doujin_audio/features/player/application/playback_session_snapshot.dart';
 
 void main() {
+  PlaybackSession createSession() => PlaybackSession(
+    id: 'state-transitions',
+    currentTrackPath: '/audio/one.mp3',
+    loopMode: SessionLoopMode.single,
+    nonSingleLoopMode: SessionLoopMode.folderSequential,
+    volume: 1,
+    createdAt: DateTime(2026),
+    state: const PlayerState(false, ProcessingState.idle),
+  );
+
+  test(
+    'preparation generations preserve flags and reject stale completion',
+    () async {
+      final session = createSession();
+      addTearDown(session.shutdown);
+      final states = <PlayerState>[];
+      session.stateStream.listen(states.add);
+      final first = session.beginPreparation(showLoading: true, autoPlay: true);
+      expect(first.changed, isTrue);
+      final second = session.beginPreparation(
+        showLoading: false,
+        autoPlay: false,
+      );
+      expect(second.generation, first.generation + 1);
+      expect(second.changed, isFalse);
+      expect(session.isLoading, isTrue);
+      expect(session.isPlaybackStarting, isTrue);
+      session.markNativePreparation(second.generation, '/new.mp3');
+      for (final prepared in [true, false]) {
+        expect(
+          session.finishPreparation(
+            first.generation,
+            prepared: prepared,
+            autoPlay: true,
+            error: 'old failure',
+          ),
+          isFalse,
+        );
+      }
+      expect(
+        session.markNativePreparation(first.generation, '/old.mp3'),
+        isFalse,
+      );
+      expect(session.cancelPlaybackStart(first.generation), isFalse);
+      expect(session.pendingNativeTrackPath, '/new.mp3');
+      expect(session.isLoading, isTrue);
+      expect(session.isPlaybackStarting, isTrue);
+      expect(session.playbackError, isNull);
+      expect(
+        session.finishPreparation(
+          second.generation,
+          prepared: false,
+          autoPlay: true,
+          error: 'current failure',
+        ),
+        isTrue,
+      );
+      expect(session.pendingNativeTrackPath, isNull);
+      expect(session.isLoading, isFalse);
+      expect(session.isPlaybackStarting, isFalse);
+      expect(session.playbackError, 'current failure');
+      expect(
+        session.finishPreparation(
+          second.generation,
+          prepared: false,
+          autoPlay: true,
+          error: 'current failure',
+        ),
+        isFalse,
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(states, isEmpty);
+    },
+  );
+
+  test(
+    'successful preparation keeps autoplay until transport confirmation',
+    () {
+      final session = createSession();
+      addTearDown(session.shutdown);
+      final preparation = session.beginPreparation(
+        showLoading: true,
+        autoPlay: true,
+      );
+      session.finishPreparation(
+        preparation.generation,
+        prepared: true,
+        autoPlay: true,
+      );
+      expect(session.isLoading, isFalse);
+      expect(session.playbackRequested, isTrue);
+      session.beginTransportCommand(commandId: 1, playing: false);
+      expect(session.playbackRequested, isFalse);
+      expect(session.loadGeneration, preparation.generation);
+    },
+  );
+
+  test('completion cleanup requires both generations and advances once', () {
+    final session = createSession();
+    addTearDown(session.shutdown);
+    expect(
+      session.beginCompletionAdvance(commandGeneration: 0, markHandled: true),
+      isTrue,
+    );
+    expect(
+      session.finishCompletionAdvance(
+        commandGeneration: 0,
+        preparationGeneration: 0,
+      ),
+      isTrue,
+    );
+    expect(
+      session.beginCompletionAdvance(commandGeneration: 0, markHandled: true),
+      isFalse,
+    );
+    final preparation = session.beginPreparation(
+      showLoading: true,
+      autoPlay: true,
+    );
+    expect(
+      session.finishCompletionAdvance(
+        commandGeneration: 0,
+        preparationGeneration: 0,
+        error: 'old completion',
+      ),
+      isFalse,
+    );
+    session.beginTransportCommand(commandId: 2, playing: false);
+    expect(
+      session.finishCompletionAdvance(
+        commandGeneration: 0,
+        preparationGeneration: preparation.generation,
+        error: 'old command',
+      ),
+      isFalse,
+    );
+    expect(session.isLoading, isTrue);
+    expect(session.playbackError, isNull);
+  });
+
+  test(
+    'shutdown invalidates preparation and refuses later state transitions',
+    () async {
+      final session = createSession();
+      final preparation = session.beginPreparation(
+        showLoading: true,
+        autoPlay: true,
+      );
+      session.markNativePreparation(preparation.generation, '/new.mp3');
+      await session.shutdown();
+      final generation = session.loadGeneration;
+      expect(session.isPreparationCurrent(preparation.generation), isFalse);
+      expect(session.pendingNativeTrackPath, isNull);
+      expect(session.isLoading, isFalse);
+      expect(
+        session.beginPreparation(showLoading: true, autoPlay: true).changed,
+        isFalse,
+      );
+      expect(session.loadGeneration, generation);
+      expect(session.markNativePreparation(generation, '/late.mp3'), isFalse);
+      expect(
+        session.finishPreparation(
+          generation,
+          prepared: false,
+          autoPlay: true,
+          error: 'late failure',
+        ),
+        isFalse,
+      );
+      expect(
+        session.beginTransportCommand(commandId: 3, playing: true),
+        isFalse,
+      );
+      expect(session.failTransportCommand(0), isFalse);
+      expect(session.beginCompletionAdvance(commandGeneration: 0), isFalse);
+      expect(
+        session.finishCompletionAdvance(
+          commandGeneration: 0,
+          preparationGeneration: generation,
+          error: 'late completion',
+        ),
+        isFalse,
+      );
+      expect(session.reconcilePlaybackState(), isFalse);
+      expect(session.confirmPaused(), isFalse);
+      expect(session.playbackError, isNull);
+    },
+  );
+
   test(
     'native snapshots update only their matching playback session',
     () async {
@@ -134,13 +323,35 @@ void main() {
     session.beginLoadingIndicatorThreshold(
       threshold: const Duration(milliseconds: 20),
     );
-    session.isPlaybackStarting = true;
+    session.beginPreparation(showLoading: false, autoPlay: true);
     session.setOptimisticState(processingState: ProcessingState.buffering);
 
     expect(session.isPlaybackLoading, isFalse);
 
     await session.stateStream.first;
 
+    expect(session.isPlaybackLoading, isTrue);
+  });
+
+  test('transport changes include loading threshold visibility', () {
+    final session = createSession();
+    addTearDown(session.shutdown);
+    session.beginTransportCommand(
+      commandId: 1,
+      playing: true,
+      threshold: Duration.zero,
+    );
+    expect(session.isPlaybackLoading, isTrue);
+    expect(session.beginTransportCommand(commandId: 1, playing: true), isTrue);
+    expect(session.isPlaybackLoading, isFalse);
+    expect(
+      session.beginTransportCommand(
+        commandId: 1,
+        playing: true,
+        threshold: Duration.zero,
+      ),
+      isTrue,
+    );
     expect(session.isPlaybackLoading, isTrue);
   });
 

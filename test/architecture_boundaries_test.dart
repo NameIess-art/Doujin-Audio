@@ -6,6 +6,125 @@ import 'package:path/path.dart' as path;
 void main() {
   final libDirectory = Directory('lib');
 
+  test('feature provider declarations remain in their owning feature', () {
+    const declarations = <String, List<String>>{
+      'asmr': [
+        'asmrDownloadManagerProvider',
+        'asmrLibraryControllerProvider',
+        'asmrLibraryGlobalStateProvider',
+        'asmrCategoryStateProvider',
+        'asmrAuthStateProvider',
+        'asmrTrackTreeStateProvider',
+        'asmrSyncStateProvider',
+        'asmrPlaybackCoordinatorProvider',
+        'asmrDownloadTaskIdsProvider',
+        'asmrDownloadButtonViewStateProvider',
+        '_asmrDownloadTaskSnapshotProvider',
+        'asmrDownloadTaskProvider',
+      ],
+      'library': ['libraryFacadeProvider', 'libraryStateProvider'],
+      'playback': [
+        'playbackFacadeProvider',
+        'playbackSubtitleServiceProvider',
+        'subtitleOverlayControllerProvider',
+        'timerFacadeProvider',
+        'notificationFacadeProvider',
+        'playbackStateProvider',
+        'timerStateProvider',
+      ],
+      'settings': [
+        'settingsRepositoryProvider',
+        'settingsStateProvider',
+        'appUpdateServiceProvider',
+      ],
+    };
+    final appSource = File(
+      'lib/app/state/app_runtime_providers.dart',
+    ).readAsStringSync();
+    for (final entry in declarations.entries) {
+      final feature = entry.key == 'playback' ? 'player' : entry.key;
+      final file = File(
+        'lib/features/$feature/presentation/${entry.key}_providers.dart',
+      );
+      final source = file.readAsStringSync();
+      for (final name in entry.value) {
+        final declaration = RegExp('^final $name =', multiLine: true);
+        expect(declaration.hasMatch(source), isTrue, reason: name);
+        expect(declaration.hasMatch(appSource), isFalse, reason: name);
+      }
+      for (final import in _imports(source)) {
+        expect(
+          _resolvedProjectImport(file, import)?.startsWith('lib/app/') ?? false,
+          isFalse,
+          reason: '${file.path} imports $import',
+        );
+      }
+    }
+    expect(appSource, isNot(contains('export ')));
+    expect(
+      File('lib/app/state/interaction_deferred_stream.dart').existsSync(),
+      isFalse,
+    );
+    expect(
+      File('lib/core/ui/interaction_deferred_stream.dart').existsSync(),
+      isTrue,
+    );
+  });
+
+  test('cross-session path lookup is owned by AudioPathCoordinator', () {
+    final commandSources = Directory('lib/app/application')
+        .listSync()
+        .whereType<File>()
+        .where(
+          (file) => path.basename(file.path).startsWith('playback_command'),
+        );
+    final declaration = RegExp(r'MusicTrack\?\s+trackByPath\s*\(');
+    for (final file in commandSources) {
+      expect(
+        declaration.hasMatch(file.readAsStringSync()),
+        isFalse,
+        reason: file.path,
+      );
+    }
+    final source = File(
+      'lib/app/application/audio_path_coordinator.dart',
+    ).readAsStringSync();
+    expect(declaration.hasMatch(source), isTrue);
+    expect(source, contains('bool includeLibraryFallback = true'));
+  });
+
+  test('library editing and subtitles own independent presentation libraries', () {
+    final tab = File(
+      'lib/features/library/presentation/library_tab.dart',
+    ).readAsStringSync();
+    final edit = File(
+      'lib/features/library/presentation/library_tab_edit.dart',
+    ).readAsStringSync();
+    final progress = File(
+      'lib/features/player/presentation/playlist/playlist_progress_widgets.dart',
+    ).readAsStringSync();
+    final subtitles = File(
+      'lib/features/player/presentation/playlist/playlist_subtitle_panel.dart',
+    ).readAsStringSync();
+    final removal = File(
+      'lib/features/library/presentation/library_removal_feedback.dart',
+    ).readAsStringSync();
+    expect(tab, isNot(contains("part 'library_tab_edit.dart'")));
+    expect(edit, isNot(contains('part of')));
+    expect(edit, contains('class LibraryManagementPage'));
+    expect(edit, contains('class LibraryEditPage'));
+    expect(progress, isNot(contains('class SessionSubtitlePanel')));
+    expect(subtitles, contains('class SessionSubtitlePanel'));
+    expect(subtitles, isNot(contains('part of')));
+    expect(removal, contains('Future<bool> stageLibraryRemoval('));
+    final libraryPresentation = Directory('lib/features/library/presentation');
+    final removalDeclarations = _dartFiles(libraryPresentation).where(
+      (file) =>
+          file.readAsStringSync().contains('Future<bool> stageLibraryRemoval('),
+    );
+    expect(removalDeclarations, hasLength(1));
+  });
+
   test('removed compatibility runtime APIs cannot return', () {
     final violations = <String>[];
     final forbiddenText = <String>[
@@ -159,13 +278,24 @@ void main() {
     expect(violations, isEmpty, reason: violations.join('\n'));
   });
 
-  test('app state does not depend on presentation', () {
+  test('app state imports only feature provider entries for assembly', () {
+    const featureProviderEntries = <String>{
+      'lib/features/asmr/presentation/asmr_providers.dart',
+      'lib/features/library/presentation/library_providers.dart',
+      'lib/features/player/presentation/playback_providers.dart',
+      'lib/features/settings/presentation/settings_providers.dart',
+    };
     final violations = <String>[];
     for (final file in _dartFiles(Directory('lib/app/state'))) {
       final filePath = _normalizedPath(file);
       for (final import in _imports(file.readAsStringSync())) {
         final resolved = _resolvedProjectImport(file, import);
-        if (resolved != null && resolved.contains('/presentation/')) {
+        final isFeatureProviderAssembly =
+            filePath == 'lib/app/state/app_runtime_providers.dart' &&
+            featureProviderEntries.contains(resolved);
+        if (resolved != null &&
+            resolved.contains('/presentation/') &&
+            !isFeatureProviderAssembly) {
           violations.add('$filePath imports $import');
         }
       }

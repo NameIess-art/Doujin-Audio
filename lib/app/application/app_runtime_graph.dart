@@ -143,6 +143,7 @@ AppRuntimeGraph createAppRuntimeGraph({
       syncTimerState: syncTimerState,
     ),
     NotificationRuntimeBinding.attach(
+      audioPaths: audioPaths,
       library: library,
       playback: playback,
       notifications: notifications,

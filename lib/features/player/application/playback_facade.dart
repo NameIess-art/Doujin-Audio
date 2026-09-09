@@ -19,7 +19,6 @@ import 'native_playback_repository.dart';
 import 'native_playback_bridge.dart';
 import 'playback_command_port.dart';
 import 'playback_command_runner.dart';
-import 'playback_queue_resolver.dart';
 
 part 'playback_native_state_coordinator.dart';
 part 'playback_session_persistence_coordinator.dart';
@@ -314,18 +313,12 @@ final class PlaybackFacade {
           _commandPort?.resolveAdvance(session, forward: true) != null &&
           session.lastHandledCompletionGeneration != currentGeneration;
       if (shouldAutoAdvanceAfterCompletion) {
-        session.isLoading = true;
-        session.isAdvancingAfterCompletion = true;
-        session.lastHandledCompletionGeneration = currentGeneration;
+        session.beginCompletionAdvance(
+          commandGeneration: currentGeneration,
+          markHandled: true,
+        );
       }
-      if (!state.playing &&
-          (state.processingState == ProcessingState.idle ||
-              state.processingState == ProcessingState.completed)) {
-        session.isPlaybackStarting = false;
-      }
-      if (state.processingState != ProcessingState.completed) {
-        session.isAdvancingAfterCompletion = false;
-      }
+      session.reconcilePlaybackState();
       _onRuntimeStateChanged?.call();
       _onSessionStateChanged?.call();
 
@@ -432,9 +425,7 @@ final class PlaybackFacade {
       return false;
     }
     for (final session in _service.sessions.values) {
-      session.setOptimisticState(playing: false);
-      session.isLoading = false;
-      session.isPlaybackStarting = false;
+      session.confirmPaused();
     }
     _onRuntimeStateChanged?.call();
     _onSessionStateChanged?.call();
@@ -478,7 +469,6 @@ final class PlaybackFacade {
     _removeNativeRetainedContentUris(removedSessionIds);
     if (removedSessions.isEmpty) return allSucceeded;
     for (final session in removedSessions) {
-      session.isPlaybackStarting = false;
       _deferredVolumeReloadSessionIds.remove(session.id);
     }
     await Future.wait(removedSessions.map((session) => session.shutdown()));
@@ -503,7 +493,7 @@ final class PlaybackFacade {
     );
     if (removedSessions.isEmpty) return true;
     for (final session in removedSessions) {
-      session.isPlaybackStarting = false;
+      session.cancelPlaybackStart(session.loadGeneration);
       _deferredVolumeReloadSessionIds.remove(session.id);
     }
     _onSessionsRemoved?.call(removedSessions);
@@ -1147,16 +1137,20 @@ final class PlaybackFacade {
 
   void _dispatchSessionCompleted(String sessionId) {
     final callback = _onSessionCompleted;
-    if (callback == null) return;
+    final session = _service.sessions[sessionId];
+    if (callback == null || session == null) return;
+    final commandGeneration = session.playbackCommandGeneration;
+    final preparationGeneration = session.loadGeneration;
     unawaited(() async {
       try {
         await callback(sessionId);
       } catch (error, stackTrace) {
-        final session = _service.sessions[sessionId];
-        if (session != null) {
-          session.isLoading = false;
-          session.isAdvancingAfterCompletion = false;
-          session.playbackError = error.toString();
+        if (isRegisteredSession(session) &&
+            session.finishCompletionAdvance(
+              commandGeneration: commandGeneration,
+              preparationGeneration: preparationGeneration,
+              error: error.toString(),
+            )) {
           _onRuntimeStateChanged?.call();
           _onSessionStateChanged?.call();
         }

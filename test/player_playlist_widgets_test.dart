@@ -1,3 +1,4 @@
+import 'package:doujin_audio/features/player/presentation/playback_providers.dart';
 import 'dart:async';
 import 'dart:io';
 import 'dart:ui' as ui;
@@ -8,7 +9,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart' show ProviderContainer;
 import 'package:flutter_test/flutter_test.dart';
 import 'support/runtime_test_models.dart';
-import 'package:doujin_audio/app/state/app_runtime_providers.dart';
 import 'package:doujin_audio/app/presentation/app_presentation_providers.dart';
 import 'package:doujin_audio/app/theme/app_design_tokens.dart';
 import 'package:doujin_audio/core/media/path_matcher.dart';
@@ -18,6 +18,7 @@ import 'package:doujin_audio/features/player/application/playback_subtitle_servi
 import 'package:doujin_audio/features/player/application/playback_session_snapshot.dart';
 import 'package:doujin_audio/features/player/application/native_playback_bridge.dart';
 import 'package:doujin_audio/features/player/presentation/playlist_tab.dart';
+import 'package:doujin_audio/features/player/presentation/playlist/playlist_subtitle_panel.dart';
 import 'package:doujin_audio/features/player/presentation/active_session_carousel.dart';
 import 'package:doujin_audio/features/player/presentation/session_video_viewport.dart';
 import 'package:doujin_audio/core/platform/platform_channels.dart';
@@ -2886,8 +2887,7 @@ void main() {
       persist: false,
     );
     final trackSession = fixture.runtimeGraph.playback.createTrackSession(track)
-      ..isLoading = true
-      ..isPlaybackStarting = true;
+      ..beginPreparation(showLoading: true, autoPlay: true);
     final queueSession =
         fixture.runtimeGraph.playback.createPlaybackQueue('Loading queue')
           ..currentTrackPath = track.path
@@ -2902,8 +2902,7 @@ void main() {
               ),
             ],
           )
-          ..isLoading = true
-          ..isPlaybackStarting = true;
+          ..beginPreparation(showLoading: true, autoPlay: true);
     addTearDown(trackSession.shutdown);
     addTearDown(queueSession.shutdown);
     fixture.playbackService.syncSlice(
@@ -3141,6 +3140,86 @@ void main() {
     expect(text.maxLines, 2);
   });
 
+  testWidgets(
+    'standalone subtitle panel ignores stale paths and late completion',
+    (tester) async {
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      final session = PlaybackSession(
+        id: 'standalone-subtitle',
+        currentTrackPath: '/subtitle/old.mp3',
+        loopMode: SessionLoopMode.single,
+        nonSingleLoopMode: SessionLoopMode.single,
+        volume: 1,
+        createdAt: DateTime(2026),
+        state: const PlayerState(false, ProcessingState.ready),
+      );
+      addTearDown(session.shutdown);
+      final pending = <String, Completer<SubtitleTrack?>>{};
+      var loadCalls = 0;
+      final subtitleService = PlaybackSubtitleService(
+        trackResolver: (_) => null,
+        subtitleLoader: (path, _) {
+          loadCalls++;
+          return pending
+              .putIfAbsent(path, Completer<SubtitleTrack?>.new)
+              .future;
+        },
+      );
+      Widget panel() => fixture.build(
+        SessionSubtitlePanel(
+          key: const ValueKey('standalone-subtitle-panel'),
+          session: PlaybackSessionSnapshot.fromRuntime(session),
+        ),
+        subtitleService: subtitleService,
+      );
+      await tester.pumpWidget(panel());
+      expect(pending.keys, ['/subtitle/old.mp3']);
+      session.currentTrackPath = '/subtitle/latest.mp3';
+      await tester.pumpWidget(panel());
+      pending['/subtitle/latest.mp3']!.complete(
+        SubtitleTrack(
+          sourcePath: '/subtitle/latest.srt',
+          cues: const [
+            SubtitleCue(
+              start: Duration.zero,
+              end: Duration(seconds: 5),
+              text: 'Latest subtitle',
+            ),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Latest subtitle'), findsOneWidget);
+      pending['/subtitle/old.mp3']!.complete(
+        SubtitleTrack(
+          sourcePath: '/subtitle/old.srt',
+          cues: const [
+            SubtitleCue(
+              start: Duration.zero,
+              end: Duration(seconds: 5),
+              text: 'Stale subtitle',
+            ),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Latest subtitle'), findsOneWidget);
+      expect(find.text('Stale subtitle'), findsNothing);
+      await tester.pumpWidget(panel());
+      expect(pending, hasLength(2));
+      expect(loadCalls, 2);
+
+      session.currentTrackPath = '/subtitle/exited.mp3';
+      await tester.pumpWidget(panel());
+      expect(pending, hasLength(3));
+      await tester.pumpWidget(const SizedBox.shrink());
+      pending['/subtitle/exited.mp3']!.complete(null);
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   testWidgets('detail loading subtitle fades while the cover resizes', (
     tester,
   ) async {
@@ -3160,9 +3239,7 @@ void main() {
     );
     final initialCoverHeight = tester.getSize(cover).height;
 
-    result.session
-      ..isLoading = true
-      ..isPlaybackStarting = true;
+    result.session.beginPreparation(showLoading: true, autoPlay: true);
     result.fixture.playbackService.markActiveSessionsDirty();
     result.fixture.playbackService.syncSlice(
       activeSessions: <PlaybackSession>[result.session],
@@ -3192,9 +3269,11 @@ void main() {
     expect(initialCoverHeight, greaterThan(midCoverHeight));
     expect(midCoverHeight, greaterThan(loadingCoverHeight));
 
-    result.session
-      ..isLoading = false
-      ..isPlaybackStarting = false;
+    result.session.finishPreparation(
+      result.session.loadGeneration,
+      prepared: false,
+      autoPlay: true,
+    );
     result.fixture.playbackService.markActiveSessionsDirty();
     result.fixture.playbackService.syncSlice(
       activeSessions: <PlaybackSession>[result.session],

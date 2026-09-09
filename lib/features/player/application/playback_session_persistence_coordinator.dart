@@ -112,9 +112,6 @@ extension PlaybackSessionPersistenceCoordinator on PlaybackFacade {
     _service.sessions.clear();
     _service.sessionOrder.clear();
     _service.markActiveSessionsDirty();
-    for (final session in removedSessions) {
-      session.isPlaybackStarting = false;
-    }
     await Future.wait(removedSessions.map((session) => session.shutdown()));
     try {
       final response = await nativeRepository.clearAll();

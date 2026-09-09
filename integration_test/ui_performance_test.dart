@@ -1,3 +1,5 @@
+import 'package:doujin_audio/features/asmr/presentation/asmr_providers.dart';
+import '../test/support/asmr_controller_test_fixture.dart';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:ui';
@@ -8,7 +10,6 @@ import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:doujin_audio/app/presentation/main_screen.dart';
-import 'package:doujin_audio/app/state/app_runtime_providers.dart';
 import 'package:doujin_audio/app/presentation/app_presentation_providers.dart';
 import 'package:doujin_audio/core/app_language.dart';
 import 'package:doujin_audio/core/persistence/app_database.dart';
@@ -16,7 +17,6 @@ import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/core/widgets/top_page_header.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_library_controller.dart';
-import 'package:doujin_audio/features/asmr/application/asmr_preferences.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_tab.dart';
 import 'package:doujin_audio/features/data_support/application/data_backup_service.dart';
@@ -80,7 +80,9 @@ void main() {
     final fixture = AppRuntimeWidgetTestFixture();
     final sessions = _seedRuntime(fixture, trackCount: _libraryItemCount);
     final asmrController = _ProfileAsmrController(
-      fixture: fixture,
+      services: createTestAsmrServices(
+        persistenceRepository: fixture.persistenceRepository,
+      ),
       works: _buildAsmrWorks(_asmrItemCount),
       trackTree: _buildAsmrTrackTree(_asmrTrackCount),
     );
@@ -499,14 +501,13 @@ Duration _percentile95(List<Duration> sorted) {
 
 final class _ProfileAsmrController extends AsmrLibraryController {
   _ProfileAsmrController({
-    required AppRuntimeWidgetTestFixture fixture,
+    required TestAsmrServices services,
     required this.works,
     required this.trackTree,
   }) : super(
-         persistenceRepository: fixture.persistenceRepository,
-         preferencesStore: AsmrPreferencesStore(
-           repository: fixture.persistenceRepository,
-         ),
+         preferencesStore: services.preferencesStore,
+         remoteCatalogService: services.remoteCatalogService,
+         accountSyncService: services.accountSyncService,
        );
 
   final List<AsmrWork> works;

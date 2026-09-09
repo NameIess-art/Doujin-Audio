@@ -105,8 +105,7 @@ void main() {
     });
     final first = _session('first')
       ..setOptimisticState(playing: true)
-      ..isLoading = true
-      ..isPlaybackStarting = true;
+      ..beginPreparation(showLoading: true, autoPlay: true);
     final second = _session('second')..setOptimisticState(playing: true);
     final removed = <String>[];
     var stateChanges = 0;
@@ -196,8 +195,7 @@ void main() {
     )..configurePersistence(enabled: false);
     final session = _session('pause-failure')
       ..setOptimisticState(playing: true)
-      ..isLoading = true
-      ..isPlaybackStarting = true;
+      ..beginPreparation(showLoading: true, autoPlay: true);
     playback.registerSession(session);
     addTearDown(() async {
       await playback.dispose();
@@ -335,7 +333,7 @@ void main() {
           playing: true,
           processingState: ProcessingState.loading,
         )
-        ..isLoading = true;
+        ..beginPreparation(showLoading: true, autoPlay: false);
       var pauseCount = 0;
       var prepareCount = 0;
       addTearDown(() async {
@@ -560,7 +558,12 @@ void main() {
       )..configurePersistence(enabled: false);
       final session = _session('failed-native-source')
         ..loadedPath = '/tracks/failed.mp3'
-        ..playbackError = 'network failed'
+        ..finishPreparation(
+          0,
+          prepared: false,
+          autoPlay: false,
+          error: 'network failed',
+        )
         ..state = PlayerState(false, ProcessingState.idle);
       var prepareCount = 0;
       var startCount = 0;
@@ -701,7 +704,7 @@ void main() {
               showLoading = true,
               targetQueueIndex,
             }) async {
-              session.isPlaybackStarting = true;
+              session.beginPreparation(showLoading: false, autoPlay: true);
               session.setOptimisticState(
                 processingState: ProcessingState.buffering,
               );
@@ -720,7 +723,7 @@ void main() {
 
     expect(session.isPlaybackLoading, isFalse);
 
-    session.isPlaybackStarting = false;
+    session.cancelPlaybackStart(session.loadGeneration);
     session.setOptimisticState(processingState: ProcessingState.ready);
     await playback.seekSessionToPrev(session.id);
 
@@ -802,9 +805,9 @@ void main() {
                 final release = Completer<void>();
                 preparationReleases.add(release);
                 preparedPaths.add(nextPath);
-                session.pendingNativeTrackPath = nextPath;
+                session.markNativePreparation(session.loadGeneration, nextPath);
                 await release.future;
-                session.pendingNativeTrackPath = null;
+                session.markNativePreparation(session.loadGeneration, null);
                 return true;
               },
           pauseSession: (_) async {},
@@ -892,56 +895,90 @@ void main() {
     },
   );
 
-  test('completion callback failures are contained and surfaced', () async {
-    final library = _createLibraryFacade();
-    final playback = PlaybackFacade.create(
-      databaseRepository:
-          library.databaseRepository as PlaybackPersistenceRepository,
-    )..configurePersistence(enabled: false);
-    final session = _session('completion_failure');
-    addTearDown(() async {
-      await session.shutdown();
-      await playback.dispose();
-      await library.dispose();
+  for (final superseding in [
+    'none',
+    'preparation',
+    'transport',
+    'replacement',
+  ]) {
+    test('completion failure respects $superseding state', () async {
+      final library = _createLibraryFacade();
+      final playback = PlaybackFacade.create(
+        databaseRepository:
+            library.databaseRepository as PlaybackPersistenceRepository,
+      )..configurePersistence(enabled: false);
+      final session = _session('completion_failure');
+      final started = Completer<void>();
+      final release = Completer<void>();
+      var currentSession = session;
+      addTearDown(() async {
+        await session.shutdown();
+        await playback.dispose();
+        await library.dispose();
+      });
+      playback
+        ..attachSessionRuntime(
+          onSessionRegistered: (_) {},
+          onSessionsReordered: () {},
+          onSessionStateChanged: () {},
+          onSessionCompleted: (_) async {
+            started.complete();
+            await release.future;
+            throw StateError('next track failed');
+          },
+        )
+        ..attachPlaybackCommands(
+          prepareSession:
+              (
+                session, {
+                required nextPath,
+                autoPlay = true,
+                forceStartAtZero = false,
+                showLoading = true,
+                targetQueueIndex,
+              }) async => true,
+          pauseSession: (_) async {},
+          startSession: (_, {required shouldStartTriggerCountdown}) async =>
+              true,
+          resolveAdvance: (_, {required forward}) =>
+              const PlaybackAdvanceResult(path: '/tracks/next.mp3'),
+          hasAdjacent: (_, {required forward}) => true,
+        )
+        ..registerSession(session);
+
+      session.setOptimisticState(
+        playing: false,
+        processingState: ProcessingState.completed,
+      );
+      await started.future;
+      switch (superseding) {
+        case 'preparation':
+          session.beginPreparation(showLoading: false, autoPlay: true);
+          break;
+        case 'transport':
+          session.beginTransportCommand(commandId: 1, playing: true);
+          break;
+        case 'replacement':
+          currentSession = _session(session.id)
+            ..beginPreparation(showLoading: true, autoPlay: false);
+          playback.registerSession(currentSession);
+          addTearDown(currentSession.shutdown);
+          break;
+      }
+      release.complete();
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
+
+      if (superseding == 'none') {
+        expect(session.isLoading, isFalse);
+        expect(session.isAdvancingAfterCompletion, isFalse);
+        expect(session.playbackError, contains('next track failed'));
+      } else {
+        expect(currentSession.isLoading, isTrue);
+        expect(currentSession.playbackError, isNull);
+      }
     });
-    playback
-      ..attachSessionRuntime(
-        onSessionRegistered: (_) {},
-        onSessionsReordered: () {},
-        onSessionStateChanged: () {},
-        onSessionCompleted: (_) async {
-          throw StateError('next track failed');
-        },
-      )
-      ..attachPlaybackCommands(
-        prepareSession:
-            (
-              session, {
-              required nextPath,
-              autoPlay = true,
-              forceStartAtZero = false,
-              showLoading = true,
-              targetQueueIndex,
-            }) async => true,
-        pauseSession: (_) async {},
-        startSession: (_, {required shouldStartTriggerCountdown}) async => true,
-        resolveAdvance: (_, {required forward}) =>
-            const PlaybackAdvanceResult(path: '/tracks/next.mp3'),
-        hasAdjacent: (_, {required forward}) => true,
-      )
-      ..registerSession(session);
-
-    session.setOptimisticState(
-      playing: false,
-      processingState: ProcessingState.completed,
-    );
-    await Future<void>.delayed(Duration.zero);
-    await Future<void>.delayed(Duration.zero);
-
-    expect(session.isLoading, isFalse);
-    expect(session.isAdvancingAfterCompletion, isFalse);
-    expect(session.playbackError, contains('next track failed'));
-  });
+  }
 
   test('PlaybackFacade owns loop mode state and synchronization', () async {
     final library = _createLibraryFacade();

@@ -1,3 +1,5 @@
+import '../../features/player/presentation/playback_providers.dart';
+import '../../features/settings/presentation/settings_providers.dart';
 import 'dart:async';
 import 'dart:io';
 import 'dart:math';

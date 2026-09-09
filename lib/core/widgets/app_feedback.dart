@@ -1,3 +1,4 @@
+import '../../app/presentation/app_presentation_providers.dart';
 import 'dart:async';
 import 'dart:ui' as ui;
 
@@ -5,7 +6,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 
-import '../../app/state/app_runtime_providers.dart';
 import '../../app/theme/app_design_tokens.dart';
 import '../../app/theme/app_styles.dart';
 import '../ui/app_interaction_feedback_settings.dart';
@@ -488,11 +488,7 @@ class AppFeedbackSurface extends ConsumerWidget {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
     final tokens = AppDesignTokens.of(context);
-    final blurEnabled = ref.watch(
-      settingsStateProvider.select(
-        (state) => state.value?.uiBlurEffectEnabled ?? true,
-      ),
-    );
+    final blurEnabled = ref.watch(uiBlurEnabledProvider);
     final accent = iconColor ?? _accentColor(context, tone);
     final chipBackground = accent.withValues(alpha: 0.14);
     final resolvedBorderRadius = borderRadius ?? tokens.radiusCapsule;

@@ -654,8 +654,10 @@ void main() {
 
       expect(restoredGraph.playback.activeSessions, hasLength(1));
       expect(
-        restoredGraph.playbackCommands
-            .trackByPath('https://example.com/asmr/01.mp3')
+        restoredGraph.audioPaths.trackByPath(
+          'https://example.com/asmr/01.mp3',
+          includeLibraryFallback: false,
+        )
             ?.toJson(),
         firstTrack.toJson(),
       );
@@ -667,8 +669,9 @@ void main() {
         'https://example.com/asmr/01.mp3',
         'https://example.com/asmr/02.mp3',
       ]);
-      final restoredTrack = restoredGraph.playbackCommands.trackByPath(
+      final restoredTrack = restoredGraph.audioPaths.trackByPath(
         'https://example.com/asmr/01.mp3',
+        includeLibraryFallback: false,
       );
       final coverPath = await restoredGraph.notifications
           .coverPathFutureForTrack(restoredTrack);
@@ -769,7 +772,11 @@ void main() {
           'https://example.com/asmr/02.mp3',
         ]);
         for (var i = 0; i < 100; i++) {
-          if (runtimeGraph.playbackCommands.trackByPath(cachedPath) != null) {
+          if (runtimeGraph.audioPaths.trackByPath(
+                cachedPath,
+                includeLibraryFallback: false,
+              ) !=
+              null) {
             break;
           }
           await Future<void>.delayed(const Duration(milliseconds: 10));
@@ -777,7 +784,9 @@ void main() {
 
         expect(session.currentTrackPath, firstTrack.path);
         expect(
-          runtimeGraph.playbackCommands.trackByPath(cachedPath)?.toJson(),
+          runtimeGraph.audioPaths
+              .trackByPath(cachedPath, includeLibraryFallback: false)
+              ?.toJson(),
           firstTrack.toJson(),
         );
         expect(paths.trackByPath(cachedPath)?.toJson(), firstTrack.toJson());

@@ -402,11 +402,11 @@ void main() {
 
     expect(view()?.showPauseIcon, isFalse);
 
-    detailSession.isLoading = true;
+    detailSession.beginPreparation(showLoading: true, autoPlay: false);
     expect(view()?.isLoading, isFalse);
     expect(view()?.showPauseIcon, isFalse);
 
-    detailSession.isPlaybackStarting = true;
+    detailSession.beginPreparation(showLoading: false, autoPlay: true);
     expect(view()?.isLoading, isTrue);
     expect(view()?.showPauseIcon, isTrue);
 
@@ -414,9 +414,12 @@ void main() {
     expect(view()?.isLoading, isFalse);
     expect(view()?.showPauseIcon, isFalse);
 
-    detailSession
-      ..isLoading = false
-      ..playbackError = 'load failed';
+    detailSession.finishPreparation(
+      detailSession.loadGeneration,
+      prepared: false,
+      autoPlay: true,
+      error: 'load failed',
+    );
     expect(view()?.showPauseIcon, isFalse);
   });
 
@@ -515,7 +518,6 @@ void main() {
 
       detailSession
         ..beginTransportCommand(commandId: 2, playing: false)
-        ..isLoading = false
         ..state = PlayerState(false, ProcessingState.buffering);
       final loadingState = sessionDetailViewStateFromPlaybackState(
         PlaybackStateSliceData(activeSessions: [snapshot(detailSession)]),

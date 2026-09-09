@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
-import '../../core/ui/ui_interaction_coordinator.dart';
+import 'ui_interaction_coordinator.dart';
 
 int _interactionDeferredStreamSeed = 0;
 const Object _noPendingValue = Object();

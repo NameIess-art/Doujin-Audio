@@ -43,19 +43,19 @@ class PlaybackSession {
   bool get isPlaybackQueue => playbackQueue != null;
   String currentTrackPath;
   String? loadedPath;
-  String? pendingNativeTrackPath;
+  String? _pendingNativeTrackPath;
   SessionLoopMode loopMode;
   SessionLoopMode nonSingleLoopMode;
   double volume;
   bool channelSwapEnabled = false;
-  bool isLoading = false;
-  bool isPlaybackStarting = false;
-  int loadGeneration = 0;
-  int playbackCommandGeneration = 0;
-  int transportCommandId = 0;
-  bool? pendingPlayingIntent;
-  int lastHandledCompletionGeneration = -1;
-  bool isAdvancingAfterCompletion = false;
+  bool _isLoading = false;
+  bool _isPlaybackStarting = false;
+  int _loadGeneration = 0;
+  int _playbackCommandGeneration = 0;
+  int _transportCommandId = 0;
+  bool? _pendingPlayingIntent;
+  int _lastHandledCompletionGeneration = -1;
+  bool _isAdvancingAfterCompletion = false;
   int? nativePlaybackQueueCacheKey;
   List<Map<String, Object?>>? nativePlaybackQueueCache;
   Duration lastKnownPosition = Duration.zero;
@@ -72,10 +72,21 @@ class PlaybackSession {
   double nativeBoostGain = 1.0;
   int lastPersistedPositionBucket = 0;
   PlayerState state;
-  String? playbackError;
+  String? _playbackError;
   PlayerState? previousStateBeforeLastStateEvent;
   bool isDisposed = false;
   Future<void>? _shutdownFuture;
+
+  String? get pendingNativeTrackPath => _pendingNativeTrackPath;
+  bool get isLoading => _isLoading;
+  bool get isPlaybackStarting => _isPlaybackStarting;
+  int get loadGeneration => _loadGeneration;
+  int get playbackCommandGeneration => _playbackCommandGeneration;
+  int get transportCommandId => _transportCommandId;
+  bool? get pendingPlayingIntent => _pendingPlayingIntent;
+  int get lastHandledCompletionGeneration => _lastHandledCompletionGeneration;
+  bool get isAdvancingAfterCompletion => _isAdvancingAfterCompletion;
+  String? get playbackError => _playbackError;
 
   Stream<PlayerState> get stateStream => _stateController.stream;
   Stream<Duration> get positionStream => _positionController.stream;
@@ -83,52 +94,180 @@ class PlaybackSession {
   Stream<Duration> get bufferedPositionStream =>
       _bufferedPositionController.stream;
   Duration get position => lastKnownPosition;
-  bool get effectivePlaying => pendingPlayingIntent ?? state.playing;
+  bool get effectivePlaying => _pendingPlayingIntent ?? state.playing;
   bool get playbackRequested =>
-      pendingPlayingIntent ?? (isPlaybackStarting || state.playing);
+      _pendingPlayingIntent ?? (_isPlaybackStarting || state.playing);
   bool get isPlaybackLoading {
     final processingState = state.processingState;
-    return isLoading ||
+    return _isLoading ||
         (!_suppressTransientLoading &&
-            (isPlaybackStarting ||
+            (_isPlaybackStarting ||
                 processingState == ProcessingState.loading ||
                 processingState == ProcessingState.buffering));
   }
 
   bool get hasPendingAudioEffectsSync => pendingNativeAudioEffects != null;
 
+  ({int generation, bool changed}) beginPreparation({
+    required bool showLoading,
+    required bool autoPlay,
+  }) {
+    if (isDisposed) return (generation: _loadGeneration, changed: false);
+    final changed =
+        (showLoading && !_isLoading) || (autoPlay && !_isPlaybackStarting);
+    _loadGeneration++;
+    if (showLoading) _isLoading = true;
+    if (autoPlay) _isPlaybackStarting = true;
+    return (generation: _loadGeneration, changed: changed);
+  }
+
+  bool isPreparationCurrent(int generation) =>
+      !isDisposed && _loadGeneration == generation;
+
+  bool markNativePreparation(int generation, String? path) {
+    if (!isPreparationCurrent(generation) || _pendingNativeTrackPath == path) {
+      return false;
+    }
+    _pendingNativeTrackPath = path;
+    return true;
+  }
+
+  bool finishPreparation(
+    int generation, {
+    required bool prepared,
+    required bool autoPlay,
+    String? error,
+  }) {
+    if (!isPreparationCurrent(generation)) return false;
+    final changed =
+        _pendingNativeTrackPath != null ||
+        _isLoading ||
+        _isAdvancingAfterCompletion ||
+        (!prepared && autoPlay && _isPlaybackStarting) ||
+        (error != null && _playbackError != error);
+    _pendingNativeTrackPath = null;
+    _isLoading = false;
+    _isAdvancingAfterCompletion = false;
+    if (!prepared && autoPlay) _isPlaybackStarting = false;
+    if (error != null) _playbackError = error;
+    return changed;
+  }
+
+  bool cancelPlaybackStart(int generation) {
+    if (!isPreparationCurrent(generation) || !_isPlaybackStarting) return false;
+    _isPlaybackStarting = false;
+    return true;
+  }
+
+  bool invalidatePreparation() {
+    if (isDisposed) return false;
+    _loadGeneration++;
+    final changed =
+        _isLoading ||
+        _isPlaybackStarting ||
+        _isAdvancingAfterCompletion ||
+        _pendingNativeTrackPath != null;
+    _isLoading = false;
+    _isPlaybackStarting = false;
+    _isAdvancingAfterCompletion = false;
+    _pendingNativeTrackPath = null;
+    return changed;
+  }
+
+  bool beginCompletionAdvance({
+    required int commandGeneration,
+    bool markHandled = false,
+  }) {
+    if (isDisposed ||
+        commandGeneration != _playbackCommandGeneration ||
+        (markHandled &&
+            _lastHandledCompletionGeneration == commandGeneration)) {
+      return false;
+    }
+    final changed = !_isLoading || !_isAdvancingAfterCompletion;
+    _isLoading = true;
+    _isAdvancingAfterCompletion = true;
+    if (markHandled) _lastHandledCompletionGeneration = commandGeneration;
+    return changed;
+  }
+
+  bool finishCompletionAdvance({
+    required int commandGeneration,
+    required int preparationGeneration,
+    String? error,
+  }) {
+    // A new preparation may begin before it issues its transport command.
+    if (!isPreparationCurrent(preparationGeneration) ||
+        commandGeneration != _playbackCommandGeneration) {
+      return false;
+    }
+    final changed =
+        _isLoading ||
+        _isAdvancingAfterCompletion ||
+        (error != null && _playbackError != error);
+    _isLoading = false;
+    _isAdvancingAfterCompletion = false;
+    if (error != null) _playbackError = error;
+    return changed;
+  }
+
+  bool reconcilePlaybackState() {
+    if (isDisposed) return false;
+    var changed = false;
+    if (!state.playing &&
+        (state.processingState == ProcessingState.idle ||
+            state.processingState == ProcessingState.completed)) {
+      changed = _isPlaybackStarting;
+      _isPlaybackStarting = false;
+    }
+    if (state.processingState != ProcessingState.completed) {
+      changed = changed || _isAdvancingAfterCompletion;
+      _isAdvancingAfterCompletion = false;
+    }
+    return changed;
+  }
+
+  bool confirmPaused() {
+    if (isDisposed) return false;
+    final changed = state.playing || _isLoading || _isPlaybackStarting;
+    setOptimisticState(playing: false);
+    _isLoading = false;
+    _isPlaybackStarting = false;
+    return changed;
+  }
+
   bool applyNativeSnapshot(NativePlaybackSnapshot snapshot) {
     if (isDisposed) return false;
     if (snapshot.sessionId != id) return false;
     final snapshotCommandId = snapshot.transportCommandId;
-    if (snapshotCommandId != null && snapshotCommandId < transportCommandId) {
+    if (snapshotCommandId != null && snapshotCommandId < _transportCommandId) {
       return false;
     }
-    if (snapshotCommandId == null && pendingPlayingIntent != null) {
+    if (snapshotCommandId == null && _pendingPlayingIntent != null) {
       return false;
     }
-    if (snapshotCommandId != null && snapshotCommandId > transportCommandId) {
-      transportCommandId = snapshotCommandId;
-      playbackCommandGeneration = snapshotCommandId;
-      pendingPlayingIntent = null;
-      isPlaybackStarting = false;
+    if (snapshotCommandId != null && snapshotCommandId > _transportCommandId) {
+      _transportCommandId = snapshotCommandId;
+      _playbackCommandGeneration = snapshotCommandId;
+      _pendingPlayingIntent = null;
+      _isPlaybackStarting = false;
     }
-    playbackError = snapshot.error;
-    final pendingIntent = pendingPlayingIntent;
+    _playbackError = snapshot.error;
+    final pendingIntent = _pendingPlayingIntent;
     final confirmsPendingIntent = pendingIntent == null
         ? false
         : pendingIntent
         ? snapshot.playWhenReady
         : !snapshot.playWhenReady;
     if (pendingIntent == true && snapshot.playWhenReady) {
-      isPlaybackStarting = false;
+      _isPlaybackStarting = false;
       _loadingIndicatorTimer?.cancel();
       _loadingIndicatorTimer = null;
       _suppressTransientLoading = false;
     }
     if (snapshot.error != null || confirmsPendingIntent) {
-      pendingPlayingIntent = null;
-      isPlaybackStarting = false;
+      _pendingPlayingIntent = null;
+      _isPlaybackStarting = false;
       _loadingIndicatorTimer?.cancel();
       _loadingIndicatorTimer = null;
       _suppressTransientLoading = false;
@@ -182,17 +321,23 @@ class PlaybackSession {
     return true;
   }
 
-  void beginTransportCommand({
+  bool beginTransportCommand({
     required int commandId,
     required bool playing,
     Duration threshold = loadingIndicatorThreshold,
   }) {
-    if (commandId < transportCommandId) return;
-    transportCommandId = commandId;
-    playbackCommandGeneration = commandId;
-    pendingPlayingIntent = playing;
-    isPlaybackStarting = playing;
-    playbackError = null;
+    if (isDisposed || commandId < _transportCommandId) return false;
+    final wasPlaybackLoading = isPlaybackLoading;
+    final changed =
+        _transportCommandId != commandId ||
+        _pendingPlayingIntent != playing ||
+        _isPlaybackStarting != playing ||
+        _playbackError != null;
+    _transportCommandId = commandId;
+    _playbackCommandGeneration = commandId;
+    _pendingPlayingIntent = playing;
+    _isPlaybackStarting = playing;
+    _playbackError = null;
     if (playing) {
       beginLoadingIndicatorThreshold(threshold: threshold);
     } else {
@@ -200,16 +345,21 @@ class PlaybackSession {
       _loadingIndicatorTimer = null;
       _suppressTransientLoading = false;
     }
+    return changed || wasPlaybackLoading != isPlaybackLoading;
   }
 
   bool failTransportCommand(int commandId) {
-    if (commandId != transportCommandId) return false;
-    pendingPlayingIntent = null;
-    isPlaybackStarting = false;
+    if (isDisposed || commandId != _transportCommandId) return false;
+    final changed =
+        _pendingPlayingIntent != null ||
+        _isPlaybackStarting ||
+        _suppressTransientLoading;
+    _pendingPlayingIntent = null;
+    _isPlaybackStarting = false;
     _loadingIndicatorTimer?.cancel();
     _loadingIndicatorTimer = null;
     _suppressTransientLoading = false;
-    return true;
+    return changed;
   }
 
   void applyNativeProgress(NativePlaybackProgressUpdate progress) {
@@ -286,6 +436,7 @@ class PlaybackSession {
   Future<void> shutdown() => _shutdownFuture ??= _shutdown();
 
   Future<void> _shutdown() async {
+    invalidatePreparation();
     isDisposed = true;
     _loadingIndicatorTimer?.cancel();
     _loadingIndicatorTimer = null;

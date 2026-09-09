@@ -1,3 +1,5 @@
+import 'features/asmr/presentation/asmr_providers.dart';
+import 'features/settings/presentation/settings_providers.dart';
 import 'dart:async';
 
 import 'package:audio_session/audio_session.dart';
@@ -19,6 +21,10 @@ import 'app/presentation/global_shortcuts.dart';
 import 'app/presentation/main_screen.dart';
 import 'app/presentation/onboarding_page.dart';
 import 'features/asmr/application/asmr_library_controller.dart';
+import 'features/asmr/application/asmr_api_service.dart';
+import 'features/asmr/application/asmr_auth_service.dart';
+import 'features/asmr/application/asmr_remote_catalog_service.dart';
+import 'features/asmr/application/asmr_account_sync_service.dart';
 import 'features/asmr/application/asmr_download_manager.dart';
 import 'features/asmr/application/asmr_playback_coordinator.dart';
 import 'features/asmr/application/asmr_preferences.dart';
@@ -216,9 +222,19 @@ Widget _createAudioPlayerApp({
     settings: settingsRepository,
     asmrDownloads: asmrDownloadManager,
   );
+  final asmrApiService = AsmrApiService();
+  final asmrPreferences = AsmrPreferencesStore(repository: asmrRepository);
   final asmrLibraryController = AsmrLibraryController(
-    persistenceRepository: asmrRepository,
-    preferencesStore: AsmrPreferencesStore(repository: asmrRepository),
+    preferencesStore: asmrPreferences,
+    remoteCatalogService: AsmrRemoteCatalogService(
+      apiService: asmrApiService,
+      persistenceRepository: asmrRepository,
+    ),
+    accountSyncService: AsmrAccountSyncService(
+      authService: AsmrAuthService(apiService: asmrApiService),
+      apiService: asmrApiService,
+      preferencesStore: asmrPreferences,
+    ),
   );
   final asmrPlaybackCoordinator = AsmrPlaybackCoordinator(
     source: asmrLibraryController,
@@ -259,7 +275,13 @@ Widget _createAudioPlayerApp({
       ),
       appUpdateServiceProvider.overrideWithValue(appUpdateService),
       asmrDownloadManagerProvider.overrideWithValue(asmrDownloadManager),
-      asmrLibraryControllerProvider.overrideWithValue(asmrLibraryController),
+      asmrLibraryControllerProvider.overrideWith((ref) {
+        ref.onDispose(() {
+          asmrLibraryController.dispose();
+          asmrApiService.close();
+        });
+        return asmrLibraryController;
+      }),
       asmrPlaybackCoordinatorProvider.overrideWithValue(
         asmrPlaybackCoordinator,
       ),
@@ -324,6 +346,8 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp> {
   @override
   void initState() {
     super.initState();
+    // Register root-owned disposal even when onboarding hides the ASMR page.
+    ref.read(asmrLibraryControllerProvider);
     _runtimeBootstrapController = AppBootstrapController(
       initializer:
           widget.runtimeInitializer ??

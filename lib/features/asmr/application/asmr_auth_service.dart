@@ -144,9 +144,11 @@ class SecureAsmrTokenStore implements AsmrTokenStore {
 }
 
 class AsmrAuthService {
-  AsmrAuthService({AsmrApiService? apiService, AsmrTokenStore? tokenStore})
-    : _apiService = apiService ?? AsmrApiService(),
-      _tokenStore = tokenStore ?? SecureAsmrTokenStore();
+  AsmrAuthService({
+    required AsmrApiService apiService,
+    AsmrTokenStore? tokenStore,
+  }) : _apiService = apiService,
+       _tokenStore = tokenStore ?? SecureAsmrTokenStore();
 
   final AsmrApiService _apiService;
   final AsmrTokenStore _tokenStore;

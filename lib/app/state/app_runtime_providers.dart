@@ -1,4 +1,7 @@
-import 'dart:async';
+import '../../features/asmr/presentation/asmr_providers.dart';
+import '../../features/library/presentation/library_providers.dart';
+import '../../features/player/presentation/playback_providers.dart';
+import '../../features/settings/presentation/settings_providers.dart';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/legacy.dart' show ChangeNotifierProvider;
@@ -12,31 +15,22 @@ import '../application/audio_ui_warmup_coordinator.dart';
 import '../application/playback_command_coordinator.dart';
 import '../application/playback_keep_alive_coordinator.dart';
 import '../../features/library/application/library_facade.dart';
-import '../../features/library/application/library_state_models.dart';
-import '../../features/player/application/audio_state_services.dart';
 import '../../features/player/application/notification_facade.dart';
 import '../../features/player/application/playback_facade.dart';
 import '../../features/player/application/playback_subtitle_service.dart';
 import '../../features/player/application/playback_time_segment_service.dart';
-import '../../features/player/application/subtitle_overlay_controller.dart';
 import '../../features/player/application/timer_facade.dart';
 import '../../core/ui/ui_operation_service.dart';
 import '../../core/ui/undoable_removal_service.dart';
 import '../theme/theme_provider.dart';
 import '../localization/app_language_provider.dart';
-import '../../features/settings/application/app_update_service.dart';
 import '../../features/settings/application/permission_status_service.dart';
 import '../../features/settings/application/settings_command_controller.dart';
 import '../../features/settings/application/settings_repository.dart';
-import '../../features/settings/application/settings_state.dart';
 import '../../features/data_support/application/data_support_file_service.dart';
 import '../../features/data_support/application/data_backup_service.dart';
 import '../../features/data_support/application/storage_usage_service.dart';
-import '../../features/asmr/application/asmr_download_manager.dart';
-import '../../features/asmr/application/asmr_library_controller.dart';
-import '../../features/asmr/application/asmr_playback_coordinator.dart';
-import '../../features/asmr/domain/asmr_models.dart';
-import 'interaction_deferred_stream.dart';
+import '../../core/ui/interaction_deferred_stream.dart';
 import '../../core/platform/file_cache_platform_gateway.dart';
 import '../../core/platform/app_lifecycle_platform_service.dart';
 import '../../core/platform/power_platform_gateway.dart';
@@ -62,12 +56,6 @@ final appLanguageStateProvider = StreamProvider<AppLanguageState>((ref) {
   return interactionDeferredListenableStream(
     source: controller,
     read: () => AppLanguageState.from(controller),
-  );
-});
-
-final appUpdateServiceProvider = Provider<AppUpdateService>((ref) {
-  throw UnimplementedError(
-    'appUpdateServiceProvider must be overridden in ProviderScope.',
   );
 });
 
@@ -127,101 +115,6 @@ final dataSupportStorageUsageServiceProvider = Provider<StorageUsageService>((
   );
 });
 
-final asmrDownloadManagerProvider = Provider<AsmrDownloadManager?>((ref) {
-  return null;
-});
-
-final asmrLibraryControllerProvider = Provider<AsmrLibraryController?>((ref) {
-  return null;
-});
-
-final asmrLibraryGlobalStateProvider =
-    StreamProvider<AsmrLibraryGlobalViewState?>((ref) {
-      final controller = ref.watch(asmrLibraryControllerProvider);
-      if (controller == null) return Stream.value(null);
-      return interactionDeferredListenableStream(
-        source: controller,
-        read: () => controller.globalViewState,
-      );
-    });
-
-typedef AsmrCategoryStateRequest = ({
-  AsmrCategoryType category,
-  String searchQuery,
-});
-
-final asmrCategoryStateProvider = StreamProvider.autoDispose
-    .family<AsmrCategoryViewState?, AsmrCategoryStateRequest>((ref, request) {
-      final controller = ref.watch(asmrLibraryControllerProvider);
-      if (controller == null) return Stream.value(null);
-      return interactionDeferredListenableStream(
-        source: controller,
-        read: () => controller.categoryViewState(
-          request.category,
-          searchQuery: request.searchQuery,
-        ),
-      );
-    });
-
-final asmrAuthStateProvider = StreamProvider<AsmrAuthViewState?>((ref) {
-  final controller = ref.watch(asmrLibraryControllerProvider);
-  if (controller == null) return Stream.value(null);
-  return interactionDeferredListenableStream(
-    source: controller,
-    read: () => controller.authViewState,
-  );
-});
-
-final asmrTrackTreeStateProvider = StreamProvider.autoDispose
-    .family<AsmrTrackTreeViewState?, int>((ref, workId) {
-      final controller = ref.watch(asmrLibraryControllerProvider);
-      if (controller == null) return Stream.value(null);
-      return interactionDeferredListenableStream(
-        source: controller,
-        read: () => controller.trackTreeViewState(workId),
-      );
-    });
-
-final asmrSyncStateProvider = StreamProvider<AsmrSyncViewState?>((ref) {
-  final controller = ref.watch(asmrLibraryControllerProvider);
-  if (controller == null) return Stream.value(null);
-  return interactionDeferredListenableStream(
-    source: controller,
-    read: () => controller.syncViewState,
-  );
-});
-
-final asmrPlaybackCoordinatorProvider = Provider<AsmrPlaybackCoordinator?>(
-  (ref) => null,
-);
-
-final asmrDownloadTaskIdsProvider = StreamProvider<List<int>>((ref) {
-  final manager = ref.watch(asmrDownloadManagerProvider);
-  return manager?.taskIdsStream ?? Stream.value(const <int>[]);
-});
-
-final asmrDownloadButtonViewStateProvider =
-    StreamProvider<AsmrDownloadButtonViewState>((ref) {
-      final manager = ref.watch(asmrDownloadManagerProvider);
-      return manager?.buttonViewStateStream ??
-          Stream.value(
-            const AsmrDownloadButtonViewState(visible: false, progress: null),
-          );
-    });
-
-final _asmrDownloadTaskSnapshotProvider = StreamProvider.autoDispose
-    .family<AsmrDownloadTaskSnapshot?, int>((ref, workId) {
-      final manager = ref.watch(asmrDownloadManagerProvider);
-      return manager?.taskStream(workId) ?? Stream.value(null);
-    });
-
-final asmrDownloadTaskProvider = Provider.autoDispose
-    .family<AsmrDownloadTaskSnapshot?, int>((ref, workId) {
-      final manager = ref.watch(asmrDownloadManagerProvider);
-      return ref.watch(_asmrDownloadTaskSnapshotProvider(workId)).value ??
-          manager?.getTask(workId);
-    });
-
 final audioRuntimeCoordinatorProvider = Provider<AppRuntimeLifecycle>((ref) {
   throw UnimplementedError(
     'audioRuntimeCoordinatorProvider must be overridden in ProviderScope.',
@@ -251,26 +144,6 @@ final playbackKeepAliveCoordinatorProvider =
       );
     });
 
-final libraryFacadeProvider = Provider<LibraryFacade>((ref) {
-  throw UnimplementedError(
-    'libraryFacadeProvider must be overridden in ProviderScope.',
-  );
-});
-
-final playbackFacadeProvider = Provider<PlaybackFacade>((ref) {
-  throw UnimplementedError(
-    'playbackFacadeProvider must be overridden in ProviderScope.',
-  );
-});
-
-final playbackSubtitleServiceProvider = Provider<PlaybackSubtitleService>((
-  ref,
-) {
-  throw UnimplementedError(
-    'playbackSubtitleServiceProvider must be overridden in ProviderScope.',
-  );
-});
-
 final audioPathCoordinatorProvider = Provider<AudioPathCoordinator>((ref) {
   return AudioPathCoordinator(
     library: ref.watch(libraryFacadeProvider),
@@ -299,32 +172,6 @@ final playbackTimeSegmentServiceProvider = Provider<PlaybackTimeSegmentService>(
     return service;
   },
 );
-
-final subtitleOverlayControllerProvider = Provider<SubtitleOverlayController>((
-  ref,
-) {
-  final controller = SubtitleOverlayController();
-  ref.onDispose(controller.dispose);
-  return controller;
-});
-
-final timerFacadeProvider = Provider<TimerFacade>((ref) {
-  throw UnimplementedError(
-    'timerFacadeProvider must be overridden in ProviderScope.',
-  );
-});
-
-final notificationFacadeProvider = Provider<NotificationFacade>((ref) {
-  throw UnimplementedError(
-    'notificationFacadeProvider must be overridden in ProviderScope.',
-  );
-});
-
-final settingsRepositoryProvider = Provider<SettingsRepository>((ref) {
-  throw UnimplementedError(
-    'settingsRepositoryProvider must be overridden in ProviderScope.',
-  );
-});
 
 final settingsCommandControllerProvider = Provider<SettingsCommandController>((
   ref,
@@ -376,24 +223,6 @@ final uiOperationForScopeProvider = Provider.autoDispose
       ref.watch(_uiOperationScopeStateChangesProvider(scope));
       return ref.watch(uiOperationServiceProvider).operationFor(scope);
     });
-
-final libraryStateProvider = StreamProvider<LibraryState>((ref) {
-  return interactionDeferredValueStream(
-    ref.watch(libraryFacadeProvider).states,
-  );
-});
-
-final playbackStateProvider = StreamProvider<PlaybackStateSliceData>((ref) {
-  return ref.watch(playbackFacadeProvider).states;
-});
-
-final timerStateProvider = StreamProvider<TimerStateSliceData>((ref) {
-  return ref.watch(timerFacadeProvider).states;
-});
-
-final settingsStateProvider = StreamProvider<SettingsState>((ref) {
-  return ref.watch(settingsRepositoryProvider).slice.stream;
-});
 
 final videoConversionCoordinatorProvider =
     ChangeNotifierProvider<VideoConversionCoordinator>((ref) {

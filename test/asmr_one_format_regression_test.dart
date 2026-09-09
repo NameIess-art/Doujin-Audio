@@ -1,9 +1,9 @@
+import 'support/asmr_controller_test_fixture.dart';
 // ignore_for_file: prefer_const_literals_to_create_immutables, prefer_const_constructors
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
 import 'package:doujin_audio/core/persistence/app_database.dart';
-import 'package:doujin_audio/features/asmr/application/asmr_library_controller.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_preferences.dart';
 import 'package:doujin_audio/infrastructure/sqlite/sqlite_asmr_repository.dart';
 
@@ -56,7 +56,7 @@ void main() {
         voiceActors: <String>[],
         tags: <String>[],
       );
-      final controller = AsmrLibraryController(
+      final controller = createTestAsmrController(
         preferencesStore: AsmrPreferencesStore(
           repository: SqliteAsmrRepository(database: AppDatabase.instance),
         ),
@@ -146,7 +146,7 @@ void main() {
       voiceActors: <String>[],
       tags: <String>[],
     );
-    final controller = AsmrLibraryController(
+    final controller = createTestAsmrController(
       preferencesStore: AsmrPreferencesStore(
         repository: SqliteAsmrRepository(database: AppDatabase.instance),
       ),

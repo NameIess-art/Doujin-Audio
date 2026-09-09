@@ -1,3 +1,7 @@
+import 'package:doujin_audio/app/presentation/app_presentation_providers.dart';
+import 'package:doujin_audio/features/settings/presentation/settings_providers.dart';
+import 'package:doujin_audio/features/settings/application/settings_state.dart';
+import 'package:doujin_audio/features/asmr/presentation/asmr_providers.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -22,6 +26,48 @@ final class _DisposalObserver extends ProviderObserver {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  test(
+    'shared blur consumers retain a single settings stream subscription',
+    () async {
+      var subscriptions = 0;
+      var cancellations = 0;
+      final states = StreamController<SettingsState>(
+        sync: true,
+        onListen: () => subscriptions++,
+        onCancel: () => cancellations++,
+      );
+      final container = ProviderContainer(
+        overrides: [settingsStateProvider.overrideWith((ref) => states.stream)],
+      );
+      final values = List.generate(3, (_) => <bool>[]);
+      for (final consumerValues in values) {
+        container.listen(
+          uiBlurEnabledProvider,
+          (_, next) => consumerValues.add(next),
+          fireImmediately: true,
+        );
+      }
+      await container.pump();
+      states.add(SettingsState());
+      await container.pump();
+      states.add(SettingsState(notificationsEnabled: false));
+      await container.pump();
+      for (final consumerValues in values) {
+        expect(consumerValues, [true]);
+      }
+      states.add(SettingsState(uiBlurEffectEnabled: false));
+      await container.pump();
+      for (final consumerValues in values) {
+        expect(consumerValues, [true, false]);
+      }
+      expect(subscriptions, 1);
+      container.dispose();
+      await Future<void>.delayed(Duration.zero);
+      expect(cancellations, 1);
+      await states.close();
+    },
+  );
 
   test(
     'parameterized runtime providers dispose after their listeners close',

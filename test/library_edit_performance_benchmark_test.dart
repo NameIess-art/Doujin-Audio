@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/features/library/application/library_entry_editor_service.dart';
-import 'package:doujin_audio/features/library/presentation/library_tab.dart';
+import 'package:doujin_audio/features/library/presentation/library_tab_edit.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'support/app_runtime_test_fixture.dart';

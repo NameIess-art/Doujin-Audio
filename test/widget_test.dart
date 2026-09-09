@@ -1,3 +1,6 @@
+import 'package:doujin_audio/features/asmr/presentation/asmr_providers.dart';
+import 'package:doujin_audio/features/settings/presentation/settings_providers.dart';
+import 'support/asmr_controller_test_fixture.dart';
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
@@ -14,8 +17,6 @@ import 'package:doujin_audio/app/state/app_runtime_providers.dart';
 import 'package:doujin_audio/app/presentation/main_screen.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_download_manager.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_library_controller.dart';
-import 'package:doujin_audio/features/asmr/application/asmr_preferences.dart';
-import 'package:doujin_audio/infrastructure/sqlite/sqlite_asmr_repository.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_download_page.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_tab.dart';
@@ -27,7 +28,6 @@ import 'package:doujin_audio/features/player/application/playback_session_snapsh
 import 'package:doujin_audio/features/settings/application/app_preferences.dart';
 import 'package:doujin_audio/features/settings/application/app_update_service.dart';
 import 'support/test_persistence_repository.dart';
-import 'package:doujin_audio/core/persistence/app_database.dart';
 import 'package:doujin_audio/features/library/application/library_service.dart';
 import 'package:doujin_audio/features/settings/application/settings_repository.dart';
 import 'package:doujin_audio/features/player/application/native_playback_repository.dart';
@@ -489,7 +489,9 @@ void main() {
   testWidgets('ASMR search results support multi-selection mode', (
     tester,
   ) async {
-    final controller = _QueuedEmptyAsmrLibraryController();
+    final controller = _QueuedEmptyAsmrLibraryController(
+      services: createTestAsmrServices(),
+    );
     final harness = AppRuntimeWidgetTestFixture();
     addTearDown(controller.dispose);
     addTearDown(harness.dispose);
@@ -554,6 +556,7 @@ void main() {
     (tester) async {
       final activePageIndex = ValueNotifier<int>(0);
       final controller = _QueuedEmptyAsmrLibraryController(
+        services: createTestAsmrServices(),
         emptyCollectedOnInitialLoad: true,
         delayInitialCollectedRefresh: true,
       );
@@ -681,7 +684,9 @@ void main() {
     tester,
   ) async {
     final fixture = AppRuntimeWidgetTestFixture();
-    final controller = _QueuedEmptyAsmrLibraryController();
+    final controller = _QueuedEmptyAsmrLibraryController(
+      services: createTestAsmrServices(),
+    );
     final activePageIndex = ValueNotifier<int>(1);
     addTearDown(fixture.dispose);
     addTearDown(controller.dispose);
@@ -720,7 +725,9 @@ void main() {
     tester,
   ) async {
     final fixture = AppRuntimeWidgetTestFixture();
-    final controller = _QueuedEmptyAsmrLibraryController();
+    final controller = _QueuedEmptyAsmrLibraryController(
+      services: createTestAsmrServices(),
+    );
     final activePageIndex = ValueNotifier<int>(0);
     addTearDown(fixture.dispose);
     addTearDown(controller.dispose);
@@ -777,7 +784,9 @@ void main() {
           .setMockMethodCallHandler(fileCacheChannel, null),
     );
     final fixture = AppRuntimeWidgetTestFixture();
-    final asmrController = _QueuedEmptyAsmrLibraryController();
+    final asmrController = _QueuedEmptyAsmrLibraryController(
+      services: createTestAsmrServices(),
+    );
     final coverScheduler = WarmupScheduler()..setPaused(true);
     final coverUi = LibraryCoverUiController(
       library: fixture.library,
@@ -870,7 +879,9 @@ void main() {
     (tester) async {
       final coordinator = UiInteractionCoordinator.instance;
       coordinator.resetForTest();
-      final controller = _QueuedEmptyAsmrLibraryController();
+      final controller = _QueuedEmptyAsmrLibraryController(
+        services: createTestAsmrServices(),
+      );
       addTearDown(controller.dispose);
       addTearDown(coordinator.resetForTest);
       final harness = AppRuntimeWidgetTestFixture();
@@ -941,7 +952,9 @@ void main() {
     testWidgets(
       'ASMR search skips initialization waits superseded by ${leavePage ? 'page exit' : 'new input'}',
       (tester) async {
-        final controller = _QueuedEmptyAsmrLibraryController();
+        final controller = _QueuedEmptyAsmrLibraryController(
+          services: createTestAsmrServices(),
+        );
         addTearDown(controller.dispose);
         final harness = AppRuntimeWidgetTestFixture();
         addTearDown(harness.dispose);
@@ -986,6 +999,7 @@ void main() {
   ) async {
     _setLogicalTestViewSize(tester, const Size(400, 320));
     final controller = _QueuedEmptyAsmrLibraryController(
+      services: createTestAsmrServices(),
       delayCollectedSearch: true,
     );
     addTearDown(controller.dispose);
@@ -1072,7 +1086,9 @@ void main() {
   });
 
   testWidgets('ASMR work cards blend into the page surface', (tester) async {
-    final controller = _QueuedEmptyAsmrLibraryController();
+    final controller = _QueuedEmptyAsmrLibraryController(
+      services: createTestAsmrServices(),
+    );
     addTearDown(controller.dispose);
     final harness = AppRuntimeWidgetTestFixture();
     addTearDown(harness.dispose);
@@ -1130,7 +1146,9 @@ void main() {
   testWidgets('ASMR empty card info keeps every work compact while loading', (
     tester,
   ) async {
-    final controller = _QueuedEmptyAsmrLibraryController();
+    final controller = _QueuedEmptyAsmrLibraryController(
+      services: createTestAsmrServices(),
+    );
     final harness = AppRuntimeWidgetTestFixture(
       configureSettingsRepository: (settings) {
         settings.cardInfoFields = const <CardInfoField>[];
@@ -1184,7 +1202,9 @@ void main() {
     tester,
   ) async {
     final activePageIndex = ValueNotifier<int>(0);
-    final controller = _QueuedEmptyAsmrLibraryController();
+    final controller = _QueuedEmptyAsmrLibraryController(
+      services: createTestAsmrServices(),
+    );
     final harness = AppRuntimeWidgetTestFixture();
     addTearDown(activePageIndex.dispose);
     addTearDown(controller.dispose);
@@ -1239,7 +1259,9 @@ void main() {
   testWidgets('ASMR track tree builds descendants only after expansion', (
     tester,
   ) async {
-    final controller = _QueuedEmptyAsmrLibraryController();
+    final controller = _QueuedEmptyAsmrLibraryController(
+      services: createTestAsmrServices(),
+    );
     addTearDown(controller.dispose);
     final harness = AppRuntimeWidgetTestFixture();
     addTearDown(harness.dispose);
@@ -1305,7 +1327,10 @@ void main() {
       ),
       growable: false,
     );
-    final controller = _QueuedEmptyAsmrLibraryController(trackTree: tree);
+    final controller = _QueuedEmptyAsmrLibraryController(
+      services: createTestAsmrServices(),
+      trackTree: tree,
+    );
     addTearDown(controller.dispose);
     final harness = AppRuntimeWidgetTestFixture();
     addTearDown(harness.dispose);
@@ -1390,6 +1415,7 @@ void main() {
       relativePath: 'Track.mp3',
     );
     final controller = _QueuedEmptyAsmrLibraryController(
+      services: createTestAsmrServices(),
       trackTree: <AsmrTrackFile>[track],
     );
     final downloads = AsmrDownloadManager(persistTasks: false);
@@ -1428,6 +1454,7 @@ void main() {
     tester,
   ) async {
     final controller = _QueuedEmptyAsmrLibraryController(
+      services: createTestAsmrServices(),
       collectedHasMore: true,
     );
     addTearDown(controller.dispose);
@@ -1474,6 +1501,7 @@ void main() {
     coordinator.resetForTest();
     addTearDown(coordinator.resetForTest);
     final controller = _QueuedEmptyAsmrLibraryController(
+      services: createTestAsmrServices(),
       collectedHasMore: true,
       needsRetry: true,
     );
@@ -1616,6 +1644,29 @@ void main() {
 
     expect(settledCalls, 1);
     expect(find.byType(MainScreen), findsNothing);
+  });
+
+  testWidgets('app root registers ASMR ownership before leaving onboarding', (
+    tester,
+  ) async {
+    var acquired = 0;
+    var released = 0;
+    await _pumpAppShell(
+      tester,
+      shouldShowOnboarding: true,
+      additionalOverrides: [
+        asmrLibraryControllerProvider.overrideWith((ref) {
+          acquired++;
+          ref.onDispose(() => released++);
+          return null;
+        }),
+      ],
+    );
+    expect(find.byType(MainScreen), findsNothing);
+    expect(acquired, 1);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+    expect(released, 1);
   });
 
   testWidgets('app shell supports Android landscape navigation', (
@@ -1811,15 +1862,21 @@ void main() {
       isSingle: false,
       remoteMetadataKind: 'asmr.one',
     );
-    final session = PlaybackSession(
-      id: 'asmr_error_session',
-      currentTrackPath: track.path,
-      loopMode: SessionLoopMode.single,
-      nonSingleLoopMode: SessionLoopMode.single,
-      volume: 1,
-      createdAt: DateTime(2026),
-      state: PlayerState(false, ProcessingState.idle),
-    )..playbackError = 'network failed';
+    final session =
+        PlaybackSession(
+          id: 'asmr_error_session',
+          currentTrackPath: track.path,
+          loopMode: SessionLoopMode.single,
+          nonSingleLoopMode: SessionLoopMode.single,
+          volume: 1,
+          createdAt: DateTime(2026),
+          state: PlayerState(false, ProcessingState.idle),
+        )..finishPreparation(
+          0,
+          prepared: false,
+          autoPlay: false,
+          error: 'network failed',
+        );
     addTearDown(() => unawaited(runtimeGraph.runtime.dispose()));
     addTearDown(session.shutdown);
     runtimeGraph.library.addTracks([track], notify: false, persist: false);
@@ -1910,9 +1967,12 @@ void main() {
     expect(find.byIcon(Icons.play_arrow_rounded), findsOneWidget);
     expect(find.byType(SessionFeatureBadgeStack), findsNothing);
 
-    session.playbackError = null;
-    session.isLoading = true;
-    session.isPlaybackStarting = true;
+    session.beginTransportCommand(
+      commandId: 1,
+      playing: true,
+      threshold: Duration.zero,
+    );
+    session.beginPreparation(showLoading: true, autoPlay: true);
     session.setOptimisticState(playing: true);
     playbackService.markActiveSessionsDirty();
     playbackService.syncSlice(
@@ -1929,8 +1989,12 @@ void main() {
     expect(find.text(languageProvider.tr('playback_loading')), findsOneWidget);
     expect(find.byIcon(Icons.pause_rounded), findsNothing);
 
-    session.isLoading = false;
-    session.isPlaybackStarting = false;
+    session.finishPreparation(
+      session.loadGeneration,
+      prepared: false,
+      autoPlay: true,
+    );
+    session.failTransportCommand(session.transportCommandId);
     session.setOptimisticState(
       playing: false,
       processingState: ProcessingState.buffering,
@@ -2946,6 +3010,7 @@ final class _AppShellNativePlaybackRepository extends NativePlaybackRepository {
 
 final class _QueuedEmptyAsmrLibraryController extends AsmrLibraryController {
   _QueuedEmptyAsmrLibraryController({
+    required TestAsmrServices services,
     this.collectedHasMore = false,
     this.needsRetry = false,
     this.delayCollectedSearch = false,
@@ -2953,12 +3018,9 @@ final class _QueuedEmptyAsmrLibraryController extends AsmrLibraryController {
     this.delayInitialCollectedRefresh = false,
     this.trackTree,
   }) : super(
-         preferencesStore: AsmrPreferencesStore(
-           repository: SqliteAsmrRepository(database: AppDatabase.instance),
-         ),
-         persistenceRepository: SqliteAsmrRepository(
-           database: AppDatabase.instance,
-         ),
+         preferencesStore: services.preferencesStore,
+         remoteCatalogService: services.remoteCatalogService,
+         accountSyncService: services.accountSyncService,
        );
 
   final Completer<void> _recommendationRefresh = Completer<void>();
@@ -3246,6 +3308,7 @@ Future<_AppShellHarness> _pumpAppShell(
   Future<void> Function()? runtimeInitializer,
   bool? shouldShowOnboarding,
   VoidCallback? onBootstrapSettled,
+  List<Override> additionalOverrides = const [],
 }) async {
   final themeProvider = ThemeProvider();
   final languageProvider = AppLanguageProvider();
@@ -3308,6 +3371,7 @@ Future<_AppShellHarness> _pumpAppShell(
         themeProviderInstanceProvider.overrideWith((ref) => themeProvider),
         appLanguageProviderInstanceProvider.overrideWithValue(languageProvider),
         appUpdateServiceProvider.overrideWithValue(AppUpdateService()),
+        ...additionalOverrides,
       ],
       child: MusicPlayerApp(
         shouldShowOnboarding: shouldShowOnboarding,

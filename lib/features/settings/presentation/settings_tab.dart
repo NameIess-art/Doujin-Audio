@@ -1,3 +1,6 @@
+import '../../asmr/presentation/asmr_providers.dart';
+import '../../player/presentation/playback_providers.dart';
+import 'settings_providers.dart';
 import 'dart:async';
 import 'dart:math' as math;
 

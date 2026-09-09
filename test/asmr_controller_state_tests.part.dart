@@ -8,6 +8,125 @@ void registerAsmrControllerStateTests({
   late AsmrPreferencesStore preferences;
   setUp(() => preferences = preferencesStore());
 
+  for (final count in [100, 1000, 5000]) {
+    test(
+      '$count category works preserve order and filtered cache identity',
+      () async {
+        await resetPrefs();
+        final works = [
+          for (var id = 1; id <= count; id++)
+            _work(id: id, title: '${id.isEven ? 'Even' : 'Odd'} work $id'),
+        ];
+        await preferences.saveFavoriteWorks(works);
+        final api = _FakeAsmrApiService(worksByToken: {'': works});
+        final controller = createTestAsmrController(
+          preferencesStore: preferences,
+          persistenceRepository: persistenceRepository(),
+          apiService: api,
+        );
+        await controller.initializeForVisiblePage();
+        await controller.refreshCategory(AsmrCategoryType.release);
+
+        final remote = controller.worksFor(AsmrCategoryType.release);
+        final favorites = controller.worksFor(AsmrCategoryType.favorites);
+        final filtered = controller.filteredWorksFor(
+          AsmrCategoryType.favorites,
+          searchQuery: 'even',
+        );
+        expect(remote.map((work) => work.id), works.map((work) => work.id));
+        expect(filtered.map((work) => work.id), [
+          for (var id = 2; id <= count; id += 2) id,
+        ]);
+        expect(
+          controller.filteredWorksFor(
+            AsmrCategoryType.favorites,
+            searchQuery: ' even ',
+          ),
+          same(filtered),
+        );
+        expect(
+          controller.filteredWorksFor(
+            AsmrCategoryType.favorites,
+            searchQuery: 'EVEN',
+          ),
+          orderedEquals(filtered),
+        );
+        await controller.refreshCategory(AsmrCategoryType.history);
+        expect(controller.worksFor(AsmrCategoryType.release), same(remote));
+        expect(
+          controller.worksFor(AsmrCategoryType.favorites),
+          same(favorites),
+        );
+        expect(
+          controller.filteredWorksFor(
+            AsmrCategoryType.favorites,
+            searchQuery: 'even',
+          ),
+          same(filtered),
+        );
+        expect(api.fetchWorkRequests, ['release:desc:1']);
+      },
+    );
+  }
+
+  test(
+    'category state preserves untouched and empty-query load semantics',
+    () async {
+      await resetPrefs();
+      final started = Completer<void>();
+      final release = Completer<void>();
+      final api = _FakeAsmrApiService(
+        beforeFetchWorkResponse: (_) async {
+          if (!started.isCompleted) started.complete();
+          await release.future;
+        },
+      );
+      final controller = createTestAsmrController(
+        preferencesStore: preferences,
+        persistenceRepository: persistenceRepository(),
+        apiService: api,
+      );
+      await controller.initialize();
+      const category = AsmrCategoryType.release;
+      final initial = controller.categoryViewState(category);
+      expect(initial.hasAttemptedLoad, isFalse);
+      expect(initial.totalCount, 0);
+      expect(initial.hasMore, isFalse);
+      final first = controller.refreshCategory(category);
+      await started.future;
+      final repeated = controller.refreshCategory(category);
+      await Future<void>.delayed(Duration.zero);
+      expect(api.fetchWorkRequests, hasLength(1));
+      expect(controller.categoryViewState(category).isLoading, isTrue);
+      expect(
+        controller.categoryViewState(AsmrCategoryType.rating).hasAttemptedLoad,
+        isFalse,
+      );
+      release.complete();
+      await Future.wait([first, repeated]);
+      final loaded = controller.categoryViewState(category);
+      expect(loaded.hasAttemptedLoad, isTrue);
+      expect(loaded.activeQuery, '');
+      expect(loaded.isLoading, isFalse);
+      expect(controller.categoryViewState(category).works, same(loaded.works));
+    },
+  );
+
+  test('disposed catalog does not dispatch refresh or pagination', () async {
+    await resetPrefs();
+    final api = _FakeAsmrApiService();
+    final controller = createTestAsmrController(
+      preferencesStore: preferences,
+      persistenceRepository: persistenceRepository(),
+      apiService: api,
+    );
+    await controller.initialize();
+    controller.dispose();
+    await controller.refreshCategory(AsmrCategoryType.release);
+    await controller.loadMoreCategory(AsmrCategoryType.release);
+    expect(api.fetchWorkRequests, isEmpty);
+  });
+
   test(
     'ASMR visible categories default to requested five categories',
     () async {
@@ -50,7 +169,7 @@ void registerAsmrControllerStateTests({
         ContentLanguagePreference.followPage,
       );
 
-      final controller = AsmrLibraryController(
+      final controller = createTestAsmrController(
         preferencesStore: preferences,
         apiService: _FakeAsmrApiService(),
         persistenceRepository: _FakeTestPersistenceRepository(
@@ -85,7 +204,7 @@ void registerAsmrControllerStateTests({
   test('content language changes refresh loaded remote categories', () async {
     await resetPrefs();
     final api = _FakeAsmrApiService();
-    final controller = AsmrLibraryController(
+    final controller = createTestAsmrController(
       preferencesStore: preferences,
       apiService: api,
       persistenceRepository: _FakeTestPersistenceRepository(
@@ -161,7 +280,7 @@ void registerAsmrControllerStateTests({
         ),
       ],
     );
-    final controller = AsmrLibraryController(
+    final controller = createTestAsmrController(
       preferencesStore: preferences,
       apiService: api,
       persistenceRepository: persistenceRepository(),
@@ -237,7 +356,7 @@ void registerAsmrControllerStateTests({
           ),
         ],
       );
-      final controller = AsmrLibraryController(
+      final controller = createTestAsmrController(
         preferencesStore: preferences,
         apiService: api,
         persistenceRepository: persistenceRepository(),
@@ -319,7 +438,7 @@ void registerAsmrControllerStateTests({
         sourceId: 'RJ000001',
         relativePath: 'track.mp3',
       );
-      final controller = AsmrLibraryController(
+      final controller = createTestAsmrController(
         preferencesStore: preferences,
         apiService: _FakeAsmrApiService(trackTree: <AsmrTrackFile>[node]),
         persistenceRepository: persistenceRepository(),
@@ -340,7 +459,7 @@ void registerAsmrControllerStateTests({
   test('ASMR detail cache keeps the most recently used 128 works', () async {
     await resetPrefs();
     final api = _FakeAsmrApiService();
-    final controller = AsmrLibraryController(
+    final controller = createTestAsmrController(
       preferencesStore: preferences,
       apiService: api,
       persistenceRepository: persistenceRepository(),
@@ -366,7 +485,7 @@ void registerAsmrControllerStateTests({
     final api = _FakeAsmrApiService(
       trackTree: <AsmrTrackFile>[_trackFile('track.mp3', 'track.mp3')],
     );
-    final controller = AsmrLibraryController(
+    final controller = createTestAsmrController(
       preferencesStore: preferences,
       apiService: api,
       persistenceRepository: persistenceRepository(),
@@ -400,7 +519,7 @@ void registerAsmrControllerStateTests({
         _trackFile('notes.txt', 'notes.txt', type: 'text'),
       ],
     );
-    final controller = AsmrLibraryController(
+    final controller = createTestAsmrController(
       preferencesStore: preferences,
       apiService: api,
       persistenceRepository: _FakeTestPersistenceRepository(
@@ -431,7 +550,7 @@ void registerAsmrControllerStateTests({
           await release.future;
         },
       );
-      final controller = AsmrLibraryController(
+      final controller = createTestAsmrController(
         preferencesStore: preferences,
         apiService: api,
         persistenceRepository: _FakeTestPersistenceRepository(
@@ -472,7 +591,7 @@ void registerAsmrControllerStateTests({
           }
         },
       );
-      final controller = AsmrLibraryController(
+      final controller = createTestAsmrController(
         preferencesStore: preferences,
         apiService: api,
         persistenceRepository: _FakeTestPersistenceRepository(
@@ -517,7 +636,7 @@ void registerAsmrControllerStateTests({
         await trackRelease.future;
       },
     );
-    final controller = AsmrLibraryController(
+    final controller = createTestAsmrController(
       preferencesStore: preferences,
       apiService: api,
       persistenceRepository: _FakeTestPersistenceRepository(
@@ -560,7 +679,7 @@ void registerAsmrControllerStateTests({
         }
       },
     );
-    final controller = AsmrLibraryController(
+    final controller = createTestAsmrController(
       preferencesStore: preferences,
       apiService: api,
       persistenceRepository: _FakeTestPersistenceRepository(
@@ -604,7 +723,7 @@ void registerAsmrControllerStateTests({
           }
         },
       );
-      final controller = AsmrLibraryController(
+      final controller = createTestAsmrController(
         preferencesStore: preferences,
         apiService: api,
         persistenceRepository: _FakeTestPersistenceRepository(
@@ -668,7 +787,7 @@ void registerAsmrControllerStateTests({
     final coordinator = UiInteractionCoordinator.instance;
     coordinator.resetForTest();
     addTearDown(coordinator.resetForTest);
-    final controller = AsmrLibraryController(
+    final controller = createTestAsmrController(
       preferencesStore: preferences,
       apiService: _FakeAsmrApiService(largeRecommendationPool: true),
       persistenceRepository: _FakeTestPersistenceRepository(
@@ -703,7 +822,7 @@ void registerAsmrControllerStateTests({
         throw const HttpException('Simulated release failure');
       },
     );
-    final controller = AsmrLibraryController(
+    final controller = createTestAsmrController(
       preferencesStore: preferences,
       apiService: api,
       persistenceRepository: _FakeTestPersistenceRepository(
@@ -736,7 +855,7 @@ void registerAsmrControllerStateTests({
 
   test('pagination stops when loaded works reach the reported total', () async {
     await resetPrefs();
-    final controller = AsmrLibraryController(
+    final controller = createTestAsmrController(
       preferencesStore: preferences,
       apiService: _FakeAsmrApiService(
         recommendationWorks: <AsmrWork>[
@@ -779,7 +898,7 @@ void registerAsmrControllerStateTests({
         }
       },
     );
-    final controller = AsmrLibraryController(
+    final controller = createTestAsmrController(
       preferencesStore: preferences,
       apiService: api,
       persistenceRepository: _FakeTestPersistenceRepository(
@@ -807,7 +926,7 @@ void registerAsmrControllerStateTests({
 
   test('pagination with no new works waits for manual retry', () async {
     await resetPrefs();
-    final controller = AsmrLibraryController(
+    final controller = createTestAsmrController(
       preferencesStore: preferences,
       apiService: _FakeAsmrApiService(
         largeRecommendationPool: true,
@@ -850,7 +969,7 @@ void registerAsmrControllerStateTests({
           }
         },
       );
-      final controller = AsmrLibraryController(
+      final controller = createTestAsmrController(
         preferencesStore: preferences,
         apiService: api,
         authService: AsmrAuthService(apiService: api, tokenStore: tokenStore),

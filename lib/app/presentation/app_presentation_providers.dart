@@ -1,3 +1,6 @@
+import '../../features/library/presentation/library_providers.dart';
+import '../../features/player/presentation/playback_providers.dart';
+import '../../features/settings/presentation/settings_providers.dart';
 import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -273,3 +276,9 @@ final sessionDetailTransportProvider = Provider.autoDispose
         sessionDetailUiProvider(sessionId).select((state) => state.detail),
       );
     });
+
+final uiBlurEnabledProvider = Provider<bool>((ref) {
+  return ref.watch(
+    settingsStateProvider.select((state) => state.value?.uiBlurEffectEnabled ?? true),
+  );
+});

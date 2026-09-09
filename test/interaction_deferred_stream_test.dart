@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:doujin_audio/app/state/interaction_deferred_stream.dart';
+import 'package:doujin_audio/core/ui/interaction_deferred_stream.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 
 void main() {
@@ -66,6 +66,45 @@ void main() {
       expect(values, <int>[1, 3]);
       await subscription.cancel();
       await source.close();
+      interaction.dispose();
+    },
+  );
+  test(
+    'cancelling a listenable subscription discards its deferred value',
+    () async {
+      final interaction = UiInteractionCoordinator(
+        idleDelay: const Duration(days: 1),
+      );
+      final source = ValueNotifier<int>(0);
+      var reads = 0;
+      final stream = interactionDeferredListenableStream(
+        source: source,
+        read: () {
+          reads++;
+          return source.value;
+        },
+        coordinator: interaction,
+      );
+      final values = <int>[];
+      final subscription = stream.listen(values.add);
+      await Future<void>.delayed(Duration.zero);
+      final interactionSource = Object();
+      interaction.beginInteraction(interactionSource);
+      source.value = 1;
+      await subscription.cancel();
+      final readsAtCancellation = reads;
+      interaction.cancelInteraction(interactionSource);
+      interaction.flushPendingCommitsForTest();
+      expect(values, [0]);
+
+      source.value = 2;
+      expect(reads, readsAtCancellation);
+      final resumedValues = <int>[];
+      final resumed = stream.listen(resumedValues.add);
+      await Future<void>.delayed(Duration.zero);
+      expect(resumedValues, [2]);
+      await resumed.cancel();
+      source.dispose();
       interaction.dispose();
     },
   );

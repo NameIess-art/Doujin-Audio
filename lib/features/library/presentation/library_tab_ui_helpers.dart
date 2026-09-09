@@ -1,7 +1,5 @@
 part of 'library_tab.dart';
 
-enum _LibraryRemovalTarget { track, folder, library }
-
 class _LibraryBatchSelection {
   const _LibraryBatchSelection({
     required this.path,
@@ -16,13 +14,13 @@ class _LibraryBatchSelection {
         path: node.path,
         firstTrack: node.firstTrack,
         target: AudioDetailTarget.libraryRootFolder(node.path),
-        removalTarget: _LibraryRemovalTarget.folder,
+        removalTarget: LibraryRemovalTarget.folder,
       ),
       TrackNode() => _LibraryBatchSelection(
         path: node.path,
         firstTrack: node.track,
         target: AudioDetailTarget.singleAudioFile(node.track.path),
-        removalTarget: _LibraryRemovalTarget.track,
+        removalTarget: LibraryRemovalTarget.track,
       ),
       _ => throw StateError('Unexpected library selection.'),
     };
@@ -35,14 +33,14 @@ class _LibraryBatchSelection {
     firstTrack: entry.firstTrack,
     target: entry.target,
     removalTarget: entry.isFolder
-        ? _LibraryRemovalTarget.folder
-        : _LibraryRemovalTarget.track,
+        ? LibraryRemovalTarget.folder
+        : LibraryRemovalTarget.track,
   );
 
   final String path;
   final MusicTrack? firstTrack;
   final AudioDetailTarget target;
-  final _LibraryRemovalTarget removalTarget;
+  final LibraryRemovalTarget removalTarget;
 }
 
 Future<void> _addLibraryBatchSelectionsToPlaylist({
@@ -122,52 +120,13 @@ Future<void> _removeLibraryBatchSelections({
 }) async {
   exitSelectionMode();
   for (final selection in selections) {
-    await _stageLibraryRemoval(
+    await stageLibraryRemoval(
       context,
       ref,
       targetPath: selection.path,
       target: selection.removalTarget,
     );
   }
-}
-
-UndoableRemovalKey _libraryRemovalKey(String targetPath) =>
-    UndoableRemovalKey('library', PathMatcher.normalize(targetPath));
-
-Future<bool> _stageLibraryRemoval(
-  BuildContext context,
-  WidgetRef ref, {
-  required String targetPath,
-  required _LibraryRemovalTarget target,
-}) async {
-  final i18n = ProviderScope.containerOf(
-    context,
-    listen: false,
-  ).read(appLanguageProviderInstanceProvider);
-  final messageKey = switch (target) {
-    _LibraryRemovalTarget.track => 'audio_removed',
-    _LibraryRemovalTarget.folder => 'folder_removed',
-    _LibraryRemovalTarget.library => 'library_removed',
-  };
-  final library = ref.read(libraryFacadeProvider);
-  return showUndoableRemovalFeedback(
-    context,
-    service: ref.read(undoableRemovalServiceProvider),
-    action: UndoableRemovalAction(
-      key: _libraryRemovalKey(targetPath),
-      commit: () async {
-        final result = target == _LibraryRemovalTarget.track
-            ? await library.removeTrack(targetPath)
-            : await library.removeFolder(targetPath);
-        if (result == null) throw StateError('Library removal failed.');
-      },
-      undo: () {},
-    ),
-    message: i18n.tr(messageKey),
-    batchMessage: (count) => i18n.tr('items_removed_count', {'count': count}),
-    undoLabel: i18n.tr('undo'),
-    failureMessage: i18n.tr('removal_failed'),
-  );
 }
 
 extension _LibraryTabUiHelpers on _LibraryTabState {

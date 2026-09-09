@@ -1,11 +1,9 @@
+import 'package:doujin_audio/features/asmr/presentation/asmr_providers.dart';
+import 'support/asmr_controller_test_fixture.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:doujin_audio/app/state/app_runtime_providers.dart';
 import 'package:doujin_audio/core/app_language.dart';
-import 'package:doujin_audio/core/persistence/app_database.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_library_controller.dart';
-import 'package:doujin_audio/features/asmr/application/asmr_preferences.dart';
-import 'package:doujin_audio/infrastructure/sqlite/sqlite_asmr_repository.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_tab.dart';
 
@@ -15,7 +13,9 @@ void main() {
   testWidgets('ASMR logout failure restores the action and shows feedback', (
     tester,
   ) async {
-    final controller = _LogoutFailureAsmrLibraryController();
+    final controller = _LogoutFailureAsmrLibraryController(
+      createTestAsmrServices(),
+    );
     final fixture = AppRuntimeWidgetTestFixture();
     addTearDown(() {
       controller.dispose();
@@ -68,14 +68,11 @@ void main() {
 }
 
 class _LogoutFailureAsmrLibraryController extends AsmrLibraryController {
-  _LogoutFailureAsmrLibraryController()
+  _LogoutFailureAsmrLibraryController(TestAsmrServices services)
     : super(
-        preferencesStore: AsmrPreferencesStore(
-          repository: SqliteAsmrRepository(database: AppDatabase.instance),
-        ),
-        persistenceRepository: SqliteAsmrRepository(
-          database: AppDatabase.instance,
-        ),
+        preferencesStore: services.preferencesStore,
+        remoteCatalogService: services.remoteCatalogService,
+        accountSyncService: services.accountSyncService,
       );
 
   int logoutAttempts = 0;

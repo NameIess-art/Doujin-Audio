@@ -10,7 +10,12 @@ extension PlaybackCommandNativeMapper on PlaybackCommandCoordinator {
     }
     final application = _playbackFacade.applyNativeSnapshot(
       snapshot,
-      hasLibraryTrack: (path) => trackByPath(path) != null,
+      hasLibraryTrack: (path) =>
+          _audioPathCoordinator.trackByPath(
+            path,
+            includeLibraryFallback: false,
+          ) !=
+          null,
     );
     if (!application.applied) return;
     final normalizedSnapshot = application.snapshot;
@@ -43,7 +48,10 @@ extension PlaybackCommandNativeMapper on PlaybackCommandCoordinator {
     }
     final trackPath = session?.currentTrackPath;
     if (trackPath != null && normalizedSnapshot.duration != null) {
-      final track = trackByPath(trackPath);
+      final track = _audioPathCoordinator.trackByPath(
+        trackPath,
+        includeLibraryFallback: false,
+      );
       if (track != null && track.duration == Duration.zero) {
         final updatedTrack = track.copyWith(
           duration: normalizedSnapshot.duration!,

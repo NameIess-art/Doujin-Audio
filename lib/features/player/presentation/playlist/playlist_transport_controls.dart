@@ -1,3 +1,4 @@
+import '../../../settings/presentation/settings_providers.dart';
 import 'dart:async';
 import 'dart:math';
 import 'dart:ui';

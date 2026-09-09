@@ -1,3 +1,4 @@
+import 'audio_path_coordinator.dart';
 import '../../features/library/application/library_facade.dart';
 import '../../features/player/application/notification_facade.dart';
 import '../../features/player/application/playback_facade.dart';
@@ -19,6 +20,7 @@ final class NotificationRuntimeBinding implements RuntimeBinding {
     required NotificationFacade notifications,
     required SettingsRepository settings,
     required PlaybackCommandCoordinator playbackCommands,
+    required AudioPathCoordinator audioPaths,
     required PlaybackKeepAliveCoordinator keepAlive,
     required PlaybackSubtitleService subtitles,
     required void Function() syncPlaybackState,
@@ -53,7 +55,8 @@ final class NotificationRuntimeBinding implements RuntimeBinding {
     notifications.attachSynchronization(
       playbackCommands: playbackCommands,
       subtitles: subtitles,
-      trackByPath: playbackCommands.trackByPath,
+      trackByPath: (path) =>
+          audioPaths.trackByPath(path, includeLibraryFallback: false),
       coverArtworkCacheService: library.coverArtworkCacheService,
       notificationsEnabled: () => settings.notificationsEnabled,
     );

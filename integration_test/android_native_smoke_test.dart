@@ -1,3 +1,5 @@
+import 'package:doujin_audio/features/player/presentation/playback_providers.dart';
+import 'package:doujin_audio/features/settings/presentation/settings_providers.dart';
 import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
@@ -7,7 +9,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:doujin_audio/app/presentation/main_screen.dart';
-import 'package:doujin_audio/app/state/app_runtime_providers.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
 import 'package:doujin_audio/features/player/application/native_playback_bridge.dart';
 import 'package:doujin_audio/features/player/application/playback_facade.dart';

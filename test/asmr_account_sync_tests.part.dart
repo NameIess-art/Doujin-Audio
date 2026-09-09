@@ -51,7 +51,7 @@ void registerAsmrAccountSyncTests({
       final tokenStore = _MemoryAsmrTokenStore();
       await tokenStore.writeToken('cached-token');
       await tokenStore.writeCredentials('alice', 'password');
-      final controller = AsmrLibraryController(
+      final controller = createTestAsmrController(
         preferencesStore: preferences,
         apiService: api,
         authService: AsmrAuthService(apiService: api, tokenStore: tokenStore),
@@ -93,7 +93,7 @@ void registerAsmrAccountSyncTests({
       final tokenStore = _MemoryAsmrTokenStore();
       await tokenStore.writeToken('current-token');
       await tokenStore.writeCredentials('current-user', 'current-password');
-      final controller = AsmrLibraryController(
+      final controller = createTestAsmrController(
         preferencesStore: preferences,
         apiService: api,
         authService: AsmrAuthService(apiService: api, tokenStore: tokenStore),
@@ -134,7 +134,7 @@ void registerAsmrAccountSyncTests({
         ],
         failPutReviewCount: 1,
       );
-      final controller = AsmrLibraryController(
+      final controller = createTestAsmrController(
         preferencesStore: preferences,
         apiService: api,
         authService: AsmrAuthService(
@@ -185,7 +185,7 @@ void registerAsmrAccountSyncTests({
           ),
         ],
       );
-      final controller = AsmrLibraryController(
+      final controller = createTestAsmrController(
         preferencesStore: preferences,
         apiService: api,
         authService: AsmrAuthService(
@@ -223,7 +223,7 @@ void registerAsmrAccountSyncTests({
           ),
         ],
       );
-      final controller = AsmrLibraryController(
+      final controller = createTestAsmrController(
         preferencesStore: preferences,
         apiService: api,
         authService: AsmrAuthService(
@@ -315,7 +315,7 @@ void registerAsmrAccountSyncTests({
       await resetPrefs();
       final api = _FakeAsmrApiService();
       final tokenStore = _MemoryAsmrTokenStore();
-      final controller = AsmrLibraryController(
+      final controller = createTestAsmrController(
         preferencesStore: preferences,
         apiService: api,
         authService: AsmrAuthService(apiService: api, tokenStore: tokenStore),
@@ -345,7 +345,7 @@ void registerAsmrAccountSyncTests({
       await resetPrefs();
       final api = _FakeAsmrApiService();
       final tokenStore = _MemoryAsmrTokenStore();
-      final controller = AsmrLibraryController(
+      final controller = createTestAsmrController(
         preferencesStore: preferences,
         apiService: api,
         authService: AsmrAuthService(apiService: api, tokenStore: tokenStore),
@@ -372,7 +372,7 @@ void registerAsmrAccountSyncTests({
   test('ASMR sync pushes local changes before pulling remote state', () async {
     await resetPrefs();
     final api = _FakeAsmrApiService();
-    final controller = AsmrLibraryController(
+    final controller = createTestAsmrController(
       preferencesStore: preferences,
       apiService: api,
       authService: AsmrAuthService(
@@ -411,7 +411,7 @@ void registerAsmrAccountSyncTests({
         ),
       ],
     );
-    final controller = AsmrLibraryController(
+    final controller = createTestAsmrController(
       preferencesStore: preferences,
       apiService: api,
       authService: AsmrAuthService(
@@ -458,7 +458,7 @@ void registerAsmrAccountSyncTests({
         ),
       ],
     );
-    final controller = AsmrLibraryController(
+    final controller = createTestAsmrController(
       preferencesStore: preferences,
       apiService: api,
       authService: AsmrAuthService(
@@ -486,7 +486,7 @@ void registerAsmrAccountSyncTests({
   test('ASMR manual refresh synchronizes before loading category', () async {
     await resetPrefs();
     final api = _FakeAsmrApiService();
-    final controller = AsmrLibraryController(
+    final controller = createTestAsmrController(
       preferencesStore: preferences,
       apiService: api,
       authService: AsmrAuthService(
@@ -512,7 +512,7 @@ void registerAsmrAccountSyncTests({
   test('ASMR sync failure only marks the requested category', () async {
     await resetPrefs();
     final api = _FakeAsmrApiService();
-    final controller = AsmrLibraryController(
+    final controller = createTestAsmrController(
       preferencesStore: preferences,
       apiService: api,
       authService: AsmrAuthService(
@@ -550,7 +550,7 @@ void registerAsmrAccountSyncTests({
       final tokenStore = _MemoryAsmrTokenStore();
       await tokenStore.writeToken('cached-token');
       await tokenStore.writeCredentials('alice', 'password');
-      final controller = AsmrLibraryController(
+      final controller = createTestAsmrController(
         preferencesStore: preferences,
         apiService: api,
         authService: AsmrAuthService(apiService: api, tokenStore: tokenStore),
@@ -576,7 +576,7 @@ void registerAsmrAccountSyncTests({
     await resetPrefs();
     final api = _FakeAsmrApiService();
     late final AsmrLibraryController controller;
-    controller = AsmrLibraryController(
+    controller = createTestAsmrController(
       preferencesStore: preferences,
       apiService: api,
       authService: AsmrAuthService(
@@ -619,7 +619,7 @@ void registerAsmrAccountSyncTests({
         ),
       ],
     );
-    final controller = AsmrLibraryController(
+    final controller = createTestAsmrController(
       preferencesStore: preferences,
       apiService: api,
       authService: AsmrAuthService(
@@ -656,7 +656,7 @@ void registerAsmrAccountSyncTests({
           ),
         ],
       );
-      final controller = AsmrLibraryController(
+      final controller = createTestAsmrController(
         preferencesStore: preferences,
         apiService: api,
         authService: AsmrAuthService(
@@ -705,7 +705,7 @@ void registerAsmrAccountSyncTests({
     ];
     final localHistory = _work(id: 300, title: 'Fresh Local History');
     final api = _FakeAsmrApiService(remoteReviewRecords: remoteHistory);
-    final controller = AsmrLibraryController(
+    final controller = createTestAsmrController(
       preferencesStore: preferences,
       apiService: api,
       authService: AsmrAuthService(
@@ -740,7 +740,7 @@ void registerAsmrAccountSyncTests({
     'concurrent favorite and history mutations do not lose updates',
     () async {
       await resetPrefs();
-      final controller = AsmrLibraryController(
+      final controller = createTestAsmrController(
         preferencesStore: preferences,
         apiService: _FakeAsmrApiService(),
         persistenceRepository: _FakeTestPersistenceRepository(
@@ -813,7 +813,7 @@ void registerAsmrAccountSyncTests({
         repository: TestPersistenceRepository(),
       );
       final api = _FakeAsmrApiService();
-      final controller = AsmrLibraryController(
+      final controller = createTestAsmrController(
         preferencesStore: blockingPreferences,
         apiService: api,
         authService: AsmrAuthService(
@@ -853,7 +853,7 @@ void registerAsmrAccountSyncTests({
         await releaseOldSync.future;
       }
     };
-    final controller = AsmrLibraryController(
+    final controller = createTestAsmrController(
       preferencesStore: preferences,
       apiService: api,
       authService: AsmrAuthService(

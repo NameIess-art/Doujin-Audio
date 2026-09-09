@@ -1,3 +1,4 @@
+import '../playback_providers.dart';
 import 'dart:async';
 import 'dart:math';
 import 'dart:ui';
@@ -24,6 +25,7 @@ import '../../application/playback_time_segment_service.dart';
 import '../../domain/playback_queue.dart';
 import '../../domain/time_segment_label.dart';
 import 'playlist_progress_widgets.dart';
+import 'playlist_subtitle_panel.dart';
 import 'playlist_shared_helpers.dart';
 import 'playlist_time_segments.dart';
 import 'playlist_transport_controls.dart';

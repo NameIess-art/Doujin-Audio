@@ -1,3 +1,8 @@
+import 'library_providers.dart';
+import 'library_tab_edit.dart';
+import 'library_removal_feedback.dart';
+import '../../player/presentation/playback_providers.dart';
+import '../../settings/presentation/settings_providers.dart';
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -5,7 +10,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show ProviderListenable;
 
 import 'package:flutter/services.dart';
-import 'package:path/path.dart' as path;
 import 'package:lottie/lottie.dart';
 
 import '../../../app/localization/app_language_provider.dart';
@@ -18,18 +22,13 @@ import '../../../core/media/search_query_utils.dart';
 import '../../player/application/playback_facade.dart';
 import '../../settings/application/settings_state.dart';
 import '../../settings/application/app_preferences.dart';
-import '../application/library_entry_editor_service.dart';
 import '../application/library_facade.dart';
 import '../domain/audio_library_category.dart';
 import '../domain/library_node.dart';
-import '../domain/library_entry.dart';
-import '../../../core/media/natural_sort.dart';
-import '../../../core/media/path_display.dart';
 import '../../../core/media/path_matcher.dart';
 import '../../../core/logging/app_log_service.dart';
 import '../../../core/ui/ui_interaction_coordinator.dart';
 import '../../../core/ui/ui_operation_service.dart';
-import '../../../core/ui/undoable_removal_service.dart';
 import '../../../app/theme/app_design_tokens.dart';
 import '../application/library_scanner_service.dart';
 import '../application/library_catalog.dart';
@@ -66,16 +65,7 @@ part 'library_tab_ui_helpers.dart';
 part 'library_tab_empty_scan.dart';
 part 'library_tab_tree_widgets.dart';
 part 'library_tab_category_widgets.dart';
-part 'library_tab_edit.dart';
 part 'library_search_page.dart';
-
-String _displaySourceName(String sourcePath) {
-  return PathDisplay.folderName(sourcePath);
-}
-
-String _displayTrackName(String trackPath) {
-  return PathDisplay.fileName(trackPath, withoutExtension: true);
-}
 
 Future<String?> _deferLibraryCardCoverLookup({
   required bool Function() isMounted,

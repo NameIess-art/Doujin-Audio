@@ -300,11 +300,11 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
   }
 
   Future<void> _removeFolder(BuildContext context) async {
-    await _stageLibraryRemoval(
+    await stageLibraryRemoval(
       context,
       ref,
       targetPath: widget.folder.path,
-      target: _LibraryRemovalTarget.folder,
+      target: LibraryRemovalTarget.folder,
     );
   }
 
@@ -344,7 +344,7 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
   @override
   Widget build(BuildContext context) {
     final isHidden = ref.watch(
-      isUndoableRemovalHiddenProvider(_libraryRemovalKey(widget.folder.path)),
+      isUndoableRemovalHiddenProvider(libraryRemovalKey(widget.folder.path)),
     );
     final i18n = ProviderScope.containerOf(
       context,
@@ -667,18 +667,18 @@ class _TrackNodeWidget extends ConsumerWidget {
     WidgetRef ref,
     MusicTrack track,
   ) async {
-    await _stageLibraryRemoval(
+    await stageLibraryRemoval(
       context,
       ref,
       targetPath: track.path,
-      target: _LibraryRemovalTarget.track,
+      target: LibraryRemovalTarget.track,
     );
   }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final isHidden = ref.watch(
-      isUndoableRemovalHiddenProvider(_libraryRemovalKey(trackNode.track.path)),
+      isUndoableRemovalHiddenProvider(libraryRemovalKey(trackNode.track.path)),
     );
     final i18n = ProviderScope.containerOf(
       context,

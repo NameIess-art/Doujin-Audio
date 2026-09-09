@@ -1,10 +1,11 @@
+import 'package:doujin_audio/features/asmr/presentation/asmr_providers.dart';
+import 'support/asmr_controller_test_fixture.dart';
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:doujin_audio/app/state/app_runtime_providers.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
 import 'package:doujin_audio/core/app_language.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
@@ -66,11 +67,11 @@ void main() {
     preferencesStore: () => preferences,
   );
 
-  test('default ASMR controller creates one shared HTTP client', () {
+  test('ASMR test assembly shares one HTTP client between services', () {
     final overrides = _CountingHttpOverrides();
     HttpOverrides.global = overrides;
     try {
-      final controller = AsmrLibraryController(
+      final controller = createTestAsmrController(
         preferencesStore: preferences,
         persistenceRepository: persistenceRepository,
       );
@@ -83,7 +84,7 @@ void main() {
 
   test('controller does not close an injected API service', () {
     final apiService = AsmrApiService();
-    final controller = AsmrLibraryController(
+    final controller = createTestAsmrController(
       apiService: apiService,
       preferencesStore: preferences,
       persistenceRepository: persistenceRepository,
@@ -98,14 +99,152 @@ void main() {
   });
 
   test(
-    'controller requires persistence when remote catalog is not injected',
-    () {
-      expect(
-        () => AsmrLibraryController(preferencesStore: preferences),
-        throwsArgumentError,
+    'disposing the owner stops initialization before closing the API',
+    () async {
+      await resetPrefs();
+      final api = _CloseCountingAsmrApiService();
+      final services = createTestAsmrServices(
+        apiService: api,
+        preferencesStore: preferences,
+        persistenceRepository: persistenceRepository,
       );
+      final account = _ControlledAccountInitialization(api, preferences);
+      final controller = AsmrLibraryController(
+        preferencesStore: preferences,
+        remoteCatalogService: services.remoteCatalogService,
+        accountSyncService: account,
+      );
+      final container = ProviderContainer(
+        overrides: [
+          asmrLibraryControllerProvider.overrideWith((ref) {
+            ref.onDispose(() {
+              controller.dispose();
+              api.close();
+            });
+            return controller;
+          }),
+        ],
+      );
+      expect(container.read(asmrLibraryControllerProvider), same(controller));
+      final first = controller.initialize();
+      expect(controller.initialize(), same(first));
+      await account.started.future;
+      container.dispose();
+      controller.dispose();
+      expect(api.closeCount, 1);
+      account.pending.complete(AsmrAccountSnapshot());
+      await first;
+      expect(controller.initialized, isFalse);
+      expect(account.restoreCalls, 0);
+      await controller.initialize();
+      expect(account.initializeCalls, 1);
     },
   );
+
+  test('ASMR initialization can retry after a dependency failure', () async {
+    await resetPrefs();
+    final api = _FakeAsmrApiService();
+    final services = createTestAsmrServices(
+      apiService: api,
+      preferencesStore: preferences,
+      persistenceRepository: persistenceRepository,
+    );
+    final account = _ControlledAccountInitialization(api, preferences);
+    final controller = AsmrLibraryController(
+      preferencesStore: preferences,
+      remoteCatalogService: services.remoteCatalogService,
+      accountSyncService: account,
+    );
+    addTearDown(controller.dispose);
+    final first = controller.initializeForVisiblePage();
+    final failure = expectLater(first, throwsStateError);
+    await account.started.future;
+    account.pending.completeError(StateError('initialization failed'));
+    await failure;
+    expect(controller.initialized, isFalse);
+    account.pending = Completer<AsmrAccountSnapshot>()
+      ..complete(AsmrAccountSnapshot());
+    await controller.initializeForVisiblePage();
+    expect(controller.initialized, isTrue);
+    expect(account.initializeCalls, 2);
+    expect(account.restoreCalls, 0);
+  });
+  test(
+    'category provider families isolate queries and release their listeners',
+    () async {
+      await resetPrefs();
+      final alpha = _work(id: 11, title: 'Alpha');
+      final beta = _work(id: 12, title: 'Beta');
+      await preferences.saveFavoriteWorks([alpha, beta]);
+      final controller = _ListenerObservedAsmrController(
+        createTestAsmrServices(
+          preferencesStore: preferences,
+          persistenceRepository: persistenceRepository,
+          apiService: _FakeAsmrApiService(),
+        ),
+      );
+      addTearDown(controller.dispose);
+      await controller.initializeForVisiblePage();
+      final container = ProviderContainer(
+        overrides: [
+          asmrLibraryControllerProvider.overrideWithValue(controller),
+        ],
+      );
+      addTearDown(container.dispose);
+      final alphaProvider = asmrCategoryStateProvider((
+        category: AsmrCategoryType.favorites,
+        searchQuery: 'Alpha',
+      ));
+      final betaProvider = asmrCategoryStateProvider((
+        category: AsmrCategoryType.favorites,
+        searchQuery: 'Beta',
+      ));
+      expect(container.read(asmrLibraryControllerProvider), same(controller));
+      final alphaSubscription = container.listen(alphaProvider, (_, _) {});
+      final betaSubscription = container.listen(betaProvider, (_, _) {});
+      await container.pump();
+      expect(
+        container.read(alphaProvider).value!.works.map((work) => work.id),
+        [11],
+      );
+      expect(container.read(betaProvider).value!.works.map((work) => work.id), [
+        12,
+      ]);
+      expect(controller.hasActiveListeners, isTrue);
+
+      await controller.toggleFavorite(alpha);
+      await container.pump();
+      expect(container.read(alphaProvider).value!.works, isEmpty);
+      expect(container.read(betaProvider).value!.works.map((work) => work.id), [
+        12,
+      ]);
+      alphaSubscription.close();
+      await container.pump();
+      expect(controller.hasActiveListeners, isTrue);
+      betaSubscription.close();
+      await container.pump();
+      expect(controller.hasActiveListeners, isFalse);
+
+      final resumed = container.listen(alphaProvider, (_, _) {});
+      await container.pump();
+      expect(controller.hasActiveListeners, isTrue);
+      expect(container.read(alphaProvider).value!.works, isEmpty);
+      resumed.close();
+      await container.pump();
+      expect(controller.hasActiveListeners, isFalse);
+    },
+  );
+}
+
+final class _ListenerObservedAsmrController extends AsmrLibraryController {
+  _ListenerObservedAsmrController(TestAsmrServices services)
+    : super(
+        preferencesStore: services.preferencesStore,
+        remoteCatalogService: services.remoteCatalogService,
+        accountSyncService: services.accountSyncService,
+      );
+
+  bool get hasActiveListeners => hasListeners;
 }
 
 final class _CountingHttpOverrides extends HttpOverrides {
@@ -624,4 +763,43 @@ AsmrTrackFile _trackFile(
     sourceId: 'RJ000001',
     relativePath: relativePath,
   );
+}
+
+final class _CloseCountingAsmrApiService extends AsmrApiService {
+  int closeCount = 0;
+
+  @override
+  void close({bool force = true}) {
+    if (!isClosed) closeCount++;
+    super.close(force: force);
+  }
+}
+
+final class _ControlledAccountInitialization extends AsmrAccountSyncService {
+  _ControlledAccountInitialization(
+    AsmrApiService api,
+    AsmrPreferencesStore preferences,
+  ) : super(
+        apiService: api,
+        authService: AsmrAuthService(apiService: api),
+        preferencesStore: preferences,
+      );
+
+  final started = Completer<void>();
+  var pending = Completer<AsmrAccountSnapshot>();
+  int initializeCalls = 0;
+  int restoreCalls = 0;
+
+  @override
+  Future<AsmrAccountSnapshot> initialize() {
+    initializeCalls++;
+    if (!started.isCompleted) started.complete();
+    return pending.future;
+  }
+
+  @override
+  Future<AsmrAccountSnapshot> restoreSession() async {
+    restoreCalls++;
+    return AsmrAccountSnapshot();
+  }
 }

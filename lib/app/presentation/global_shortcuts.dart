@@ -1,8 +1,8 @@
+import '../../features/player/presentation/playback_providers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../state/app_runtime_providers.dart';
 
 class TogglePlayPauseIntent extends Intent {
   const TogglePlayPauseIntent();

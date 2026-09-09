@@ -828,8 +828,9 @@ void main() {
         await runtimeGraph.playback.setSessionChannelSwap(session.id, true);
 
         expect(session.currentTrackPath, newTrackPath);
-        final resolvedTrack = runtimeGraph.playbackCommands.trackByPath(
+        final resolvedTrack = runtimeGraph.audioPaths.trackByPath(
           trackFile.path,
+          includeLibraryFallback: false,
         );
         expect(resolvedTrack, isNotNull);
         expect(resolvedTrack?.path, newTrackPath);

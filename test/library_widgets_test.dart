@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'support/runtime_test_models.dart';
 import 'package:doujin_audio/features/library/presentation/library_tab.dart';
+import 'package:doujin_audio/features/library/presentation/library_tab_edit.dart';
 import 'package:doujin_audio/core/widgets/app_scroll_physics.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/core/widgets/async_cover_image.dart';
@@ -2143,6 +2144,85 @@ void main() {
     expect(find.text('Disc1', findRichText: true), findsOneWidget);
     expect(find.text(languageProvider.tr('exclude')), findsWidgets);
   });
+
+  testWidgets(
+    'standalone library edit retries failure and ignores exit callbacks',
+    (tester) async {
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      const libraryRoot = '/library-edit-retry';
+      final track = testMusicTrack(
+        name: 'Retained track',
+        path: '$libraryRoot/retained.mp3',
+        groupKey: libraryRoot,
+        groupTitle: 'Library',
+      );
+      fixture.runtimeGraph.library.addWatchedFolder(libraryRoot, notify: false);
+      fixture.runtimeGraph.library.addTracks(
+        [track],
+        notify: false,
+        persist: false,
+      );
+      fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 0);
+      final initial = Completer<LibraryEntryDiskSnapshot>();
+      final retry = Completer<LibraryEntryDiskSnapshot>();
+      final afterExit = Completer<LibraryEntryDiskSnapshot>();
+      final service = _QueuedEntryEditorService([
+        initial.future,
+        retry.future,
+        afterExit.future,
+      ]);
+      await tester.pumpWidget(
+        fixture.build(
+          LibraryEditPage(
+            libraryPath: libraryRoot,
+            entryEditorService: service,
+          ),
+        ),
+      );
+      initial.completeError(StateError('disk snapshot failed'));
+      await tester.pump();
+      final retryButton = find.widgetWithText(
+        FilledButton,
+        fixture.languageProvider.tr('retry'),
+      );
+      expect(retryButton, findsOneWidget);
+      expect(fixture.runtimeGraph.library.trackByPath(track.path), same(track));
+      await tester.tap(retryButton);
+      retry.complete(
+        LibraryEntryDiskSnapshot(
+          audioFilePaths: [track.path],
+          scannedFolderPaths: const {},
+          authoritative: true,
+        ),
+      );
+      await tester.pump();
+      expect(retryButton, findsNothing);
+      expect(find.text('Retained track', findRichText: true), findsOneWidget);
+      expect(service.responses, hasLength(1));
+
+      WidgetsBinding.instance.handleAppLifecycleStateChanged(
+        AppLifecycleState.resumed,
+      );
+      await tester.pump();
+      expect(service.responses, isEmpty);
+      await tester.pumpWidget(const SizedBox.shrink());
+      afterExit.complete(
+        LibraryEntryDiskSnapshot(
+          audioFilePaths: const [],
+          scannedFolderPaths: const {},
+          authoritative: true,
+        ),
+      );
+      await tester.pump();
+      WidgetsBinding.instance.handleAppLifecycleStateChanged(
+        AppLifecycleState.resumed,
+      );
+      await tester.pump();
+      expect(fixture.runtimeGraph.library.trackByPath(track.path), same(track));
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets(
     'library edit ignores stale scans and preserves tree on failure',

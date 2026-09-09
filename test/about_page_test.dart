@@ -1,7 +1,7 @@
+import 'package:doujin_audio/features/settings/presentation/settings_providers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:doujin_audio/app/state/app_runtime_providers.dart';
 import 'package:doujin_audio/app/theme/app_styles.dart';
 import 'package:doujin_audio/core/widgets/app_brand_icon.dart';
 import 'package:doujin_audio/core/widgets/top_page_header.dart';

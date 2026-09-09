@@ -224,10 +224,14 @@ extension PlaybackCommandTransport on PlaybackCommandCoordinator {
   Future<void> _handleSessionCompleted(String sessionId) async {
     final session = _sessions[sessionId];
     if (session == null) return;
+    final completionGeneration = session.playbackCommandGeneration;
+    final preparationGeneration = session.loadGeneration;
     if (_timerFacade.stopAfterCurrentTrack) {
       _timerFacade.setStopAfterCurrentTrack(false);
-      session.isAdvancingAfterCompletion = false;
-      session.isLoading = false;
+      session.finishCompletionAdvance(
+        commandGeneration: completionGeneration,
+        preparationGeneration: preparationGeneration,
+      );
       await _pauseSessionPlayback(session);
       _syncNotificationState();
       _notifyPlaybackChanged();
@@ -235,15 +239,15 @@ extension PlaybackCommandTransport on PlaybackCommandCoordinator {
     }
     final nextTarget = _nextPathFor(session, forward: true);
     if (nextTarget == null) {
-      session.isAdvancingAfterCompletion = false;
-      session.isLoading = false;
+      session.finishCompletionAdvance(
+        commandGeneration: completionGeneration,
+        preparationGeneration: preparationGeneration,
+      );
       _syncNotificationState();
       return;
     }
 
-    final completionGeneration = session.playbackCommandGeneration;
-    session.isLoading = true;
-    session.isAdvancingAfterCompletion = true;
+    session.beginCompletionAdvance(commandGeneration: completionGeneration);
     _syncNotificationState();
 
     if (nextTarget.path == session.currentTrackPath &&
@@ -252,21 +256,26 @@ extension PlaybackCommandTransport on PlaybackCommandCoordinator {
       try {
         await _nativePlaybackRepository.seek(session.id, Duration.zero);
         if (!_isRegisteredSession(session) ||
-            session.playbackCommandGeneration != completionGeneration) {
+            session.playbackCommandGeneration != completionGeneration ||
+            !session.isPreparationCurrent(preparationGeneration)) {
           return;
         }
         session.setOptimisticPosition(Duration.zero);
       } finally {
         if (_isRegisteredSession(session) &&
-            session.playbackCommandGeneration == completionGeneration) {
-          session.isLoading = false;
-          session.isAdvancingAfterCompletion = false;
+            session.playbackCommandGeneration == completionGeneration &&
+            session.isPreparationCurrent(preparationGeneration)) {
+          session.finishCompletionAdvance(
+            commandGeneration: completionGeneration,
+            preparationGeneration: preparationGeneration,
+          );
           _syncNotificationState();
           _notifyPlaybackChanged();
         }
       }
       if (_isRegisteredSession(session) &&
-          session.playbackCommandGeneration == completionGeneration) {
+          session.playbackCommandGeneration == completionGeneration &&
+          session.isPreparationCurrent(preparationGeneration)) {
         await _startSessionPlayback(
           session,
           shouldStartTriggerCountdown: false,
@@ -278,9 +287,6 @@ extension PlaybackCommandTransport on PlaybackCommandCoordinator {
         nextPath: nextTarget.path,
         targetQueueIndex: nextTarget.queueIndex,
       );
-      if (_isRegisteredSession(session)) {
-        session.isAdvancingAfterCompletion = false;
-      }
     }
   }
 

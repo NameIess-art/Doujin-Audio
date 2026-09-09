@@ -1,9 +1,9 @@
+import '../../app/presentation/app_presentation_providers.dart';
 import 'dart:ui' as dart_ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../app/state/app_runtime_providers.dart';
 import '../../app/theme/app_design_tokens.dart';
 import '../../app/theme/app_styles.dart';
 import 'app_edge_fade_mask.dart';
@@ -588,9 +588,7 @@ class _AppHeaderGlassSurface extends ConsumerWidget {
     final cs = Theme.of(context).colorScheme;
     final tokens = AppDesignTokens.of(context);
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final blurEnabled = ref.watch(
-      settingsStateProvider.select((s) => s.value?.uiBlurEffectEnabled ?? true),
-    );
+    final blurEnabled = ref.watch(uiBlurEnabledProvider);
     final surface = DecoratedBox(
       decoration: BoxDecoration(
         color: cs.surface.withValues(
@@ -642,9 +640,7 @@ class HeaderFloatingSurface extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final blurEnabled = ref.watch(
-      settingsStateProvider.select((s) => s.value?.uiBlurEffectEnabled ?? true),
-    );
+    final blurEnabled = ref.watch(uiBlurEnabledProvider);
     final shouldBlur =
         (enableBlur ?? !_AppHeaderScope.hasBlurBackgroundOf(context)) &&
         blurEnabled;

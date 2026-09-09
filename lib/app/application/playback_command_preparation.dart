@@ -64,23 +64,16 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
       session,
     );
 
-    session.loadGeneration++;
-    final generation = session.loadGeneration;
-
     final wasLoading = session.isLoading;
-    final wasPlaybackStarting = session.isPlaybackStarting;
-    if (showLoading) {
-      session.isLoading = true;
-    }
-    if (autoPlay) {
-      session.isPlaybackStarting = true;
-    }
-    if ((showLoading && !wasLoading) || (autoPlay && !wasPlaybackStarting)) {
-      _notifyPlaybackChanged();
-    }
+    final preparation = session.beginPreparation(
+      showLoading: showLoading,
+      autoPlay: autoPlay,
+    );
+    final generation = preparation.generation;
+    if (preparation.changed) _notifyPlaybackChanged();
 
     var prepared = false;
-    var preparationFailed = false;
+    String? preparationError;
     final previousLoadedPath = session.loadedPath;
     final previousLogicalPath = session.currentTrackPath;
     final previousPosition = session.position;
@@ -103,7 +96,7 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
           session.loadedPath == null;
 
       if (shouldPrepareNativeTrack) {
-        session.pendingNativeTrackPath = target.resolvedPath;
+        session.markNativePreparation(generation, target.resolvedPath);
         final nativeResult = await _prepareNativeTrackWithRetry(
           session,
           target,
@@ -112,7 +105,6 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
         );
         if (!_isSessionLoadCurrent(session, generation)) return false;
         if (!nativeResult.succeeded) {
-          preparationFailed = true;
           final failureMessage =
               nativeResult.error ?? 'Failed to prepare the selected track.';
           await _restorePreviousNativeTrack(
@@ -124,12 +116,12 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
             previousWasPlaying: previousWasPlaying,
           );
           if (_isSessionLoadCurrent(session, generation)) {
-            session.playbackError = failureMessage;
+            preparationError = failureMessage;
           }
           return false;
         }
         if (!_isSessionLoadCurrent(session, generation)) return false;
-        session.pendingNativeTrackPath = null;
+        session.markNativePreparation(generation, null);
         _applyPlaybackPreparationTarget(
           session,
           target,
@@ -176,7 +168,6 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
         error: e,
         stackTrace: stackTrace,
       );
-      preparationFailed = true;
       if (_isSessionLoadCurrent(session, generation)) {
         await _restorePreviousNativeTrack(
           session,
@@ -188,19 +179,19 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
         );
       }
       if (_isSessionLoadCurrent(session, generation)) {
-        session.playbackError = e.toString();
+        preparationError = e.toString();
       }
     } finally {
       if (_isRegisteredSession(session) &&
-          session.loadGeneration == generation) {
-        session.pendingNativeTrackPath = null;
-        session.isLoading = false;
-        if (!prepared && autoPlay) {
-          session.isPlaybackStarting = false;
-        }
-        session.isAdvancingAfterCompletion = false;
+          session.isPreparationCurrent(generation)) {
+        session.finishPreparation(
+          generation,
+          prepared: prepared,
+          autoPlay: autoPlay,
+          error: preparationError,
+        );
         _syncNotificationState();
-        if (prepared || preparationFailed) {
+        if (prepared || preparationError != null) {
           _playbackFacade.scheduleSessionStatePersistence();
         }
         if (showLoading || wasLoading) {
@@ -228,7 +219,7 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
       );
     } else {
       if (autoPlay) {
-        session.isPlaybackStarting = false;
+        session.cancelPlaybackStart(generation);
       }
       _syncNotificationState();
     }
@@ -237,7 +228,7 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
 
   bool _isSessionLoadCurrent(PlaybackSession session, int generation) {
     return _isRegisteredSession(session) &&
-        session.loadGeneration == generation;
+        session.isPreparationCurrent(generation);
   }
 
   _PlaybackPreparationTarget _resolvePlaybackPreparationTarget(
@@ -419,7 +410,7 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
         forceStartAtZero: false,
         startPositionOverride: previousPosition,
       );
-      session.pendingNativeTrackPath = previousLoadedPath;
+      session.markNativePreparation(generation, previousLoadedPath);
       final restored = await _prepareNativeTrackWithRetry(
         session,
         restoreTarget,
@@ -427,7 +418,7 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
         targetQueueIndex: session.currentQueueIndex,
       );
       if (!_isSessionLoadCurrent(session, generation)) return false;
-      session.pendingNativeTrackPath = null;
+      session.markNativePreparation(generation, null);
       if (!restored.succeeded) {
         session.loadedPath = null;
         return false;
@@ -454,7 +445,7 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
         stackTrace: stackTrace,
       );
       if (_isSessionLoadCurrent(session, generation)) {
-        session.pendingNativeTrackPath = null;
+        session.markNativePreparation(generation, null);
         session.loadedPath = null;
       }
       return false;
@@ -574,7 +565,10 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
     final resolvedCurrentPath = _playbackFacade.resolveRetargetedPath(
       currentPath,
     );
-    final currentTrack = trackByPath(resolvedCurrentPath);
+    final currentTrack = _audioPathCoordinator.trackByPath(
+      resolvedCurrentPath,
+      includeLibraryFallback: false,
+    );
     final sessionTrack = _sessionTrackForPath(session, resolvedCurrentPath);
     final queueTracks = session.isPlaybackQueue
         ? (_hasDetachedPlaybackQueueCurrent(session)
@@ -648,7 +642,10 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
 
   MusicTrack? _trackForAnyPath(String trackPath) {
     final resolvedPath = _playbackFacade.resolveRetargetedPath(trackPath);
-    final libraryTrack = trackByPath(resolvedPath);
+    final libraryTrack = _audioPathCoordinator.trackByPath(
+      resolvedPath,
+      includeLibraryFallback: false,
+    );
     if (libraryTrack != null) {
       return libraryTrack;
     }
@@ -673,6 +670,9 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
         return track;
       }
     }
-    return trackByPath(resolvedPath);
+    return _audioPathCoordinator.trackByPath(
+      resolvedPath,
+      includeLibraryFallback: false,
+    );
   }
 }

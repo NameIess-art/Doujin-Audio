@@ -1,4 +1,23 @@
-part of 'library_tab.dart';
+import 'dart:async';
+
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path/path.dart' as path;
+
+import '../../../app/localization/app_language_provider.dart';
+import '../../../app/presentation/app_presentation_providers.dart';
+import '../../../app/state/app_runtime_providers.dart';
+import '../../../core/media/natural_sort.dart';
+import '../../../core/media/path_display.dart';
+import '../../../core/media/path_matcher.dart';
+import '../../../core/widgets/app_feedback.dart';
+import '../../../core/widgets/app_transitions.dart';
+import '../../../core/widgets/top_page_header.dart';
+import '../application/library_entry_editor_service.dart';
+import '../application/library_facade.dart';
+import '../domain/library_entry.dart';
+import 'library_providers.dart';
+import 'library_removal_feedback.dart';
 
 const Size _libraryEditActionMinimumSize = Size(0, 36);
 const double _libraryEditChildFolderTileHeight = 48;
@@ -102,7 +121,7 @@ class LibraryManagementPage extends ConsumerWidget {
     final visibleLibraries = libraries
         .where(
           (libraryPath) =>
-              !removalState.isHidden(_libraryRemovalKey(libraryPath)),
+              !removalState.isHidden(libraryRemovalKey(libraryPath)),
         )
         .toList(growable: false);
     return Scaffold(
@@ -152,7 +171,7 @@ class LibraryManagementPage extends ConsumerWidget {
                       ),
                       child: ListTile(
                         title: Text(
-                          _displaySourceName(libraryPath),
+                          PathDisplay.folderName(libraryPath),
                           style: Theme.of(context).textTheme.titleMedium
                               ?.copyWith(fontWeight: FontWeight.w700),
                         ),
@@ -168,10 +187,11 @@ class LibraryManagementPage extends ConsumerWidget {
                         ),
                         trailing: IconButton(
                           tooltip: i18n.tr('remove_library'),
-                          onPressed: () => _removeWatchedLibraryWithUndo(
+                          onPressed: () => stageLibraryRemoval(
                             context,
                             ref,
-                            libraryPath,
+                            targetPath: libraryPath,
+                            target: LibraryRemovalTarget.library,
                           ),
                           icon: Icon(
                             Icons.delete_outline_rounded,
@@ -202,19 +222,6 @@ class LibraryManagementPage extends ConsumerWidget {
       ),
     );
   }
-}
-
-Future<bool> _removeWatchedLibraryWithUndo(
-  BuildContext context,
-  WidgetRef ref,
-  String libraryPath,
-) async {
-  return _stageLibraryRemoval(
-    context,
-    ref,
-    targetPath: libraryPath,
-    target: _LibraryRemovalTarget.library,
-  );
 }
 
 class LibraryEditPage extends ConsumerStatefulWidget {
@@ -346,10 +353,11 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage>
   }
 
   Future<void> _confirmRemoveLibrary(BuildContext context) async {
-    final removed = await _removeWatchedLibraryWithUndo(
+    final removed = await stageLibraryRemoval(
       context,
       ref,
-      widget.libraryPath,
+      targetPath: widget.libraryPath,
+      target: LibraryRemovalTarget.library,
     );
     if (removed && context.mounted) {
       await Navigator.of(context).maybePop();
@@ -532,7 +540,7 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage>
               icon: Icons.edit_note_rounded,
               title: i18n.tr('edit_library'),
               titleSuffix: Text(
-                _displaySourceName(widget.libraryPath),
+                PathDisplay.folderName(widget.libraryPath),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
@@ -1005,7 +1013,7 @@ class _LibraryEditFolderTreeNode extends _LibraryEditTreeNode {
   final List<_LibraryEditTreeNode> children;
 
   @override
-  String get name => _displaySourceName(folderPath);
+  String get name => PathDisplay.folderName(folderPath);
 
   @override
   String get pathValue => folderPath;
@@ -1017,7 +1025,7 @@ class _LibraryEditTrackTreeNode extends _LibraryEditTreeNode {
   final String trackPath;
 
   @override
-  String get name => _displayTrackName(trackPath);
+  String get name => PathDisplay.fileName(trackPath, withoutExtension: true);
 
   @override
   String get pathValue => trackPath;

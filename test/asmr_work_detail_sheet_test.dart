@@ -1,16 +1,14 @@
+import 'package:doujin_audio/features/asmr/presentation/asmr_providers.dart';
+import 'support/asmr_controller_test_fixture.dart';
 import 'package:doujin_audio/app/localization/app_language_provider.dart';
-import 'package:doujin_audio/app/state/app_runtime_providers.dart';
-import 'package:doujin_audio/core/persistence/app_database.dart';
 import 'package:doujin_audio/core/immutable_collections.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/widgets/top_page_header.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_library_controller.dart';
-import 'package:doujin_audio/features/asmr/application/asmr_preferences.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_download_page.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_tab.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_work_detail_sheet.dart';
-import 'package:doujin_audio/infrastructure/sqlite/sqlite_asmr_repository.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -29,7 +27,10 @@ void main() {
       final fixture = AppRuntimeWidgetTestFixture();
       addTearDown(fixture.dispose);
       await fixture.languageProvider.setLanguage(AppLanguage.zh);
-      final controller = _TestFavoritesAsmrLibraryController(const []);
+      final controller = _TestFavoritesAsmrLibraryController(
+        createTestAsmrServices(),
+        const [],
+      );
       controller.favoriteWorks = immutableList(
         List.generate(count, (index) => _work(id: index, title: 'Work $index')),
       );
@@ -143,7 +144,10 @@ void main() {
       await fixture.languageProvider.setLanguage(AppLanguage.zh);
 
       final work = _work();
-      final controller = _TestFavoritesAsmrLibraryController(<AsmrWork>[work]);
+      final controller = _TestFavoritesAsmrLibraryController(
+        createTestAsmrServices(),
+        <AsmrWork>[work],
+      );
       addTearDown(controller.dispose);
 
       await tester.pumpWidget(
@@ -204,10 +208,10 @@ void main() {
 
       final work1 = _work(id: 101, title: 'First Favorite Work');
       final work2 = _work(id: 102, title: 'Second Favorite Work');
-      final controller = _TestFavoritesAsmrLibraryController(<AsmrWork>[
-        work1,
-        work2,
-      ]);
+      final controller = _TestFavoritesAsmrLibraryController(
+        createTestAsmrServices(),
+        <AsmrWork>[work1, work2],
+      );
       addTearDown(controller.dispose);
 
       await tester.pumpWidget(
@@ -265,16 +269,15 @@ void main() {
 }
 
 class _TestFavoritesAsmrLibraryController extends AsmrLibraryController {
-  _TestFavoritesAsmrLibraryController(List<AsmrWork> initialWorks)
-      : favoriteWorks = List.of(initialWorks),
-        super(
-          preferencesStore: AsmrPreferencesStore(
-            repository: SqliteAsmrRepository(database: AppDatabase.instance),
-          ),
-          persistenceRepository: SqliteAsmrRepository(
-            database: AppDatabase.instance,
-          ),
-        );
+  _TestFavoritesAsmrLibraryController(
+    TestAsmrServices services,
+    List<AsmrWork> initialWorks,
+  ) : favoriteWorks = List.of(initialWorks),
+      super(
+        preferencesStore: services.preferencesStore,
+        remoteCatalogService: services.remoteCatalogService,
+        accountSyncService: services.accountSyncService,
+      );
 
   List<AsmrWork> favoriteWorks;
   int _revision = 0;

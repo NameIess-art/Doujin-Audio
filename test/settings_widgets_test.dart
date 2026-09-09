@@ -1,3 +1,4 @@
+import 'package:doujin_audio/features/player/presentation/playback_providers.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';

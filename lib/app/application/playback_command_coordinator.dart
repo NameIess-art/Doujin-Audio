@@ -103,25 +103,6 @@ final class PlaybackCommandCoordinator
         immediateUnifiedSync: immediateUnifiedSync,
       );
 
-  MusicTrack? trackByPath(String trackPath) {
-    final resolvedPath = _playbackFacade.resolveRetargetedPath(trackPath);
-    final libraryTrack = _libraryFacade.trackByPath(resolvedPath);
-    if (libraryTrack != null) return libraryTrack;
-    for (final session in _sessions.values) {
-      for (final track in session.customQueueTracks ?? const <MusicTrack>[]) {
-        if (PathMatcher.equalsNormalized(track.path, trackPath) ||
-            PathMatcher.equalsNormalized(track.path, resolvedPath) ||
-            PathMatcher.equalsNormalized(
-              _playbackFacade.resolveRetargetedPath(track.path),
-              resolvedPath,
-            )) {
-          return track;
-        }
-      }
-    }
-    return null;
-  }
-
   String? resolvedPlaybackCoverPathForTrack(
     MusicTrack? track, {
     String? trackPath,

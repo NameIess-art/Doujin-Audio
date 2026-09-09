@@ -737,13 +737,13 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
   final VoidCallback? onToggleSelect;
 
   Future<void> _remove(BuildContext context, WidgetRef ref) async {
-    await _stageLibraryRemoval(
+    await stageLibraryRemoval(
       context,
       ref,
       targetPath: entry.path,
       target: entry.isFolder
-          ? _LibraryRemovalTarget.folder
-          : _LibraryRemovalTarget.track,
+          ? LibraryRemovalTarget.folder
+          : LibraryRemovalTarget.track,
     );
   }
 
@@ -780,7 +780,7 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final isHidden = ref.watch(
-      isUndoableRemovalHiddenProvider(_libraryRemovalKey(entry.path)),
+      isUndoableRemovalHiddenProvider(libraryRemovalKey(entry.path)),
     );
     final i18n = ProviderScope.containerOf(
       context,

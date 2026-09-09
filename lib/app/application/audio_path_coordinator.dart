@@ -19,7 +19,10 @@ final class AudioPathCoordinator implements PlaybackTrackResolver {
 
   LibraryFacade get library => _library;
 
-  MusicTrack? trackByPath(String trackPath) {
+  MusicTrack? trackByPath(
+    String trackPath, {
+    bool includeLibraryFallback = true,
+  }) {
     final resolvedPath = _playback.resolveRetargetedPath(trackPath);
     final libraryTrack = _library.trackByPath(resolvedPath);
     if (libraryTrack != null) return libraryTrack;
@@ -29,6 +32,7 @@ final class AudioPathCoordinator implements PlaybackTrackResolver {
       final track = sessionTrackForPath(session.id, resolvedPath);
       if (track != null) return track;
     }
+    if (!includeLibraryFallback) return null;
     for (final track in _library.library) {
       if (PathMatcher.equalsNormalized(track.path, trackPath) ||
           PathMatcher.equalsNormalized(track.path, resolvedPath)) {
@@ -87,8 +91,7 @@ final class AudioPathCoordinator implements PlaybackTrackResolver {
     final track = trackByPath(trackPath);
     if (track == null) return const <MusicTrack>[];
     if (track.isSingle) return <MusicTrack>[track];
-    if (track.isRemoteAsmr ||
-        PathMatcher.isRemoteUri(track.path)) {
+    if (track.isRemoteAsmr || PathMatcher.isRemoteUri(track.path)) {
       return tracksInSameGroup(trackPath);
     }
     final root = workRootForTrack(trackPath);

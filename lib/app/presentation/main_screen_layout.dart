@@ -21,6 +21,8 @@ extension _MainScreenLayout on _MainScreenState {
                 ))
         : EdgeInsets.zero;
     final isLandscapeLayout =
+        defaultTargetPlatform == TargetPlatform.windows ||
+        defaultTargetPlatform == TargetPlatform.windows ||
         MediaQuery.orientationOf(context) == Orientation.landscape;
     final settingsState = ref.watch(settingsStateProvider).value;
     final showLocal = settingsState?.showLocalLibrary ?? true;
@@ -402,6 +404,8 @@ extension _MainScreenLayout on _MainScreenState {
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final isLandscapeLayout =
+        defaultTargetPlatform == TargetPlatform.windows ||
+        defaultTargetPlatform == TargetPlatform.windows ||
         MediaQuery.orientationOf(context) == Orientation.landscape;
     final double expandedWidth = isLandscapeLayout ? 260 : 292;
     final double collapsedWidth = isLandscapeLayout ? 80 : 92;

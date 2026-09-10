@@ -1,0 +1,17 @@
+Doujin Audio Windows distribution
+
+Application: GPL-3.0, https://github.com/NameIess-art/Doujin-Audio
+Flutter and Dart: BSD-3-Clause, https://github.com/flutter/flutter
+media_kit: MIT, https://github.com/media-kit/media-kit
+libmpv Windows runtime: GPL, https://github.com/shinchiro/mpv-winbuild-cmake/releases/tag/20260903
+libmpv corresponding source and build recipes: https://github.com/shinchiro/mpv-winbuild-cmake
+media_kit rendering SDK and ANGLE: https://github.com/media-kit/libmpv-win32-video-build/releases/tag/2023-09-24
+FFmpeg 8.0.1 essentials: GPL-3.0, https://github.com/GyanD/codexffmpeg/releases/tag/8.0.1
+FFmpeg corresponding source: https://ffmpeg.org/releases/ffmpeg-8.0.1.tar.xz
+FFmpeg build configuration and dependencies: https://www.gyan.dev/ffmpeg/builds/
+SQLite: public domain, https://www.sqlite.org/copyright.html
+Microsoft Visual C++ runtime: distributed under the Visual Studio redistributable license.
+
+Flutter's compiled NOTICES asset contains the Dart/Flutter package license texts.
+Pinned binary versions and SHA256 checksums are recorded in windows_dependencies.json.
+The Windows application installer is unsigned. No store or alternate update channel is used.

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:ffmpeg_kit_flutter_new_audio/ffmpeg_kit.dart';
@@ -8,6 +9,7 @@ import 'package:ffmpeg_kit_flutter_new_audio/statistics.dart';
 import 'package:path/path.dart' as path;
 
 import 'video_conversion_plan.dart';
+import '../../../core/platform/windows_media_tools.dart';
 
 typedef VideoConversionProgress = void Function(double progress);
 
@@ -61,17 +63,30 @@ class VideoConversionRunner {
   VideoConversionRunner({
     VideoConversionExecutor? executor,
     Future<void> Function()? cancelExecutor,
+    WindowsMediaTools? windowsMediaTools,
+    bool Function()? isWindows,
   }) : _executor = executor,
-       _cancelExecutor = cancelExecutor;
+       _cancelExecutor = cancelExecutor,
+       _windowsMediaTools = windowsMediaTools ?? WindowsMediaTools.instance,
+       _isWindows = isWindows ?? (() => Platform.isWindows);
 
   final VideoConversionExecutor? _executor;
   final Future<void> Function()? _cancelExecutor;
+  final WindowsMediaTools _windowsMediaTools;
+  final bool Function() _isWindows;
+  Process? _windowsProcess;
   Future<VideoConversionResult>? _activeConversion;
   int _nextRunId = 0;
   int? _activeRunId;
   int? _cancelRequestedRunId;
 
   Future<int> readDurationMs(String videoPath) async {
+    if (_isWindows()) {
+      return (await _windowsMediaTools.readDuration(
+            videoPath,
+          ))?.inMilliseconds ??
+          0;
+    }
     final mediaInformation = await FFprobeKit.getMediaInformation(videoPath);
     final information = mediaInformation.getMediaInformation();
     return parseVideoDurationMs(information?.getDuration());
@@ -119,6 +134,8 @@ class VideoConversionRunner {
     final cancelExecutor = _cancelExecutor;
     if (cancelExecutor != null) {
       await cancelExecutor();
+    } else if (_isWindows()) {
+      _windowsProcess?.kill();
     } else {
       await FFmpegKit.cancel();
     }
@@ -146,6 +163,13 @@ class VideoConversionRunner {
         final executionResult = executor != null
             ? await executor(
                 command: plan.command,
+                durationMs: durationMs,
+                onProgress: onProgress,
+              )
+            : _isWindows()
+            ? await _convertWithWindowsTools(
+                runId: runId,
+                plan: plan,
                 durationMs: durationMs,
                 onProgress: onProgress,
               )
@@ -180,6 +204,62 @@ class VideoConversionRunner {
       }
     }
     return result;
+  }
+
+  Future<VideoConversionExecutionResult> _convertWithWindowsTools({
+    required int runId,
+    required VideoConversionPlan plan,
+    required int durationMs,
+    required VideoConversionProgress onProgress,
+  }) async {
+    final process = await _windowsMediaTools.start('ffmpeg', [
+      '-nostdin',
+      '-v',
+      'error',
+      '-progress',
+      'pipe:1',
+      '-nostats',
+      ...buildVideoConversionCommandArgs(
+        inputPath: plan.inputPath,
+        outputPath: plan.temporaryOutputPath,
+        format: plan.format,
+        bitrate: plan.bitrate,
+      ),
+    ]);
+    _windowsProcess = process;
+    final errors = StringBuffer();
+    final errorStream = process.stderr
+        .transform(const Utf8Decoder(allowMalformed: true))
+        .forEach((text) {
+          if (errors.length < 32768) errors.write(text);
+        });
+    final progressStream = process.stdout
+        .transform(utf8.decoder)
+        .transform(const LineSplitter())
+        .forEach((line) {
+          if (!line.startsWith('out_time_us=') ||
+              durationMs <= 0 ||
+              _cancelRequestedRunId == runId) {
+            return;
+          }
+          final elapsed = int.tryParse(line.substring('out_time_us='.length));
+          if (elapsed != null) {
+            onProgress((elapsed / (durationMs * 1000)).clamp(0.0, 1.0));
+          }
+        });
+    if (_cancelRequestedRunId == runId) process.kill();
+    try {
+      final code = await process.exitCode;
+      await Future.wait([errorStream, progressStream]);
+      if (_cancelRequestedRunId == runId) {
+        return const VideoConversionExecutionResult.canceled();
+      }
+      return code == 0
+          ? const VideoConversionExecutionResult.success()
+          : VideoConversionExecutionResult.failed(errors.toString());
+    } finally {
+      _windowsProcess = null;
+    }
   }
 
   Future<VideoConversionExecutionResult> _convertWithFfmpegKit({

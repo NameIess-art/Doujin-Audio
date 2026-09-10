@@ -1,6 +1,6 @@
 # Doujin Audio
 
-Doujin Audio 是一款面向 ASMR、同人音声与本地媒体库的 Android 音频播放器，采用 Flutter 构建界面，播放核心由 Android 原生 Media3 / ExoPlayer 驱动。应用将本地存储媒体、ASMR.ONE 在线流式内容与自定义播放队列统一置于多会话体系中管理。
+Doujin Audio 是一款面向 ASMR、同人音声与本地媒体库的 Android / Windows 音频播放器，采用 Flutter 构建共享界面与业务逻辑，Android 播放核心使用 Media3 / ExoPlayer，Windows 使用 libmpv。应用将本地存储媒体、ASMR.ONE 在线流式内容与自定义播放队列统一置于多会话体系中管理。
 
 当前版本以 [`pubspec.yaml`](pubspec.yaml) 为唯一版本源；正式安装包与版本更新均通过 GitHub Release 分发：[GitHub Latest Release](https://github.com/NameIess-art/Doujin-Audio/releases/latest)。
 
@@ -18,6 +18,7 @@ Doujin Audio 是一款面向 ASMR、同人音声与本地媒体库的 Android �
 | Android arm64-v8a | `DoujinAudio-android-arm64-<tag>.apk` | 适用于绝大多数现代 64 位 Android 设备，体积更小 |
 | Android armeabi-v7a | `DoujinAudio-android-armv7-<tag>.apk` | 适用于旧款 32 位 ARM 架构 Android 设备 |
 | Android x86_64 | `DoujinAudio-android-x64-<tag>.apk` | 适用于 x86_64 架构平板、PC 模拟器或特定设备 |
+| Windows x64 | `DoujinAudio-windows-x64-<tag>-setup.exe` | Windows 10/11 当前用户安装，运行依赖随包提供；以 Release 实际资产为准 |
 
 本项目仅通过 GitHub Release 渠道进行官方发布，不分发应用商店 AAB 安装包或 iOS 版本。
 
@@ -238,13 +239,31 @@ flutter build apk --release --obfuscate --split-debug-info=build/app/outputs/sym
 flutter build apk --release --split-per-abi --target-platform android-arm,android-arm64,android-x64 --obfuscate --split-debug-info=build/app/outputs/symbols
 ```
 
+### Windows 构建与使用
+
+安装 Flutter 3.41.6、Visual Studio 的“使用 C++ 的桌面开发”组件与 Windows SDK 后运行：
+
+```bat
+tool\build_windows.bat
+```
+
+脚本支持从任意工作目录调用，自动下载并验证固定版本的媒体工具和 Inno Setup，构建 Release 后在 `dist/windows/` 输出安装包与同名 `.sha256`。安装包包含运行所需的 DLL、Flutter 资源及媒体工具；不能只复制主程序 EXE。默认没有 Windows 代码签名。仅复用已构建的 Release 时可传 `-SkipBuild`，该参数不替代构建验证。
+
+Windows 主界面使用横向布局，初始客户区为 1280×800、最小 960×600 逻辑像素。卡片滑动菜单改为鼠标右键菜单；关闭窗口进入托盘，使用托盘“退出”保存数据并结束进程。视频支持窗口内播放和全屏，悬浮字幕可以拖动和调整大小。
+
+直接使用 `flutter run -d windows` 前先运行 `tool\build_windows.bat -PrepareOnly`，准备随包媒体工具。Debug 与安装版分别保持单实例，调试定时任务也与安装版隔离。
+
+Windows 使用软件 EQ、系统媒体控制和音频输出设备变更事件。设置不展示“权限与后台”“缓存”和手机音频焦点选项；内部缓存仍用于在线播放、下载及封面。文件夹通过 Windows 选择器添加，ASMR.ONE、DLsite、视频转音频及备份功能沿用共享流程。
+
+未完成定时任务通过当前用户的 Windows 任务计划在登录后恢复。睡眠唤醒受硬件及系统电源策略限制，不支持关机唤醒或未登录时播放。备份仅支持同平台恢复，Android SAF 路径不能直接迁移到 Windows。升级保留用户数据，卸载清除定时任务但保留用户数据目录。
+
 ## 发布流程
 
 向仓库推送与 `pubspec.yaml` 版本严格一致的 Git Tag 会触发 GitHub Actions 流水线：
 
-1. 执行静态代码分析（flutter analyze）、全量 Flutter 测试、Android JVM 测试与 Debug APK 验证构建。
+1. 执行静态代码分析（flutter analyze）、全量 Flutter 测试、Android JVM 测试、Debug APK 和 Windows 验证构建。
 2. 调用仓库 Secrets 中的正式发布密钥构建 Android universal、arm64、armv7 与 x64 四种 APK 安装包。
-3. 为所有构建产物生成 `.sha256` 校验和，逐个检验 APK 签名完整性与 CPU ABI 架构匹配度，随后上传为 CI Artifacts。
+3. 构建 Windows x64 安装包，为所有构建产物生成 `.sha256` 校验和，逐个检验 APK 签名完整性与 CPU ABI 架构匹配度，随后上传为 CI Artifacts。
 4. 构建步骤全部成功后创建 Draft 草稿 Release，核实资产完整无误后，正式公开为 GitHub Latest Release。
 
 ```powershell

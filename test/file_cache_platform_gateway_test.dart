@@ -341,11 +341,12 @@ void main() {
   );
 
   test(
-    'non-Android scan and listing report unsupported without calls',
+    'unsupported platform scan and metadata report unsupported without calls',
     () async {
       final nonAndroidGateway = FileCachePlatformGateway(
         channel: channel,
         isAndroid: () => false,
+        isWindows: () => false,
       );
 
       expect(

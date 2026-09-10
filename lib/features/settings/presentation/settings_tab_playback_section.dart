@@ -209,86 +209,88 @@ List<Widget> _buildSettingsPlaybackSection({
             );
           },
         ),
-        Consumer(
-          builder: (context, ref, _) {
-            final strategy = ref.watch(
-              settingsStateProvider.select(
-                (state) =>
-                    state.value?.audioFocusStrategy ??
-                    AudioFocusStrategy.standard,
-              ),
-            );
-            return ListTile(
-              title: _settingsTitle(i18n.tr('audio_focus_strategy')),
-              leading: _settingsIcon(
-                Icons.multitrack_audio_rounded,
-                cs.onSurface,
-              ),
-              trailing: _settingsDropdown<AudioFocusStrategy>(
-                context,
-                value: strategy,
-                onChanged: (value) {
-                  if (value != null) {
-                    settingsController.setAudioFocusStrategy(value);
-                  }
-                },
-                items: AudioFocusStrategy.values
-                    .map(
-                      (value) => DropdownMenuItem<AudioFocusStrategy>(
-                        value: value,
-                        child: _settingsDropdownText(
-                          i18n.tr('audio_focus_strategy_${value.name}'),
+        if (defaultTargetPlatform != TargetPlatform.windows)
+          Consumer(
+            builder: (context, ref, _) {
+              final strategy = ref.watch(
+                settingsStateProvider.select(
+                  (state) =>
+                      state.value?.audioFocusStrategy ??
+                      AudioFocusStrategy.standard,
+                ),
+              );
+              return ListTile(
+                title: _settingsTitle(i18n.tr('audio_focus_strategy')),
+                leading: _settingsIcon(
+                  Icons.multitrack_audio_rounded,
+                  cs.onSurface,
+                ),
+                trailing: _settingsDropdown<AudioFocusStrategy>(
+                  context,
+                  value: strategy,
+                  onChanged: (value) {
+                    if (value != null) {
+                      settingsController.setAudioFocusStrategy(value);
+                    }
+                  },
+                  items: AudioFocusStrategy.values
+                      .map(
+                        (value) => DropdownMenuItem<AudioFocusStrategy>(
+                          value: value,
+                          child: _settingsDropdownText(
+                            i18n.tr('audio_focus_strategy_${value.name}'),
+                          ),
                         ),
-                      ),
-                    )
-                    .toList(),
-              ),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-            );
-          },
-        ),
-        Consumer(
-          builder: (context, ref, _) {
-            final behavior = ref.watch(
-              settingsStateProvider.select(
-                (state) =>
-                    state.value?.transientAudioFocusLossBehavior ??
-                    TransientAudioFocusLossBehavior.duck,
-              ),
-            );
-            return ListTile(
-              title: _settingsTitle(
-                i18n.tr('transient_audio_focus_loss_behavior'),
-              ),
-              leading: _settingsIcon(Icons.volume_down_rounded, cs.onSurface),
-              trailing: _settingsDropdown<TransientAudioFocusLossBehavior>(
-                context,
-                value: behavior,
-                onChanged: (value) {
-                  if (value != null) {
-                    settingsController.setTransientAudioFocusLossBehavior(
-                      value,
-                    );
-                  }
-                },
-                items: TransientAudioFocusLossBehavior.values
-                    .map(
-                      (value) =>
-                          DropdownMenuItem<TransientAudioFocusLossBehavior>(
-                            value: value,
-                            child: _settingsDropdownText(
-                              i18n.tr(
-                                'transient_audio_focus_loss_${value.name}',
+                      )
+                      .toList(),
+                ),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+              );
+            },
+          ),
+        if (defaultTargetPlatform != TargetPlatform.windows)
+          Consumer(
+            builder: (context, ref, _) {
+              final behavior = ref.watch(
+                settingsStateProvider.select(
+                  (state) =>
+                      state.value?.transientAudioFocusLossBehavior ??
+                      TransientAudioFocusLossBehavior.duck,
+                ),
+              );
+              return ListTile(
+                title: _settingsTitle(
+                  i18n.tr('transient_audio_focus_loss_behavior'),
+                ),
+                leading: _settingsIcon(Icons.volume_down_rounded, cs.onSurface),
+                trailing: _settingsDropdown<TransientAudioFocusLossBehavior>(
+                  context,
+                  value: behavior,
+                  onChanged: (value) {
+                    if (value != null) {
+                      settingsController.setTransientAudioFocusLossBehavior(
+                        value,
+                      );
+                    }
+                  },
+                  items: TransientAudioFocusLossBehavior.values
+                      .map(
+                        (value) =>
+                            DropdownMenuItem<TransientAudioFocusLossBehavior>(
+                              value: value,
+                              child: _settingsDropdownText(
+                                i18n.tr(
+                                  'transient_audio_focus_loss_${value.name}',
+                                ),
                               ),
                             ),
-                          ),
-                    )
-                    .toList(),
-              ),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-            );
-          },
-        ),
+                      )
+                      .toList(),
+                ),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+              );
+            },
+          ),
         Consumer(
           builder: (context, ref, _) {
             final behavior = ref.watch(

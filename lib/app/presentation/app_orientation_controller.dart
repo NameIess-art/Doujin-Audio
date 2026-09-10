@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -42,6 +43,7 @@ final appOrientationControllerProvider = Provider<AppOrientationController>((
 ) {
   return AppOrientationController(
     videoDisplay: ref.watch(videoDisplayPlatformGatewayProvider),
+    setWindowFullscreen: ref.watch(windowsFullscreenSetterProvider),
   );
 });
 
@@ -50,10 +52,14 @@ class AppOrientationController {
     PreferredOrientationsSetter? setPreferredOrientations,
     SystemUiModeSetter? setSystemUiMode,
     VideoDisplayPlatformGateway? videoDisplay,
+    Future<void> Function(bool)? setWindowFullscreen,
   }) : _setPreferredOrientations =
            setPreferredOrientations ?? _defaultSetPreferredOrientations,
        _setSystemUiMode = setSystemUiMode ?? _defaultSetSystemUiMode,
-       _videoDisplay = videoDisplay;
+       _videoDisplay = videoDisplay,
+       _setWindowFullscreen = setWindowFullscreen;
+
+  final Future<void> Function(bool)? _setWindowFullscreen;
 
   final PreferredOrientationsSetter _setPreferredOrientations;
   final SystemUiModeSetter _setSystemUiMode;
@@ -76,6 +82,12 @@ class AppOrientationController {
     final wasFullscreen = isVideoFullscreen;
     final leaseId = ++_nextLeaseId;
     _fullscreenLeaseIds.add(leaseId);
+    if (defaultTargetPlatform == TargetPlatform.windows) {
+      if (!wasFullscreen) {
+        await _setWindowFullscreen!(true);
+      }
+      return AppVideoFullscreenLease._(this, leaseId, initialBrightness: null);
+    }
     if (!wasFullscreen) {
       await _beginBrightnessControl();
       await _runPlatformUpdate(
@@ -98,6 +110,10 @@ class AppOrientationController {
 
   Future<void> _releaseVideoFullscreen(int leaseId) async {
     if (!_fullscreenLeaseIds.remove(leaseId) || isVideoFullscreen) return;
+    if (defaultTargetPlatform == TargetPlatform.windows) {
+      await _setWindowFullscreen!(false);
+      return;
+    }
     await _endBrightnessControl();
     await _runPlatformUpdate(
       'video_fullscreen_system_ui_restore_failed',
@@ -163,6 +179,7 @@ class AppOrientationController {
   }
 
   Future<void> _applyPreferredOrientation() {
+    if (defaultTargetPlatform == TargetPlatform.windows) return Future.value();
     return _runPlatformUpdate(
       'orientation_preference_update_failed',
       () => _setPreferredOrientations(

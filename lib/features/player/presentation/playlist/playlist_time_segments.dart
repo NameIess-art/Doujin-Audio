@@ -1,5 +1,6 @@
 import 'dart:math';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -160,6 +161,7 @@ class _TimeSegmentPanelState extends State<TimeSegmentPanel> {
     final loopActive = selected != null && selected.id == widget.loopSegmentId;
     final mediaHeight = MediaQuery.sizeOf(context).height;
     final isPortrait =
+        defaultTargetPlatform != TargetPlatform.windows &&
         MediaQuery.orientationOf(context) == Orientation.portrait;
     final targetHeight = isPortrait
         ? max(420.0, min(560.0, mediaHeight * 0.54))

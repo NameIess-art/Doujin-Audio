@@ -9,11 +9,12 @@ List<Widget> _buildSettingsUpdateSection({
   required VoidCallback onCheckForUpdates,
 }) {
   return <Widget>[
-    _SettingsSectionCard(
-      title: i18n.tr('settings_group_permissions'),
-      childrenUseOwnCards: true,
-      children: const [PermissionSettingsControls()],
-    ),
+    if (defaultTargetPlatform != TargetPlatform.windows)
+      _SettingsSectionCard(
+        title: i18n.tr('settings_group_permissions'),
+        childrenUseOwnCards: true,
+        children: const [PermissionSettingsControls()],
+      ),
     _SettingsSectionCard(
       title: i18n.tr('settings_group_updates'),
       children: [

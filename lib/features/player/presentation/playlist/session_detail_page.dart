@@ -1133,6 +1133,8 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                           child: Builder(
                             builder: (context) {
                               final isLandscape =
+                                  defaultTargetPlatform ==
+                                      TargetPlatform.windows ||
                                   MediaQuery.orientationOf(context) ==
                                   Orientation.landscape;
                               Widget artworkWidget = AnimatedSwitcher(

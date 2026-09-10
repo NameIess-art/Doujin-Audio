@@ -1,5 +1,6 @@
 import 'playback_providers.dart';
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'dart:math' as math;
 import 'dart:ui';
 
@@ -69,7 +70,11 @@ class _TimerTabState extends ConsumerState<TimerTab>
     WidgetsBinding.instance.addObserver(this);
     _showCompactDetail = widget.initialCompactDetail;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || _reliabilityStatusFuture != null) return;
+      if (!mounted ||
+          defaultTargetPlatform == TargetPlatform.windows ||
+          _reliabilityStatusFuture != null) {
+        return;
+      }
       final reliabilityStatus = _loadReliabilityStatus();
       setState(() {
         _reliabilityStatusFuture = reliabilityStatus;
@@ -91,7 +96,7 @@ class _TimerTabState extends ConsumerState<TimerTab>
   }
 
   void _refreshReliabilityStatus() {
-    if (!mounted) return;
+    if (!mounted || defaultTargetPlatform == TargetPlatform.windows) return;
     final reliabilityStatus = _loadReliabilityStatus();
     setState(() {
       _reliabilityStatusFuture = reliabilityStatus;
@@ -229,7 +234,10 @@ class _TimerTabState extends ConsumerState<TimerTab>
     required bool promptForCapability,
   }) async {
     timer.setAutoResume(enabled, hour, minute);
-    if (!promptForCapability) return;
+    if (!promptForCapability ||
+        defaultTargetPlatform == TargetPlatform.windows) {
+      return;
+    }
     final canScheduleExactAlarms = await _canScheduleExactAlarms();
     if (canScheduleExactAlarms || !mounted) return;
     final i18n = ref.read(appLanguageProviderInstanceProvider);

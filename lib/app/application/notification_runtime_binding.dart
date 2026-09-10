@@ -1,4 +1,5 @@
 import 'audio_path_coordinator.dart';
+import 'package:flutter/foundation.dart';
 import '../../features/library/application/library_facade.dart';
 import '../../features/player/application/notification_facade.dart';
 import '../../features/player/application/playback_facade.dart';
@@ -58,7 +59,9 @@ final class NotificationRuntimeBinding implements RuntimeBinding {
       trackByPath: (path) =>
           audioPaths.trackByPath(path, includeLibraryFallback: false),
       coverArtworkCacheService: library.coverArtworkCacheService,
-      notificationsEnabled: () => settings.notificationsEnabled,
+      notificationsEnabled: () =>
+          defaultTargetPlatform == TargetPlatform.windows ||
+          settings.notificationsEnabled,
     );
     final binding = NotificationRuntimeBinding._(notifications);
     _attached[notifications] = binding;

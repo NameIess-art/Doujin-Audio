@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import 'app_feedback.dart';
@@ -150,6 +151,66 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
     });
   }
 
+  Future<void> _showContextMenu(TapDownDetails details) async {
+    if (!widget.enabled) return;
+    widget.onWillReveal?.call();
+    final overlay =
+        Overlay.of(context).context.findRenderObject()! as RenderBox;
+    final position = overlay.globalToLocal(details.globalPosition);
+    PopupMenuItem<VoidCallback> item(
+      String label,
+      Widget icon,
+      VoidCallback action, {
+      bool destructive = false,
+    }) => PopupMenuItem<VoidCallback>(
+      value: action,
+      child: Row(
+        children: [
+          IconTheme(
+            data: IconThemeData(
+              size: 20,
+              color: destructive ? Theme.of(context).colorScheme.error : null,
+            ),
+            child: icon,
+          ),
+          const SizedBox(width: 12),
+          Flexible(child: Text(label)),
+        ],
+      ),
+    );
+    final action = await showMenu<VoidCallback>(
+      context: context,
+      position: RelativeRect.fromSize(position & Size.zero, overlay.size),
+      items: [
+        if (_hasLeadingAction)
+          item(
+            widget.leadingActionLabel ?? widget.leadingActionTooltip ?? '',
+            widget.leadingActionIconWidget ?? Icon(widget.leadingActionIcon),
+            widget.onLeadingAction!,
+          ),
+        if (_hasTertiaryAction)
+          item(
+            widget.tertiaryActionLabel ?? widget.tertiaryActionTooltip ?? '',
+            Icon(widget.tertiaryActionIcon),
+            widget.onTertiaryAction!,
+          ),
+        if (_hasSecondaryAction)
+          item(
+            widget.secondaryActionLabel ?? widget.secondaryActionTooltip ?? '',
+            Icon(widget.secondaryActionIcon),
+            widget.onSecondaryAction!,
+          ),
+        item(
+          widget.actionLabel,
+          Icon(widget.primaryActionIcon),
+          widget.onRemove,
+          destructive: widget.destructive,
+        ),
+      ],
+    );
+    if (mounted && widget.enabled) action?.call();
+  }
+
   void _handleHorizontalDragStart(DragStartDetails details) {
     if (!widget.enabled) return;
     _dragStartRevealedWidth = _revealedWidth;
@@ -250,8 +311,9 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
     final cs = Theme.of(context).colorScheme;
     final actionWidth = _activeActionWidth;
     final revealProgress = (_revealedWidth / actionWidth).clamp(0.0, 1.0);
-    final effectiveDestructive =
-        _revealedFromStart ? false : widget.destructive;
+    final effectiveDestructive = _revealedFromStart
+        ? false
+        : widget.destructive;
     final baseColor =
         widget.color ??
         (effectiveDestructive
@@ -324,6 +386,16 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
     }
 
     final closedContent = Builder(builder: buildClosedContent);
+    if (defaultTargetPlatform == TargetPlatform.windows) {
+      return Padding(
+        padding: widget.margin,
+        child: GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onSecondaryTapDown: widget.enabled ? _showContextMenu : null,
+          child: closedContent,
+        ),
+      );
+    }
     final cardWidget = RepaintBoundary(
       child: TapRegion(
         onTapOutside: (_) => _closePane(),
@@ -837,10 +909,7 @@ class PushPinOffIcon extends StatelessWidget {
 }
 
 class PushPinOffPainter extends CustomPainter {
-  const PushPinOffPainter({
-    required this.iconColor,
-    required this.size,
-  });
+  const PushPinOffPainter({required this.iconColor, required this.size});
 
   final Color iconColor;
   final double size;
@@ -895,4 +964,3 @@ class PushPinOffPainter extends CustomPainter {
     return oldDelegate.iconColor != iconColor || oldDelegate.size != size;
   }
 }
-

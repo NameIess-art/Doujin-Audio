@@ -313,7 +313,9 @@ class _SessionVideoFullscreenPageState
             : _FullscreenVideoPanMode.horizontalSeek;
       } else {
         _panMode = _panVerticalSide == SessionVideoVerticalGestureSide.left
-            ? _FullscreenVideoPanMode.brightness
+            ? widget.fullscreenLease.initialBrightness == null
+                  ? _FullscreenVideoPanMode.ignored
+                  : _FullscreenVideoPanMode.brightness
             : _FullscreenVideoPanMode.volume;
       }
     }

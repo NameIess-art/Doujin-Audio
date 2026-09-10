@@ -302,10 +302,41 @@ jobs:
           retention-days: 30
           path: build/app/outputs/symbols
 
+  windows:
+    runs-on: windows-latest
+    needs: flutter-test
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+      - name: Set up Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      - name: Test Windows adapters
+        run: flutter test test/windows_playback_bridge_test.dart test/windows_media_tools_test.dart test/windows_library_scan_merge_test.dart test/swipe_reveal_card_test.dart test/app_orientation_controller_test.dart
+      - name: Prepare Windows media tools
+        shell: cmd
+        run: tool\build_windows.bat -PrepareOnly
+      - name: Test Windows native integration
+        run: flutter test -d windows --dart-define=WINDOWS_TEST_NULL_AUDIO=true integration_test/windows_platform_test.dart
+      - name: Build Windows installer and checksum
+        shell: cmd
+        run: tool\build_windows.bat
+      - name: Store Windows installer
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: release-windows-${{ github.ref_name }}
+          if-no-files-found: error
+          path: |
+            dist/windows/*-setup.exe
+            dist/windows/*-setup.exe.sha256
+
   publish-release:
     if: startsWith(github.ref, 'refs/tags/')
     needs:
       - release-android
+      - windows
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -317,6 +348,12 @@ jobs:
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: release-android-${{ github.ref_name }}
+          path: release-assets
+
+      - name: Download verified Windows assets
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: release-windows-${{ github.ref_name }}
           path: release-assets
 
       - name: Verify complete release payload
@@ -332,6 +369,8 @@ jobs:
           DoujinAudio-android-armv7-${tag}.apk.sha256
           DoujinAudio-android-x64-${tag}.apk
           DoujinAudio-android-x64-${tag}.apk.sha256
+          DoujinAudio-windows-x64-${tag}-setup.exe
+          DoujinAudio-windows-x64-${tag}-setup.exe.sha256
           EOF
           find release-assets -maxdepth 1 -type f -printf '%f\n' | sort > actual-assets.txt
           sort -o expected-assets.txt expected-assets.txt

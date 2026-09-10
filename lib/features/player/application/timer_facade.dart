@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
+import 'package:flutter/foundation.dart';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -36,6 +37,9 @@ final class TimerFacade {
   final PowerPlatformService powerPlatformService;
   final Future<SharedPreferences> Function() _preferencesLoader;
   SharedPreferences? _cachedPreferences;
+  // Sessions retained for an armed countdown when Windows restarts with players paused.
+  final _restoredCountdownSessions = <String>{};
+  bool get _isWindows => defaultTargetPlatform == TargetPlatform.windows;
   static const String _settingsKey = 'timer_settings_v1';
   static const String _runtimeKey = 'timer_runtime_v1';
   static const TimerRuntimeCalculator _runtimeCalculator =
@@ -248,6 +252,7 @@ final class TimerFacade {
   }
 
   void resetRuntimeState({bool clearPausedSessions = true}) {
+    _restoredCountdownSessions.clear();
     _service.timerGeneration++;
     _service.countdownTimer?.cancel();
     _service.countdownTimer = null;
@@ -348,6 +353,14 @@ final class TimerFacade {
         .where((session) => session.effectivePlaying)
         .toList(growable: false);
     final pausedSessionIds = <String>[];
+    if (_isWindows) {
+      pausedSessionIds.addAll(
+        _restoredCountdownSessions.where(
+          (id) => _sessions().any((session) => session.id == id),
+        ),
+      );
+      _restoredCountdownSessions.clear();
+    }
     for (final session in playingSessions) {
       if (!_isCurrentGeneration(generation)) return;
       if (await _pauseSession(session)) {
@@ -572,6 +585,13 @@ final class TimerFacade {
         'autoResumeMinute': _service.autoResumeMinute,
         'autoResumeAtMs': _service.autoResumeAt?.millisecondsSinceEpoch,
         'pausedSessionIds': _service.pausedByTimerSessionIds,
+        if (_isWindows && _service.timerActive)
+          'countdownSessionIds': {
+            ..._restoredCountdownSessions,
+            ..._sessions()
+                .where((session) => session.effectivePlaying)
+                .map((session) => session.id),
+          }.toList(),
         'generation': _service.timerGeneration,
       });
       await preferences.setString(_runtimeKey, encoded);
@@ -675,7 +695,7 @@ final class TimerFacade {
         _readMillisValue(map['autoResumeHour']) ?? _service.autoResumeHour;
     final autoResumeMinute =
         _readMillisValue(map['autoResumeMinute']) ?? _service.autoResumeMinute;
-    final autoResumeAtMs = _readMillisValue(map['autoResumeAtMs']);
+    var autoResumeAtMs = _readMillisValue(map['autoResumeAtMs']);
     final generation =
         _readMillisValue(map['generation']) ?? _service.timerGeneration;
     final pausedSessionIds =
@@ -683,7 +703,31 @@ final class TimerFacade {
                 map['pausedByTimerPaths'] as List<dynamic>? ??
                 const <dynamic>[])
             .whereType<String>()
-            .toList(growable: false);
+            .toList();
+
+    if (_isWindows) {
+      _restoredCountdownSessions
+        ..clear()
+        ..addAll(
+          (map['countdownSessionIds'] as List? ?? const [])
+              .whereType<String>()
+              .where((id) => _sessions().any((session) => session.id == id)),
+        );
+      if (timerEndsAtMs != null &&
+          timerEndsAtMs <= now.millisecondsSinceEpoch &&
+          autoResumeEnabled &&
+          _restoredCountdownSessions.isNotEmpty) {
+        pausedSessionIds.addAll(_restoredCountdownSessions);
+        _restoredCountdownSessions.clear();
+        autoResumeAtMs ??= _runtimeCalculator
+            .nextClockTime(
+              now: DateTime.fromMillisecondsSinceEpoch(timerEndsAtMs),
+              hour: autoResumeHour,
+              minute: autoResumeMinute,
+            )
+            .millisecondsSinceEpoch;
+      }
+    }
 
     final hasPendingTrigger =
         waitingForPlayback &&
@@ -700,6 +744,7 @@ final class TimerFacade {
       if (removeLegacyPrefsWhenEmpty) {
         await (await _preferences).remove(_runtimeKey);
       }
+      if (_isWindows) await syncNativeAlarms();
       return;
     }
 
@@ -790,6 +835,7 @@ final class TimerFacade {
   }
 
   void _cancelTimerInternal() {
+    _restoredCountdownSessions.clear();
     _service.timerGeneration++;
     _service.countdownTimer?.cancel();
     _service.countdownTimer = null;

@@ -27,11 +27,14 @@ class AppUpdateService {
     HttpClient Function()? httpClientFactory,
     Future<Directory> Function()? temporaryDirectoryProvider,
     DateTime Function()? clock,
+    bool? isWindows,
   }) : _platform = platform ?? UpdatePlatformService(),
        _httpClientFactory = httpClientFactory ?? (() => HttpClient()),
        _temporaryDirectoryProvider =
            temporaryDirectoryProvider ?? getTemporaryDirectory,
-       _clock = clock ?? DateTime.now;
+       _clock = clock ?? DateTime.now,
+       _isWindows =
+           isWindows ?? (defaultTargetPlatform == TargetPlatform.windows);
 
   static const String owner = 'NameIess-art';
   static const String repo = 'doujin-audio';
@@ -49,6 +52,8 @@ class AppUpdateService {
   final HttpClient Function() _httpClientFactory;
   final Future<Directory> Function() _temporaryDirectoryProvider;
   final DateTime Function() _clock;
+  final bool _isWindows;
+  final _verifiedDownloads = <String, String>{};
   String? _activeDownloadIdentity;
   Future<File>? _activeDownload;
   final Set<void Function(double? progress)> _downloadListeners =
@@ -298,10 +303,7 @@ class AppUpdateService {
     DateTime? publishedAt,
   }) {
     final latestVersionName = _versionNameFromTag(tagName);
-    final updateAsset = _selectUpdateAsset(
-      assets,
-      currentVersion.androidAssetVariant,
-    );
+    final updateAsset = _selectUpdateAsset(assets, currentVersion, tagName);
     if (updateAsset == null) {
       return AppUpdateInfo(
         currentVersion: currentVersion,
@@ -357,6 +359,7 @@ class AppUpdateService {
             versionName: version.versionName,
             buildNumber: version.buildNumber,
             androidAssetVariant: version.androidAssetVariant,
+            platform: version.platform,
           );
   }
 
@@ -424,7 +427,17 @@ class AppUpdateService {
     if (!await updateDir.exists()) {
       await updateDir.create(recursive: true);
     }
-    final file = File(path.join(updateDir.path, _safeFileName(assetName)));
+    final file = File(
+      path.join(
+        updateDir.path,
+        _safeFileName(
+          assetName,
+          extension: info.currentVersion.platform == 'windows'
+              ? '.exe'
+              : '.apk',
+        ),
+      ),
+    );
     final partialFile = File('${file.path}.part');
     final cacheLease = AppCacheService.protectPaths(<String>[
       file.path,
@@ -457,10 +470,7 @@ class AppUpdateService {
       final request = await client
           .getUrl(Uri.parse(assetUrl))
           .timeout(_requestTimeout);
-      request.headers.set(
-        HttpHeaders.userAgentHeader,
-        'Doujin Audio updater',
-      );
+      request.headers.set(HttpHeaders.userAgentHeader, 'Doujin Audio updater');
       final response = await request.close().timeout(_requestTimeout);
       if (response.statusCode < 200 || response.statusCode >= 300) {
         throw const HttpException('Update download failed.');
@@ -488,6 +498,7 @@ class AppUpdateService {
         throw const FormatException('Update checksum verification failed.');
       }
       await partialFile.rename(file.path);
+      _verifiedDownloads[path.normalize(file.absolute.path)] = expectedChecksum;
       await file.setLastModified(_clock());
       await AppCacheService.enforceLimit();
       onProgress(1);
@@ -589,8 +600,23 @@ class AppUpdateService {
   }
 
   Future<UpdateInstallResult> _installUpdateOnce(File file) async {
-    final result = await _platform.installApk(file.path);
-    _logNativeFailure('installApk', result);
+    if (_isWindows) {
+      final expected = _verifiedDownloads[path.normalize(file.absolute.path)];
+      if (expected == null ||
+          !await file.exists() ||
+          (await sha256.bind(file.openRead()).first).toString() != expected) {
+        return const UpdateInstallResult(
+          ok: false,
+          needsPermission: false,
+          message:
+              'Update checksum verification failed. Download the update again.',
+        );
+      }
+    }
+    final result = _isWindows
+        ? await _platform.installWindowsUpdate(file.path)
+        : await _platform.installApk(file.path);
+    _logNativeFailure('installUpdate', result);
     final installResult = result.valueOrNull;
     return installResult == null
         ? UpdateInstallResult(
@@ -620,8 +646,21 @@ class AppUpdateService {
 
   static _GitHubAsset? _selectUpdateAsset(
     List<_GitHubAsset> assets,
-    String? androidAssetVariant,
-  ) => _selectApkAsset(assets, androidAssetVariant: androidAssetVariant);
+    AppVersionInfo version,
+    String tagName,
+  ) {
+    if (version.platform == 'windows') {
+      final name = 'DoujinAudio-windows-x64-$tagName-setup.exe';
+      return assets.cast<_GitHubAsset?>().firstWhere(
+        (asset) => asset?.name == name,
+        orElse: () => null,
+      );
+    }
+    return _selectApkAsset(
+      assets,
+      androidAssetVariant: version.androidAssetVariant,
+    );
+  }
 
   static _GitHubAsset? _selectApkAsset(
     List<_GitHubAsset> assets, {
@@ -733,8 +772,8 @@ class AppUpdateService {
     }
   }
 
-  static String _safeFileName(String value) {
-    const updateExtension = '.apk';
+  static String _safeFileName(String value, {String extension = '.apk'}) {
+    final updateExtension = extension;
     final cleaned = PathDisplay.safeFileName(
       value,
       replacement: '_',

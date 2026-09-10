@@ -9,11 +9,13 @@ class PlatformAppVersion {
     required this.versionName,
     required this.buildNumber,
     this.androidAssetVariant,
+    this.platform = 'android',
   });
 
   final String versionName;
   final int buildNumber;
   final String? androidAssetVariant;
+  final String platform;
 }
 
 class PlatformUpdateInstallResult {
@@ -45,6 +47,7 @@ class UpdatePlatformService {
           versionName: map['versionName'] as String,
           buildNumber: (map['buildNumber'] as num).toInt(),
           androidAssetVariant: map['androidAssetVariant'] as String?,
+          platform: map['platform'] as String? ?? 'android',
         );
       },
     );
@@ -66,8 +69,21 @@ class UpdatePlatformService {
   }
 
   Future<NativeResult<PlatformUpdateInstallResult>> installApk(String path) {
+    return _install(UpdateMethod.installApk, path);
+  }
+
+  Future<NativeResult<PlatformUpdateInstallResult>> installWindowsUpdate(
+    String path,
+  ) {
+    return _install('installWindowsUpdate', path);
+  }
+
+  Future<NativeResult<PlatformUpdateInstallResult>> _install(
+    String method,
+    String path,
+  ) {
     return _client.invoke<PlatformUpdateInstallResult>(
-      UpdateMethod.installApk,
+      method,
       arguments: <String, Object?>{'path': path},
       decode: (value) {
         final map = Map<Object?, Object?>.from(value as Map);

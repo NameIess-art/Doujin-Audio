@@ -374,6 +374,8 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
     final coverCacheWidth = coverCacheWidthForResolution(coverImageResolution);
     final listBottomInset = MobileOverlayInset.of(context);
     final isLandscape =
+        defaultTargetPlatform == TargetPlatform.windows ||
+        defaultTargetPlatform == TargetPlatform.windows ||
         MediaQuery.orientationOf(context) == Orientation.landscape;
     final listCacheExtent = playlistListCacheExtent(
       headerHeight: headerHeight,

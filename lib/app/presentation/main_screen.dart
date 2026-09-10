@@ -5,6 +5,7 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:ui';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -926,6 +927,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
     final layoutSize = _layoutViewSize();
     final width = layoutSize.width;
     final isDesktop =
+        defaultTargetPlatform == TargetPlatform.windows ||
         MediaQuery.orientationOf(context) == Orientation.landscape ||
         width >= _desktopBreakpoint;
     final isTinyWindow = width < 300 || layoutSize.height < 300;

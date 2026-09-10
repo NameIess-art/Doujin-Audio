@@ -180,25 +180,26 @@ List<Widget> _buildSettingsGeneralSection({
     _SettingsSectionCard(
       title: i18n.tr('settings_group_general_behavior'),
       children: [
-        Consumer(
-          builder: (context, ref, _) {
-            final enabled = ref.watch(
-              settingsStateProvider.select(
-                (state) => state.value?.portraitLockEnabled ?? false,
-              ),
-            );
-            return SwitchListTile(
-              title: _settingsTitle(i18n.tr('portrait_lock')),
-              value: enabled,
-              onChanged: settings.setPortraitLockEnabled,
-              secondary: _settingsIcon(
-                Icons.screen_lock_portrait_rounded,
-                cs.onSurface,
-              ),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-            );
-          },
-        ),
+        if (defaultTargetPlatform != TargetPlatform.windows)
+          Consumer(
+            builder: (context, ref, _) {
+              final enabled = ref.watch(
+                settingsStateProvider.select(
+                  (state) => state.value?.portraitLockEnabled ?? false,
+                ),
+              );
+              return SwitchListTile(
+                title: _settingsTitle(i18n.tr('portrait_lock')),
+                value: enabled,
+                onChanged: settings.setPortraitLockEnabled,
+                secondary: _settingsIcon(
+                  Icons.screen_lock_portrait_rounded,
+                  cs.onSurface,
+                ),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+              );
+            },
+          ),
         Consumer(
           builder: (context, ref, _) {
             final enabled = ref.watch(

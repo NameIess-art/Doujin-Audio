@@ -18,9 +18,12 @@ class AppLifecyclePlatformService {
   final bool? _isAndroidOverride;
 
   bool get _isAndroid => _isAndroidOverride ?? AppPlatform.isAndroid;
+  bool get _isWindows =>
+      _isAndroidOverride == null &&
+      defaultTargetPlatform == TargetPlatform.windows;
 
   Future<bool> terminateForPendingRestore() async {
-    if (!_isAndroid) {
+    if (!_isAndroid && !_isWindows) {
       await SystemNavigator.pop();
       return true;
     }
@@ -35,13 +38,10 @@ class AppLifecyclePlatformService {
     required String preset,
     required String themeMode,
   }) async {
-    if (!_isAndroid) return true;
+    if (!_isAndroid && !_isWindows) return true;
     final result = await _client.invoke<void>(
       AppLifecycleMethod.syncAppTheme,
-      arguments: <String, Object>{
-        'preset': preset,
-        'themeMode': themeMode,
-      },
+      arguments: <String, Object>{'preset': preset, 'themeMode': themeMode},
       decode: (_) {},
     );
     return result.isOk;

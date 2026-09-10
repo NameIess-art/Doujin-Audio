@@ -51,7 +51,7 @@ final class PlaybackKeepAliveCoordinator {
   }
 
   Future<bool> activateAudioSession() async {
-    if (AppPlatform.isAndroid) return true;
+    if (AppPlatform.isAndroid || AppPlatform.isWindows) return true;
     try {
       final audioSession = await AudioSession.instance;
       return await audioSession.setActive(true);
@@ -66,7 +66,7 @@ final class PlaybackKeepAliveCoordinator {
   }
 
   Future<void> deactivateAudioSession() async {
-    if (AppPlatform.isAndroid) return;
+    if (AppPlatform.isAndroid || AppPlatform.isWindows) return;
     try {
       final audioSession = await AudioSession.instance;
       await audioSession.setActive(false);

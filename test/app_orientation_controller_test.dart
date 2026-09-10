@@ -3,8 +3,51 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/app/presentation/app_orientation_controller.dart';
 import 'package:doujin_audio/core/errors/native_result.dart';
 import 'package:doujin_audio/core/platform/video_display_platform_gateway.dart';
+import 'package:doujin_audio/core/platform/windows_desktop_service.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+  testWidgets(
+    'Windows fullscreen uses desktop window without Android platform calls',
+    (tester) async {
+      final calls = <MethodCall>[];
+      const channel = MethodChannel('doujin_audio/windows_desktop');
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, (
+        call,
+      ) async {
+        calls.add(call);
+        return null;
+      });
+      addTearDown(
+        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          channel,
+          null,
+        ),
+      );
+      final controller = AppOrientationController(
+        setWindowFullscreen: WindowsDesktopService.instance.setFullscreen,
+        setPreferredOrientations: (_) async =>
+            fail('Android orientation invoked'),
+        setSystemUiMode: (_) async => fail('Android UI mode invoked'),
+      );
+      await controller.setPortraitLockEnabled(true);
+      final first = await controller.enterVideoFullscreen();
+      final second = await controller.enterVideoFullscreen();
+      expect(first.initialBrightness, isNull);
+      await first.release();
+      expect(calls, hasLength(1));
+      await second.release();
+      expect(calls.map((call) => call.method), [
+        'setFullscreen',
+        'setFullscreen',
+      ]);
+      expect(calls.map((call) => call.arguments), [
+        {'enabled': true},
+        {'enabled': false},
+      ]);
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.windows),
+  );
   test(
     'fullscreen overrides portrait lock and restores it on release',
     () async {

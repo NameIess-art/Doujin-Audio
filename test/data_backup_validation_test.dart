@@ -49,13 +49,28 @@ void main() {
 
   test('restore rejects a backup from another platform', () async {
     await expectLater(
-      _inspect(
-        _backupArchive(platform: 'other-platform'),
-        temporaryDirectory,
-      ),
+      _inspect(_backupArchive(platform: 'other-platform'), temporaryDirectory),
       throwsA(isA<FormatException>()),
     );
   });
+
+  test(
+    'Windows rejects Android backup before creating a pending restore',
+    () async {
+      await expectLater(
+        _inspect(
+          _backupArchive(platform: 'android'),
+          temporaryDirectory,
+          platform: 'windows',
+        ),
+        throwsA(isA<FormatException>()),
+      );
+      expect(
+        Directory('${temporaryDirectory.path}/backup_restore').existsSync(),
+        isFalse,
+      );
+    },
+  );
 
   test('restore preflights cumulative expanded size', () async {
     final archive = _backupArchive(database: List<int>.filled(1024, 0));
@@ -151,12 +166,13 @@ Future<BackupValidationResult> _inspect(
   int? maximumExpandedBytes,
   int? maximumPreferencesBytes,
   int? maximumAccountBytes,
+  String platform = 'test-platform',
 }) async {
   final file = File('${directory.path}/candidate.dabackup');
   await file.writeAsBytes(ZipEncoder().encode(archive));
   return DataBackupService(
     supportDirectoryProvider: () async => directory,
-    platformName: 'test-platform',
+    platformName: platform,
     maximumExpandedBytes: maximumExpandedBytes ?? 512 * 1024 * 1024,
     maximumPreferencesBytes: maximumPreferencesBytes ?? 16 * 1024 * 1024,
     maximumAccountBytes: maximumAccountBytes ?? 1024 * 1024,

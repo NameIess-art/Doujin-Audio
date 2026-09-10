@@ -279,9 +279,7 @@ extension _TimerTabBody on _TimerTabState {
           ),
           subtitle: Text(
             i18n.tr('stop_after_current_track_subtitle'),
-            style: TextStyle(
-              fontSize: compactMode ? 10 : 11,
-            ),
+            style: TextStyle(fontSize: compactMode ? 10 : 11),
           ),
           value: timerSlice.stopAfterCurrentTrack,
           onChanged: (enabled) {
@@ -439,7 +437,8 @@ extension _TimerTabBody on _TimerTabState {
                   ],
                   if (!showCompactOnly &&
                       (timerConfigured || timerSlice.autoResumeEnabled)) ...[
-                    buildReliabilityCard(),
+                    if (defaultTargetPlatform != TargetPlatform.windows)
+                      buildReliabilityCard(),
                     const SizedBox(height: 16),
                   ],
                   if (showCompactOnly ||

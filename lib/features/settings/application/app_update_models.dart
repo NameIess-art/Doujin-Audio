@@ -3,11 +3,13 @@ class AppVersionInfo {
     required this.versionName,
     required this.buildNumber,
     this.androidAssetVariant,
+    this.platform = 'android',
   });
 
   final String versionName;
   final int buildNumber;
   final String? androidAssetVariant;
+  final String platform;
 }
 
 enum AppUpdateStatus {

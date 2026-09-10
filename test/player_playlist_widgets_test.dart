@@ -3536,7 +3536,9 @@ void main() {
         ));
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 400));
-        await tester.pump();
+        // A throttled progress event starts the fade on this frame; let that
+        // animation finish before checking that its outgoing cue was removed.
+        await tester.pumpAndSettle();
         if (style == PlaybackDetailSubtitleStyle.compact) {
           expect(find.text('Automatic cue $index'), findsOneWidget);
           expect(find.text('Automatic cue ${index - 1}'), findsNothing);

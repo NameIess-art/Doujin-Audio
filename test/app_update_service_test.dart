@@ -105,6 +105,94 @@ void main() {
     expect(File('${file.path}.part').existsSync(), isFalse);
   });
 
+  test('Windows release selects exact installer and its checksum', () {
+    const exe = 'DoujinAudio-windows-x64-v1.0.1-setup.exe';
+    final result = AppUpdateService.buildUpdateInfoForTesting(
+      currentVersion: const AppVersionInfo(
+        versionName: '1.0.0',
+        buildNumber: 1,
+        platform: 'windows',
+      ),
+      tagName: 'v1.0.1',
+      releaseUrl: 'https://github.com/example/releases/v1.0.1',
+      assets: [
+        githubAsset('DoujinAudio-android-universal-v1.0.1.apk'),
+        githubAsset(exe),
+        githubAsset('$exe.sha256'),
+      ],
+    );
+    expect(result.assetName, exe);
+    expect(result.canDownload, true);
+  });
+
+  test('Windows refuses unverified installer without native launch', () async {
+    var launches = 0;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(updateChannel, (call) async {
+          launches++;
+          return {'ok': true};
+        });
+    final file = await File(
+      '${tempDir.path}/unverified.exe',
+    ).writeAsBytes(payload);
+    final result = await AppUpdateService(isWindows: true).installUpdate(file);
+    expect(result.ok, false);
+    expect(launches, 0);
+  });
+
+  test(
+    'Windows keeps exe extension and rechecks installer before launch',
+    () async {
+      const exe = 'DoujinAudio-windows-x64-v1.0.1-setup.exe';
+      server.listen((request) async {
+        if (request.uri.path == '/checksum') {
+          request.response.write('${sha256.convert(payload)}  $exe');
+        } else {
+          request.response.add(payload);
+        }
+        await request.response.close();
+      });
+      var launches = 0;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(updateChannel, (call) async {
+            expect(call.method, 'installWindowsUpdate');
+            launches++;
+            return {
+              'ok': true,
+              'value': {'ok': true, 'needsPermission': false},
+            };
+          });
+      final base = 'http://${server.address.host}:${server.port}';
+      final windowsService = AppUpdateService(
+        isWindows: true,
+        temporaryDirectoryProvider: () async => tempDir,
+      );
+      final file = await windowsService.downloadUpdate(
+        AppUpdateInfo(
+          currentVersion: const AppVersionInfo(
+            versionName: '1.0.0',
+            buildNumber: 1,
+            platform: 'windows',
+          ),
+          latestVersionName: '1.0.1',
+          tagName: 'v1.0.1',
+          assetName: exe,
+          assetUrl: '$base/update',
+          checksumAssetUrl: '$base/checksum',
+          releaseUrl: '$base/release',
+          isUpdateAvailable: true,
+        ),
+        onProgress: (_) {},
+      );
+      expect(file.path.endsWith('.exe'), true);
+      expect((await windowsService.installUpdate(file)).ok, true);
+      expect(launches, 1);
+      await file.writeAsString('tampered');
+      expect((await windowsService.installUpdate(file)).ok, false);
+      expect(launches, 1);
+    },
+  );
+
   test('concurrent callers share one update download', () async {
     var assetRequests = 0;
     server.listen((request) async {

@@ -14,6 +14,8 @@ import 'package:doujin_audio/app/state/subtitle_settings_provider.dart';
 import 'package:doujin_audio/features/settings/application/settings_repository.dart';
 import 'package:doujin_audio/features/player/application/native_playback_repository.dart';
 import 'package:doujin_audio/features/settings/presentation/settings_tab.dart';
+import 'package:doujin_audio/features/data_support/application/storage_usage_service.dart';
+import 'package:doujin_audio/core/platform/file_cache_platform_gateway.dart';
 import 'package:doujin_audio/features/settings/presentation/about_page.dart';
 import 'package:doujin_audio/core/widgets/top_page_header.dart';
 import 'package:doujin_audio/app/state/app_runtime_providers.dart';
@@ -42,6 +44,43 @@ void main() {
   tearDownAll(() async {
     await AppRuntimeTestFixture.disposeSharedDatabase(testDatabase);
   });
+
+  testWidgets(
+    'Windows hides Android permissions, cache and orientation settings',
+    (tester) async {
+      final harness = AppRuntimeWidgetTestFixture();
+      addTearDown(harness.dispose);
+      await tester.pumpWidget(harness.build(const SettingsTab()));
+      await tester.pumpAndSettle();
+      final i18n = harness.languageProvider;
+      for (final entry in {
+        'section_common': ['portrait_lock'],
+        'section_playback': [
+          'audio_focus_strategy',
+          'transient_audio_focus_loss_behavior',
+        ],
+        'section_data_storage': [
+          'settings_group_cache',
+          'max_cache_size',
+          'clear_app_cache',
+        ],
+        'section_updates_permissions': [
+          'settings_group_permissions',
+          'notification_permission_status',
+        ],
+      }.entries) {
+        await tester.ensureVisible(find.text(i18n.tr(entry.key)));
+        await tester.tap(find.text(i18n.tr(entry.key)));
+        await tester.pumpAndSettle();
+        for (final key in entry.value) {
+          expect(find.text(i18n.tr(key)), findsNothing);
+        }
+        Navigator.of(tester.element(find.byType(TopPageHeader))).pop();
+        await tester.pumpAndSettle();
+      }
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.windows),
+  );
 
   testWidgets('settings opens categorized secondary pages', (tester) async {
     final harness = AppRuntimeWidgetTestFixture();
@@ -405,7 +444,19 @@ void main() {
     (tester) async {
       final harness = AppRuntimeWidgetTestFixture();
       addTearDown(harness.dispose);
-      await tester.pumpWidget(harness.build(const SettingsTab()));
+      await tester.pumpWidget(
+        harness.build(
+          const SettingsTab(),
+          overrides: [
+            dataSupportStorageUsageServiceProvider.overrideWithValue(
+              StorageUsageService(
+                fileCacheGateway: _UnavailableStorageGateway(),
+                libraryTracks: () => const [],
+              ),
+            ),
+          ],
+        ),
+      );
       await tester.pump();
 
       final i18n = harness.languageProvider;
@@ -1000,11 +1051,8 @@ void main() {
     expect(title.overflow, TextOverflow.visible);
     expect(tester.getSize(startupTileFinder).height, greaterThan(58));
 
-    final dropdownFinder = find.byType(
-      DropdownButton<StartupPage>,
-    );
-    final dropdown = tester
-        .widget<DropdownButton<StartupPage>>(dropdownFinder);
+    final dropdownFinder = find.byType(DropdownButton<StartupPage>);
+    final dropdown = tester.widget<DropdownButton<StartupPage>>(dropdownFinder);
     expect(dropdown.isExpanded, isTrue);
     expect(dropdown.itemHeight, isNull);
 
@@ -1070,10 +1118,7 @@ void main() {
             final i18n = harness.languageProvider;
             await tester.tap(find.text(i18n.tr('section_common')));
             await tester.pumpAndSettle();
-            final tile = find.widgetWithText(
-              ListTile,
-              i18n.tr('startup_page'),
-            );
+            final tile = find.widgetWithText(ListTile, i18n.tr('startup_page'));
             expect(tile, findsOneWidget);
             expect(tester.getSize(tile).height, greaterThanOrEqualTo(58));
             expect(
@@ -1088,9 +1133,7 @@ void main() {
                 alignment: 0.5,
               );
               await tester.pumpAndSettle();
-              final dropdown = find.byType(
-                DropdownButton<StartupPage>,
-              );
+              final dropdown = find.byType(DropdownButton<StartupPage>);
               await tester.tap(dropdown);
               await tester.pumpAndSettle();
               expect(
@@ -1522,7 +1565,7 @@ void main() {
       nonSingleLoopMode: SessionLoopMode.folderSequential,
       volume: 1,
       createdAt: DateTime(2026),
-      state: PlayerState(false, ProcessingState.ready),
+      state: const PlayerState(false, ProcessingState.ready),
     );
     addTearDown(session.shutdown);
     harness.playbackService.sessions[session.id] = session;
@@ -1684,4 +1727,9 @@ final class _DeferredCardInfoSettingsRepository extends SettingsRepository {
     cardInfoFieldUpdates.add(List.of(fields));
     return _pendingPersistence.future;
   }
+}
+
+class _UnavailableStorageGateway extends FileCachePlatformGateway {
+  @override
+  Future<StorageUsagePlatformSnapshot?> readStorageUsage() async => null;
 }

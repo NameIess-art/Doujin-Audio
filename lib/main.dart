@@ -1,8 +1,13 @@
 import 'features/asmr/presentation/asmr_providers.dart';
 import 'features/settings/presentation/settings_providers.dart';
 import 'dart:async';
+import 'dart:io';
 
 import 'package:audio_session/audio_session.dart';
+import 'package:media_kit/media_kit.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:path/path.dart' as path;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -12,6 +17,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'app/localization/app_language_provider.dart';
 import 'app/application/app_bootstrap_controller.dart';
 import 'app/application/app_runtime_graph.dart';
+import 'app/application/windows_runtime_binding.dart';
 import 'app/state/app_runtime_providers.dart';
 import 'app/presentation/app_presentation_providers.dart';
 import 'app/presentation/app_bootstrap_host.dart';
@@ -62,6 +68,15 @@ StartupRestoreOutcome? _startupRestoreOutcome;
 
 Future<void> main() async {
   final binding = WidgetsFlutterBinding.ensureInitialized();
+  if (Platform.isWindows) {
+    MediaKit.ensureInitialized();
+    sqfliteFfiInit();
+    databaseFactory = databaseFactoryFfi;
+    final directory = await getApplicationSupportDirectory();
+    await databaseFactory.setDatabasesPath(
+      path.join(directory.path, 'databases'),
+    );
+  }
   binding.deferFirstFrame();
   var firstFrameAllowed = false;
 
@@ -134,13 +149,16 @@ Future<void> _initializeAudioPlayerApp() async {
 
   // Start essential services in parallel to minimize blocking before runApp
   final initFutures = Future.wait([
-    SystemChrome.setPreferredOrientations(
-      AppOrientationPolicy.current.allowedOrientations,
-    ),
-    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge),
-    AudioSession.instance.then(
-      (session) => session.configure(const AudioSessionConfiguration.music()),
-    ),
+    if (!Platform.isWindows)
+      SystemChrome.setPreferredOrientations(
+        AppOrientationPolicy.current.allowedOrientations,
+      ),
+    if (!Platform.isWindows)
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge),
+    if (!Platform.isWindows)
+      AudioSession.instance.then(
+        (session) => session.configure(const AudioSessionConfiguration.music()),
+      ),
   ]);
 
   SystemChrome.setSystemUIOverlayStyle(
@@ -252,6 +270,14 @@ Widget _createAudioPlayerApp({
         ),
       ),
     ]);
+    if (Platform.isWindows) {
+      await attachWindowsRuntime(
+        runtime: runtimeGraph.runtime,
+        playback: playbackFacade,
+        notifications: notificationFacade,
+        timer: timerFacade,
+      );
+    }
   }
 
   final app = ProviderScope(
@@ -421,10 +447,9 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp> {
       (previous, next) {
         if (previous != next) {
           unawaited(
-            ref.read(appLifecyclePlatformServiceProvider).syncAppTheme(
-              preset: next.$1.name,
-              themeMode: next.$2.name,
-            ),
+            ref
+                .read(appLifecyclePlatformServiceProvider)
+                .syncAppTheme(preset: next.$1.name, themeMode: next.$2.name),
           );
         }
       },

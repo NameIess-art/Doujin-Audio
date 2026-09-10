@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/core/widgets/swipe_reveal_card.dart';
@@ -5,6 +7,93 @@ import 'package:doujin_audio/app/theme/theme_provider.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  testWidgets(
+    'Windows context menu reuses all actions without triggering tap',
+    (tester) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+      final calls = <String>[];
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: SizedBox(
+                width: 300,
+                height: 100,
+                child: SwipeRevealCard(
+                  shape: const RoundedRectangleBorder(),
+                  actionLabel: 'Remove',
+                  removeTooltip: 'Remove',
+                  onRemove: () => calls.add('Remove'),
+                  onSecondaryAction: () => calls.add('Details'),
+                  secondaryActionLabel: 'Details',
+                  onTertiaryAction: () => calls.add('Download'),
+                  tertiaryActionLabel: 'Download',
+                  onLeadingAction: () => calls.add('Pin'),
+                  leadingActionLabel: 'Pin',
+                  child: InkWell(
+                    onTap: () => calls.add('Play'),
+                    child: const Center(child: Text('Track')),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      final card = find.byType(SwipeRevealCard);
+      final originalPosition = tester.getTopLeft(find.text('Track'));
+      await tester.drag(card, const Offset(-180, 0));
+      await tester.pumpAndSettle();
+      expect(tester.getTopLeft(find.text('Track')), originalPosition);
+      expect(find.byType(IconButton), findsNothing);
+      for (final label in ['Pin', 'Download', 'Details', 'Remove']) {
+        final click = await tester.startGesture(
+          tester.getCenter(card),
+          kind: PointerDeviceKind.mouse,
+          buttons: kSecondaryMouseButton,
+        );
+        await click.up();
+        await tester.pumpAndSettle();
+        expect(find.byType(PopupMenuItem<VoidCallback>), findsNWidgets(4));
+        await tester.tap(find.text(label));
+        await tester.pumpAndSettle();
+      }
+      expect(calls, ['Pin', 'Download', 'Details', 'Remove']);
+      debugDefaultTargetPlatformOverride = null;
+    },
+  );
+
+  testWidgets('Windows disabled card never opens a context menu', (
+    tester,
+  ) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+    addTearDown(() => debugDefaultTargetPlatformOverride = null);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SwipeRevealCard(
+            enabled: false,
+            shape: const RoundedRectangleBorder(),
+            actionLabel: 'Remove',
+            removeTooltip: 'Remove',
+            onRemove: () => fail('Disabled action executed'),
+            child: const SizedBox(width: 300, height: 100),
+          ),
+        ),
+      ),
+    );
+    final click = await tester.startGesture(
+      tester.getCenter(find.byType(SwipeRevealCard)),
+      kind: PointerDeviceKind.mouse,
+      buttons: kSecondaryMouseButton,
+    );
+    await click.up();
+    await tester.pumpAndSettle();
+    expect(find.byType(PopupMenuItem<VoidCallback>), findsNothing);
+    debugDefaultTargetPlatformOverride = null;
+  });
 
   testWidgets('default reveal colors follow the active color scheme', (
     tester,

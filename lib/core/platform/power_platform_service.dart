@@ -72,6 +72,9 @@ class PowerPlatformService implements PowerPlatformGateway {
   final bool? _isAndroidOverride;
 
   bool get _isAndroid => _isAndroidOverride ?? AppPlatform.isAndroid;
+  bool get _isWindows =>
+      _isAndroidOverride == null &&
+      defaultTargetPlatform == TargetPlatform.windows;
 
   Future<void> syncPlaybackTimerAlarms({
     required int? timerMode,
@@ -215,7 +218,7 @@ class PowerPlatformService implements PowerPlatformGateway {
   }
 
   Future<bool> acquireWakeLock({required String tag, int? timeoutMs}) async {
-    if (!_isAndroid) return true;
+    if (!_isAndroid && !_isWindows) return true;
     final result = await _client.invoke<bool>(
       PowerMethod.acquireWakeLock,
       arguments: <String, Object?>{'tag': tag, 'timeoutMs': timeoutMs},
@@ -226,7 +229,7 @@ class PowerPlatformService implements PowerPlatformGateway {
   }
 
   Future<bool> releaseWakeLock({required String tag}) async {
-    if (!_isAndroid) return true;
+    if (!_isAndroid && !_isWindows) return true;
     final result = await _client.invoke<bool>(
       PowerMethod.releaseWakeLock,
       arguments: <String, Object?>{'tag': tag},
@@ -238,7 +241,7 @@ class PowerPlatformService implements PowerPlatformGateway {
 
   @override
   Future<bool> setKeepScreenOn(bool enabled) async {
-    if (!_isAndroid) return true;
+    if (!_isAndroid && !_isWindows) return true;
     final result = await _client.invoke<bool>(
       PowerMethod.setKeepScreenOn,
       arguments: <String, Object?>{'enabled': enabled},
@@ -249,7 +252,7 @@ class PowerPlatformService implements PowerPlatformGateway {
   }
 
   Future<T?> _invokeBestEffort<T>(String method, [Object? arguments]) async {
-    if (!_isAndroid) return null;
+    if (!_isAndroid && !_isWindows) return null;
     final result = await _client.invoke<T?>(
       method,
       arguments: arguments,

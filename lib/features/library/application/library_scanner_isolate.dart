@@ -64,7 +64,7 @@ ScanMergeIsolateResult processScannedTracksInIsolate(
 
   final existingTracks = <String, MusicTrack>{};
   for (final track in payload.library) {
-    existingTracks[PathMatcher.normalize(track.path)] = track;
+    existingTracks[PathMatcher.equivalenceKey(track.path)] = track;
   }
 
   bool trackIsDirectlyInFolder(String folderPath, ScannedTrack track) {
@@ -73,7 +73,7 @@ ScanMergeIsolateResult processScannedTracksInIsolate(
   }
 
   MusicTrack canonicalizeTrackPath(MusicTrack track) {
-    final existing = existingTracks[PathMatcher.normalize(track.path)];
+    final existing = existingTracks[PathMatcher.equivalenceKey(track.path)];
     if (existing == null || existing.path == track.path) return track;
     return MusicTrack(
       path: existing.path,
@@ -120,7 +120,7 @@ ScanMergeIsolateResult processScannedTracksInIsolate(
   }
 
   bool trackNeedsRefresh(MusicTrack nextTrack) {
-    final existing = existingTracks[PathMatcher.normalize(nextTrack.path)];
+    final existing = existingTracks[PathMatcher.equivalenceKey(nextTrack.path)];
     return existing == null || mergedTrackHasChanges(existing, nextTrack);
   }
 

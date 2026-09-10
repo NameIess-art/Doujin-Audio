@@ -1,0 +1,26 @@
+{
+  "sqlite": {
+    "version": "3.5.0",
+    "url": "https://github.com/simolus3/sqlite3.dart/releases/download/sqlite3-3.5.0/sqlite3.x64.windows.dll",
+    "sha256": "858141a2826f53e8374cb07de2638e0f1ac944f49b897dd558feba5597e86d1c"
+  },
+  "mpv": {
+    "version": "20260903-69e63f425a",
+    "url": "https://github.com/shinchiro/mpv-winbuild-cmake/releases/download/20260903/mpv-dev-x86_64-20260903-git-69e63f425a.7z",
+    "sha256": "fac135c68a35b7639e39d72c0c365104edbaebdea39a0dfdd8c36e8c8e80faef"
+  },
+  "ffmpeg": {
+    "version": "8.0.1",
+    "url": "https://github.com/GyanD/codexffmpeg/releases/download/8.0.1/ffmpeg-8.0.1-essentials_build.zip",
+    "sha256": "e2aaeaa0fdbc397d4794828086424d4aaa2102cef1fb6874f6ffd29c0b88b673"
+  },
+  "nativeArchives": [
+    {"name": "mpv-dev-x86_64-20230924-git-652a1dd.7z", "sha256": "dce982222d7a23e4a1c6f0fb6cc39f6e899a6714624b95ea49cff6558ee97572"},
+    {"name": "ANGLE.7z", "sha256": "cc5911bb15d596fd5a2b362613ad35b7093b427117269a7359054a65746a5f9a"}
+  ],
+  "inno": {
+    "version": "6.7.3",
+    "url": "https://github.com/jrsoftware/issrc/releases/download/is-6_7_3/innosetup-6.7.3.exe",
+    "sha256": "9c73c3bae7ed48d44112a0f48e66742c00090bdb5bef71d9d3c056c66e97b732"
+  }
+}

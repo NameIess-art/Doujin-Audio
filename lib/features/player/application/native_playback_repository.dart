@@ -1,10 +1,17 @@
-import 'native_playback_bridge.dart';
+import 'package:flutter/foundation.dart';
+
 import '../../../core/errors/native_result.dart';
 import '../domain/audio_effects.dart';
+import 'native_playback_bridge.dart';
+import 'windows_playback_bridge.dart';
 
 class NativePlaybackRepository {
   NativePlaybackRepository({NativePlaybackBridgeBase? bridge})
-    : _bridge = bridge ?? NativePlaybackBridge.instance;
+    : _bridge =
+          bridge ??
+          (defaultTargetPlatform == TargetPlatform.windows
+              ? WindowsPlaybackBridge.instance
+              : NativePlaybackBridge.instance);
 
   final NativePlaybackBridgeBase _bridge;
 

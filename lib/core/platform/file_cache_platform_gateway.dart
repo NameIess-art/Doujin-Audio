@@ -3,7 +3,9 @@ import 'dart:io';
 import 'dart:isolate';
 
 import 'package:flutter/services.dart';
+import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as path;
+import 'package:path_provider/path_provider.dart';
 
 import 'library_scan_wire_models.dart';
 import '../logging/app_log_service.dart';
@@ -12,6 +14,7 @@ import '../errors/native_result.dart';
 import '../media/path_display.dart';
 import 'platform_channels.dart';
 import 'platform_method_client.dart';
+import 'windows_media_tools.dart';
 
 class CoverImageReference {
   const CoverImageReference({
@@ -79,18 +82,25 @@ class FileCachePlatformGateway {
     MethodChannel? channel,
     EventChannel? scanEvents,
     bool Function()? isAndroid,
+    bool Function()? isWindows,
   }) : _client = PlatformMethodClient(
          channel ?? const MethodChannel(FileCacheChannel.name),
        ),
        _scanEvents =
            scanEvents ?? const EventChannel(FileCacheChannel.scanEvents),
-       _isAndroid = isAndroid ?? (() => Platform.isAndroid);
+       _isAndroid = isAndroid ?? (() => Platform.isAndroid),
+       _isWindows =
+           isWindows ??
+           (() =>
+               isAndroid == null &&
+               defaultTargetPlatform == TargetPlatform.windows);
 
   static final FileCachePlatformGateway instance = FileCachePlatformGateway();
 
   final PlatformMethodClient _client;
   final EventChannel _scanEvents;
   final bool Function() _isAndroid;
+  final bool Function() _isWindows;
 
   void _logOptionalFailure<T>(String method, NativeResult<T> result) {
     if (result case NativeFailure<T>(
@@ -269,6 +279,30 @@ class FileCachePlatformGateway {
     required String rootFolder,
     bool recursive = true,
   }) async {
+    if (_isWindows() && !_isAndroid()) {
+      final images = <CoverImageReference>[];
+      final directory = Directory(rootFolder);
+      if (!await directory.exists()) return images;
+      await for (final entity in directory.list(
+        recursive: recursive,
+        followLinks: false,
+      )) {
+        if (entity is File &&
+            RegExp(
+              r'\.(png|jpe?g|webp|bmp)$',
+              caseSensitive: false,
+            ).hasMatch(entity.path)) {
+          images.add(
+            CoverImageReference(
+              displayPath: entity.path,
+              sourcePath: entity.path,
+            ),
+          );
+        }
+      }
+      images.sort((a, b) => a.displayPath.compareTo(b.displayPath));
+      return images;
+    }
     final result = await _client.invoke<List<Object?>>(
       FileCacheMethod.discoverRootImages,
       arguments: <String, Object?>{
@@ -295,6 +329,9 @@ class FileCachePlatformGateway {
     String? groupKey,
     String? rootFolder,
   }) async {
+    if (_isWindows() && !_isAndroid()) {
+      return WindowsMediaTools.instance.extractImage(path, videoFrame: false);
+    }
     final result = await _client.invoke<String?>(
       FileCacheMethod.resolveTrackCover,
       arguments: <String, Object?>{
@@ -314,6 +351,9 @@ class FileCachePlatformGateway {
     required String path,
     int? modifiedAtMs,
   }) async {
+    if (_isWindows() && !_isAndroid()) {
+      return WindowsMediaTools.instance.extractImage(path, videoFrame: true);
+    }
     final result = await _client.invoke<String?>(
       FileCacheMethod.resolveVideoFrame,
       arguments: <String, Object?>{'path': path, 'modifiedAtMs': ?modifiedAtMs},
@@ -326,6 +366,9 @@ class FileCachePlatformGateway {
   }
 
   Future<Duration?> resolveMediaDuration(String mediaPath) async {
+    if (_isWindows() && !_isAndroid()) {
+      return WindowsMediaTools.instance.readDuration(mediaPath);
+    }
     if (!_isAndroid()) return null;
     try {
       final result = await _client
@@ -467,6 +510,7 @@ class FileCachePlatformGateway {
   }
 
   Future<void> setApplicationCacheLimit(int maxBytes) async {
+    if (!_isAndroid()) return;
     await _client.invoke<Object?>(
       FileCacheMethod.setApplicationCacheLimit,
       arguments: <String, Object?>{'maxBytes': maxBytes},
@@ -475,6 +519,7 @@ class FileCachePlatformGateway {
   }
 
   Future<int> clearApplicationCache() async {
+    if (!_isAndroid()) return 0;
     final result = await _client.invoke<num>(
       FileCacheMethod.clearApplicationCache,
       decode: (value) => value as num,
@@ -483,6 +528,7 @@ class FileCachePlatformGateway {
   }
 
   Future<void> enforceApplicationCacheLimit(int maxBytes) async {
+    if (!_isAndroid()) return;
     await _client.invoke<Object?>(
       FileCacheMethod.enforceApplicationCacheLimit,
       arguments: <String, Object?>{'maxBytes': maxBytes},
@@ -491,9 +537,12 @@ class FileCachePlatformGateway {
   }
 
   Future<StorageUsagePlatformSnapshot?> readStorageUsage() async {
-    if (!_isAndroid()) return null;
+    if (!_isAndroid() && !_isWindows()) return null;
     final result = await _client.invoke<Map<String, Object?>>(
       FileCacheMethod.getStorageUsage,
+      arguments: _isWindows() && !_isAndroid()
+          ? <String, Object?>{'cachePath': (await getTemporaryDirectory()).path}
+          : null,
       decode: (value) => Map<String, Object?>.from(value as Map),
     );
     final raw = result.valueOrNull;

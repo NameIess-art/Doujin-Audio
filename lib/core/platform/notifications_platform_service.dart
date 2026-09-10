@@ -29,6 +29,9 @@ class NotificationsPlatformService {
   final Duration _timeout;
 
   bool get _isAndroid => _isAndroidOverride ?? AppPlatform.isAndroid;
+  bool get _isWindows =>
+      _isAndroidOverride == null &&
+      defaultTargetPlatform == TargetPlatform.windows;
 
   Future<bool> areNotificationsEnabled() async {
     if (!_isAndroid) return true;
@@ -84,7 +87,7 @@ class NotificationsPlatformService {
   Future<void> syncUnifiedPlaybackNotifications(
     Map<String, dynamic> payload,
   ) async {
-    if (!_isAndroid) return;
+    if (!_isAndroid && !_isWindows) return;
     try {
       final result = await _client
           .invoke<void>(
@@ -110,7 +113,7 @@ class NotificationsPlatformService {
   }
 
   Future<void> clearUnifiedPlaybackNotifications() async {
-    if (!_isAndroid) return;
+    if (!_isAndroid && !_isWindows) return;
     try {
       final result = await _client
           .invoke<void>(

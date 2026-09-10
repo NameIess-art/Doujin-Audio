@@ -3,6 +3,7 @@ import '../playback_providers.dart';
 import '../../../settings/presentation/settings_providers.dart';
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as path;
@@ -1017,6 +1018,7 @@ class _PlaybackQueueAudioEditPageState
             child: LayoutBuilder(
               builder: (context, constraints) {
                 final isLandscape =
+                    defaultTargetPlatform == TargetPlatform.windows ||
                     constraints.maxWidth > constraints.maxHeight;
                 final removalState = ref.watch(undoableRemovalStateProvider);
                 final queueEntries = queue.entries

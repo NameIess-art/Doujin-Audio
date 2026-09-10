@@ -244,10 +244,10 @@ flutter build apk --release --split-per-abi --target-platform android-arm,androi
 安装 Flutter 3.41.6、Visual Studio 的“使用 C++ 的桌面开发”组件与 Windows SDK 后运行：
 
 ```bat
-script\build_windows.bat
+tool\build_windows.bat
 ```
 
-`script/build_windows.bat` 转发到统一的 `tool/build_windows.bat`，参数及退出码保持一致。脚本支持从任意工作目录调用，自动下载并验证固定版本的媒体工具和 Inno Setup，构建 Release 后在 `dist/windows/` 输出安装包与同名 `.sha256`。安装包包含运行所需的 DLL、Flutter 资源及媒体工具；不能只复制主程序 EXE。默认没有 Windows 代码签名。仅复用已构建的 Release 时可传 `-SkipBuild`，该参数不替代构建验证。
+`tool/build_windows.bat` 统一负责 Windows 打包流程。脚本支持从任意工作目录调用，自动下载并验证固定版本的媒体工具和 Inno Setup，构建 Release 后在 `dist/windows/` 输出安装包与同名 `.sha256`。安装包包含运行所需的 DLL、Flutter 资源及媒体工具；不能只复制主程序 EXE。默认没有 Windows 代码签名。仅复用已构建的 Release 时可传 `-SkipBuild`，该参数不替代构建验证。
 
 Windows 主界面使用横向布局，初始客户区为 1280×800、最小 960×600 逻辑像素。卡片滑动菜单改为鼠标右键菜单；关闭窗口进入托盘，使用托盘“退出”保存数据并结束进程。视频支持窗口内播放和全屏，悬浮字幕在主窗口前台与后台均可显示，可以拖动、调整宽度，并按文字自动换行和调整高度。纵向页面提供常显滚动条，元数据标签使用右键复制。
 

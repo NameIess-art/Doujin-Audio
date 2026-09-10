@@ -326,6 +326,7 @@ const Map<String, String> appLanguageZh = {
   'audio_detail_current_cover': '当前封面',
   'audio_detail_rename_file': '重命名文件',
   'audio_detail_rename_failed': '重命名失败，请检查文件是否存在或正在被占用。',
+  'audio_detail_value_removed': '已移除「{value}」',
   'dlsite_review_title': '确认作品数据',
   'dlsite_save_cover': '保存封面到文件夹',
   'dlsite_fetch_failed': '获取作品数据失败，请检查RJ号、文件夹/文件名称、作品标题或网络后重试。',

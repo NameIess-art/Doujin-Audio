@@ -420,6 +420,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                 library: library,
                 playback: playback,
                 coverCacheWidth: coverCacheWidth,
+                showSubtitles: subtitleSettings.isGlobalEnabled(session.id),
                 isSelectionMode: _isSelectionMode,
                 isSelected: _selectedSessionIds.contains(session.id),
                 isPinned: isPinned,

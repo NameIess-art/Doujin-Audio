@@ -361,6 +361,7 @@ const Map<String, String> appLanguageEn = {
   'audio_detail_rename_file': 'Rename file',
   'audio_detail_rename_failed':
       'Rename failed. Check whether the file exists or is in use.',
+  'audio_detail_value_removed': 'Removed "{value}"',
   'dlsite_review_title': 'Review work data',
   'dlsite_save_cover': 'Save cover to folder',
   'dlsite_fetch_failed':

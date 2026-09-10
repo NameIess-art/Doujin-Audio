@@ -256,12 +256,26 @@ class _AudioDetailSheetState extends ConsumerState<AudioDetailSheet> {
   ) async {
     final detail = _detail;
     if (detail == null || _savingField != null || _runningAction) return;
+    final previousDetail = detail;
     final currentList = field.readList(detail);
     final updatedList = currentList.where((v) => v != valueToRemove).toList();
     final nextDetail = field == _AudioDetailField.tags
         ? detail.copyWith(tags: updatedList)
         : detail.copyWith(voiceActors: updatedList);
     await _saveField(field, nextDetail);
+    if (!mounted || _detail == previousDetail) return;
+    final i18n = ProviderScope.containerOf(
+      context,
+      listen: false,
+    ).read(appLanguageProviderInstanceProvider);
+    showAppSnackBar(
+      context,
+      i18n.tr('audio_detail_value_removed', {'value': valueToRemove}),
+      tone: AppFeedbackTone.destructive,
+      icon: Icons.remove_circle_outline_rounded,
+      actionLabel: i18n.tr('undo'),
+      onAction: () => unawaited(_saveField(field, previousDetail)),
+    );
   }
 
   Future<void> _renameTargetToName(

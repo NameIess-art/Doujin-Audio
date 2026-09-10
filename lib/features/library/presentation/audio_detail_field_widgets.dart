@@ -120,35 +120,30 @@ class _DetailCapsule extends StatelessWidget {
         child: Padding(
           padding: EdgeInsets.only(
             left: 12,
-            top: onDelete != null ? 3 : 6,
-            bottom: onDelete != null ? 3 : 6,
-            right: onDelete != null ? 4 : 12,
+            top: 6,
+            bottom: 6,
+            right: onDelete != null ? 6 : 12,
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(
-                text,
-                style: Theme.of(
-                  context,
-                ).textTheme.bodyMedium?.copyWith(color: cs.onSurface),
+              Flexible(
+                child: Text(
+                  text,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyMedium?.copyWith(color: cs.onSurface),
+                ),
               ),
               if (onDelete != null) ...[
                 const SizedBox(width: 4),
-                IconButton(
-                  iconSize: 14,
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints.tightFor(
-                    width: 20,
-                    height: 20,
-                  ),
-                  tooltip:
-                      MaterialLocalizations.of(context).deleteButtonTooltip,
-                  icon: Icon(
+                GestureDetector(
+                  onTap: onDelete,
+                  child: Icon(
                     Icons.close_rounded,
+                    size: 14,
                     color: cs.onSurfaceVariant,
                   ),
-                  onPressed: onDelete,
                 ),
               ],
             ],

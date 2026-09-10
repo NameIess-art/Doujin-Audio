@@ -6,10 +6,12 @@ import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart' show ProviderContainer;
+import 'package:flutter_riverpod/flutter_riverpod.dart'
+    show ProviderContainer, ProviderScope;
 import 'package:flutter_test/flutter_test.dart';
 import 'support/runtime_test_models.dart';
 import 'package:doujin_audio/app/presentation/app_presentation_providers.dart';
+import 'package:doujin_audio/app/state/subtitle_settings_provider.dart';
 import 'package:doujin_audio/app/theme/app_design_tokens.dart';
 import 'package:doujin_audio/core/media/path_matcher.dart';
 import 'package:doujin_audio/core/media/subtitle_parser.dart';
@@ -2416,6 +2418,54 @@ void main() {
     ]);
     expect(activeGradient.begin, Alignment.topLeft);
     expect(activeGradient.end, Alignment.bottomRight);
+
+    expect(
+      find.descendant(
+        of: find.byType(PlaybackQueueCard),
+        matching: find.byIcon(Icons.subtitles_rounded),
+      ),
+      findsNothing,
+    );
+    expect(
+      find.descendant(
+        of: find.byType(PlaybackQueueCard),
+        matching: find.byIcon(Icons.speed_rounded),
+      ),
+      findsNothing,
+    );
+
+    ProviderScope.containerOf(
+      tester.element(find.byType(PlaylistTab)),
+    ).read(subtitleSettingsProvider.notifier).setGlobalEnabled(
+      queueSession.id,
+      true,
+    );
+    queueSession.speed = 1.25;
+    playbackService.markActiveSessionsDirty();
+    playbackService.syncSlice(
+      activeSessions: <PlaybackSession>[queueSession],
+      playingSessionCount: 1,
+      focusedSessionId: queueSession.id,
+      multiThreadPlaybackEnabled: false,
+      coverGeneration: 0,
+      isInitialized: true,
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.descendant(
+        of: find.byType(PlaybackQueueCard),
+        matching: find.byIcon(Icons.subtitles_rounded),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byType(PlaybackQueueCard),
+        matching: find.byIcon(Icons.speed_rounded),
+      ),
+      findsOneWidget,
+    );
 
     unawaited(
       Navigator.of(

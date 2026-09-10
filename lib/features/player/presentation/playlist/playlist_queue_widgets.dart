@@ -66,6 +66,7 @@ class PlaybackQueueCard extends ConsumerWidget {
     required this.coverCacheWidth,
     required this.onOpen,
     required this.onEdit,
+    this.showSubtitles = false,
     this.isSelectionMode = false,
     this.isSelected = false,
     this.isPinned = false,
@@ -80,6 +81,7 @@ class PlaybackQueueCard extends ConsumerWidget {
   final int? coverCacheWidth;
   final VoidCallback onOpen;
   final VoidCallback onEdit;
+  final bool showSubtitles;
   final bool isSelectionMode;
   final bool isSelected;
   final bool isPinned;
@@ -177,6 +179,11 @@ class PlaybackQueueCard extends ConsumerWidget {
                   .audioDetailTargetForTrack(currentTrack),
             ).select((state) => state.value?.duration),
           );
+    final tokens = AppDesignTokens.of(context);
+    final asmrBlue = tokens.asmrAccent;
+    final featureIconColor = cardState.queueColorValue != null
+        ? activeColor
+        : (isAsmrOne ? asmrBlue : cs.primary);
     return UndoableRemovalTransition(
       hidden: isHidden,
       child: SwipeRevealCard(
@@ -385,13 +392,13 @@ class PlaybackQueueCard extends ConsumerWidget {
                           children: [
                             SessionFeatureBadgeStack(
                               featureIcons: sessionFeatureBadgeIcons(
-                                showSubtitles: false,
+                                showSubtitles: showSubtitles,
                                 channelSwapEnabled:
                                     cardState.channelSwapEnabled,
                                 audioEffects: cardState.audioEffects,
                                 speed: cardState.speed,
                               ),
-                              color: activeColor,
+                              color: featureIconColor,
                               child: IconButton(
                                 tooltip: cardState.isPlaying
                                     ? i18n.tr('pause')

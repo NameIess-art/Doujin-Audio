@@ -34,6 +34,7 @@ void SubtitleWindow::Show(bool visible) {
 }
 void SubtitleWindow::Update(const std::string& text) {
   text_ = winrt::to_hstring(text);
+  FitText();
   InvalidateRect(window_, nullptr, TRUE);
 }
 void SubtitleWindow::Style(const flutter::EncodableMap& style) {
@@ -52,7 +53,35 @@ void SubtitleWindow::Style(const flutter::EncodableMap& style) {
       if (*name == "backgroundColor") background_ = ParseColor(*text, background_);
     }
   }
+  FitText();
   InvalidateRect(window_, nullptr, TRUE);
+}
+void SubtitleWindow::FitText() {
+  if (!window_) return;
+  RECT bounds{}; GetWindowRect(window_, &bounds);
+  const double scale = GetDpiForWindow(window_) / 96.0;
+  const int padding = static_cast<int>((20 + border_depth_ * 4) * scale);
+  HDC dc = GetDC(window_);
+  auto font = CreateFontW(-static_cast<int>(font_size_ * scale), 0, 0, 0,
+      FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
+      CLIP_DEFAULT_PRECIS, ANTIALIASED_QUALITY, DEFAULT_PITCH,
+      family_.empty() ? L"Segoe UI" : family_.c_str());
+  auto previous = SelectObject(dc, font);
+  RECT text{0, 0, std::max(1L, bounds.right - bounds.left - 2 * padding), 0};
+  DrawTextW(dc, text_.empty() ? L" " : text_.c_str(), -1, &text,
+      DT_CENTER | DT_WORDBREAK | DT_NOPREFIX | DT_CALCRECT);
+  SelectObject(dc, previous); DeleteObject(font); ReleaseDC(window_, dc);
+  MONITORINFO monitor{sizeof(MONITORINFO)};
+  GetMonitorInfo(MonitorFromWindow(window_, MONITOR_DEFAULTTONEAREST), &monitor);
+  const auto& area = monitor.rcWork;
+  const int height = std::min<LONG>(area.bottom - area.top,
+      std::max<LONG>(static_cast<LONG>(50 * scale),
+          text.bottom + static_cast<LONG>((20 + border_depth_ * 8) * scale)));
+  const int top = std::clamp<LONG>(bounds.top, area.top, area.bottom - height);
+  if (height != bounds.bottom - bounds.top || top != bounds.top) {
+    SetWindowPos(window_, nullptr, bounds.left, top, bounds.right - bounds.left,
+        height, SWP_NOACTIVATE | SWP_NOZORDER);
+  }
 }
 LRESULT CALLBACK SubtitleWindow::WndProc(HWND hwnd, UINT message, WPARAM wp, LPARAM lp) {
   auto self = reinterpret_cast<SubtitleWindow*>(GetWindowLongPtr(hwnd, GWLP_USERDATA));
@@ -74,6 +103,7 @@ LRESULT CALLBACK SubtitleWindow::WndProc(HWND hwnd, UINT message, WPARAM wp, LPA
     reinterpret_cast<MINMAXINFO*>(lp)->ptMinTrackSize = {160,50}; return 0;
   }
   if (message == WM_SIZE) {
+    self->FitText();
     InvalidateRect(hwnd,nullptr,FALSE);
   }
   if (message == WM_PAINT) {
@@ -100,7 +130,24 @@ LRESULT CALLBACK SubtitleWindow::WndProc(HWND hwnd, UINT message, WPARAM wp, LPA
     const DWORD alpha = self->opacity_;
     const DWORD background = (alpha<<24) | ((GetRValue(self->background_)*alpha/255)<<16)
         | ((GetGValue(self->background_)*alpha/255)<<8) | (GetBValue(self->background_)*alpha/255);
-    std::fill(pixels,pixels+width*rows,background);
+    const double scale = GetDpiForWindow(hwnd) / 96.0;
+    const double radius = std::min({self->font_size_ * 1.2 * scale,
+        width / 2.0, rows / 2.0});
+    const double border = self->border_depth_ * 4 * scale;
+    // Match the preview's rounded surface and translucent white frame.
+    for (int y = 0; y < rows; ++y) for (int x = 0; x < width; ++x) {
+      const double dx = std::max(std::abs(x + 0.5 - width / 2.0) - (width / 2.0 - radius), 0.0);
+      const double dy = std::max(std::abs(y + 0.5 - rows / 2.0) - (rows / 2.0 - radius), 0.0);
+      const double edge = radius - std::sqrt(dx * dx + dy * dy);
+      DWORD color = background;
+      if (edge < border || x < border || y < border || x >= width-border || y >= rows-border) {
+        color = ((64 + alpha * 191 / 255) << 24)
+            | ((64 + GetRValue(self->background_) * alpha / 255 * 191 / 255) << 16)
+            | ((64 + GetGValue(self->background_) * alpha / 255 * 191 / 255) << 8)
+            | (64 + GetBValue(self->background_) * alpha / 255 * 191 / 255);
+      }
+      pixels[y * width + x] = edge < 0 ? 0 : color;
+    }
     std::fill(coverage,coverage+width*rows,0);
     // A separate grayscale mask preserves text opacity on a translucent background.
     auto composite = [&](COLORREF color) {
@@ -114,22 +161,15 @@ LRESULT CALLBACK SubtitleWindow::WndProc(HWND hwnd, UINT message, WPARAM wp, LPA
       }
     };
     const int height = static_cast<int>(self->font_size_ * GetDpiForWindow(hwnd) / 96.0);
-    auto font = CreateFontW(-height, 0, 0, 0, FW_MEDIUM, FALSE, FALSE, FALSE,
+    auto font = CreateFontW(-height, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
         DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, ANTIALIASED_QUALITY,
-        DEFAULT_PITCH, self->family_.c_str());
+        DEFAULT_PITCH, self->family_.empty() ? L"Segoe UI" : self->family_.c_str());
     auto previous = SelectObject(dc, font);
     SetBkMode(dc, TRANSPARENT);
-    InflateRect(&rect, -12, -8);
+    InflateRect(&rect, -static_cast<int>((20 + self->border_depth_ * 4) * scale),
+        -static_cast<int>((10 + self->border_depth_ * 4) * scale));
     const auto flags = DT_CENTER | DT_WORDBREAK | DT_NOPREFIX;
     SetTextColor(dc, RGB(255,255,255));
-    const int border = static_cast<int>(std::round(self->border_depth_));
-    for (int x = -border; x <= border; ++x) for (int y = -border; y <= border; ++y) {
-      if (x == 0 && y == 0) continue;
-      auto outline = rect; OffsetRect(&outline, x, y);
-      DrawTextW(dc, self->text_.c_str(), -1, &outline, flags);
-    }
-    composite(RGB(0,0,0));
-    std::fill(coverage,coverage+width*rows,0);
     DrawTextW(dc, self->text_.c_str(), -1, &rect, flags);
     composite(self->text_color_);
     SelectObject(dc, previous); DeleteObject(font);

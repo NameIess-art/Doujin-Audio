@@ -244,16 +244,16 @@ flutter build apk --release --split-per-abi --target-platform android-arm,androi
 安装 Flutter 3.41.6、Visual Studio 的“使用 C++ 的桌面开发”组件与 Windows SDK 后运行：
 
 ```bat
-tool\build_windows.bat
+script\build_windows.bat
 ```
 
-脚本支持从任意工作目录调用，自动下载并验证固定版本的媒体工具和 Inno Setup，构建 Release 后在 `dist/windows/` 输出安装包与同名 `.sha256`。安装包包含运行所需的 DLL、Flutter 资源及媒体工具；不能只复制主程序 EXE。默认没有 Windows 代码签名。仅复用已构建的 Release 时可传 `-SkipBuild`，该参数不替代构建验证。
+`script/build_windows.bat` 转发到统一的 `tool/build_windows.bat`，参数及退出码保持一致。脚本支持从任意工作目录调用，自动下载并验证固定版本的媒体工具和 Inno Setup，构建 Release 后在 `dist/windows/` 输出安装包与同名 `.sha256`。安装包包含运行所需的 DLL、Flutter 资源及媒体工具；不能只复制主程序 EXE。默认没有 Windows 代码签名。仅复用已构建的 Release 时可传 `-SkipBuild`，该参数不替代构建验证。
 
-Windows 主界面使用横向布局，初始客户区为 1280×800、最小 960×600 逻辑像素。卡片滑动菜单改为鼠标右键菜单；关闭窗口进入托盘，使用托盘“退出”保存数据并结束进程。视频支持窗口内播放和全屏，悬浮字幕可以拖动和调整大小。
+Windows 主界面使用横向布局，初始客户区为 1280×800、最小 960×600 逻辑像素。卡片滑动菜单改为鼠标右键菜单；关闭窗口进入托盘，使用托盘“退出”保存数据并结束进程。视频支持窗口内播放和全屏，悬浮字幕在主窗口前台与后台均可显示，可以拖动、调整宽度，并按文字自动换行和调整高度。纵向页面提供常显滚动条，元数据标签使用右键复制。
 
 直接使用 `flutter run -d windows` 前先运行 `tool\build_windows.bat -PrepareOnly`，准备随包媒体工具。Debug 与安装版分别保持单实例，调试定时任务也与安装版隔离。
 
-Windows 使用软件 EQ、系统媒体控制和音频输出设备变更事件。设置不展示“权限与后台”“缓存”和手机音频焦点选项；内部缓存仍用于在线播放、下载及封面。文件夹通过 Windows 选择器添加，ASMR.ONE、DLsite、视频转音频及备份功能沿用共享流程。
+Windows 使用软件 EQ、系统媒体控制和音频输出设备变更事件。设置不展示“权限与后台”“缓存”“存储空间”和手机音频焦点选项；内部缓存仍用于在线播放、下载及封面。文件夹通过 Windows 选择器添加，ASMR.ONE、DLsite、视频转音频及备份功能沿用共享流程。
 
 未完成定时任务通过当前用户的 Windows 任务计划在登录后恢复。睡眠唤醒受硬件及系统电源策略限制，不支持关机唤醒或未登录时播放。备份仅支持同平台恢复，Android SAF 路径不能直接迁移到 Windows。升级保留用户数据，卸载清除定时任务但保留用户数据目录。
 

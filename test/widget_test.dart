@@ -1,3 +1,4 @@
+import 'package:doujin_audio/app/state/subtitle_settings_provider.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_providers.dart';
 import 'package:doujin_audio/features/settings/presentation/settings_providers.dart';
 import 'support/asmr_controller_test_fixture.dart';
@@ -174,6 +175,35 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
     expect(tester.widget<AppFadeThroughIndexedStack>(mainPageStack).index, 3);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Windows foreground restore keeps subtitle overlay enabled', (tester) async {
+    final calls = <String>[];
+    const channel = MethodChannel('doujin_audio/subtitle_overlay');
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, (call) async {
+      calls.add(call.method);
+      return <String, Object?>{'ok': true, 'value': true};
+    });
+    addTearDown(() => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, null));
+    await _pumpAppShell(tester);
+    debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+    addTearDown(() => debugDefaultTargetPlatformOverride = null);
+    final container = ProviderScope.containerOf(tester.element(find.byType(MainScreen)));
+    container.read(subtitleSettingsProvider.notifier).setGlobalEnabled('orientation_session', true);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(calls, contains('startOverlay'));
+    WidgetsBinding.instance.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+    calls.clear();
+    WidgetsBinding.instance.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(calls, contains('startOverlay'));
+    expect(calls, isNot(contains('stopOverlay')));
+    await tester.pumpWidget(const SizedBox.shrink());
+    debugDefaultTargetPlatformOverride = null;
   });
 
   testWidgets('app lifecycle disposes downloads only when detached', (

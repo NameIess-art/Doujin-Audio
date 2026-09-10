@@ -71,6 +71,29 @@ void main() {
     await AppRuntimeTestFixture.disposeSharedDatabase(testDatabase);
   });
 
+  testWidgets('Windows scrollbar starts below the page header', (tester) async {
+    final fixture = AppRuntimeWidgetTestFixture();
+    addTearDown(fixture.dispose);
+    await tester.pumpWidget(fixture.build(const LibraryTab()));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+    void expectTrackBelowHeader() {
+      final headerBottom = tester.getBottomLeft(find.byType(TopPageHeader)).dy;
+      final paints = find.byWidgetPredicate((widget) =>
+          widget is CustomPaint && widget.foregroundPainter is ScrollbarPainter);
+      expect(paints, findsWidgets);
+      for (final element in paints.evaluate()) {
+        final painter = (element.widget as CustomPaint).foregroundPainter! as ScrollbarPainter;
+        final top = tester.getTopLeft(find.byWidget(element.widget)).dy;
+        expect(top + painter.padding.resolve(TextDirection.ltr).top, greaterThanOrEqualTo(headerBottom));
+      }
+    }
+    expectTrackBelowHeader();
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(seconds: 1));
+  }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
+
   testWidgets('top page header tolerates transient multiple scroll positions', (
     WidgetTester tester,
   ) async {

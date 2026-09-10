@@ -1,3 +1,5 @@
+import 'core/widgets/drag_only_scrollbar.dart';
+import 'package:flutter/foundation.dart';
 import 'features/asmr/presentation/asmr_providers.dart';
 import 'features/settings/presentation/settings_providers.dart';
 import 'dart:async';
@@ -327,6 +329,22 @@ class _StretchOverscrollBehavior extends MaterialScrollBehavior {
   const _StretchOverscrollBehavior();
 
   @override
+  Widget buildScrollbar(
+    BuildContext context,
+    Widget child,
+    ScrollableDetails details,
+  ) {
+    if (defaultTargetPlatform != TargetPlatform.windows ||
+        axisDirectionToAxis(details.direction) != Axis.vertical) {
+      return child;
+    }
+    return DragOnlyScrollbar(
+      controller: details.controller,
+      child: child,
+    );
+  }
+
+  @override
   Widget buildOverscrollIndicator(
     BuildContext context,
     Widget child,
@@ -492,7 +510,7 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp> {
       darkTheme: themeProvider.darkTheme,
       themeMode: themeProvider.themeMode,
       scrollBehavior: const _StretchOverscrollBehavior().copyWith(
-        scrollbars: false,
+        scrollbars: defaultTargetPlatform == TargetPlatform.windows,
         physics: const ClampingScrollPhysics(
           parent: AlwaysScrollableScrollPhysics(),
         ),

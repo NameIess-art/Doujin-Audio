@@ -49,7 +49,7 @@ part 'main_screen_widgets.dart';
 
 @visibleForTesting
 bool shouldRunGlobalSubtitleOverlay({required bool appInForeground}) {
-  return !appInForeground;
+  return defaultTargetPlatform == TargetPlatform.windows || !appInForeground;
 }
 
 enum MainDestinationType {
@@ -748,7 +748,11 @@ class _MainScreenState extends ConsumerState<MainScreen>
       return;
     }
     _appInForeground = true;
-    unawaited(_stopGlobalSubtitleOverlay(immediate: true));
+    if (shouldRunGlobalSubtitleOverlay(appInForeground: _appInForeground)) {
+      _requestGlobalSubtitleOverlaySync();
+    } else {
+      unawaited(_stopGlobalSubtitleOverlay(immediate: true));
+    }
     unawaited(_consumePendingNotificationSession());
     unawaited(_permissionActionController.handleAppResumed());
     unawaited(

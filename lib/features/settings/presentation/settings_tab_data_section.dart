@@ -17,7 +17,9 @@ List<Widget> _buildSettingsDataSection({
   return <Widget>[
     _SettingsSectionCard(
       title: i18n.tr('settings_group_data'),
-      leadingContent: const StorageUsageCard(),
+      leadingContent: defaultTargetPlatform == TargetPlatform.windows
+          ? null
+          : const StorageUsageCard(),
       childrenUseOwnCards: true,
       children: const [DataSupportSettingsControls()],
     ),

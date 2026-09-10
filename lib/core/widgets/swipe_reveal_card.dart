@@ -164,12 +164,15 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
       bool destructive = false,
     }) => PopupMenuItem<VoidCallback>(
       value: action,
+      height: 40,
       child: Row(
         children: [
           IconTheme(
             data: IconThemeData(
               size: 20,
-              color: destructive ? Theme.of(context).colorScheme.error : null,
+              color: destructive
+                  ? Theme.of(context).colorScheme.error
+                  : Theme.of(context).colorScheme.primary,
             ),
             child: icon,
           ),

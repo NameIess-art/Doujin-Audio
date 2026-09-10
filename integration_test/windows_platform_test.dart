@@ -50,6 +50,9 @@ void main() {
         });
         await overlay.updateSubtitle('Windows subtitle smoke test');
         await overlay.startOverlay();
+        await overlay.updateSubtitle(List.filled(30, '多行字幕 Windows wrapping').join(' '));
+        await overlay.updateStyle({'fontSize': 36.0, 'borderDepth': 0.5});
+        await overlay.updateSubtitle('Short subtitle');
         await overlay.stopOverlay();
         await WindowsDesktopService.instance.setFullscreen(true);
         await WindowsDesktopService.instance.setFullscreen(false);

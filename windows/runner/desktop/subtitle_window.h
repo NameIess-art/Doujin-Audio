@@ -11,6 +11,7 @@ class SubtitleWindow {
   void Update(const std::string& text);
   void Style(const flutter::EncodableMap& style);
  private:
+  void FitText();
   static LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);
   HWND window_ = nullptr;
   std::wstring text_;

@@ -1264,7 +1264,9 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
             MediaQuery(
               data: MediaQuery.of(context).copyWith(
                 padding: EdgeInsets.only(
-                  top: headerControlsFullHeight + 4,
+                  top: defaultTargetPlatform == TargetPlatform.windows
+                      ? listTopPadding
+                      : headerControlsFullHeight + 4,
                   bottom: listViewportBottomInset,
                   right: 4,
                 ),

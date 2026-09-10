@@ -56,7 +56,8 @@ analyze_output.txt
 /dist/
 
 # Local-only helper scripts and scratch work
-/script/
+/script/*
+!/script/build_windows.bat
 /scratch/
 /docs/
 /migrate_working_dir/

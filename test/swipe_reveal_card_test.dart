@@ -57,6 +57,16 @@ void main() {
         await click.up();
         await tester.pumpAndSettle();
         expect(find.byType(PopupMenuItem<VoidCallback>), findsNWidgets(4));
+        final item = tester.widget<PopupMenuItem<VoidCallback>>(
+          find.ancestor(of: find.text(label), matching: find.byType(PopupMenuItem<VoidCallback>)),
+        );
+        expect(item.height, 40);
+        final iconContext = tester.element(find.descendant(
+          of: find.ancestor(of: find.text(label), matching: find.byType(PopupMenuItem<VoidCallback>)),
+          matching: find.byType(Icon),
+        ));
+        final colors = Theme.of(iconContext).colorScheme;
+        expect(IconTheme.of(iconContext).color, label == 'Remove' ? colors.error : colors.primary);
         await tester.tap(find.text(label));
         await tester.pumpAndSettle();
       }

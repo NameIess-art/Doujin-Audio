@@ -474,6 +474,9 @@ class _DetailCapsule extends StatelessWidget {
       color: cs.surfaceContainerHighest,
       borderRadius: BorderRadius.circular(999),
       child: InkWell(
+        onSecondaryTap: defaultTargetPlatform == TargetPlatform.windows
+            ? onCopy
+            : null,
         onLongPress: defaultTargetPlatform == TargetPlatform.android
             ? onCopy
             : null,

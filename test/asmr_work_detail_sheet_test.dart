@@ -1,3 +1,5 @@
+import 'package:flutter/gestures.dart';
+import 'package:flutter/services.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_providers.dart';
 import 'support/asmr_controller_test_fixture.dart';
 import 'package:doujin_audio/app/localization/app_language_provider.dart';
@@ -16,6 +18,32 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'support/app_runtime_test_fixture.dart';
 
 void main() {
+  testWidgets('Windows metadata copies with right click only', (tester) async {
+    SharedPreferences.setMockInitialValues(const <String, Object>{});
+    final fixture = AppRuntimeWidgetTestFixture();
+    addTearDown(fixture.dispose);
+    final copied = <String>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+      if (call.method == 'Clipboard.setData') copied.add((call.arguments as Map)['text'] as String);
+      return null;
+    });
+    addTearDown(() => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, null));
+    await tester.pumpWidget(fixture.build(Builder(builder: (context) => TextButton(
+      onPressed: () => showAsmrWorkDetailSheet(context, _work()),
+      child: const Text('Open detail'),
+    ))));
+    await tester.tap(find.text('Open detail'));
+    await tester.pumpAndSettle();
+    final text = find.text('Test circle');
+    await tester.ensureVisible(text);
+    await tester.longPress(text);
+    expect(copied, isEmpty);
+    final click = await tester.startGesture(tester.getCenter(text), kind: PointerDeviceKind.mouse, buttons: kSecondaryMouseButton);
+    await click.up();
+    await tester.pumpAndSettle();
+    expect(copied, ['Test circle']);
+  }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
+
   setUp(UiInteractionCoordinator.instance.resetForTest);
   tearDown(UiInteractionCoordinator.instance.resetForTest);
 

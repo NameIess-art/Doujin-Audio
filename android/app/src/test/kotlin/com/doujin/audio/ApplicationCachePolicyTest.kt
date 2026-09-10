@@ -60,4 +60,13 @@ class ApplicationCachePolicyTest {
             )
         )
     }
+
+    @Test
+    fun `excludes partial downloads temp and nomedia from eviction`() {
+        assertFalse(isEvictableApplicationCacheFile(java.io.File("track.flac.part")))
+        assertFalse(isEvictableApplicationCacheFile(java.io.File("update.apk.tmp")))
+        assertFalse(isEvictableApplicationCacheFile(java.io.File(".nomedia")))
+        assertTrue(isEvictableApplicationCacheFile(java.io.File("cover_123.jpg")))
+        assertTrue(isEvictableApplicationCacheFile(java.io.File("track_456.mp3")))
+    }
 }

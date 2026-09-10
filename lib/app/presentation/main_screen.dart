@@ -731,6 +731,11 @@ class _MainScreenState extends ConsumerState<MainScreen>
   }
 
   @override
+  void didHaveMemoryPressure() {
+    unawaited(ref.read(audioRuntimeCoordinatorProvider).handleMemoryPressure());
+  }
+
+  @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.detached) {
       _appInForeground = false;

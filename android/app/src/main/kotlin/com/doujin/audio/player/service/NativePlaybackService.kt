@@ -13,6 +13,7 @@ import com.doujin.audio.storage.*
 
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.content.ComponentCallbacks2
 import android.content.Context
 import android.content.ComponentName
 import android.content.Intent
@@ -664,6 +665,20 @@ class NativePlaybackService : MediaSessionService() {
         if (foregroundCoordinator.onTaskRemoved()) {
             stopSelf()
         }
+    }
+
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        if (level >= ComponentCallbacks2.TRIM_MEMORY_BACKGROUND ||
+            level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL
+        ) {
+            UnifiedPlaybackNotificationController.trimArtworkMemory()
+        }
+    }
+
+    override fun onLowMemory() {
+        super.onLowMemory()
+        UnifiedPlaybackNotificationController.trimArtworkMemory()
     }
 
     override fun onDestroy() {

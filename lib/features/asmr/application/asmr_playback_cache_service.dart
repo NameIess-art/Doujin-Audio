@@ -64,6 +64,7 @@ class AsmrPlaybackCacheService {
     required String source,
   }) async {
     final temp = File('${target.path}.part');
+    final lease = AppCacheService.protectPaths(<String>[temp.path]);
     try {
       if (_disposed) return null;
       await root.create(recursive: true);
@@ -87,6 +88,7 @@ class AsmrPlaybackCacheService {
       _logFailure(error, stackTrace);
       return null;
     } finally {
+      lease.release();
       if (await temp.exists()) {
         await temp.delete();
       }

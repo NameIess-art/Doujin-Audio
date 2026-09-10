@@ -326,9 +326,9 @@ class AppCacheService {
     var totalBytes = 0;
     for (final file in files) {
       try {
-        if (_isProtected(file.path)) continue;
         final stat = await file.stat();
         totalBytes += stat.size;
+        if (_isProtected(file.path)) continue;
         entries.add(
           _CacheFileEntry(file: file, size: stat.size, modified: stat.modified),
         );

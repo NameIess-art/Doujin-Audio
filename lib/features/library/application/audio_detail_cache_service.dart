@@ -317,6 +317,13 @@ class AudioDetailCacheService {
     _bumpRevision();
   }
 
+  void trimMemory() {
+    final targetSize = (_maxResolvedEntries ~/ 10).clamp(0, _maxResolvedEntries);
+    while (_resolved.length > targetSize) {
+      _resolved.remove(_resolved.keys.first);
+    }
+  }
+
   Future<void> suspendAndWait() async {
     _suspended = true;
     clear();

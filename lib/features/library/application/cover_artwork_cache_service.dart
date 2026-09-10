@@ -263,28 +263,37 @@ class CoverArtworkCacheService {
     final coverSearchKey = coverSearchKeyForTrack(track, trackPath: trackPath);
     if (coverSearchKey == null) return Future<String?>.value();
 
-    return _playbackTrackCoverFutures.putIfAbsent(coverSearchKey, () {
-      final future = _resolvePlaybackCoverPathForTrack(
-        track,
-        trackPath: trackPath,
-      );
-      unawaited(
-        future.then(
-          (coverPath) {
-            if (coverPath == null &&
-                identical(_playbackTrackCoverFutures[coverSearchKey], future)) {
-              _playbackTrackCoverFutures.remove(coverSearchKey);
-            }
-          },
-          onError: (Object _) {
-            if (identical(_playbackTrackCoverFutures[coverSearchKey], future)) {
-              _playbackTrackCoverFutures.remove(coverSearchKey);
-            }
-          },
-        ),
-      );
-      return future;
-    });
+    final playbackFuture =
+        _playbackTrackCoverFutures.putIfAbsent(coverSearchKey, () {
+          final future = _resolvePlaybackCoverPathForTrack(
+            track,
+            trackPath: trackPath,
+          );
+          unawaited(
+            future.then(
+              (coverPath) {
+                if (coverPath == null &&
+                    identical(
+                      _playbackTrackCoverFutures[coverSearchKey],
+                      future,
+                    )) {
+                  _playbackTrackCoverFutures.remove(coverSearchKey);
+                }
+              },
+              onError: (Object _) {
+                if (identical(
+                  _playbackTrackCoverFutures[coverSearchKey],
+                  future,
+                )) {
+                  _playbackTrackCoverFutures.remove(coverSearchKey);
+                }
+              },
+            ),
+          );
+          return future;
+        });
+    _trimPlaybackTrackCoverFutures();
+    return playbackFuture;
   }
 
   Future<String?> _resolvePlaybackCoverPathForTrack(
@@ -792,6 +801,35 @@ class CoverArtworkCacheService {
     _trimResolvedCache(
       _resolvedRemoteCovers,
       _resolvedRemoteCoverLimit,
+      futures: _resolvedRemoteCoverFutures,
+    );
+  }
+
+  void _trimPlaybackTrackCoverFutures() {
+    _trimResolvedCache(
+      _playbackTrackCoverFutures,
+      _resolvedTrackCoverLimit,
+    );
+  }
+
+  void trimMemory() {
+    _folderImageIndexFutures.clear();
+    _manualCoverPathValidityCache.clear();
+    _manualCoverValidationFutures.clear();
+    _playbackTrackCoverFutures.clear();
+    _trimResolvedCache(
+      _resolvedTrackCovers,
+      _resolvedTrackCoverLimit ~/ 4,
+      futures: _resolvedTrackCoverFutures,
+    );
+    _trimResolvedCache(
+      _resolvedFolderCovers,
+      _resolvedFolderCoverLimit ~/ 4,
+      futures: _resolvedFolderCoverFutures,
+    );
+    _trimResolvedCache(
+      _resolvedRemoteCovers,
+      _resolvedRemoteCoverLimit ~/ 4,
       futures: _resolvedRemoteCoverFutures,
     );
   }
@@ -1893,10 +1931,21 @@ class CoverArtworkCacheService {
     }
   }
 
+  static const int _maxFolderImageSources = 500;
+
   void _rememberFolderImageSource(String displayPath, String sourcePath) {
     final display = displayPath.trim();
     final source = sourcePath.trim();
     if (display.isEmpty || source.isEmpty) return;
+    if (_folderImageSourceByDisplayKey.length >= _maxFolderImageSources) {
+      final oldestKey = _folderImageSourceByDisplayKey.keys.first;
+      final mappedSource = _folderImageSourceByDisplayKey.remove(oldestKey);
+      if (mappedSource != null) {
+        _folderImageDisplayBySourceKey.remove(
+          PathMatcher.equivalenceKey(mappedSource),
+        );
+      }
+    }
     _folderImageSourceByDisplayKey[PathMatcher.equivalenceKey(display)] =
         source;
     _folderImageDisplayBySourceKey[PathMatcher.equivalenceKey(source)] =

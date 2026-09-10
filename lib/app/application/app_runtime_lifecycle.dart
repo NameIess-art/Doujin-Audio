@@ -6,4 +6,6 @@ abstract interface class AppRuntimeLifecycle {
   Future<void> resumeForeground();
 
   Future<void> dispose();
+
+  Future<void> handleMemoryPressure() => Future<void>.value();
 }

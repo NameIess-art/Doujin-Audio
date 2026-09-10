@@ -1181,6 +1181,11 @@ final class LibraryFacade implements LibraryCatalog {
     _service.scanProgressNotifyTimer = null;
   }
 
+  void trimMemory() {
+    _coverArtworkCacheService?.trimMemory();
+    detailCacheService.trimMemory();
+  }
+
   void syncPresentationState({bool? isInitialized}) {
     _syncStateSlice(isInitialized: isInitialized);
   }

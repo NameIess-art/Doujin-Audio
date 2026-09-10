@@ -51,6 +51,35 @@ void main() {
 
     expect(cache.load(target), throwsA(isA<AudioDetailOperationCancelled>()));
   });
+
+  test('trimMemory prunes resolved details down to budget', () async {
+    final repository = _FakeAudioDetailRepository(
+      AudioDetail.empty(AudioDetailTarget.libraryRootFolder('/library/work')),
+    );
+    final cache = AudioDetailCacheService(
+      repository: repository,
+      maxResolvedEntries: 20,
+    );
+
+    for (var i = 0; i < 15; i++) {
+      final target = AudioDetailTarget.libraryRootFolder('/library/work_$i');
+      repository.detail = AudioDetail.empty(target);
+      await cache.load(target);
+      expect(cache.resolvedDetail(target), isNotNull);
+    }
+
+    cache.trimMemory();
+
+    // With maxResolvedEntries: 20, trimMemory prunes to 20 ~/ 10 = 2 entries
+    var retainedCount = 0;
+    for (var i = 0; i < 15; i++) {
+      final target = AudioDetailTarget.libraryRootFolder('/library/work_$i');
+      if (cache.resolvedDetail(target) != null) {
+        retainedCount++;
+      }
+    }
+    expect(retainedCount, 2);
+  });
 }
 
 final class _FakeAudioDetailRepository implements AudioDetailRepository {

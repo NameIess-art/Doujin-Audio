@@ -69,7 +69,7 @@ extension PlaybackSessionPersistenceCoordinator on PlaybackFacade {
         lastPlayedAt: item.lastPlayedAtMs == null
             ? null
             : DateTime.fromMillisecondsSinceEpoch(item.lastPlayedAtMs!),
-        state: PlayerState(false, ProcessingState.idle),
+        state: const PlayerState(false, ProcessingState.idle),
         customQueueTracks: customQueueTracks,
         playbackQueue: item.playbackQueue,
         currentQueueIndex: recordProgress ? item.currentQueueIndex : 0,

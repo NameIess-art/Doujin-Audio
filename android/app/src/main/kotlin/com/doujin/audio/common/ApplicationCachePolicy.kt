@@ -11,6 +11,11 @@ internal fun shouldEvictApplicationCacheEntry(
     return totalBytes > maxBytes && remainingFiles > 1
 }
 
+internal fun isEvictableApplicationCacheFile(file: File): Boolean {
+    val name = file.name
+    return !name.endsWith(".part") && !name.endsWith(".tmp") && name != ".nomedia"
+}
+
 internal fun applicationCacheTrimTargetBytes(maxBytes: Long): Long {
     val normalizedMaxBytes = maxBytes.coerceAtLeast(1L)
     return (normalizedMaxBytes - normalizedMaxBytes / 10L)
@@ -80,7 +85,9 @@ internal class ApplicationCachePolicy(
         if (totalBytes > maxBytes) {
             val trimTargetBytes = applicationCacheTrimTargetBytes(maxBytes)
             var remainingFiles = files.size
-            files.sortedBy(File::lastModified).forEach { file ->
+            files.filter(::isEvictableApplicationCacheFile)
+                .sortedBy(File::lastModified)
+                .forEach { file ->
                 if (!shouldEvictApplicationCacheEntry(totalBytes, trimTargetBytes, remainingFiles)) {
                     return@forEach
                 }

@@ -22,6 +22,7 @@ import '../../features/player/application/playback_subtitle_service.dart';
 import '../../features/player/application/timer_facade.dart';
 import '../../features/player/domain/audio_effects.dart';
 import '../../features/player/domain/playback_mode.dart';
+import '../../features/settings/application/app_cache_service.dart';
 import '../../features/settings/application/settings_repository.dart';
 import 'audio_path_coordinator.dart';
 import 'playback_keep_alive_coordinator.dart';
@@ -102,6 +103,20 @@ final class PlaybackCommandCoordinator
       _syncNotificationStateCallback(
         immediateUnifiedSync: immediateUnifiedSync,
       );
+
+  CachePathLease? _activePlaybackCacheLease;
+
+  void _syncActivePlaybackCacheLease() {
+    final activePaths = _sessions.values
+        .where((session) => session.playbackRequested)
+        .map((session) => session.currentTrackPath)
+        .where((path) => path.isNotEmpty && !path.contains('://'))
+        .toSet();
+    _activePlaybackCacheLease?.release();
+    _activePlaybackCacheLease = activePaths.isNotEmpty
+        ? AppCacheService.protectPaths(activePaths)
+        : null;
+  }
 
   String? resolvedPlaybackCoverPathForTrack(
     MusicTrack? track, {

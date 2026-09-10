@@ -1,8 +1,10 @@
 import '../../features/asmr/application/asmr_download_manager.dart';
+import '../../features/library/application/cover_image_cache_policy.dart';
 import '../../features/library/application/library_facade.dart';
 import '../../features/player/application/notification_facade.dart';
 import '../../features/player/application/playback_facade.dart';
 import '../../features/player/application/timer_facade.dart';
+import '../../features/settings/application/app_cache_service.dart';
 import '../../features/settings/application/settings_repository.dart';
 import 'app_persistence_coordinator.dart';
 import 'app_runtime_lifecycle.dart';
@@ -47,6 +49,7 @@ final class AppLifecycleBinding implements RuntimeBinding, AppRuntimeLifecycle {
       onEnterBackground: _enterBackground,
       onResumeForeground: _resumeForeground,
       onDispose: _disposeRuntime,
+      onMemoryPressure: _handleMemoryPressure,
     );
   }
 
@@ -103,11 +106,20 @@ final class AppLifecycleBinding implements RuntimeBinding, AppRuntimeLifecycle {
   Future<void> resumeForeground() => _runtime.resumeForeground();
 
   @override
+  Future<void> handleMemoryPressure() => _runtime.handleMemoryPressure();
+
+  @override
   Future<void> dispose() => _disposeFuture ??= _dispose();
 
   Future<void> _dispose() async {
     await _asmrDownloads?.pauseAllTasks();
     await _runtime.dispose();
+  }
+
+  void _handleMemoryPressure() {
+    trimCoverImageCacheOnMemoryPressure();
+    _library.trimMemory();
+    AppCacheService.scheduleEnforce();
   }
 
   void _enterBackground() {

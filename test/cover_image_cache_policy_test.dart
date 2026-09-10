@@ -61,4 +61,15 @@ void main() {
     expect(cache.currentSize, 0);
     expect(cache.currentSizeBytes, 0);
   });
+
+  test('memory pressure trim clears image cache and live images', () {
+    final cache = ImageCache()
+      ..maximumSize = 300
+      ..maximumSizeBytes = 64 * 1024 * 1024;
+
+    trimCoverImageCacheOnMemoryPressure(imageCache: cache);
+
+    expect(cache.currentSize, 0);
+    expect(cache.currentSizeBytes, 0);
+  });
 }

@@ -759,6 +759,76 @@ void main() {
     },
   );
 
+  testWidgets(
+    'carousel hides indicator dots when compactForFab is enabled',
+    (tester) async {
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      final session1 = PlaybackSession(
+        id: 'session_1',
+        currentTrackPath: '/track1.mp3',
+        loopMode: SessionLoopMode.folderSequential,
+        nonSingleLoopMode: SessionLoopMode.folderSequential,
+        volume: 1.0,
+        createdAt: DateTime.now(),
+        state: const PlayerState(false, ProcessingState.idle),
+      );
+      final session2 = PlaybackSession(
+        id: 'session_2',
+        currentTrackPath: '/track2.mp3',
+        loopMode: SessionLoopMode.folderSequential,
+        nonSingleLoopMode: SessionLoopMode.folderSequential,
+        volume: 1.0,
+        createdAt: DateTime.now(),
+        state: const PlayerState(false, ProcessingState.idle),
+      );
+      addTearDown(session1.shutdown);
+      addTearDown(session2.shutdown);
+      final sessions = <PlaybackSessionSnapshot>[
+        PlaybackSessionSnapshot.fromRuntime(session1),
+        PlaybackSessionSnapshot.fromRuntime(session2),
+      ];
+
+      // With compactForFab: true, indicator dots should not be rendered
+      await tester.pumpWidget(
+        fixture.build(
+          ActiveSessionCarousel(
+            sessions: sessions,
+            compactForFab: true,
+            onOpenSession: (_) {},
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.descendant(
+          of: find.byType(ActiveSessionCarousel),
+          matching: find.byType(AnimatedContainer),
+        ),
+        findsNothing,
+      );
+
+      // With compactForFab: false, indicator dots should be rendered
+      await tester.pumpWidget(
+        fixture.build(
+          ActiveSessionCarousel(
+            sessions: sessions,
+            compactForFab: false,
+            onOpenSession: (_) {},
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.descendant(
+          of: find.byType(ActiveSessionCarousel),
+          matching: find.byType(AnimatedContainer),
+        ),
+        findsNWidgets(2),
+      );
+    },
+  );
+
   test('equalizer badge only appears while equalizer is enabled', () {
     final disabledIcons = sessionFeatureBadgeIcons(
       showSubtitles: false,

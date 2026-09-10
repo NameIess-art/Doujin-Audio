@@ -18,6 +18,7 @@ final class AudioRuntimeCoordinator implements AppRuntimeLifecycle {
     required AudioRuntimeAction onEnterBackground,
     required AudioRuntimeAction onResumeForeground,
     required AudioRuntimeAction onDispose,
+    AudioRuntimeAction? onMemoryPressure,
   }) : _snapshots = snapshots,
        _progressUpdates = progressUpdates,
        _startListening = startListening,
@@ -27,7 +28,8 @@ final class AudioRuntimeCoordinator implements AppRuntimeLifecycle {
        _onStart = onStart,
        _onEnterBackground = onEnterBackground,
        _onResumeForeground = onResumeForeground,
-       _onDispose = onDispose;
+       _onDispose = onDispose,
+       _onMemoryPressure = onMemoryPressure;
 
   final Stream<NativePlaybackSnapshot> _snapshots;
   final Stream<NativePlaybackProgressUpdate> _progressUpdates;
@@ -39,6 +41,7 @@ final class AudioRuntimeCoordinator implements AppRuntimeLifecycle {
   final AudioRuntimeAction _onEnterBackground;
   final AudioRuntimeAction _onResumeForeground;
   final AudioRuntimeAction _onDispose;
+  final AudioRuntimeAction? _onMemoryPressure;
 
   StreamSubscription<NativePlaybackSnapshot>? _snapshotSubscription;
   StreamSubscription<NativePlaybackProgressUpdate>? _progressSubscription;
@@ -82,6 +85,12 @@ final class AudioRuntimeCoordinator implements AppRuntimeLifecycle {
     if (!_started || _disposed) return;
     _startListening();
     await _onResumeForeground();
+  }
+
+  @override
+  Future<void> handleMemoryPressure() async {
+    if (_disposed) return;
+    await _onMemoryPressure?.call();
   }
 
   @override

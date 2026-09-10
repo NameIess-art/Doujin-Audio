@@ -332,7 +332,7 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
                   },
                 ),
               ),
-              if (sessions.length > 1)
+              if (sessions.length > 1 && !widget.compactForFab)
                 Positioned(
                   right: indicatorRight,
                   bottom: indicatorBottom,

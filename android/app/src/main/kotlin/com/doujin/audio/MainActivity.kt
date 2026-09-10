@@ -1,6 +1,7 @@
 package com.doujin.audio
 
 import com.doujin.audio.channel.*
+import com.doujin.audio.player.notification.UnifiedPlaybackNotificationController
 import com.doujin.audio.player.notification.notificationSessionIdFromIntent
 import com.doujin.audio.player.common.*
 import com.doujin.audio.player.service.NativePlaybackService
@@ -16,6 +17,7 @@ import android.animation.AnimatorSet
 import android.animation.ObjectAnimator
 import android.animation.PropertyValuesHolder
 import android.animation.ValueAnimator
+import android.content.ComponentCallbacks2
 import android.content.Intent
 import android.content.res.Configuration
 import android.graphics.drawable.ColorDrawable
@@ -346,6 +348,20 @@ open class MainActivity : FlutterFragmentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         deliverNotificationSessionIntent(intent)
+    }
+
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        if (level >= ComponentCallbacks2.TRIM_MEMORY_BACKGROUND ||
+            level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL
+        ) {
+            UnifiedPlaybackNotificationController.trimArtworkMemory()
+        }
+    }
+
+    override fun onLowMemory() {
+        super.onLowMemory()
+        UnifiedPlaybackNotificationController.trimArtworkMemory()
     }
 
     override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {

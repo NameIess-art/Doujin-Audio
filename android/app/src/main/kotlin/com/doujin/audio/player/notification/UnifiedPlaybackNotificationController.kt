@@ -238,6 +238,10 @@ internal object UnifiedPlaybackNotificationController {
         return removeNotification && !hasUnifiedNotifications()
     }
 
+    fun trimArtworkMemory() {
+        artworkLoader?.clear()
+    }
+
     internal fun markActiveForTest(notificationId: Int) {
         activeNotificationIds.add(notificationId)
     }

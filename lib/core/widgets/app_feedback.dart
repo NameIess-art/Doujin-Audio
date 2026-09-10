@@ -2,6 +2,7 @@ import '../../app/presentation/app_presentation_providers.dart';
 import 'dart:async';
 import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
@@ -42,7 +43,9 @@ abstract final class AppInteractionFeedback {
     AppInteractionFeedbackType type, {
     BuildContext? context,
   }) {
-    if (!hapticFeedbackEnabled) return Future<void>.value();
+    if (defaultTargetPlatform == TargetPlatform.windows || !hapticFeedbackEnabled) {
+      return Future<void>.value();
+    }
     switch (type) {
       case AppInteractionFeedbackType.tap:
         return context == null
@@ -61,7 +64,9 @@ abstract final class AppInteractionFeedback {
     Object value, {
     Duration interval = const Duration(milliseconds: 72),
   }) {
-    if (!hapticFeedbackEnabled) return Future<void>.value();
+    if (defaultTargetPlatform == TargetPlatform.windows || !hapticFeedbackEnabled) {
+      return Future<void>.value();
+    }
     final now = DateTime.now();
     final previousAt = _lastContinuousFeedbackAt;
     if (_lastContinuousValue == value ||

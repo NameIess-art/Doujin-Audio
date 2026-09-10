@@ -79,7 +79,7 @@ void main() {
       await tester.pumpAndSettle();
       final i18n = harness.languageProvider;
       for (final entry in {
-        'section_common': ['portrait_lock'],
+        'section_common': ['portrait_lock', 'haptic_feedback_enabled'],
         'section_playback': [
           'audio_focus_strategy',
           'transient_audio_focus_loss_behavior',

@@ -1837,6 +1837,23 @@ void main() {
       ]);
     },
   );
+
+  test('trimMemory clears folder index and validity caches', () async {
+    final root = await Directory.systemTemp.createTemp('cover_trim_memory_');
+    addTearDown(() async {
+      if (await root.exists()) await root.delete(recursive: true);
+    });
+    final child = Directory('${root.path}${Platform.pathSeparator}child');
+    await child.create();
+    final first = File('${child.path}${Platform.pathSeparator}first.jpg');
+    await first.writeAsBytes(const <int>[1]);
+    final library = LibraryService()..watchedLibraries.add(root.path);
+    final cache = CoverArtworkCacheService(libraryService: library);
+
+    expect(await cache.futureForFolder(root.path), first.path);
+    cache.trimMemory();
+    expect(cache.manualCoverPathValidityCacheSize, 0);
+  });
 }
 
 Future<File> _temporaryCoverFile(String prefix) async {

@@ -399,6 +399,7 @@ extension _MainScreenLayout on _MainScreenState {
         : cs.surfaceContainerLow;
 
     return AnimatedContainer(
+      key: ValueKey<bool>(isLandscapeLayout),
       duration: const Duration(milliseconds: 250),
       curve: Curves.easeOutCubic,
       width: containerWidth,

@@ -26,6 +26,7 @@ import 'package:doujin_audio/features/library/presentation/library_tab.dart';
 import 'package:doujin_audio/features/player/presentation/playlist_tab.dart';
 import 'package:doujin_audio/features/player/application/playback_facade.dart';
 import 'package:doujin_audio/features/player/application/playback_session_snapshot.dart';
+import 'package:doujin_audio/features/settings/application/app_cache_service.dart';
 import 'package:doujin_audio/features/settings/application/app_preferences.dart';
 import 'package:doujin_audio/features/settings/application/app_update_service.dart';
 import 'support/test_persistence_repository.dart';
@@ -3340,6 +3341,8 @@ Future<_AppShellHarness> _pumpAppShell(
   VoidCallback? onBootstrapSettled,
   List<Override> additionalOverrides = const [],
 }) async {
+  AppCacheService.scheduledEnforceEnabled = false;
+  addTearDown(AppCacheService.resetForTest);
   final themeProvider = ThemeProvider();
   final languageProvider = AppLanguageProvider();
   final notificationService = PlaybackNotificationService();

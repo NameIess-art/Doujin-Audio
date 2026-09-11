@@ -71,13 +71,12 @@ final class LibraryFacade implements LibraryCatalog {
     LibraryEntryEditorService? entryEditorService,
     CoverArtworkCacheService? coverArtworkCacheService,
   }) {
-    final resolvedDatabase = databaseRepository;
     final resolvedAudioDetailStore =
         audioDetailStore ??
-        (resolvedDatabase is AudioDetailStore
-            ? resolvedDatabase as AudioDetailStore
+        (databaseRepository is AudioDetailStore
+            ? databaseRepository as AudioDetailStore
             : throw ArgumentError.value(
-                resolvedDatabase,
+                databaseRepository,
                 'databaseRepository',
                 'must also implement AudioDetailStore',
               ));
@@ -93,7 +92,7 @@ final class LibraryFacade implements LibraryCatalog {
         );
     final resolvedService = service ?? LibraryService();
     return LibraryFacade(
-      databaseRepository: resolvedDatabase,
+      databaseRepository: databaseRepository,
       detailCacheService: resolvedDetailCache,
       metadataService: metadataService ?? DlsiteMetadataService(),
       asmrMetadataService: asmrMetadataService ?? AsmrMetadataService(),
@@ -259,9 +258,8 @@ final class LibraryFacade implements LibraryCatalog {
 
   Future<void> resetPersistedState() async {
     await prepareForPersistedStateReset();
-    _service.scanProgressNotifyTimer?.cancel();
+    cancelPendingScanProgressNotification();
     _service
-      ..scanProgressNotifyTimer = null
       ..library.clear()
       ..libraryByPath.clear()
       ..libraryIndexByPath.clear()
@@ -1091,15 +1089,14 @@ final class LibraryFacade implements LibraryCatalog {
         nextProcessed != _service.scanProcessed ||
         nextTotal != _service.scanTotal;
     if (!changed) return;
-    if (currentFolder != null) _service.scanCurrentFolder = currentFolder;
-    if (foundCount != null) _service.scanFoundCount = foundCount;
-    if (duplicateCount != null) {
-      _service.scanDuplicateCount = duplicateCount;
-    }
-    if (failureCount != null) _service.scanFailureCount = failureCount;
-    if (stage != null) _service.scanStage = stage;
-    if (processed != null) _service.scanProcessed = processed;
-    if (total != null) _service.scanTotal = total;
+    _service
+      ..scanCurrentFolder = nextFolder
+      ..scanFoundCount = nextFoundCount
+      ..scanDuplicateCount = nextDuplicateCount
+      ..scanFailureCount = nextFailureCount
+      ..scanStage = nextStage
+      ..scanProcessed = nextProcessed
+      ..scanTotal = nextTotal;
     if (_service.isBackgroundScanning) return;
     _scheduleScanProgressSync();
   }
@@ -1112,8 +1109,7 @@ final class LibraryFacade implements LibraryCatalog {
     _service
       ..isScanning = scanning
       ..isBackgroundScanning = scanning && background;
-    _service.scanProgressNotifyTimer?.cancel();
-    _service.scanProgressNotifyTimer = null;
+    cancelPendingScanProgressNotification();
     if (scanning) {
       _service
         ..scanCurrentFolder = ''

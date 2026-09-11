@@ -57,7 +57,7 @@ void main() {
           nonSingleLoopMode: SessionLoopMode.folderSequential,
           volume: 0.4,
           createdAt: DateTime(2026),
-          state: PlayerState(false, ProcessingState.idle),
+          state: const PlayerState(false, ProcessingState.idle),
           customQueueTracks: <MusicTrack>[track],
         );
         runtimeGraph.playback.registerSession(session);
@@ -126,7 +126,7 @@ void main() {
           nonSingleLoopMode: SessionLoopMode.folderSequential,
           volume: 1,
           createdAt: DateTime(2026),
-          state: PlayerState(false, ProcessingState.idle),
+          state: const PlayerState(false, ProcessingState.idle),
           customQueueTracks: <MusicTrack>[track],
         );
         runtimeGraph.playback.registerSession(session);
@@ -190,7 +190,7 @@ void main() {
           nonSingleLoopMode: SessionLoopMode.folderSequential,
           volume: 1,
           createdAt: DateTime(2026),
-          state: PlayerState(false, ProcessingState.idle),
+          state: const PlayerState(false, ProcessingState.idle),
           customQueueTracks: <MusicTrack>[track],
         );
         runtimeGraph.playback.registerSession(session);
@@ -713,7 +713,7 @@ void main() {
           nonSingleLoopMode: SessionLoopMode.folderSequential,
           volume: 1,
           createdAt: DateTime(2026),
-          state: PlayerState(false, ProcessingState.idle),
+          state: const PlayerState(false, ProcessingState.idle),
           customQueueTracks: <MusicTrack>[oldTrack],
         );
         runtimeGraph.playback.registerSession(oldSession);
@@ -732,7 +732,7 @@ void main() {
           nonSingleLoopMode: SessionLoopMode.folderSequential,
           volume: 1,
           createdAt: DateTime(2026, 1, 2),
-          state: PlayerState(false, ProcessingState.idle),
+          state: const PlayerState(false, ProcessingState.idle),
           customQueueTracks: <MusicTrack>[replacementTrack],
         );
         runtimeGraph.playback.registerSession(replacementSession);
@@ -1002,7 +1002,7 @@ void main() {
       );
       failingSessionId = sessions[1].id;
       for (final session in sessions) {
-        session.state = PlayerState(true, ProcessingState.ready);
+        session.state = const PlayerState(true, ProcessingState.ready);
       }
       final future = DateTime.now().add(const Duration(minutes: 2));
       runtimeGraph.timer.setAutoResume(true, future.hour, future.minute);
@@ -1091,7 +1091,7 @@ void main() {
         );
         failingSessionId = sessions[1].id;
         for (final session in sessions) {
-          session.state = PlayerState(false, ProcessingState.ready);
+          session.state = const PlayerState(false, ProcessingState.ready);
         }
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString(
@@ -1250,7 +1250,7 @@ void main() {
         nonSingleLoopMode: SessionLoopMode.single,
         volume: 1.0,
         createdAt: DateTime(2026),
-        state: PlayerState(false, ProcessingState.idle),
+        state: const PlayerState(false, ProcessingState.idle),
       );
       final second = PlaybackSession(
         id: 'native_2',
@@ -1259,7 +1259,7 @@ void main() {
         nonSingleLoopMode: SessionLoopMode.single,
         volume: 0.5,
         createdAt: DateTime(2026, 1, 2),
-        state: PlayerState(false, ProcessingState.idle),
+        state: const PlayerState(false, ProcessingState.idle),
       );
       addTearDown(first.shutdown);
       addTearDown(second.shutdown);
@@ -1300,7 +1300,7 @@ void main() {
         nonSingleLoopMode: SessionLoopMode.single,
         volume: 1.0,
         createdAt: DateTime(2026),
-        state: PlayerState(false, ProcessingState.idle),
+        state: const PlayerState(false, ProcessingState.idle),
       );
       addTearDown(session.shutdown);
 

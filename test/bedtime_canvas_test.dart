@@ -196,7 +196,7 @@ void main() {
           nonSingleLoopMode: SessionLoopMode.single,
           volume: 0.8,
           createdAt: DateTime(2026),
-          state: PlayerState(false, ProcessingState.ready),
+          state: const PlayerState(false, ProcessingState.ready),
         );
         // Session 2: playing
         final session2 = PlaybackSession(
@@ -206,7 +206,7 @@ void main() {
           nonSingleLoopMode: SessionLoopMode.single,
           volume: 0.6,
           createdAt: DateTime(2026),
-          state: PlayerState(true, ProcessingState.ready),
+          state: const PlayerState(true, ProcessingState.ready),
         );
         // Session 3: playing
         final session3 = PlaybackSession(
@@ -216,7 +216,7 @@ void main() {
           nonSingleLoopMode: SessionLoopMode.single,
           volume: 0.7,
           createdAt: DateTime(2026),
-          state: PlayerState(true, ProcessingState.ready),
+          state: const PlayerState(true, ProcessingState.ready),
         );
 
         fixture.playbackService.registerSession(session1);
@@ -242,8 +242,8 @@ void main() {
         expect(find.byIcon(Icons.pause_rounded), findsOneWidget);
 
         // Update sessions to paused state
-        session2.state = PlayerState(false, ProcessingState.ready);
-        session3.state = PlayerState(false, ProcessingState.ready);
+        session2.state = const PlayerState(false, ProcessingState.ready);
+        session3.state = const PlayerState(false, ProcessingState.ready);
         fixture.playbackService.syncSlice(
           activeSessions: <PlaybackSession>[session1, session2, session3],
           playingSessionCount: 0,
@@ -276,7 +276,7 @@ void main() {
         nonSingleLoopMode: SessionLoopMode.single,
         volume: 0.5,
         createdAt: DateTime(2026),
-        state: PlayerState(true, ProcessingState.ready),
+        state: const PlayerState(true, ProcessingState.ready),
       );
       final sessionB = PlaybackSession(
         id: 'test-session-b',
@@ -285,7 +285,7 @@ void main() {
         nonSingleLoopMode: SessionLoopMode.single,
         volume: 0.6,
         createdAt: DateTime(2026),
-        state: PlayerState(true, ProcessingState.ready),
+        state: const PlayerState(true, ProcessingState.ready),
       );
       fixture.playbackService.registerSession(sessionA);
       fixture.playbackService.registerSession(sessionB);
@@ -324,7 +324,7 @@ void main() {
         nonSingleLoopMode: SessionLoopMode.single,
         volume: 0.5,
         createdAt: DateTime(2026),
-        state: PlayerState(true, ProcessingState.ready),
+        state: const PlayerState(true, ProcessingState.ready),
       );
       fixture.playbackService.registerSession(session);
       fixture.playbackService.syncSlice(
@@ -502,7 +502,7 @@ void main() {
           nonSingleLoopMode: SessionLoopMode.single,
           volume: 0.8,
           createdAt: DateTime(2026),
-          state: PlayerState(true, ProcessingState.ready),
+          state: const PlayerState(true, ProcessingState.ready),
         );
         fixture.playbackService.registerSession(session);
         fixture.playbackService.syncSlice(
@@ -616,7 +616,7 @@ void main() {
           nonSingleLoopMode: SessionLoopMode.single,
           volume: 0.8,
           createdAt: DateTime(2026),
-          state: PlayerState(true, ProcessingState.ready),
+          state: const PlayerState(true, ProcessingState.ready),
         );
         fixture.playbackService.registerSession(session);
         fixture.playbackService.syncSlice(
@@ -659,7 +659,7 @@ void main() {
         nonSingleLoopMode: SessionLoopMode.single,
         volume: 0.8,
         createdAt: DateTime(2026),
-        state: PlayerState(true, ProcessingState.ready),
+        state: const PlayerState(true, ProcessingState.ready),
       );
       fixture.playbackService.registerSession(session);
       fixture.playbackService.syncSlice(
@@ -679,7 +679,7 @@ void main() {
       await tester.pump(const Duration(minutes: 2));
 
       // Pause playback
-      session.state = PlayerState(false, ProcessingState.ready);
+      session.state = const PlayerState(false, ProcessingState.ready);
       fixture.playbackService.syncSlice(
         activeSessions: <PlaybackSession>[session],
         playingSessionCount: 0,
@@ -743,7 +743,7 @@ void main() {
           nonSingleLoopMode: SessionLoopMode.single,
           volume: 0.8,
           createdAt: DateTime(2026),
-          state: PlayerState(true, ProcessingState.ready),
+          state: const PlayerState(true, ProcessingState.ready),
         );
         fixture.playbackService.registerSession(session);
         fixture.playbackService.syncSlice(

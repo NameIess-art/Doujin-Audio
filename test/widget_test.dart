@@ -1900,7 +1900,7 @@ void main() {
           nonSingleLoopMode: SessionLoopMode.single,
           volume: 1,
           createdAt: DateTime(2026),
-          state: PlayerState(false, ProcessingState.idle),
+          state: const PlayerState(false, ProcessingState.idle),
         )..finishPreparation(
           0,
           prepared: false,
@@ -2122,7 +2122,7 @@ void main() {
       nonSingleLoopMode: SessionLoopMode.single,
       volume: 1,
       createdAt: DateTime(2026),
-      state: PlayerState(false, ProcessingState.ready),
+      state: const PlayerState(false, ProcessingState.ready),
     );
     final secondSession = PlaybackSession(
       id: 'second_session',
@@ -2131,7 +2131,7 @@ void main() {
       nonSingleLoopMode: SessionLoopMode.single,
       volume: 1,
       createdAt: DateTime(2026),
-      state: PlayerState(false, ProcessingState.ready),
+      state: const PlayerState(false, ProcessingState.ready),
     );
     addTearDown(() => unawaited(runtimeGraph.runtime.dispose()));
     addTearDown(firstSession.shutdown);
@@ -2260,7 +2260,7 @@ void main() {
       nonSingleLoopMode: SessionLoopMode.single,
       volume: 1,
       createdAt: DateTime(2026),
-      state: PlayerState(false, ProcessingState.ready),
+      state: const PlayerState(false, ProcessingState.ready),
     );
     addTearDown(session.shutdown);
     harness.playbackService.registerSession(session);
@@ -3380,7 +3380,7 @@ Future<_AppShellHarness> _pumpAppShell(
       nonSingleLoopMode: SessionLoopMode.single,
       volume: playbackVolume,
       createdAt: DateTime(2026),
-      state: PlayerState(false, ProcessingState.ready),
+      state: const PlayerState(false, ProcessingState.ready),
     );
     addTearDown(session.shutdown);
     playbackService.registerSession(session);

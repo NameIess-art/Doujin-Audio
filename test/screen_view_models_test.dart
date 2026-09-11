@@ -275,7 +275,7 @@ void main() {
         snapshot(playbackSession),
       );
 
-      playbackSession.state = PlayerState(true, ProcessingState.ready);
+      playbackSession.state = const PlayerState(true, ProcessingState.ready);
       final playingStructure = playlistStructureStateFromPlaybackState(
         PlaybackStateSliceData(
           activeSessions: [snapshot(playbackSession)],
@@ -518,7 +518,7 @@ void main() {
 
       detailSession
         ..beginTransportCommand(commandId: 2, playing: false)
-        ..state = PlayerState(false, ProcessingState.buffering);
+        ..state = const PlayerState(false, ProcessingState.buffering);
       final loadingState = sessionDetailViewStateFromPlaybackState(
         PlaybackStateSliceData(activeSessions: [snapshot(detailSession)]),
         'detail',

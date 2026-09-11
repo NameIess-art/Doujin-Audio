@@ -724,7 +724,7 @@ void main() {
         nonSingleLoopMode: SessionLoopMode.folderSequential,
         volume: 1,
         createdAt: DateTime(2026),
-        state: PlayerState(false, ProcessingState.ready),
+        state: const PlayerState(false, ProcessingState.ready),
         customQueueTracks: <MusicTrack>[track],
       );
       addTearDown(session.shutdown);
@@ -813,7 +813,6 @@ void main() {
         fixture.build(
           ActiveSessionCarousel(
             sessions: sessions,
-            compactForFab: false,
             onOpenSession: (_) {},
           ),
         ),
@@ -1002,7 +1001,7 @@ void main() {
       nonSingleLoopMode: SessionLoopMode.single,
       volume: 1,
       createdAt: DateTime(2026),
-      state: PlayerState(false, ProcessingState.ready),
+      state: const PlayerState(false, ProcessingState.ready),
     );
     final empty = PlaybackSession(
       id: 'empty',
@@ -1011,7 +1010,7 @@ void main() {
       nonSingleLoopMode: SessionLoopMode.single,
       volume: 1,
       createdAt: DateTime(2026),
-      state: PlayerState(false, ProcessingState.ready),
+      state: const PlayerState(false, ProcessingState.ready),
     );
 
     fixture.playbackService.syncSlice(
@@ -1074,7 +1073,7 @@ void main() {
             nonSingleLoopMode: SessionLoopMode.single,
             volume: 1,
             createdAt: DateTime(2026),
-            state: PlayerState(false, ProcessingState.ready),
+            state: const PlayerState(false, ProcessingState.ready),
           ),
       ];
       fixture.playbackService.syncSlice(
@@ -1529,7 +1528,7 @@ void main() {
       nonSingleLoopMode: SessionLoopMode.single,
       volume: 1,
       createdAt: DateTime(2026),
-      state: PlayerState(false, ProcessingState.ready),
+      state: const PlayerState(false, ProcessingState.ready),
     )..audioEffects = AudioEffectsState.flat.copyWith(panning: 0.6);
     addTearDown(session.shutdown);
     runtimeGraph.library.addTracks(
@@ -1747,7 +1746,7 @@ void main() {
               nonSingleLoopMode: SessionLoopMode.single,
               volume: 1,
               createdAt: DateTime(2026),
-              state: PlayerState(false, ProcessingState.ready),
+              state: const PlayerState(false, ProcessingState.ready),
             )
             ..setOptimisticPosition(const Duration(seconds: 2))
             ..setOptimisticDuration(const Duration(minutes: 2));
@@ -1962,7 +1961,7 @@ void main() {
       nonSingleLoopMode: SessionLoopMode.single,
       volume: 1,
       createdAt: DateTime(2026),
-      state: PlayerState(false, ProcessingState.ready),
+      state: const PlayerState(false, ProcessingState.ready),
     );
     final singleSession = PlaybackSession(
       id: 'single-duration-session',
@@ -1971,7 +1970,7 @@ void main() {
       nonSingleLoopMode: SessionLoopMode.single,
       volume: 1,
       createdAt: DateTime(2026, 1, 2),
-      state: PlayerState(false, ProcessingState.ready),
+      state: const PlayerState(false, ProcessingState.ready),
     );
     addTearDown(workSession.shutdown);
     addTearDown(singleSession.shutdown);
@@ -2453,7 +2452,7 @@ void main() {
     expect(loopText.style?.fontSize, 11);
     expect(loopText.style?.fontWeight, FontWeight.w600);
     expect(loopText.style?.fontStyle, FontStyle.italic);
-    queueSession.state = PlayerState(true, ProcessingState.ready);
+    queueSession.state = const PlayerState(true, ProcessingState.ready);
     playbackService.markSessionStateDirty();
     playbackService.syncSlice(
       activeSessions: <PlaybackSession>[queueSession],
@@ -2723,7 +2722,7 @@ void main() {
       nonSingleLoopMode: SessionLoopMode.single,
       volume: 1,
       createdAt: DateTime(2026),
-      state: PlayerState(false, ProcessingState.ready),
+      state: const PlayerState(false, ProcessingState.ready),
     );
     addTearDown(sourceSession.shutdown);
     final queueSession = fixture.runtimeGraph.playback.createPlaybackQueue(
@@ -2824,7 +2823,7 @@ void main() {
         nonSingleLoopMode: SessionLoopMode.single,
         volume: 1,
         createdAt: DateTime(2026),
-        state: PlayerState(false, ProcessingState.ready),
+        state: const PlayerState(false, ProcessingState.ready),
       );
       final sourceSession2 = PlaybackSession(
         id: 'source-2',
@@ -2833,7 +2832,7 @@ void main() {
         nonSingleLoopMode: SessionLoopMode.single,
         volume: 1,
         createdAt: DateTime(2026),
-        state: PlayerState(false, ProcessingState.ready),
+        state: const PlayerState(false, ProcessingState.ready),
       );
       addTearDown(sourceSession1.shutdown);
       addTearDown(sourceSession2.shutdown);
@@ -4380,11 +4379,11 @@ void main() {
       );
       final trackSession = fixture.runtimeGraph.playback.createTrackSession(
         track,
-      )..state = PlayerState(false, ProcessingState.ready);
+      )..state = const PlayerState(false, ProcessingState.ready);
       final queueSession =
           fixture.runtimeGraph.playback.createPlaybackQueue('Selection queue')
             ..currentTrackPath = queueTrack.path
-            ..state = PlayerState(true, ProcessingState.ready)
+            ..state = const PlayerState(true, ProcessingState.ready)
             ..playbackQueue = PlaybackQueueDefinition(
               name: 'Selection queue',
               entries: <PlaybackQueueEntry>[
@@ -4909,7 +4908,7 @@ void main() {
         nonSingleLoopMode: SessionLoopMode.single,
         volume: 1,
         createdAt: DateTime(2026),
-        state: PlayerState(false, ProcessingState.ready),
+        state: const PlayerState(false, ProcessingState.ready),
       );
       addTearDown(trackSession.shutdown);
       fixture.playbackService.registerSession(trackSession);

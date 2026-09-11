@@ -501,9 +501,9 @@ void main() {
       ..registerSession(session);
 
     await playback.toggleSessionPlayPause(session.id);
-    session.state = PlayerState(true, ProcessingState.ready);
+    session.state = const PlayerState(true, ProcessingState.ready);
     await playback.toggleSessionPlayPause(session.id);
-    session.state = PlayerState(false, ProcessingState.ready);
+    session.state = const PlayerState(false, ProcessingState.ready);
     await playback.toggleSessionPlayPause(session.id);
     await playback.switchSessionTrack(session.id, '/tracks/direct.mp3');
     await playback.switchSessionQueueTrack(session.id, 1);
@@ -564,7 +564,7 @@ void main() {
           autoPlay: false,
           error: 'network failed',
         )
-        ..state = PlayerState(false, ProcessingState.idle);
+        ..state = const PlayerState(false, ProcessingState.idle);
       var prepareCount = 0;
       var startCount = 0;
       addTearDown(() async {
@@ -610,7 +610,7 @@ void main() {
           library.databaseRepository as PlaybackPersistenceRepository,
     )..configurePersistence(enabled: false);
     final session = _session('adjacent_playback_intent')
-      ..state = PlayerState(false, ProcessingState.ready)
+      ..state = const PlayerState(false, ProcessingState.ready)
       ..customQueueTracks = <MusicTrack>[
         MusicTrack(
           path: '/tracks/first.mp3',
@@ -663,7 +663,7 @@ void main() {
     await playback.seekSessionToNext(session.id);
     await playback.seekSessionToPrev(session.id);
 
-    session.state = PlayerState(true, ProcessingState.ready);
+    session.state = const PlayerState(true, ProcessingState.ready);
     await playback.switchSessionTrack(session.id, '/tracks/direct.mp3');
     await playback.switchSessionQueueTrack(session.id, 1);
     await playback.seekSessionToNext(session.id);
@@ -739,7 +739,7 @@ void main() {
             library.databaseRepository as PlaybackPersistenceRepository,
       )..configurePersistence(enabled: false);
       final session = _session('toggle_loading')
-        ..state = PlayerState(false, ProcessingState.ready);
+        ..state = const PlayerState(false, ProcessingState.ready);
       addTearDown(() async {
         await session.shutdown();
         await playback.dispose();
@@ -1633,7 +1633,7 @@ PlaybackSession _session(String id) {
     nonSingleLoopMode: SessionLoopMode.folderSequential,
     volume: 1,
     createdAt: DateTime(2026),
-    state: PlayerState(false, ProcessingState.idle),
+    state: const PlayerState(false, ProcessingState.idle),
   );
 }
 

@@ -826,7 +826,7 @@ void main() {
         nonSingleLoopMode: SessionLoopMode.single,
         volume: 0.9,
         createdAt: DateTime(2026),
-        state: PlayerState(false, ProcessingState.ready),
+        state: const PlayerState(false, ProcessingState.ready),
       );
       final second = PlaybackSession(
         id: 's2',
@@ -835,7 +835,7 @@ void main() {
         nonSingleLoopMode: SessionLoopMode.single,
         volume: 0.8,
         createdAt: DateTime(2026, 1, 2),
-        state: PlayerState(false, ProcessingState.ready),
+        state: const PlayerState(false, ProcessingState.ready),
       );
       addTearDown(first.shutdown);
       addTearDown(second.shutdown);
@@ -858,7 +858,7 @@ void main() {
         nonSingleLoopMode: SessionLoopMode.single,
         volume: 0.9,
         createdAt: DateTime(2026),
-        state: PlayerState(false, ProcessingState.ready),
+        state: const PlayerState(false, ProcessingState.ready),
       );
       final second = PlaybackSession(
         id: 's2',
@@ -867,7 +867,7 @@ void main() {
         nonSingleLoopMode: SessionLoopMode.single,
         volume: 0.8,
         createdAt: DateTime(2026, 1, 2),
-        state: PlayerState(true, ProcessingState.ready),
+        state: const PlayerState(true, ProcessingState.ready),
       );
       addTearDown(first.shutdown);
       addTearDown(second.shutdown);
@@ -898,7 +898,7 @@ void main() {
         nonSingleLoopMode: SessionLoopMode.single,
         volume: 0.8,
         createdAt: DateTime(2026, 1, 3),
-        state: PlayerState(true, ProcessingState.ready),
+        state: const PlayerState(true, ProcessingState.ready),
       );
       addTearDown(session.shutdown);
 

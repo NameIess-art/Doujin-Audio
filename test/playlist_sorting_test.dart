@@ -21,7 +21,7 @@ PlaybackSessionSnapshot _session(
     nonSingleLoopMode: SessionLoopMode.folderSequential,
     volume: 1,
     createdAt: createdAt ?? DateTime(2026),
-    state: PlayerState(false, ProcessingState.ready),
+    state: const PlayerState(false, ProcessingState.ready),
   );
   return PlaybackSessionSnapshot.fromRuntime(s);
 }

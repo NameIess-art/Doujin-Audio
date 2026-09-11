@@ -140,7 +140,7 @@ void main() {
       nonSingleLoopMode: SessionLoopMode.folderSequential,
       volume: 1,
       createdAt: DateTime(2026),
-      state: PlayerState(true, ProcessingState.ready),
+      state: const PlayerState(true, ProcessingState.ready),
     );
     var focusedSessionId = '';
     addTearDown(() async {
@@ -191,7 +191,7 @@ void main() {
       nonSingleLoopMode: SessionLoopMode.folderSequential,
       volume: 1,
       createdAt: DateTime(2026),
-      state: PlayerState(true, ProcessingState.ready),
+      state: const PlayerState(true, ProcessingState.ready),
     );
     playback.registerSession(session);
     facade.attachActions(
@@ -291,7 +291,7 @@ _NotificationFixture _createNotificationFixture(
     nonSingleLoopMode: SessionLoopMode.folderSequential,
     volume: 1,
     createdAt: DateTime(2026),
-    state: PlayerState(true, ProcessingState.ready),
+    state: const PlayerState(true, ProcessingState.ready),
   );
   playback.registerSession(session);
   facade.attachActions(

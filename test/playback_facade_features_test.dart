@@ -551,7 +551,7 @@ void main() {
       final session = runtimeGraph.playback.activeSessions.single;
       session
         ..loadedPath = null
-        ..state = PlayerState(true, ProcessingState.ready);
+        ..state = const PlayerState(true, ProcessingState.ready);
 
       await runtimeGraph.playback.setSessionSkipSilence(session.id, true);
 

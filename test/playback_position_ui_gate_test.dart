@@ -15,7 +15,7 @@ PlaybackSession _session(String id) {
     nonSingleLoopMode: SessionLoopMode.folderSequential,
     volume: 1,
     createdAt: DateTime(2026),
-    state: PlayerState(true, ProcessingState.ready),
+    state: const PlayerState(true, ProcessingState.ready),
   );
 }
 

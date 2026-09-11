@@ -46,7 +46,7 @@ void main() {
               nonSingleLoopMode: SessionLoopMode.folderSequential,
               volume: 1,
               createdAt: DateTime(2026),
-              state: PlayerState(false, ProcessingState.ready),
+              state: const PlayerState(false, ProcessingState.ready),
             )
             ..audioEffects = AudioEffectsState(
               eqEnabled: true,
@@ -284,7 +284,7 @@ PlaybackSession _sessionUsingPreset(String id, EqPreset preset) {
       nonSingleLoopMode: SessionLoopMode.folderSequential,
       volume: 1,
       createdAt: DateTime(2026),
-      state: PlayerState(false, ProcessingState.ready),
+      state: const PlayerState(false, ProcessingState.ready),
     )
     ..loadedPath = path
     ..audioEffects = AudioEffectsState(

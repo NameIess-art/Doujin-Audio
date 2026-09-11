@@ -205,7 +205,7 @@ void main() {
         nonSingleLoopMode: SessionLoopMode.folderSequential,
         volume: 0.7,
         createdAt: DateTime(2026),
-        state: PlayerState(false, ProcessingState.idle),
+        state: const PlayerState(false, ProcessingState.idle),
       );
       final second = PlaybackSession(
         id: 'session_2',
@@ -214,7 +214,7 @@ void main() {
         nonSingleLoopMode: SessionLoopMode.folderRandom,
         volume: 0.5,
         createdAt: DateTime(2026, 1, 2),
-        state: PlayerState(false, ProcessingState.idle),
+        state: const PlayerState(false, ProcessingState.idle),
       );
       addTearDown(first.shutdown);
       addTearDown(second.shutdown);
@@ -286,7 +286,7 @@ void main() {
       nonSingleLoopMode: SessionLoopMode.folderSequential,
       volume: 1,
       createdAt: DateTime(2026),
-      state: PlayerState(false, ProcessingState.idle),
+      state: const PlayerState(false, ProcessingState.idle),
     );
     addTearDown(session.shutdown);
 
@@ -316,7 +316,7 @@ void main() {
       nonSingleLoopMode: SessionLoopMode.folderSequential,
       volume: 1,
       createdAt: DateTime(2026),
-      state: PlayerState(true, ProcessingState.ready),
+      state: const PlayerState(true, ProcessingState.ready),
     );
     addTearDown(session.shutdown);
 
@@ -363,7 +363,7 @@ void main() {
       nonSingleLoopMode: SessionLoopMode.folderSequential,
       volume: 1,
       createdAt: DateTime(2026),
-      state: PlayerState(false, ProcessingState.ready),
+      state: const PlayerState(false, ProcessingState.ready),
     );
     addTearDown(session.shutdown);
 
@@ -430,7 +430,7 @@ void main() {
       nonSingleLoopMode: SessionLoopMode.folderSequential,
       volume: 1,
       createdAt: DateTime(2026),
-      state: PlayerState(true, ProcessingState.ready),
+      state: const PlayerState(true, ProcessingState.ready),
     );
     addTearDown(session.shutdown);
 
@@ -452,7 +452,7 @@ void main() {
             nonSingleLoopMode: SessionLoopMode.folderSequential,
             volume: 0.7,
             createdAt: DateTime(2026),
-            state: PlayerState(true, ProcessingState.ready),
+            state: const PlayerState(true, ProcessingState.ready),
           )
           ..loadedPath = '/audio/one.mp3'
           ..audioEffects = AudioEffectsState(skipSilenceEnabled: true)
@@ -499,7 +499,7 @@ void main() {
             nonSingleLoopMode: SessionLoopMode.folderSequential,
             volume: 0.7,
             createdAt: DateTime(2026),
-            state: PlayerState(true, ProcessingState.ready),
+            state: const PlayerState(true, ProcessingState.ready),
           )
           ..channelSwapEnabled = true
           ..audioEffects = AudioEffectsState(
@@ -550,7 +550,7 @@ void main() {
       nonSingleLoopMode: SessionLoopMode.folderSequential,
       volume: 1,
       createdAt: DateTime(2026),
-      state: PlayerState(true, ProcessingState.ready),
+      state: const PlayerState(true, ProcessingState.ready),
     );
     addTearDown(session.shutdown);
 
@@ -589,7 +589,7 @@ void main() {
       nonSingleLoopMode: SessionLoopMode.folderSequential,
       volume: 1,
       createdAt: DateTime(2026),
-      state: PlayerState(false, ProcessingState.idle),
+      state: const PlayerState(false, ProcessingState.idle),
     );
     addTearDown(session.shutdown);
 
@@ -641,7 +641,7 @@ void main() {
       nonSingleLoopMode: SessionLoopMode.folderSequential,
       volume: 1,
       createdAt: DateTime(2026),
-      state: PlayerState(false, ProcessingState.idle),
+      state: const PlayerState(false, ProcessingState.idle),
     );
     session.subscriptions.add(source.stream.listen((_) {}));
 
@@ -682,7 +682,7 @@ void main() {
         nonSingleLoopMode: SessionLoopMode.folderSequential,
         volume: 1,
         createdAt: DateTime(2026),
-        state: PlayerState(false, ProcessingState.idle),
+        state: const PlayerState(false, ProcessingState.idle),
       );
       session.subscriptions.add(source.stream.listen((_) {}));
       final streamsDone = Future.wait<void>(<Future<void>>[
@@ -709,7 +709,7 @@ void main() {
         nonSingleLoopMode: SessionLoopMode.folderSequential,
         volume: 1,
         createdAt: DateTime(2026),
-        state: PlayerState(false, ProcessingState.idle),
+        state: const PlayerState(false, ProcessingState.idle),
       );
       addTearDown(session.shutdown);
       final before = PlaybackSessionSnapshot.fromRuntime(session);

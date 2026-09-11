@@ -17,6 +17,8 @@ import 'package:doujin_audio/core/platform/windows_media_tools.dart';
 import 'package:doujin_audio/features/player/application/windows_playback_bridge.dart';
 import 'package:doujin_audio/features/player/domain/audio_effects.dart';
 
+import 'windows_video_playback_test.dart';
+
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
   testWidgets(
@@ -267,4 +269,5 @@ void main() {
     },
     skip: !Platform.isWindows,
   );
+  registerWindowsVideoPlaybackTest();
 }

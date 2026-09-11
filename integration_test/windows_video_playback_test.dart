@@ -11,6 +11,10 @@ import 'package:media_kit_video/media_kit_video.dart';
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+  registerWindowsVideoPlaybackTest();
+}
+
+void registerWindowsVideoPlaybackTest() {
   testWidgets(
     'Windows renders video and reuses the player across surfaces',
     (tester) async {

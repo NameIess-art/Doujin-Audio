@@ -319,7 +319,7 @@ jobs:
         shell: cmd
         run: tool\build_windows.bat -PrepareOnly
       - name: Test Windows native integration
-        run: flutter test -d windows --dart-define=WINDOWS_TEST_NULL_AUDIO=true integration_test/windows_platform_test.dart integration_test/windows_video_playback_test.dart
+        run: flutter test -d windows --dart-define=WINDOWS_TEST_NULL_AUDIO=true integration_test/windows_platform_test.dart
       - name: Build Windows installer and checksum
         shell: cmd
         run: tool\build_windows.bat

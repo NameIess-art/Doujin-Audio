@@ -21,12 +21,18 @@ class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
     return _instance!;
   }
 
-  static Player _defaultPlayer() => Player(
-        configuration: const PlayerConfiguration(
-          title: 'Doujin Audio',
-          vo: 'libmpv',
-        ),
-      );
+  static Player _defaultPlayer() {
+    final player = Player(
+      configuration: const PlayerConfiguration(
+        title: 'Doujin Audio',
+        vo: 'libmpv',
+      ),
+    );
+    if (const bool.fromEnvironment('WINDOWS_TEST_NULL_AUDIO')) {
+      (player.platform! as NativePlayer).setProperty('ao', 'null');
+    }
+    return player;
+  }
 
   final Player Function() _createPlayer;
   final _sessions = <String, _WindowsPlaybackSession>{};
@@ -40,8 +46,12 @@ class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
   bool _disposed = false;
 
   Player? playerForSession(String sessionId) => _sessions[sessionId]?.player;
-  VideoController? videoControllerForSession(String sessionId) =>
-      _sessions[sessionId]?.videoController;
+  VideoController? videoControllerForSession(String sessionId) {
+    final session = _sessions[sessionId];
+    final player = session?.player;
+    if (session == null || player == null) return null;
+    return session.videoController ??= VideoController(player);
+  }
 
   @override
   Stream<NativePlaybackSnapshot> get snapshots => _snapshots.stream;
@@ -190,11 +200,6 @@ class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
         ? session.position
         : null;
     try {
-      final platform = player.platform;
-      if (platform is NativePlayer) {
-        session.videoController ??= VideoController(player);
-        await platform.setProperty('vid', 'auto');
-      }
       final playlist = Playlist([
         for (var i = 0; i < session.queue.length; i++)
           Media(session.queue[i]['uri'] as String),

@@ -1,4 +1,3 @@
-import '../../core/platform/windows_desktop_service.dart';
 import '../../features/asmr/presentation/asmr_providers.dart';
 import '../../features/library/presentation/library_providers.dart';
 import '../../features/player/presentation/playback_providers.dart';
@@ -272,6 +271,3 @@ List<Override> createAppRuntimeOverrides({
   ];
 }
 
-final windowsFullscreenSetterProvider = Provider<Future<void> Function(bool)>(
-  (ref) => WindowsDesktopService.instance.setFullscreen,
-);

@@ -22,7 +22,6 @@ extension _MainScreenLayout on _MainScreenState {
         : EdgeInsets.zero;
     final isLandscapeLayout =
         defaultTargetPlatform == TargetPlatform.windows ||
-        defaultTargetPlatform == TargetPlatform.windows ||
         MediaQuery.orientationOf(context) == Orientation.landscape;
     final settingsState = ref.watch(settingsStateProvider).value;
     final showLocal = settingsState?.showLocalLibrary ?? true;
@@ -57,38 +56,17 @@ extension _MainScreenLayout on _MainScreenState {
                               ? pageCs.surface
                               : pageCs.surfaceContainerLow,
                           borderRadius: isLandscapeLayout
-                              ? const BorderRadius.only(
-                                  topLeft: Radius.circular(AppRadius.medium),
-                                )
+                              ? BorderRadius.zero
                               : radius,
                           border: isLandscapeLayout
-                              ? Border(
-                                  left: BorderSide(
-                                    color: pageCs.outlineVariant.withValues(
-                                      alpha: 0.25,
-                                    ),
-                                  ),
-                                  top: BorderSide(
-                                    color: pageCs.outlineVariant.withValues(
-                                      alpha: 0.25,
-                                    ),
-                                  ),
-                                )
+                              ? null
                               : Border.all(
                                   color: pageCs.outlineVariant.withValues(
                                     alpha: 0.85,
                                   ),
                                 ),
                           boxShadow: isLandscapeLayout
-                              ? [
-                                  BoxShadow(
-                                    color: pageCs.shadow.withValues(
-                                      alpha: 0.04,
-                                    ),
-                                    blurRadius: 16,
-                                    offset: const Offset(-2, -2),
-                                  ),
-                                ]
+                              ? null
                               : [
                                   BoxShadow(
                                     color: pageCs.shadow.withValues(alpha: 0.1),
@@ -101,12 +79,12 @@ extension _MainScreenLayout on _MainScreenState {
                   child: ClipRRect(
                     borderRadius: isDesktop
                         ? (isLandscapeLayout
-                              ? const BorderRadius.only(
-                                  topLeft: Radius.circular(AppRadius.medium),
-                                )
+                              ? BorderRadius.zero
                               : radius)
                         : BorderRadius.zero,
-                    clipBehavior: isDesktop ? Clip.hardEdge : Clip.none,
+                    clipBehavior: isDesktop && !isLandscapeLayout
+                        ? Clip.hardEdge
+                        : Clip.none,
                     child: ColoredBox(
                       key: ValueKey<String>('main_page_canvas_$actualIndex'),
                       color: pageCs.surface,
@@ -405,13 +383,20 @@ extension _MainScreenLayout on _MainScreenState {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final isLandscapeLayout =
         defaultTargetPlatform == TargetPlatform.windows ||
-        defaultTargetPlatform == TargetPlatform.windows ||
         MediaQuery.orientationOf(context) == Orientation.landscape;
     final double expandedWidth = isLandscapeLayout ? 260 : 292;
     final double collapsedWidth = isLandscapeLayout ? 80 : 92;
     final double containerWidth = _isMenuCollapsed
         ? collapsedWidth
         : expandedWidth;
+
+    final sidebarColor = isLandscapeLayout
+        ? (isDark
+            ? (cs.surfaceContainerLowest == cs.surface
+                ? cs.surfaceContainerLow
+                : cs.surfaceContainerLowest)
+            : cs.surfaceContainerLow)
+        : cs.surfaceContainerLow;
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 250),
@@ -424,15 +409,27 @@ extension _MainScreenLayout on _MainScreenState {
           ? const EdgeInsets.fromLTRB(8, 4, 8, 8)
           : const EdgeInsets.fromLTRB(10, AppSpacing.md, 10, 10),
       decoration: BoxDecoration(
-        color: isLandscapeLayout ? Colors.transparent : cs.surfaceContainerLow,
+        color: sidebarColor,
         borderRadius: isLandscapeLayout
             ? BorderRadius.zero
             : BorderRadius.circular(16),
         border: isLandscapeLayout
-            ? null
+            ? Border(
+                right: BorderSide(
+                  color: cs.outlineVariant.withValues(
+                    alpha: isDark ? 0.4 : 0.65,
+                  ),
+                ),
+              )
             : Border.all(color: cs.outlineVariant.withValues(alpha: 0.85)),
         boxShadow: isLandscapeLayout
-            ? null
+            ? [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: isDark ? 0.2 : 0.04),
+                  blurRadius: 10,
+                  offset: const Offset(2, 0),
+                ),
+              ]
             : [
                 BoxShadow(
                   color: Colors.black.withValues(alpha: 0.1),

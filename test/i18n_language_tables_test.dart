@@ -103,4 +103,34 @@ void main() {
       }
     },
   );
+
+  test('action, subtitle and duration keys are localized properly', () {
+    expect(appLanguageZh['download'], '下载');
+    expect(appLanguageJa['download'], 'ダウンロード');
+    expect(appLanguageEn['download'], 'Download');
+
+    expect(appLanguageZh['add'], '添加');
+    expect(appLanguageJa['add'], '追加');
+    expect(appLanguageEn['add'], 'Add');
+
+    expect(appLanguageZh['back'], '返回');
+    expect(appLanguageJa['back'], '戻る');
+    expect(appLanguageEn['back'], 'Back');
+
+    expect(appLanguageZh['error'], '错误');
+    expect(appLanguageJa['error'], 'エラー');
+    expect(appLanguageEn['error'], 'Error');
+
+    expect(appLanguageZh['asmr_has_subtitle'], '有字幕');
+    expect(appLanguageJa['asmr_has_subtitle'], '字幕あり');
+    expect(appLanguageEn['asmr_has_subtitle'], 'Subtitles');
+
+    expect(appLanguageZh['asmr_no_subtitle'], '无字幕');
+    expect(appLanguageJa['asmr_no_subtitle'], '字幕なし');
+    expect(appLanguageEn['asmr_no_subtitle'], 'No subtitles');
+
+    expect(appLanguageZh['minutes_duration'], '{count}分钟');
+    expect(appLanguageJa['minutes_duration'], '{count}分');
+    expect(appLanguageEn['minutes_duration'], '{count} min');
+  });
 }

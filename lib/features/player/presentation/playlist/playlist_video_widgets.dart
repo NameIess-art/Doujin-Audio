@@ -2,10 +2,11 @@ import '../../../library/presentation/library_providers.dart';
 import '../playback_providers.dart';
 import '../../../settings/presentation/settings_providers.dart';
 import 'dart:async';
-import 'dart:io';
 import 'dart:math';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../app/presentation/app_orientation_controller.dart';
@@ -28,7 +29,8 @@ import 'playlist_shared_helpers.dart';
 
 bool isSessionVideoReady(PlaybackSessionSnapshot session, MusicTrack? track) {
   final loadedPath = session.loadedPath;
-  return Platform.isAndroid &&
+  return (defaultTargetPlatform == TargetPlatform.android ||
+          defaultTargetPlatform == TargetPlatform.windows) &&
       track?.isVideo == true &&
       loadedPath != null &&
       PathMatcher.equalsNormalized(loadedPath, track!.path);
@@ -615,70 +617,86 @@ class _SessionVideoFullscreenPageState
       onPopInvokedWithResult: (didPop, _) {
         if (!didPop) unawaited(_requestExit());
       },
-      child: Scaffold(
-        backgroundColor: Colors.black,
-        body: LayoutBuilder(
-          builder: (context, constraints) {
-            final viewportSize = constraints.biggest;
-            final gestureRect = sessionVideoFullscreenGestureRect(
-              viewportSize: viewportSize,
-              controlsVisible: _controlsVisible,
-            );
-            return Stack(
-              fit: StackFit.expand,
-              children: [
-                RepaintBoundary(
-                  child: SessionVideoBlurredBackdrop(
-                    child: AsyncLocalCoverImage(
-                      future: _coverFuture ?? Future<String?>.value(),
-                      requestKey: 'fullscreen:${widget.sessionId}',
-                      initialPath: library.resolvedPlaybackCoverPathForTrack(
-                        track,
-                      ),
-                      retryFutureBuilder: () =>
-                          library.playbackCoverPathFutureForTrack(track),
-                      seed: track!.displayName,
-                      cacheWidth: coverCacheWidth,
-                      useDefaultCacheWidth: coverCacheWidth != null,
-                      fit: BoxFit.cover,
-                      iconSize: 72,
-                    ),
-                  ),
-                ),
-                if (isSessionVideoReady(activeSession, track))
-                  NativeSessionVideoSurface(sessionId: widget.sessionId),
-                Positioned.fromRect(
-                  rect: gestureRect,
-                  child: GestureDetector(
-                    key: const ValueKey<String>(
-                      'fullscreen_video_gesture_surface',
-                    ),
-                    behavior: HitTestBehavior.opaque,
-                    onTap: _toggleControls,
-                    onDoubleTapDown: (details) =>
-                        _doubleTapPosition = details.localPosition,
-                    onDoubleTap: _handleDoubleTap,
-                    onLongPressStart: (_) => unawaited(_startTemporarySpeed()),
-                    onLongPressEnd: (_) => unawaited(_restoreTemporarySpeed()),
-                    onLongPressCancel: () =>
-                        unawaited(_restoreTemporarySpeed()),
-                    onPanStart: (details) => _handlePanStart(
-                      details,
-                      Size(
-                        max(1, gestureRect.width),
-                        max(1, gestureRect.height),
-                      ),
-                    ),
-                    onPanUpdate: _handlePanUpdate,
-                    onPanEnd: (_) => _handlePanEnd(cancelled: false),
-                    onPanCancel: () => _handlePanEnd(cancelled: true),
-                  ),
-                ),
-                _buildFeedback(),
-                _buildControls(context, activeSession, detail, playing),
-              ],
-            );
+      child: CallbackShortcuts(
+        bindings: <ShortcutActivator, VoidCallback>{
+          const SingleActivator(LogicalKeyboardKey.escape): () {
+            unawaited(_requestExit());
           },
+        },
+        child: Focus(
+          autofocus: true,
+          child: Scaffold(
+            backgroundColor: Colors.black,
+            body: MouseRegion(
+              onHover: (_) => _showControls(),
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final viewportSize = constraints.biggest;
+                  final gestureRect = sessionVideoFullscreenGestureRect(
+                    viewportSize: viewportSize,
+                    controlsVisible: _controlsVisible,
+                  );
+                  return Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      RepaintBoundary(
+                        child: SessionVideoBlurredBackdrop(
+                          child: AsyncLocalCoverImage(
+                            future: _coverFuture ?? Future<String?>.value(),
+                            requestKey: 'fullscreen:${widget.sessionId}',
+                            initialPath:
+                                library.resolvedPlaybackCoverPathForTrack(
+                                  track,
+                                ),
+                            retryFutureBuilder: () =>
+                                library.playbackCoverPathFutureForTrack(track),
+                            seed: track!.displayName,
+                            cacheWidth: coverCacheWidth,
+                            useDefaultCacheWidth: coverCacheWidth != null,
+                            fit: BoxFit.cover,
+                            iconSize: 72,
+                          ),
+                        ),
+                      ),
+                      if (isSessionVideoReady(activeSession, track))
+                        NativeSessionVideoSurface(sessionId: widget.sessionId),
+                      Positioned.fromRect(
+                        rect: gestureRect,
+                        child: GestureDetector(
+                          key: const ValueKey<String>(
+                            'fullscreen_video_gesture_surface',
+                          ),
+                          behavior: HitTestBehavior.opaque,
+                          onTap: _toggleControls,
+                          onDoubleTapDown: (details) =>
+                              _doubleTapPosition = details.localPosition,
+                          onDoubleTap: _handleDoubleTap,
+                          onLongPressStart: (_) =>
+                              unawaited(_startTemporarySpeed()),
+                          onLongPressEnd: (_) =>
+                              unawaited(_restoreTemporarySpeed()),
+                          onLongPressCancel: () =>
+                              unawaited(_restoreTemporarySpeed()),
+                          onPanStart: (details) => _handlePanStart(
+                            details,
+                            Size(
+                              max(1, gestureRect.width),
+                              max(1, gestureRect.height),
+                            ),
+                          ),
+                          onPanUpdate: _handlePanUpdate,
+                          onPanEnd: (_) => _handlePanEnd(cancelled: false),
+                          onPanCancel: () => _handlePanEnd(cancelled: true),
+                        ),
+                      ),
+                      _buildFeedback(),
+                      _buildControls(context, activeSession, detail, playing),
+                    ],
+                  );
+                },
+              ),
+            ),
+          ),
         ),
       ),
     );

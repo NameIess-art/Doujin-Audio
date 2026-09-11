@@ -223,7 +223,11 @@ class _AsmrWorkDetailSheetState extends ConsumerState<_AsmrWorkDetailSheet> {
                     borderRadius: BorderRadius.circular(4),
                   ),
                   child: Text(
-                    effectiveWork.hasSubtitle ? '有字幕' : '无字幕',
+                    i18n.tr(
+                      effectiveWork.hasSubtitle
+                          ? 'asmr_has_subtitle'
+                          : 'asmr_no_subtitle',
+                    ),
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: effectiveWork.hasSubtitle
                           ? Colors.green

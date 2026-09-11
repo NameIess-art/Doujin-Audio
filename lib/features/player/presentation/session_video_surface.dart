@@ -23,7 +23,9 @@ class NativeSessionVideoSurface extends StatelessWidget {
         sessionId,
       );
       if (player == null) return const SizedBox.shrink();
-      final controller = _controllers[player] ??= VideoController(player);
+      final controller =
+          WindowsPlaybackBridge.instance.videoControllerForSession(sessionId) ??
+          (_controllers[player] ??= VideoController(player));
       return Video(
         key: ValueKey<String>('native_video_surface_$sessionId'),
         controller: controller,

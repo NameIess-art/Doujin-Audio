@@ -359,7 +359,7 @@ class SessionsEmptyState extends StatelessWidget {
                           ],
                         ),
                         child: Icon(
-                          Icons.queue_music_rounded,
+                          Icons.playlist_play_rounded,
                           size: 36,
                           color: cs.onPrimaryContainer,
                         ),

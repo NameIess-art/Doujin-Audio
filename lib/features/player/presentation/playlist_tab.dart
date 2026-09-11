@@ -550,7 +550,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
 
                   return TopPageHeader(
                     key: const ValueKey('playlist_batch_selection_header'),
-                    icon: Icons.graphic_eq_rounded,
+                    icon: Icons.playlist_play_rounded,
                     topCapsuleTitle: i18n.tr('multi_select'),
                     topCapsuleData: i18n.tr('selected_count', {
                       'count': count.toString(),
@@ -648,7 +648,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
 
                 return TopPageHeader(
                   key: headerKey,
-                  icon: Icons.graphic_eq_rounded,
+                  icon: Icons.playlist_play_rounded,
                   collapseController: _scrollController,
                   topCapsuleTitle: i18n.tr('playback_sessions'),
                   topCapsuleData: i18n.tr('playlist_header_stats', {
@@ -830,7 +830,9 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                     children: [
                       ActionChip(
                         avatar: const Icon(Icons.timer_10_rounded, size: 16),
-                        label: const Text('15 min'),
+                        label: Text(
+                          i18n.tr('minutes_duration', {'count': 15}),
+                        ),
                         onPressed: () {
                           timer.configureTimer(
                             TimerMode.manual,
@@ -842,7 +844,9 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                       ),
                       ActionChip(
                         avatar: const Icon(Icons.timer_rounded, size: 16),
-                        label: const Text('30 min'),
+                        label: Text(
+                          i18n.tr('minutes_duration', {'count': 30}),
+                        ),
                         onPressed: () {
                           timer.configureTimer(
                             TimerMode.manual,
@@ -854,7 +858,9 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                       ),
                       ActionChip(
                         avatar: const Icon(Icons.timer_rounded, size: 16),
-                        label: const Text('60 min'),
+                        label: Text(
+                          i18n.tr('minutes_duration', {'count': 60}),
+                        ),
                         onPressed: () {
                           timer.configureTimer(
                             TimerMode.manual,

@@ -174,8 +174,11 @@ class SessionVideoViewport extends StatefulWidget {
 class _SessionVideoViewportState extends State<SessionVideoViewport> {
   Timer? _controlsTimer;
   bool _controlsVisible = false;
+  bool _cursorInside = false;
   bool _surfaceSuspended = false;
   bool _fullscreenActionRunning = false;
+
+  bool get _isControlVisible => _cursorInside || _controlsVisible;
 
   @override
   void didUpdateWidget(covariant SessionVideoViewport oldWidget) {
@@ -183,6 +186,7 @@ class _SessionVideoViewportState extends State<SessionVideoViewport> {
     if (widget.videoReady) return;
     _controlsTimer?.cancel();
     _controlsVisible = false;
+    _cursorInside = false;
     _surfaceSuspended = false;
   }
 
@@ -210,6 +214,7 @@ class _SessionVideoViewportState extends State<SessionVideoViewport> {
     _controlsTimer?.cancel();
     setState(() {
       _controlsVisible = false;
+      _cursorInside = false;
       _surfaceSuspended = true;
     });
     await WidgetsBinding.instance.endOfFrame;
@@ -226,34 +231,46 @@ class _SessionVideoViewportState extends State<SessionVideoViewport> {
   @override
   Widget build(BuildContext context) {
     final showSurface = widget.videoReady && !_surfaceSuspended;
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        widget.poster,
-        if (showSurface)
-          KeyedSubtree(
-            key: const ValueKey<String>('session_video_surface'),
-            child: widget.surfaceBuilder(context),
-          ),
-        if (widget.videoReady)
-          Positioned.fill(
-            child: GestureDetector(
-              key: const ValueKey<String>('session_video_tap_target'),
-              behavior: HitTestBehavior.opaque,
-              onTap: _toggleControls,
-              child: const ColoredBox(color: Colors.transparent),
+    return MouseRegion(
+      onEnter: widget.videoReady
+          ? (_) => setState(() => _cursorInside = true)
+          : null,
+      onHover: widget.videoReady
+          ? (_) {
+              if (!_cursorInside) setState(() => _cursorInside = true);
+            }
+          : null,
+      onExit: widget.videoReady
+          ? (_) => setState(() => _cursorInside = false)
+          : null,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          widget.poster,
+          if (showSurface)
+            KeyedSubtree(
+              key: const ValueKey<String>('session_video_surface'),
+              child: widget.surfaceBuilder(context),
             ),
-          ),
-        if (widget.videoReady)
-          Positioned(
-            right: 12,
-            bottom: 12,
-            child: AnimatedOpacity(
-              key: const ValueKey<String>('session_video_fullscreen_control'),
-              opacity: _controlsVisible ? 1 : 0,
-              duration: kAppMotionFast,
-              child: IgnorePointer(
-                ignoring: !_controlsVisible,
+          if (widget.videoReady)
+            Positioned.fill(
+              child: GestureDetector(
+                key: const ValueKey<String>('session_video_tap_target'),
+                behavior: HitTestBehavior.opaque,
+                onTap: _toggleControls,
+                child: const ColoredBox(color: Colors.transparent),
+              ),
+            ),
+          if (widget.videoReady)
+            Positioned(
+              right: 12,
+              bottom: 12,
+              child: AnimatedOpacity(
+                key: const ValueKey<String>('session_video_fullscreen_control'),
+                opacity: _isControlVisible ? 1 : 0,
+                duration: kAppMotionFast,
+                child: IgnorePointer(
+                  ignoring: !_isControlVisible,
                 child: Material(
                   color: Colors.black.withValues(alpha: 0.58),
                   shape: const CircleBorder(),
@@ -271,7 +288,8 @@ class _SessionVideoViewportState extends State<SessionVideoViewport> {
               ),
             ),
           ),
-      ],
+        ],
+      ),
     );
   }
 }

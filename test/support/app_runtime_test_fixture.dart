@@ -38,6 +38,7 @@ import 'package:doujin_audio/features/player/application/playback_facade.dart';
 import 'package:doujin_audio/features/player/application/playback_notification_service.dart';
 import 'package:doujin_audio/features/player/application/playback_subtitle_service.dart';
 import 'package:doujin_audio/features/player/application/timer_facade.dart';
+import 'package:doujin_audio/features/settings/application/app_cache_service.dart';
 import 'package:doujin_audio/features/settings/application/app_update_service.dart';
 import 'package:doujin_audio/features/settings/application/settings_repository.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -296,6 +297,7 @@ final class AppRuntimeWidgetTestFixture {
        uiOperationService = UiOperationService(),
        undoableRemovalService = UndoableRemovalService(),
        languageProvider = AppLanguageProvider() {
+    AppCacheService.scheduledEnforceEnabled = false;
     configureSettingsRepository?.call(settingsRepository);
     final detailCache = AudioDetailCacheService(
       repository: AudioDetailRepository(
@@ -396,6 +398,7 @@ final class AppRuntimeWidgetTestFixture {
     languageProvider.dispose();
     unawaited(undoableRemovalService.dispose());
     unawaited(runtimeGraph.runtime.dispose());
+    AppCacheService.resetForTest();
   }
 
   void disposeAfterWarmups() => dispose();
@@ -590,6 +593,7 @@ final class AppRuntimeTestFixture {
     messenger.setMockMethodCallHandler(notificationsChannel, null);
     await database.close();
     UiInteractionCoordinator.instance.resetForTest();
+    AppCacheService.resetForTest();
   }
 
   void bindRuntimeGraph(AppRuntimeGraph graph) {

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -254,5 +255,39 @@ void main() {
     await tester.pump();
 
     expect(find.byIcon(Icons.fullscreen_exit_rounded), findsOneWidget);
+  });
+
+  testWidgets('hover over video reveals fullscreen button and exit hides it', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      buildViewport(videoReady: true, onFullscreen: () async {}),
+    );
+
+    IgnorePointer pointer() => tester.widget<IgnorePointer>(
+      find.descendant(
+        of: find.byKey(
+          const ValueKey<String>('session_video_fullscreen_control'),
+        ),
+        matching: find.byType(IgnorePointer),
+      ),
+    );
+
+    expect(pointer().ignoring, isTrue);
+
+    final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await gesture.addPointer(location: Offset.zero);
+    addTearDown(gesture.removePointer);
+
+    final posterRect = tester.getRect(
+      find.byKey(const ValueKey<String>('poster')),
+    );
+    await gesture.moveTo(posterRect.center);
+    await tester.pumpAndSettle();
+    expect(pointer().ignoring, isFalse);
+
+    await gesture.moveTo(posterRect.bottomRight + const Offset(50, 50));
+    await tester.pumpAndSettle();
+    expect(pointer().ignoring, isTrue);
   });
 }

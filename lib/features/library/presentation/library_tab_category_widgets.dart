@@ -227,6 +227,8 @@ extension _LibrarySearchPageCategoryView on _LibrarySearchPageState {
                   selectedTerms: _selectedTermsForCurrentCategory,
                   emptyText: _noTermsText(i18n),
                   clearLabel: i18n.tr('clear'),
+                  collapseLabel: i18n.tr('collapse'),
+                  expandLabel: i18n.tr('expand'),
                   searchHintText: _termSearchHintText(i18n),
                   searchQuery: _termSearchQuery,
                   onSearchQueryChanged: (val) {
@@ -320,6 +322,8 @@ class LibraryCategoryTermBox extends StatefulWidget {
     required this.selectedTerms,
     required this.emptyText,
     required this.clearLabel,
+    required this.collapseLabel,
+    required this.expandLabel,
     required this.onToggle,
     required this.onClear,
     required this.searchHintText,
@@ -333,6 +337,8 @@ class LibraryCategoryTermBox extends StatefulWidget {
   final Set<String> selectedTerms;
   final String emptyText;
   final String clearLabel;
+  final String collapseLabel;
+  final String expandLabel;
   final ValueChanged<String> onToggle;
   final VoidCallback onClear;
   final String searchHintText;
@@ -594,7 +600,11 @@ class _LibraryCategoryTermBoxState extends State<LibraryCategoryTermBox> {
                                   color: cs.primary,
                                 ),
                                 const SizedBox(width: 2),
-                                Text(_expanded ? '收起' : '展开'),
+                                Text(
+                                  _expanded
+                                      ? widget.collapseLabel
+                                      : widget.expandLabel,
+                                ),
                               ],
                             ),
                           ),

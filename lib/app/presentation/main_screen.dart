@@ -94,8 +94,8 @@ List<_MainDestination> _resolveMainDestinations({
       ),
     const _MainDestination(
       type: MainDestinationType.playlist,
-      icon: Icons.graphic_eq_outlined,
-      selectedIcon: Icons.graphic_eq_rounded,
+      icon: Icons.playlist_play_outlined,
+      selectedIcon: Icons.playlist_play_rounded,
       labelKey: 'nav_sessions',
     ),
     const _MainDestination(

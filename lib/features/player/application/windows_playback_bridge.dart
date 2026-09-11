@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:media_kit/media_kit.dart';
+import 'package:media_kit_video/media_kit_video.dart';
 
 import '../../../core/errors/native_result.dart';
 import '../domain/audio_effects.dart';
@@ -20,8 +21,12 @@ class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
     return _instance!;
   }
 
-  static Player _defaultPlayer() =>
-      Player(configuration: const PlayerConfiguration(title: 'Doujin Audio'));
+  static Player _defaultPlayer() => Player(
+        configuration: const PlayerConfiguration(
+          title: 'Doujin Audio',
+          vo: 'libmpv',
+        ),
+      );
 
   final Player Function() _createPlayer;
   final _sessions = <String, _WindowsPlaybackSession>{};
@@ -35,6 +40,8 @@ class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
   bool _disposed = false;
 
   Player? playerForSession(String sessionId) => _sessions[sessionId]?.player;
+  VideoController? videoControllerForSession(String sessionId) =>
+      _sessions[sessionId]?.videoController;
 
   @override
   Stream<NativePlaybackSnapshot> get snapshots => _snapshots.stream;
@@ -183,6 +190,11 @@ class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
         ? session.position
         : null;
     try {
+      final platform = player.platform;
+      if (platform is NativePlayer) {
+        session.videoController ??= VideoController(player);
+        await platform.setProperty('vid', 'auto');
+      }
       final playlist = Playlist([
         for (var i = 0; i < session.queue.length; i++)
           Media(session.queue[i]['uri'] as String),
@@ -575,6 +587,7 @@ class _WindowsPlaybackSession {
   _WindowsPlaybackSession(this.id);
   final String id;
   Player? player;
+  VideoController? videoController;
   final subscriptions = <StreamSubscription<dynamic>>[];
   List<Map<String, Object?>> queue = [];
   List<String> mediaUris = [];
@@ -642,6 +655,7 @@ class _WindowsPlaybackSession {
       await subscription.cancel();
     }
     await player?.dispose();
+    videoController = null;
   }
 }
 

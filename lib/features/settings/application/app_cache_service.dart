@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/services.dart';
+import 'package:meta/meta.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 
@@ -158,10 +159,13 @@ class AppCacheService {
     return future;
   }
 
+  static bool scheduledEnforceEnabled = true;
+
   static void scheduleEnforce({
     Duration idleDelay = const Duration(seconds: 2),
     Duration maxDelay = const Duration(seconds: 30),
   }) {
+    if (!scheduledEnforceEnabled) return;
     if (_protectedPaths.isNotEmpty) {
       _enforceAfterLeaseRelease = true;
       return;
@@ -187,6 +191,15 @@ class AppCacheService {
     _scheduledEnforceTimer?.cancel();
     _scheduledEnforceTimer = null;
     _scheduledEnforceStartedAt = null;
+  }
+
+  @visibleForTesting
+  static void resetForTest() {
+    _cancelScheduledEnforce();
+    scheduledEnforceEnabled = true;
+    _enforceAfterLeaseRelease = false;
+    _enforceRequested = false;
+    _protectedPaths.clear();
   }
 
   static Future<void> _drainEnforceRequests() async {

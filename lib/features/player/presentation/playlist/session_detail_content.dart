@@ -624,7 +624,7 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
               ),
             ),
           ),
-          if (!_segmentPanelExpanded)
+          if (!_segmentPanelExpanded || widget.isLandscape)
             RepaintBoundary(
               child: SessionSubtitlePanel(
                 transitionActive: widget.transitionActive,

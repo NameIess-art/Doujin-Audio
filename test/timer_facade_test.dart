@@ -306,7 +306,58 @@ void main() {
       expect(timer.stopAfterCurrentTrack, isFalse);
       expect(timer.state.stopAfterCurrentTrack, isFalse);
     });
+
+    test('auto-resume ramps fade multiplier from 0.0 to 1.0', () async {
+      final platform = _ControlledPowerPlatformService();
+      final timerService = TimerService()
+        ..autoResumeEnabled = true
+        ..autoResumeAt = DateTime.now().subtract(const Duration(minutes: 1))
+        ..pausedByTimerSessionIds.add('session-1');
+      final timer = TimerFacade.create(
+        service: timerService,
+        powerPlatformService: platform,
+        resumeFadeInDuration: const Duration(milliseconds: 250),
+      );
+      addTearDown(timer.dispose);
+
+      final fadeMultipliers = <double>[];
+      final resumedSessions = <String>[];
+      final session = _TestSession('session-1');
+
+      timer.attachRuntime(
+        hasPlayingSession: () => false,
+        sessions: () => [session],
+        pauseSession: (_) async => true,
+        activateAudioSession: () async => true,
+        resumeSession: (s) async {
+          resumedSessions.add(s.id);
+          return true;
+        },
+        onStateChanged: () {},
+        onRuntimeRestored: () {},
+        applyFadeMultiplier: fadeMultipliers.add,
+      );
+
+      platform.autoResumeResult.complete(TimerExecutionResult.failed);
+      timer.retryOverdueAutoResume();
+
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect(resumedSessions, contains('session-1'));
+      expect(fadeMultipliers.first, 0.0);
+
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+      expect(fadeMultipliers.last, 1.0);
+      expect(fadeMultipliers.length, greaterThan(2));
+    });
   });
+}
+
+class _TestSession extends Fake implements PlaybackSession {
+  _TestSession(this.id);
+  @override
+  final String id;
+  @override
+  bool get effectivePlaying => false;
 }
 
 void _attachNoopRuntime(

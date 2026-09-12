@@ -30,7 +30,6 @@ import '../../application/subtitle_overlay_controller.dart';
 import 'playlist_feature_icons.dart';
 import 'playlist_media_widgets.dart';
 import 'playlist_shared_helpers.dart';
-import 'playlist_time_segments.dart';
 import 'session_detail_content.dart';
 import '../playlist_view_models.dart';
 
@@ -711,8 +710,6 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
   ThemeData? _cachedQueueBaseTheme;
   int? _cachedQueueColorValue;
   ThemeData? _cachedQueueTheme;
-  double _segmentPanelDragDelta = 0;
-  bool _isSegmentPanelGesture = false;
   bool _isDismissGesture = false;
 
   ThemeData _detailThemeForSession(
@@ -875,27 +872,19 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
           onHorizontalDragCancel: onHorizontalDragCancel,
           onVerticalDragStart: (details) {
             final detailState = _detailContentKey.currentState;
-            _isSegmentPanelGesture =
-                detailState?.isSegmentPanelExpanded ?? false;
+            final panelExpanded = detailState?.isSegmentPanelExpanded ?? false;
             _isDismissGesture =
-                !_isSegmentPanelGesture && widget.dismissAnimation.value > 0.01;
-            _segmentPanelDragDelta = 0;
+                !panelExpanded && widget.dismissAnimation.value > 0.01;
           },
           onVerticalDragUpdate: (details) {
-            final delta = details.primaryDelta ?? 0;
             final detailState = _detailContentKey.currentState;
             final panelExpanded = detailState?.isSegmentPanelExpanded ?? false;
+            if (panelExpanded) return;
+
+            final delta = details.primaryDelta ?? 0;
             final detailFullyOpen = widget.dismissAnimation.value <= 0.01;
 
-            if (_isSegmentPanelGesture) {
-              _segmentPanelDragDelta += delta;
-              return;
-            }
-
-            if (!_isDismissGesture &&
-                delta > 0 &&
-                !panelExpanded &&
-                detailFullyOpen) {
+            if (!_isDismissGesture && delta > 0 && detailFullyOpen) {
               _isDismissGesture = true;
               onVerticalDragUpdate?.call(delta);
               return;
@@ -905,52 +894,20 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
               onVerticalDragUpdate?.call(delta);
               return;
             }
-
-            if (!panelExpanded && delta < 0 && detailFullyOpen) {
-              _segmentPanelDragDelta += delta;
-              return;
-            }
-
-            onVerticalDragUpdate?.call(delta);
           },
           onVerticalDragEnd: (details) {
-            final velocity = details.primaryVelocity ?? 0;
             final detailState = _detailContentKey.currentState;
             final panelExpanded = detailState?.isSegmentPanelExpanded ?? false;
-            if (_isSegmentPanelGesture) {
-              _isSegmentPanelGesture = false;
-              final shouldCollapse =
-                  panelExpanded &&
-                  (_segmentPanelDragDelta >
-                          kSegmentPanelCollapseDragThreshold ||
-                      velocity > 800);
-              _segmentPanelDragDelta = 0;
-              if (shouldCollapse) detailState?.collapseSegmentPanel();
-              return;
-            }
+            if (panelExpanded) return;
+
             if (_isDismissGesture) {
               _isDismissGesture = false;
-              _segmentPanelDragDelta = 0;
               onVerticalDragEnd?.call(details);
               return;
             }
-            final shouldExpand =
-                !panelExpanded &&
-                widget.dismissAnimation.value <= 0.01 &&
-                (_segmentPanelDragDelta < -120 || velocity < -800);
-            _segmentPanelDragDelta = 0;
-            if (shouldExpand) {
-              detailState?.expandSegmentPanel();
-              return;
-            }
-            onVerticalDragEnd?.call(details);
           },
           onVerticalDragCancel: () {
-            final wasSegmentPanelGesture = _isSegmentPanelGesture;
-            _isSegmentPanelGesture = false;
             _isDismissGesture = false;
-            _segmentPanelDragDelta = 0;
-            if (wasSegmentPanelGesture) return;
             onVerticalDragCancel?.call();
           },
           child: Stack(

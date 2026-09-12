@@ -609,12 +609,13 @@ class _PlaybackSecondaryControlsState
         builder: (context, constraints) => SingleChildScrollView(
           key: const ValueKey('playback_secondary_controls_horizontal_scroll'),
           scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.symmetric(horizontal: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 10),
           child: ConstrainedBox(
             constraints: BoxConstraints(
-              minWidth: max(0.0, constraints.maxWidth - 16),
+              minWidth: max(0.0, constraints.maxWidth - 20),
             ),
             child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
                 SessionLoopModeButton(
                   session: widget.session,
@@ -683,9 +684,12 @@ class _PlaybackSecondaryControlsState
           width: 0.5,
         ),
       ),
-      child: AnimatedSwitcher(
-        duration: const Duration(milliseconds: 200),
-        child: _volumeMode ? buildVolumeBar() : buildButtonsRow(),
+      child: ClipRRect(
+        borderRadius: borderRadius,
+        child: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 200),
+          child: _volumeMode ? buildVolumeBar() : buildButtonsRow(),
+        ),
       ),
     );
 
@@ -699,7 +703,10 @@ class _PlaybackSecondaryControlsState
               ),
             ),
           )
-        : capsuleSurface;
+        : ClipRRect(
+            borderRadius: borderRadius,
+            child: capsuleSurface,
+          );
 
     return Padding(
       padding: const EdgeInsets.only(top: 8, left: 4, right: 4),

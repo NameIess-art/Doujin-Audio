@@ -18,6 +18,7 @@ final class TimerFacade {
     required TimerService service,
     required this.powerPlatformService,
     Future<SharedPreferences> Function()? preferencesLoader,
+    this.resumeFadeInDuration = const Duration(seconds: 10),
   }) : _service = service,
        _preferencesLoader = preferencesLoader ?? SharedPreferences.getInstance;
 
@@ -25,14 +26,18 @@ final class TimerFacade {
     TimerService? service,
     PowerPlatformService? powerPlatformService,
     Future<SharedPreferences> Function()? preferencesLoader,
+    Duration resumeFadeInDuration = const Duration(seconds: 10),
   }) {
     return TimerFacade(
       service: service ?? TimerService(),
       powerPlatformService: powerPlatformService ?? PowerPlatformService(),
       preferencesLoader: preferencesLoader,
+      resumeFadeInDuration: resumeFadeInDuration,
     );
   }
 
+  final Duration resumeFadeInDuration;
+  Timer? _resumeFadeTimer;
   final TimerService _service;
   final PowerPlatformService powerPlatformService;
   final Future<SharedPreferences> Function() _preferencesLoader;
@@ -251,7 +256,40 @@ final class TimerFacade {
     await syncNativeAlarms();
   }
 
-  void resetRuntimeState({bool clearPausedSessions = true}) {
+  void _startResumeFadeIn() {
+    _cancelResumeFadeIn();
+    if (resumeFadeInDuration <= Duration.zero) {
+      _applyFadeMultiplier(1.0);
+      return;
+    }
+    _applyFadeMultiplier(0.0);
+    final stopwatch = Stopwatch()..start();
+    final durationMs = resumeFadeInDuration.inMilliseconds;
+    const interval = Duration(milliseconds: 100);
+
+    _resumeFadeTimer = Timer.periodic(interval, (timer) {
+      final elapsed = stopwatch.elapsedMilliseconds;
+      if (elapsed >= durationMs) {
+        _applyFadeMultiplier(1.0);
+        timer.cancel();
+        _resumeFadeTimer = null;
+      } else {
+        final fraction = (elapsed / durationMs).clamp(0.0, 1.0);
+        _applyFadeMultiplier(fraction);
+      }
+    });
+  }
+
+  void _cancelResumeFadeIn() {
+    _resumeFadeTimer?.cancel();
+    _resumeFadeTimer = null;
+  }
+
+  void resetRuntimeState({
+    bool clearPausedSessions = true,
+    bool restoreFadeMultiplier = true,
+  }) {
+    _cancelResumeFadeIn();
     _restoredCountdownSessions.clear();
     _service.timerGeneration++;
     _service.countdownTimer?.cancel();
@@ -269,7 +307,9 @@ final class TimerFacade {
       _service.pausedByTimerSessionIds.clear();
     }
     _service.stopAfterCurrentTrack = false;
-    _applyFadeMultiplier(1.0);
+    if (restoreFadeMultiplier) {
+      _applyFadeMultiplier(1.0);
+    }
   }
 
   Future<void> resetPersistedState() async {
@@ -428,7 +468,7 @@ final class TimerFacade {
         nativeRuntime == _NativeTimerRuntimeLoadResult.stale) {
       return;
     }
-    resetRuntimeState();
+    resetRuntimeState(restoreFadeMultiplier: false);
     _changed();
     unawaited(saveRuntime());
   }
@@ -473,10 +513,13 @@ final class TimerFacade {
       await syncNativeAlarms();
       return;
     }
+    _applyFadeMultiplier(0.0);
+    final resumedSessionIds = <String>[];
     for (final session in resumableSessions) {
       final resumed = await _resumeSession(session);
       if (!_isCurrentGeneration(generation)) return;
       if (resumed) {
+        resumedSessionIds.add(session.id);
         _service.pausedByTimerSessionIds.remove(session.id);
       }
     }
@@ -486,10 +529,16 @@ final class TimerFacade {
     );
     if (_service.pausedByTimerSessionIds.isEmpty) {
       _service.autoResumeAt = null;
-      resetRuntimeState(clearPausedSessions: false);
+      resetRuntimeState(
+        clearPausedSessions: false,
+        restoreFadeMultiplier: false,
+      );
     } else {
       _service.autoResumeTimer?.cancel();
       _service.autoResumeTimer = null;
+    }
+    if (resumedSessionIds.isNotEmpty) {
+      _startResumeFadeIn();
     }
     _changed();
     await saveRuntime();
@@ -897,6 +946,7 @@ final class TimerFacade {
   void _changed() => _onStateChanged();
 
   Future<void> dispose() async {
+    _cancelResumeFadeIn();
     _service.countdownTimer?.cancel();
     _service.autoResumeTimer?.cancel();
     await _service.dispose();

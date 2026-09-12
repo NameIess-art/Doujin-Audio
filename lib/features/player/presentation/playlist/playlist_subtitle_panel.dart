@@ -16,6 +16,7 @@ import '../../../../core/widgets/app_feedback.dart';
 import '../../../settings/application/settings_state.dart';
 import '../../../settings/presentation/settings_providers.dart';
 import '../../application/playback_session_snapshot.dart';
+import '../../application/playback_subtitle_service.dart';
 import '../playback_error_text.dart';
 import '../playback_position_ui_gate.dart';
 import '../playback_providers.dart';
@@ -49,6 +50,7 @@ class _SessionSubtitlePanelState extends ConsumerState<SessionSubtitlePanel> {
   int _loadGeneration = 0;
   late final String _commitKey = 'detail_subtitle_${identityHashCode(this)}';
   VoidCallback? _pendingSubtitle;
+  late final PlaybackSubtitleService _subtitleService;
 
   @override
   void initState() {
@@ -58,9 +60,8 @@ class _SessionSubtitlePanelState extends ConsumerState<SessionSubtitlePanel> {
       session: widget.session,
       includeBufferedPosition: false,
     )..addListener(_handlePositionTick);
-    ref
-        .read(playbackSubtitleServiceProvider)
-        .addListener(_handleSubtitleServiceChanged);
+    _subtitleService = ref.read(playbackSubtitleServiceProvider)
+      ..addListener(_handleSubtitleServiceChanged);
     if (widget.subtitleEnabled) {
       _scheduleSubtitleTrackLoad();
     }
@@ -107,9 +108,7 @@ class _SessionSubtitlePanelState extends ConsumerState<SessionSubtitlePanel> {
   void dispose() {
     _loadGeneration++;
     _pendingSubtitle = null;
-    ref
-        .read(playbackSubtitleServiceProvider)
-        .removeListener(_handleSubtitleServiceChanged);
+    _subtitleService.removeListener(_handleSubtitleServiceChanged);
     widget.transitionActive?.removeListener(_schedulePendingSubtitle);
     UiInteractionCoordinator.instance.cancelCommit(_commitKey);
     _positionGate

@@ -28,7 +28,7 @@ void main() {
     start: const Duration(milliseconds: 1250),
     end: const Duration(milliseconds: 7250),
     colorValue: 0xFF64B5F6,
-    createdAt: DateTime.utc(2026, 1, 1),
+    createdAt: DateTime.utc(2026),
     updatedAt: DateTime.utc(2026, 1, 2),
   );
 
@@ -177,7 +177,7 @@ void main() {
       await repository.save(AudioDetail.empty(target));
       final local = original.copyWith(
         name: '本地更新',
-        updatedAt: DateTime.utc(2026, 2, 1),
+        updatedAt: DateTime.utc(2026, 2),
       );
       await playback.upsertTimeSegmentLabel(local);
 
@@ -193,7 +193,7 @@ void main() {
       final entry =
           (json['timeSegmentLabels'] as List).single as Map<String, dynamic>;
       entry['name'] = '文档更新';
-      entry['updatedAt'] = DateTime.utc(2026, 3, 1).toIso8601String();
+      entry['updatedAt'] = DateTime.utc(2026, 3).toIso8601String();
       await document.writeAsString(jsonEncode(json));
 
       await repository.importBackupsMany([target]);

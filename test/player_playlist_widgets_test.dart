@@ -3561,23 +3561,28 @@ void main() {
         of: secondaryControls,
         matching: find.byType(IconButton),
       );
-      expect(secondaryButtons, findsNWidgets(5));
+      expect(secondaryButtons, findsNWidgets(6));
       final buttonCenters = List<double>.generate(
-        5,
+        6,
         (index) => tester.getCenter(secondaryButtons.at(index)).dx,
       );
-      expect(
-        List<double>.generate(
-          buttonCenters.length - 1,
-          (index) => buttonCenters[index + 1] - buttonCenters[index],
-        ),
-        <double>[52, 52, 52, 52],
+      final intervals = List<double>.generate(
+        buttonCenters.length - 1,
+        (index) => buttonCenters[index + 1] - buttonCenters[index],
       );
-      expect(
-        tester.getTopRight(secondaryControls).dx -
-            tester.getTopRight(secondaryButtons.last).dx,
-        greaterThanOrEqualTo(100),
-      );
+      for (final interval in intervals) {
+        expect(interval, closeTo(intervals.first, 1.0));
+      }
+      for (var i = 0; i < 6; i++) {
+        expect(
+          tester.getTopLeft(secondaryButtons.at(i)).dx,
+          greaterThanOrEqualTo(tester.getTopLeft(secondaryControls).dx),
+        );
+        expect(
+          tester.getTopRight(secondaryButtons.at(i)).dx,
+          lessThanOrEqualTo(tester.getTopRight(secondaryControls).dx),
+        );
+      }
       expect(
         find.byKey(const ValueKey('session_detail_background_blur')),
         findsOneWidget,

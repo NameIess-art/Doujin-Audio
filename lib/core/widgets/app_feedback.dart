@@ -277,9 +277,7 @@ void _showTopFeedback(
             final key = element.widget.key;
             if (key is ValueKey<String>) {
               final keyStr = key.value;
-              if (keyStr.startsWith('main_page_canvas_') ||
-                  keyStr.startsWith('audio_library_') ||
-                  keyStr.startsWith('main_destination_')) {
+              if (keyStr.startsWith('main_page_canvas_')) {
                 final box = element.findRenderObject() as RenderBox?;
                 if (box != null && box.hasSize) {
                   targetBox = box;
@@ -289,7 +287,6 @@ void _showTopFeedback(
             }
             return true;
           });
-          targetBox ??= context.findRenderObject() as RenderBox?;
           if (targetBox != null && targetBox!.hasSize) {
             final origin = targetBox!.localToGlobal(Offset.zero);
             availableWidth = origin.dx + targetBox!.size.width;
@@ -297,9 +294,6 @@ void _showTopFeedback(
               derivedLeft = origin.dx;
             }
           }
-        }
-        if (derivedLeft <= 0) {
-          derivedLeft = mediaQuery.size.width >= 980 ? 292 : 260;
         }
         leftInset = derivedLeft + 16.0;
       }

@@ -1,5 +1,6 @@
 import 'package:doujin_audio/features/settings/presentation/settings_providers.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -548,6 +549,54 @@ void main() {
     },
   );
 
+  for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+    for (final size in [
+      const Size(1280, 800),
+      const Size(800, 400),
+      const Size(400, 800),
+    ]) {
+      testWidgets('top feedback fills standalone page on $platform at $size', (
+        tester,
+      ) async {
+        debugDefaultTargetPlatformOverride = platform;
+        addTearDown(() => debugDefaultTargetPlatformOverride = null);
+        tester.view.physicalSize = size;
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.reset);
+
+        await tester.pumpWidget(
+          _feedbackApp(
+            blurEnabled: false,
+            home: Scaffold(
+              body: Center(
+                child: SizedBox(
+                  width: 120,
+                  child: Builder(
+                    builder: (context) => TextButton(
+                      onPressed: () =>
+                          showAppSnackBar(context, 'Page feedback'),
+                      child: const Text('Trigger'),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.tap(find.text('Trigger'));
+        await tester.pumpAndSettle();
+
+        final surface = find.byType(AppFeedbackSurface);
+        expect(tester.getTopLeft(surface).dx, 16);
+        expect(tester.getTopRight(surface).dx, size.width - 16);
+        expect(tester.takeException(), isNull);
+        await tester.pump(const Duration(seconds: 3));
+        await tester.pumpAndSettle();
+        debugDefaultTargetPlatformOverride = null;
+      });
+    }
+  }
+
   testWidgets('non-destructive confirmation uses the requested action', (
     tester,
   ) async {
@@ -625,4 +674,3 @@ void main() {
     expect(find.text('Item deleted (1s)'), findsOneWidget);
   });
 }
-

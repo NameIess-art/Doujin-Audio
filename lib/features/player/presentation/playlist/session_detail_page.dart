@@ -1042,89 +1042,98 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                               final subtitles = ref.read(
                                 playbackSubtitleServiceProvider,
                               );
-                              final hasSubtitle = subtitles.hasKnownSubtitle(
-                                session.currentTrackPath,
-                              );
-                              final settings = ref.watch(
-                                subtitleSettingsProvider.select(
-                                  (state) => (
-                                    state.isShowEnabled(session.id),
-                                    state.isGlobalEnabled(session.id),
-                                  ),
-                                ),
-                              );
+                              return ListenableBuilder(
+                                listenable: subtitles,
+                                builder: (context, _) {
+                                  final hasSubtitle = subtitles
+                                      .hasKnownSubtitle(
+                                        session.currentTrackPath,
+                                      );
+                                  final settings = ref.watch(
+                                    subtitleSettingsProvider.select(
+                                      (state) => (
+                                        state.isShowEnabled(session.id),
+                                        state.isGlobalEnabled(session.id),
+                                      ),
+                                    ),
+                                  );
 
-                              return Row(
-                                children: [
-                                  IconButton(
-                                    onPressed: onClose,
-                                    tooltip: i18n.tr('close'),
-                                    icon: Icon(
-                                      Icons.keyboard_arrow_down_rounded,
-                                      color: sessionDetailForeground(
-                                        cs,
-                                        SessionDetailForegroundLevel.muted,
-                                      ),
-                                      size: 32,
-                                    ),
-                                  ),
-                                  const Expanded(child: SizedBox(height: 48)),
-                                  if (hasSubtitle &&
-                                      settings.$1 &&
-                                      settings.$2) ...[
-                                    Icon(
-                                      Icons.subtitles_rounded,
-                                      color: sessionDetailForeground(
-                                        cs,
-                                        SessionDetailForegroundLevel.muted,
-                                      ),
-                                      size: 20,
-                                    ),
-                                    const SizedBox(width: 8),
-                                  ],
-                                  Consumer(
-                                    builder: (context, ref, child) {
-                                      final transport = ref.watch(
-                                        sessionDetailTransportProvider(
-                                          session.id,
-                                        ),
-                                      );
-                                      final featureIcons =
-                                          sessionFeatureBadgeIcons(
-                                            showSubtitles: false,
-                                            channelSwapEnabled:
-                                                transport?.channelSwapEnabled ??
-                                                session.channelSwapEnabled,
-                                            audioEffects:
-                                                transport?.audioEffects ??
-                                                session.audioEffects,
-                                            speed:
-                                                transport?.speed ??
-                                                session.speed,
-                                          );
-                                      if (featureIcons.isEmpty) {
-                                        return const SizedBox.shrink();
-                                      }
-                                      return Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          SessionFeatureIconRow(
-                                            featureIcons: featureIcons,
-                                            color: sessionDetailForeground(
-                                              cs,
-                                              SessionDetailForegroundLevel
-                                                  .muted,
-                                            ),
-                                            iconSize: 20,
-                                            spacing: 8,
-                                            alignment: WrapAlignment.end,
+                                  return Row(
+                                    children: [
+                                      IconButton(
+                                        onPressed: onClose,
+                                        tooltip: i18n.tr('close'),
+                                        icon: Icon(
+                                          Icons.keyboard_arrow_down_rounded,
+                                          color: sessionDetailForeground(
+                                            cs,
+                                            SessionDetailForegroundLevel.muted,
                                           ),
-                                          const SizedBox(width: 8),
-                                        ],
-                                      );
-                                    },
-                                  ),
-                                ],
+                                          size: 32,
+                                        ),
+                                      ),
+                                      const Expanded(
+                                        child: SizedBox(height: 48),
+                                      ),
+                                      if (hasSubtitle &&
+                                          settings.$1 &&
+                                          settings.$2) ...[
+                                        Icon(
+                                          Icons.subtitles_rounded,
+                                          color: sessionDetailForeground(
+                                            cs,
+                                            SessionDetailForegroundLevel.muted,
+                                          ),
+                                          size: 20,
+                                        ),
+                                        const SizedBox(width: 8),
+                                      ],
+                                      Consumer(
+                                        builder: (context, ref, child) {
+                                          final transport = ref.watch(
+                                            sessionDetailTransportProvider(
+                                              session.id,
+                                            ),
+                                          );
+                                          final featureIcons =
+                                              sessionFeatureBadgeIcons(
+                                                showSubtitles: false,
+                                                channelSwapEnabled:
+                                                    transport
+                                                        ?.channelSwapEnabled ??
+                                                    session.channelSwapEnabled,
+                                                audioEffects:
+                                                    transport?.audioEffects ??
+                                                    session.audioEffects,
+                                                speed:
+                                                    transport?.speed ??
+                                                    session.speed,
+                                              );
+                                          if (featureIcons.isEmpty) {
+                                            return const SizedBox.shrink();
+                                          }
+                                          return Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              SessionFeatureIconRow(
+                                                featureIcons: featureIcons,
+                                                color: sessionDetailForeground(
+                                                  cs,
+                                                  SessionDetailForegroundLevel
+                                                      .muted,
+                                                ),
+                                                iconSize: 20,
+                                                spacing: 8,
+                                                alignment: WrapAlignment.end,
+                                              ),
+                                              const SizedBox(width: 8),
+                                            ],
+                                          );
+                                        },
+                                      ),
+                                    ],
+                                  );
+                                },
                               );
                             },
                           ),
@@ -1194,9 +1203,6 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                               final subtitles = ref.read(
                                 playbackSubtitleServiceProvider,
                               );
-                              final hasSubtitle = subtitles.hasKnownSubtitle(
-                                session.currentTrackPath,
-                              );
                               final subtitleSettings = ref.watch(
                                 subtitleSettingsProvider.select(
                                   (state) => (
@@ -1205,48 +1211,58 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                                   ),
                                 ),
                               );
+                              return ListenableBuilder(
+                                listenable: subtitles,
+                                builder: (context, _) {
+                                  final hasSubtitle = subtitles
+                                      .hasKnownSubtitle(
+                                        session.currentTrackPath,
+                                      );
 
-                              return SessionDetailContent(
-                                transitionActive: widget.transitionActive,
-                                key: _detailContentKey,
-                                session: session,
-                                segmentPanelExpandedNotifier:
-                                    widget.segmentPanelExpandedNotifier,
-                                isLandscape: isLandscape,
-                                artworkWidget: artwork,
-                                detailPadding: detailPadding,
-                                hasSubtitle: hasSubtitle,
-                                subtitleEnabled: subtitleSettings.$1,
-                                subtitleGlobalEnabled: subtitleSettings.$2,
-                                onToggleSubtitle: hasSubtitle
-                                    ? () {
-                                        ref
-                                            .read(
-                                              subtitleSettingsProvider.notifier,
-                                            )
-                                            .toggleShowSubtitles(session.id);
-                                      }
-                                    : null,
-                                onToggleGlobalSubtitle: hasSubtitle
-                                    ? () {
-                                        final notifier = ref.read(
-                                          subtitleSettingsProvider.notifier,
-                                        );
-                                        unawaited(
-                                          _toggleGlobalSubtitleDisplay(
-                                            notifier,
-                                            ref.read(subtitleSettingsProvider),
-                                            session.id,
-                                          ),
-                                        );
-                                      }
-                                    : null,
-                                onShowAudioDetail: () =>
-                                    _showAudioDetailForSession(
-                                      context,
-                                      session,
-                                      track,
-                                    ),
+                                  return SessionDetailContent(
+                                    transitionActive: widget.transitionActive,
+                                    key: _detailContentKey,
+                                    session: session,
+                                    segmentPanelExpandedNotifier:
+                                        widget.segmentPanelExpandedNotifier,
+                                    isLandscape: isLandscape,
+                                    artworkWidget: artwork,
+                                    detailPadding: detailPadding,
+                                    hasSubtitle: hasSubtitle,
+                                    subtitleEnabled: subtitleSettings.$1,
+                                    subtitleGlobalEnabled: subtitleSettings.$2,
+                                    onToggleSubtitle: hasSubtitle
+                                        ? () {
+                                            ref
+                                                .read(
+                                                  subtitleSettingsProvider
+                                                      .notifier,
+                                                )
+                                                .toggleShowSubtitles(
+                                                  session.id,
+                                                );
+                                          }
+                                        : null,
+                                    onToggleGlobalSubtitle: () {
+                                      final notifier = ref.read(
+                                        subtitleSettingsProvider.notifier,
+                                      );
+                                      unawaited(
+                                        _toggleGlobalSubtitleDisplay(
+                                          notifier,
+                                          ref.read(subtitleSettingsProvider),
+                                          session.id,
+                                        ),
+                                      );
+                                    },
+                                    onShowAudioDetail: () =>
+                                        _showAudioDetailForSession(
+                                          context,
+                                          session,
+                                          track,
+                                        ),
+                                  );
+                                },
                               );
                             },
                           ),

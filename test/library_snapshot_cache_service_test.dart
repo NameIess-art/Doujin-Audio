@@ -488,6 +488,9 @@ MusicTrack _track({required String path, required String groupKey}) {
 }
 
 class _FakeAudioDetailRepository implements AudioDetailRepository {
+  @override
+  Future<bool> exportTimeSegments(AudioDetailTarget target) async => true;
+
   _FakeAudioDetailRepository({
     Map<String, String>? details,
     this.failBatchLoad = false,

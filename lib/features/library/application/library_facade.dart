@@ -350,6 +350,20 @@ final class LibraryFacade implements LibraryCatalog {
   Future<AudioDetailSaveResult> saveAudioDetail(AudioDetail detail) =>
       _metadataCoordinator.saveAudioDetail(detail);
 
+  Future<bool> exportTimeSegmentLabels(String trackKey) async {
+    final track = _service.library
+        .where(
+          (track) =>
+              !track.isRemoteAsmr &&
+              PathMatcher.normalize(track.path) == trackKey,
+        )
+        .firstOrNull;
+    if (track == null) return true;
+    return detailCacheService.exportTimeSegments(
+      audioDetailTargetForTrack(track),
+    );
+  }
+
   Future<void> deleteAudioDetail(AudioDetailTarget target) =>
       _metadataCoordinator.deleteAudioDetail(target);
 

@@ -181,6 +181,11 @@ class AudioDetailCacheService {
     );
   }
 
+  Future<bool> exportTimeSegments(AudioDetailTarget target) =>
+      _runSerialized<bool>(<AudioDetailTarget>[
+        target,
+      ], () => _repository.exportTimeSegments(target));
+
   Future<AudioDetailSaveResult> retarget(
     AudioDetailTarget previousTarget,
     AudioDetail detail,

@@ -3,6 +3,7 @@ import 'dart:async';
 import '../../../core/media/audio_detail.dart';
 import '../../../core/media/path_matcher.dart';
 import '../../../core/persistence/json_document_store.dart';
+import '../../player/domain/time_segment_label.dart';
 import '../domain/audio_detail_store.dart';
 import '../data/audio_detail_cover_store.dart';
 import 'audio_detail_document_repository.dart';
@@ -107,6 +108,20 @@ class AudioDetailRepository {
     ];
   }
 
+  Future<bool> exportTimeSegments(AudioDetailTarget target) async {
+    final normalized = _normalizeTarget(target);
+    final detail =
+        await _store.load(normalized) ?? AudioDetail.empty(normalized);
+    final labels = await _store.loadTimeSegmentLabelsForTarget(normalized);
+    _ensureCanCommit();
+    final result = await _documents.saveExplicit(
+      detail,
+      timeSegmentLabels: labels,
+      onlyTimeSegments: true,
+    );
+    return result.status != JsonDocumentWriteStatus.conflict;
+  }
+
   Future<AudioDetailSaveResult> save(AudioDetail detail) async {
     return _saveExplicit(detail);
   }
@@ -135,6 +150,9 @@ class AudioDetailRepository {
     final document = await _documents.saveExplicit(
       normalized,
       previousTarget: previousTarget,
+      timeSegmentLabels: await _store.loadTimeSegmentLabelsForTarget(
+        normalized.target,
+      ),
     );
     return AudioDetailSaveResult(
       detail: normalized,
@@ -163,6 +181,7 @@ class AudioDetailRepository {
       for (final detail in existing) _key(detail.target): detail,
     };
     final changed = <AudioDetail>[];
+    final labels = <TimeSegmentLabel>[];
     var imported = 0;
     var failures = 0;
     for (final target in ordered) {
@@ -173,6 +192,7 @@ class AudioDetailRepository {
         continue;
       }
       imported++;
+      labels.addAll(document.timeSegmentLabels);
       final database = existingByKey[_key(target)];
       final merged = _mergeImported(database, fileDetail, target);
       if (database == null || !_sameDetail(database, merged)) {
@@ -181,7 +201,7 @@ class AudioDetailRepository {
       }
     }
     _ensureCanCommit();
-    await _store.upsertMany(changed);
+    await _store.importDetails(changed, labels);
     return AudioDetailBackupImportResult(
       changedDetails: List<AudioDetail>.unmodifiable(changed),
       importedCount: imported,

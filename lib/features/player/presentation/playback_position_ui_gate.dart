@@ -217,8 +217,13 @@ class SubtitleTextCache {
       _cue = null;
       _text = null;
     }
+    final effectivePosition = track == null
+        ? position
+        : position - track.offset;
     final cachedCue = _cue;
-    if (cachedCue != null && cachedCue.contains(position)) {
+    if (cachedCue != null &&
+        effectivePosition >= Duration.zero &&
+        cachedCue.contains(effectivePosition)) {
       return _text;
     }
     final nextCue = track?.cueAt(position);

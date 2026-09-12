@@ -259,6 +259,12 @@ class SubtitleSettingsNotifier extends Notifier<SubtitleSettingsState>
     }
   }
 
+  void ensureSubtitlesEnabled(String sessionId) {
+    if (!state.isShowEnabled(sessionId)) {
+      toggleShowSubtitles(sessionId);
+    }
+  }
+
   void toggleGlobalSubtitles(String sessionId) {
     setGlobalEnabled(sessionId, !state.isGlobalEnabled(sessionId));
   }

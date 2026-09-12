@@ -3,11 +3,17 @@ import 'dart:typed_data';
 
 import '../../../core/media/audio_detail.dart';
 import '../../../core/media/path_matcher.dart';
+import '../../player/domain/time_segment_label.dart';
 
 final class AudioDetailJsonDocument {
-  const AudioDetailJsonDocument({required this.detail, required this.fields});
+  const AudioDetailJsonDocument({
+    required this.detail,
+    required this.fields,
+    this.timeSegmentLabels = const [],
+  });
 
   final AudioDetail detail;
+  final List<TimeSegmentLabel> timeSegmentLabels;
   final Map<String, Object?> fields;
 }
 
@@ -30,6 +36,7 @@ final class AudioDetailJsonCodec {
     };
     return AudioDetailJsonDocument(
       detail: _detailFromJson(target, raw),
+      timeSegmentLabels: _labelsFromJson(raw, target),
       fields: Map<String, Object?>.unmodifiable(raw),
     );
   }
@@ -67,6 +74,127 @@ final class AudioDetailJsonCodec {
       _ => throw const FormatException('Audio detail document layout mismatch'),
     };
     return _encode(updated);
+  }
+
+  Map<String, Object?> timeSegmentFields(
+    AudioDetailTarget target,
+    Iterable<TimeSegmentLabel> labels,
+  ) => {
+    'timeSegmentLabels': [
+      for (final label in labels)
+        {
+          'id': label.id,
+          'trackPath': target.isLibraryRootFolder
+              ? PathMatcher.relativeWithin(label.trackKey, target.targetPath)
+              : '',
+          'name': label.name,
+          'startMs': label.start.inMilliseconds,
+          'endMs': label.end.inMilliseconds,
+          'colorValue': label.colorValue,
+          'createdAt': label.createdAt.toIso8601String(),
+          'updatedAt': label.updatedAt.toIso8601String(),
+        },
+    ],
+  };
+
+  List<TimeSegmentLabel> _labelsFromJson(
+    Map<String, Object?> json,
+    AudioDetailTarget target,
+  ) {
+    if (!json.containsKey('timeSegmentLabels')) return const [];
+    final value = json['timeSegmentLabels'];
+    if (value is! List) {
+      throw const FormatException('Invalid timeSegmentLabels');
+    }
+    final result = <TimeSegmentLabel>[];
+    final ids = <String>{};
+    for (final item in value) {
+      if (item is! Map) {
+        throw const FormatException('Invalid time segment label');
+      }
+      final fields = Map<String, Object?>.from(item);
+      final id = _string(fields, 'id');
+      final name = _string(fields, 'name');
+      final relative = fields['trackPath'];
+      if (id.trim().isEmpty ||
+          !ids.add(id) ||
+          name.trim().isEmpty ||
+          relative is! String ||
+          (target.isLibraryRootFolder
+              ? relative.isEmpty
+              : relative.isNotEmpty) ||
+          relative.contains('\\') ||
+          relative.contains(':') ||
+          relative.contains('\x00') ||
+          relative.startsWith('/') ||
+          (relative.isNotEmpty &&
+              relative
+                  .split('/')
+                  .any(
+                    (part) => part.isEmpty || part == '.' || part == '..',
+                  ))) {
+        throw const FormatException('Invalid time segment identity or path');
+      }
+      final start = _integer(fields, 'startMs', minimum: 0);
+      final end = _integer(fields, 'endMs', minimum: 0);
+      final color = _integer(fields, 'colorValue', minimum: 0);
+      final created = _date(fields, 'createdAt');
+      final updated = _date(fields, 'updatedAt');
+      if (start == null ||
+          end == null ||
+          end <= start ||
+          color == null ||
+          color > 0xffffffff ||
+          created == null ||
+          updated == null ||
+          updated.isBefore(created)) {
+        throw const FormatException('Invalid time segment values');
+      }
+      final root = target.targetPath;
+      final trackKey = !target.isLibraryRootFolder
+          ? root
+          : PathMatcher.isContentUri(root)
+          ? (root.contains('::') ? '$root/$relative' : '$root::$relative')
+          : PathMatcher.join(root, relative);
+      result.add(
+        TimeSegmentLabel(
+          id: id,
+          trackKey: trackKey,
+          name: name,
+          start: Duration(milliseconds: start),
+          end: Duration(milliseconds: end),
+          colorValue: color,
+          createdAt: created,
+          updatedAt: updated,
+        ),
+      );
+    }
+    return List.unmodifiable(result);
+  }
+
+  Uint8List mergeTimeSegments(
+    Uint8List bytes,
+    AudioDetailTarget target,
+    Map<String, Object?> fields,
+  ) {
+    final root = _decodeRoot(bytes);
+    if (root is Map && target.isLibraryRootFolder) {
+      final entry = Map<String, Object?>.from(root);
+      _detailFromJson(target, entry);
+      return _encode({...entry, ...fields});
+    }
+    if (root is List && !target.isLibraryRootFolder) {
+      final entry = _findTargetEntry(root, target);
+      _detailFromJson(target, entry);
+      return _encode([
+        for (final item in root)
+          if (item is Map && item['targetPath'] == entry['targetPath'])
+            {...entry, ...fields}
+          else
+            item,
+      ]);
+    }
+    throw const FormatException('Audio detail document layout mismatch');
   }
 
   Object? _decodeRoot(Uint8List bytes) {

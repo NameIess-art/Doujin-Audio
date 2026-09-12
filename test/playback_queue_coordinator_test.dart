@@ -59,6 +59,32 @@ void main() {
   });
 
   group('playback queues', () {
+    test('label edits export after persistence and report backup failure', () async {
+      await timeSegments.dispose();
+      final exportedCounts = <int>[];
+      timeSegments = PlaybackTimeSegmentService(
+        database: runtimeGraph.playback.databaseRepository,
+        playback: runtimeGraph.playback,
+        paths: paths,
+        exportLabels: (trackKey) async {
+          final saved = await runtimeGraph.playback.databaseRepository
+              .loadTimeSegmentLabels(trackKey);
+          exportedCounts.add(saved.length);
+          return false;
+        },
+      );
+      final label = timeSegments.buildLabel(
+        trackKey: '/library/labels/01.mp3',
+        name: 'Opening',
+        start: Duration.zero,
+        end: const Duration(seconds: 10),
+        colorValue: 0xFFE57373,
+      );
+      expect(await timeSegments.saveLabel(label), isFalse);
+      expect(await timeSegments.deleteLabel(label), isFalse);
+      expect(exportedCounts, <int>[1, 0]);
+    });
+
     test('queue edit is visible before native preparation completes', () async {
       final prepareResult = Completer<Object?>();
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger

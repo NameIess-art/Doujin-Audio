@@ -24,14 +24,28 @@ class SubtitleCue {
 }
 
 class SubtitleTrack {
-  SubtitleTrack({required this.sourcePath, required List<SubtitleCue> cues})
-    : cues = immutableList(cues);
+  SubtitleTrack({
+    required this.sourcePath,
+    required List<SubtitleCue> cues,
+    this.offset = Duration.zero,
+  }) : cues = immutableList(cues);
 
   final String sourcePath;
   final List<SubtitleCue> cues;
+  final Duration offset;
+
+  SubtitleTrack withOffset(Duration newOffset) {
+    return SubtitleTrack(
+      sourcePath: sourcePath,
+      cues: cues,
+      offset: newOffset,
+    );
+  }
 
   SubtitleCue? cueAt(Duration position) {
     if (cues.isEmpty) return null;
+    final effectivePosition = position - offset;
+    if (effectivePosition < Duration.zero) return null;
 
     var low = 0;
     var high = cues.length - 1;
@@ -39,9 +53,9 @@ class SubtitleTrack {
     while (low <= high) {
       final mid = low + ((high - low) >> 1);
       final cue = cues[mid];
-      if (position < cue.start) {
+      if (effectivePosition < cue.start) {
         high = mid - 1;
-      } else if (position >= cue.end) {
+      } else if (effectivePosition >= cue.end) {
         low = mid + 1;
       } else {
         return cue;

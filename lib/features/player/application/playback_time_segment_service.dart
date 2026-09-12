@@ -13,11 +13,13 @@ final class PlaybackTimeSegmentService {
     required PlaybackPersistenceRepository database,
     required PlaybackFacade playback,
     required PlaybackTrackResolver paths,
+    Future<bool> Function(String trackKey)? exportLabels,
     DateTime Function()? now,
     Random? random,
   }) : _database = database,
        _playback = playback,
        _paths = paths,
+       _exportLabels = exportLabels,
        _now = now ?? DateTime.now,
        _random = random ?? Random() {
     _playbackSubscription = _playback.states.listen((_) => _pruneSessions());
@@ -26,6 +28,7 @@ final class PlaybackTimeSegmentService {
   final PlaybackPersistenceRepository _database;
   final PlaybackFacade _playback;
   final PlaybackTrackResolver _paths;
+  final Future<bool> Function(String trackKey)? _exportLabels;
   final DateTime Function() _now;
   final Random _random;
   final Map<String, _TimeSegmentLoopRuntime> _loops =
@@ -52,16 +55,18 @@ final class PlaybackTimeSegmentService {
   Future<List<TimeSegmentLabel>> loadLabels(String trackKey) =>
       _database.loadTimeSegmentLabels(trackKey);
 
-  Future<void> saveLabel(TimeSegmentLabel label) async {
+  Future<bool> saveLabel(TimeSegmentLabel label) async {
     await _database.upsertTimeSegmentLabel(label);
     for (final entry in _loops.entries.toList(growable: false)) {
       if (entry.value.labelId == label.id) {
         _loops[entry.key] = _TimeSegmentLoopRuntime.fromLabel(label);
       }
     }
+    return await _exportLabels?.call(label.trackKey) ?? true;
   }
 
-  Future<void> deleteLabel(String id) async {
+  Future<bool> deleteLabel(TimeSegmentLabel label) async {
+    final id = label.id;
     await _database.deleteTimeSegmentLabel(id);
     final affected = _loops.entries
         .where((entry) => entry.value.labelId == id)
@@ -70,6 +75,7 @@ final class PlaybackTimeSegmentService {
     for (final sessionId in affected) {
       _clearLoop(sessionId);
     }
+    return await _exportLabels?.call(label.trackKey) ?? true;
   }
 
   String? loopLabelIdForSession(String sessionId, {required String? trackKey}) {

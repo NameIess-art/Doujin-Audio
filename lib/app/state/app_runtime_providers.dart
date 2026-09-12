@@ -168,6 +168,7 @@ final playbackTimeSegmentServiceProvider = Provider<PlaybackTimeSegmentService>(
       database: ref.watch(playbackFacadeProvider).databaseRepository,
       playback: ref.watch(playbackFacadeProvider),
       paths: ref.watch(audioPathCoordinatorProvider),
+      exportLabels: ref.watch(libraryFacadeProvider).exportTimeSegmentLabels,
     );
     ref.onDispose(service.dispose);
     return service;

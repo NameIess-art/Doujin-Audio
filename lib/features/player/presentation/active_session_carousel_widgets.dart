@@ -404,6 +404,9 @@ class _ActiveSessionTitleSubtitleState
       session: widget.session,
       includeBufferedPosition: false,
     )..addListener(_handlePositionTick);
+    ref
+        .read(playbackSubtitleServiceProvider)
+        .addListener(_handleSubtitleServiceChanged);
     _loadSubtitleTrack();
   }
 
@@ -426,6 +429,9 @@ class _ActiveSessionTitleSubtitleState
 
   @override
   void dispose() {
+    ref
+        .read(playbackSubtitleServiceProvider)
+        .removeListener(_handleSubtitleServiceChanged);
     _positionGate
       ..removeListener(_handlePositionTick)
       ..dispose();
@@ -436,17 +442,41 @@ class _ActiveSessionTitleSubtitleState
     _updateSubtitleText(_positionGate.value.position);
   }
 
+  void _handleSubtitleServiceChanged() {
+    if (!mounted) return;
+    final trackPath = widget.session.currentTrackPath;
+    final subtitles = ref.read(playbackSubtitleServiceProvider);
+    if (subtitles.hasResult(trackPath)) {
+      final updated = subtitles.trackSync(trackPath);
+      if (!identical(_subtitleTrack, updated) ||
+          _subtitleTrack?.offset != updated?.offset) {
+        _subtitleTrack = updated;
+        _subtitleTextCache.clear();
+        _updateSubtitleText(_positionGate.value.position);
+      }
+    } else {
+      _loadSubtitleTrack();
+    }
+  }
+
   void _loadSubtitleTrack() {
     final trackPath = widget.session.currentTrackPath;
     _loadedPath = trackPath;
     _subtitleTextCache.clear();
+    final subtitles = ref.read(playbackSubtitleServiceProvider);
+    if (subtitles.hasResult(trackPath)) {
+      _subtitleTrack = subtitles.trackSync(trackPath);
+      _subtitleText = null;
+      _updateSubtitleText(_positionGate.value.position);
+      return;
+    }
     if (_subtitleTrack != null || _subtitleText != null) {
       setState(() {
         _subtitleTrack = null;
         _subtitleText = null;
       });
     }
-    ref.read(playbackSubtitleServiceProvider).load(trackPath).then((track) {
+    subtitles.load(trackPath).then((track) {
       if (!mounted || _loadedPath != trackPath) return;
       _subtitleTrack = track;
       _subtitleTextCache.clear();
@@ -455,12 +485,14 @@ class _ActiveSessionTitleSubtitleState
   }
 
   void _updateSubtitleText(Duration position) {
-    if (_subtitleTrack == null) return;
-    final nextText = _subtitleTextCache.resolve(
-      trackPath: widget.session.currentTrackPath,
-      position: position,
-      track: _subtitleTrack,
-    );
+    final track = _subtitleTrack;
+    final nextText = track == null
+        ? null
+        : _subtitleTextCache.resolve(
+            trackPath: widget.session.currentTrackPath,
+            position: position,
+            track: track,
+          );
     if (_subtitleText == nextText) return;
     setState(() {
       _subtitleText = nextText;

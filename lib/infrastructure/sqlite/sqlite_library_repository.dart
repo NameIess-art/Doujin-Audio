@@ -2,6 +2,7 @@ import '../../core/media/audio_detail.dart';
 import '../../core/media/music_track.dart';
 import '../../core/persistence/app_database.dart';
 import '../../core/persistence/persistence_records.dart';
+import '../../features/player/domain/time_segment_label.dart';
 import '../../features/library/domain/library_entry.dart';
 import '../../features/library/domain/audio_detail_store.dart';
 import '../../features/library/domain/library_persistence_repository.dart';
@@ -70,6 +71,26 @@ class SqliteLibraryRepository
   @override
   Future<void> upsertMany(Iterable<AudioDetail> details) =>
       _database.upsertAudioDetailRecords(details.map(_audioDetailToRecord));
+  @override
+  Future<List<TimeSegmentLabel>> loadTimeSegmentLabelsForTarget(
+    AudioDetailTarget target,
+  ) async =>
+      (await _database.loadTimeSegmentLabelsForTarget(
+            target.targetPath,
+            isFolder: target.isLibraryRootFolder,
+          ))
+          .map((record) => TimeSegmentLabel.fromRow(record.toRow()))
+          .toList(growable: false);
+
+  @override
+  Future<void> importDetails(
+    Iterable<AudioDetail> details,
+    Iterable<TimeSegmentLabel> labels,
+  ) => _database.importAudioDetails(
+    details.map(_audioDetailToRecord),
+    labels.map((label) => TimeSegmentLabelRecord.fromRow(label.toRow())),
+  );
+
   @override
   Future<void> delete(AudioDetailTarget target) =>
       _database.deleteAudioDetailRecord(

@@ -38,6 +38,7 @@ class TransportPlaybackControlPanel extends ConsumerWidget {
     required this.onToggleSegments,
     this.onToggleSubtitle,
     this.onToggleGlobalSubtitle,
+    this.onShowSubtitleMenu,
     this.onShowAudioDetail,
   });
 
@@ -53,6 +54,7 @@ class TransportPlaybackControlPanel extends ConsumerWidget {
   final VoidCallback onToggleSegments;
   final VoidCallback? onToggleSubtitle;
   final VoidCallback? onToggleGlobalSubtitle;
+  final VoidCallback? onShowSubtitleMenu;
   final VoidCallback? onShowAudioDetail;
 
   @override
@@ -79,6 +81,7 @@ class TransportPlaybackControlPanel extends ConsumerWidget {
       onToggleSegments: onToggleSegments,
       onToggleSubtitle: onToggleSubtitle,
       onToggleGlobalSubtitle: onToggleGlobalSubtitle,
+      onShowSubtitleMenu: onShowSubtitleMenu,
       onShowAudioDetail: onShowAudioDetail,
     );
   }
@@ -100,6 +103,7 @@ class _PlaybackControlPanel extends StatelessWidget {
     required this.onToggleSegments,
     this.onToggleSubtitle,
     this.onToggleGlobalSubtitle,
+    this.onShowSubtitleMenu,
     this.onShowAudioDetail,
   });
 
@@ -117,6 +121,7 @@ class _PlaybackControlPanel extends StatelessWidget {
   final VoidCallback onToggleSegments;
   final VoidCallback? onToggleSubtitle;
   final VoidCallback? onToggleGlobalSubtitle;
+  final VoidCallback? onShowSubtitleMenu;
   final VoidCallback? onShowAudioDetail;
 
   @override
@@ -153,6 +158,7 @@ class _PlaybackControlPanel extends StatelessWidget {
                 onToggleSegments: onToggleSegments,
                 onToggleSubtitle: onToggleSubtitle,
                 onToggleGlobalSubtitle: onToggleGlobalSubtitle,
+                onShowSubtitleMenu: onShowSubtitleMenu,
                 onShowAudioDetail: onShowAudioDetail,
               ),
             ),
@@ -339,6 +345,7 @@ class _PlaybackSecondaryControls extends ConsumerStatefulWidget {
     required this.onToggleSegments,
     this.onToggleSubtitle,
     this.onToggleGlobalSubtitle,
+    this.onShowSubtitleMenu,
     this.onShowAudioDetail,
   });
 
@@ -353,6 +360,7 @@ class _PlaybackSecondaryControls extends ConsumerStatefulWidget {
   final VoidCallback onToggleSegments;
   final VoidCallback? onToggleSubtitle;
   final VoidCallback? onToggleGlobalSubtitle;
+  final VoidCallback? onShowSubtitleMenu;
   final VoidCallback? onShowAudioDetail;
 
   @override
@@ -620,26 +628,13 @@ class _PlaybackSecondaryControlsState
                     setState(() => _volumeMode = true);
                   },
                 ),
-                if (widget.hasSubtitle)
-                  _SecondaryControlButton(
-                    icon: widget.subtitleEnabled
-                        ? Icons.subtitles_rounded
-                        : Icons.subtitles_off_rounded,
-                    tooltip: widget.subtitleEnabled
-                        ? i18n.tr('turn_off_subtitle')
-                        : i18n.tr('turn_on_subtitle'),
-                    active: widget.subtitleEnabled,
-                    onPressed: widget.onToggleSubtitle,
-                  ),
-                if (widget.hasSubtitle)
-                  _SecondaryControlButton(
-                    icon: widget.subtitleGlobalEnabled
-                        ? Icons.check_rounded
-                        : Icons.layers_rounded,
-                    tooltip: i18n.tr('subtitle_global_display'),
-                    active: widget.subtitleGlobalEnabled,
-                    onPressed: widget.onToggleGlobalSubtitle,
-                  ),
+                _SecondaryControlButton(
+                  key: const ValueKey('session_subtitle_menu_button'),
+                  icon: Icons.subtitles_rounded,
+                  tooltip: i18n.tr('subtitles'),
+                  active: widget.subtitleEnabled && widget.hasSubtitle,
+                  onPressed: widget.onShowSubtitleMenu,
+                ),
                 _SecondaryControlButton(
                   icon: Icons.tune_rounded,
                   tooltip: i18n.tr('audio_features'),

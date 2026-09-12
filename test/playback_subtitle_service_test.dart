@@ -1,12 +1,19 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
 import 'package:doujin_audio/core/media/subtitle_parser.dart';
 import 'package:doujin_audio/features/player/application/playback_subtitle_service.dart';
 
 void main() {
+  setUp(() {
+    TestWidgetsFlutterBinding.ensureInitialized();
+    HttpOverrides.global = null;
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+  });
   test('loads, caches, and clears a local subtitle track', () async {
     final directory = await Directory.systemTemp.createTemp(
       'doujin_audio_subtitle_',
@@ -137,6 +144,91 @@ void main() {
       future.timeout(const Duration(seconds: 1)),
       throwsA(isA<TimeoutException>()),
     );
+  });
+
+  test('setTrackOffset updates offset, notifies listeners, and shifts cue evaluation', () async {
+    const cues = [
+      SubtitleCue(
+        start: Duration(seconds: 2),
+        end: Duration(seconds: 4),
+        text: 'hello',
+      ),
+    ];
+    final track = SubtitleTrack(sourcePath: 'test.lrc', cues: cues);
+    const audioPath = '/path/to/audio.mp3';
+
+    var notifyCount = 0;
+    final service = PlaybackSubtitleService(
+      trackResolver: (_) => null,
+      subtitleLoader: (_, _) async => track,
+    );
+
+    await service.load(audioPath);
+    service.addListener(() => notifyCount++);
+    expect(service.getOffset(audioPath), Duration.zero);
+    expect(service.textAt(audioPath, const Duration(milliseconds: 2500)), 'hello');
+
+    // Add +1000ms offset (delay subtitle by 1s)
+    await service.setTrackOffset(audioPath, const Duration(seconds: 1));
+    expect(notifyCount, 1);
+    expect(service.getOffset(audioPath), const Duration(seconds: 1));
+    expect(service.trackSync(audioPath)?.offset, const Duration(seconds: 1));
+
+    // At 2500ms audio position, effective subtitle position is 1500ms -> no text
+    expect(service.textAt(audioPath, const Duration(milliseconds: 2500)), isNull);
+    // At 3500ms audio position, effective subtitle position is 2500ms -> 'hello'
+    expect(service.textAt(audioPath, const Duration(milliseconds: 3500)), 'hello');
+
+    // Reset offset
+    await service.setTrackOffset(audioPath, Duration.zero);
+    expect(notifyCount, 2);
+    expect(service.getOffset(audioPath), Duration.zero);
+    expect(service.textAt(audioPath, const Duration(milliseconds: 2500)), 'hello');
+  });
+
+  test('importSubtitle and removeCustomSubtitle persist and update track', () async {
+    const channel = MethodChannel('plugins.flutter.io/path_provider');
+    final supportDir = await Directory.systemTemp.createTemp('sub_support_');
+    final tempDir = await Directory.systemTemp.createTemp('sub_temp_');
+    addTearDown(() async {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null);
+      if (await supportDir.exists()) await supportDir.delete(recursive: true);
+      if (await tempDir.exists()) await tempDir.delete(recursive: true);
+    });
+
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          if (call.method == 'getApplicationSupportDirectory') {
+            return supportDir.path;
+          }
+          return null;
+        });
+
+    final externalSub = File('${tempDir.path}/external.lrc');
+    await externalSub.writeAsString('[00:01.00]external text');
+
+    const audioPath = '/music/song.mp3';
+    var notifyCount = 0;
+    final service = PlaybackSubtitleService(trackResolver: (_) => null);
+    service.addListener(() => notifyCount++);
+
+    final importedTrack = await service.importSubtitle(audioPath, externalSub.path);
+    expect(importedTrack, isNotNull);
+    expect(notifyCount, 1);
+    expect(service.hasCustomSubtitle(audioPath), isTrue);
+    expect(service.getCustomSubtitlePath(audioPath), isNotNull);
+
+    final loaded = service.trackSync(audioPath);
+    expect(loaded, isNotNull);
+    expect(service.textAt(audioPath, const Duration(milliseconds: 1500)), 'external text');
+
+    // Now remove custom subtitle
+    await service.removeCustomSubtitle(audioPath);
+    expect(notifyCount, 2);
+    expect(service.hasCustomSubtitle(audioPath), isFalse);
+    expect(service.getCustomSubtitlePath(audioPath), isNull);
+    expect(service.trackSync(audioPath), isNull);
   });
 }
 

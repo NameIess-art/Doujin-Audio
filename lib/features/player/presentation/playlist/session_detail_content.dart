@@ -29,6 +29,7 @@ import '../../domain/playback_queue.dart';
 import '../../domain/time_segment_label.dart';
 import 'playlist_progress_widgets.dart';
 import 'playlist_subtitle_panel.dart';
+import 'playlist_subtitle_menu_sheet.dart';
 import 'playlist_shared_helpers.dart';
 import 'playlist_time_segments.dart';
 import 'playlist_transport_controls.dart';
@@ -416,7 +417,7 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
             _timeSegments.nextColor(_segmentLabels),
         existing: existing,
       );
-      await _timeSegments.saveLabel(label);
+      final backupSucceeded = await _timeSegments.saveLabel(label);
       if (!mounted || _segmentTrackKey != trackKey) return;
       setState(() {
         if (_segmentDraftGeneration == draftGeneration) {
@@ -434,6 +435,17 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
                   : a.createdAt.compareTo(b.createdAt);
             });
       });
+      if (!backupSucceeded) {
+        final i18n = ProviderScope.containerOf(
+          context,
+          listen: false,
+        ).read(appLanguageProviderInstanceProvider);
+        showAppSnackBar(
+          context,
+          i18n.tr('audio_detail_backup_failed'),
+          tone: AppFeedbackTone.warning,
+        );
+      }
     } finally {
       if (pendingReservation != null) {
         _pendingNewSegmentNames.remove(pendingReservation);
@@ -453,7 +465,7 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
     if (selected == null) return;
     _segmentNameDebounce?.cancel();
     _segmentSaveQueued = false;
-    await _timeSegments.deleteLabel(selected.id);
+    final backupSucceeded = await _timeSegments.deleteLabel(selected);
     if (!mounted) return;
     setState(() {
       _segmentLabels = _segmentLabels
@@ -467,8 +479,12 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
     ).read(appLanguageProviderInstanceProvider);
     showAppSnackBar(
       context,
-      i18n.tr('items_removed_count', {'count': 1}),
-      tone: AppFeedbackTone.destructive,
+      backupSucceeded
+          ? i18n.tr('items_removed_count', {'count': 1})
+          : i18n.tr('audio_detail_backup_failed'),
+      tone: backupSucceeded
+          ? AppFeedbackTone.destructive
+          : AppFeedbackTone.warning,
       icon: Icons.sell_rounded,
     );
   }
@@ -532,6 +548,15 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
             : expandSegmentPanel,
         onToggleSubtitle: widget.onToggleSubtitle,
         onToggleGlobalSubtitle: widget.onToggleGlobalSubtitle,
+        onShowSubtitleMenu: () {
+          unawaited(
+            showSubtitleMenuBottomSheet(
+              context: context,
+              session: session,
+              onToggleGlobalSubtitle: widget.onToggleGlobalSubtitle,
+            ),
+          );
+        },
         onShowAudioDetail: widget.onShowAudioDetail,
       );
     }

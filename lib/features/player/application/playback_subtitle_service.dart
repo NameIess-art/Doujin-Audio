@@ -1,46 +1,211 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 
+import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as path;
+import 'package:path_provider/path_provider.dart';
 
 import '../../../core/logging/app_log_service.dart';
 import '../../../core/media/music_track.dart';
 import '../../../core/media/subtitle_parser.dart';
 import '../../../core/platform/file_cache_platform_gateway.dart';
+import '../../settings/application/app_preferences.dart';
 
 typedef PlaybackTrackResolver = MusicTrack? Function(String trackPath);
 typedef PlaybackSubtitleLoader =
     Future<SubtitleTrack?> Function(String trackPath, MusicTrack? track);
 
-final class PlaybackSubtitleService {
+class PlaybackSubtitleService extends ChangeNotifier {
   PlaybackSubtitleService({
     required PlaybackTrackResolver trackResolver,
     FileCachePlatformGateway? fileCacheGateway,
     void Function(String trackPath, SubtitleTrack? track)? onTrackLoaded,
     PlaybackSubtitleLoader? subtitleLoader,
+    Future<Directory> Function()? subtitlesDirectoryResolver,
+    Map<String, Duration>? initialOffsets,
+    Map<String, String>? initialCustomPaths,
   }) : _trackResolver = trackResolver,
        _fileCacheGateway =
            fileCacheGateway ?? FileCachePlatformGateway.instance,
        _onTrackLoaded = onTrackLoaded,
-       _subtitleLoader = subtitleLoader;
+       _subtitleLoader = subtitleLoader,
+       _subtitlesDirectoryResolver =
+           subtitlesDirectoryResolver ?? _defaultSubtitlesDirectory {
+    if (initialOffsets != null) _offsets.addAll(initialOffsets);
+    if (initialCustomPaths != null) _customPaths.addAll(initialCustomPaths);
+    unawaited(_loadPersistedSettings());
+  }
 
   final PlaybackTrackResolver _trackResolver;
   final FileCachePlatformGateway _fileCacheGateway;
   final void Function(String trackPath, SubtitleTrack? track)? _onTrackLoaded;
   final PlaybackSubtitleLoader? _subtitleLoader;
+  final Future<Directory> Function() _subtitlesDirectoryResolver;
+
   final Map<String, Future<SubtitleTrack?>> _loading =
       <String, Future<SubtitleTrack?>>{};
   final Map<String, SubtitleTrack?> _tracks = <String, SubtitleTrack?>{};
   final Map<String, Future<SubtitleTrack?>> _results =
       <String, Future<SubtitleTrack?>>{};
+  final Map<String, Duration> _offsets = <String, Duration>{};
+  final Map<String, String> _customPaths = <String, String>{};
   int _generation = 0;
 
   bool hasResult(String trackPath) => _tracks.containsKey(trackPath);
   bool isLoading(String trackPath) => _loading.containsKey(trackPath);
   bool hasKnownSubtitle(String trackPath) =>
       _tracks[trackPath] != null ||
+      _customPaths.containsKey(trackPath) ||
       _hasRemoteSubtitleUrl(_trackResolver(trackPath));
+
+  Duration getOffset(String trackPath) =>
+      _offsets[trackPath] ?? Duration.zero;
+
+  bool hasCustomSubtitle(String trackPath) => _customPaths.containsKey(trackPath);
+
+  String? getCustomSubtitlePath(String trackPath) => _customPaths[trackPath];
+
+  Future<void> setTrackOffset(String trackPath, Duration offset) async {
+    if (offset == Duration.zero) {
+      _offsets.remove(trackPath);
+    } else {
+      _offsets[trackPath] = offset;
+    }
+    unawaited(_persistOffsets());
+    final currentTrack = _tracks[trackPath];
+    if (currentTrack != null) {
+      final updatedTrack = currentTrack.withOffset(offset);
+      _tracks[trackPath] = updatedTrack;
+      _results[trackPath] = SynchronousFuture<SubtitleTrack?>(updatedTrack);
+      _onTrackLoaded?.call(trackPath, updatedTrack);
+    }
+    notifyListeners();
+  }
+
+  Future<SubtitleTrack?> importSubtitle(
+    String trackPath,
+    String filePath,
+  ) async {
+    final file = File(filePath);
+    if (!await file.exists()) return null;
+    try {
+      final bytes = await file.readAsBytes();
+      final raw = utf8.decode(bytes, allowMalformed: true);
+      final extension = path.extension(filePath).toLowerCase();
+      final parsed = await parseSubtitleTrackFromRaw(
+        sourcePath: filePath,
+        raw: raw,
+        extension: extension,
+      );
+      if (parsed == null || parsed.cues.isEmpty) return null;
+
+      final dir = await _subtitlesDirectoryResolver();
+      final safeKey = md5.convert(utf8.encode(trackPath)).toString();
+      final destFile = File(path.join(dir.path, '$safeKey$extension'));
+      await file.copy(destFile.path);
+
+      _customPaths[trackPath] = destFile.path;
+      unawaited(_persistCustomPaths());
+
+      final offset = getOffset(trackPath);
+      final readyTrack = parsed.withOffset(offset);
+      _tracks[trackPath] = readyTrack;
+      _results[trackPath] = SynchronousFuture<SubtitleTrack?>(readyTrack);
+      _trimResults();
+      _onTrackLoaded?.call(trackPath, readyTrack);
+      notifyListeners();
+      return readyTrack;
+    } catch (error, stackTrace) {
+      AppLogService.warning(
+        'import_subtitle_failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      return null;
+    }
+  }
+
+  Future<void> removeCustomSubtitle(String trackPath) async {
+    final custom = _customPaths.remove(trackPath);
+    if (custom != null) {
+      unawaited(_persistCustomPaths());
+      try {
+        final file = File(custom);
+        if (await file.exists()) await file.delete();
+      } catch (_) {}
+    }
+    _tracks.remove(trackPath);
+    unawaited(_results.remove(trackPath));
+    notifyListeners();
+    unawaited(load(trackPath));
+  }
+
+  static Future<Directory> _defaultSubtitlesDirectory() async {
+    final supportDir = await getApplicationSupportDirectory();
+    final dir = Directory(path.join(supportDir.path, 'imported_subtitles'));
+    if (!await dir.exists()) {
+      await dir.create(recursive: true);
+    }
+    return dir;
+  }
+
+  Future<void> _loadPersistedSettings() async {
+    try {
+      final rawOffsets = await AppPreferences.getStringList(
+        'subtitle_track_offsets',
+      );
+      if (rawOffsets != null) {
+        for (final item in rawOffsets) {
+          final idx = item.lastIndexOf('|');
+          if (idx > 0) {
+            final trackKey = item.substring(0, idx);
+            final ms = int.tryParse(item.substring(idx + 1));
+            if (ms != null && trackKey.isNotEmpty) {
+              _offsets.putIfAbsent(trackKey, () => Duration(milliseconds: ms));
+            }
+          }
+        }
+      }
+      final rawCustom = await AppPreferences.getStringList(
+        'subtitle_custom_paths',
+      );
+      if (rawCustom != null) {
+        for (final item in rawCustom) {
+          final idx = item.lastIndexOf('|');
+          if (idx > 0) {
+            final trackKey = item.substring(0, idx);
+            final customPath = item.substring(idx + 1);
+            if (trackKey.isNotEmpty && customPath.isNotEmpty) {
+              _customPaths.putIfAbsent(trackKey, () => customPath);
+            }
+          }
+        }
+      }
+    } catch (error, stack) {
+      AppLogService.warning(
+        'Failed to load persisted subtitle settings',
+        error: error,
+        stackTrace: stack,
+      );
+    }
+  }
+
+  Future<void> _persistOffsets() async {
+    final list = _offsets.entries
+        .map((e) => '${e.key}|${e.value.inMilliseconds}')
+        .toList(growable: false);
+    await AppPreferences.setStringList('subtitle_track_offsets', list);
+  }
+
+  Future<void> _persistCustomPaths() async {
+    final list = _customPaths.entries
+        .map((e) => '${e.key}|${e.value}')
+        .toList(growable: false);
+    await AppPreferences.setStringList('subtitle_custom_paths', list);
+  }
 
   Future<SubtitleTrack?> load(String trackPath) {
     if (_tracks.containsKey(trackPath)) {
@@ -71,6 +236,7 @@ final class PlaybackSubtitleService {
           _trimResults();
         }
         _onTrackLoaded?.call(trackPath, subtitleTrack);
+        notifyListeners();
         return subtitleTrack;
       } finally {
         if (identical(_loading[trackPath], task)) {
@@ -99,16 +265,53 @@ final class PlaybackSubtitleService {
     _loading.clear();
     _tracks.clear();
     _results.clear();
+    notifyListeners();
   }
 
   Future<SubtitleTrack?> _loadTrack(String trackPath, MusicTrack? track) async {
-    if (trackPath.startsWith('content://')) {
-      return _loadContentTrack(trackPath, track);
+    SubtitleTrack? loaded;
+    final customPath = _customPaths[trackPath];
+    if (customPath != null) {
+      loaded = await _loadFromFile(customPath);
     }
-    if (track?.isRemoteAsmr == true && track != null) {
-      return _loadAsmrTrack(track);
+    if (loaded == null) {
+      if (trackPath.startsWith('content://')) {
+        loaded = await _loadContentTrack(trackPath, track);
+      } else if (track?.isRemoteAsmr == true && track != null) {
+        loaded = await _loadAsmrTrack(track);
+      } else {
+        loaded = await loadSubtitleTrackForAudio(trackPath);
+      }
     }
-    return loadSubtitleTrackForAudio(trackPath);
+    if (loaded != null) {
+      final offset = getOffset(trackPath);
+      if (offset != Duration.zero) {
+        loaded = loaded.withOffset(offset);
+      }
+    }
+    return loaded;
+  }
+
+  Future<SubtitleTrack?> _loadFromFile(String filePath) async {
+    final file = File(filePath);
+    if (!await file.exists()) return null;
+    try {
+      final bytes = await file.readAsBytes();
+      final raw = utf8.decode(bytes, allowMalformed: true);
+      final extension = path.extension(filePath).toLowerCase();
+      return await parseSubtitleTrackFromRaw(
+        sourcePath: filePath,
+        raw: raw,
+        extension: extension,
+      );
+    } catch (error, stackTrace) {
+      AppLogService.warning(
+        'custom_subtitle_file_load_failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      return null;
+    }
   }
 
   bool _hasRemoteSubtitleUrl(MusicTrack? track) {

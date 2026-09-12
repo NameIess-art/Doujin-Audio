@@ -85,6 +85,9 @@ void main() {
 final class _FakeAudioDetailRepository implements AudioDetailRepository {
   _FakeAudioDetailRepository(this.detail);
 
+  @override
+  Future<bool> exportTimeSegments(AudioDetailTarget target) async => true;
+
   AudioDetail detail;
   int loadCount = 0;
   int explicitSaveCount = 0;

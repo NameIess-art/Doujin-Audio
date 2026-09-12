@@ -9,6 +9,7 @@ import 'package:doujin_audio/core/persistence/json_document_store.dart';
 import 'package:doujin_audio/features/library/application/audio_detail_document_repository.dart';
 import 'package:doujin_audio/features/library/application/audio_detail_repository.dart';
 import 'package:doujin_audio/features/library/domain/audio_detail_store.dart';
+import 'package:doujin_audio/features/player/domain/time_segment_label.dart';
 
 void main() {
   late Directory directory;
@@ -155,7 +156,9 @@ void main() {
       ),
     );
 
-    final result = await repository.importBackupsMany(<AudioDetailTarget>[target]);
+    final result = await repository.importBackupsMany(<AudioDetailTarget>[
+      target,
+    ]);
     expect(result.importedCount, 1);
     final loaded = await database.load(target);
     expect(loaded?.tags, isEmpty);
@@ -164,6 +167,17 @@ void main() {
 
 final class _MemoryAudioDetailStore implements AudioDetailStore {
   final Map<String, AudioDetail> _values = <String, AudioDetail>{};
+
+  @override
+  Future<List<TimeSegmentLabel>> loadTimeSegmentLabelsForTarget(
+    AudioDetailTarget target,
+  ) async => const [];
+
+  @override
+  Future<void> importDetails(
+    Iterable<AudioDetail> details,
+    Iterable<TimeSegmentLabel> labels,
+  ) => upsertMany(details);
 
   String _key(AudioDetailTarget target) =>
       '${target.targetType.dbValue}|${PathMatcher.equivalenceKey(target.targetPath)}';

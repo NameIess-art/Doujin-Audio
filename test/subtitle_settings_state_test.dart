@@ -142,6 +142,11 @@ void main() {
 
     notifier.toggleShowSubtitles('other');
     notifier.setGlobalEnabled('global', true);
+    notifier.ensureSubtitlesEnabled('other');
+    expect(notifier.state.isShowEnabled('other'), isTrue);
+    notifier.ensureSubtitlesEnabled('other');
+    expect(notifier.state.isShowEnabled('other'), isTrue);
+
     notifier.turnOffAllSubtitles(const <String>['active']);
     expect(notifier.state.isShowEnabled('active'), isFalse);
     expect(notifier.state.isShowEnabled('other'), isFalse);

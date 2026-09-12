@@ -58,6 +58,9 @@ class _SessionSubtitlePanelState extends ConsumerState<SessionSubtitlePanel> {
       session: widget.session,
       includeBufferedPosition: false,
     )..addListener(_handlePositionTick);
+    ref
+        .read(playbackSubtitleServiceProvider)
+        .addListener(_handleSubtitleServiceChanged);
     if (widget.subtitleEnabled) {
       _scheduleSubtitleTrackLoad();
     }
@@ -104,6 +107,9 @@ class _SessionSubtitlePanelState extends ConsumerState<SessionSubtitlePanel> {
   void dispose() {
     _loadGeneration++;
     _pendingSubtitle = null;
+    ref
+        .read(playbackSubtitleServiceProvider)
+        .removeListener(_handleSubtitleServiceChanged);
     widget.transitionActive?.removeListener(_schedulePendingSubtitle);
     UiInteractionCoordinator.instance.cancelCommit(_commitKey);
     _positionGate
@@ -180,6 +186,21 @@ class _SessionSubtitlePanelState extends ConsumerState<SessionSubtitlePanel> {
     );
   }
 
+  void _handleSubtitleServiceChanged() {
+    if (!mounted || !widget.subtitleEnabled) return;
+    final trackPath = widget.session.currentTrackPath;
+    final subtitles = ref.read(playbackSubtitleServiceProvider);
+    if (subtitles.hasResult(trackPath)) {
+      final updated = subtitles.trackSync(trackPath);
+      if (!identical(_subtitleTrack, updated) ||
+          _subtitleTrack?.offset != updated?.offset) {
+        _applySubtitleTrack(trackPath, updated);
+      }
+    } else {
+      _scheduleSubtitleTrackLoad();
+    }
+  }
+
   void _applySubtitleTrack(String trackPath, SubtitleTrack? track) {
     if (!mounted || _loadedPath != trackPath) return;
     _subtitleTrack = track;
@@ -208,14 +229,15 @@ class _SessionSubtitlePanelState extends ConsumerState<SessionSubtitlePanel> {
   int? _timelineSubtitleIndexAt(SubtitleTrack? track, Duration position) {
     final cues = track?.cues;
     if (cues == null || cues.isEmpty) return null;
-    if (position < cues.first.start) return 0;
+    final effectivePosition = position - (track?.offset ?? Duration.zero);
+    if (effectivePosition < cues.first.start) return 0;
 
     var low = 0;
     var high = cues.length - 1;
     var result = 0;
     while (low <= high) {
       final mid = low + ((high - low) >> 1);
-      if (cues[mid].start <= position) {
+      if (cues[mid].start <= effectivePosition) {
         result = mid;
         low = mid + 1;
       } else {
@@ -308,9 +330,13 @@ class _SessionSubtitlePanelState extends ConsumerState<SessionSubtitlePanel> {
           key: ValueKey<Object>((widget.session.id, subtitleTrack)),
           cues: subtitleTrack.cues,
           playbackSubtitleIndex: playbackSubtitleIndex,
-          onSeek: (position) => ref
-              .read(playbackFacadeProvider)
-              .seekSession(widget.session.id, position),
+          onSeek: (position) {
+            final target = position + subtitleTrack.offset;
+            final clamped = target < Duration.zero ? Duration.zero : target;
+            return ref
+                .read(playbackFacadeProvider)
+                .seekSession(widget.session.id, clamped);
+          },
         );
       } else {
         final subtitleText = _subtitleText;

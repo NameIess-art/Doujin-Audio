@@ -84,21 +84,99 @@ extension AppDatabaseAudioDetails on AppDatabase {
     });
   }
 
+  Future<List<TimeSegmentLabelRecord>> loadTimeSegmentLabelsForTarget(
+    String targetPath, {
+    required bool isFolder,
+  }) => _runDatabaseRead((db) async {
+    final rows = await db.query(
+      'time_segment_labels',
+      orderBy: 'start_ms ASC, created_at_ms ASC',
+    );
+    return rows
+        .where(
+          (row) => isFolder
+              ? PathMatcher.isWithinOrEqual(
+                  row['track_key'] as String,
+                  targetPath,
+                )
+              : PathMatcher.equalsNormalized(
+                  row['track_key'] as String,
+                  targetPath,
+                ),
+        )
+        .map(TimeSegmentLabelRecord.fromRow)
+        .toList(growable: false);
+  });
+
+  Future<void> importAudioDetails(
+    Iterable<AudioDetailRecord> details,
+    Iterable<TimeSegmentLabelRecord> labels,
+  ) => _runDatabaseWrite(
+    (db) => db.transaction((transaction) async {
+      final batch = transaction.batch();
+      for (final detail in details) {
+        _writeAudioDetailRecordToBatch(batch, detail);
+      }
+      await batch.commit(noResult: true);
+      for (final label in labels) {
+        var id = label.id;
+        var rows = await transaction.query(
+          'time_segment_labels',
+          where: 'id = ?',
+          whereArgs: [id],
+        );
+        // A copied work keeps its remapped ID even after the original label
+        // has been deleted from the source work.
+        if (rows.isEmpty) {
+          final mappedId =
+              '$id@${base64Url.encode(utf8.encode(PathMatcher.equivalenceKey(label.trackKey)))}';
+          final mappedRows = await transaction.query(
+            'time_segment_labels',
+            where: 'id = ?',
+            whereArgs: [mappedId],
+          );
+          if (mappedRows.isNotEmpty) {
+            id = mappedId;
+            rows = mappedRows;
+          }
+        }
+        while (rows.isNotEmpty &&
+            !PathMatcher.equalsNormalized(
+              rows.first['track_key'] as String,
+              label.trackKey,
+            )) {
+          id =
+              '$id@${base64Url.encode(utf8.encode(PathMatcher.equivalenceKey(label.trackKey)))}';
+          rows = await transaction.query(
+            'time_segment_labels',
+            where: 'id = ?',
+            whereArgs: [id],
+          );
+        }
+        if (rows.isNotEmpty &&
+            (rows.first['updated_at_ms'] as num) >= label.updatedAtMs) {
+          continue;
+        }
+        await transaction.insert('time_segment_labels', {
+          ...label.toRow(),
+          'id': id,
+        }, conflictAlgorithm: ConflictAlgorithm.replace);
+      }
+    }),
+  );
+
   // ---- Time segment labels ----
 
   Future<List<TimeSegmentLabelRecord>> loadTimeSegmentLabels(
     String trackKey,
-  ) async {
-    return _runDatabaseRead((db) async {
-      final rows = await db.query(
-        'time_segment_labels',
-        where: 'track_key = ?',
-        whereArgs: [trackKey],
-        orderBy: 'start_ms ASC, created_at_ms ASC',
-      );
-      return rows.map(TimeSegmentLabelRecord.fromRow).toList(growable: false);
-    });
-  }
+  ) async => (await loadTimeSegmentLabelsForTarget(trackKey, isFolder: false))
+      .map(
+        (record) => TimeSegmentLabelRecord.fromRow({
+          ...record.toRow(),
+          'track_key': trackKey,
+        }),
+      )
+      .toList(growable: false);
 
   Future<void> upsertTimeSegmentLabel(TimeSegmentLabelRecord label) async {
     await _runDatabaseWrite(

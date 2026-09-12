@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import '../../../core/media/audio_detail.dart';
 import '../../../core/persistence/json_document_store.dart';
+import '../../player/domain/time_segment_label.dart';
 import '../data/audio_detail_cover_store.dart';
 import '../data/audio_detail_json_codec.dart';
 
@@ -10,11 +11,13 @@ const String audioDetailDocumentName = 'doujin-audio.json';
 final class AudioDetailDocumentReadResult {
   const AudioDetailDocumentReadResult({
     this.detail,
+    this.timeSegmentLabels = const [],
     required this.status,
     this.error,
   });
 
   final AudioDetail? detail;
+  final List<TimeSegmentLabel> timeSegmentLabels;
   final JsonDocumentReadStatus status;
   final String? error;
 }
@@ -48,6 +51,7 @@ final class AudioDetailDocumentRepository {
           decoded.detail.copyWith(target: target),
           decoded.fields,
         ),
+        timeSegmentLabels: decoded.timeSegmentLabels,
         status: JsonDocumentReadStatus.found,
       );
     } on Object catch (error) {
@@ -61,9 +65,15 @@ final class AudioDetailDocumentRepository {
   Future<JsonDocumentWriteResult> saveExplicit(
     AudioDetail detail, {
     AudioDetailTarget? previousTarget,
+    List<TimeSegmentLabel>? timeSegmentLabels,
+    bool onlyTimeSegments = false,
   }) async {
     final location = locationFor(detail.target);
-    final coverFields = await _coverStore.documentFields(detail);
+    final coverFields = <String, Object?>{
+      ...await _coverStore.documentFields(detail),
+      if (timeSegmentLabels != null)
+        ..._codec.timeSegmentFields(detail.target, timeSegmentLabels),
+    };
     for (var attempt = 0; attempt < 2; attempt++) {
       final current = await _store.read(location);
       final snapshot = current.snapshot;
@@ -85,13 +95,25 @@ final class AudioDetailDocumentRepository {
 
       Uint8List bytes;
       try {
-        bytes = _codec.merge(
-          snapshot.bytes,
-          detail,
-          previousTarget: previousTarget,
-          additionalFields: coverFields,
-        );
-      } on FormatException {
+        bytes = onlyTimeSegments
+            ? _codec.mergeTimeSegments(
+                snapshot.bytes,
+                detail.target,
+                _codec.timeSegmentFields(detail.target, timeSegmentLabels!),
+              )
+            : _codec.merge(
+                snapshot.bytes,
+                detail,
+                previousTarget: previousTarget,
+                additionalFields: coverFields,
+              );
+      } on FormatException catch (error) {
+        if (onlyTimeSegments) {
+          return JsonDocumentWriteResult(
+            status: JsonDocumentWriteStatus.conflict,
+            error: error.toString(),
+          );
+        }
         // Explicit user saves may rebuild an empty, truncated or invalid
         // application-owned document. Automatic imports never call this path.
         bytes = _codec.encodeNew(detail, additionalFields: coverFields);

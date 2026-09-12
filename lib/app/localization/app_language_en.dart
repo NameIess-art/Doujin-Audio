@@ -698,6 +698,9 @@ const Map<String, String> appLanguageEn = {
   'about_version': 'Version',
   'about_source_code': 'Source code',
   'about_wiki': 'Wiki',
+  'about_feedback': 'Send feedback',
+  'about_feedback_open_failed':
+      'Could not open a mail app. Install or configure one, or send an email to:',
   'about_wiki_open_failed': 'Could not open the GitHub project page.',
   'about_author': 'Author',
   'about_reward': 'Support the project',

@@ -44,7 +44,8 @@ internal class NativePlaybackRestoreCoordinator(
     ) -> List<String>,
     private val startBootstrap: () -> NativePlaybackForegroundStartResult,
     private val resetRestoreState: () -> Unit,
-    private val completeRestore: (List<String>, Boolean) -> Unit,
+    private val completeRestore: (List<String>) -> Unit,
+    private val sessionExists: (String) -> Boolean,
     private val hasSessions: () -> Boolean,
     private val hasPlaybackToKeepAlive: () -> Boolean,
     private val hasPendingCommandDelivery: () -> Boolean,
@@ -56,6 +57,7 @@ internal class NativePlaybackRestoreCoordinator(
     private var generation = 0L
     private var latestAcceptedStartId = 0
     private var deferredIdleExit: DeferredIdleExit? = null
+    private var excludedSessionIds: MutableSet<String>? = null
 
     fun acceptStart(startId: Int) {
         latestAcceptedStartId = startId
@@ -63,6 +65,7 @@ internal class NativePlaybackRestoreCoordinator(
 
     fun restoreAfterServiceRestart(startId: Int) {
         val requestedGeneration = ++generation
+        excludedSessionIds = mutableSetOf()
         environment.executeBackground {
             val storedSessions = environment.loadSessions()
                 .filter { it.playing || it.playWhenReady }
@@ -71,6 +74,16 @@ internal class NativePlaybackRestoreCoordinator(
                 restoreOnMain(storedSessions, requestedGeneration, startId)
             }
         }
+    }
+
+    fun excludeSessionFromRestartRestore(sessionId: String) {
+        excludedSessionIds?.add(sessionId)
+    }
+
+    fun cancelRestartRestore() {
+        generation += 1
+        excludedSessionIds = null
+        deferredIdleExit = null
     }
 
     fun restoreMissingSessions(
@@ -114,8 +127,7 @@ internal class NativePlaybackRestoreCoordinator(
     }
 
     fun shutdown() {
-        generation += 1
-        deferredIdleExit = null
+        cancelRestartRestore()
         environment.shutdown()
     }
 
@@ -125,6 +137,7 @@ internal class NativePlaybackRestoreCoordinator(
         startId: Int
     ) {
         if (storedSessions.isEmpty()) {
+            excludedSessionIds = null
             logInfo("sticky_restore_skip no_active_sessions")
             stopIdleServiceAfterRestoreIfEligible(
                 requestedGeneration,
@@ -134,14 +147,16 @@ internal class NativePlaybackRestoreCoordinator(
             return
         }
         logInfo("sticky_restore_begin sessionCount=${storedSessions.size}")
-        startBootstrap()
-        resetRestoreState()
+        if (!hasSessions()) {
+            startBootstrap()
+            resetRestoreState()
+        }
         val restoredSessionIds = mutableListOf<String>()
-        val shouldAutoPlay = false
 
         fun restoreNext(index: Int) {
             if (requestedGeneration != generation) return
             if (index >= storedSessions.size) {
+                excludedSessionIds = null
                 if (restoredSessionIds.isEmpty()) {
                     logInfo("sticky_restore_skip restore_failed")
                     stopIdleServiceAfterRestoreIfEligible(
@@ -151,7 +166,7 @@ internal class NativePlaybackRestoreCoordinator(
                     )
                     return
                 }
-                completeRestore(restoredSessionIds, shouldAutoPlay)
+                completeRestore(restoredSessionIds)
                 logInfo(
                     "sticky_restore_complete restored=${restoredSessionIds.size} " +
                         "queueItems=${storedSessions.sumOf { it.queue.size }}"
@@ -159,11 +174,13 @@ internal class NativePlaybackRestoreCoordinator(
                 return
             }
             val stored = storedSessions[index]
-            restoredSessionIds += restoreSessions(
-                listOf(stored),
-                { shouldAutoPlay && (it.playWhenReady || it.playing) },
-                {}
-            )
+            // Live commands may have prepared or restored this session while disk I/O
+            // or the previous main-thread restore step was pending.
+            if (!sessionExists(stored.sessionId) &&
+                excludedSessionIds?.contains(stored.sessionId) != true
+            ) {
+                restoredSessionIds += restoreSessions(listOf(stored), { false }, {})
+            }
             environment.postMain { restoreNext(index + 1) }
         }
         restoreNext(0)

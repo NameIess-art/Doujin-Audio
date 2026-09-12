@@ -152,7 +152,7 @@ DesktopIntegration::DesktopIntegration(HWND window, flutter::BinaryMessenger* me
         {Value("buildNumber"),Value(FLUTTER_VERSION_BUILD)}, {Value("platform"),Value("windows")}}));
     } else if (name == "openReleasePage") {
       auto url = RequiredText(args,"url");
-      if (url.rfind("https://",0) != 0 && url.rfind("http://",0) != 0) throw std::invalid_argument("url");
+      if (url.rfind("https://",0) != 0 && url.rfind("http://",0) != 0 && url.rfind("mailto:",0) != 0) throw std::invalid_argument("url");
       Launch(winrt::to_hstring(url).c_str()); Success(result,Value(true));
     } else if (name == "installWindowsUpdate") {
       const auto path = std::filesystem::path(winrt::to_hstring(RequiredText(args,"path")).c_str());

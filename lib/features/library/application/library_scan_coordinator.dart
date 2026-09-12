@@ -98,7 +98,14 @@ class LibraryScanCoordinator extends ChangeNotifier {
   }) async {
     final outcome = await scan();
     if (!_isCurrent(generation)) return null;
-    if (!enabled || outcome == null || !_canImportBackups(outcome.code)) {
+    if (!enabled || outcome == null) {
+      return outcome;
+    }
+    final partialRefresh =
+        outcome.code == LibraryScanOutcomeCode.failed &&
+        outcome.source == 'refresh' &&
+        outcome.addedCount > 0;
+    if (!_canImportBackups(outcome.code) && !partialRefresh) {
       return outcome;
     }
     if (skipWhenUnchanged &&

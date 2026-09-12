@@ -274,11 +274,16 @@ class LibraryScannerService {
       );
     }
     return LibraryScanOutcome(
-      code: totalAdded > 0
+      code: chunkFailureCount > 0
+          ? LibraryScanOutcomeCode.failed
+          : totalAdded > 0
           ? LibraryScanOutcomeCode.refreshAdded
           : LibraryScanOutcomeCode.refreshNoChanges,
       source: 'refresh',
-      details: <String, Object?>{'count': totalAdded},
+      details: <String, Object?>{
+        'count': totalAdded,
+        'failureCount': chunkFailureCount,
+      },
     );
   }
 

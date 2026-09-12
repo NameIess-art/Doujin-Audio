@@ -1,13 +1,18 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:doujin_audio/core/errors/app_failure.dart';
 import 'package:doujin_audio/features/library/application/library_catalog.dart';
 import 'package:doujin_audio/features/library/application/library_scan_coordinator.dart';
 import 'package:doujin_audio/features/library/application/library_scanner_service.dart';
 import 'package:doujin_audio/features/library/application/audio_detail_repository.dart';
+import 'package:doujin_audio/app/localization/app_language_provider.dart';
+import 'package:doujin_audio/core/widgets/app_feedback.dart';
+import 'package:doujin_audio/features/library/presentation/library_scan_feedback.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
   const labels = LibraryScanLabels(
     chooseMusicFolder: 'music',
     chooseLibraryFolder: 'library',
@@ -69,6 +74,34 @@ void main() {
       );
     },
   );
+
+  test('failed refresh reaches failure state and feedback', () async {
+    final catalog = _FakeCatalog();
+    final coordinator = LibraryScanCoordinator(
+      scanner: _FakeScanner(
+        (_, _) async => LibraryScanOutcome(
+          code: LibraryScanOutcomeCode.failed,
+          source: 'refresh',
+          details: <String, Object?>{'count': 1, 'failureCount': 1},
+        ),
+      ),
+    );
+    addTearDown(coordinator.dispose);
+    SharedPreferences.setMockInitialValues({});
+    final i18n = AppLanguageProvider();
+    addTearDown(i18n.dispose);
+    await i18n.initialized;
+
+    final outcome = await coordinator.refresh(catalog: catalog, labels: labels);
+
+    expect(coordinator.state.phase, LibraryScanPhase.failure);
+    expect(coordinator.state.failure?.details, containsPair('failureCount', 1));
+    expect(catalog.detailImportCount, 1);
+    expect(
+      LibraryScanPresentationMapper.feedback(outcome!, i18n)?.tone,
+      AppFeedbackTone.destructive,
+    );
+  });
 
   test('startup refresh can skip JSON detail import', () async {
     final catalog = _FakeCatalog();

@@ -11,7 +11,7 @@ class NativePlaybackRestoreCoordinatorTest {
     fun `new restore generation discards stale main-thread completion`() {
         val environment = FakeRestoreEnvironment()
         val restoredBatches = mutableListOf<List<String>>()
-        val coordinator = coordinator(environment, completeRestore = { ids, _ ->
+        val coordinator = coordinator(environment, completeRestore = { ids ->
             restoredBatches += ids
         })
         environment.sessions = listOf(storedSession("first"))
@@ -137,6 +137,102 @@ class NativePlaybackRestoreCoordinatorTest {
         assertEquals(listOf(false), autoPlayValues)
     }
 
+    @Test
+    fun `live session created during disk load keeps its queue and playback state`() {
+        val environment = FakeRestoreEnvironment().apply {
+            sessions = listOf(storedSession("live"), storedSession("other"))
+        }
+        val sessionStates = mutableMapOf<String, String>()
+        var resetCount = 0
+        val coordinator = coordinator(
+            environment,
+            sessionExists = sessionStates::containsKey,
+            resetRestoreState = { resetCount++ },
+            restore = { stored, _, _ ->
+                stored.map { sessionStates[it.sessionId] = "old paused queue"; it.sessionId }
+            }
+        )
+
+        coordinator.restoreAfterServiceRestart(1)
+        sessionStates["live"] = "new playing queue at 30000"
+        environment.runAll()
+
+        assertEquals("new playing queue at 30000", sessionStates["live"])
+        assertEquals("old paused queue", sessionStates["other"])
+        assertEquals(0, resetCount)
+    }
+
+    @Test
+    fun `live session created between restore steps is skipped while others restore`() {
+        val environment = FakeRestoreEnvironment().apply {
+            sessions = listOf(storedSession("first"), storedSession("live"), storedSession("last"))
+        }
+        val sessionStates = mutableMapOf<String, String>()
+        val completed = mutableListOf<String>()
+        val coordinator = coordinator(
+            environment,
+            sessionExists = sessionStates::containsKey,
+            restore = { stored, _, _ ->
+                stored.map { sessionStates[it.sessionId] = "paused"; it.sessionId }
+            },
+            completeRestore = completed::addAll
+        )
+
+        coordinator.restoreAfterServiceRestart(1)
+        environment.runBackground()
+        environment.runNextMain()
+        sessionStates["first"] = "playing at 40000"
+        sessionStates["live"] = "prepared at 90000"
+        environment.runMain()
+
+        assertEquals("playing at 40000", sessionStates["first"])
+        assertEquals("prepared at 90000", sessionStates["live"])
+        assertEquals("paused", sessionStates["last"])
+        assertEquals(listOf("first", "last"), completed)
+    }
+
+    @Test
+    fun `session removed during disk load is not recreated`() {
+        val environment = FakeRestoreEnvironment().apply {
+            sessions = listOf(storedSession("removed"), storedSession("other"))
+        }
+        val restored = mutableListOf<String>()
+        val coordinator = coordinator(environment, completeRestore = restored::addAll)
+
+        coordinator.restoreAfterServiceRestart(1)
+        coordinator.excludeSessionFromRestartRestore("removed")
+        environment.runAll()
+
+        assertEquals(listOf("other"), restored)
+    }
+
+    @Test
+    fun `global stop cancels pending restore and completion`() {
+        for (stopDuringDiskLoad in listOf(true, false)) {
+            val environment = FakeRestoreEnvironment().apply {
+                sessions = listOf(storedSession("first"), storedSession("second"))
+            }
+            val restored = mutableListOf<String>()
+            var completed = false
+            val coordinator = coordinator(
+                environment,
+                restore = { stored, _, _ -> stored.map { restored += it.sessionId; it.sessionId } },
+                completeRestore = { completed = true }
+            )
+
+            coordinator.restoreAfterServiceRestart(1)
+            if (!stopDuringDiskLoad) {
+                environment.runBackground()
+                environment.runNextMain()
+            }
+            coordinator.cancelRestartRestore()
+            environment.runAll()
+
+            assertEquals(if (stopDuringDiskLoad) emptyList<String>() else listOf("first"), restored)
+            assertEquals(false, completed)
+        }
+    }
+
     private fun coordinator(
         environment: FakeRestoreEnvironment,
         restore: (
@@ -148,7 +244,9 @@ class NativePlaybackRestoreCoordinatorTest {
         },
         hasPendingCommandDelivery: () -> Boolean = { false },
         stopIdleService: (Int, String) -> Unit = { _, _ -> },
-        completeRestore: (List<String>, Boolean) -> Unit = { _, _ -> },
+        completeRestore: (List<String>) -> Unit = {},
+        sessionExists: (String) -> Boolean = { false },
+        resetRestoreState: () -> Unit = {},
         onMissingSessionsRestored: (List<String>) -> Unit = {},
         onNotificationSessionRestored: (String) -> Unit = {},
         startBootstrap: () -> NativePlaybackForegroundStartResult = {
@@ -158,9 +256,10 @@ class NativePlaybackRestoreCoordinatorTest {
         environment = environment,
         restoreSessions = restore,
         startBootstrap = startBootstrap,
-        resetRestoreState = {},
+        resetRestoreState = resetRestoreState,
         completeRestore = completeRestore,
-        hasSessions = { false },
+        sessionExists = sessionExists,
+        hasSessions = { environment.sessions.any { sessionExists(it.sessionId) } },
         hasPlaybackToKeepAlive = { false },
         hasPendingCommandDelivery = hasPendingCommandDelivery,
         stopIdleService = stopIdleService,
@@ -183,6 +282,7 @@ private class FakeRestoreEnvironment : NativePlaybackRestoreEnvironment {
     override fun postMain(task: () -> Unit) { main += task }
     override fun shutdown() { background.clear(); main.clear() }
     fun runBackground() { while (background.isNotEmpty()) background.removeFirst().invoke() }
+    fun runNextMain() { main.removeFirst().invoke() }
     fun runMain() { while (main.isNotEmpty()) main.removeFirst().invoke() }
     fun runAll() { runBackground(); runMain() }
 }

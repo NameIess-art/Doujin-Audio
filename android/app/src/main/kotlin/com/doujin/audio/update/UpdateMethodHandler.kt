@@ -117,8 +117,9 @@ internal class UpdateMethodHandler(
 
     private fun openReleasePage(url: String): Boolean {
         val uri = Uri.parse(url)
-        require(uri.scheme == "https" || uri.scheme == "http") { "Release URL must use HTTP(S)." }
-        return openIntent(Intent(Intent.ACTION_VIEW, uri))
+        require(uri.scheme in setOf("https", "http", "mailto")) { "URL must use HTTP(S) or mailto." }
+        val action = if (uri.scheme == "mailto") Intent.ACTION_SENDTO else Intent.ACTION_VIEW
+        return openIntent(Intent(action, uri))
     }
 
     private fun openIntent(intent: Intent): Boolean {

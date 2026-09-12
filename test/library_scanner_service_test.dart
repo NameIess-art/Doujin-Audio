@@ -185,13 +185,36 @@ void main() {
       terminalFailureCount: 1,
     );
 
-    await LibraryScannerService(
+    final outcome = await LibraryScannerService(
       dataSource: dataSource,
     ).refreshWatchedFolders(provider: catalog, labels: labels);
 
+    expect(outcome.code, LibraryScanOutcomeCode.failed);
+    expect(outcome.details['failureCount'], 1);
     expect(catalog.library, <MusicTrack>[existing]);
     expect(catalog.removedTrackPaths, isEmpty);
     expect(catalog.scanFailureCount, 1);
+  });
+
+  test('partial refresh reports failure while retaining new tracks', () async {
+    final catalog = _RefreshCatalog(watchedFolders: <String>['C:/music']);
+    final outcome = await LibraryScannerService(
+      dataSource: _ChunkedRefreshDataSource(
+        catalog: catalog,
+        chunks: <FolderScanChunk>[
+          FolderScanChunk(
+            tracks: <ScannedTrack>[_scannedTrack('C:/music/new.mp3')],
+            paths: <String>{PathMatcher.normalize('C:/music/new.mp3')},
+          ),
+        ],
+        terminalFailureCount: 1,
+      ),
+    ).refreshWatchedFolders(provider: catalog, labels: labels);
+
+    expect(outcome.code, LibraryScanOutcomeCode.failed);
+    expect(outcome.addedCount, 1);
+    expect(outcome.details['failureCount'], 1);
+    expect(catalog.library, hasLength(1));
   });
 
   test(

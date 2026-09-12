@@ -63,6 +63,8 @@ void main() {
       'about_version',
       'about_source_code',
       'about_wiki',
+      'about_feedback',
+      'about_feedback_open_failed',
       'about_wiki_open_failed',
       'about_author',
       'about_reward',

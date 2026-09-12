@@ -623,6 +623,8 @@ const Map<String, String> appLanguageZh = {
   'about_version': '版本',
   'about_source_code': '源代码',
   'about_wiki': 'wiki',
+  'about_feedback': '意见反馈',
+  'about_feedback_open_failed': '无法打开邮件应用，请安装或配置邮件应用，或手动发送邮件至：',
   'about_wiki_open_failed': '无法打开 GitHub 项目页面。',
   'about_author': '作者',
   'about_reward': '打赏',

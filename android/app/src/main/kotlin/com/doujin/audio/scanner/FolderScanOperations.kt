@@ -5,10 +5,12 @@ import com.doujin.audio.storage.*
 
 import android.content.ContentUris
 import android.content.Context
+import android.database.Cursor
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
+import android.provider.DocumentsContract
 import androidx.documentfile.provider.DocumentFile
 import java.io.File
 import java.util.ArrayDeque
@@ -83,6 +85,44 @@ private fun escapeSqlLikeArgument(value: String): String = value
     .replace("%", "\\%")
     .replace("_", "\\_")
 
+internal data class ScannedDocument(
+    val id: String,
+    val name: String,
+    val mime: String,
+    val size: Long?,
+    val modifiedAt: Long?
+)
+
+internal fun scanDocumentChildren(
+    query: () -> Cursor?,
+    observer: FolderScanObserver,
+    onDocument: (ScannedDocument) -> Unit
+): Int = try {
+    val cursor = query() ?: throw IllegalStateException("Document query returned no cursor")
+    cursor.use {
+        val idIndex = it.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
+        val nameIndex = it.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
+        val mimeIndex = it.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_MIME_TYPE)
+        val sizeIndex = it.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_SIZE)
+        val modifiedIndex = it.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_LAST_MODIFIED)
+        while (!observer.isCancelled() && it.moveToNext()) {
+            observer.onEntryProcessed()
+            onDocument(
+                ScannedDocument(
+                    id = requireNotNull(it.getString(idIndex)),
+                    name = requireNotNull(it.getString(nameIndex)),
+                    mime = requireNotNull(it.getString(mimeIndex)),
+                    size = it.getLong(sizeIndex).takeIf { value -> value > 0L },
+                    modifiedAt = it.getLong(modifiedIndex).takeIf { value -> value > 0L }
+                )
+            )
+        }
+    }
+    0
+} catch (_: Exception) {
+    1
+}
+
 internal class FolderScanOperations(
     private val context: Context,
     private val storage: DocumentStorageOperations = DocumentStorageOperations(context)
@@ -114,27 +154,39 @@ internal class FolderScanOperations(
         if (!root.exists() || !root.isDirectory) return 1
         val rootName = normalized(root.name).ifBlank { "Folder" }
         val pending = ArrayDeque<DocumentNode>()
-        pending.add(DocumentNode(root, "", rootName))
+        pending.add(DocumentNode(root.uri, "", rootName))
         var failures = 0
         while (pending.isNotEmpty() && !observer.isCancelled()) {
             val current = pending.removeFirst()
-            val children = try {
-                current.directory.listFiles()
-            } catch (_: Exception) {
-                failures++
-                emptyArray()
-            }
-            for (child in children) {
-                if (observer.isCancelled()) break
-                observer.onEntryProcessed()
+            failures += scanDocumentChildren(
+                query = {
+                    val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(
+                        current.directory,
+                        DocumentsContract.getDocumentId(current.directory)
+                    )
+                    resolver.query(
+                        childrenUri,
+                        arrayOf(
+                            DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                            DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                            DocumentsContract.Document.COLUMN_MIME_TYPE,
+                            DocumentsContract.Document.COLUMN_SIZE,
+                            DocumentsContract.Document.COLUMN_LAST_MODIFIED
+                        ),
+                        null, null, null
+                    )
+                },
+                observer = observer
+            ) { child ->
                 val name = normalized(child.name).ifBlank { "media_file" }
-                if (child.isDirectory) {
+                val childUri = DocumentsContract.buildDocumentUriUsingTree(rootUri, child.id)
+                if (child.mime == DocumentsContract.Document.MIME_TYPE_DIR) {
                     val relative = joinRelative(current.relative, name)
-                    pending.add(DocumentNode(child, relative, name))
-                    continue
+                    pending.add(DocumentNode(childUri, relative, name))
+                    return@scanDocumentChildren
                 }
-                if (!child.isFile) continue
-                val media = MediaNameMetadata.mediaNameInfoOrNull(name, child.type) ?: continue
+                val media = MediaNameMetadata.mediaNameInfoOrNull(name, child.mime)
+                    ?: return@scanDocumentChildren
                 val groupKey = if (current.relative.isBlank()) {
                     rootUri.toString()
                 } else {
@@ -143,14 +195,14 @@ internal class FolderScanOperations(
                 remember(
                     tracks,
                     ScannedTrack(
-                        path = child.uri.toString(),
+                        path = childUri.toString(),
                         title = media.title,
                         groupKey = groupKey,
                         groupTitle = current.title,
                         groupSubtitle = if (current.relative.isBlank()) rootName else "$rootName/${current.relative}",
                         isVideo = media.isVideo,
-                        fileSizeBytes = child.length().takeIf { it > 0L },
-                        modifiedAtMs = child.lastModified().takeIf { it > 0L }
+                        fileSizeBytes = child.size,
+                        modifiedAtMs = child.modifiedAt
                     ),
                     observer
                 )
@@ -330,7 +382,7 @@ internal class FolderScanOperations(
     }
 
     private data class DocumentNode(
-        val directory: DocumentFile,
+        val directory: Uri,
         val relative: String,
         val title: String
     )

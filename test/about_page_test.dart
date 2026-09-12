@@ -13,6 +13,49 @@ import 'support/app_runtime_test_fixture.dart';
 void main() {
   AppRuntimeTestFixture.initialize();
 
+  for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+    for (final openResult in [true, false]) {
+      testWidgets('feedback on $platform with open result $openResult', (
+        tester,
+      ) async {
+        final harness = AppRuntimeWidgetTestFixture();
+        final updateService = _FakeAppUpdateService(openResult: openResult);
+        addTearDown(harness.dispose);
+        await tester.pumpWidget(
+          harness.build(
+            Theme(
+              data: ThemeData(platform: platform),
+              child: ProviderScope(
+                overrides: [
+                  appUpdateServiceProvider.overrideWithValue(updateService),
+                ],
+                child: AboutPage(
+                  versionFuture: Future.value(
+                    const AppVersionInfo(
+                      versionName: '1.2.3',
+                      buildNumber: 123,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        final i18n = harness.languageProvider;
+        final feedback = find.text(i18n.tr('about_feedback'));
+        await tester.ensureVisible(feedback);
+        await tester.tap(feedback);
+        await tester.pump();
+        expect(updateService.openedUrl, 'mailto:likenshonameless@gmail.com');
+        expect(
+          find.textContaining(i18n.tr('about_feedback_open_failed')),
+          openResult ? findsNothing : findsOneWidget,
+        );
+      });
+    }
+  }
+
   testWidgets(
     'about page renders grouped identity, links, author, and reward',
     (tester) async {

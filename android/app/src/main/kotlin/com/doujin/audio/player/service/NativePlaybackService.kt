@@ -308,12 +308,7 @@ class NativePlaybackService : MediaSessionService() {
                 notificationsDismissed = false
                 playbackSuspended = false
             },
-            completeRestore = { restoredSessionIds, autoPlay ->
-                if (autoPlay) {
-                    restoredSessionIds.forEach(::markPlaybackIntended)
-                } else {
-                    restoredSessionIds.forEach(::clearPlaybackIntent)
-                }
+            completeRestore = { restoredSessionIds ->
                 evictPlayersIfNeeded()
                 restoredSessionIds.forEach(::publishSessionState)
                 progressHeartbeat.ensure()
@@ -321,6 +316,7 @@ class NativePlaybackService : MediaSessionService() {
                 persistSessionStateNow()
                 syncForegroundState()
             },
+            sessionExists = sessionManager::contains,
             hasSessions = { sessionManager.isNotEmpty },
             hasPlaybackToKeepAlive = ::hasPlaybackToKeepAlive,
             hasPendingCommandDelivery = ::hasPendingCommandDelivery,
@@ -1115,6 +1111,7 @@ class NativePlaybackService : MediaSessionService() {
     }
 
     fun removeSession(sessionId: String): Map<String, Any?> {
+        restoreCoordinator.excludeSessionFromRestartRestore(sessionId)
         focusRecovery.removePending(sessionId)
         clearPlaybackIntent(sessionId)
         val wasFocused = focusedSessionId == sessionId
@@ -1145,6 +1142,7 @@ class NativePlaybackService : MediaSessionService() {
     }
 
     fun pauseAll(): Map<String, Any?> {
+        restoreCoordinator.cancelRestartRestore()
         notificationsDismissed = true
         focusRecovery.clearInterruptionState()
         playbackRecovery.clearAll()
@@ -1163,6 +1161,7 @@ class NativePlaybackService : MediaSessionService() {
     }
 
     fun clearAll(): Map<String, Any?> {
+        restoreCoordinator.cancelRestartRestore()
         notificationsDismissed = true
         focusRecovery.clearInterruptionState()
         playbackRecovery.clearAll()

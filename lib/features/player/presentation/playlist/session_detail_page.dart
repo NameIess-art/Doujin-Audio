@@ -559,6 +559,7 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
           child: RepaintBoundary(
             child: Builder(
               builder: (context) {
+                ref.watch(coverGenerationProvider);
                 final pageSession = playback.sessionSnapshotById(
                   _currentSessionId,
                 );

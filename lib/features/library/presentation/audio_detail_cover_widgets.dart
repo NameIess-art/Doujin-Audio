@@ -18,26 +18,39 @@ class _SingleFileCoverPreviewState
 
   Future<String?> _futureFor(
     LibraryFacade library,
-    MusicTrack track,
+    MusicTrack? track,
     int coverGeneration,
   ) {
-    if (_lastTrackPath != track.path ||
+    if (_lastTrackPath != widget.filePath ||
         _lastCoverGeneration != coverGeneration) {
-      _lastTrackPath = track.path;
+      _lastTrackPath = widget.filePath;
       _lastCoverGeneration = coverGeneration;
-      _coverFuture = library.coverPathFutureForTrack(track);
+      _coverFuture = _resolveSingleFileCover(library, track);
     }
     return _coverFuture!;
+  }
+
+  Future<String?> _resolveSingleFileCover(
+    LibraryFacade library,
+    MusicTrack? track,
+  ) async {
+    final embedded = await library.embeddedCoverPathFutureForFile(
+      widget.filePath,
+    );
+    if (embedded != null && embedded.isNotEmpty) {
+      return embedded;
+    }
+    return library.coverPathFutureForTrack(track, trackPath: widget.filePath);
   }
 
   @override
   Widget build(BuildContext context) {
     final library = ref.read(libraryFacadeProvider);
     final track = ref.watch(libraryTrackProvider(widget.filePath));
-    if (track == null) return const SizedBox.shrink();
-
     final coverGeneration = ref.watch(coverGenerationProvider);
-    final initialPath = library.resolvedCoverPathForTrack(track);
+    final initialPath =
+        library.resolvedEmbeddedCoverPathForFile(widget.filePath) ??
+        library.resolvedCoverPathForTrack(track, trackPath: widget.filePath);
     final coverFuture = _futureFor(library, track, coverGeneration);
     final coverCacheWidth = coverCacheWidthForResolution(
       ref.watch(coverImageResolutionProvider),

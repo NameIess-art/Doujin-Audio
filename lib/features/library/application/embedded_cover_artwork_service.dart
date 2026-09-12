@@ -78,16 +78,27 @@ class EmbeddedCoverArtworkService {
         picture = await _readId3v2Picture(trackFile);
         picture ??= await _readFlacPicture(trackFile);
       } else if (header.length >= 4 &&
+          ascii.decode(header.sublist(0, 4), allowInvalid: true) == 'RIFF') {
+        picture = await _readWavPicture(trackFile);
+      } else if (header.length >= 4 &&
           ascii.decode(header.sublist(0, 4), allowInvalid: true) == 'fLaC') {
         picture = await _readFlacPicture(trackFile);
       } else if (header.length >= 8 &&
           ascii.decode(header.sublist(4, 8), allowInvalid: true) == 'ftyp') {
         picture = await _readMp4Picture(trackFile);
+      } else if (header.length >= 4 &&
+          header[0] == 0x4f &&
+          header[1] == 0x67 &&
+          header[2] == 0x67 &&
+          header[3] == 0x53) {
+        picture = await _readOggPicture(trackFile);
       } else {
         picture =
             await _readId3v2Picture(trackFile) ??
+            await _readWavPicture(trackFile) ??
             await _readMp4Picture(trackFile) ??
-            await _readFlacPicture(trackFile);
+            await _readFlacPicture(trackFile) ??
+            await _readOggPicture(trackFile);
       }
     } on FileSystemException catch (error, stackTrace) {
       AppLogService.warning(
@@ -158,6 +169,67 @@ class EmbeddedCoverArtworkService {
     RandomAccessFile? raf;
     try {
       raf = await file.open();
+      return await _readId3v2PictureFromRaf(raf);
+    } catch (_) {
+      return null;
+    } finally {
+      await raf?.close();
+    }
+  }
+
+  static Future<Uint8List?> _readWavPicture(File file) async {
+    RandomAccessFile? raf;
+    try {
+      raf = await file.open();
+      final header = await raf.read(12);
+      if (header.length != 12 ||
+          ascii.decode(header.sublist(0, 4), allowInvalid: true) != 'RIFF' ||
+          ascii.decode(header.sublist(8, 12), allowInvalid: true) != 'WAVE') {
+        return null;
+      }
+      final fileLength = await file.length();
+      var offset = 12;
+      while (offset + 8 <= fileLength) {
+        await raf.setPosition(offset);
+        final chunkHeader = await raf.read(8);
+        if (chunkHeader.length < 8) break;
+        final chunkId = ascii.decode(
+          chunkHeader.sublist(0, 4),
+          allowInvalid: true,
+        );
+        final chunkSize = ByteData.sublistView(
+          chunkHeader,
+          4,
+          8,
+        ).getUint32(0, Endian.little);
+        if (chunkId.toLowerCase() == 'id3 ') {
+          return await _readId3v2PictureFromRaf(
+            raf,
+            startOffset: offset + 8,
+            maxTagBytes: chunkSize,
+          );
+        }
+        offset += 8 + chunkSize;
+        if (chunkSize.isOdd) offset += 1;
+        if (chunkSize <= 0) break;
+      }
+      return null;
+    } catch (_) {
+      return null;
+    } finally {
+      await raf?.close();
+    }
+  }
+
+  static Future<Uint8List?> _readId3v2PictureFromRaf(
+    RandomAccessFile raf, {
+    int startOffset = 0,
+    int? maxTagBytes,
+  }) async {
+    try {
+      if (startOffset > 0) {
+        await raf.setPosition(startOffset);
+      }
       final header = await raf.read(10);
       if (header.length != 10 ||
           header[0] != 0x49 ||
@@ -177,10 +249,13 @@ class EmbeddedCoverArtworkService {
           ((header[8] & 0x7f) << 7) |
           (header[9] & 0x7f);
 
-      if (tagSize <= 0 || tagSize > 20 * 1024 * 1024) return null;
+      if (tagSize <= 0 || tagSize > _maxEmbeddedPictureBytes) return null;
 
-      final tagData = await raf.read(tagSize);
-      if (tagData.length != tagSize) return null;
+      final bytesToRead = maxTagBytes != null && maxTagBytes > 10
+          ? (maxTagBytes - 10 < tagSize ? maxTagBytes - 10 : tagSize)
+          : tagSize;
+      final tagData = await raf.read(bytesToRead);
+      if (tagData.length != bytesToRead) return null;
 
       int offset = 0;
       if (extHeader) {
@@ -294,8 +369,6 @@ class EmbeddedCoverArtworkService {
       return null;
     } catch (_) {
       return null;
-    } finally {
-      await raf?.close();
     }
   }
 
@@ -483,15 +556,81 @@ class EmbeddedCoverArtworkService {
       final separatorIndex = comment.indexOf('=');
       if (separatorIndex <= 0) continue;
       final key = comment.substring(0, separatorIndex).toUpperCase();
-      if (key != 'METADATA_BLOCK_PICTURE') continue;
-      final encoded = comment.substring(separatorIndex + 1).trim();
-      try {
-        return _pictureDataFromFlacBlock(base64.decode(encoded));
-      } catch (_) {
-        return null;
+      if (key == 'METADATA_BLOCK_PICTURE') {
+        final encoded = comment.substring(separatorIndex + 1).trim();
+        try {
+          return _pictureDataFromFlacBlock(base64.decode(encoded));
+        } catch (_) {
+          continue;
+        }
+      }
+      if (key == 'COVERART') {
+        final encoded = comment.substring(separatorIndex + 1).trim();
+        try {
+          return Uint8List.fromList(base64.decode(encoded));
+        } catch (_) {
+          continue;
+        }
       }
     }
     return null;
+  }
+
+  static Future<Uint8List?> _readOggPicture(File file) async {
+    RandomAccessFile? raf;
+    try {
+      raf = await file.open();
+      final length = await file.length();
+      final readLength = length < 1024 * 1024 ? length : 1024 * 1024;
+      final buffer = await raf.read(readLength);
+      if (buffer.length < 4 ||
+          buffer[0] != 0x4f ||
+          buffer[1] != 0x67 ||
+          buffer[2] != 0x67 ||
+          buffer[3] != 0x53) {
+        return null;
+      }
+
+      // Search for Vorbis comment marker '\x03vorbis'
+      final vorbisMarker = <int>[0x03, 0x76, 0x6f, 0x72, 0x62, 0x69, 0x73];
+      final vorbisIndex = _indexOfSublist(buffer, vorbisMarker);
+      if (vorbisIndex >= 0 && vorbisIndex + 7 < buffer.length) {
+        final commentBlock = Uint8List.sublistView(buffer, vorbisIndex + 7);
+        final picture = _pictureDataFromVorbisCommentBlock(commentBlock);
+        if (picture != null) return picture;
+      }
+
+      // Search for OpusTags marker 'OpusTags'
+      final opusMarker = <int>[0x4f, 0x70, 0x75, 0x73, 0x54, 0x61, 0x67, 0x73];
+      final opusIndex = _indexOfSublist(buffer, opusMarker);
+      if (opusIndex >= 0 && opusIndex + 8 < buffer.length) {
+        final commentBlock = Uint8List.sublistView(buffer, opusIndex + 8);
+        final picture = _pictureDataFromVorbisCommentBlock(commentBlock);
+        if (picture != null) return picture;
+      }
+
+      return null;
+    } catch (_) {
+      return null;
+    } finally {
+      await raf?.close();
+    }
+  }
+
+  static int _indexOfSublist(Uint8List source, List<int> pattern) {
+    if (pattern.isEmpty || source.length < pattern.length) return -1;
+    final limit = source.length - pattern.length;
+    for (var i = 0; i <= limit; i++) {
+      var match = true;
+      for (var j = 0; j < pattern.length; j++) {
+        if (source[i + j] != pattern[j]) {
+          match = false;
+          break;
+        }
+      }
+      if (match) return i;
+    }
+    return -1;
   }
 
   static Uint8List? _pictureDataFromFlacBlock(Uint8List block) {

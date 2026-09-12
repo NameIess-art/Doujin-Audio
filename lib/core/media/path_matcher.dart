@@ -122,8 +122,49 @@ abstract final class PathMatcher {
 
   static String? parentPath(String value) {
     final normalized = normalize(value);
-    if (isContentUri(normalized) || isRemoteUri(normalized)) return null;
-    return _contextFor(normalized).dirname(normalized);
+    if (isRemoteUri(normalized)) return null;
+    if (isContentUri(normalized)) {
+      final markerIndex = normalized.indexOf('::');
+      if (markerIndex >= 0) {
+        final base = normalized.substring(0, markerIndex);
+        final relative = trimRightSlash(normalized.substring(markerIndex + 2));
+        if (relative.isEmpty) return null;
+        final lastSlash = relative.lastIndexOf('/');
+        if (lastSlash < 0) {
+          return normalize(base);
+        }
+        final parentRelative = relative.substring(0, lastSlash);
+        return parentRelative.isEmpty
+            ? normalize(base)
+            : '${normalize(base)}::$parentRelative';
+      }
+
+      final treeBase = _treeUriBase(normalized);
+      final docPath = _documentPath(normalized);
+      if (treeBase != null && docPath != null) {
+        final treeDocId = _documentPath(treeBase);
+        if (treeDocId != null && docPath.startsWith('$treeDocId/')) {
+          final relative = docPath.substring(treeDocId.length + 1);
+          final lastSlash = relative.lastIndexOf('/');
+          if (lastSlash < 0) {
+            return normalize(treeBase);
+          }
+          final parentRelative = relative.substring(0, lastSlash);
+          return parentRelative.isEmpty
+              ? normalize(treeBase)
+              : '${normalize(treeBase)}::$parentRelative';
+        }
+      }
+      return null;
+    }
+    final context = _contextFor(normalized);
+    final directoryPath = context.dirname(normalized);
+    if (directoryPath.isEmpty ||
+        directoryPath == '.' ||
+        context.equals(directoryPath, normalized)) {
+      return null;
+    }
+    return directoryPath;
   }
 
   static bool isWithinOrEqual(String child, String parent) {

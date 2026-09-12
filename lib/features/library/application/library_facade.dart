@@ -469,6 +469,12 @@ final class LibraryFacade implements LibraryCatalog {
     String? trackPath,
   }) => _metadataCoordinator.coverForTrack(track, trackPath: trackPath);
 
+  String? resolvedEmbeddedCoverPathForFile(String filePath) =>
+      _metadataCoordinator.resolvedEmbeddedCoverForPath(filePath);
+
+  Future<String?> embeddedCoverPathFutureForFile(String filePath) =>
+      _metadataCoordinator.resolveEmbeddedCoverForPath(filePath);
+
   Future<String?> playbackCoverPathFutureForTrack(
     MusicTrack? track, {
     String? trackPath,

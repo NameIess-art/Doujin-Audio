@@ -1208,8 +1208,131 @@ void main() {
       gateway.coversByPath.clear();
       cache.invalidateAll();
 
+      expect(cache.resolvedForTrack(track), folderCover);
+      expect(cache.resolvedForPlaybackTrack(track), folderCover);
       expect(await cache.futureForTrack(track), folderCover);
       expect(await cache.futureForPlaybackTrack(track), folderCover);
+    },
+  );
+
+  test(
+    'embedded audio preference falls back to parent folder cover selection for nested disc tracks without embedded artwork',
+    () async {
+      final rootDir = await Directory.systemTemp.createTemp(
+        'cover_cache_nested_fallback_',
+      );
+      addTearDown(() async {
+        if (await rootDir.exists()) await rootDir.delete(recursive: true);
+      });
+      final albumDir = Directory('${rootDir.path}${Platform.pathSeparator}Album');
+      final discDir = Directory('${albumDir.path}${Platform.pathSeparator}Disc 1');
+      await discDir.create(recursive: true);
+
+      final trackPath = '${discDir.path}${Platform.pathSeparator}01.flac';
+      final albumCover = '${albumDir.path}${Platform.pathSeparator}cover.jpg';
+      await File(trackPath).writeAsBytes(<int>[1]);
+      await File(albumCover).writeAsBytes(<int>[0xff, 0xd8, 0xff, 0xd9]);
+
+      final track = _track(path: trackPath, groupKey: albumDir.path);
+      final library = LibraryService()
+        ..watchedFolders.add(rootDir.path)
+        ..library.add(track);
+      final gateway = _FakeFileCachePlatformGateway(
+        coversByPath: const <String, String>{},
+      );
+      final cache = CoverArtworkCacheService(
+        libraryService: library,
+        fileCacheGateway: gateway,
+        preferEmbeddedAudioCover: () => true,
+      );
+
+      await cache.setFolderCoverSelection(albumDir.path, albumCover);
+
+      expect(cache.resolvedForTrack(track), albumCover);
+      expect(cache.resolvedForPlaybackTrack(track), albumCover);
+      expect(await cache.futureForTrack(track), albumCover);
+      expect(await cache.futureForPlaybackTrack(track), albumCover);
+    },
+  );
+
+  test('PathMatcher.parentPath handles Android SAF content URIs', () {
+    expect(
+      PathMatcher.parentPath(
+        'content://media/tree/primary%3AMusic::Artist/Album/01.flac',
+      ),
+      'content://media/tree/primary%3AMusic::Artist/Album',
+    );
+    expect(
+      PathMatcher.parentPath(
+        'content://media/tree/primary%3AMusic::Artist/Album',
+      ),
+      'content://media/tree/primary%3AMusic::Artist',
+    );
+    expect(
+      PathMatcher.parentPath('content://media/tree/primary%3AMusic::Artist'),
+      'content://media/tree/primary%3AMusic',
+    );
+    expect(
+      PathMatcher.parentPath('content://media/tree/primary%3AMusic'),
+      isNull,
+    );
+    expect(
+      PathMatcher.parentPath(
+        'content://com.android.externalstorage.documents/tree/primary%3AMusic/document/primary%3AMusic%2FArtist%2FAlbum%2F01.flac',
+      ),
+      'content://com.android.externalstorage.documents/tree/primary%3AMusic::Artist/Album',
+    );
+  });
+
+  test(
+    'embedded audio preference falls back to selected folder cover for Android SAF content URI tracks without embedded artwork',
+    () async {
+      const treeUri =
+          'content://com.android.externalstorage.documents/tree/primary%3AMusic';
+      const folderUri = '$treeUri::Artist/Album';
+      const trackPath =
+          'content://com.android.externalstorage.documents/tree/primary%3AMusic/document/primary%3AMusic%2FArtist%2FAlbum%2F01.flac';
+      const selectedCoverSource = '$folderUri/cover.jpg';
+      final tempFile = File(
+        '${Directory.systemTemp.path}${Platform.pathSeparator}saf_cover_${DateTime.now().microsecondsSinceEpoch}.jpg',
+      );
+      await tempFile.writeAsBytes(<int>[0xff, 0xd8, 0xff, 0xd9]);
+      addTearDown(() async {
+        if (await tempFile.exists()) await tempFile.delete();
+      });
+
+      final track = _track(path: trackPath, groupKey: folderUri);
+      final library = LibraryService()
+        ..watchedFolders.add(treeUri)
+        ..library.add(track)
+        ..tracksByGroup[folderUri] = <MusicTrack>[track];
+
+      final gateway = _FakeFileCachePlatformGateway(
+        coversByPath: const <String, String>{},
+        discoveredImages: (path) async => <CoverImageReference>[
+          CoverImageReference(
+            displayPath: tempFile.path,
+            sourcePath: selectedCoverSource,
+          ),
+        ],
+      );
+
+      final cache = CoverArtworkCacheService(
+        libraryService: library,
+        fileCacheGateway: gateway,
+        preferEmbeddedAudioCover: () => true,
+      );
+
+      await cache.setFolderCoverSelection(
+        folderUri,
+        tempFile.path,
+        sourcePath: selectedCoverSource,
+      );
+
+      expect(cache.resolvedForTrack(track), tempFile.path);
+      expect(cache.resolvedForPlaybackTrack(track), tempFile.path);
+      expect(await cache.futureForTrack(track), tempFile.path);
+      expect(await cache.futureForPlaybackTrack(track), tempFile.path);
     },
   );
 
@@ -1559,6 +1682,71 @@ void main() {
         ),
         <String>[selectedCover.path],
       );
+    },
+  );
+
+  test(
+    'folder detail candidates deduplicate multiple audio files with identical embedded covers and against folder images',
+    () async {
+      final directory = await Directory.systemTemp.createTemp(
+        'cover_cache_embedded_dedup_',
+      );
+      final supportDirectory = Directory('${directory.path}/support');
+      final temporaryDirectory = Directory('${directory.path}/temporary');
+      await supportDirectory.create();
+      await temporaryDirectory.create();
+      addTearDown(() async {
+        if (await directory.exists()) await directory.delete(recursive: true);
+      });
+
+      final folderCover = File(
+        '${directory.path}${Platform.pathSeparator}cover.jpg',
+      );
+      await folderCover.writeAsBytes(<int>[0xff, 0xd8, 0xff, 0xd9, 0x01]);
+
+      final audio1 = '${directory.path}${Platform.pathSeparator}01.flac';
+      final audio2 = '${directory.path}${Platform.pathSeparator}02.flac';
+      final audio3 = '${directory.path}${Platform.pathSeparator}03.flac';
+      final audio4 = '${directory.path}${Platform.pathSeparator}04.flac';
+
+      final matchingBridge = File(
+        '${temporaryDirectory.path}/matching.image',
+      );
+      await matchingBridge.writeAsBytes(<int>[0xff, 0xd8, 0xff, 0xd9, 0x01]);
+
+      final distinctBridge = File(
+        '${temporaryDirectory.path}/distinct.image',
+      );
+      await distinctBridge.writeAsBytes(<int>[0x89, 0x50, 0x4e, 0x47, 0x02]);
+
+      final library = LibraryService();
+      final t1 = _track(path: audio1, groupKey: directory.path);
+      final t2 = _track(path: audio2, groupKey: directory.path);
+      final t3 = _track(path: audio3, groupKey: directory.path);
+      final t4 = _track(path: audio4, groupKey: directory.path);
+      library.library.addAll(<MusicTrack>[t1, t2, t3, t4]);
+
+      final cache = CoverArtworkCacheService(
+        libraryService: library,
+        fileCacheGateway: _FakeFileCachePlatformGateway(
+          coversByPath: <String, String>{
+            audio1: matchingBridge.path,
+            audio2: matchingBridge.path,
+            audio3: distinctBridge.path,
+            audio4: distinctBridge.path,
+          },
+        ),
+        persistentDirectory: () async => supportDirectory,
+        temporaryDirectory: () async => temporaryDirectory,
+      );
+      addTearDown(cache.dispose);
+      await cache.initialize();
+
+      final candidates = await cache.discoverCoverCandidatesInFolder(
+        directory.path,
+      );
+      expect(candidates.length, 2);
+      expect(candidates.first, folderCover.path);
     },
   );
 

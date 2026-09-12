@@ -168,6 +168,90 @@ void main() {
 
     expect(await EmbeddedCoverArtworkService.resolveForPath(file.path), isNull);
   });
+
+  test('reads FLAC COVERART vorbis comment', () async {
+    final directory = await Directory.systemTemp.createTemp(
+      'embedded_cover_flac_coverart_',
+    );
+    addTearDown(() async {
+      if (await directory.exists()) await directory.delete(recursive: true);
+    });
+    final flacFile = File('${directory.path}/track.flac');
+    final imageBytes = Uint8List.fromList(<int>[0x89, 0x50, 0x4e, 0x47, 0x01]);
+    await flacFile.writeAsBytes(
+      _flacWithCoverartComment(imageBytes),
+      flush: true,
+    );
+
+    final coverPath = await EmbeddedCoverArtworkService.resolveForPath(
+      flacFile.path,
+    );
+    expect(coverPath, isNotNull);
+    expect(await File(coverPath!).readAsBytes(), imageBytes);
+  });
+
+  test('reads Ogg METADATA_BLOCK_PICTURE vorbis comment', () async {
+    final directory = await Directory.systemTemp.createTemp(
+      'embedded_cover_ogg_test_',
+    );
+    addTearDown(() async {
+      if (await directory.exists()) await directory.delete(recursive: true);
+    });
+    final oggFile = File('${directory.path}/track.ogg');
+    final imageBytes = Uint8List.fromList(<int>[0xff, 0xd8, 0xff, 0xe0, 0x12]);
+    await oggFile.writeAsBytes(
+      _oggWithVorbisMetadataBlockPicture(imageBytes),
+      flush: true,
+    );
+
+    final coverPath = await EmbeddedCoverArtworkService.resolveForPath(
+      oggFile.path,
+    );
+    expect(coverPath, isNotNull);
+    expect(await File(coverPath!).readAsBytes(), imageBytes);
+  });
+
+  test('reads Opus COVERART vorbis comment', () async {
+    final directory = await Directory.systemTemp.createTemp(
+      'embedded_cover_opus_test_',
+    );
+    addTearDown(() async {
+      if (await directory.exists()) await directory.delete(recursive: true);
+    });
+    final opusFile = File('${directory.path}/track.opus');
+    final imageBytes = Uint8List.fromList(<int>[0x89, 0x50, 0x4e, 0x47, 0x99]);
+    await opusFile.writeAsBytes(
+      _opusWithVorbisCoverart(imageBytes),
+      flush: true,
+    );
+
+    final coverPath = await EmbeddedCoverArtworkService.resolveForPath(
+      opusFile.path,
+    );
+    expect(coverPath, isNotNull);
+    expect(await File(coverPath!).readAsBytes(), imageBytes);
+  });
+
+  test('reads WAV RIFF id3 chunk APIC cover', () async {
+    final directory = await Directory.systemTemp.createTemp(
+      'embedded_cover_wav_test_',
+    );
+    addTearDown(() async {
+      if (await directory.exists()) await directory.delete(recursive: true);
+    });
+    final wavFile = File('${directory.path}/track.wav');
+    final imageBytes = Uint8List.fromList(<int>[0xff, 0xd8, 0xff, 0xe1, 0xaa]);
+    await wavFile.writeAsBytes(
+      _wavWithId3Apic(imageBytes),
+      flush: true,
+    );
+
+    final coverPath = await EmbeddedCoverArtworkService.resolveForPath(
+      wavFile.path,
+    );
+    expect(coverPath, isNotNull);
+    expect(await File(coverPath!).readAsBytes(), imageBytes);
+  });
 }
 
 Uint8List _flacWithPicture(Uint8List pictureBytes) {
@@ -271,4 +355,164 @@ Uint8List _mp4Atom(String type, Uint8List payload, {int? declaredSize}) {
   bytes.add(ascii.encode(type));
   bytes.add(payload);
   return bytes.toBytes();
+}
+
+Uint8List _flacWithCoverartComment(Uint8List pictureBytes) {
+  final comment = utf8.encode(
+    'COVERART=${base64.encode(pictureBytes)}',
+  );
+  final block = BytesBuilder();
+  final vendor = utf8.encode('doujin-audio-test');
+  _addUint32Le(block, vendor.length);
+  block.add(vendor);
+  _addUint32Le(block, 1);
+  _addUint32Le(block, comment.length);
+  block.add(comment);
+  return _flacWithMetadataBlock(blockType: 4, block: block.toBytes());
+}
+
+Uint8List _oggWithVorbisMetadataBlockPicture(Uint8List pictureBytes) {
+  final comment = utf8.encode(
+    'METADATA_BLOCK_PICTURE=${base64.encode(_pictureBlock(pictureBytes))}',
+  );
+  final block = BytesBuilder();
+  final vendor = utf8.encode('doujin-audio-test');
+  _addUint32Le(block, vendor.length);
+  block.add(vendor);
+  _addUint32Le(block, 1);
+  _addUint32Le(block, comment.length);
+  block.add(comment);
+
+  final packet = BytesBuilder();
+  packet.add(<int>[0x03]);
+  packet.add(ascii.encode('vorbis'));
+  packet.add(block.toBytes());
+
+  final ogg = BytesBuilder();
+  ogg.add(ascii.encode('OggS'));
+  ogg.add(<int>[
+    0, 2,
+    0, 0, 0, 0, 0, 0, 0, 0,
+    1, 0, 0, 0,
+    0, 0, 0, 0,
+    0, 0, 0, 0,
+  ]);
+  final packetBytes = packet.toBytes();
+  final segCount = (packetBytes.length + 254) ~/ 255;
+  ogg.add(<int>[segCount]);
+  var remaining = packetBytes.length;
+  for (var i = 0; i < segCount; i++) {
+    final len = remaining > 255 ? 255 : remaining;
+    ogg.add(<int>[len]);
+    remaining -= len;
+  }
+  ogg.add(packetBytes);
+  return ogg.toBytes();
+}
+
+Uint8List _opusWithVorbisCoverart(Uint8List pictureBytes) {
+  final comment = utf8.encode(
+    'COVERART=${base64.encode(pictureBytes)}',
+  );
+  final block = BytesBuilder();
+  final vendor = utf8.encode('doujin-audio-test');
+  _addUint32Le(block, vendor.length);
+  block.add(vendor);
+  _addUint32Le(block, 1);
+  _addUint32Le(block, comment.length);
+  block.add(comment);
+
+  final packet = BytesBuilder();
+  packet.add(ascii.encode('OpusTags'));
+  packet.add(block.toBytes());
+
+  final ogg = BytesBuilder();
+  ogg.add(ascii.encode('OggS'));
+  ogg.add(<int>[
+    0, 2,
+    0, 0, 0, 0, 0, 0, 0, 0,
+    1, 0, 0, 0,
+    0, 0, 0, 0,
+    0, 0, 0, 0,
+  ]);
+  final packetBytes = packet.toBytes();
+  final segCount = (packetBytes.length + 254) ~/ 255;
+  ogg.add(<int>[segCount]);
+  var remaining = packetBytes.length;
+  for (var i = 0; i < segCount; i++) {
+    final len = remaining > 255 ? 255 : remaining;
+    ogg.add(<int>[len]);
+    remaining -= len;
+  }
+  ogg.add(packetBytes);
+  return ogg.toBytes();
+}
+
+Uint8List _wavWithId3Apic(Uint8List pictureBytes) {
+  final apicPayload = BytesBuilder();
+  apicPayload.addByte(0);
+  apicPayload.add(ascii.encode('image/jpeg'));
+  apicPayload.addByte(0);
+  apicPayload.addByte(3);
+  apicPayload.addByte(0);
+  apicPayload.add(pictureBytes);
+
+  final apicFrame = BytesBuilder();
+  apicFrame.add(ascii.encode('APIC'));
+  final payloadBytes = apicPayload.toBytes();
+  final frameSizeBuf = ByteData(4)..setUint32(0, payloadBytes.length);
+  apicFrame.add(frameSizeBuf.buffer.asUint8List());
+  apicFrame.add(<int>[0, 0]);
+  apicFrame.add(payloadBytes);
+
+  final tagPayload = apicFrame.toBytes();
+  final id3Header = BytesBuilder();
+  id3Header.add(ascii.encode('ID3'));
+  id3Header.add(<int>[3, 0, 0]);
+  final tagLen = tagPayload.length;
+  id3Header.add(<int>[
+    (tagLen >> 21) & 0x7f,
+    (tagLen >> 14) & 0x7f,
+    (tagLen >> 7) & 0x7f,
+    tagLen & 0x7f,
+  ]);
+  id3Header.add(tagPayload);
+  final fullId3 = id3Header.toBytes();
+
+  final wav = BytesBuilder();
+  wav.add(ascii.encode('RIFF'));
+  final body = BytesBuilder();
+  body.add(ascii.encode('WAVE'));
+
+  body.add(ascii.encode('fmt '));
+  final fmtSize = ByteData(4)..setUint32(0, 16, Endian.little);
+  body.add(fmtSize.buffer.asUint8List());
+  final fmtData = ByteData(16)
+    ..setUint16(0, 1, Endian.little)
+    ..setUint16(2, 2, Endian.little)
+    ..setUint32(4, 44100, Endian.little)
+    ..setUint32(8, 176400, Endian.little)
+    ..setUint16(12, 4, Endian.little)
+    ..setUint16(14, 16, Endian.little);
+  body.add(fmtData.buffer.asUint8List());
+
+  body.add(ascii.encode('data'));
+  final dataSize = ByteData(4)..setUint32(0, 4, Endian.little);
+  body.add(dataSize.buffer.asUint8List());
+  body.add(<int>[0, 0, 0, 0]);
+
+  body.add(ascii.encode('id3 '));
+  final id3ChunkSize = ByteData(4)..setUint32(0, fullId3.length, Endian.little);
+  body.add(id3ChunkSize.buffer.asUint8List());
+  body.add(fullId3);
+  if (fullId3.length.isOdd) {
+    body.addByte(0);
+  }
+
+  final bodyBytes = body.toBytes();
+  final riffSize = ByteData(4)..setUint32(0, bodyBytes.length, Endian.little);
+  wav.add(riffSize.buffer.asUint8List());
+  wav.add(bodyBytes);
+
+  return wav.toBytes();
 }

@@ -1061,9 +1061,32 @@ internal class DocumentStorageOperations(
             )
         }
 
-        private fun documentUriForTreeRoot(rootUri: Uri): Uri? {
+        internal fun documentUriForTreeRoot(rootUri: Uri): Uri? {
             val documentId = startDocumentIdForTreeUri(rootUri) ?: return null
             return DocumentsContract.buildDocumentUriUsingTree(rootUri, documentId)
+        }
+
+        internal fun resolveDocumentUri(source: String): Uri? {
+            val trimmed = source.trim()
+            if (!trimmed.startsWith("content://")) return null
+
+            val syntheticIndex = trimmed.indexOf("::")
+            if (syntheticIndex >= 0) {
+                val base = trimmed.substring(0, syntheticIndex)
+                val relative = trimmed.substring(syntheticIndex + 2).replace("::", "/").trim('/')
+                val rootUri = Uri.parse(base)
+                return if (relative.isBlank()) {
+                    documentUriForTreeRoot(rootUri)
+                } else {
+                    resolveRelativeDocumentUri(rootUri, relative)
+                }
+            }
+
+            val uri = Uri.parse(trimmed)
+            if (DocumentsContract.isTreeUri(uri) && trimmed.indexOf("/document/") < 0) {
+                return documentUriForTreeRoot(uri)
+            }
+            return uri
         }
 
         internal fun treeUriBaseForDocumentUri(uri: Uri): Uri? {

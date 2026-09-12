@@ -73,12 +73,21 @@ class _FakeAsmrMetadataService extends AsmrMetadataService {
 class _DetailCoverCacheService extends CoverArtworkCacheService {
   _DetailCoverCacheService({
     this.candidates = const <String>['/covers/candidate.jpg'],
+    this.embeddedCoverPath,
   }) : super(libraryService: LibraryService());
 
   final List<String> candidates;
+  final String? embeddedCoverPath;
 
   @override
   Future<String?> futureForFolder(String folderPath) async => null;
+
+  @override
+  Future<String?> resolveEmbeddedCoverForPath(String filePath) async =>
+      embeddedCoverPath;
+
+  @override
+  String? resolvedEmbeddedCoverForPath(String filePath) => embeddedCoverPath;
 
   @override
   Future<List<String>> discoverCoverCandidatesInFolder(
@@ -1004,4 +1013,39 @@ void main() {
       }
     },
   );
+
+  testWidgets('single audio detail loads embedded cover for file', (
+    WidgetTester tester,
+  ) async {
+    final fixture = AppRuntimeWidgetTestFixture(
+      coverArtworkCacheService: _DetailCoverCacheService(
+        embeddedCoverPath: '/cache/embedded_sample.jpg',
+      ),
+    );
+    addTearDown(fixture.dispose);
+    const target = AudioDetailTarget(
+      targetType: AudioDetailTargetType.singleAudioFile,
+      targetPath: '/library/track_with_embedded.flac',
+    );
+    await tester.runAsync(
+      () => fixture.runtimeGraph.library.saveAudioDetail(
+        AudioDetail.empty(target),
+      ),
+    );
+
+    await tester.pumpWidget(
+      fixture.build(const AudioDetailSheet(target: target)),
+    );
+    final loadedCover = find.byKey(
+      const ValueKey<String>('audio_detail_single_cover_loaded'),
+    );
+    for (var i = 0; i < 40 && loadedCover.evaluate().isEmpty; i++) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 10)),
+      );
+      await tester.pump(const Duration(milliseconds: 20));
+    }
+
+    expect(loadedCover, findsOneWidget);
+  });
 }

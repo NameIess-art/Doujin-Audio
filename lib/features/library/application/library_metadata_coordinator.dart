@@ -461,6 +461,12 @@ final class LibraryMetadataCoordinator {
   Future<String?> coverForTrack(MusicTrack? track, {String? trackPath}) =>
       _coverArtwork().futureForTrack(track, trackPath: trackPath);
 
+  String? resolvedEmbeddedCoverForPath(String filePath) =>
+      _coverArtwork().resolvedEmbeddedCoverForPath(filePath);
+
+  Future<String?> resolveEmbeddedCoverForPath(String filePath) =>
+      _coverArtwork().resolveEmbeddedCoverForPath(filePath);
+
   Future<String?> playbackCoverForTrack(
     MusicTrack? track, {
     String? trackPath,

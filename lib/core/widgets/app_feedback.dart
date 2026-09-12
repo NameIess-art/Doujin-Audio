@@ -267,49 +267,51 @@ void _showTopFeedback(
           36.0 +
           6.0;
 
-      double leftInset = 16.0;
-      var availableWidth = mediaQuery.size.width;
-      if (isLandscape) {
-        double derivedLeft = 0;
-        if (context.mounted) {
-          RenderBox? targetBox;
-          context.visitAncestorElements((element) {
-            final key = element.widget.key;
-            if (key is ValueKey<String>) {
-              final keyStr = key.value;
-              if (keyStr.startsWith('main_page_canvas_')) {
-                final box = element.findRenderObject() as RenderBox?;
-                if (box != null && box.hasSize) {
-                  targetBox = box;
-                  return false;
-                }
-              }
-            }
-            return true;
-          });
-          if (targetBox != null && targetBox!.hasSize) {
-            final origin = targetBox!.localToGlobal(Offset.zero);
-            availableWidth = origin.dx + targetBox!.size.width;
-            if (origin.dx > 40 && origin.dx < mediaQuery.size.width * 0.7) {
-              derivedLeft = origin.dx;
+      var leftInset = 16.0;
+      var rightInset = 16.0;
+      if (isLandscape && context.mounted) {
+        RenderBox? targetBox;
+        bool findCanvas(Element element) {
+          final key = element.widget.key;
+          if (key is ValueKey<String> &&
+              key.value.startsWith('main_page_canvas_')) {
+            final box = element.findRenderObject();
+            if (box is RenderBox && box.hasSize) {
+              targetBox = box;
+              return false;
             }
           }
+          return true;
         }
-        leftInset = derivedLeft + 16.0;
-      }
-      if (availableWidth < 600) {
-        leftInset = 16.0;
-      } else {
-        final maximumLeftInset = availableWidth - 16.0 - 240;
-        if (leftInset > maximumLeftInset) {
-          leftInset = maximumLeftInset.clamp(16.0, leftInset);
+
+        context.visitAncestorElements(findCanvas);
+        if (targetBox == null) {
+          // Main-screen and navigation callbacks sit outside the page canvas.
+          // Search only their own route so standalone pages keep their bounds.
+          void visit(Element element) {
+            if (targetBox != null) return;
+            final widget = element.widget;
+            if (widget is Offstage && widget.offstage) return;
+            if (findCanvas(element)) element.visitChildren(visit);
+          }
+
+          final routeContext = ModalRoute.of(context)?.subtreeContext;
+          if (routeContext is Element) visit(routeContext);
+        }
+        final box = targetBox;
+        final overlayBox = overlay.context.findRenderObject();
+        if (box != null && overlayBox is RenderBox) {
+          final origin = box.localToGlobal(Offset.zero, ancestor: overlayBox);
+          leftInset = origin.dx + 16.0;
+          rightInset =
+              overlayBox.size.width - origin.dx - box.size.width + 16.0;
         }
       }
 
       return Positioned(
         top: topInset,
         left: leftInset,
-        right: 16.0,
+        right: rightInset,
         child: _FeedbackAnimationWrapper(
           duration: duration,
           transitionDuration: AppDesignTokens.of(overlayContext).motionStandard,

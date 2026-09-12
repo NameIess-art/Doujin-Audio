@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -27,6 +29,7 @@ class SpeedWheelPage extends ConsumerStatefulWidget {
 class _SpeedWheelPageState extends ConsumerState<SpeedWheelPage> {
   late FixedExtentScrollController _controller;
   late int _selectedIndex;
+  int? _wheelTargetIndex;
 
   List<double> get _speeds => PlaybackFacade.playbackSpeedOptions;
 
@@ -40,12 +43,16 @@ class _SpeedWheelPageState extends ConsumerState<SpeedWheelPage> {
   @override
   void didUpdateWidget(covariant SpeedWheelPage oldWidget) {
     super.didUpdateWidget(oldWidget);
-    final nextIndex = _nearestSpeedIndex(widget.session.speed);
     if (oldWidget.session.id != widget.session.id ||
-        nextIndex != _selectedIndex) {
-      _selectedIndex = nextIndex;
-      _controller.dispose();
-      _controller = FixedExtentScrollController(initialItem: _selectedIndex);
+        (oldWidget.session.speed != widget.session.speed &&
+            _wheelTargetIndex == null)) {
+      final nextIndex = _nearestSpeedIndex(widget.session.speed);
+      if (nextIndex != _selectedIndex) {
+        _selectedIndex = nextIndex;
+        _wheelTargetIndex = null;
+        _controller.dispose();
+        _controller = FixedExtentScrollController(initialItem: _selectedIndex);
+      }
     }
   }
 
@@ -104,11 +111,13 @@ class _SpeedWheelPageState extends ConsumerState<SpeedWheelPage> {
         ) ??
         widget.session.speed;
 
-    final nextIndex = _nearestSpeedIndex(speed);
-    if (nextIndex != _selectedIndex) {
-      _selectedIndex = nextIndex;
-      _controller.dispose();
-      _controller = FixedExtentScrollController(initialItem: _selectedIndex);
+    if (_wheelTargetIndex == null) {
+      final nextIndex = _nearestSpeedIndex(speed);
+      if (nextIndex != _selectedIndex) {
+        _selectedIndex = nextIndex;
+        _controller.dispose();
+        _controller = FixedExtentScrollController(initialItem: _selectedIndex);
+      }
     }
 
     final i18n = ProviderScope.containerOf(
@@ -135,70 +144,103 @@ class _SpeedWheelPageState extends ConsumerState<SpeedWheelPage> {
         ),
         const SizedBox(height: 8),
         Expanded(
-          child: NotificationListener<ScrollEndNotification>(
-            onNotification: (_) {
-              _setSpeedIndex(_selectedIndex, persist: true);
-              return false;
-            },
-            child: ListWheelScrollView.useDelegate(
-              key: const ValueKey('playback_speed_wheel'),
-              controller: _controller,
-              itemExtent: 52,
-              diameterRatio: 1.5,
-              useMagnifier: true,
-              magnification: 1.08,
-              physics: const FixedExtentScrollPhysics(),
-              onSelectedItemChanged: (index) {
-                _setSpeedIndex(index, persist: false);
-              },
-              childDelegate: ListWheelChildBuilderDelegate(
-                childCount: _speeds.length,
-                builder: (context, index) {
-                  if (index < 0 || index >= _speeds.length) return null;
-                  final speed = _speeds[index];
-                  final selected = index == _selectedIndex;
-                  return GestureDetector(
-                    onTap: () {
-                      AppInteractionFeedback.trigger(
-                        AppInteractionFeedbackType.selection,
-                      );
-                      _controller.animateToItem(
-                        index,
-                        duration: const Duration(milliseconds: 300),
-                        curve: Curves.easeOutCubic,
+          child: Stack(
+            children: [
+              NotificationListener<ScrollEndNotification>(
+                onNotification: (_) {
+                  _wheelTargetIndex = null;
+                  _setSpeedIndex(_selectedIndex, persist: true);
+                  return false;
+                },
+                child: ListWheelScrollView.useDelegate(
+                  key: const ValueKey('playback_speed_wheel'),
+                  controller: _controller,
+                  itemExtent: 52,
+                  diameterRatio: 1.5,
+                  useMagnifier: true,
+                  magnification: 1.08,
+                  physics: const FixedExtentScrollPhysics(),
+                  onSelectedItemChanged: (index) {
+                    _setSpeedIndex(index, persist: false);
+                  },
+                  childDelegate: ListWheelChildBuilderDelegate(
+                    childCount: _speeds.length,
+                    builder: (context, index) {
+                      if (index < 0 || index >= _speeds.length) return null;
+                      final speed = _speeds[index];
+                      final selected = index == _selectedIndex;
+                      return GestureDetector(
+                        onTap: () {
+                          _wheelTargetIndex = null;
+                          AppInteractionFeedback.trigger(
+                            AppInteractionFeedbackType.selection,
+                          );
+                          _controller.animateToItem(
+                            index,
+                            duration: const Duration(milliseconds: 300),
+                            curve: Curves.easeOutCubic,
+                          );
+                        },
+                        child: Center(
+                          child: AnimatedDefaultTextStyle(
+                            duration: const Duration(milliseconds: 140),
+                            curve: Curves.easeOutCubic,
+                            style: selected
+                                ? Theme.of(context).textTheme.headlineMedium!.copyWith(
+                                    color: cs.primary,
+                                    fontWeight: FontWeight.w900,
+                                    fontSize: 28,
+                                    letterSpacing: -0.5,
+                                    fontFeatures: const [
+                                      FontFeature.tabularFigures(),
+                                    ],
+                                  )
+                                : Theme.of(context).textTheme.titleMedium!.copyWith(
+                                    color: cs.onSurfaceVariant.withValues(
+                                      alpha: 0.45,
+                                    ),
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 17,
+                                    fontFeatures: const [
+                                      FontFeature.tabularFigures(),
+                                    ],
+                                  ),
+                            child: Text(formatSpeedValue(speed)),
+                          ),
+                        ),
                       );
                     },
-                    child: Center(
-                      child: AnimatedDefaultTextStyle(
-                        duration: const Duration(milliseconds: 140),
-                        curve: Curves.easeOutCubic,
-                        style: selected
-                            ? Theme.of(context).textTheme.headlineMedium!.copyWith(
-                                color: cs.primary,
-                                fontWeight: FontWeight.w900,
-                                fontSize: 28,
-                                letterSpacing: -0.5,
-                                fontFeatures: const [
-                                  FontFeature.tabularFigures(),
-                                ],
-                              )
-                            : Theme.of(context).textTheme.titleMedium!.copyWith(
-                                color: cs.onSurfaceVariant.withValues(
-                                  alpha: 0.45,
-                                ),
-                                fontWeight: FontWeight.w600,
-                                fontSize: 17,
-                                fontFeatures: const [
-                                  FontFeature.tabularFigures(),
-                                ],
-                              ),
-                        child: Text(formatSpeedValue(speed)),
-                      ),
-                    ),
-                  );
-                },
+                  ),
+                ),
               ),
-            ),
+              if (defaultTargetPlatform == TargetPlatform.windows)
+                Positioned.fill(
+                  child: Listener(
+                    behavior: HitTestBehavior.translucent,
+                    onPointerSignal: (signal) {
+                      if (signal is PointerScrollEvent) {
+                        GestureBinding.instance.pointerSignalResolver.register(signal, (event) {
+                          final scrollEvent = event as PointerScrollEvent;
+                          if (scrollEvent.scrollDelta.dy == 0) return;
+                          final delta = scrollEvent.scrollDelta.dy > 0 ? 1 : -1;
+                          final baseIndex = _wheelTargetIndex ?? _selectedIndex;
+                          final nextIndex = (baseIndex + delta).clamp(0, _speeds.length - 1);
+                          if (nextIndex != _selectedIndex || _wheelTargetIndex != nextIndex) {
+                            _wheelTargetIndex = nextIndex;
+                            AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
+                            _controller.animateToItem(
+                              nextIndex,
+                              duration: const Duration(milliseconds: 150),
+                              curve: Curves.easeOutCubic,
+                            );
+                            _setSpeedIndex(nextIndex, persist: false);
+                          }
+                        });
+                      }
+                    },
+                  ),
+                ),
+            ],
           ),
         ),
         const SizedBox(height: 8),

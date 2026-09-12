@@ -175,9 +175,68 @@ class _FolderCoverSelectorState extends ConsumerState<_FolderCoverSelector> {
 
   void _handlePageChanged(int index) {
     if (index < 0 || index >= _images.length) return;
+    if (_currentIndex == index) return;
     setState(() {
       _currentIndex = index;
     });
+  }
+
+  void _goToPrevious() {
+    if (_currentIndex <= 0 || _saving) return;
+    final targetIndex = _currentIndex - 1;
+    setState(() {
+      _currentIndex = targetIndex;
+    });
+    final controller = _pageController;
+    if (controller != null && controller.hasClients) {
+      controller.animateToPage(
+        targetIndex,
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeOutCubic,
+      );
+    }
+  }
+
+  void _goToNext() {
+    if (_currentIndex >= _images.length - 1 || _saving) return;
+    final targetIndex = _currentIndex + 1;
+    setState(() {
+      _currentIndex = targetIndex;
+    });
+    final controller = _pageController;
+    if (controller != null && controller.hasClients) {
+      controller.animateToPage(
+        targetIndex,
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeOutCubic,
+      );
+    }
+  }
+
+  Widget _buildNavButton({
+    required Key key,
+    required IconData icon,
+    required String tooltip,
+    required bool enabled,
+    required VoidCallback onPressed,
+  }) {
+    return AnimatedOpacity(
+      duration: kAppMotionFast,
+      opacity: enabled ? 1.0 : 0.35,
+      child: Material(
+        color: Colors.black.withValues(alpha: enabled ? 0.58 : 0.28),
+        shape: const CircleBorder(),
+        child: IconButton(
+          key: key,
+          tooltip: enabled ? tooltip : null,
+          onPressed: enabled ? onPressed : null,
+          color: Colors.white,
+          visualDensity: VisualDensity.compact,
+          iconSize: 22,
+          icon: Icon(icon),
+        ),
+      ),
+    );
   }
 
   Future<void> _commitSelection() async {
@@ -304,6 +363,39 @@ class _FolderCoverSelectorState extends ConsumerState<_FolderCoverSelector> {
                     },
                   ),
                 ),
+                if (defaultTargetPlatform == TargetPlatform.windows &&
+                    _images.length > 1) ...[
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Padding(
+                      padding: const EdgeInsets.only(left: 8),
+                      child: _buildNavButton(
+                        key: const ValueKey<String>(
+                          'audio_detail_cover_prev_button',
+                        ),
+                        icon: Icons.chevron_left_rounded,
+                        tooltip: i18n.tr('previous'),
+                        enabled: _currentIndex > 0 && !_saving,
+                        onPressed: _goToPrevious,
+                      ),
+                    ),
+                  ),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: _buildNavButton(
+                        key: const ValueKey<String>(
+                          'audio_detail_cover_next_button',
+                        ),
+                        icon: Icons.chevron_right_rounded,
+                        tooltip: i18n.tr('next'),
+                        enabled: _currentIndex < _images.length - 1 && !_saving,
+                        onPressed: _goToNext,
+                      ),
+                    ),
+                  ),
+                ],
                 Positioned(
                   right: 12,
                   top: 12,

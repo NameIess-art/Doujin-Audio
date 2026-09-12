@@ -3,6 +3,7 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../app/presentation/app_presentation_providers.dart';
@@ -402,6 +403,8 @@ class _TimelineSubtitleView extends StatefulWidget {
 class _TimelineSubtitleViewState extends State<_TimelineSubtitleView> {
   @visibleForTesting
   int debugMeasuredCueCount = 0;
+  @visibleForTesting
+  int get debugFocusedIndex => _focusedIndex;
   static const int _initialWindowRadius = 30;
   static const int _windowExpansionSize = 30;
   static const int _windowExpansionThreshold = 4;
@@ -430,6 +433,7 @@ class _TimelineSubtitleViewState extends State<_TimelineSubtitleView> {
   bool _isPointerDown = false;
   bool _snapScheduled = false;
   bool _layoutAlignmentScheduled = false;
+  int? _wheelTargetIndex;
 
   int get _lastIndex => widget.cues.length - 1;
   int get _windowLength => _windowEnd - _windowStart;
@@ -452,6 +456,7 @@ class _TimelineSubtitleViewState extends State<_TimelineSubtitleView> {
     final playbackIndex = widget.playbackSubtitleIndex.clamp(0, _lastIndex);
     if (!identical(oldWidget.cues, widget.cues)) {
       _focusedIndex = playbackIndex;
+      _wheelTargetIndex = null;
       _resetWindowAround(playbackIndex);
       return;
     }
@@ -482,12 +487,55 @@ class _TimelineSubtitleViewState extends State<_TimelineSubtitleView> {
 
   void _handlePointerDown(PointerDownEvent event) {
     _isPointerDown = true;
+    _wheelTargetIndex = null;
     _returnTimer?.cancel();
   }
 
   void _handlePointerReleased(PointerEvent event) {
     _isPointerDown = false;
     if (_isBrowsing) _scheduleImmediateSnap();
+  }
+
+  void _handlePointerSignal(PointerSignalEvent signal) {
+    if (defaultTargetPlatform == TargetPlatform.windows &&
+        signal is PointerScrollEvent) {
+      GestureBinding.instance.pointerSignalResolver.register(signal, (event) {
+        final scrollEvent = event as PointerScrollEvent;
+        if (scrollEvent.scrollDelta.dy == 0) return;
+        final delta = scrollEvent.scrollDelta.dy > 0 ? 1 : -1;
+        _scrollByOneLine(delta);
+      });
+    }
+  }
+
+  void _scrollByOneLine(int delta) {
+    if (widget.cues.isEmpty) return;
+    final baseIndex = _wheelTargetIndex ?? _focusedIndex;
+    final nextIndex = (baseIndex + delta).clamp(0, _lastIndex);
+    if (nextIndex == _focusedIndex && _wheelTargetIndex == nextIndex) return;
+    _wheelTargetIndex = nextIndex;
+
+    _returnTimer?.cancel();
+    if (!_isBrowsing) {
+      AppInteractionFeedback.resetContinuous();
+      setState(() => _isBrowsing = true);
+    }
+    _scrollToIndex(nextIndex);
+    _extendWindowNearFocusedIndex();
+
+    unawaited(
+      AppInteractionFeedback.continuous(
+        '${widget.key}:$_focusedIndex',
+        interval: _focusHapticInterval,
+      ),
+    );
+
+    final playbackIndex = widget.playbackSubtitleIndex.clamp(0, _lastIndex);
+    if (_focusedIndex == playbackIndex) {
+      setState(() => _isBrowsing = false);
+    } else {
+      _returnTimer = Timer(_returnDelay, _returnToPlaybackSubtitle);
+    }
   }
 
   void _scheduleImmediateSnap() {
@@ -510,6 +558,7 @@ class _TimelineSubtitleViewState extends State<_TimelineSubtitleView> {
     final viewportCenter = _scrollController.offset + (_viewportHeight / 2);
     final nextIndex = _windowStart + _nearestWindowItemIndex(viewportCenter);
     if (nextIndex == _focusedIndex || !mounted) return;
+    _wheelTargetIndex = null;
     setState(() => _focusedIndex = nextIndex);
     if (_isBrowsing) {
       unawaited(
@@ -532,10 +581,11 @@ class _TimelineSubtitleViewState extends State<_TimelineSubtitleView> {
         AppInteractionFeedback.resetContinuous();
         setState(() => _isBrowsing = true);
       }
-    } else if (notification is ScrollEndNotification &&
-        _isBrowsing &&
-        !_isPointerDown) {
-      _finishManualScroll();
+    } else if (notification is ScrollEndNotification) {
+      _wheelTargetIndex = null;
+      if (_isBrowsing && !_isPointerDown) {
+        _finishManualScroll();
+      }
     }
     return false;
   }
@@ -561,6 +611,7 @@ class _TimelineSubtitleViewState extends State<_TimelineSubtitleView> {
 
   void _returnToPlaybackSubtitle() {
     _returnTimer = null;
+    _wheelTargetIndex = null;
     if (!mounted) return;
     final playbackIndex = widget.playbackSubtitleIndex.clamp(0, _lastIndex);
     setState(() => _isBrowsing = false);
@@ -600,6 +651,7 @@ class _TimelineSubtitleViewState extends State<_TimelineSubtitleView> {
   }
 
   void _seekToFocusedSubtitle() {
+    _wheelTargetIndex = null;
     _returnTimer?.cancel();
     if (_isBrowsing) {
       setState(() => _isBrowsing = false);
@@ -825,100 +877,111 @@ class _TimelineSubtitleViewState extends State<_TimelineSubtitleView> {
                 onPointerDown: _handlePointerDown,
                 onPointerUp: _handlePointerReleased,
                 onPointerCancel: _handlePointerReleased,
-                child: NotificationListener<ScrollNotification>(
-                  onNotification: _handleScrollNotification,
-                child: ListView.builder(
-                  key: const ValueKey('subtitle_timeline_list'),
-                  controller: _scrollController,
-                  padding: EdgeInsets.only(
-                    top: _leadingPadding,
-                    bottom: _trailingPadding,
-                  ),
-                  itemExtentBuilder: (index, _) => _itemExtents[index],
-                  itemCount: _windowLength,
-                  itemBuilder: (context, localIndex) {
-                    final index = _windowStart + localIndex;
-                    final cue = widget.cues[index];
-                    final isFocused = index == _focusedIndex;
-                    final isPlaybackSubtitle =
-                        index == widget.playbackSubtitleIndex;
-                    return Semantics(
-                      selected: isFocused,
-                      child: Opacity(
-                        opacity: isFocused ? 1 : 0.45,
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 120),
-                          curve: Curves.easeOutCubic,
-                          decoration: BoxDecoration(
-                            color: isFocused
-                                ? cs.primary.withValues(alpha: 0.08)
-                                : Colors.transparent,
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                          child: Stack(
-                            key: ValueKey('subtitle_timeline_cue_$index'),
-                            fit: StackFit.expand,
-                            children: [
-                              Padding(
-                                key: ValueKey(
-                                  'subtitle_timeline_text_padding_$index',
+                child: Stack(
+                  children: [
+                    NotificationListener<ScrollNotification>(
+                      onNotification: _handleScrollNotification,
+                      child: ListView.builder(
+                        key: const ValueKey('subtitle_timeline_list'),
+                        controller: _scrollController,
+                        padding: EdgeInsets.only(
+                          top: _leadingPadding,
+                          bottom: _trailingPadding,
+                        ),
+                        itemExtentBuilder: (index, _) => _itemExtents[index],
+                        itemCount: _windowLength,
+                        itemBuilder: (context, localIndex) {
+                          final index = _windowStart + localIndex;
+                          final cue = widget.cues[index];
+                          final isFocused = index == _focusedIndex;
+                          final isPlaybackSubtitle =
+                              index == widget.playbackSubtitleIndex;
+                          return Semantics(
+                            selected: isFocused,
+                            child: Opacity(
+                              opacity: isFocused ? 1 : 0.45,
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 120),
+                                curve: Curves.easeOutCubic,
+                                decoration: BoxDecoration(
+                                  color: isFocused
+                                      ? cs.primary.withValues(alpha: 0.08)
+                                      : Colors.transparent,
+                                  borderRadius: BorderRadius.circular(14),
                                 ),
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: _textHorizontalPadding,
-                                  vertical: _textVerticalPadding,
-                                ),
-                                child: Center(
-                                  child: AnimatedScale(
-                                    scale: isFocused ? 1.03 : 1,
-                                    duration: const Duration(milliseconds: 120),
-                                    curve: Curves.easeOutCubic,
-                                    child: SizedBox(
-                                      width: double.infinity,
-                                      child: Text(
-                                        cue.text,
-                                        key: ValueKey(
-                                          'subtitle_timeline_text_$index',
+                                child: Stack(
+                                  key: ValueKey('subtitle_timeline_cue_$index'),
+                                  fit: StackFit.expand,
+                                  children: [
+                                    Padding(
+                                      key: ValueKey(
+                                        'subtitle_timeline_text_padding_$index',
+                                      ),
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: _textHorizontalPadding,
+                                        vertical: _textVerticalPadding,
+                                      ),
+                                      child: Center(
+                                        child: AnimatedScale(
+                                          scale: isFocused ? 1.03 : 1,
+                                          duration: const Duration(milliseconds: 120),
+                                          curve: Curves.easeOutCubic,
+                                          child: SizedBox(
+                                            width: double.infinity,
+                                            child: Text(
+                                              cue.text,
+                                              key: ValueKey(
+                                                'subtitle_timeline_text_$index',
+                                              ),
+                                              textAlign: TextAlign.center,
+                                              style: isFocused
+                                                  ? focusedTextStyle
+                                                  : unfocusedTextStyle,
+                                            ),
+                                          ),
                                         ),
-                                        textAlign: TextAlign.center,
-                                        style: isFocused
-                                            ? focusedTextStyle
-                                            : unfocusedTextStyle,
                                       ),
                                     ),
-                                  ),
+                                    if (_isBrowsing && isFocused && !isPlaybackSubtitle)
+                                      Align(
+                                        alignment: Alignment.centerRight,
+                                        child: SizedBox(
+                                          width: 48,
+                                          height: 48,
+                                          child: IconButton(
+                                            key: const ValueKey(
+                                              'subtitle_timeline_seek_button',
+                                            ),
+                                            tooltip: i18n.tr('seek_to_subtitle'),
+                                            onPressed: _seekToFocusedSubtitle,
+                                            icon: Icon(
+                                              Icons.play_arrow_rounded,
+                                              color: sessionDetailForeground(
+                                                cs,
+                                                SessionDetailForegroundLevel.medium,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                  ],
                                 ),
                               ),
-                              if (_isBrowsing && isFocused && !isPlaybackSubtitle)
-                                Align(
-                                  alignment: Alignment.centerRight,
-                                  child: SizedBox(
-                                    width: 48,
-                                    height: 48,
-                                    child: IconButton(
-                                      key: const ValueKey(
-                                        'subtitle_timeline_seek_button',
-                                      ),
-                                      tooltip: i18n.tr('seek_to_subtitle'),
-                                      onPressed: _seekToFocusedSubtitle,
-                                      icon: Icon(
-                                        Icons.play_arrow_rounded,
-                                        color: sessionDetailForeground(
-                                          cs,
-                                          SessionDetailForegroundLevel.medium,
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                            ],
-                          ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                    if (defaultTargetPlatform == TargetPlatform.windows)
+                      Positioned.fill(
+                        child: Listener(
+                          behavior: HitTestBehavior.translucent,
+                          onPointerSignal: _handlePointerSignal,
                         ),
                       ),
-                    );
-                  },
+                  ],
                 ),
               ),
-            ),
           ),
         ),
       );

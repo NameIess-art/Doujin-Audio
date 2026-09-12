@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/app/localization/app_language_provider.dart';
@@ -70,7 +71,11 @@ class _FakeAsmrMetadataService extends AsmrMetadataService {
 }
 
 class _DetailCoverCacheService extends CoverArtworkCacheService {
-  _DetailCoverCacheService() : super(libraryService: LibraryService());
+  _DetailCoverCacheService({
+    this.candidates = const <String>['/covers/candidate.jpg'],
+  }) : super(libraryService: LibraryService());
+
+  final List<String> candidates;
 
   @override
   Future<String?> futureForFolder(String folderPath) async => null;
@@ -79,7 +84,7 @@ class _DetailCoverCacheService extends CoverArtworkCacheService {
   Future<List<String>> discoverCoverCandidatesInFolder(
     String folderPath, {
     String? selectedCoverPath,
-  }) async => const <String>['/covers/candidate.jpg'];
+  }) async => candidates;
 }
 
 void _expectPrimaryFilledButton(WidgetTester tester, Finder finder) {
@@ -856,4 +861,147 @@ void main() {
 
     expect(find.byIcon(Icons.drive_file_rename_outline), findsNothing);
   });
+
+  testWidgets(
+    'windows audio detail shows prev/next buttons when folder has multiple covers',
+    (WidgetTester tester) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+
+      try {
+        final fixture = AppRuntimeWidgetTestFixture(
+          coverArtworkCacheService: _DetailCoverCacheService(
+            candidates: const <String>[
+              '/covers/c1.jpg',
+              '/covers/c2.jpg',
+              '/covers/c3.jpg',
+            ],
+          ),
+        );
+        addTearDown(fixture.dispose);
+        const target = AudioDetailTarget(
+          targetType: AudioDetailTargetType.libraryRootFolder,
+          targetPath: '/library/MultiCoverWork',
+        );
+        await tester.runAsync(
+          () => fixture.runtimeGraph.library.saveAudioDetail(
+            AudioDetail.empty(target),
+          ),
+        );
+
+        await tester.pumpWidget(
+          fixture.build(const AudioDetailSheet(target: target)),
+        );
+
+        final nextButtonFinder = find.byKey(
+          const ValueKey<String>('audio_detail_cover_next_button'),
+        );
+        final prevButtonFinder = find.byKey(
+          const ValueKey<String>('audio_detail_cover_prev_button'),
+        );
+
+        for (var i = 0; i < 40 && nextButtonFinder.evaluate().isEmpty; i++) {
+          await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 10)),
+          );
+          await tester.pump(const Duration(milliseconds: 20));
+        }
+
+        expect(nextButtonFinder, findsOneWidget);
+        expect(prevButtonFinder, findsOneWidget);
+
+        // Initially at index 0: prev is disabled, next is enabled
+        final prevBtn0 = tester.widget<IconButton>(prevButtonFinder);
+        final nextBtn0 = tester.widget<IconButton>(nextButtonFinder);
+        expect(prevBtn0.onPressed, isNull);
+        expect(nextBtn0.onPressed, isNotNull);
+
+        // Tap next button -> index 1
+        await tester.tap(nextButtonFinder);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
+
+        final prevBtn1 = tester.widget<IconButton>(prevButtonFinder);
+        final nextBtn1 = tester.widget<IconButton>(nextButtonFinder);
+        expect(prevBtn1.onPressed, isNotNull);
+        expect(nextBtn1.onPressed, isNotNull);
+
+        // Tap next button -> index 2
+        await tester.tap(nextButtonFinder);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
+
+        final prevBtn2 = tester.widget<IconButton>(prevButtonFinder);
+        final nextBtn2 = tester.widget<IconButton>(nextButtonFinder);
+        expect(prevBtn2.onPressed, isNotNull);
+        expect(nextBtn2.onPressed, isNull);
+
+        // Tap prev button -> back to index 1
+        await tester.tap(prevButtonFinder);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
+
+        final prevBtn3 = tester.widget<IconButton>(prevButtonFinder);
+        final nextBtn3 = tester.widget<IconButton>(nextButtonFinder);
+        expect(prevBtn3.onPressed, isNotNull);
+        expect(nextBtn3.onPressed, isNotNull);
+      } finally {
+        await tester.pumpWidget(const SizedBox.shrink());
+        debugDefaultTargetPlatformOverride = null;
+      }
+    },
+  );
+
+  testWidgets(
+    'android audio detail hides prev/next buttons even when multiple covers exist',
+    (WidgetTester tester) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+
+      try {
+        final fixture = AppRuntimeWidgetTestFixture(
+          coverArtworkCacheService: _DetailCoverCacheService(
+            candidates: const <String>[
+              '/covers/c1.jpg',
+              '/covers/c2.jpg',
+            ],
+          ),
+        );
+        addTearDown(fixture.dispose);
+        const target = AudioDetailTarget(
+          targetType: AudioDetailTargetType.libraryRootFolder,
+          targetPath: '/library/MultiCoverWorkAndroid',
+        );
+        await tester.runAsync(
+          () => fixture.runtimeGraph.library.saveAudioDetail(
+            AudioDetail.empty(target),
+          ),
+        );
+
+        await tester.pumpWidget(
+          fixture.build(const AudioDetailSheet(target: target)),
+        );
+
+        final loadedContent = find.byKey(
+          const ValueKey<String>('audio_detail_cover_content'),
+        );
+        for (var i = 0; i < 40 && loadedContent.evaluate().isEmpty; i++) {
+          await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 10)),
+          );
+          await tester.pump(const Duration(milliseconds: 20));
+        }
+
+        expect(
+          find.byKey(const ValueKey<String>('audio_detail_cover_next_button')),
+          findsNothing,
+        );
+        expect(
+          find.byKey(const ValueKey<String>('audio_detail_cover_prev_button')),
+          findsNothing,
+        );
+      } finally {
+        await tester.pumpWidget(const SizedBox.shrink());
+        debugDefaultTargetPlatformOverride = null;
+      }
+    },
+  );
 }

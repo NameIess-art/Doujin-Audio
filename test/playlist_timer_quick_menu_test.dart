@@ -1,3 +1,4 @@
+import 'package:doujin_audio/features/player/domain/playback_mode.dart';
 import 'package:doujin_audio/features/player/presentation/playlist_tab.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -31,6 +32,10 @@ void main() {
       expect(quickMenuTrigger, findsOneWidget);
       tester.widget<GestureDetector>(quickMenuTrigger).onLongPress!();
       await tester.pump(const Duration(milliseconds: 400));
+      expect(
+        find.text(fixture.languageProvider.tr('stop_after_current_track')),
+        findsNothing,
+      );
       final setCountdown = tester.widget<ActionChip>(
         find.widgetWithText(
           ActionChip,
@@ -48,6 +53,38 @@ void main() {
       await tester.pump();
       expect(openedTimerSettings, 1);
       expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'quick menu shows stop_after_current_track when timer is active',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(400, 800));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+
+      fixture.timer.configureTimer(
+        TimerMode.manual,
+        const Duration(minutes: 15),
+      );
+      fixture.timer.startCountdown();
+
+      await tester.pumpWidget(fixture.build(const PlaylistTab()));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+
+      final quickMenuTrigger = find.byType(TimerCountdownCapsule);
+      expect(quickMenuTrigger, findsOneWidget);
+      tester.widget<TimerCountdownCapsule>(quickMenuTrigger).onLongPress!();
+      await tester.pump(const Duration(milliseconds: 400));
+
+      expect(
+        find.text(fixture.languageProvider.tr('stop_after_current_track')),
+        findsOneWidget,
+      );
+      fixture.timer.cancelTimer();
+      await tester.pump();
     },
   );
 }

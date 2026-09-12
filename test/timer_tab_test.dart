@@ -47,12 +47,20 @@ void main() {
       tester.getRect(find.text('确认并立即开始')).bottom,
       lessThanOrEqualTo(setupPanelRect.bottom),
     );
+    expect(
+      find.text(fixture.languageProvider.tr('stop_after_current_track')),
+      findsNothing,
+    );
 
     await tester.tap(find.text('确认并立即开始'));
     await tester.pump();
     await tester.pump();
 
     expect(find.text('倒计时进行中'), findsOneWidget);
+    expect(
+      find.text(fixture.languageProvider.tr('stop_after_current_track')),
+      findsOneWidget,
+    );
     final detailPanelRect = tester.getRect(panel);
     final detailTitleRect = tester.getRect(title);
     expect(detailPanelRect.size, setupPanelRect.size);

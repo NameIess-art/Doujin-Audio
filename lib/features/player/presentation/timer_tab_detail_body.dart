@@ -197,61 +197,63 @@ extension _TimerTabDetailBody on _TimerTabState {
                           ),
                         ),
                       ],
-                      const SizedBox(height: 8),
-                      Material(
-                        color: cs.surfaceContainerLow,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                        clipBehavior: Clip.antiAlias,
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 8,
+                      if (!timerExpired) ...[
+                        const SizedBox(height: 8),
+                        Material(
+                          color: cs.surfaceContainerLow,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
                           ),
-                          child: Row(
-                            children: [
-                              Container(
-                                width: 36,
-                                height: 36,
-                                decoration: BoxDecoration(
-                                  color: cs.primary.withValues(alpha: 0.12),
-                                  borderRadius: BorderRadius.circular(
-                                    AppDesignTokens.of(context).radiusSmall,
+                          clipBehavior: Clip.antiAlias,
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 8,
+                            ),
+                            child: Row(
+                              children: [
+                                Container(
+                                  width: 36,
+                                  height: 36,
+                                  decoration: BoxDecoration(
+                                    color: cs.primary.withValues(alpha: 0.12),
+                                    borderRadius: BorderRadius.circular(
+                                      AppDesignTokens.of(context).radiusSmall,
+                                    ),
+                                  ),
+                                  child: Icon(
+                                    Icons.music_note_rounded,
+                                    size: 20,
+                                    color: cs.primary,
                                   ),
                                 ),
-                                child: Icon(
-                                  Icons.music_note_rounded,
-                                  size: 20,
-                                  color: cs.primary,
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Text(
+                                    i18n.tr('stop_after_current_track'),
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodyMedium
+                                        ?.copyWith(
+                                          fontWeight: FontWeight.w700,
+                                          fontSize: 14,
+                                        ),
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Text(
-                                  i18n.tr('stop_after_current_track'),
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .bodyMedium
-                                      ?.copyWith(
-                                        fontWeight: FontWeight.w700,
-                                        fontSize: 14,
-                                      ),
+                                Switch.adaptive(
+                                  value: timerState.stopAfterCurrentTrack,
+                                  onChanged: (value) {
+                                    AppInteractionFeedback.trigger(
+                                      AppInteractionFeedbackType.selection,
+                                    );
+                                    timer.setStopAfterCurrentTrack(value);
+                                  },
                                 ),
-                              ),
-                              Switch.adaptive(
-                                value: timerState.stopAfterCurrentTrack,
-                                onChanged: (value) {
-                                  AppInteractionFeedback.trigger(
-                                    AppInteractionFeedbackType.selection,
-                                  );
-                                  timer.setStopAfterCurrentTrack(value);
-                                },
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
                         ),
-                      ),
+                      ],
                     ],
                   ],
                 ),

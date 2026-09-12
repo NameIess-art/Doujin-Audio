@@ -294,6 +294,7 @@ class _WheelPicker extends StatefulWidget {
 class _WheelPickerState extends State<_WheelPicker> {
   late FixedExtentScrollController _controller;
   int _lastReportedValue = -1;
+  int? _wheelTargetItem;
 
   @override
   void initState() {
@@ -306,6 +307,12 @@ class _WheelPickerState extends State<_WheelPicker> {
   void didUpdateWidget(_WheelPicker oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.value != oldWidget.value) {
+      if (_wheelTargetItem != null) {
+        final targetLogicalIndex = _wheelTargetItem! % (widget.max + 1);
+        if (widget.value == targetLogicalIndex) {
+          return;
+        }
+      }
       if (_controller.hasClients) {
         final currentLogicalIndex = _controller.selectedItem;
         final maxCount = widget.max + 1;
@@ -361,39 +368,68 @@ class _WheelPickerState extends State<_WheelPicker> {
               PointerDeviceKind.trackpad,
             },
           ),
-          child: ListWheelScrollView.useDelegate(
-            controller: _controller,
-            itemExtent: 42,
-            perspective: 0.005,
-            diameterRatio: 1.5,
-            physics: const FixedExtentScrollPhysics(),
-            onSelectedItemChanged: (index) {
-              final actualIndex = index % (widget.max + 1);
-              if (actualIndex != _lastReportedValue) {
-                _lastReportedValue = actualIndex;
-                AppInteractionFeedback.trigger(
-                  AppInteractionFeedbackType.selection,
-                );
-                widget.onChanged(actualIndex);
-              }
+          child: NotificationListener<ScrollEndNotification>(
+            onNotification: (_) {
+              _wheelTargetItem = null;
+              return false;
             },
-            childDelegate: ListWheelChildLoopingListDelegate(
-              children: List.generate(widget.max + 1, (index) {
-                return Center(
-                  child: Text(
-                    index.toString().padLeft(2, '0'),
-                    style: TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.w700,
-                      fontFeatures: const [FontFeature.tabularFigures()],
-                      color: cs.onSurface,
+            child: ListWheelScrollView.useDelegate(
+              controller: _controller,
+              itemExtent: 42,
+              perspective: 0.005,
+              diameterRatio: 1.5,
+              physics: const FixedExtentScrollPhysics(),
+              onSelectedItemChanged: (index) {
+                final actualIndex = index % (widget.max + 1);
+                if (actualIndex != _lastReportedValue) {
+                  _lastReportedValue = actualIndex;
+                  AppInteractionFeedback.trigger(
+                    AppInteractionFeedbackType.selection,
+                  );
+                  widget.onChanged(actualIndex);
+                }
+              },
+              childDelegate: ListWheelChildLoopingListDelegate(
+                children: List.generate(widget.max + 1, (index) {
+                  return Center(
+                    child: Text(
+                      index.toString().padLeft(2, '0'),
+                      style: TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.w700,
+                        fontFeatures: const [FontFeature.tabularFigures()],
+                        color: cs.onSurface,
+                      ),
                     ),
-                  ),
-                );
-              }),
+                  );
+                }),
+              ),
             ),
           ),
         ),
+        if (defaultTargetPlatform == TargetPlatform.windows)
+          Positioned.fill(
+            child: Listener(
+              behavior: HitTestBehavior.translucent,
+              onPointerSignal: (signal) {
+                if (signal is PointerScrollEvent) {
+                  GestureBinding.instance.pointerSignalResolver.register(signal, (event) {
+                    final scrollEvent = event as PointerScrollEvent;
+                    if (scrollEvent.scrollDelta.dy == 0) return;
+                    final delta = scrollEvent.scrollDelta.dy > 0 ? 1 : -1;
+                    final baseItem = _wheelTargetItem ?? _controller.selectedItem;
+                    final nextItem = baseItem + delta;
+                    _wheelTargetItem = nextItem;
+                    _controller.animateToItem(
+                      nextItem,
+                      duration: const Duration(milliseconds: 150),
+                      curve: Curves.easeOutCubic,
+                    );
+                  });
+                }
+              },
+            ),
+          ),
       ],
     );
   }

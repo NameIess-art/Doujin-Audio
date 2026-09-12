@@ -16,6 +16,48 @@ import 'package:doujin_audio/core/platform/file_cache_platform_gateway.dart';
 import 'package:doujin_audio/core/media/path_matcher.dart';
 
 void main() {
+  test(
+    'committing a folder cover refreshes lookups started during selection',
+    () async {
+      final directory = await Directory.systemTemp.createTemp(
+        'cover_selection_refresh_',
+      );
+      addTearDown(() => directory.delete(recursive: true));
+      final first = File('${directory.path}${Platform.pathSeparator}first.jpg');
+      final second = File(
+        '${directory.path}${Platform.pathSeparator}second.jpg',
+      );
+      await first.writeAsBytes([0xff, 0xd8, 0xff, 0xd9]);
+      await second.writeAsBytes([0xff, 0xd8, 0xff, 0xd9]);
+      final scanGate = Completer<List<String>>();
+      var delayScan = false;
+      final track = _track(
+        path: '${directory.path}${Platform.pathSeparator}track.flac',
+        groupKey: directory.path,
+      );
+      final cache = CoverArtworkCacheService(
+        libraryService: LibraryService(),
+        filesystemImageScanner: (_, _) async =>
+            delayScan ? scanGate.future : [first.path, second.path],
+      );
+      await cache.setFolderCoverSelection(directory.path, first.path);
+      delayScan = true;
+      final selection = cache.setFolderCoverSelection(
+        directory.path,
+        second.path,
+      );
+      final duringSelectionGeneration = cache.generation;
+      expect(await cache.futureForFolder(directory.path), first.path);
+      expect(await cache.futureForPlaybackTrack(track), first.path);
+      scanGate.complete([first.path, second.path]);
+      expect(await selection, second.path);
+      expect(await cache.futureForFolder(directory.path), second.path);
+      expect(await cache.futureForTrack(track), second.path);
+      expect(await cache.futureForPlaybackTrack(track), second.path);
+      expect(cache.generation, greaterThan(duringSelectionGeneration));
+    },
+  );
+
   test('folder cover future reuses the same in-flight lookup', () async {
     final directory = await Directory.systemTemp.createTemp(
       'cover_cache_test_',

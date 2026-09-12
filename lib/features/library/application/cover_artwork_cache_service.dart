@@ -591,6 +591,9 @@ class CoverArtworkCacheService {
     )) {
       return _resolvedFolderCovers[normalizedFolder];
     }
+    // Playback can resolve the previous cover while selection is being saved.
+    // Commit a new generation and discard those lookups before publishing it.
+    invalidateFolder(normalizedFolder);
     _resolvedFolderCovers[normalizedFolder] = effectiveCoverPath;
     _resolvedFolderCoverFutures[normalizedFolder] = SynchronousFuture<String?>(
       effectiveCoverPath,

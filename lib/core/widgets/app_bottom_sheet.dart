@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../app/theme/app_styles.dart';
@@ -22,7 +23,8 @@ class AppBottomSheet {
     Clip? clipBehavior,
     AnimationStyle? sheetAnimationStyle,
   }) {
-    final maxHeight = MediaQuery.sizeOf(context).height * 0.75;
+    final size = MediaQuery.sizeOf(context);
+    final isWindows = defaultTargetPlatform == TargetPlatform.windows;
     final effectiveAnimationStyle =
         sheetAnimationStyle ??
         (MediaQuery.disableAnimationsOf(context)
@@ -34,24 +36,74 @@ class AppBottomSheet {
                 reverseCurve: Curves.fastOutSlowIn,
               ));
 
-    return showModalBottomSheet<T>(
-      context: context,
-      isScrollControlled: isScrollControlled,
-      useRootNavigator: useRootNavigator,
-      showDragHandle: showDragHandle,
-      enableDrag: enableDrag,
-      isDismissible: isDismissible,
-      sheetAnimationStyle: effectiveAnimationStyle,
-      backgroundColor: backgroundColor,
-      elevation: elevation,
-      clipBehavior: clipBehavior,
-      constraints: BoxConstraints(maxHeight: maxHeight),
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(
-          top: Radius.circular(AppRadius.dialog),
+    final navigator = Navigator.of(context, rootNavigator: useRootNavigator);
+    final localizations = MaterialLocalizations.of(context);
+    return navigator.push<T>(
+      _AppBottomSheetRoute<T>(
+        halfWidth: isWindows,
+        capturedThemes: InheritedTheme.capture(
+          from: context,
+          to: navigator.context,
         ),
+        barrierLabel: localizations.scrimLabel,
+        barrierOnTapHint: localizations.scrimOnTapHint(
+          localizations.bottomSheetLabel,
+        ),
+        modalBarrierColor: Theme.of(context).bottomSheetTheme.modalBarrierColor,
+        isScrollControlled: isScrollControlled,
+        showDragHandle: showDragHandle,
+        enableDrag: enableDrag,
+        isDismissible: isDismissible,
+        sheetAnimationStyle: effectiveAnimationStyle,
+        backgroundColor: backgroundColor,
+        elevation: elevation,
+        clipBehavior: clipBehavior,
+        constraints: BoxConstraints(
+          minWidth: isWindows ? double.infinity : 0,
+          maxHeight: size.height * 0.75,
+        ),
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(
+            top: Radius.circular(AppRadius.dialog),
+          ),
+        ),
+        builder: (ctx) => RepaintBoundary(child: builder(ctx)),
       ),
-      builder: (ctx) => RepaintBoundary(child: builder(ctx)),
     );
+  }
+}
+
+class _AppBottomSheetRoute<T> extends ModalBottomSheetRoute<T> {
+  _AppBottomSheetRoute({
+    required this.halfWidth,
+    required super.builder,
+    required super.isScrollControlled,
+    super.capturedThemes,
+    super.barrierLabel,
+    super.barrierOnTapHint,
+    super.modalBarrierColor,
+    super.showDragHandle,
+    super.enableDrag,
+    super.isDismissible,
+    super.sheetAnimationStyle,
+    super.backgroundColor,
+    super.elevation,
+    super.clipBehavior,
+    super.constraints,
+    super.shape,
+  });
+
+  final bool halfWidth;
+
+  @override
+  Widget buildPage(
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+  ) {
+    final page = super.buildPage(context, animation, secondaryAnimation);
+    return halfWidth
+        ? FractionallySizedBox(widthFactor: 0.5, child: page)
+        : page;
   }
 }

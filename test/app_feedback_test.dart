@@ -549,6 +549,56 @@ void main() {
     },
   );
 
+  for (final size in [const Size(1280, 800), const Size(580, 320)]) {
+    testWidgets('feedback from menu stays inside content at $size', (
+      tester,
+    ) async {
+      tester.view.physicalSize = size;
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        _feedbackApp(
+          blurEnabled: false,
+          home: Scaffold(
+            body: Row(
+              children: [
+                SizedBox(
+                  width: 180,
+                  child: Builder(
+                    builder: (context) => TextButton(
+                      onPressed: () => showAppSnackBar(
+                        context,
+                        'A long feedback message that must wrap within the content area. ' *
+                            4,
+                      ),
+                      child: const Text('Menu trigger'),
+                    ),
+                  ),
+                ),
+                const Expanded(
+                  child: ColoredBox(
+                    key: ValueKey<String>('main_page_canvas_0'),
+                    color: Colors.black,
+                    child: SizedBox.expand(),
+                  ),
+                ),
+                const SizedBox(width: 40),
+              ],
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('Menu trigger'));
+      await tester.pumpAndSettle();
+      final surface = find.byType(AppFeedbackSurface);
+      expect(tester.getTopLeft(surface).dx, 196);
+      expect(tester.getTopRight(surface).dx, size.width - 56);
+      expect(tester.takeException(), isNull);
+      await tester.pump(const Duration(seconds: 3));
+      await tester.pumpAndSettle();
+    });
+  }
+
   for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
     for (final size in [
       const Size(1280, 800),

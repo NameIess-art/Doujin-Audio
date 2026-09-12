@@ -792,38 +792,39 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                       ),
                     ],
                   ),
-                  const SizedBox(height: 14),
-                  SwitchListTile(
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    tileColor: cs.surfaceContainerLow,
-                    secondary: Icon(
-                      Icons.music_note_rounded,
-                      color: timerState.stopAfterCurrentTrack
-                          ? cs.primary
-                          : null,
-                    ),
-                    title: Text(
-                      i18n.tr('stop_after_current_track'),
-                      style: const TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
+                  if (timerState.active || timerState.duration != null) ...[
+                    SwitchListTile(
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
                       ),
+                      tileColor: cs.surfaceContainerLow,
+                      secondary: Icon(
+                        Icons.music_note_rounded,
+                        color: timerState.stopAfterCurrentTrack
+                            ? cs.primary
+                            : null,
+                      ),
+                      title: Text(
+                        i18n.tr('stop_after_current_track'),
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      subtitle: Text(
+                        i18n.tr('stop_after_current_track_subtitle'),
+                        style: const TextStyle(fontSize: 11),
+                      ),
+                      value: timerState.stopAfterCurrentTrack,
+                      onChanged: (enabled) {
+                        AppInteractionFeedback.trigger(
+                          AppInteractionFeedbackType.selection,
+                        );
+                        timer.setStopAfterCurrentTrack(enabled);
+                      },
                     ),
-                    subtitle: Text(
-                      i18n.tr('stop_after_current_track_subtitle'),
-                      style: const TextStyle(fontSize: 11),
-                    ),
-                    value: timerState.stopAfterCurrentTrack,
-                    onChanged: (enabled) {
-                      AppInteractionFeedback.trigger(
-                        AppInteractionFeedbackType.selection,
-                      );
-                      timer.setStopAfterCurrentTrack(enabled);
-                    },
-                  ),
-                  const SizedBox(height: 12),
+                    const SizedBox(height: 12),
+                  ],
                   Wrap(
                     spacing: 8,
                     runSpacing: 8,

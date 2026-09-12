@@ -9,7 +9,9 @@ import 'support/runtime_test_models.dart';
 import 'package:doujin_audio/features/library/presentation/audio_detail_sheet.dart';
 import 'package:doujin_audio/features/library/presentation/dlsite_metadata_batch_page.dart';
 import 'package:doujin_audio/features/library/presentation/dlsite_metadata_review_page.dart';
+import 'package:doujin_audio/features/asmr/application/asmr_download_models.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_metadata_service.dart';
+import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
 import 'package:doujin_audio/features/library/application/cover_artwork_cache_service.dart';
 import 'package:doujin_audio/features/library/application/dlsite_metadata_service.dart';
 import 'package:doujin_audio/features/library/application/library_service.dart';
@@ -1048,4 +1050,180 @@ void main() {
 
     expect(loadedCover, findsOneWidget);
   });
+
+  group('resolveWorkFolderDestination', () {
+    test('resolves local library root folder', () {
+      const target = AudioDetailTarget(
+        targetType: AudioDetailTargetType.libraryRootFolder,
+        targetPath: 'D:\\Audio\\Works\\RJ123456',
+      );
+      final resolved = resolveWorkFolderDestination(target);
+      expect(resolved.destinationRoot, 'D:\\Audio\\Works');
+      expect(resolved.workFolderName, 'RJ123456');
+
+      final snapshot = AsmrDownloadTaskSnapshot(
+        work: _testWork(sourceId: 'RJ123456', title: 'Work Title'),
+        destinationRoot: resolved.destinationRoot,
+        workFolderName: resolved.workFolderName,
+        conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
+        saveCover: true,
+        automaticFileRetryCount: 3,
+        status: AsmrDownloadTaskStatus.idle,
+        totalFiles: 0,
+        completedFiles: 0,
+        skippedFiles: 0,
+        failedFiles: 0,
+        totalBytes: 0,
+        downloadedBytes: 0,
+        startedAt: DateTime.now(),
+      );
+      expect(snapshot.workRootPath, 'D:\\Audio\\Works\\RJ123456');
+    });
+
+    test('resolves local single audio file to its parent folder', () {
+      const target = AudioDetailTarget(
+        targetType: AudioDetailTargetType.singleAudioFile,
+        targetPath: 'D:\\Audio\\Works\\RJ123456\\track01.mp3',
+      );
+      final resolved = resolveWorkFolderDestination(target);
+      expect(resolved.destinationRoot, 'D:\\Audio\\Works');
+      expect(resolved.workFolderName, 'RJ123456');
+    });
+
+    test('resolves Android SAF content URI with :: and subfolder', () {
+      const target = AudioDetailTarget(
+        targetType: AudioDetailTargetType.libraryRootFolder,
+        targetPath:
+            'content://com.android.externalstorage.documents/tree/1234-5678%3A/document/1234-5678%3A::ASMR/RJ123456',
+      );
+      final resolved = resolveWorkFolderDestination(target);
+      expect(
+        resolved.destinationRoot,
+        'content://com.android.externalstorage.documents/tree/1234-5678%3A/document/1234-5678%3A::ASMR',
+      );
+      expect(resolved.workFolderName, 'RJ123456');
+
+      final snapshot = AsmrDownloadTaskSnapshot(
+        work: _testWork(sourceId: 'RJ123456', title: 'Work Title'),
+        destinationRoot: resolved.destinationRoot,
+        workFolderName: resolved.workFolderName,
+        conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
+        saveCover: true,
+        automaticFileRetryCount: 3,
+        status: AsmrDownloadTaskStatus.idle,
+        totalFiles: 0,
+        completedFiles: 0,
+        skippedFiles: 0,
+        failedFiles: 0,
+        totalBytes: 0,
+        downloadedBytes: 0,
+        startedAt: DateTime.now(),
+      );
+      expect(
+        snapshot.workRootPath,
+        'content://com.android.externalstorage.documents/tree/1234-5678%3A/document/1234-5678%3A::ASMR/RJ123456',
+      );
+    });
+
+    test('resolves Android SAF content URI with :: at root', () {
+      const target = AudioDetailTarget(
+        targetType: AudioDetailTargetType.libraryRootFolder,
+        targetPath:
+            'content://com.android.externalstorage.documents/tree/1234-5678%3A/document/1234-5678%3A::RJ123456',
+      );
+      final resolved = resolveWorkFolderDestination(target);
+      expect(
+        resolved.destinationRoot,
+        'content://com.android.externalstorage.documents/tree/1234-5678%3A/document/1234-5678%3A',
+      );
+      expect(resolved.workFolderName, 'RJ123456');
+
+      final snapshot = AsmrDownloadTaskSnapshot(
+        work: _testWork(sourceId: 'RJ123456', title: 'Work Title'),
+        destinationRoot: resolved.destinationRoot,
+        workFolderName: resolved.workFolderName,
+        conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
+        saveCover: true,
+        automaticFileRetryCount: 3,
+        status: AsmrDownloadTaskStatus.idle,
+        totalFiles: 0,
+        completedFiles: 0,
+        skippedFiles: 0,
+        failedFiles: 0,
+        totalBytes: 0,
+        downloadedBytes: 0,
+        startedAt: DateTime.now(),
+      );
+      expect(
+        snapshot.workRootPath,
+        'content://com.android.externalstorage.documents/tree/1234-5678%3A/document/1234-5678%3A::RJ123456',
+      );
+    });
+  });
+
+  testWidgets(
+    'audio detail sheet does not have download button',
+    (WidgetTester tester) async {
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      const target = AudioDetailTarget(
+        targetType: AudioDetailTargetType.libraryRootFolder,
+        targetPath: '/library/SimpleWorkWithoutRj',
+      );
+      await tester.runAsync(
+        () => fixture.runtimeGraph.library.saveAudioDetail(
+          AudioDetail.empty(target).copyWith(workTitle: 'Plain Audio'),
+        ),
+      );
+
+      await tester.pumpWidget(
+        fixture.build(const AudioDetailSheet(target: target)),
+      );
+
+      final downloadBtn = find.byKey(
+        const ValueKey<String>('audio_detail_download_asmr'),
+      );
+      final fetchInfoBtn = find.byKey(
+        const ValueKey<String>('audio_detail_fetch_info'),
+      );
+
+      for (var i = 0; i < 40 && downloadBtn.evaluate().isEmpty; i++) {
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 10)),
+        );
+        await tester.pump(const Duration(milliseconds: 20));
+      }
+
+      expect(
+        find.byKey(const ValueKey<String>('audio_detail_download_asmr')),
+        findsNothing,
+      );
+      expect(fetchInfoBtn, findsOneWidget);
+    },
+  );
+}
+
+AsmrWork _testWork({
+  required String sourceId,
+  required String title,
+}) {
+  return AsmrWork(
+    id: sourceId.hashCode,
+    title: title,
+    circleName: 'Circle',
+    sourceId: sourceId,
+    sourceType: 'asmr',
+    sourceUrl: '',
+    coverUrl: 'https://example.com/cover.jpg',
+    thumbnailUrl: '',
+    mainCoverUrl: '',
+    releaseDate: null,
+    createDate: null,
+    duration: Duration.zero,
+    dlCount: 0,
+    reviewCount: 0,
+    rating: 0,
+    voiceActors: const <String>['Voice'],
+    tags: const <String>['ASMR'],
+  );
 }

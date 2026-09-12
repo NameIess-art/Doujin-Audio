@@ -843,22 +843,32 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
           removeTooltip: entry.isFolder
               ? i18n.tr('remove_audio_folder')
               : i18n.tr('remove_audio'),
-          secondaryActionLabel: i18n.tr('audio_detail'),
-          secondaryActionTooltip: i18n.tr('audio_detail'),
+          secondaryActionLabel:
+              i18n.tr(isPinned ? 'unpin_from_top' : 'pin_to_top'),
+          secondaryActionTooltip:
+              i18n.tr(isPinned ? 'unpin_from_top' : 'pin_to_top'),
+          secondaryActionIcon: Icons.push_pin_rounded,
+          secondaryActionIconWidget: isPinned ? const PushPinOffIcon() : null,
           verticalActions: useFeaturedCard,
-          onSecondaryAction: () =>
-              unawaited(showAudioDetailSheet(context, entry.target)),
-          onLeadingAction: () => unawaited(
+          onSecondaryAction: () => unawaited(
             ref
                 .read(settingsRepositoryProvider)
                 .toggleLibraryPathPinned(entry.path),
           ),
-          leadingActionLabel:
-              i18n.tr(isPinned ? 'unpin_from_top' : 'pin_to_top'),
-          leadingActionTooltip:
-              i18n.tr(isPinned ? 'unpin_from_top' : 'pin_to_top'),
-          leadingActionIcon: Icons.push_pin_rounded,
-          leadingActionIconWidget: isPinned ? const PushPinOffIcon() : null,
+          onLeadingAction: () =>
+              unawaited(showAudioDetailSheet(context, entry.target)),
+          leadingActionLabel: i18n.tr('audio_detail'),
+          leadingActionTooltip: i18n.tr('audio_detail'),
+          leadingActionIcon: Icons.info_outline_rounded,
+          onSecondaryLeadingAction: () => unawaited(
+            _downloadAudioTargetFromAsmr(
+              context: context,
+              ref: ref,
+              target: entry.target,
+            ),
+          ),
+          secondaryLeadingActionLabel: i18n.tr('download'),
+          secondaryLeadingActionTooltip: i18n.tr('download'),
           onRemove: () => _remove(context, ref),
           child: Card(
             margin: EdgeInsets.zero,

@@ -379,6 +379,7 @@ class AsmrDownloadManager {
     int automaticFileRetryCount = kDefaultAsmrDownloadRetryCount,
     Iterable<AsmrDownloadFolderNameField> folderNameFields =
         kDefaultAsmrDownloadFolderNameFields,
+    String? customWorkFolderName,
   }) async {
     if (_disposed) return;
     if (work.id <= 0) {
@@ -418,10 +419,13 @@ class AsmrDownloadManager {
       }
       _resumingTasks.remove(workId);
 
-      final workFolderName = buildAsmrDownloadWorkFolderName(
-        work,
-        folderNameFields,
-      );
+      final workFolderName = customWorkFolderName != null &&
+              customWorkFolderName.trim().isNotEmpty
+          ? customWorkFolderName.trim()
+          : buildAsmrDownloadWorkFolderName(
+              work,
+              folderNameFields,
+            );
       final plannedFiles = _collectPlannedFiles(selectedRoots);
       final coverFile = saveCover ? _plannedCoverFile(work) : null;
       if (coverFile != null) plannedFiles.add(coverFile);

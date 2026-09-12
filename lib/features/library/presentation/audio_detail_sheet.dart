@@ -5,12 +5,14 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
+import 'package:path/path.dart' as path;
 
 import '../../../app/localization/app_language_provider.dart';
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/presentation/app_presentation_providers.dart';
 import '../../../core/media/audio_detail.dart';
 import '../../../core/media/music_track.dart';
+import '../../../core/media/path_matcher.dart';
 import '../application/audio_detail_repository.dart';
 import '../application/library_facade.dart';
 import '../../../core/logging/app_log_service.dart';
@@ -32,6 +34,54 @@ part 'audio_detail_field_widgets.dart';
 part 'audio_detail_fetch_dialog.dart';
 
 const _multiValueSeparator = '\uFF0C';
+
+({String destinationRoot, String workFolderName}) resolveWorkFolderDestination(
+  AudioDetailTarget target,
+) {
+  final folderPath = target.isLibraryRootFolder
+      ? target.targetPath
+      : (PathMatcher.parentPath(target.targetPath) ??
+          path.dirname(target.targetPath));
+
+  if (PathMatcher.isContentUri(folderPath)) {
+    if (folderPath.contains('::')) {
+      final marker = folderPath.indexOf('::');
+      final base = folderPath.substring(0, marker);
+      final rel = folderPath
+          .substring(marker + 2)
+          .replaceAll(r'\', '/')
+          .replaceAll(RegExp(r'/+$'), '');
+      if (rel.contains('/')) {
+        final lastSlash = rel.lastIndexOf('/');
+        final parentRel = rel.substring(0, lastSlash);
+        final folderName = rel.substring(lastSlash + 1);
+        return (
+          destinationRoot: parentRel.isEmpty ? base : '$base::$parentRel',
+          workFolderName: folderName,
+        );
+      }
+      return (destinationRoot: base, workFolderName: rel);
+    }
+    final parent = PathMatcher.parentPath(folderPath) ?? folderPath;
+    final folderName = PathDisplay.folderName(folderPath);
+    return (destinationRoot: parent, workFolderName: folderName);
+  }
+
+  var sanitized = folderPath.trim();
+  while (sanitized.length > 1 &&
+      (sanitized.endsWith('/') || sanitized.endsWith(r'\')) &&
+      !sanitized.endsWith(':/') &&
+      !sanitized.endsWith(r':\')) {
+    sanitized = sanitized.substring(0, sanitized.length - 1);
+  }
+  final normalized = path.normalize(sanitized);
+  final destinationRoot = path.dirname(normalized);
+  final workFolderName = path.basename(normalized);
+  return (
+    destinationRoot: destinationRoot,
+    workFolderName: workFolderName.isEmpty ? normalized : workFolderName,
+  );
+}
 
 Future<void> showAudioDetailSheet(
   BuildContext context,
@@ -484,7 +534,7 @@ class _AudioDetailSheetState extends ConsumerState<AudioDetailSheet> {
                     ),
                   ),
                 ),
-                if (detail != null)
+                if (detail != null) ...[
                   IconButton(
                     key: const ValueKey<String>('audio_detail_fetch_info'),
                     constraints: const BoxConstraints.tightFor(
@@ -497,6 +547,7 @@ class _AudioDetailSheetState extends ConsumerState<AudioDetailSheet> {
                     tooltip: i18n.tr('audio_detail_fetch_info'),
                     icon: const Icon(Icons.cloud_download_rounded),
                   ),
+                ],
                 IconButton(
                   onPressed: () => Navigator.of(context).maybePop(),
                   tooltip: MaterialLocalizations.of(context).closeButtonTooltip,

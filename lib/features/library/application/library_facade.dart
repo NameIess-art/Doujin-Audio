@@ -12,6 +12,7 @@ import '../../../core/media/path_matcher.dart';
 import '../../../core/platform/file_cache_platform_gateway.dart';
 import '../../../core/persistence/json_document_store.dart';
 import '../../asmr/application/asmr_metadata_service.dart';
+import '../../asmr/domain/asmr_models.dart';
 import '../../settings/application/app_cache_service.dart';
 import 'audio_detail_cache_service.dart';
 import 'audio_detail_repository.dart';
@@ -422,6 +423,11 @@ final class LibraryFacade implements LibraryCatalog {
     required AppLanguage language,
   }) =>
       _metadataCoordinator.searchPreferredMetadata(titles, language: language);
+
+  Future<AsmrWork?> findAsmrWorkByRjCode(
+    String rjCode, {
+    required AppLanguage language,
+  }) => asmrMetadataService.findAsmrWorkByRjCode(rjCode, language: language);
 
   AudioDetail? resolvedAudioDetail(AudioDetailTarget target) =>
       _metadataCoordinator.resolvedDetail(target);

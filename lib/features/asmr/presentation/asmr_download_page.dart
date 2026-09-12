@@ -26,11 +26,15 @@ class AsmrDownloadPage extends ConsumerStatefulWidget {
     required this.work,
     this.batchIndex,
     this.batchTotal,
+    this.customDestinationRoot,
+    this.customWorkFolderName,
   });
 
   final AsmrWork work;
   final int? batchIndex;
   final int? batchTotal;
+  final String? customDestinationRoot;
+  final String? customWorkFolderName;
 
   @override
   ConsumerState<AsmrDownloadPage> createState() => _AsmrDownloadPageState();
@@ -70,14 +74,27 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
               final settings = ref.read(settingsRepositoryProvider);
               final tree = await libraryController.ensureTrackTree(widget.work);
               await downloadManager.initialize();
-              final savedDestination = settings.asmrDownloadDestinationRoot;
-              destinationMissing =
-                  savedDestination != null &&
-                  savedDestination.trim().isNotEmpty &&
-                  !await downloadManager.destinationExists(savedDestination);
+              final customRoot = widget.customDestinationRoot?.trim();
+              final customFolder = widget.customWorkFolderName?.trim();
+              final isCustom = customRoot != null &&
+                  customRoot.isNotEmpty &&
+                  customFolder != null &&
+                  customFolder.isNotEmpty;
+
+              final String? targetRoot;
+              if (isCustom) {
+                targetRoot = customRoot;
+              } else {
+                targetRoot = settings.asmrDownloadDestinationRoot;
+              }
+
+              destinationMissing = !isCustom &&
+                  targetRoot != null &&
+                  targetRoot.trim().isNotEmpty &&
+                  !await downloadManager.destinationExists(targetRoot);
               return (
                 tree: tree,
-                destinationRoot: destinationMissing ? null : savedDestination,
+                destinationRoot: destinationMissing ? null : targetRoot,
               );
             },
           );
@@ -232,6 +249,7 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
               saveCover: settings.asmrDownloadSaveCover,
               automaticFileRetryCount: settings.asmrDownloadRetryCount,
               folderNameFields: settings.asmrDownloadFolderNameFields,
+              customWorkFolderName: widget.customWorkFolderName,
             ),
           );
       if (!mounted) return;
@@ -436,40 +454,44 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
                           ),
                     )
                   : null,
-              trailing: HeaderFloatingSurface(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(19),
-                  onTap: _starting ? null : _chooseDestination,
-                  child: Center(
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.folder_outlined, size: 16, color: asmrBlue),
-                        const SizedBox(width: 4),
-                        Text(
-                          i18n.tr(
-                            hasDestination
-                                ? 'asmr_download_change_path'
-                                : 'asmr_download_choose_path',
-                          ),
-                          style: TextStyle(
-                            fontSize: 12.5,
-                            fontWeight: FontWeight.w700,
-                            color: asmrBlue,
+              trailing: widget.customWorkFolderName != null
+                  ? null
+                  : HeaderFloatingSurface(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(19),
+                        onTap: _starting ? null : _chooseDestination,
+                        child: Center(
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.folder_outlined, size: 16, color: asmrBlue),
+                              const SizedBox(width: 4),
+                              Text(
+                                i18n.tr(
+                                  hasDestination
+                                      ? 'asmr_download_change_path'
+                                      : 'asmr_download_choose_path',
+                                ),
+                                style: TextStyle(
+                                  fontSize: 12.5,
+                                  fontWeight: FontWeight.w700,
+                                  color: asmrBlue,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
-                      ],
+                      ),
                     ),
-                  ),
-                ),
-              ),
               additionalChild: Padding(
                 padding: const EdgeInsets.fromLTRB(16, 6, 16, 12),
                 child: _DownloadSummaryCard(
                   work: widget.work,
                   selectedLeafCount: selectedLeafCount,
                   selectedTotalSizeBytes: selectedTotalSizeBytes,
+                  customDestinationRoot: widget.customDestinationRoot,
+                  customWorkFolderName: widget.customWorkFolderName,
                 ),
               ),
             ),
@@ -825,11 +847,15 @@ class _DownloadSummaryCard extends ConsumerWidget {
     required this.work,
     required this.selectedLeafCount,
     required this.selectedTotalSizeBytes,
+    this.customDestinationRoot,
+    this.customWorkFolderName,
   });
 
   final AsmrWork work;
   final int selectedLeafCount;
   final int selectedTotalSizeBytes;
+  final String? customDestinationRoot;
+  final String? customWorkFolderName;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -878,6 +904,31 @@ class _DownloadSummaryCard extends ConsumerWidget {
               ),
             ],
           ),
+          if (customWorkFolderName != null &&
+              customWorkFolderName!.trim().isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                Icon(
+                  Icons.folder_outlined,
+                  size: 16,
+                  color: cs.onSurfaceVariant,
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    customWorkFolderName!.trim(),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: cs.onSurfaceVariant,
+                          fontWeight: FontWeight.w500,
+                        ),
+                  ),
+                ),
+              ],
+            ),
+          ],
         ],
       ),
     );

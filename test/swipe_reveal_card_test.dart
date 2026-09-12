@@ -432,4 +432,131 @@ void main() {
       expect(find.text('Swipe target'), findsOneWidget);
     },
   );
+
+  testWidgets(
+    'vertical actions reveal Info on top and Download below on right swipe, Pin on top and Remove below on left swipe',
+    (tester) async {
+      final calls = <String>[];
+      final shape = RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: SizedBox(
+                width: 320,
+                height: 120,
+                child: SwipeRevealCard(
+                  shape: shape,
+                  verticalActions: true,
+                  actionLabel: 'Remove',
+                  removeTooltip: 'Remove',
+                  onRemove: () => calls.add('Remove'),
+                  onSecondaryAction: () => calls.add('Pin'),
+                  secondaryActionLabel: 'Pin',
+                  secondaryActionTooltip: 'Pin',
+                  secondaryActionIcon: Icons.push_pin_rounded,
+                  onLeadingAction: () => calls.add('Info'),
+                  leadingActionLabel: 'Info',
+                  leadingActionTooltip: 'Info',
+                  leadingActionIcon: Icons.info_outline_rounded,
+                  onSecondaryLeadingAction: () => calls.add('Download'),
+                  secondaryLeadingActionLabel: 'Download',
+                  secondaryLeadingActionTooltip: 'Download',
+                  child: const SizedBox.expand(child: Text('Card Content')),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      // Right swipe reveals left actions (Info on top, Download below)
+      await tester.drag(find.text('Card Content'), const Offset(200, 0));
+      await tester.pumpAndSettle();
+
+      final infoBtn = find.byTooltip('Info');
+      final downloadBtn = find.byTooltip('Download');
+      expect(infoBtn, findsOneWidget);
+      expect(downloadBtn, findsOneWidget);
+
+      final infoRect = tester.getRect(infoBtn);
+      final downloadRect = tester.getRect(downloadBtn);
+      expect(infoRect.bottom, lessThanOrEqualTo(downloadRect.top));
+
+      await tester.tap(downloadBtn);
+      await tester.pumpAndSettle();
+      expect(calls, ['Download']);
+
+      // Left swipe reveals right actions (Pin on top, Remove below)
+      await tester.drag(find.text('Card Content'), const Offset(-200, 0));
+      await tester.pumpAndSettle();
+
+      final pinBtn = find.byTooltip('Pin');
+      final removeBtn = find.byTooltip('Remove');
+      expect(pinBtn, findsOneWidget);
+      expect(removeBtn, findsOneWidget);
+
+      final pinRect = tester.getRect(pinBtn);
+      final removeRect = tester.getRect(removeBtn);
+      expect(pinRect.bottom, lessThanOrEqualTo(removeRect.top));
+
+      await tester.tap(pinBtn);
+      await tester.pumpAndSettle();
+      expect(calls, ['Download', 'Pin']);
+    },
+  );
+
+  testWidgets(
+    'Windows context menu shows Info, Download, Pin, Remove in order',
+    (tester) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+      final calls = <String>[];
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: SizedBox(
+                width: 300,
+                height: 100,
+                child: SwipeRevealCard(
+                  shape: const RoundedRectangleBorder(),
+                  verticalActions: true,
+                  actionLabel: 'Remove',
+                  removeTooltip: 'Remove',
+                  onRemove: () => calls.add('Remove'),
+                  onSecondaryAction: () => calls.add('Pin'),
+                  secondaryActionLabel: 'Pin',
+                  onLeadingAction: () => calls.add('Info'),
+                  leadingActionLabel: 'Info',
+                  onSecondaryLeadingAction: () => calls.add('Download'),
+                  secondaryLeadingActionLabel: 'Download',
+                  child: const Center(child: Text('Windows Card')),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      final card = find.byType(SwipeRevealCard);
+      for (final label in ['Info', 'Download', 'Pin', 'Remove']) {
+        final click = await tester.startGesture(
+          tester.getCenter(card),
+          kind: PointerDeviceKind.mouse,
+          buttons: kSecondaryMouseButton,
+        );
+        await click.up();
+        await tester.pumpAndSettle();
+        expect(find.byType(PopupMenuItem<VoidCallback>), findsNWidgets(4));
+        await tester.tap(find.text(label));
+        await tester.pumpAndSettle();
+      }
+      expect(calls, ['Info', 'Download', 'Pin', 'Remove']);
+      debugDefaultTargetPlatformOverride = null;
+    },
+  );
 }

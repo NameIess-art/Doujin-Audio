@@ -356,6 +356,10 @@ const Map<String, String> appLanguageEn = {
   'metadata_scope_missing': 'Missing data',
   'audio_detail_fetch_missing_query':
       'Fill in an RJ number, folder/file name, or work title first.',
+  'audio_detail_missing_rj_for_download':
+      'No RJ code found to search on ASMR.ONE',
+  'audio_detail_asmr_work_not_found': 'Work not found on ASMR.ONE: {rj}',
+  'audio_detail_searching_asmr': 'Searching ASMR.ONE...',
   'audio_detail_cover_swipe_hint': 'Swipe left or right to change',
   'audio_detail_set_cover': 'Set as cover',
   'audio_detail_current_cover': 'Current cover',

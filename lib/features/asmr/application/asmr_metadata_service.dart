@@ -35,6 +35,29 @@ class AsmrMetadataService {
     return _metadataFromWork(exact.first);
   }
 
+  Future<AsmrWork?> findAsmrWorkByRjCode(
+    String rjCode, {
+    AppLanguage language = AppLanguage.zh,
+  }) async {
+    final normalizedRjCode = AudioDetail.findRjCodeInText(rjCode);
+    if (normalizedRjCode == null) return null;
+    try {
+      final page = await _apiService.searchWorks(
+        keyword: normalizedRjCode,
+        order: 'release',
+        sort: 'desc',
+        pageSize: 20,
+        language: _asmrLanguage(language),
+      );
+      final exact = page.works.where(
+        (work) => work.rjCode.toUpperCase() == normalizedRjCode,
+      );
+      return exact.firstOrNull;
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<List<DlsiteMetadata>> searchByTitleCandidates(
     Iterable<String> titles, {
     AppLanguage language = AppLanguage.zh,

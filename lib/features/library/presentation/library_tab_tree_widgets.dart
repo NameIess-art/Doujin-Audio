@@ -607,10 +607,23 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
         closedColor: cs.surface,
         actionLabel: i18n.tr('remove'),
         removeTooltip: i18n.tr('remove_audio_folder'),
-        secondaryActionLabel: isRootFolder ? i18n.tr('audio_detail') : null,
-        secondaryActionTooltip: isRootFolder ? i18n.tr('audio_detail') : null,
+        secondaryActionLabel: isRootFolder
+            ? i18n.tr(isPinned ? 'unpin_from_top' : 'pin_to_top')
+            : null,
+        secondaryActionTooltip: isRootFolder
+            ? i18n.tr(isPinned ? 'unpin_from_top' : 'pin_to_top')
+            : null,
+        secondaryActionIcon: Icons.push_pin_rounded,
+        secondaryActionIconWidget: isPinned ? const PushPinOffIcon() : null,
         verticalActions: isRootFolder,
         onSecondaryAction: isRootFolder
+            ? () => unawaited(
+                ref
+                    .read(settingsRepositoryProvider)
+                    .toggleLibraryPathPinned(widget.folder.path),
+              )
+            : null,
+        onLeadingAction: isRootFolder
             ? () => unawaited(
                 showAudioDetailSheet(
                   context,
@@ -618,21 +631,23 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
                 ),
               )
             : null,
-        onLeadingAction: isRootFolder
+        leadingActionLabel: isRootFolder ? i18n.tr('audio_detail') : null,
+        leadingActionTooltip: isRootFolder ? i18n.tr('audio_detail') : null,
+        leadingActionIcon: Icons.info_outline_rounded,
+        onSecondaryLeadingAction: isRootFolder
             ? () => unawaited(
-                ref
-                    .read(settingsRepositoryProvider)
-                    .toggleLibraryPathPinned(widget.folder.path),
+                _downloadAudioTargetFromAsmr(
+                  context: context,
+                  ref: ref,
+                  target: AudioDetailTarget.libraryRootFolder(
+                    widget.folder.path,
+                  ),
+                ),
               )
             : null,
-        leadingActionLabel: isRootFolder
-            ? i18n.tr(isPinned ? 'unpin_from_top' : 'pin_to_top')
-            : null,
-        leadingActionTooltip: isRootFolder
-            ? i18n.tr(isPinned ? 'unpin_from_top' : 'pin_to_top')
-            : null,
-        leadingActionIcon: Icons.push_pin_rounded,
-        leadingActionIconWidget: isPinned ? const PushPinOffIcon() : null,
+        secondaryLeadingActionLabel: isRootFolder ? i18n.tr('download') : null,
+        secondaryLeadingActionTooltip:
+            isRootFolder ? i18n.tr('download') : null,
         onRemove: () => _removeFolder(context),
         onWillReveal: _expansionController.collapse,
         child: cardContent,
@@ -754,25 +769,36 @@ class _TrackNodeWidget extends ConsumerWidget {
           closedColor: cs.surface,
           actionLabel: i18n.tr('remove'),
           removeTooltip: i18n.tr('remove_audio'),
-          secondaryActionLabel: i18n.tr('audio_detail'),
-          secondaryActionTooltip: i18n.tr('audio_detail'),
+          secondaryActionLabel:
+              i18n.tr(isPinned ? 'unpin_from_top' : 'pin_to_top'),
+          secondaryActionTooltip:
+              i18n.tr(isPinned ? 'unpin_from_top' : 'pin_to_top'),
+          secondaryActionIcon: Icons.push_pin_rounded,
+          secondaryActionIconWidget: isPinned ? const PushPinOffIcon() : null,
           verticalActions: useFeaturedCard,
           onSecondaryAction: () => unawaited(
+            ref
+                .read(settingsRepositoryProvider)
+                .toggleLibraryPathPinned(track.path),
+          ),
+          onLeadingAction: () => unawaited(
             showAudioDetailSheet(
               context,
               AudioDetailTarget.singleAudioFile(track.path),
             ),
           ),
-          onLeadingAction: () => unawaited(
-            ref
-                .read(settingsRepositoryProvider)
-                .toggleLibraryPathPinned(track.path),
+          leadingActionLabel: i18n.tr('audio_detail'),
+          leadingActionTooltip: i18n.tr('audio_detail'),
+          leadingActionIcon: Icons.info_outline_rounded,
+          onSecondaryLeadingAction: () => unawaited(
+            _downloadAudioTargetFromAsmr(
+              context: context,
+              ref: ref,
+              target: AudioDetailTarget.singleAudioFile(track.path),
+            ),
           ),
-          leadingActionLabel: i18n.tr(isPinned ? 'unpin_from_top' : 'pin_to_top'),
-          leadingActionTooltip:
-              i18n.tr(isPinned ? 'unpin_from_top' : 'pin_to_top'),
-          leadingActionIcon: Icons.push_pin_rounded,
-          leadingActionIconWidget: isPinned ? const PushPinOffIcon() : null,
+          secondaryLeadingActionLabel: i18n.tr('download'),
+          secondaryLeadingActionTooltip: i18n.tr('download'),
           onRemove: () => _removeTrack(context, ref, track),
           child: Card(
             margin: EdgeInsets.zero,

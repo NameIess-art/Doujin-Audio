@@ -17,6 +17,7 @@ class SwipeRevealCard extends StatefulWidget {
     this.secondaryActionLabel,
     this.secondaryActionTooltip,
     this.secondaryActionIcon = Icons.info_outline_rounded,
+    this.secondaryActionIconWidget,
     this.primaryActionIcon = Icons.delete_outline_rounded,
     this.primaryActionTooltip,
     this.onTertiaryAction,
@@ -33,6 +34,11 @@ class SwipeRevealCard extends StatefulWidget {
     this.leadingActionTooltip,
     this.leadingActionIcon = Icons.download_rounded,
     this.leadingActionIconWidget,
+    this.onSecondaryLeadingAction,
+    this.secondaryLeadingActionLabel,
+    this.secondaryLeadingActionTooltip,
+    this.secondaryLeadingActionIcon = Icons.download_rounded,
+    this.secondaryLeadingActionIconWidget,
   });
 
   final Widget child;
@@ -46,6 +52,7 @@ class SwipeRevealCard extends StatefulWidget {
   final String? secondaryActionLabel;
   final String? secondaryActionTooltip;
   final IconData secondaryActionIcon;
+  final Widget? secondaryActionIconWidget;
   final IconData primaryActionIcon;
   final String? primaryActionTooltip;
   final VoidCallback? onTertiaryAction;
@@ -62,6 +69,11 @@ class SwipeRevealCard extends StatefulWidget {
   final String? leadingActionTooltip;
   final IconData leadingActionIcon;
   final Widget? leadingActionIconWidget;
+  final VoidCallback? onSecondaryLeadingAction;
+  final String? secondaryLeadingActionLabel;
+  final String? secondaryLeadingActionTooltip;
+  final IconData secondaryLeadingActionIcon;
+  final Widget? secondaryLeadingActionIconWidget;
 
   @override
   State<SwipeRevealCard> createState() => _SwipeRevealCardState();
@@ -89,14 +101,24 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
   bool get _hasSecondaryAction => widget.onSecondaryAction != null;
   bool get _hasTertiaryAction => widget.onTertiaryAction != null;
   bool get _hasLeadingAction => widget.onLeadingAction != null;
+  bool get _hasSecondaryLeadingAction => widget.onSecondaryLeadingAction != null;
   int get _actionCount =>
       1 + (_hasSecondaryAction ? 1 : 0) + (_hasTertiaryAction ? 1 : 0);
+  int get _leadingActionCount =>
+      (_hasLeadingAction ? 1 : 0) + (_hasSecondaryLeadingAction ? 1 : 0);
   double get _actionWidth => widget.verticalActions && _actionCount > 1
       ? 76
       : _hasSecondaryAction
       ? 144
       : 72;
-  double get _activeActionWidth => _revealedFromStart ? 72 : _actionWidth;
+  double get _leadingActionWidth =>
+      widget.verticalActions && _leadingActionCount > 1
+          ? 76
+          : _leadingActionCount > 1
+          ? 144
+          : 72;
+  double get _activeActionWidth =>
+      _revealedFromStart ? _leadingActionWidth : _actionWidth;
   bool get _isOpen => _revealedWidth > (_activeActionWidth * 0.5);
 
   @override
@@ -191,6 +213,15 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
             widget.leadingActionIconWidget ?? Icon(widget.leadingActionIcon),
             widget.onLeadingAction!,
           ),
+        if (_hasSecondaryLeadingAction)
+          item(
+            widget.secondaryLeadingActionLabel ??
+                widget.secondaryLeadingActionTooltip ??
+                '',
+            widget.secondaryLeadingActionIconWidget ??
+                Icon(widget.secondaryLeadingActionIcon),
+            widget.onSecondaryLeadingAction!,
+          ),
         if (_hasTertiaryAction)
           item(
             widget.tertiaryActionLabel ?? widget.tertiaryActionTooltip ?? '',
@@ -200,7 +231,8 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
         if (_hasSecondaryAction)
           item(
             widget.secondaryActionLabel ?? widget.secondaryActionTooltip ?? '',
-            Icon(widget.secondaryActionIcon),
+            widget.secondaryActionIconWidget ??
+                Icon(widget.secondaryActionIcon),
             widget.onSecondaryAction!,
           ),
         item(
@@ -243,7 +275,7 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
       }
       final isIntentionalSwipe =
           ((_dragDx < 0 && _actionCount > 0) ||
-              (_dragDx > 0 && _hasLeadingAction)) &&
+              (_dragDx > 0 && _leadingActionCount > 0)) &&
           horizontalDistance >= _revealStartThreshold &&
           horizontalDistance > verticalDistance * _acceptSlopeRatio;
       if (!isIntentionalSwipe) {
@@ -348,9 +380,11 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
         ? onColor
         : onColor.withValues(alpha: 0.3);
     final primaryFg = effectiveDestructive ? baseColor : onColor;
-    final showVerticalActions =
-        !_revealedFromStart && widget.verticalActions && _actionCount > 1;
-    final leadingActionLabel = widget.leadingActionLabel ?? '';
+    final showVerticalActions = widget.verticalActions &&
+        (_revealedFromStart ? _leadingActionCount > 1 : _actionCount > 1);
+    final leadingActionLabel = _hasSecondaryLeadingAction
+        ? '${widget.leadingActionLabel ?? ''} / ${widget.secondaryLeadingActionLabel ?? ''}'
+        : (widget.leadingActionLabel ?? '');
     final actionLabel = _hasTertiaryAction
         ? [
             widget.tertiaryActionLabel ?? '',
@@ -551,7 +585,7 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                               padding: EdgeInsets.only(
                                 top: showVerticalActions ? 10 : 0,
                                 left: _revealedFromStart
-                                    ? (showVerticalActions ? 0 : 14)
+                                    ? (showVerticalActions ? 10 : 14)
                                     : 0,
                                 right: _revealedFromStart
                                     ? 0
@@ -567,6 +601,90 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                                         width: actionWidth - 20,
                                         child: LayoutBuilder(
                                           builder: (context, constraints) {
+                                            if (_revealedFromStart) {
+                                              final count = _leadingActionCount;
+                                              final gap = count > 1 ? 6.0 : 0.0;
+                                              final availableHeight =
+                                                  constraints.maxHeight;
+                                              final buttonSize =
+                                                  ((availableHeight -
+                                                              gap *
+                                                                  (count - 1)) /
+                                                          count)
+                                                      .clamp(34.0, 48.0);
+                                              return Column(
+                                                mainAxisAlignment:
+                                                    MainAxisAlignment.center,
+                                                children: [
+                                                  if (_hasLeadingAction) ...[
+                                                    _SwipeRevealActionButton(
+                                                      onPressed: () {
+                                                        AppInteractionFeedback
+                                                            .trigger(
+                                                          AppInteractionFeedbackType
+                                                              .confirmation,
+                                                        );
+                                                        _runActionAfterPaneClose(
+                                                          widget
+                                                              .onLeadingAction,
+                                                        );
+                                                      },
+                                                      backgroundColor:
+                                                          primaryBg,
+                                                      foregroundColor:
+                                                          primaryFg,
+                                                      tooltip:
+                                                          widget
+                                                              .leadingActionTooltip ??
+                                                          widget
+                                                              .leadingActionLabel,
+                                                      icon:
+                                                          widget
+                                                              .leadingActionIcon,
+                                                      iconWidget:
+                                                          widget
+                                                              .leadingActionIconWidget,
+                                                      tonal: true,
+                                                      size: buttonSize,
+                                                    ),
+                                                  ],
+                                                  if (_hasSecondaryLeadingAction) ...[
+                                                    if (_hasLeadingAction)
+                                                      SizedBox(height: gap),
+                                                    _SwipeRevealActionButton(
+                                                      onPressed: () {
+                                                        AppInteractionFeedback
+                                                            .trigger(
+                                                          AppInteractionFeedbackType
+                                                              .confirmation,
+                                                        );
+                                                        _runActionAfterPaneClose(
+                                                          widget
+                                                              .onSecondaryLeadingAction,
+                                                        );
+                                                      },
+                                                      backgroundColor:
+                                                          primaryBg,
+                                                      foregroundColor:
+                                                          primaryFg,
+                                                      tooltip:
+                                                          widget
+                                                              .secondaryLeadingActionTooltip ??
+                                                          widget
+                                                              .secondaryLeadingActionLabel,
+                                                      icon:
+                                                          widget
+                                                              .secondaryLeadingActionIcon,
+                                                      iconWidget:
+                                                          widget
+                                                              .secondaryLeadingActionIconWidget,
+                                                      tonal: true,
+                                                      size: buttonSize,
+                                                    ),
+                                                  ],
+                                                ],
+                                              );
+                                            }
                                             final gap = _actionCount > 1
                                                 ? 6.0
                                                 : 0.0;
@@ -586,7 +704,8 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                                                 if (_hasTertiaryAction) ...[
                                                   _SwipeRevealActionButton(
                                                     onPressed: () {
-                                                      AppInteractionFeedback.trigger(
+                                                      AppInteractionFeedback
+                                                          .trigger(
                                                         AppInteractionFeedbackType
                                                             .selection,
                                                       );
@@ -601,8 +720,9 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                                                             .tertiaryActionTooltip ??
                                                         widget
                                                             .tertiaryActionLabel,
-                                                    icon: widget
-                                                        .tertiaryActionIcon,
+                                                    icon:
+                                                        widget
+                                                            .tertiaryActionIcon,
                                                     tonal: true,
                                                     size: buttonSize,
                                                   ),
@@ -611,7 +731,8 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                                                 if (_hasSecondaryAction) ...[
                                                   _SwipeRevealActionButton(
                                                     onPressed: () {
-                                                      AppInteractionFeedback.trigger(
+                                                      AppInteractionFeedback
+                                                          .trigger(
                                                         AppInteractionFeedbackType
                                                             .selection,
                                                       );
@@ -629,8 +750,12 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                                                             .secondaryActionTooltip ??
                                                         widget
                                                             .secondaryActionLabel,
-                                                    icon: widget
-                                                        .secondaryActionIcon,
+                                                    icon:
+                                                        widget
+                                                            .secondaryActionIcon,
+                                                    iconWidget:
+                                                        widget
+                                                            .secondaryActionIconWidget,
                                                     tonal: true,
                                                     size: buttonSize,
                                                   ),
@@ -638,7 +763,8 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                                                 ],
                                                 _SwipeRevealActionButton(
                                                   onPressed: () {
-                                                    AppInteractionFeedback.trigger(
+                                                    AppInteractionFeedback
+                                                        .trigger(
                                                       widget.destructive
                                                           ? AppInteractionFeedbackType
                                                                 .destructive
@@ -666,25 +792,102 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                                         ),
                                       )
                                     : _revealedFromStart
-                                    ? _SwipeRevealActionButton(
-                                        onPressed: () {
-                                          AppInteractionFeedback.trigger(
-                                            AppInteractionFeedbackType
-                                                .confirmation,
-                                          );
-                                          _runActionAfterPaneClose(
-                                            widget.onLeadingAction,
+                                    ? LayoutBuilder(
+                                        builder: (context, constraints) {
+                                          final buttonSize =
+                                              constraints.maxHeight.isFinite
+                                              ? (constraints.maxHeight - 20)
+                                                    .clamp(34.0, 54.0)
+                                              : 54.0;
+                                          if (_leadingActionCount > 1) {
+                                            return Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                if (_hasLeadingAction) ...[
+                                                  _SwipeRevealActionButton(
+                                                    onPressed: () {
+                                                      AppInteractionFeedback
+                                                          .trigger(
+                                                        AppInteractionFeedbackType
+                                                            .confirmation,
+                                                      );
+                                                      _runActionAfterPaneClose(
+                                                        widget.onLeadingAction,
+                                                      );
+                                                    },
+                                                    backgroundColor: primaryBg,
+                                                    foregroundColor: primaryFg,
+                                                    tooltip:
+                                                        widget
+                                                            .leadingActionTooltip ??
+                                                        widget
+                                                            .leadingActionLabel,
+                                                    icon:
+                                                        widget
+                                                            .leadingActionIcon,
+                                                    iconWidget:
+                                                        widget
+                                                            .leadingActionIconWidget,
+                                                    tonal: true,
+                                                    size: buttonSize,
+                                                  ),
+                                                ],
+                                                if (_hasSecondaryLeadingAction) ...[
+                                                  const SizedBox(width: 8),
+                                                  _SwipeRevealActionButton(
+                                                    onPressed: () {
+                                                      AppInteractionFeedback
+                                                          .trigger(
+                                                        AppInteractionFeedbackType
+                                                            .confirmation,
+                                                      );
+                                                      _runActionAfterPaneClose(
+                                                        widget
+                                                            .onSecondaryLeadingAction,
+                                                      );
+                                                    },
+                                                    backgroundColor: primaryBg,
+                                                    foregroundColor: primaryFg,
+                                                    tooltip:
+                                                        widget
+                                                            .secondaryLeadingActionTooltip ??
+                                                            widget
+                                                            .secondaryLeadingActionLabel,
+                                                    icon:
+                                                        widget
+                                                            .secondaryLeadingActionIcon,
+                                                    iconWidget:
+                                                        widget
+                                                            .secondaryLeadingActionIconWidget,
+                                                    tonal: true,
+                                                    size: buttonSize,
+                                                  ),
+                                                ],
+                                              ],
+                                            );
+                                          }
+                                          return _SwipeRevealActionButton(
+                                            onPressed: () {
+                                              AppInteractionFeedback.trigger(
+                                                AppInteractionFeedbackType
+                                                    .confirmation,
+                                              );
+                                              _runActionAfterPaneClose(
+                                                widget.onLeadingAction,
+                                              );
+                                            },
+                                            backgroundColor: primaryBg,
+                                            foregroundColor: primaryFg,
+                                            tooltip:
+                                                widget.leadingActionTooltip ??
+                                                widget.leadingActionLabel,
+                                            icon: widget.leadingActionIcon,
+                                            iconWidget:
+                                                widget.leadingActionIconWidget,
+                                            tonal: true,
+                                            size: buttonSize,
                                           );
                                         },
-                                        backgroundColor: primaryBg,
-                                        foregroundColor: primaryFg,
-                                        tooltip:
-                                            widget.leadingActionTooltip ??
-                                            widget.leadingActionLabel,
-                                        icon: widget.leadingActionIcon,
-                                        iconWidget:
-                                            widget.leadingActionIconWidget,
-                                        tonal: true,
                                       )
                                     : LayoutBuilder(
                                         builder: (context, constraints) {
@@ -699,7 +902,8 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                                               if (_hasTertiaryAction) ...[
                                                 _SwipeRevealActionButton(
                                                   onPressed: () {
-                                                    AppInteractionFeedback.trigger(
+                                                    AppInteractionFeedback
+                                                        .trigger(
                                                       AppInteractionFeedbackType
                                                           .selection,
                                                     );
@@ -715,7 +919,8 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                                                       widget
                                                           .tertiaryActionLabel,
                                                   icon:
-                                                      widget.tertiaryActionIcon,
+                                                      widget
+                                                          .tertiaryActionIcon,
                                                   tonal: true,
                                                   size: buttonSize,
                                                 ),
@@ -724,12 +929,14 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                                               if (_hasSecondaryAction) ...[
                                                 _SwipeRevealActionButton(
                                                   onPressed: () {
-                                                    AppInteractionFeedback.trigger(
+                                                    AppInteractionFeedback
+                                                        .trigger(
                                                       AppInteractionFeedbackType
                                                           .selection,
                                                     );
                                                     _runActionAfterPaneClose(
-                                                      widget.onSecondaryAction,
+                                                      widget
+                                                          .onSecondaryAction,
                                                     );
                                                   },
                                                   backgroundColor: secondaryBg,
@@ -741,6 +948,8 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                                                           .secondaryActionLabel,
                                                   icon: widget
                                                       .secondaryActionIcon,
+                                                  iconWidget: widget
+                                                      .secondaryActionIconWidget,
                                                   tonal: true,
                                                   size: buttonSize,
                                                 ),
@@ -748,7 +957,8 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                                               ],
                                               _SwipeRevealActionButton(
                                                 onPressed: () {
-                                                  AppInteractionFeedback.trigger(
+                                                  AppInteractionFeedback
+                                                      .trigger(
                                                     widget.destructive
                                                         ? AppInteractionFeedbackType
                                                               .destructive

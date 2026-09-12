@@ -275,3 +275,100 @@ extension _LibraryTabUiHelpers on _LibraryTabState {
     );
   }
 }
+
+Future<void> _downloadAudioTargetFromAsmr({
+  required BuildContext context,
+  required WidgetRef ref,
+  required AudioDetailTarget target,
+}) async {
+  final i18n = ProviderScope.containerOf(
+    context,
+    listen: false,
+  ).read(appLanguageProviderInstanceProvider);
+
+  var detail = ref.read(libraryFacadeProvider).resolvedAudioDetail(target);
+  var rjCode =
+      (detail != null ? AudioDetail.findRjCodeInText(detail.rjCode) : null) ??
+      AudioDetail.findRjCodeInText(
+        PathDisplay.folderName(target.targetPath),
+      ) ??
+      AudioDetail.findRjCodeInText(target.targetPath) ??
+      (detail != null ? AudioDetail.findRjCodeInText(detail.workTitle) : null);
+
+  if (rjCode == null) {
+    try {
+      final loaded =
+          await ref.read(libraryFacadeProvider).loadAudioDetail(target);
+      detail = loaded.detail;
+      rjCode = AudioDetail.findRjCodeInText(detail.rjCode) ??
+          AudioDetail.findRjCodeInText(detail.workTitle);
+    } catch (_) {
+      // Best-effort load.
+    }
+  }
+
+  if (!context.mounted) return;
+
+  if (rjCode == null || rjCode.isEmpty) {
+    showAppSnackBar(
+      context,
+      i18n.tr('audio_detail_missing_rj_for_download'),
+      tone: AppFeedbackTone.warning,
+    );
+    return;
+  }
+
+  final effectiveRjCode = rjCode;
+
+  try {
+    final customFinder = ref.read(asmrWorkFinderOverrideProvider);
+    final AsmrWork? work;
+    if (customFinder != null) {
+      work = await customFinder(effectiveRjCode);
+    } else {
+      final language = ref.read(appLanguageProviderInstanceProvider).language;
+      work = await ref
+          .read(uiOperationServiceProvider)
+          .run<AsmrWork?>(
+            scope: UiOperationScope('library:asmr-search:$effectiveRjCode'),
+            labelKey: 'audio_detail_searching_asmr',
+            task: (_) => ref
+                .read(libraryFacadeProvider)
+                .findAsmrWorkByRjCode(effectiveRjCode, language: language),
+          );
+    }
+
+    if (!context.mounted) return;
+
+    if (work == null) {
+      showAppSnackBar(
+        context,
+        i18n.tr('audio_detail_asmr_work_not_found', {'rj': effectiveRjCode}),
+        tone: AppFeedbackTone.warning,
+      );
+      return;
+    }
+
+    final destination = resolveWorkFolderDestination(target);
+
+    await Navigator.of(context).push<void>(
+      buildAppPageRoute<void>(
+        context: context,
+        style: AppPageTransitionStyle.sharedAxisZ,
+        child: AsmrDownloadPage(
+          work: work,
+          customDestinationRoot: destination.destinationRoot,
+          customWorkFolderName: destination.workFolderName,
+        ),
+      ),
+    );
+  } catch (_) {
+    if (!context.mounted) return;
+    showAppSnackBar(
+      context,
+      i18n.tr('audio_detail_asmr_work_not_found', {'rj': rjCode}),
+      tone: AppFeedbackTone.warning,
+    );
+  }
+}
+

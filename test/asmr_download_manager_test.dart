@@ -3460,6 +3460,31 @@ void main() {
       }
     },
   );
+
+  test(
+    'startDownload respects customWorkFolderName instead of default title-based folder name',
+    () async {
+      final manager = _manager();
+      addTearDown(manager.dispose);
+
+      await manager.startDownload(
+        work: _work(id: 777, title: 'Remote Work Title', sourceId: 'RJ777777'),
+        selectedRoots: <AsmrTrackFile>[
+          _file(downloadUrl: 'https://example.invalid/track.mp3'),
+        ],
+        destinationRoot: 'E:\\Audio\\Works',
+        conflictPolicy: AsmrDownloadConflictPolicy.skip,
+        saveMetadata: false,
+        customWorkFolderName: 'MyCustomLocalFolder',
+      );
+
+      final task = manager.getTask(777);
+      expect(task, isNotNull);
+      expect(task!.workFolderName, 'MyCustomLocalFolder');
+      expect(task.destinationRoot, 'E:\\Audio\\Works');
+      expect(task.workRootPath, 'E:\\Audio\\Works\\MyCustomLocalFolder');
+    },
+  );
 }
 
 Future<

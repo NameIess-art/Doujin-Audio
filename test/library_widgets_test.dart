@@ -18,6 +18,9 @@ import 'package:doujin_audio/core/platform/platform_channels.dart';
 import 'package:doujin_audio/core/media/path_matcher.dart';
 import 'package:doujin_audio/features/library/application/library_entry_editor_service.dart';
 import 'package:doujin_audio/features/library/application/library_organizer.dart';
+import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
+import 'package:doujin_audio/features/asmr/presentation/asmr_download_page.dart';
+import 'package:doujin_audio/features/library/presentation/library_providers.dart';
 import 'package:doujin_audio/features/settings/application/app_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
@@ -2859,7 +2862,7 @@ void main() {
   );
 
   testWidgets(
-    'root folder card supports right-swipe pin and displays pin badge on cover',
+    'root folder card supports swipe pin and displays pin badge on cover',
     (WidgetTester tester) async {
       final fixture = AppRuntimeWidgetTestFixture();
       addTearDown(fixture.dispose);
@@ -2899,10 +2902,21 @@ void main() {
       expect(swipeCard.onLeadingAction, isNotNull);
       expect(
         swipeCard.leadingActionLabel,
+        fixture.languageProvider.tr('audio_detail'),
+      );
+      expect(swipeCard.leadingActionIcon, Icons.info_outline_rounded);
+      expect(swipeCard.onSecondaryLeadingAction, isNotNull);
+      expect(
+        swipeCard.secondaryLeadingActionLabel,
+        fixture.languageProvider.tr('download'),
+      );
+      expect(swipeCard.onSecondaryAction, isNotNull);
+      expect(
+        swipeCard.secondaryActionLabel,
         fixture.languageProvider.tr('pin_to_top'),
       );
-      expect(swipeCard.leadingActionIcon, Icons.push_pin_rounded);
-      expect(swipeCard.leadingActionIconWidget, isNull);
+      expect(swipeCard.secondaryActionIcon, Icons.push_pin_rounded);
+      expect(swipeCard.secondaryActionIconWidget, isNull);
 
       // Pin badge not shown initially
       expect(
@@ -2911,7 +2925,7 @@ void main() {
       );
 
       // Toggle pin
-      swipeCard.onLeadingAction!();
+      swipeCard.onSecondaryAction!();
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
 
@@ -2928,10 +2942,106 @@ void main() {
       // Swipe card now shows unpin
       final updatedSwipeCard = tester.widget<SwipeRevealCard>(swipeCardFinder);
       expect(
-        updatedSwipeCard.leadingActionLabel,
+        updatedSwipeCard.secondaryActionLabel,
         fixture.languageProvider.tr('unpin_from_top'),
       );
-      expect(updatedSwipeCard.leadingActionIconWidget, isA<PushPinOffIcon>());
+      expect(updatedSwipeCard.secondaryActionIconWidget, isA<PushPinOffIcon>());
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 30)),
+      );
+      await tester.pump();
+    },
+  );
+
+  testWidgets(
+    'root folder card right-swipe download action finds ASMR work and navigates to AsmrDownloadPage',
+    (WidgetTester tester) async {
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      final runtimeGraph = fixture.runtimeGraph;
+      const libraryPath = '/library/Works/RJ123456_Work';
+      final rootTrack = MusicTrack(
+        path: '/library/Works/RJ123456_Work/audio.mp3',
+        displayName: 'audio.mp3',
+        groupKey: libraryPath,
+        groupTitle: 'RJ123456_Work',
+        groupSubtitle: '',
+        isSingle: false,
+        duration: const Duration(minutes: 1),
+      );
+      runtimeGraph.library
+        ..addWatchedLibrary(libraryPath, notify: false)
+        ..recordLibraryEntriesForTracks(libraryPath, <MusicTrack>[
+          rootTrack,
+        ], persist: false)
+        ..addTracks(<MusicTrack>[rootTrack], notify: false, persist: false);
+      fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 0);
+
+      final testWork = AsmrWork(
+        id: 123456,
+        title: 'Remote ASMR Title',
+        circleName: 'Circle Name',
+        sourceId: 'RJ123456',
+        sourceType: 'asmr',
+        sourceUrl: '',
+        coverUrl: '',
+        thumbnailUrl: '',
+        mainCoverUrl: '',
+        releaseDate: null,
+        createDate: null,
+        duration: Duration.zero,
+        dlCount: 0,
+        reviewCount: 0,
+        rating: 0,
+        voiceActors: const <String>[],
+        tags: const <String>[],
+      );
+
+      await tester.pumpWidget(
+        fixture.build(
+          const LibraryTab(),
+          overrides: [
+            asmrWorkFinderOverrideProvider.overrideWithValue(
+              (rjCode) async => rjCode == 'RJ123456' ? testWork : null,
+            ),
+          ],
+        ),
+      );
+      await tester.pump();
+      await pumpUntilLibraryTreeReady(tester, runtimeGraph.library);
+      await pumpUntilNotFound(tester, find.byType(LibraryLikeSkeletonCard));
+      await tester.pump(const Duration(milliseconds: 350));
+
+      final rootFolderFinder = find.text('RJ123456_Work', findRichText: true);
+      final swipeCardFinder = find.ancestor(
+        of: rootFolderFinder,
+        matching: find.byType(SwipeRevealCard),
+      );
+      expect(swipeCardFinder, findsOneWidget);
+
+      final swipeCard = tester.widget<SwipeRevealCard>(swipeCardFinder);
+      expect(swipeCard.onSecondaryLeadingAction, isNotNull);
+      expect(
+        swipeCard.secondaryLeadingActionLabel,
+        fixture.languageProvider.tr('download'),
+      );
+
+      swipeCard.onSecondaryLeadingAction!();
+      await tester.pump();
+      await tester.pumpAndSettle();
+
+      final downloadPage = find.byType(AsmrDownloadPage);
+      expect(downloadPage, findsOneWidget);
+
+      final pageWidget = tester.widget<AsmrDownloadPage>(downloadPage);
+      expect(pageWidget.work.id, testWork.id);
+      expect(
+        PathMatcher.normalize(pageWidget.customDestinationRoot!),
+        PathMatcher.normalize('/library/Works'),
+      );
+      expect(pageWidget.customWorkFolderName, 'RJ123456_Work');
 
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.runAsync(

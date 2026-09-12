@@ -84,6 +84,9 @@ class AsmrDownloadTaskSnapshot {
         RegExp(r'/+$'),
         '',
       );
+      if (normalizedRoot.contains('::')) {
+        return '$normalizedRoot/$workFolderName';
+      }
       return '$normalizedRoot::$workFolderName';
     }
     return path.join(destinationRoot, workFolderName);

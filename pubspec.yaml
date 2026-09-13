@@ -40,6 +40,8 @@ dependencies:
   media_kit_video: ^2.0.1
   media_kit_libs_windows_video: ^1.0.11
   sqflite_common_ffi: ^2.4.0+3
+  flutter_markdown_plus: ^1.0.12
+  pdfx: ^2.11.0
 
 dev_dependencies:
   flutter_test:

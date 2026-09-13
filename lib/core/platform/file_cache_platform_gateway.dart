@@ -326,13 +326,17 @@ class FileCachePlatformGateway {
 
   Future<List<Map<String, String>>> discoverWorkTexts(String folderPath) async {
     if (_isWindows() && !_isAndroid()) {
+      const supportedExtensions = {'.txt', '.md', '.pdf'};
       final texts = <Map<String, String>>[];
       final directory = Directory(folderPath);
       if (!await directory.exists()) return texts;
       try {
         await for (final entity
             in directory.list(recursive: true, followLinks: false)) {
-          if (entity is File && entity.path.toLowerCase().endsWith('.txt')) {
+          if (entity is File &&
+              supportedExtensions.contains(
+                path.extension(entity.path).toLowerCase(),
+              )) {
             final rel = path
                 .relative(entity.path, from: folderPath)
                 .replaceAll(r'\', '/');

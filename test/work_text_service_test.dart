@@ -153,16 +153,83 @@ void main() {
       expect(result.text, '');
       expect(result.encoding, WorkTextEncoding.utf8);
     });
+    test('readDocumentBytes returns raw bytes from gateway', () async {
+      final raw = Uint8List.fromList([0x25, 0x50, 0x44, 0x46]); // %PDF
+      final gateway = _FakeFileCacheGateway(readResult: raw);
+      final service = WorkTextService(platformGateway: gateway);
+      final result = await service.readDocumentBytes(
+        const WorkTextFile(
+          name: 'doc.pdf',
+          relativePath: 'doc.pdf',
+          path: '/path/doc.pdf',
+        ),
+      );
+
+      expect(result, raw);
+    });
   });
 
-  group('WorkTextFile', () {
-    test('displayName strips extension properly', () {
+  group('WorkDocType and WorkTextFile', () {
+    test('identifies document types correctly', () {
+      expect(WorkDocType.fromPath('manual.pdf'), WorkDocType.pdf);
+      expect(WorkDocType.fromPath('MANUAL.PDF'), WorkDocType.pdf);
+      expect(WorkDocType.fromPath('README.md'), WorkDocType.markdown);
+      expect(WorkDocType.fromPath('notes.MD'), WorkDocType.markdown);
+      expect(WorkDocType.fromPath('script.txt'), WorkDocType.text);
+      expect(WorkDocType.fromPath('SCRIPT.TXT'), WorkDocType.text);
+      expect(WorkDocType.fromPath('other'), WorkDocType.text);
+    });
+
+    test('WorkTextFile reports isPdf and isMarkdown accurately', () {
+      const pdfFile = WorkTextFile(
+        name: 'manual.pdf',
+        relativePath: 'docs/manual.pdf',
+        path: '/works/RJ123/docs/manual.pdf',
+      );
+      expect(pdfFile.docType, WorkDocType.pdf);
+      expect(pdfFile.isPdf, isTrue);
+      expect(pdfFile.isMarkdown, isFalse);
+
+      const mdFile = WorkTextFile(
+        name: 'README.md',
+        relativePath: 'README.md',
+        path: '/works/RJ123/README.md',
+      );
+      expect(mdFile.docType, WorkDocType.markdown);
+      expect(mdFile.isPdf, isFalse);
+      expect(mdFile.isMarkdown, isTrue);
+
+      const txtFile = WorkTextFile(
+        name: 'script.txt',
+        relativePath: 'script.txt',
+        path: '/works/RJ123/script.txt',
+      );
+      expect(txtFile.docType, WorkDocType.text);
+      expect(txtFile.isPdf, isFalse);
+      expect(txtFile.isMarkdown, isFalse);
+    });
+
+    test('displayName strips extension properly for .txt, .md, and .pdf', () {
       const fileWithExt = WorkTextFile(
         name: '01_トラック台本.txt',
         relativePath: '01_トラック台本.txt',
         path: '/path/01_トラック台本.txt',
       );
       expect(fileWithExt.displayName, '01_トラック台本');
+
+      const mdFile = WorkTextFile(
+        name: '特典说明.md',
+        relativePath: '特典说明.md',
+        path: '/path/特典说明.md',
+      );
+      expect(mdFile.displayName, '特典说明');
+
+      const pdfFile = WorkTextFile(
+        name: 'ブックレット.pdf',
+        relativePath: 'ブックレット.pdf',
+        path: '/path/ブックレット.pdf',
+      );
+      expect(pdfFile.displayName, 'ブックレット');
 
       const fileWithoutExt = WorkTextFile(
         name: 'README',

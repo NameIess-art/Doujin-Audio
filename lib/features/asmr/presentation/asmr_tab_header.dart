@@ -28,9 +28,7 @@ class _AsmrDownloadProgressInlineButton extends ConsumerWidget {
                   child: CircularProgressIndicator(
                     value: state.progress,
                     strokeWidth: 2,
-                    color: Theme.of(
-                      context,
-                    ).colorScheme.onSurfaceVariant.withValues(alpha: 0.78),
+                    color: Theme.of(context).colorScheme.primary,
                   ),
                 ),
             ],

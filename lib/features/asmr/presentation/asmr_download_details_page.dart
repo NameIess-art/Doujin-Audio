@@ -44,10 +44,14 @@ class _AsmrDownloadDetailsPageState
               top: 0,
               left: 0,
               right: 0,
-              child: TopPageHeader(
-                icon: Icons.info_outline_rounded,
-                leading: const BackButton(),
-                title: i18n.tr('asmr_download_details_title'),
+              child: Theme(
+                data: asmrThemeData(context),
+                child: TopPageHeader(
+                  icon: Icons.info_outline_rounded,
+                  iconColor: AppDesignTokens.of(context).asmrAccent,
+                  leading: const BackButton(),
+                  title: i18n.tr('asmr_download_details_title'),
+                ),
               ),
             ),
           ],
@@ -119,11 +123,14 @@ class _AsmrDownloadDetailsPageState
             top: 0,
             left: 0,
             right: 0,
-            child: TopPageHeader(
-              key: _headerKey,
-              icon: Icons.info_outline_rounded,
-              leading: const BackButton(),
-              title: i18n.tr('asmr_download_details_title'),
+            child: Theme(
+              data: asmrThemeData(context),
+              child: TopPageHeader(
+                key: _headerKey,
+                icon: Icons.info_outline_rounded,
+                iconColor: AppDesignTokens.of(context).asmrAccent,
+                leading: const BackButton(),
+                title: i18n.tr('asmr_download_details_title'),
               additionalChild: Padding(
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
                 child: HeaderFloatingSurface(
@@ -171,6 +178,7 @@ class _AsmrDownloadDetailsPageState
               ),
             ),
           ),
+        ),
         ],
       ),
     );

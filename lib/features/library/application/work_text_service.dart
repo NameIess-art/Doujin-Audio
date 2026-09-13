@@ -14,6 +14,19 @@ enum WorkTextEncoding {
   final String label;
 }
 
+enum WorkDocType {
+  text,
+  markdown,
+  pdf;
+
+  static WorkDocType fromPath(String filePath) {
+    final lower = filePath.toLowerCase();
+    if (lower.endsWith('.md')) return WorkDocType.markdown;
+    if (lower.endsWith('.pdf')) return WorkDocType.pdf;
+    return WorkDocType.text;
+  }
+}
+
 @immutable
 class WorkTextFile {
   const WorkTextFile({
@@ -25,6 +38,12 @@ class WorkTextFile {
   final String name;
   final String relativePath;
   final String path;
+
+  WorkDocType get docType =>
+      WorkDocType.fromPath(path.isNotEmpty ? path : name);
+
+  bool get isPdf => docType == WorkDocType.pdf;
+  bool get isMarkdown => docType == WorkDocType.markdown;
 
   String get displayName {
     final dotIndex = name.lastIndexOf('.');
@@ -167,6 +186,10 @@ class WorkTextService {
       return (text: '', encoding: encodingOverride ?? WorkTextEncoding.utf8);
     }
     return decodeWorkText(bytes, overrideEncoding: encodingOverride);
+  }
+
+  Future<Uint8List?> readDocumentBytes(WorkTextFile file) {
+    return _platformGateway.readDocumentBytes(file.path);
   }
 }
 

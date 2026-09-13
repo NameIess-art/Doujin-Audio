@@ -14,6 +14,7 @@ class AppPageAppBar extends StatelessWidget implements PreferredSizeWidget {
     super.key,
     required this.title,
     this.icon,
+    this.iconColor,
     this.leading,
     this.actions,
     this.automaticallyImplyLeading = true,
@@ -23,6 +24,7 @@ class AppPageAppBar extends StatelessWidget implements PreferredSizeWidget {
 
   final Widget title;
   final IconData? icon;
+  final Color? iconColor;
   final Widget? leading;
   final List<Widget>? actions;
   final bool automaticallyImplyLeading;
@@ -41,7 +43,7 @@ class AppPageAppBar extends StatelessWidget implements PreferredSizeWidget {
       resolvedTitle = Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 18, color: cs.primary),
+          Icon(icon, size: 18, color: iconColor ?? cs.primary),
           const SizedBox(width: 8),
           Flexible(child: title),
         ],
@@ -70,6 +72,7 @@ class TopPageHeader extends ConsumerStatefulWidget {
   const TopPageHeader({
     super.key,
     this.icon,
+    this.iconColor,
     this.title = '',
     this.titleWidget,
     this.leading,
@@ -108,6 +111,7 @@ class TopPageHeader extends ConsumerStatefulWidget {
   });
 
   final IconData? icon;
+  final Color? iconColor;
   final String title;
   final Widget? titleWidget;
   final Widget? leading;
@@ -309,7 +313,11 @@ class _TopPageHeaderState extends ConsumerState<TopPageHeader> {
           child: Row(
             children: [
               if (widget.icon != null) ...[
-                Icon(widget.icon, size: 18, color: cs.primary),
+                Icon(
+                  widget.icon,
+                  size: 18,
+                  color: widget.iconColor ?? cs.primary,
+                ),
                 const SizedBox(width: 8),
               ],
               Expanded(
@@ -411,7 +419,11 @@ class _TopPageHeaderState extends ConsumerState<TopPageHeader> {
                   leading:
                       widget.topCapsuleLeading ??
                       (widget.icon != null
-                          ? Icon(widget.icon, size: 16, color: cs.primary)
+                          ? Icon(
+                              widget.icon,
+                              size: 16,
+                              color: widget.iconColor ?? cs.primary,
+                            )
                           : null),
                   trailing: widget.topCapsuleTrailing,
                 )
@@ -759,17 +771,20 @@ class HeaderSegmentedCategoryBar<T> extends StatelessWidget {
     required this.selected,
     required this.onSelected,
     required this.labelBuilder,
+    this.accentColor,
   });
 
   final List<T> items;
   final T selected;
   final ValueChanged<T> onSelected;
   final String Function(T item) labelBuilder;
+  final Color? accentColor;
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
+    final activeColor = accentColor ?? cs.primary;
 
     return Align(
       alignment: Alignment.centerLeft,
@@ -788,7 +803,7 @@ class HeaderSegmentedCategoryBar<T> extends StatelessWidget {
                     padding: const EdgeInsets.symmetric(horizontal: 1.5),
                     child: Material(
                       color: isSelected
-                          ? cs.primary.withValues(alpha: 0.16)
+                          ? activeColor.withValues(alpha: 0.16)
                           : Colors.transparent,
                       borderRadius: BorderRadius.circular(15),
                       child: InkWell(
@@ -804,7 +819,7 @@ class HeaderSegmentedCategoryBar<T> extends StatelessWidget {
                               label,
                               style: textTheme.labelMedium?.copyWith(
                                 color: isSelected
-                                    ? cs.primary
+                                    ? activeColor
                                     : cs.onSurfaceVariant.withValues(
                                         alpha: 0.85,
                                       ),

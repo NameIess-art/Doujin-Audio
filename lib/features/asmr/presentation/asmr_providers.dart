@@ -1,7 +1,9 @@
 import 'dart:async';
 
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../app/theme/app_design_tokens.dart';
 import '../../../core/ui/interaction_deferred_stream.dart';
 import '../application/asmr_download_manager.dart';
 import '../application/asmr_library_controller.dart';
@@ -102,3 +104,22 @@ final asmrDownloadTaskProvider = Provider.autoDispose
       return ref.watch(_asmrDownloadTaskSnapshotProvider(workId)).value ??
           manager?.getTask(workId);
     });
+
+ThemeData asmrThemeData(BuildContext context) {
+  final base = Theme.of(context);
+  final tokens = AppDesignTokens.of(context);
+  final accent = tokens.asmrAccent;
+  final scheme = base.colorScheme.copyWith(
+    primary: accent,
+    onPrimary: tokens.onAsmrAccent,
+    primaryContainer: tokens.asmrContainer,
+    onPrimaryContainer: tokens.onAsmrContainer,
+    secondary: accent,
+    onSecondary: tokens.onAsmrAccent,
+    secondaryContainer: tokens.asmrContainer,
+    onSecondaryContainer: tokens.onAsmrContainer,
+  );
+  return base.copyWith(
+    colorScheme: scheme,
+  );
+}

@@ -43,6 +43,18 @@ class SubtitleMenuSheet extends ConsumerStatefulWidget {
 class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
   bool _importing = false;
 
+  @override
+  void initState() {
+    super.initState();
+    final trackPath = widget.session.currentTrackPath;
+    if (trackPath.isNotEmpty) {
+      final subtitles = ref.read(playbackSubtitleServiceProvider);
+      if (!subtitles.hasResult(trackPath)) {
+        unawaited(subtitles.load(trackPath));
+      }
+    }
+  }
+
   String _formatOffset(Duration offset) {
     final seconds = offset.inMilliseconds / 1000.0;
     if (offset == Duration.zero) return '0.0s';
@@ -145,6 +157,9 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
         final activeOffset = subtitles.getOffset(trackPath);
         final activeCustomPath = subtitles.getCustomSubtitlePath(trackPath);
         final activeTrack = subtitles.trackSync(trackPath);
+        final hasSubtitle =
+            trackPath.isNotEmpty &&
+            (activeTrack != null || subtitles.hasKnownSubtitle(trackPath));
         final isOffsetZero = activeOffset == Duration.zero;
 
         return SafeArea(
@@ -217,7 +232,11 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
                             showSubtitles
                                 ? Icons.subtitles_rounded
                                 : Icons.subtitles_off_rounded,
-                            color: showSubtitles ? cs.primary : cs.onSurfaceVariant,
+                            color: !hasSubtitle
+                                ? cs.onSurface.withValues(alpha: 0.38)
+                                : (showSubtitles
+                                    ? cs.primary
+                                    : cs.onSurfaceVariant),
                           ),
                           title: Text(
                             showSubtitles
@@ -225,14 +244,19 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
                                 : i18n.tr('turn_on_subtitle'),
                             style: theme.textTheme.bodyLarge?.copyWith(
                               fontWeight: FontWeight.w600,
+                              color: !hasSubtitle
+                                  ? cs.onSurface.withValues(alpha: 0.38)
+                                  : null,
                             ),
                           ),
                           value: showSubtitles,
-                          onChanged: (_) {
-                            ref
-                                .read(subtitleSettingsProvider.notifier)
-                                .toggleShowSubtitles(widget.session.id);
-                          },
+                          onChanged: !hasSubtitle
+                              ? null
+                              : (_) {
+                                  ref
+                                      .read(subtitleSettingsProvider.notifier)
+                                      .toggleShowSubtitles(widget.session.id);
+                                },
                         ),
                         Divider(
                           height: 1,
@@ -251,20 +275,27 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
                             globalSubtitles
                                 ? Icons.layers_rounded
                                 : Icons.layers_clear_rounded,
-                            color: globalSubtitles
-                                ? cs.primary
-                                : cs.onSurfaceVariant,
+                            color: !hasSubtitle
+                                ? cs.onSurface.withValues(alpha: 0.38)
+                                : (globalSubtitles
+                                    ? cs.primary
+                                    : cs.onSurfaceVariant),
                           ),
                           title: Text(
                             i18n.tr('subtitle_global_display'),
                             style: theme.textTheme.bodyLarge?.copyWith(
                               fontWeight: FontWeight.w600,
+                              color: !hasSubtitle
+                                  ? cs.onSurface.withValues(alpha: 0.38)
+                                  : null,
                             ),
                           ),
                           value: globalSubtitles,
-                          onChanged: (_) {
-                            widget.onToggleGlobalSubtitle?.call();
-                          },
+                          onChanged: !hasSubtitle
+                              ? null
+                              : (_) {
+                                  widget.onToggleGlobalSubtitle?.call();
+                                },
                         ),
                       ],
                     ),
@@ -382,13 +413,18 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
                             Icon(
                               Icons.sync_rounded,
                               size: 20,
-                              color: cs.primary,
+                              color: !hasSubtitle
+                                  ? cs.onSurface.withValues(alpha: 0.38)
+                                  : cs.primary,
                             ),
                             const SizedBox(width: 8),
                             Text(
                               i18n.tr('subtitle_sync'),
                               style: theme.textTheme.titleSmall?.copyWith(
                                 fontWeight: FontWeight.bold,
+                                color: !hasSubtitle
+                                    ? cs.onSurface.withValues(alpha: 0.38)
+                                    : null,
                               ),
                             ),
                             const Spacer(),
@@ -398,7 +434,7 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
                                 vertical: 2,
                               ),
                               decoration: BoxDecoration(
-                                color: isOffsetZero
+                                color: (!hasSubtitle || isOffsetZero)
                                     ? cs.surfaceContainerHighest
                                     : cs.primaryContainer,
                                 borderRadius: BorderRadius.circular(8),
@@ -408,9 +444,11 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
                                   'offset': _formatOffset(activeOffset),
                                 }),
                                 style: theme.textTheme.labelSmall?.copyWith(
-                                  color: isOffsetZero
-                                      ? cs.onSurfaceVariant
-                                      : cs.onPrimaryContainer,
+                                  color: !hasSubtitle
+                                      ? cs.onSurface.withValues(alpha: 0.38)
+                                      : (isOffsetZero
+                                          ? cs.onSurfaceVariant
+                                          : cs.onPrimaryContainer),
                                   fontWeight: FontWeight.bold,
                                 ),
                               ),
@@ -425,16 +463,20 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
                             Expanded(
                               child: _SyncControlButton(
                                 label: '-0.5s',
-                                onPressed: () =>
-                                    _adjustOffset(subtitles, -500),
+                                onPressed: !hasSubtitle
+                                    ? null
+                                    : () =>
+                                        _adjustOffset(subtitles, -500),
                               ),
                             ),
                             const SizedBox(width: 6),
                             Expanded(
                               child: _SyncControlButton(
                                 label: '-0.1s',
-                                onPressed: () =>
-                                    _adjustOffset(subtitles, -100),
+                                onPressed: !hasSubtitle
+                                    ? null
+                                    : () =>
+                                        _adjustOffset(subtitles, -100),
                               ),
                             ),
                             const SizedBox(width: 6),
@@ -442,7 +484,7 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
                               child: _SyncControlButton(
                                 label: i18n.tr('subtitle_reset'),
                                 isReset: true,
-                                onPressed: isOffsetZero
+                                onPressed: (!hasSubtitle || isOffsetZero)
                                     ? null
                                     : () => _resetOffset(subtitles),
                               ),
@@ -451,16 +493,20 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
                             Expanded(
                               child: _SyncControlButton(
                                 label: '+0.1s',
-                                onPressed: () =>
-                                    _adjustOffset(subtitles, 100),
+                                onPressed: !hasSubtitle
+                                    ? null
+                                    : () =>
+                                        _adjustOffset(subtitles, 100),
                               ),
                             ),
                             const SizedBox(width: 6),
                             Expanded(
                               child: _SyncControlButton(
                                 label: '+0.5s',
-                                onPressed: () =>
-                                    _adjustOffset(subtitles, 500),
+                                onPressed: !hasSubtitle
+                                    ? null
+                                    : () =>
+                                        _adjustOffset(subtitles, 500),
                               ),
                             ),
                           ],

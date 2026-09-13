@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -7,7 +6,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:doujin_audio/app/localization/app_language_provider.dart';
 import 'package:doujin_audio/app/state/app_runtime_providers.dart';
+import 'package:flutter/foundation.dart';
 import 'package:doujin_audio/core/platform/file_cache_platform_gateway.dart';
+import 'package:doujin_audio/core/widgets/app_edge_fade_mask.dart';
+import 'package:doujin_audio/core/widgets/top_page_header.dart';
 import 'package:doujin_audio/features/library/application/work_text_service.dart';
 import 'package:doujin_audio/features/library/presentation/work_text_viewer_page.dart';
 
@@ -221,4 +223,235 @@ void main() {
       expect(scrollableState.position.pixels, lessThan(50.0));
     },
   );
+
+  testWidgets(
+    'WorkTextViewerPage renders markdown (.md) documents with MarkdownBody',
+    (tester) async {
+      SharedPreferences.setMockInitialValues(const <String, Object>{});
+      final language = AppLanguageProvider();
+      addTearDown(language.dispose);
+      await language.setLanguage(AppLanguage.zh);
+
+      const mdFile = WorkTextFile(
+        name: 'README.md',
+        relativePath: 'README.md',
+        path: '/works/RJ123/README.md',
+      );
+
+      final fakeGateway = _FakeFileCacheGateway({
+        mdFile.path: Uint8List.fromList(
+          utf8.encode('# 作品说明\n\n这是**加粗说明**和*斜体文本*。'),
+        ),
+      });
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            appLanguageProviderInstanceProvider.overrideWithValue(language),
+            workTextServiceProvider.overrideWithValue(
+              WorkTextService(platformGateway: fakeGateway),
+            ),
+          ],
+          child: const MaterialApp(
+            home: WorkTextViewerPage(
+              files: [mdFile],
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('README'), findsOneWidget);
+      expect(find.text('README.md'), findsNothing);
+      expect(find.textContaining('作品说明'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'WorkTextViewerPage handles switching between .txt and .md files smoothly',
+    (tester) async {
+      SharedPreferences.setMockInitialValues(const <String, Object>{});
+      final language = AppLanguageProvider();
+      addTearDown(language.dispose);
+      await language.setLanguage(AppLanguage.zh);
+
+      const txtFile = WorkTextFile(
+        name: '01_台本.txt',
+        relativePath: '01_台本.txt',
+        path: '/works/RJ123/01_台本.txt',
+      );
+      const mdFile = WorkTextFile(
+        name: '特典.md',
+        relativePath: '特典.md',
+        path: '/works/RJ123/特典.md',
+      );
+
+      final fakeGateway = _FakeFileCacheGateway({
+        txtFile.path: Uint8List.fromList(utf8.encode('普通纯文本台本')),
+        mdFile.path: Uint8List.fromList(utf8.encode('### 特典剧本')),
+      });
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            appLanguageProviderInstanceProvider.overrideWithValue(language),
+            workTextServiceProvider.overrideWithValue(
+              WorkTextService(platformGateway: fakeGateway),
+            ),
+          ],
+          child: const MaterialApp(
+            home: WorkTextViewerPage(
+              files: [txtFile, mdFile],
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('01_台本'), findsOneWidget);
+      expect(find.text('普通纯文本台本'), findsOneWidget);
+      expect(find.text('1/2'), findsOneWidget);
+
+      // Switch to .md file
+      final nextBtnFinder = find.widgetWithIcon(IconButton, Icons.chevron_right_rounded);
+      await tester.tap(nextBtnFinder);
+      await tester.pumpAndSettle();
+
+      expect(find.text('特典'), findsOneWidget);
+      expect(find.text('特典.md'), findsNothing);
+      expect(find.text('2/2'), findsOneWidget);
+      expect(find.textContaining('特典剧本'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'WorkTextViewerPage displays error state when PDF file cannot be loaded',
+    (tester) async {
+      SharedPreferences.setMockInitialValues(const <String, Object>{});
+      final language = AppLanguageProvider();
+      addTearDown(language.dispose);
+      await language.setLanguage(AppLanguage.zh);
+
+      const pdfFile = WorkTextFile(
+        name: 'manual.pdf',
+        relativePath: 'manual.pdf',
+        path: '/works/RJ123/manual.pdf',
+      );
+
+      final fakeGateway = _FakeFileCacheGateway({});
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            appLanguageProviderInstanceProvider.overrideWithValue(language),
+            workTextServiceProvider.overrideWithValue(
+              WorkTextService(platformGateway: fakeGateway),
+            ),
+          ],
+          child: const MaterialApp(
+            home: WorkTextViewerPage(
+              files: [pdfFile],
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('manual'), findsOneWidget);
+      expect(find.text('manual.pdf'), findsNothing);
+      expect(find.text('Failed to load PDF file'), findsOneWidget);
+      expect(find.text('Retry'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'WorkTextViewerPage uses TopPageHeader with fade mask and spans full width',
+    (tester) async {
+      SharedPreferences.setMockInitialValues(const <String, Object>{});
+      final language = AppLanguageProvider();
+      addTearDown(language.dispose);
+      await language.setLanguage(AppLanguage.zh);
+
+      final fakeGateway = _FakeFileCacheGateway({
+        file1.path: Uint8List.fromList(utf8.encode('台本文本内容')),
+      });
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            appLanguageProviderInstanceProvider.overrideWithValue(language),
+            workTextServiceProvider.overrideWithValue(
+              WorkTextService(platformGateway: fakeGateway),
+            ),
+          ],
+          child: const MaterialApp(
+            home: WorkTextViewerPage(
+              files: [file1],
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final headerFinder = find.byType(TopPageHeader);
+      expect(headerFinder, findsOneWidget);
+
+      // Verify the header spans full width (same width as the screen / 800)
+      final headerSize = tester.getSize(headerFinder);
+      expect(headerSize.width, 800.0);
+
+      // TopPageHeader includes the AppEdgeFadeMask
+      final maskFinder = find.byType(AppEdgeFadeMask);
+      expect(maskFinder, findsOneWidget);
+      final mask = tester.widget<AppEdgeFadeMask>(maskFinder);
+      expect(mask.direction, AppEdgeFadeDirection.towardTop);
+    },
+  );
+
+  testWidgets(
+    'WorkTextViewerPage configures MediaQuery top padding on Windows to keep scrollbar below header',
+    (tester) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+      try {
+        SharedPreferences.setMockInitialValues(const <String, Object>{});
+        final language = AppLanguageProvider();
+        addTearDown(language.dispose);
+        await language.setLanguage(AppLanguage.zh);
+
+        final fakeGateway = _FakeFileCacheGateway({
+          file1.path: Uint8List.fromList(utf8.encode('台本文本内容')),
+        });
+
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [
+              appLanguageProviderInstanceProvider.overrideWithValue(language),
+              workTextServiceProvider.overrideWithValue(
+                WorkTextService(platformGateway: fakeGateway),
+              ),
+            ],
+            child: const MaterialApp(
+              home: WorkTextViewerPage(
+                files: [file1],
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Find MediaQuery wrapping the content inside Scaffold
+        final scrollableFinder = find.byType(SingleChildScrollView);
+        expect(scrollableFinder, findsOneWidget);
+
+        final scrollableContext = tester.element(scrollableFinder);
+        final mediaQuery = MediaQuery.of(scrollableContext);
+
+        // Top padding on Windows is contentTopInset (58.0 without system status bar) so scrollbar starts below title bar
+        expect(mediaQuery.padding.top, greaterThanOrEqualTo(58.0));
+      } finally {
+        debugDefaultTargetPlatformOverride = null;
+      }
+    },
+  );
 }
+

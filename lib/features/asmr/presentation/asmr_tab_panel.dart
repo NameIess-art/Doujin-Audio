@@ -1,21 +1,10 @@
 part of 'asmr_tab.dart';
 
 ThemeData _asmrPanelTheme(BuildContext context) {
-  final base = Theme.of(context);
+  final base = asmrThemeData(context);
   final tokens = AppDesignTokens.of(context);
   final blue = tokens.asmrAccent;
-  final scheme = base.colorScheme.copyWith(
-    primary: blue,
-    onPrimary: tokens.onAsmrAccent,
-    primaryContainer: tokens.asmrContainer,
-    onPrimaryContainer: tokens.onAsmrContainer,
-    secondary: blue,
-    onSecondary: tokens.onAsmrAccent,
-    secondaryContainer: tokens.asmrContainer,
-    onSecondaryContainer: tokens.onAsmrContainer,
-  );
   return base.copyWith(
-    colorScheme: scheme,
     checkboxTheme: CheckboxThemeData(
       fillColor: WidgetStateProperty.resolveWith((states) {
         if (states.contains(WidgetState.selected)) {

@@ -1267,6 +1267,13 @@ internal class DocumentStorageOperations(
         )
     }
 
+    private val supportedWorkDocExtensions = setOf("txt", "md", "pdf")
+
+    private fun isSupportedWorkDocName(name: String): Boolean {
+        val ext = name.substringAfterLast('.', "").lowercase(Locale.US)
+        return ext in supportedWorkDocExtensions
+    }
+
     fun discoverWorkTexts(folderPath: String): List<Map<String, String>> {
         val trimmed = folderPath.trim()
         if (trimmed.startsWith("content://")) {
@@ -1283,7 +1290,7 @@ internal class DocumentStorageOperations(
                         val childRel = listOf(node.relPath, name).filter(String::isNotBlank).joinToString("/")
                         when {
                             child.isDirectory -> pending += Node(child, childRel)
-                            child.isFile && name.endsWith(".txt", ignoreCase = true) -> {
+                            child.isFile && isSupportedWorkDocName(name) -> {
                                 results += mapOf(
                                     "name" to name,
                                     "relativePath" to childRel,
@@ -1308,7 +1315,7 @@ internal class DocumentStorageOperations(
         val root = File(folderPath)
         if (!root.exists() || !root.isDirectory) return emptyList()
         return root.walkTopDown()
-            .filter { it.isFile && it.extension.equals("txt", ignoreCase = true) }
+            .filter { it.isFile && it.extension.lowercase(Locale.US) in supportedWorkDocExtensions }
             .sortedWith(compareBy { it.absolutePath.lowercase(Locale.US) })
             .map { file ->
                 val rel = file.relativeToOrNull(root)?.invariantSeparatorsPath ?: file.name

@@ -476,10 +476,13 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
             top: 0,
             left: 0,
             right: 0,
-            child: TopPageHeader(
-              key: _headerKey,
-              icon: Icons.download_rounded,
-              leading: const BackButton(),
+            child: Theme(
+              data: asmrThemeData(context),
+              child: TopPageHeader(
+                key: _headerKey,
+                icon: Icons.download_rounded,
+                iconColor: AppDesignTokens.of(context).asmrAccent,
+                leading: const BackButton(),
               title: i18n.tr('asmr_download_title'),
               titleSuffix: (widget.batchIndex != null &&
                       widget.batchTotal != null &&
@@ -539,6 +542,7 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
               ),
             ),
           ),
+        ),
         ],
       ),
     );
@@ -596,10 +600,14 @@ class AsmrDownloadTaskPage extends ConsumerWidget {
             top: 0,
             left: 0,
             right: 0,
-            child: TopPageHeader(
-              icon: Icons.download_done_rounded,
-              leading: const BackButton(),
-              title: i18n.tr('asmr_download_task_title'),
+            child: Theme(
+              data: asmrThemeData(context),
+              child: TopPageHeader(
+                icon: Icons.download_done_rounded,
+                iconColor: AppDesignTokens.of(context).asmrAccent,
+                leading: const BackButton(),
+                title: i18n.tr('asmr_download_task_title'),
+              ),
             ),
           ),
         ],

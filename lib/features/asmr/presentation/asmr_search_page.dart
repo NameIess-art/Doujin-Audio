@@ -290,18 +290,21 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
       blurEnabled: blurEnabled,
       accentColor: accent,
       controlsOverlay: _isSelectionMode
-          ? _AsmrBatchSelectionHeader(
-              keyPrefix: 'asmr_search',
-              i18n: i18n,
-              selectedWorks: selectedWorks,
-              onAddToPlaylist: selectedWorks.isEmpty
-                  ? null
-                  : _addSelectedWorksToPlaylist,
-              onDownload: selectedWorks.isEmpty ? null : _downloadSelectedWorks,
-              onToggleFavorite: selectedWorks.isEmpty
-                  ? null
-                  : _toggleSelectedFavorites,
-              onExit: _exitSelectionMode,
+          ? Theme(
+              data: asmrThemeData(context),
+              child: _AsmrBatchSelectionHeader(
+                keyPrefix: 'asmr_search',
+                i18n: i18n,
+                selectedWorks: selectedWorks,
+                onAddToPlaylist: selectedWorks.isEmpty
+                    ? null
+                    : _addSelectedWorksToPlaylist,
+                onDownload: selectedWorks.isEmpty ? null : _downloadSelectedWorks,
+                onToggleFavorite: selectedWorks.isEmpty
+                    ? null
+                    : _toggleSelectedFavorites,
+                onExit: _exitSelectionMode,
+              ),
             )
           : null,
       body: body,

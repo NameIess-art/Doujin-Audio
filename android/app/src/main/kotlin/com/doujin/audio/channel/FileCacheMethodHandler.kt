@@ -322,6 +322,18 @@ internal class FileCacheMethodHandler(
             FileCacheMethods.PICK_AUDIO_SOURCE -> launchPickAudioSource(result)
             FileCacheMethods.PICK_AUDIO_FILES -> launchPickAudioFiles(result)
             FileCacheMethods.PICK_AUDIO_FOLDER -> launchPickAudioFolder(result)
+            FileCacheMethods.DISCOVER_WORK_TEXTS -> {
+                val folder = arguments.requiredString("folder")
+                runAsync(result, errorCode = { "discover_texts_failed" }) {
+                    operations.discoverWorkTexts(folder)
+                }
+            }
+            FileCacheMethods.READ_DOCUMENT_BYTES -> {
+                val path = arguments.requiredString("path")
+                runAsync(result, errorCode = { "read_document_failed" }) {
+                    operations.readDocumentBytes(path)
+                }
+            }
             else -> result.notImplemented()
         }
     }

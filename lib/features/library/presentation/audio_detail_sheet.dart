@@ -27,6 +27,8 @@ import '../../../core/widgets/library_like_cards.dart';
 import '../../../core/widgets/operation_feedback.dart';
 import '../../../core/widgets/app_bottom_sheet.dart';
 import 'dlsite_metadata_review_page.dart';
+import 'work_text_viewer_page.dart';
+import '../application/work_text_service.dart';
 import '../../../core/widgets/app_transitions.dart';
 
 part 'audio_detail_cover_widgets.dart';
@@ -382,6 +384,31 @@ class _AudioDetailSheetState extends ConsumerState<AudioDetailSheet> {
     }
   }
 
+  Future<void> _viewWorkText() async {
+    final folderPath = _target.isLibraryRootFolder
+        ? _target.targetPath
+        : (PathMatcher.parentPath(_target.targetPath) ??
+            path.dirname(_target.targetPath));
+    final service = ref.read(workTextServiceProvider);
+    final files = await service.findWorkTextFiles(folderPath);
+    if (!mounted) return;
+    if (files.isEmpty) {
+      final i18n = ProviderScope.containerOf(context, listen: false)
+          .read(appLanguageProviderInstanceProvider);
+      showAppSnackBar(
+        context,
+        i18n.tr('script_text_not_found'),
+        tone: AppFeedbackTone.warning,
+      );
+      return;
+    }
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => WorkTextViewerPage(files: files),
+      ),
+    );
+  }
+
   Future<void> _saveField(
     _AudioDetailField field,
     AudioDetail nextDetail,
@@ -546,6 +573,16 @@ class _AudioDetailSheetState extends ConsumerState<AudioDetailSheet> {
                         : () => _confirmFetchInfo(detail),
                     tooltip: i18n.tr('audio_detail_fetch_info'),
                     icon: const Icon(Icons.cloud_download_rounded),
+                  ),
+                  IconButton(
+                    key: const ValueKey<String>('audio_detail_view_text'),
+                    constraints: const BoxConstraints.tightFor(
+                      width: 48,
+                      height: 48,
+                    ),
+                    onPressed: _runningAction ? null : _viewWorkText,
+                    tooltip: i18n.tr('script_text_tooltip'),
+                    icon: const Icon(Icons.description_outlined),
                   ),
                 ],
                 IconButton(

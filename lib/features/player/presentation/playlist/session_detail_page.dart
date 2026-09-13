@@ -22,8 +22,14 @@ import '../../../../core/widgets/app_transitions.dart';
 import '../../../../core/widgets/async_cover_image.dart';
 import '../../../../core/widgets/marquee_text.dart';
 import '../../../asmr/domain/asmr_models.dart';
+import 'package:path/path.dart' as path;
+
+import '../../../../core/media/path_matcher.dart';
+import '../../../../core/widgets/app_feedback.dart';
 import '../../../asmr/presentation/asmr_work_detail_sheet.dart';
+import '../../../library/application/work_text_service.dart';
 import '../../../library/presentation/audio_detail_sheet.dart';
+import '../../../library/presentation/work_text_viewer_page.dart';
 import '../../../settings/application/settings_state.dart';
 import '../../application/playback_session_snapshot.dart';
 import '../../application/subtitle_overlay_controller.dart';
@@ -822,6 +828,37 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
     unawaited(showAudioDetailSheet(context, target));
   }
 
+  Future<void> _showScriptTextForSession(
+    BuildContext context,
+    PlaybackSessionSnapshot session,
+    MusicTrack? track,
+  ) async {
+    final target = ref
+        .read(libraryFacadeProvider)
+        .audioDetailTargetForPath(session.currentTrackPath);
+    final folderPath = target.isLibraryRootFolder
+        ? target.targetPath
+        : (PathMatcher.parentPath(target.targetPath) ??
+            path.dirname(target.targetPath));
+    final service = ref.read(workTextServiceProvider);
+    final files = await service.findWorkTextFiles(folderPath);
+    if (!context.mounted) return;
+    if (files.isEmpty) {
+      final i18n = ref.read(appLanguageProviderInstanceProvider);
+      showAppSnackBar(
+        context,
+        i18n.tr('script_text_not_found'),
+        tone: AppFeedbackTone.warning,
+      );
+      return;
+    }
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => WorkTextViewerPage(files: files),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final session = widget.session;
@@ -1214,6 +1251,12 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                                     },
                                     onShowAudioDetail: () =>
                                         _showAudioDetailForSession(
+                                          context,
+                                          session,
+                                          track,
+                                        ),
+                                    onShowScriptText: () =>
+                                        _showScriptTextForSession(
                                           context,
                                           session,
                                           track,

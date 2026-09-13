@@ -174,9 +174,10 @@ final class AudioDetailJsonCodec {
 
   Uint8List mergeTimeSegments(
     Uint8List bytes,
-    AudioDetailTarget target,
+    AudioDetail detail,
     Map<String, Object?> fields,
   ) {
+    final target = detail.target;
     final root = _decodeRoot(bytes);
     if (root is Map && target.isLibraryRootFolder) {
       final entry = Map<String, Object?>.from(root);
@@ -184,6 +185,17 @@ final class AudioDetailJsonCodec {
       return _encode({...entry, ...fields});
     }
     if (root is List && !target.isLibraryRootFolder) {
+      if (!root.any(
+        (item) =>
+            item is Map &&
+            item['targetPath'] is String &&
+            PathMatcher.equalsNormalized(
+              item['targetPath'] as String,
+              target.targetPath,
+            ),
+      )) {
+        return _encode([...root, _detailToJson(detail, fields)]);
+      }
       final entry = _findTargetEntry(root, target);
       _detailFromJson(target, entry);
       return _encode([

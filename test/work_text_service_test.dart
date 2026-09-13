@@ -1,0 +1,183 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
+import 'package:charset/charset.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:doujin_audio/core/platform/file_cache_platform_gateway.dart';
+import 'package:doujin_audio/features/library/application/work_text_service.dart';
+
+class _FakeFileCacheGateway extends Fake implements FileCachePlatformGateway {
+  _FakeFileCacheGateway({
+    this.discoverResult = const [],
+    this.readResult,
+  });
+
+  final List<Map<String, String>> discoverResult;
+  final Uint8List? readResult;
+
+  @override
+  Future<List<Map<String, String>>> discoverWorkTexts(String folderPath) async {
+    return discoverResult;
+  }
+
+  @override
+  Future<Uint8List?> readDocumentBytes(String filePath) async {
+    return readResult;
+  }
+}
+
+void main() {
+  group('decodeWorkText', () {
+    test('decodes UTF-8 text correctly without BOM', () {
+      const original = '第一話：おはようございます。汉化剧本测试。';
+      final bytes = Uint8List.fromList(utf8.encode(original));
+      final result = decodeWorkText(bytes);
+
+      expect(result.encoding, WorkTextEncoding.utf8);
+      expect(result.text, original);
+    });
+
+    test('decodes UTF-8 text with BOM correctly', () {
+      const original = 'UTF-8 with BOM 台本テスト';
+      final bytes = Uint8List.fromList([
+        0xEF, 0xBB, 0xBF,
+        ...utf8.encode(original),
+      ]);
+      final result = decodeWorkText(bytes);
+
+      expect(result.encoding, WorkTextEncoding.utf8);
+      expect(result.text, original);
+    });
+
+    test('auto-detects and decodes Shift-JIS text correctly', () {
+      const original = 'トラック01：おはようございます、お兄ちゃん。特典台本です。';
+      final bytes = Uint8List.fromList(shiftJis.encode(original));
+      final result = decodeWorkText(bytes);
+
+      expect(result.encoding, WorkTextEncoding.shiftJis);
+      expect(result.text, original);
+    });
+
+    test('auto-detects and decodes GBK text correctly', () {
+      const original = '【汉化剧本】第01轨：早上好，主人。这里是特典说明文本。';
+      final bytes = Uint8List.fromList(gbk.encode(original));
+      final result = decodeWorkText(bytes);
+
+      expect(result.encoding, WorkTextEncoding.gbk);
+      expect(result.text, original);
+    });
+
+    test('supports manual override encoding', () {
+      const original = '纯中文字符测试剧本';
+      final bytes = Uint8List.fromList(gbk.encode(original));
+      final result = decodeWorkText(
+        bytes,
+        overrideEncoding: WorkTextEncoding.gbk,
+      );
+
+      expect(result.encoding, WorkTextEncoding.gbk);
+      expect(result.text, original);
+    });
+
+    test('handles empty bytes gracefully', () {
+      final result = decodeWorkText(Uint8List(0));
+      expect(result.text, '');
+      expect(result.encoding, WorkTextEncoding.utf8);
+    });
+  });
+
+  group('WorkTextService', () {
+    test('findWorkTextFiles returns mapped WorkTextFile list', () async {
+      final gateway = _FakeFileCacheGateway(
+        discoverResult: [
+          {
+            'name': '01_台本.txt',
+            'relativePath': '台本/01_台本.txt',
+            'path': '/works/RJ123/台本/01_台本.txt',
+          },
+          {
+            'name': 'readme.txt',
+            'relativePath': 'readme.txt',
+            'path': '/works/RJ123/readme.txt',
+          },
+        ],
+      );
+
+      final service = WorkTextService(platformGateway: gateway);
+      final files = await service.findWorkTextFiles('/works/RJ123');
+
+      expect(files, hasLength(2));
+      expect(files[0].name, '01_台本.txt');
+      expect(files[0].relativePath, '台本/01_台本.txt');
+      expect(files[0].path, '/works/RJ123/台本/01_台本.txt');
+      expect(files[1].name, 'readme.txt');
+    });
+
+    test('findWorkTextFiles returns empty list for blank folder', () async {
+      final gateway = _FakeFileCacheGateway();
+      final service = WorkTextService(platformGateway: gateway);
+      final files = await service.findWorkTextFiles('   ');
+      expect(files, isEmpty);
+    });
+
+    test('readDecodedText reads bytes and decodes properly', () async {
+      const original = '音声作品台本テスト';
+      final gateway = _FakeFileCacheGateway(
+        readResult: Uint8List.fromList(shiftJis.encode(original)),
+      );
+
+      final service = WorkTextService(platformGateway: gateway);
+      final result = await service.readDecodedText(
+        const WorkTextFile(
+          name: 'script.txt',
+          relativePath: 'script.txt',
+          path: '/path/script.txt',
+        ),
+      );
+
+      expect(result.text, original);
+      expect(result.encoding, WorkTextEncoding.shiftJis);
+    });
+
+    test('readDecodedText returns empty string when readDocumentBytes fails', () async {
+      final gateway = _FakeFileCacheGateway();
+      final service = WorkTextService(platformGateway: gateway);
+      final result = await service.readDecodedText(
+        const WorkTextFile(
+          name: 'missing.txt',
+          relativePath: 'missing.txt',
+          path: '/path/missing.txt',
+        ),
+      );
+
+      expect(result.text, '');
+      expect(result.encoding, WorkTextEncoding.utf8);
+    });
+  });
+
+  group('WorkTextFile', () {
+    test('displayName strips extension properly', () {
+      const fileWithExt = WorkTextFile(
+        name: '01_トラック台本.txt',
+        relativePath: '01_トラック台本.txt',
+        path: '/path/01_トラック台本.txt',
+      );
+      expect(fileWithExt.displayName, '01_トラック台本');
+
+      const fileWithoutExt = WorkTextFile(
+        name: 'README',
+        relativePath: 'README',
+        path: '/path/README',
+      );
+      expect(fileWithoutExt.displayName, 'README');
+
+      const multiDotFile = WorkTextFile(
+        name: 'part.1.final.script.txt',
+        relativePath: 'part.1.final.script.txt',
+        path: '/path/part.1.final.script.txt',
+      );
+      expect(multiDotFile.displayName, 'part.1.final.script');
+    });
+  });
+}
+

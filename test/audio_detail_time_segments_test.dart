@@ -128,6 +128,14 @@ void main() {
         )).single.toRow(),
         original.toRow(),
       );
+      await playback.deleteTimeSegmentLabel(original.id);
+      await repository.importBackupsMany([movedTarget]);
+      expect(
+        await playback.loadTimeSegmentLabels(
+          PathMatcher.join(destination.path, '声轨/01.mp3'),
+        ),
+        hasLength(1),
+      );
     },
   );
 
@@ -145,7 +153,7 @@ void main() {
       await playback.upsertTimeSegmentLabel(first);
       await playback.upsertTimeSegmentLabel(second);
       await repository.save(AudioDetail.empty(firstTarget));
-      await repository.save(AudioDetail.empty(secondTarget));
+      expect(await repository.exportTimeSegments(secondTarget), isTrue);
       final json = jsonDecode(await document.readAsString()) as List<dynamic>;
       expect(json, hasLength(2));
       expect((json.first['timeSegmentLabels'] as List).single['id'], first.id);

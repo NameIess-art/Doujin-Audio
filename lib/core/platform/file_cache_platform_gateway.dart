@@ -324,6 +324,83 @@ class FileCachePlatformGateway {
         const <CoverImageReference>[];
   }
 
+  Future<List<Map<String, String>>> discoverWorkTexts(String folderPath) async {
+    if (_isWindows() && !_isAndroid()) {
+      final texts = <Map<String, String>>[];
+      final directory = Directory(folderPath);
+      if (!await directory.exists()) return texts;
+      try {
+        await for (final entity
+            in directory.list(recursive: true, followLinks: false)) {
+          if (entity is File && entity.path.toLowerCase().endsWith('.txt')) {
+            final rel = path
+                .relative(entity.path, from: folderPath)
+                .replaceAll(r'\', '/');
+            texts.add({
+              'name': path.basename(entity.path),
+              'relativePath': rel,
+              'path': entity.path,
+            });
+          }
+        }
+      } catch (error, stackTrace) {
+        AppLogService.warning(
+          'windows_discover_work_texts_failed',
+          error: error,
+          stackTrace: stackTrace,
+        );
+      }
+      texts.sort((a, b) => (a['relativePath'] ?? '')
+          .toLowerCase()
+          .compareTo((b['relativePath'] ?? '').toLowerCase()));
+      return texts;
+    }
+    final result = await _client.invoke<List<Object?>>(
+      FileCacheMethod.discoverWorkTexts,
+      arguments: <String, Object?>{'folder': folderPath},
+      decode: (value) => (value as List).cast<Object?>(),
+    );
+    if (result is NativeFailure<List<Object?>>) {
+      _logOptionalFailure(FileCacheMethod.discoverWorkTexts, result);
+    }
+    final raw = result.valueOrNull;
+    return raw
+            ?.map((item) {
+              if (item is! Map) return null;
+              return item.map(
+                (k, v) => MapEntry(k.toString(), v?.toString() ?? ''),
+              );
+            })
+            .whereType<Map<String, String>>()
+            .toList(growable: false) ??
+        const <Map<String, String>>[];
+  }
+
+  Future<Uint8List?> readDocumentBytes(String filePath) async {
+    if (!filePath.startsWith('content://')) {
+      final file = File(filePath);
+      if (!await file.exists()) return null;
+      try {
+        return await file.readAsBytes();
+      } catch (error, stackTrace) {
+        AppLogService.warning(
+          'read_document_bytes_failed',
+          error: error,
+          stackTrace: stackTrace,
+        );
+        return null;
+      }
+    }
+    final result = await _client.invoke<Uint8List?>(
+      FileCacheMethod.readDocumentBytes,
+      arguments: <String, Object?>{'path': filePath},
+      decode: (value) => value is Uint8List
+          ? value
+          : (value is List ? Uint8List.fromList(value.cast<int>()) : null),
+    );
+    return result.valueOrNull;
+  }
+
   Future<String?> resolveTrackCover({
     required String path,
     String? groupKey,

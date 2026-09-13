@@ -49,6 +49,7 @@ class SessionDetailContent extends ConsumerStatefulWidget {
     this.onToggleSubtitle,
     this.onToggleGlobalSubtitle,
     this.onShowAudioDetail,
+    this.onShowScriptText,
   });
 
   final PlaybackSessionSnapshot session;
@@ -63,6 +64,7 @@ class SessionDetailContent extends ConsumerStatefulWidget {
   final VoidCallback? onToggleSubtitle;
   final VoidCallback? onToggleGlobalSubtitle;
   final VoidCallback? onShowAudioDetail;
+  final VoidCallback? onShowScriptText;
 
   @override
   ConsumerState<SessionDetailContent> createState() =>
@@ -558,6 +560,7 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
           );
         },
         onShowAudioDetail: widget.onShowAudioDetail,
+        onShowScriptText: widget.onShowScriptText,
       );
     }
 

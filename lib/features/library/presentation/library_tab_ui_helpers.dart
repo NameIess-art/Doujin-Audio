@@ -319,56 +319,18 @@ Future<void> _downloadAudioTargetFromAsmr({
   }
 
   final effectiveRjCode = rjCode;
+  final destination = resolveWorkFolderDestination(target);
 
-  try {
-    final customFinder = ref.read(asmrWorkFinderOverrideProvider);
-    final AsmrWork? work;
-    if (customFinder != null) {
-      work = await customFinder(effectiveRjCode);
-    } else {
-      final language = ref.read(appLanguageProviderInstanceProvider).language;
-      work = await ref
-          .read(uiOperationServiceProvider)
-          .run<AsmrWork?>(
-            scope: UiOperationScope('library:asmr-search:$effectiveRjCode'),
-            labelKey: 'audio_detail_searching_asmr',
-            task: (_) => ref
-                .read(libraryFacadeProvider)
-                .findAsmrWorkByRjCode(effectiveRjCode, language: language),
-          );
-    }
-
-    if (!context.mounted) return;
-
-    if (work == null) {
-      showAppSnackBar(
-        context,
-        i18n.tr('audio_detail_asmr_work_not_found', {'rj': effectiveRjCode}),
-        tone: AppFeedbackTone.warning,
-      );
-      return;
-    }
-
-    final destination = resolveWorkFolderDestination(target);
-
-    await Navigator.of(context).push<void>(
-      buildAppPageRoute<void>(
-        context: context,
-        style: AppPageTransitionStyle.sharedAxisZ,
-        child: AsmrDownloadPage(
-          work: work,
-          customDestinationRoot: destination.destinationRoot,
-          customWorkFolderName: destination.workFolderName,
-        ),
+  await Navigator.of(context).push<void>(
+    buildAppPageRoute<void>(
+      context: context,
+      style: AppPageTransitionStyle.sharedAxisZ,
+      child: AsmrDownloadPage(
+        initialRjCode: effectiveRjCode,
+        customDestinationRoot: destination.destinationRoot,
+        customWorkFolderName: destination.workFolderName,
       ),
-    );
-  } catch (_) {
-    if (!context.mounted) return;
-    showAppSnackBar(
-      context,
-      i18n.tr('audio_detail_asmr_work_not_found', {'rj': rjCode}),
-      tone: AppFeedbackTone.warning,
-    );
-  }
+    ),
+  );
 }
 

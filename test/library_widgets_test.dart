@@ -20,6 +20,7 @@ import 'package:doujin_audio/features/library/application/library_entry_editor_s
 import 'package:doujin_audio/features/library/application/library_organizer.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_download_page.dart';
+import 'package:doujin_audio/core/widgets/operation_feedback.dart';
 import 'package:doujin_audio/features/library/presentation/library_providers.dart';
 import 'package:doujin_audio/features/settings/application/app_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
@@ -2999,12 +3000,16 @@ void main() {
         tags: const <String>[],
       );
 
+      final workCompleter = Completer<AsmrWork?>();
+
       await tester.pumpWidget(
         fixture.build(
           const LibraryTab(),
           overrides: [
             asmrWorkFinderOverrideProvider.overrideWithValue(
-              (rjCode) async => rjCode == 'RJ123456' ? testWork : null,
+              (rjCode) => rjCode == 'RJ123456'
+                  ? workCompleter.future
+                  : Future.value(),
             ),
           ],
         ),
@@ -3030,18 +3035,28 @@ void main() {
 
       swipeCard.onSecondaryLeadingAction!();
       await tester.pump();
-      await tester.pumpAndSettle();
+      await tester.pump(const Duration(milliseconds: 100));
 
       final downloadPage = find.byType(AsmrDownloadPage);
       expect(downloadPage, findsOneWidget);
 
       final pageWidget = tester.widget<AsmrDownloadPage>(downloadPage);
-      expect(pageWidget.work.id, testWork.id);
+      expect(pageWidget.initialRjCode, 'RJ123456');
       expect(
         PathMatcher.normalize(pageWidget.customDestinationRoot!),
         PathMatcher.normalize('/library/Works'),
       );
       expect(pageWidget.customWorkFolderName, 'RJ123456_Work');
+      expect(find.byType(OperationSkeletonList), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey<String>('asmr_download_summary_skeleton')),
+        findsOneWidget,
+      );
+
+      workCompleter.complete(testWork);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(find.text('Remote ASMR Title'), findsOneWidget);
 
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.runAsync(

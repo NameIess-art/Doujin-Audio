@@ -17,20 +17,27 @@ import '../../../core/widgets/app_bottom_sheet.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/operation_feedback.dart';
+import '../../../core/widgets/shimmer_loading.dart';
 import '../../../core/widgets/top_page_header.dart';
+import '../../library/presentation/library_providers.dart';
 import 'asmr_download_details_page.dart';
 
 class AsmrDownloadPage extends ConsumerStatefulWidget {
   const AsmrDownloadPage({
     super.key,
-    required this.work,
+    this.work,
+    this.initialRjCode,
     this.batchIndex,
     this.batchTotal,
     this.customDestinationRoot,
     this.customWorkFolderName,
-  });
+  }) : assert(
+         work != null || initialRjCode != null,
+         'Either work or initialRjCode must be provided',
+       );
 
-  final AsmrWork work;
+  final AsmrWork? work;
+  final String? initialRjCode;
   final int? batchIndex;
   final int? batchTotal;
   final String? customDestinationRoot;
@@ -45,6 +52,7 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
   double _headerHeight = 0;
   AsmrDownloadSelectionModel? _selection;
   String? _destinationRoot;
+  AsmrWork? _work;
   bool _loading = true;
   bool _starting = false;
   Object? _bootstrapError;
@@ -52,6 +60,7 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
   @override
   void initState() {
     super.initState();
+    _work = widget.work;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       unawaited(_bootstrap());
     });
@@ -62,17 +71,45 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
     try {
       final result = await ref
           .read(uiOperationServiceProvider)
-          .run<({List<AsmrTrackFile> tree, String? destinationRoot})>(
+          .run<({List<AsmrTrackFile> tree, String? destinationRoot, AsmrWork work})>(
             scope: UiOperationScope.asmrDownloadInit,
             labelKey: 'asmr_download_title',
             task: (_) async {
+              var work = _work;
+              if (work == null) {
+                final rjCode = widget.initialRjCode?.trim();
+                if (rjCode == null || rjCode.isEmpty) {
+                  throw StateError('No RJ code provided');
+                }
+                final customFinder = ref.read(asmrWorkFinderOverrideProvider);
+                if (customFinder != null) {
+                  work = await customFinder(rjCode);
+                } else {
+                  final language =
+                      ref.read(appLanguageProviderInstanceProvider).language;
+                  work = await ref
+                      .read(libraryFacadeProvider)
+                      .findAsmrWorkByRjCode(rjCode, language: language);
+                }
+                if (work == null) {
+                  final i18n = ref.read(appLanguageProviderInstanceProvider);
+                  throw StateError(
+                    i18n.tr('audio_detail_asmr_work_not_found', {'rj': rjCode}),
+                  );
+                }
+                if (mounted) {
+                  setState(() => _work = work);
+                }
+              }
+
               final libraryController = ref.read(asmrLibraryControllerProvider);
               final downloadManager = ref.read(asmrDownloadManagerProvider);
               if (libraryController == null || downloadManager == null) {
                 throw StateError('ASMR services are not configured.');
               }
+
               final settings = ref.read(settingsRepositoryProvider);
-              final tree = await libraryController.ensureTrackTree(widget.work);
+              final tree = await libraryController.ensureTrackTree(work);
               await downloadManager.initialize();
               final customRoot = widget.customDestinationRoot?.trim();
               final customFolder = widget.customWorkFolderName?.trim();
@@ -95,17 +132,20 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
               return (
                 tree: tree,
                 destinationRoot: destinationMissing ? null : targetRoot,
+                work: work,
               );
             },
           );
       if (!mounted) return;
-      final workTitle = widget.work.title.trim().isNotEmpty
-          ? widget.work.title.trim()
-          : (widget.work.sourceId.trim().isNotEmpty
-                ? widget.work.sourceId.trim()
-                : widget.work.id.toString());
+      final currentWork = result.work;
+      _work = currentWork;
+      final workTitle = currentWork.title.trim().isNotEmpty
+          ? currentWork.title.trim()
+          : (currentWork.sourceId.trim().isNotEmpty
+                ? currentWork.sourceId.trim()
+                : currentWork.id.toString());
       final workRootFolder = AsmrTrackFile(
-        hash: 'work_root_${widget.work.id}',
+        hash: 'work_root_${currentWork.id}',
         title: workTitle,
         type: 'folder',
         streamUrl: null,
@@ -114,10 +154,10 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
         duration: Duration.zero,
         size: 0,
         children: result.tree,
-        workId: widget.work.id,
-        workTitle: widget.work.title,
-        sourceId: widget.work.sourceId,
-        relativePath: '__work_root_${widget.work.id}__',
+        workId: currentWork.id,
+        workTitle: currentWork.title,
+        sourceId: currentWork.sourceId,
+        relativePath: '__work_root_${currentWork.id}__',
       );
       setState(() {
         _selection = AsmrDownloadSelectionModel([workRootFolder]);
@@ -170,8 +210,9 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
   }
 
   Future<void> _startDownload() async {
+    final work = _work;
     final selection = _selection;
-    if (selection == null) return;
+    if (work == null || selection == null) return;
     if (_starting) return;
 
     final asmrBlue = AppDesignTokens.of(context).asmrAccent;
@@ -179,7 +220,7 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
     if (downloadManager == null) return;
     final settings = ref.read(settingsRepositoryProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
-    final task = downloadManager.getTask(widget.work.id);
+    final task = downloadManager.getTask(work.id);
     if (task != null &&
         task.status != AsmrDownloadTaskStatus.completed &&
         task.status != AsmrDownloadTaskStatus.failed) {
@@ -241,7 +282,7 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
             scope: UiOperationScope.asmrDownloadStart,
             labelKey: 'asmr_download_starting',
             task: (_) => downloadManager.startDownload(
-              work: widget.work,
+              work: work,
               selectedRoots: selectedRoots,
               destinationRoot: destination!,
               conflictPolicy: settings.asmrDownloadConflictPolicy,
@@ -377,59 +418,60 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
                     },
                   ),
           ),
-          Positioned(
-            bottom: 16 + bottomInset,
-            right: 16,
-            child: HeaderFloatingSurface(
-              height: 46,
-              radius: 23,
-              padding: EdgeInsets.zero,
-              child: Material(
-                color: asmrBlue,
-                borderRadius: BorderRadius.circular(23),
-                child: InkWell(
+          if (!_loading && _selection != null && _work != null)
+            Positioned(
+              bottom: 16 + bottomInset,
+              right: 16,
+              child: HeaderFloatingSurface(
+                height: 46,
+                radius: 23,
+                padding: EdgeInsets.zero,
+                child: Material(
+                  color: asmrBlue,
                   borderRadius: BorderRadius.circular(23),
-                  onTap: _starting ? null : _startDownload,
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 20),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (_starting)
-                          SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(23),
+                    onTap: _starting ? null : _startDownload,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (_starting)
+                            SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: onAsmrBlue,
+                              ),
+                            )
+                          else
+                            Icon(
+                              Icons.download_rounded,
+                              size: 18,
                               color: onAsmrBlue,
                             ),
-                          )
-                        else
-                          Icon(
-                            Icons.download_rounded,
-                            size: 18,
-                            color: onAsmrBlue,
+                          const SizedBox(width: 6),
+                          Text(
+                            _starting
+                                ? i18n.tr('asmr_download_starting')
+                                : i18n.tr('asmr_download_confirm'),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: onAsmrBlue,
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                            ),
                           ),
-                        const SizedBox(width: 6),
-                        Text(
-                          _starting
-                              ? i18n.tr('asmr_download_starting')
-                              : i18n.tr('asmr_download_confirm'),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: onAsmrBlue,
-                            fontSize: 15,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                 ),
               ),
             ),
-          ),
           Positioned(
             top: 0,
             left: 0,
@@ -460,7 +502,7 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
                       padding: const EdgeInsets.symmetric(horizontal: 12),
                       child: InkWell(
                         borderRadius: BorderRadius.circular(19),
-                        onTap: _starting ? null : _chooseDestination,
+                        onTap: (_starting || _loading) ? null : _chooseDestination,
                         child: Center(
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
@@ -487,7 +529,8 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
               additionalChild: Padding(
                 padding: const EdgeInsets.fromLTRB(16, 6, 16, 12),
                 child: _DownloadSummaryCard(
-                  work: widget.work,
+                  work: _work,
+                  initialRjCode: widget.initialRjCode,
                   selectedLeafCount: selectedLeafCount,
                   selectedTotalSizeBytes: selectedTotalSizeBytes,
                   customDestinationRoot: widget.customDestinationRoot,
@@ -844,14 +887,16 @@ class _TaskCard extends ConsumerWidget {
 
 class _DownloadSummaryCard extends ConsumerWidget {
   const _DownloadSummaryCard({
-    required this.work,
+    this.work,
+    this.initialRjCode,
     required this.selectedLeafCount,
     required this.selectedTotalSizeBytes,
     this.customDestinationRoot,
     this.customWorkFolderName,
   });
 
-  final AsmrWork work;
+  final AsmrWork? work;
+  final String? initialRjCode;
   final int selectedLeafCount;
   final int selectedTotalSizeBytes;
   final String? customDestinationRoot;
@@ -864,6 +909,67 @@ class _DownloadSummaryCard extends ConsumerWidget {
     final asmrBlue = tokens.asmrAccent;
     ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
+
+    final currentWork = work;
+    if (currentWork == null) {
+      return HeaderFloatingSurface(
+        key: const ValueKey<String>('asmr_download_summary_skeleton'),
+        height: null,
+        radius: 16,
+        padding: const EdgeInsets.all(16),
+        child: ShimmerLoader(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (initialRjCode != null && initialRjCode!.trim().isNotEmpty)
+                Text(
+                  initialRjCode!.trim(),
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
+                )
+              else
+                const ShimmerContainer(width: 200, height: 18),
+              const SizedBox(height: 10),
+              const Row(
+                children: [
+                  ShimmerContainer(width: 16, height: 16, borderRadius: 8),
+                  SizedBox(width: 6),
+                  ShimmerContainer(width: 140, height: 12),
+                ],
+              ),
+              if (customWorkFolderName != null &&
+                  customWorkFolderName!.trim().isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Icon(
+                      Icons.folder_outlined,
+                      size: 16,
+                      color: cs.onSurfaceVariant,
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        customWorkFolderName!.trim(),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: cs.onSurfaceVariant,
+                              fontWeight: FontWeight.w500,
+                            ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ],
+          ),
+        ),
+      );
+    }
+
     return HeaderFloatingSurface(
       key: const ValueKey<String>('asmr_download_summary'),
       height: null,
@@ -874,7 +980,7 @@ class _DownloadSummaryCard extends ConsumerWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
-            work.title,
+            currentWork.title,
             maxLines: 3,
             overflow: TextOverflow.ellipsis,
             style: Theme.of(

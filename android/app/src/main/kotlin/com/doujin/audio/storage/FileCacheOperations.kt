@@ -145,4 +145,11 @@ internal class FileCacheOperations(context: Context) {
             "cacheBytes" to cachePolicy.sizeBytes(),
         )
     }
+
+    fun discoverWorkTexts(folder: String): List<Map<String, String>> =
+        documentStorage.discoverWorkTexts(folder)
+
+    fun readDocumentBytes(path: String): ByteArray? =
+        documentStorage.readDocumentBytes(path)
 }
+

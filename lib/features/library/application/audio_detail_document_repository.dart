@@ -98,7 +98,7 @@ final class AudioDetailDocumentRepository {
         bytes = onlyTimeSegments
             ? _codec.mergeTimeSegments(
                 snapshot.bytes,
-                detail.target,
+                detail,
                 _codec.timeSegmentFields(detail.target, timeSegmentLabels!),
               )
             : _codec.merge(

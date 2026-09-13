@@ -132,7 +132,7 @@ void main() {
     expect(find.byType(TopPageHeader), findsOneWidget);
     expect(find.byType(HeaderFloatingSurface), findsWidgets);
     expect(
-      tester.widget<AsmrDownloadPage>(find.byType(AsmrDownloadPage)).work.id,
+      tester.widget<AsmrDownloadPage>(find.byType(AsmrDownloadPage)).work!.id,
       work.id,
     );
     expect(find.text('Work details'), findsNothing);

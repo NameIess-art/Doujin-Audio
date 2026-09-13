@@ -1871,6 +1871,21 @@ void main() {
       expect(labelsAfterFirst[1].start, const Duration(seconds: 18));
       expect(labelsAfterFirst[1].end, const Duration(seconds: 42));
 
+      var backupFinished = false;
+      unawaited(
+        fixture.library.detailCacheService.waitForPendingOperations().then(
+          (_) => backupFinished = true,
+        ),
+      );
+      for (var attempt = 0; !backupFinished && attempt < 100; attempt++) {
+        await tester.pump();
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 10)),
+        );
+      }
+      expect(backupFinished, isTrue);
+      await tester.pump();
+
       session.setOptimisticPosition(const Duration(seconds: 80));
       await tester.pump();
       await tester.tap(

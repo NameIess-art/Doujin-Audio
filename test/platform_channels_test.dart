@@ -52,6 +52,8 @@ void main() {
       FileCacheMethod.pickAudioSource,
       FileCacheMethod.pickAudioFiles,
       FileCacheMethod.pickAudioFolder,
+      FileCacheMethod.discoverWorkTexts,
+      FileCacheMethod.readDocumentBytes,
     ];
     const subtitleOverlayMethods = <String>[
       SubtitleOverlayMethod.canDrawOverlays,

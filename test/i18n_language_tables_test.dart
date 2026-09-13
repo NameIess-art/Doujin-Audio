@@ -134,5 +134,9 @@ void main() {
     expect(appLanguageZh['minutes_duration'], '{count}分钟');
     expect(appLanguageJa['minutes_duration'], '{count}分');
     expect(appLanguageEn['minutes_duration'], '{count} min');
+
+    expect(appLanguageZh['subtitle_global_display'], '字幕悬浮窗');
+    expect(appLanguageJa['subtitle_global_display'], '字幕を全体に表示');
+    expect(appLanguageEn['subtitle_global_display'], 'Show subtitles globally');
   });
 }

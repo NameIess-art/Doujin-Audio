@@ -138,6 +138,8 @@ abstract final class FileCacheMethod {
   static const String pickAudioSource = 'pickAudioSource';
   static const String pickAudioFiles = 'pickAudioFiles';
   static const String pickAudioFolder = 'pickAudioFolder';
+  static const String discoverWorkTexts = 'discoverWorkTexts';
+  static const String readDocumentBytes = 'readDocumentBytes';
 }
 
 abstract final class SubtitleOverlayMethod {

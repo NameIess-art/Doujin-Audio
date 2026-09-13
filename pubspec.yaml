@@ -34,6 +34,7 @@ dependencies:
   lottie: ^3.3.3
   crypto: ^3.0.6
   archive: ^4.0.9
+  charset: ^2.0.1
   pub_semver: ^2.2.0
   media_kit: ^1.2.6
   media_kit_video: ^2.0.1

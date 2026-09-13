@@ -120,4 +120,6 @@ internal object FileCacheMethods {
     const val SET_APPLICATION_CACHE_LIMIT = "setApplicationCacheLimit"
     const val WRITE_JSON_DOCUMENT = "writeJsonDocument"
     const val WRITE_FILE_BYTES_TO_FOLDER = "writeFileBytesToFolder"
+    const val DISCOVER_WORK_TEXTS = "discoverWorkTexts"
+    const val READ_DOCUMENT_BYTES = "readDocumentBytes"
 }

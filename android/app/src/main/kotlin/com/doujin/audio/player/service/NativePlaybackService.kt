@@ -1081,8 +1081,9 @@ class NativePlaybackService : MediaSessionService() {
 
     internal fun setRepeatOne(args: NativeRepeatOneArguments): Map<String, Any?> {
         val session = sessionManager.get(args.sessionId) ?: return errorResult("Unknown session.")
+        val repeatOne = args.repeatOne
         session.lastUsedMs = System.currentTimeMillis()
-        session.repeatOne = args.repeatOne
+        session.repeatOne = repeatOne
         val queue = args.queue
         if (queue.isNotEmpty()) {
             session.updateQueue(
@@ -1095,11 +1096,8 @@ class NativePlaybackService : MediaSessionService() {
         } else {
             session.repeatAll = args.repeatAll
             session.shuffleModeEnabled = args.shuffle
-            session.playerOrNull()?.repeatMode = if (repeatOne) {
-                Player.REPEAT_MODE_ONE
-            } else {
-                session.currentRepeatMode()
-            }
+            session.playerOrNull()?.repeatMode =
+                if (repeatOne) Player.REPEAT_MODE_ONE else session.currentRepeatMode()
             session.playerOrNull()?.shuffleModeEnabled = session.currentShuffleModeEnabled()
         }
         schedulePersistSessionState()

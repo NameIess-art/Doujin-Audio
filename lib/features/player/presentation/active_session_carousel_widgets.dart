@@ -392,6 +392,7 @@ class _ActiveSessionTitleSubtitle extends ConsumerStatefulWidget {
 class _ActiveSessionTitleSubtitleState
     extends ConsumerState<_ActiveSessionTitleSubtitle> {
   late final PlaybackPositionUiGate _positionGate;
+  late final PlaybackSubtitleService _subtitleService;
   final SubtitleTextCache _subtitleTextCache = SubtitleTextCache();
   SubtitleTrack? _subtitleTrack;
   String? _subtitleText;
@@ -404,9 +405,8 @@ class _ActiveSessionTitleSubtitleState
       session: widget.session,
       includeBufferedPosition: false,
     )..addListener(_handlePositionTick);
-    ref
-        .read(playbackSubtitleServiceProvider)
-        .addListener(_handleSubtitleServiceChanged);
+    _subtitleService = ref.read(playbackSubtitleServiceProvider)
+      ..addListener(_handleSubtitleServiceChanged);
     _loadSubtitleTrack();
   }
 
@@ -429,9 +429,7 @@ class _ActiveSessionTitleSubtitleState
 
   @override
   void dispose() {
-    ref
-        .read(playbackSubtitleServiceProvider)
-        .removeListener(_handleSubtitleServiceChanged);
+    _subtitleService.removeListener(_handleSubtitleServiceChanged);
     _positionGate
       ..removeListener(_handlePositionTick)
       ..dispose();
@@ -445,7 +443,7 @@ class _ActiveSessionTitleSubtitleState
   void _handleSubtitleServiceChanged() {
     if (!mounted) return;
     final trackPath = widget.session.currentTrackPath;
-    final subtitles = ref.read(playbackSubtitleServiceProvider);
+    final subtitles = _subtitleService;
     if (subtitles.hasResult(trackPath)) {
       final updated = subtitles.trackSync(trackPath);
       if (!identical(_subtitleTrack, updated) ||
@@ -463,7 +461,7 @@ class _ActiveSessionTitleSubtitleState
     final trackPath = widget.session.currentTrackPath;
     _loadedPath = trackPath;
     _subtitleTextCache.clear();
-    final subtitles = ref.read(playbackSubtitleServiceProvider);
+    final subtitles = _subtitleService;
     if (subtitles.hasResult(trackPath)) {
       _subtitleTrack = subtitles.trackSync(trackPath);
       _subtitleText = null;

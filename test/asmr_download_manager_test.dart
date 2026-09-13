@@ -3482,7 +3482,10 @@ void main() {
       expect(task, isNotNull);
       expect(task!.workFolderName, 'MyCustomLocalFolder');
       expect(task.destinationRoot, 'E:\\Audio\\Works');
-      expect(task.workRootPath, 'E:\\Audio\\Works\\MyCustomLocalFolder');
+      expect(
+        task.workRootPath,
+        path.join('E:\\Audio\\Works', 'MyCustomLocalFolder'),
+      );
     },
   );
 }

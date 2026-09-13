@@ -135,7 +135,13 @@ class PlaybackSubtitleService extends ChangeNotifier {
       try {
         final file = File(custom);
         if (await file.exists()) await file.delete();
-      } catch (_) {}
+      } catch (error, stackTrace) {
+        AppLogService.warning(
+          'remove_custom_subtitle_file_failed',
+          error: error,
+          stackTrace: stackTrace,
+        );
+      }
     }
     _tracks.remove(trackPath);
     unawaited(_results.remove(trackPath));

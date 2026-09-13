@@ -40,10 +40,13 @@ const _multiValueSeparator = '\uFF0C';
 ({String destinationRoot, String workFolderName}) resolveWorkFolderDestination(
   AudioDetailTarget target,
 ) {
+  final isWindows = RegExp(r'^(?:[A-Za-z]:[\\/]|\\\\)').hasMatch(target.targetPath) ||
+      target.targetPath.contains(r'\');
+  final pContext = isWindows ? path.windows : path.context;
   final folderPath = target.isLibraryRootFolder
       ? target.targetPath
       : (PathMatcher.parentPath(target.targetPath) ??
-          path.dirname(target.targetPath));
+          pContext.dirname(target.targetPath));
 
   if (PathMatcher.isContentUri(folderPath)) {
     if (folderPath.contains('::')) {
@@ -76,9 +79,9 @@ const _multiValueSeparator = '\uFF0C';
       !sanitized.endsWith(r':\')) {
     sanitized = sanitized.substring(0, sanitized.length - 1);
   }
-  final normalized = path.normalize(sanitized);
-  final destinationRoot = path.dirname(normalized);
-  final workFolderName = path.basename(normalized);
+  final normalized = pContext.normalize(sanitized);
+  final destinationRoot = pContext.dirname(normalized);
+  final workFolderName = pContext.basename(normalized);
   return (
     destinationRoot: destinationRoot,
     workFolderName: workFolderName.isEmpty ? normalized : workFolderName,

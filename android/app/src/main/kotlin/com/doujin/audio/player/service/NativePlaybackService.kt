@@ -300,9 +300,7 @@ class NativePlaybackService : MediaSessionService() {
                 context = applicationContext,
                 mainHandler = mainHandler
             ),
-            restoreSessions = { storedSessions, autoPlay, onRestored ->
-                sessionRestorer.restore(storedSessions, autoPlay, onRestored)
-            },
+            restoreSessions = sessionRestorer::restore,
             startBootstrap = foregroundCoordinator::startBootstrap,
             resetRestoreState = {
                 notificationsDismissed = false
@@ -898,9 +896,7 @@ class NativePlaybackService : MediaSessionService() {
         cancelTimerFadeIn()
         val session = sessionManager.get(sessionId) ?: return errorResult("Unknown session.")
         session.lastUsedMs = System.currentTimeMillis()
-        if (transportCommandId > 0L) {
-            session.transportCommandId = transportCommandId
-        }
+        if (transportCommandId > 0L) session.transportCommandId = transportCommandId
         focusRecovery.removePending(sessionId)
         clearPlaybackIntent(sessionId)
         session.playerOrNull()?.pause()
@@ -990,10 +986,7 @@ class NativePlaybackService : MediaSessionService() {
         action: String,
         requestedSessionId: String
     ): Map<String, Any?> {
-        val storedSessions = if (
-            requestedSessionId.isBlank() ||
-            !sessionManager.contains(requestedSessionId)
-        ) {
+        val storedSessions = if (requestedSessionId.isBlank() || !sessionManager.contains(requestedSessionId)) {
             NativePlaybackStateStore.loadSessions(this)
         } else {
             emptyList()
@@ -1087,11 +1080,9 @@ class NativePlaybackService : MediaSessionService() {
     }
 
     internal fun setRepeatOne(args: NativeRepeatOneArguments): Map<String, Any?> {
-        val sessionId = args.sessionId
-        val repeatOne = args.repeatOne
-        val session = sessionManager.get(sessionId) ?: return errorResult("Unknown session.")
+        val session = sessionManager.get(args.sessionId) ?: return errorResult("Unknown session.")
         session.lastUsedMs = System.currentTimeMillis()
-        session.repeatOne = repeatOne
+        session.repeatOne = args.repeatOne
         val queue = args.queue
         if (queue.isNotEmpty()) {
             session.updateQueue(
@@ -1307,10 +1298,8 @@ class NativePlaybackService : MediaSessionService() {
     private var timerFadeInRunnable: Runnable? = null
 
     private fun cancelTimerFadeIn() {
-        timerFadeInRunnable?.let { runnable ->
-            mainHandler.removeCallbacks(runnable)
-            timerFadeInRunnable = null
-        }
+        timerFadeInRunnable?.let { mainHandler.removeCallbacks(it) }
+        timerFadeInRunnable = null
     }
 
     private fun startTimerResumeFadeIn(sessionIds: List<String>) {
@@ -1319,24 +1308,16 @@ class NativePlaybackService : MediaSessionService() {
         val durationMs = 10000L
         val intervalMs = 50L
         val startTime = SystemClock.uptimeMillis()
-
-        sessionIds.forEach { sessionId ->
-            sessionManager.get(sessionId)?.applyFadeMultiplier(0f)
-        }
-
+        sessionIds.forEach { sessionManager.get(it)?.applyFadeMultiplier(0f) }
         val runnable = object : Runnable {
             override fun run() {
                 val elapsed = SystemClock.uptimeMillis() - startTime
                 if (elapsed >= durationMs) {
-                    sessionIds.forEach { sessionId ->
-                        sessionManager.get(sessionId)?.applyFadeMultiplier(1f)
-                    }
+                    sessionIds.forEach { sessionManager.get(it)?.applyFadeMultiplier(1f) }
                     timerFadeInRunnable = null
                 } else {
                     val fraction = (elapsed.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f)
-                    sessionIds.forEach { sessionId ->
-                        sessionManager.get(sessionId)?.applyFadeMultiplier(fraction)
-                    }
+                    sessionIds.forEach { sessionManager.get(it)?.applyFadeMultiplier(fraction) }
                     mainHandler.postDelayed(this, intervalMs)
                 }
             }
@@ -1361,22 +1342,19 @@ class NativePlaybackService : MediaSessionService() {
             }
         }
         val resumableSessionIds = resumableSessions.map(NativePlaybackSession::sessionId)
-        if (resumableSessions.isNotEmpty() &&
-            !establishForegroundPlaybackOrRollback(resumableSessionIds)
-        ) {
+        if (resumableSessions.isNotEmpty() && !establishForegroundPlaybackOrRollback(resumableSessionIds)) {
             return NativeTimerResumeResult(emptyList(), audioFocusDenied = true)
         }
         if (resumableSessions.isNotEmpty() && !focusRecovery.requestIfNeeded()) {
             rollbackPlaybackStart(resumableSessionIds, "timer_audio_focus_denied")
             return NativeTimerResumeResult(emptyList(), audioFocusDenied = true)
         }
-        val resumedSessionIds = mutableListOf<String>()
-        resumableSessions.forEach { session ->
+        val resumedSessionIds = resumableSessions.map { session ->
             ensureFocusedPlayer(session).apply {
                 pauseAtEndOfMediaItems = false
                 play()
             }
-            resumedSessionIds += session.sessionId
+            session.sessionId
         }
         if (resumedSessionIds.isNotEmpty()) {
             progressHeartbeat.ensure()

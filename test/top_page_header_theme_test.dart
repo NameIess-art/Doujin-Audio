@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/app/theme/app_design_tokens.dart';
 import 'package:doujin_audio/core/widgets/top_page_header.dart';
-import 'package:doujin_audio/features/asmr/presentation/asmr_providers.dart';
+import 'package:doujin_audio/features/asmr/presentation/asmr_theme.dart';
 
 Widget _buildThemedApp({
   required Widget child,

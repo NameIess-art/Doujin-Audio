@@ -353,16 +353,10 @@ final class LibraryFacade implements LibraryCatalog {
 
   Future<bool> exportTimeSegmentLabels(String trackKey) async {
     final track = _service.library
-        .where(
-          (track) =>
-              !track.isRemoteAsmr &&
-              PathMatcher.normalize(track.path) == trackKey,
-        )
+        .where((t) => !t.isRemoteAsmr && PathMatcher.normalize(t.path) == trackKey)
         .firstOrNull;
     if (track == null) return true;
-    return detailCacheService.exportTimeSegments(
-      audioDetailTargetForTrack(track),
-    );
+    return detailCacheService.exportTimeSegments(audioDetailTargetForTrack(track));
   }
 
   Future<void> deleteAudioDetail(AudioDetailTarget target) =>
@@ -398,9 +392,7 @@ final class LibraryFacade implements LibraryCatalog {
 
   Future<void> backfillMissingLibraryDurations({
     Future<Duration?> Function(String path)? durationReader,
-  }) => _metadataCoordinator.backfillMissingDurations(
-    durationReader: durationReader,
-  );
+  }) => _metadataCoordinator.backfillMissingDurations(durationReader: durationReader);
 
   Future<Duration?> calculateMissingLibraryDuration(
     String targetPath, {

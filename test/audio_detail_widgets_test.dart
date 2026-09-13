@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:path/path.dart' as path;
 import 'package:doujin_audio/app/localization/app_language_provider.dart';
 import 'package:doujin_audio/core/widgets/app_dialog.dart';
 import 'support/runtime_test_models.dart';
@@ -1077,7 +1078,10 @@ void main() {
         downloadedBytes: 0,
         startedAt: DateTime.now(),
       );
-      expect(snapshot.workRootPath, 'D:\\Audio\\Works\\RJ123456');
+      expect(
+        snapshot.workRootPath,
+        path.join('D:\\Audio\\Works', 'RJ123456'),
+      );
     });
 
     test('resolves local single audio file to its parent folder', () {

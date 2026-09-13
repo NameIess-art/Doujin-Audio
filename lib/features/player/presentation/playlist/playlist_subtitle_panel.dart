@@ -134,7 +134,7 @@ class _SessionSubtitlePanelState extends ConsumerState<SessionSubtitlePanel> {
       _subtitleText = null;
       _playbackSubtitleIndex = null;
     });
-    final subtitles = ref.read(playbackSubtitleServiceProvider);
+    final subtitles = _subtitleService;
     if (subtitles.hasResult(trackPath)) {
       _applySubtitleTrack(trackPath, subtitles.trackSync(trackPath));
       return;
@@ -188,12 +188,17 @@ class _SessionSubtitlePanelState extends ConsumerState<SessionSubtitlePanel> {
   void _handleSubtitleServiceChanged() {
     if (!mounted || !widget.subtitleEnabled) return;
     final trackPath = widget.session.currentTrackPath;
-    final subtitles = ref.read(playbackSubtitleServiceProvider);
+    final subtitles = _subtitleService;
     if (subtitles.hasResult(trackPath)) {
       final updated = subtitles.trackSync(trackPath);
       if (!identical(_subtitleTrack, updated) ||
           _subtitleTrack?.offset != updated?.offset) {
-        _applySubtitleTrack(trackPath, updated);
+        if (widget.transitionActive?.value == true) {
+          _pendingSubtitle = () => _applySubtitleTrack(trackPath, updated);
+          _schedulePendingSubtitle();
+        } else {
+          _applySubtitleTrack(trackPath, updated);
+        }
       }
     } else {
       _scheduleSubtitleTrackLoad();

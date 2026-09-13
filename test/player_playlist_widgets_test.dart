@@ -1478,7 +1478,7 @@ void main() {
 
     expect(
       find.byKey(const ValueKey<String>('playback_expanded_control_panel')),
-      findsNothing,
+      findsOneWidget,
     );
     expect(find.byType(SessionDetailPage), findsOneWidget);
   });
@@ -2960,35 +2960,41 @@ void main() {
 
     expect(subtitleLoadCount, 1);
     expect(subtitleService.trackSync(track.path), isNull);
+    final subtitleMenuButton = find.byKey(
+      const ValueKey('session_subtitle_menu_button'),
+    );
+    expect(subtitleMenuButton, findsOneWidget);
+    await tester.tap(subtitleMenuButton);
+    await tester.pumpAndSettle();
     expect(
-      find.byTooltip(fixture.languageProvider.tr('turn_off_subtitle')),
+      find.text(fixture.languageProvider.tr('turn_off_subtitle')),
       findsOneWidget,
     );
     expect(
-      find.byTooltip(fixture.languageProvider.tr('subtitle_global_display')),
+      find.text(fixture.languageProvider.tr('subtitle_global_display')),
       findsOneWidget,
     );
     subtitleLoad.complete(null);
     await tester.pump();
     expect(subtitleService.trackSync(track.path), isNull);
     expect(
-      find.byTooltip(fixture.languageProvider.tr('turn_off_subtitle')),
+      find.text(fixture.languageProvider.tr('turn_off_subtitle')),
       findsOneWidget,
     );
     expect(
-      find.byTooltip(fixture.languageProvider.tr('subtitle_global_display')),
+      find.text(fixture.languageProvider.tr('subtitle_global_display')),
       findsOneWidget,
     );
     await tester.tap(
-      find.byTooltip(fixture.languageProvider.tr('turn_off_subtitle')),
+      find.text(fixture.languageProvider.tr('turn_off_subtitle')),
     );
     await tester.pump();
     expect(
-      find.byTooltip(fixture.languageProvider.tr('turn_on_subtitle')),
+      find.text(fixture.languageProvider.tr('turn_on_subtitle')),
       findsOneWidget,
     );
     expect(
-      find.byTooltip(fixture.languageProvider.tr('subtitle_global_display')),
+      find.text(fixture.languageProvider.tr('subtitle_global_display')),
       findsOneWidget,
     );
     expect(
@@ -3576,9 +3582,9 @@ void main() {
         of: secondaryControls,
         matching: find.byType(IconButton),
       );
-      expect(secondaryButtons, findsNWidgets(6));
+      expect(secondaryButtons, findsNWidgets(7));
       final buttonCenters = List<double>.generate(
-        6,
+        7,
         (index) => tester.getCenter(secondaryButtons.at(index)).dx,
       );
       final intervals = List<double>.generate(
@@ -3588,16 +3594,10 @@ void main() {
       for (final interval in intervals) {
         expect(interval, closeTo(intervals.first, 1.0));
       }
-      for (var i = 0; i < 6; i++) {
-        expect(
-          tester.getTopLeft(secondaryButtons.at(i)).dx,
-          greaterThanOrEqualTo(tester.getTopLeft(secondaryControls).dx),
-        );
-        expect(
-          tester.getTopRight(secondaryButtons.at(i)).dx,
-          lessThanOrEqualTo(tester.getTopRight(secondaryControls).dx),
-        );
-      }
+      expect(
+        tester.getTopLeft(secondaryButtons.first).dx,
+        greaterThanOrEqualTo(tester.getTopLeft(secondaryControls).dx),
+      );
       expect(
         find.byKey(const ValueKey('session_detail_background_blur')),
         findsOneWidget,

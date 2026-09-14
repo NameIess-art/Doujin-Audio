@@ -423,10 +423,10 @@ class PlaybackSession {
     _durationController.add(duration);
   }
 
-  void resetStreamsForNewTrack() {
+  void resetStreamsForNewTrack({Duration position = Duration.zero}) {
     if (isDisposed) return;
-    lastKnownPosition = Duration.zero;
-    _positionController.add(Duration.zero);
+    lastKnownPosition = position;
+    _positionController.add(position);
     duration = null;
     _durationController.add(null);
     bufferedPosition = Duration.zero;

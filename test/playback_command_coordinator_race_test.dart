@@ -35,6 +35,93 @@ void main() {
   });
 
   group('multi-session playback stability', () {
+    test(
+      'renaming a queued track updates native queue without restarting current',
+      () async {
+        MusicTrack track(String path) => MusicTrack(
+          path: PathMatcher.normalize(path),
+          displayName: path,
+          groupKey: '/music',
+          groupTitle: 'Music',
+          groupSubtitle: '',
+          isSingle: true,
+        );
+        final first = track('/music/first.mp3');
+        final second = track('/music/second.mp3');
+        final session = runtimeGraph.playback.createTrackSession(
+          first,
+          customQueueTracks: [first, second],
+        )..loadedPath = first.path;
+        session.setOptimisticPosition(const Duration(seconds: 42));
+        final queues = <Map<Object?, Object?>>[];
+        var preparations = 0;
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(nativePlaybackChannel, (call) async {
+              if (call.method == NativePlaybackMethod.setRepeatOne) {
+                queues.add(Map<Object?, Object?>.from(call.arguments as Map));
+              }
+              if (call.method == NativePlaybackMethod.prepareSession) {
+                preparations++;
+              }
+              return <String, Object?>{'ok': true, 'value': null};
+            });
+
+        await runtimeGraph.playback.retargetPath(
+          second.path,
+          '/music/renamed.mp3',
+        );
+
+        expect(preparations, 0);
+        expect(queues, hasLength(1));
+        expect(
+          (queues.single['queue'] as List).last['path'],
+          PathMatcher.normalize('/music/renamed.mp3'),
+        );
+        expect(session.currentTrackPath, first.path);
+        expect(session.position, const Duration(seconds: 42));
+      },
+    );
+
+    for (final playing in [false, true]) {
+      test('retarget reload preserves position and playing=$playing', () async {
+        final track = MusicTrack(
+          path: PathMatcher.normalize('/music/old/01.mp3'),
+          displayName: '01',
+          groupKey: '/music/old',
+          groupTitle: 'Old',
+          groupSubtitle: '',
+          isSingle: false,
+        );
+        final session = runtimeGraph.playback.createTrackSession(
+          track,
+          customQueueTracks: [track],
+        )..loadedPath = track.path;
+        session.setOptimisticPosition(const Duration(seconds: 42));
+        session.setOptimisticState(playing: playing);
+        final preparations = <Map<Object?, Object?>>[];
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(nativePlaybackChannel, (call) async {
+              if (call.method == NativePlaybackMethod.prepareSession) {
+                preparations.add(
+                  Map<Object?, Object?>.from(call.arguments as Map),
+                );
+              }
+              return <String, Object?>{'ok': true, 'value': null};
+            });
+
+        await runtimeGraph.playback.retargetPath('/music/old', '/music/new');
+
+        expect(preparations, hasLength(1));
+        expect(preparations.single['startPositionMs'], 42000);
+        expect(
+          preparations.single['path'],
+          PathMatcher.normalize('/music/new/01.mp3'),
+        );
+        expect(session.position, const Duration(seconds: 42));
+        expect(session.playbackRequested, playing);
+      });
+    }
+
     test('initial state has no active sessions', () {
       expect(runtimeGraph.playback.activeSessions, isEmpty);
     });

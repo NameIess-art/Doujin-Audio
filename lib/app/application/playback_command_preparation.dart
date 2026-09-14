@@ -250,14 +250,21 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
     if (coverPath == null) {
       unawaited(_resolveNotificationCoverPathForTrack(track));
     }
-    final isNewTrack =
-        session.loadedPath != resolvedPath ||
-        (targetQueueIndex != null &&
-            targetQueueIndex != session.currentQueueIndex);
+    final queueIndexChanged =
+        targetQueueIndex != null &&
+        targetQueueIndex != session.currentQueueIndex;
+    final isNewTrack = session.loadedPath != resolvedPath || queueIndexChanged;
     final isInitialLoad = session.loadedPath == null;
+    final logicalTrackChanged =
+        queueIndexChanged ||
+        (!isInitialLoad &&
+            !PathMatcher.equalsNormalized(
+              _playbackFacade.resolveRetargetedPath(session.loadedPath!),
+              resolvedPath,
+            ));
     final startPosition =
         startPositionOverride ??
-        (forceStartAtZero || (isNewTrack && !isInitialLoad)
+        (forceStartAtZero || (!isInitialLoad && logicalTrackChanged)
             ? Duration.zero
             : session.lastKnownPosition);
     return _PlaybackPreparationTarget(
@@ -294,7 +301,7 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
     }
     if (target.isNewTrack) {
       if (!target.isInitialLoad) {
-        session.resetStreamsForNewTrack();
+        session.resetStreamsForNewTrack(position: target.startPosition);
       }
       final trackDuration = target.track?.duration ?? Duration.zero;
       if (trackDuration > Duration.zero) {

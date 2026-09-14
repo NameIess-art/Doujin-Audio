@@ -179,7 +179,9 @@ extension PlaybackQueuePathCoordinator on PlaybackFacade {
             return PlaybackQueueEntry(
               id: entry.id,
               kind: entry.kind,
-              title: entry.title,
+              title: entry.kind == PlaybackQueueEntryKind.track
+                  ? updatedTrack.displayName
+                  : entry.title,
               tracks: List<MusicTrack>.unmodifiable(tracks),
               workRootPath: entry.workRootPath,
             );
@@ -237,7 +239,105 @@ extension PlaybackQueuePathCoordinator on PlaybackFacade {
     rememberRetargetedPath(oldPath, newPath);
     var changed = false;
     final sessionsToReload = <PlaybackSession>[];
+    final sessionsToSyncQueue = <PlaybackSession>[];
+    var retargetedTracks = 0;
+    MusicTrack retargetTrack(MusicTrack track) {
+      if (!PathMatcher.isWithinOrEqual(track.path, oldPath)) return track;
+      changed = true;
+      retargetedTracks++;
+      final nextPath = PathMatcher.replaceWithinOrEqual(
+        track.path,
+        oldPath,
+        newPath,
+      );
+      final resolved = _persistedTrackResolver?.call(nextPath);
+      if (resolved != null) return resolved;
+      final groupKey = PathMatcher.replaceWithinOrEqual(
+        track.groupKey,
+        oldPath,
+        newPath,
+      );
+      String? retargetNullable(String? value) => value == null
+          ? null
+          : PathMatcher.replaceWithinOrEqual(value, oldPath, newPath);
+      return MusicTrack(
+        path: nextPath,
+        displayName: PathMatcher.equalsNormalized(track.path, oldPath)
+            ? PathDisplay.fileName(newPath)
+            : track.displayName,
+        groupKey: groupKey,
+        groupTitle: groupKey != track.groupKey
+            ? PathDisplay.folderName(groupKey)
+            : track.groupTitle,
+        groupSubtitle: groupKey != track.groupKey
+            ? PathDisplay.displayPathFor(groupKey)
+            : track.groupSubtitle,
+        isSingle: track.isSingle,
+        isVideo: track.isVideo,
+        scannedAt: track.scannedAt,
+        fileSizeBytes: track.fileSizeBytes,
+        modifiedAt: track.modifiedAt,
+        lastPlayedPosition: track.lastPlayedPosition,
+        lastPlayedAt: track.lastPlayedAt,
+        isFavorite: track.isFavorite,
+        tags: track.tags,
+        coverCachePath: retargetNullable(track.coverCachePath),
+        lyricsPath: retargetNullable(track.lyricsPath),
+        manualCoverPath: retargetNullable(track.manualCoverPath),
+        remoteCoverUrl: track.remoteCoverUrl,
+        remoteMetadataKind: track.remoteMetadataKind,
+        remoteMetadata: track.remoteMetadata,
+        duration: track.duration,
+      );
+    }
+
     for (final session in _service.sessions.values) {
+      final previousRetargetedTracks = retargetedTracks;
+      final customTracks = session.customQueueTracks;
+      if (customTracks != null) {
+        final tracks = customTracks.map(retargetTrack).toList(growable: false);
+        if (retargetedTracks != previousRetargetedTracks) {
+          session.customQueueTracks = List.unmodifiable(tracks);
+        }
+      }
+      final queue = session.playbackQueue;
+      if (queue != null) {
+        final entries = queue.entries
+            .map((entry) {
+              final tracks = entry.tracks
+                  .map(retargetTrack)
+                  .toList(growable: false);
+              final oldRoot = entry.workRootPath;
+              final root = oldRoot == null
+                  ? null
+                  : PathMatcher.replaceWithinOrEqual(oldRoot, oldPath, newPath);
+              final rootChanged = root != oldRoot;
+              final tracksChanged = tracks.indexed.any(
+                (item) => !identical(item.$2, entry.tracks[item.$1]),
+              );
+              if (!rootChanged && !tracksChanged) return entry;
+              changed = true;
+              return PlaybackQueueEntry(
+                id: entry.id,
+                kind: entry.kind,
+                title:
+                    entry.kind == PlaybackQueueEntryKind.track &&
+                        tracks.isNotEmpty
+                    ? tracks.first.displayName
+                    : rootChanged
+                    ? PathDisplay.folderName(root!)
+                    : entry.title,
+                tracks: tracks,
+                workRootPath: root,
+              );
+            })
+            .toList(growable: false);
+        if (entries.indexed.any(
+          (item) => !identical(item.$2, queue.entries[item.$1]),
+        )) {
+          session.playbackQueue = queue.copyWith(entries: entries);
+        }
+      }
       if (PathMatcher.isWithinOrEqual(session.currentTrackPath, oldPath)) {
         session.currentTrackPath = PathMatcher.replaceWithinOrEqual(
           session.currentTrackPath,
@@ -254,10 +354,14 @@ extension PlaybackQueuePathCoordinator on PlaybackFacade {
         // change instead of treating the stale ExoPlayer item as current.
         sessionsToReload.add(session);
         changed = true;
+      } else if (loadedPath != null &&
+          retargetedTracks != previousRetargetedTracks) {
+        sessionsToSyncQueue.add(session);
       }
     }
     if (!changed) return;
     _service.markActiveSessionsDirty();
+    _onSessionStateChanged?.call();
     final current = _service.slice.state;
     _service.syncSlice(
       activeSessions: _service.activeSessions,
@@ -282,6 +386,10 @@ extension PlaybackQueuePathCoordinator on PlaybackFacade {
         });
       }
       await _service.sessionPreparationQueue;
+    }
+    for (final session in sessionsToSyncQueue) {
+      if (!isRegisteredSession(session)) continue;
+      await _synchronizeLoopMode?.call(session, session.loopMode);
     }
     await savePersistedState();
   }

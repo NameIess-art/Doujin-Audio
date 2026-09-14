@@ -10,6 +10,7 @@ import 'package:doujin_audio/app/application/audio_path_coordinator.dart';
 import 'support/runtime_test_models.dart';
 import 'package:doujin_audio/core/app_language.dart';
 import 'package:doujin_audio/core/persistence/app_database.dart';
+import 'package:doujin_audio/core/media/path_matcher.dart';
 import 'support/test_persistence_repository.dart';
 import 'package:doujin_audio/features/library/application/audio_detail_document_repository.dart';
 import 'package:doujin_audio/features/library/application/cover_artwork_cache_service.dart';
@@ -583,6 +584,85 @@ void main() {
   });
 
   group('audio detail rename target name', () {
+    test(
+      'renamed work updates existing session and queue cover selections',
+      () async {
+        await fixture.settings.setPreferEmbeddedAudioCover(false);
+        final directory = await Directory.systemTemp.createTemp(
+          'queue_work_rename_',
+        );
+        addTearDown(() => directory.delete(recursive: true));
+        final source = await Directory(
+          PathMatcher.join(directory.path, 'Old'),
+        ).create();
+        final audio = File(PathMatcher.join(source.path, '01.mp3'));
+        await audio.writeAsBytes([1, 2, 3]);
+        final cover = File(PathMatcher.join(source.path, 'cover.jpg'));
+        final replacement = File(PathMatcher.join(source.path, 'other.jpg'));
+        await cover.writeAsBytes([4, 5, 6]);
+        await replacement.writeAsBytes([7, 8, 9]);
+        final track = MusicTrack(
+          path: audio.path,
+          displayName: '01',
+          groupKey: source.path,
+          groupTitle: 'Old',
+          groupSubtitle: source.path,
+          isSingle: false,
+        );
+        runtimeGraph.library.addWatchedFolder(source.path, notify: false);
+        runtimeGraph.library.addTracks([track], notify: false, persist: false);
+        final ordinary = runtimeGraph.playback.createTrackSession(
+          track,
+          customQueueTracks: [track],
+        );
+        final queue = runtimeGraph.playback.createPlaybackQueue('My queue');
+        await runtimeGraph.playback.addWorkToPlaybackQueue(
+          queue.id,
+          title: 'Old',
+          tracks: [track],
+          workRootPath: source.path,
+        );
+        await runtimeGraph.library.setFolderManualCover(
+          source.path,
+          cover.path,
+        );
+        expect(
+          await runtimeGraph.library.playbackCoverPathFutureForTrack(
+            queue.playbackQueue!.expandedTracks.single,
+          ),
+          cover.path,
+        );
+
+        final result = await pathCoordinator.renameAudioDetailTargetToName(
+          AudioDetail.empty(AudioDetailTarget.libraryRootFolder(source.path)),
+          'New',
+        );
+        final root = result.detail.target.targetPath;
+        final renamedCover = PathMatcher.join(root, 'other.jpg');
+        final generation = runtimeGraph.playback.state.coverGeneration;
+        await runtimeGraph.library.setFolderManualCover(root, renamedCover);
+
+        expect(queue.playbackQueue!.name, 'My queue');
+        expect(queue.playbackQueue!.entries.single.title, 'New');
+        expect(queue.playbackQueue!.entries.single.workRootPath, root);
+        expect(
+          runtimeGraph.playback.state.coverGeneration,
+          greaterThan(generation),
+        );
+        for (final updated in [
+          ordinary.customQueueTracks!.single,
+          queue.playbackQueue!.expandedTracks.single,
+        ]) {
+          expect(updated.path, PathMatcher.join(root, '01.mp3'));
+          expect(updated.groupTitle, 'New');
+          expect(
+            await runtimeGraph.library.playbackCoverPathFutureForTrack(updated),
+            renamedCover,
+          );
+        }
+      },
+    );
+
     test(
       'renames a single audio file while preserving its extension',
       () async {

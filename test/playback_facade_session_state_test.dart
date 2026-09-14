@@ -1260,6 +1260,89 @@ void main() {
     },
   );
 
+  for (final root in <String>['/library/旧作品', r'C:\音频库\旧作品']) {
+    test('retarget updates inactive queue snapshots under $root', () async {
+      final playback = PlaybackFacade.create(
+        databaseRepository: _RecordingTestPersistenceRepository(),
+      )..configurePersistence(enabled: false);
+      final track = MusicTrack(
+        path: PathMatcher.join(root, 'track.mp3'),
+        displayName: 'track.mp3',
+        groupKey: root,
+        groupTitle: '旧作品',
+        groupSubtitle: root,
+        isSingle: false,
+        manualCoverPath: PathMatcher.join(root, 'cover.jpg'),
+        duration: const Duration(minutes: 3),
+        tags: const ['标签'],
+      );
+      final session = _session('queue-retarget')
+        ..currentTrackPath = '/unrelated/playing.mp3'
+        ..currentQueueIndex = 1
+        ..lastKnownPosition = const Duration(seconds: 17)
+        ..customQueueTracks = [track]
+        ..playbackQueue = PlaybackQueueDefinition(
+          name: '我的队列',
+          entries: [
+            PlaybackQueueEntry(
+              id: 'work',
+              kind: PlaybackQueueEntryKind.work,
+              title: '旧作品',
+              tracks: [track],
+              workRootPath: root,
+            ),
+            PlaybackQueueEntry(
+              id: 'track',
+              kind: PlaybackQueueEntryKind.track,
+              title: track.displayName,
+              tracks: [track],
+            ),
+          ],
+        );
+      playback.registerSession(session);
+      addTearDown(playback.dispose);
+      final nextRoot = root.replaceFirst('旧作品', '新作品');
+
+      await playback.retargetPath(root, nextRoot);
+
+      final queue = session.playbackQueue!;
+      expect(queue.name, '我的队列');
+      expect(queue.entries.map((entry) => entry.id), ['work', 'track']);
+      expect(queue.entries.first.title, '新作品');
+      expect(queue.entries.first.workRootPath, nextRoot);
+      expect(
+        session.customQueueTracks!.first.path,
+        PathMatcher.join(nextRoot, 'track.mp3'),
+      );
+      expect(
+        queue.expandedTracks.every((item) => item.groupTitle == '新作品'),
+        isTrue,
+      );
+      expect(
+        queue.expandedTracks.first.manualCoverPath,
+        PathMatcher.join(nextRoot, 'cover.jpg'),
+      );
+      expect(queue.expandedTracks.first.tags, ['标签']);
+      expect(session.currentTrackPath, '/unrelated/playing.mp3');
+      expect(session.currentQueueIndex, 1);
+      expect(session.lastKnownPosition, const Duration(seconds: 17));
+
+      final renamed = PathMatcher.join(nextRoot, 'renamed.mp3');
+      await playback.retargetPath(
+        PathMatcher.join(nextRoot, 'track.mp3'),
+        renamed,
+      );
+      expect(session.playbackQueue!.entries.last.title, 'renamed.mp3');
+      expect(session.playbackQueue!.entries.first.title, '新作品');
+      expect(
+        session.playbackQueue!.expandedTracks.every(
+          (item) => item.path == renamed,
+        ),
+        isTrue,
+      );
+    });
+  }
+
   test(
     'PlaybackFacade owns debounced session persistence scheduling',
     () async {

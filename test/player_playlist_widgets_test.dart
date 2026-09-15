@@ -2646,7 +2646,7 @@ void main() {
     final editAudioIcon = tester.widget<Container>(
       find.byKey(
         ValueKey(
-          'playback_queue_edit_tile_icon_${Icons.queue_music_rounded.codePoint}',
+          'playback_queue_edit_tile_icon_${Icons.playlist_play_rounded.codePoint}',
         ),
       ),
     );

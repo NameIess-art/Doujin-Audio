@@ -1,7 +1,7 @@
 name: doujin_audio
 description: Local audio player for multi-session ASMR and voice library playback.
 publish_to: 'none'
-version: 0.24.0+2400
+version: 0.24.1+2410
 
 environment:
   sdk: ^3.11.1

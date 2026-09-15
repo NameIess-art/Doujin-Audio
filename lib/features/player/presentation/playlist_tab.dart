@@ -434,7 +434,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                         context,
                         i18n.tr('queue_add_audio_first'),
                         tone: AppFeedbackTone.warning,
-                        icon: Icons.queue_music_rounded,
+                        icon: Icons.playlist_play_rounded,
                       )
                     : _openSessionDetail(context, session.id),
                 onEdit: () => _openQueueEditor(context, session.id),

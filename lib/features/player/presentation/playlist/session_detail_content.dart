@@ -898,7 +898,7 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
                         this.context,
                         i18n.tr('switch_audio'),
                         tone: AppFeedbackTone.success,
-                        icon: Icons.queue_music_rounded,
+                        icon: Icons.playlist_play_rounded,
                       );
                     }
                   }());
@@ -1059,7 +1059,7 @@ class _QueueSheetHeader extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(2, 0, 2, 6),
       child: Row(
         children: [
-          Icon(Icons.queue_music_rounded, size: 20, color: cs.primary),
+          Icon(Icons.playlist_play_rounded, size: 20, color: cs.primary),
           const SizedBox(width: 8),
           Expanded(
             child: Text(

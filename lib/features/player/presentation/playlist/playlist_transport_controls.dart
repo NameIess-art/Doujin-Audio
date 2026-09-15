@@ -651,7 +651,7 @@ class _PlaybackSecondaryControlsState
                   onPressed: widget.onToggleSegments,
                 ),
                 _SecondaryControlButton(
-                  icon: Icons.queue_music_rounded,
+                  icon: Icons.playlist_play_rounded,
                   tooltip: i18n.tr('switch_audio'),
                   onPressed: widget.hasSiblings
                       ? widget.onShowTrackSwitcher

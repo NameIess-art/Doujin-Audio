@@ -667,7 +667,7 @@ class _PlaybackQueueEditPageState extends ConsumerState<PlaybackQueueEditPage> {
                         borderRadius: BorderRadius.circular(tokens.radiusSmall),
                       ),
                       child: Icon(
-                        Icons.queue_music_rounded,
+                        Icons.playlist_play_rounded,
                         color: queueColor,
                         size: 22,
                       ),
@@ -724,7 +724,7 @@ class _PlaybackQueueEditPageState extends ConsumerState<PlaybackQueueEditPage> {
                     children: [
                       _queueEditTile(
                         context,
-                        Icons.queue_music_rounded,
+                        Icons.playlist_play_rounded,
                         i18n.tr('edit_queue_audio'),
                         () => Navigator.of(context).push(
                           buildAppPageRoute<void>(
@@ -1146,7 +1146,7 @@ class _PlaybackQueueAudioEditPageState
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 Icon(
-                                  Icons.queue_music_rounded,
+                                  Icons.playlist_play_rounded,
                                   size: 16,
                                   color: cs.primary,
                                 ),
@@ -1293,7 +1293,7 @@ class _PlaybackQueueAudioEditPageState
             left: 0,
             right: 0,
             child: TopPageHeader(
-              icon: Icons.queue_music_rounded,
+              icon: Icons.playlist_play_rounded,
               leading: IconButton(
                 tooltip: i18n.tr('close'),
                 onPressed: () => Navigator.of(context).maybePop(),

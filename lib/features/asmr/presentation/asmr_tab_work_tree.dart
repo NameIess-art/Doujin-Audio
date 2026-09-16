@@ -187,7 +187,8 @@ class _AsmrWorkTreeCardState extends ConsumerState<_AsmrWorkTreeCard> {
     final useCompactCard = fields.isEmpty;
     const cardShape = LibraryLikeCardMetrics.cardShape;
 
-    return GestureDetector(
+    return InkWell(
+      canRequestFocus: widget.isSelectionMode,
       onLongPress: widget.onLongPress,
       onTap: widget.isSelectionMode ? widget.onToggleSelect : null,
       child: SwipeRevealCard(

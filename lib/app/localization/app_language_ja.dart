@@ -1,4 +1,13 @@
 const Map<String, String> appLanguageJa = {
+  'keyboard_shortcuts_title': 'キーボードショートカット',
+  'keyboard_shortcuts_local':
+      'アプリ内\nSpace / Ctrl + Space：再生 / 一時停止\nCtrl + ← / →：前 / 次の曲\nAlt + ← / →：5 秒戻る / 進む\nAlt + ↑ / ↓：音量を 5% 上げる / 下げる\nCtrl + 1–4：ライブラリ / 再生 / ASMR / 設定\nTab / Shift + Tab：次 / 前の操作項目\nEnter / Space：選択中の項目を実行\n矢印キー：スライダー調整・項目選択\nEsc：戻る・ダイアログを閉じる\nF1：このヘルプを表示\nテキスト入力中は編集キーを優先します。',
+  'keyboard_shortcuts_global':
+      'システム全体（バックグラウンドでも有効）\nCtrl + Alt + Space：再生 / 一時停止\nCtrl + Alt + ← / →：前 / 次の曲\nCtrl + Alt + ↑：メインウィンドウを表示',
+  'keyboard_shortcuts_registered': '有効',
+  'keyboard_shortcuts_unavailable': '登録失敗：競合または使用不可',
+  'keyboard_shortcuts_status_error': 'グローバルショートカットの状態を取得できません',
+
   'app_title': 'Doujin Audio',
   'startup_initializing': 'Doujin Audio を起動しています…',
   'startup_error_title': 'Doujin Audio を起動できませんでした',

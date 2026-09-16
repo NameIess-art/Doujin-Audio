@@ -84,6 +84,8 @@ DesktopIntegration::DesktopIntegration(HWND window, flutter::BinaryMessenger* me
         quitting_ = true; result->Success(); PostMessage(window_,WM_CLOSE,0,0);
       } else if (call.method_name() == "setFullscreen") {
         SetFullscreen(RequiredBool(Arguments(call),"enabled")); result->Success();
+      } else if (call.method_name() == "getHotkeyStatus") {
+        result->Success(Value(media_->HotkeyStatus()));
       } else { result->NotImplemented(); }
     } catch (const std::invalid_argument& e) { result->Error("invalid_argument",e.what()); }
       catch (const std::exception& e) { result->Error("desktop_error",e.what()); }
@@ -248,6 +250,11 @@ void DesktopIntegration::SetFullscreen(bool enabled) {
   }
 }
 std::optional<LRESULT> DesktopIntegration::HandleMessage(UINT message, WPARAM wp, LPARAM lp) {
+  if (auto action = media_->HandleMessage(message, wp)) {
+    if (*action == "showWindow") Show();
+    else if (!action->empty()) Action(*action);
+    return 0;
+  }
   if (message == kTaskbarCreated) { AddTray(); return 0; }
   if (message == kActivate) { if (wp == 0) Show(); else Action("resume"); return 0; }
   if (message == WM_EXITSIZEMOVE) SavePlacement();

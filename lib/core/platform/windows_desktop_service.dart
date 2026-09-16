@@ -22,5 +22,15 @@ class WindowsDesktopService {
   Future<void> setFullscreen(bool enabled) =>
       _channel.invokeMethod<void>('setFullscreen', {'enabled': enabled});
 
+  Future<Map<String, bool>> getHotkeyStatus() async {
+    final status = await _channel.invokeMapMethod<String, bool>(
+      'getHotkeyStatus',
+    );
+    if (status == null) {
+      throw const FormatException('Missing Windows hotkey registration status');
+    }
+    return status;
+  }
+
   Future<void> exit() => _channel.invokeMethod<void>('exit');
 }

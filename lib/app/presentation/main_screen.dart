@@ -1022,7 +1022,33 @@ class _MainScreenState extends ConsumerState<MainScreen>
       key: const ValueKey<String>('main_screen_keyboard_inset_boundary'),
       context: context,
       removeBottom: true,
-      child: content,
+      child: defaultTargetPlatform == TargetPlatform.windows
+          ? CallbackShortcuts(
+              bindings: {
+                for (final (index, key) in [
+                  LogicalKeyboardKey.digit1,
+                  LogicalKeyboardKey.digit2,
+                  LogicalKeyboardKey.digit3,
+                  LogicalKeyboardKey.digit4,
+                ].indexed)
+                  SingleActivator(key, control: true): () {
+                    if (index < _currentDestinations().length) {
+                      _switchPage(index);
+                    }
+                  },
+                for (final backwards in [false, true])
+                  SingleActivator(
+                    LogicalKeyboardKey.tab,
+                    control: true,
+                    shift: backwards,
+                  ): () => _switchPage(
+                    (_activePageIndex.value + (backwards ? -1 : 1)) %
+                        _currentDestinations().length,
+                  ),
+              },
+              child: Focus(autofocus: true, skipTraversal: true, child: content),
+            )
+          : content,
     );
   }
 }

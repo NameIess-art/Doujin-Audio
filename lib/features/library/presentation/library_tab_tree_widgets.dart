@@ -598,7 +598,8 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
           )
         : content;
 
-    final result = GestureDetector(
+    final result = InkWell(
+      canRequestFocus: widget.isSelectionMode,
       onLongPress: widget.onLongPress,
       onTap: widget.isSelectionMode ? widget.onToggleSelect : null,
       child: SwipeRevealCard(
@@ -760,7 +761,8 @@ class _TrackNodeWidget extends ConsumerWidget {
     }
 
     Widget buildSingleTrackCard(bool useFeaturedCard) {
-      return GestureDetector(
+      return InkWell(
+        canRequestFocus: isSelectionMode,
         onLongPress: onLongPress,
         onTap: isSelectionMode ? onToggleSelect : null,
         child: SwipeRevealCard(

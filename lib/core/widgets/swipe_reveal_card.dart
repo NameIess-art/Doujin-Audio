@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'app_feedback.dart';
 
@@ -173,12 +174,16 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
     });
   }
 
-  Future<void> _showContextMenu(TapDownDetails details) async {
+  Future<void> _showContextMenu([TapDownDetails? details]) async {
     if (!widget.enabled) return;
     widget.onWillReveal?.call();
     final overlay =
         Overlay.of(context).context.findRenderObject()! as RenderBox;
-    final position = overlay.globalToLocal(details.globalPosition);
+    final box = context.findRenderObject()! as RenderBox;
+    final position = overlay.globalToLocal(
+      details?.globalPosition ??
+          box.localToGlobal(box.size.center(Offset.zero)),
+    );
     PopupMenuItem<VoidCallback> item(
       String label,
       Widget icon,
@@ -205,6 +210,7 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
     );
     final action = await showMenu<VoidCallback>(
       context: context,
+      requestFocus: true,
       position: RelativeRect.fromSize(position & Size.zero, overlay.size),
       items: [
         if (_hasLeadingAction)
@@ -426,10 +432,24 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
     if (defaultTargetPlatform == TargetPlatform.windows) {
       return Padding(
         padding: widget.margin,
-        child: GestureDetector(
-          behavior: HitTestBehavior.translucent,
-          onSecondaryTapDown: widget.enabled ? _showContextMenu : null,
-          child: closedContent,
+        child: CallbackShortcuts(
+          bindings: widget.enabled
+              ? {
+                  const SingleActivator(LogicalKeyboardKey.f10, shift: true):
+                      _showContextMenu,
+                  const SingleActivator(LogicalKeyboardKey.contextMenu):
+                      _showContextMenu,
+                }
+              : const {},
+          child: Focus(
+            canRequestFocus: widget.enabled,
+            skipTraversal: true,
+            child: GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onSecondaryTapDown: widget.enabled ? _showContextMenu : null,
+              child: closedContent,
+            ),
+          ),
         ),
       );
     }

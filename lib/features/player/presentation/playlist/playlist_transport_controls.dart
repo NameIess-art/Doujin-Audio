@@ -588,7 +588,7 @@ class _PlaybackSecondaryControlsState
                 ),
               ),
             ),
-            GestureDetector(
+            InkWell(
               key: const ValueKey('session_volume_percent_text'),
               onTap: () => _showVolumeInputDialog(context),
               child: Padding(

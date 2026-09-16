@@ -523,7 +523,18 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp> {
           ),
           child: ColoredBox(
             color: Theme.of(context).colorScheme.surface,
-            child: child ?? const SizedBox(),
+            child: defaultTargetPlatform == TargetPlatform.windows
+                ? ListenableBuilder(
+                    listenable: _runtimeBootstrapController,
+                    child: child ?? const SizedBox(),
+                    builder: (context, child) => GlobalShortcuts(
+                      enabled: _runtimeBootstrapController.state.phase ==
+                          AppBootstrapPhase.ready,
+                      navigatorKey: _navigatorKey,
+                      child: child!,
+                    ),
+                  )
+                : child ?? const SizedBox(),
           ),
         );
       },
@@ -533,7 +544,9 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp> {
         child: AppBootstrapGate(
           controller: _runtimeBootstrapController,
           disposeController: false,
-          readyBuilder: (_) => const GlobalShortcuts(child: MainScreen()),
+          readyBuilder: (_) => defaultTargetPlatform == TargetPlatform.windows
+              ? const MainScreen()
+              : const GlobalShortcuts(child: MainScreen()),
           loadingBuilder: (_) => const AppBootstrapLoadingView(),
           failureBuilder: (_, state) => AppErrorView(
             error: state.error ?? StateError('Unknown runtime startup failure'),

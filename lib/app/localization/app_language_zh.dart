@@ -1,4 +1,13 @@
 const Map<String, String> appLanguageZh = {
+  'keyboard_shortcuts_title': '键盘快捷键',
+  'keyboard_shortcuts_local':
+      '窗口内\nSpace / Ctrl + Space：播放或暂停\nCtrl + ← / →：上一曲 / 下一曲\nAlt + ← / →：快退 / 快进 5 秒\nAlt + ↑ / ↓：音量增加 / 减少 5%\nCtrl + 1–4：媒体库 / 播放 / ASMR / 设置\nTab / Shift + Tab：下一个 / 上一个控件\nEnter / Space：激活当前控件\n方向键：调整滑块或切换选项\nEsc：返回或关闭对话框\nF1：显示本帮助\n文本输入时保留编辑按键。',
+  'keyboard_shortcuts_global':
+      '系统全局（窗口在后台时也可用）\nCtrl + Alt + Space：播放或暂停\nCtrl + Alt + ← / →：上一曲 / 下一曲\nCtrl + Alt + ↑：显示主窗口',
+  'keyboard_shortcuts_registered': '已启用',
+  'keyboard_shortcuts_unavailable': '注册失败：快捷键冲突或不可用',
+  'keyboard_shortcuts_status_error': '无法查询全局快捷键状态',
+
   'app_title': 'Doujin Audio',
   'startup_initializing': '正在启动 Doujin Audio…',
   'startup_error_title': 'Doujin Audio 启动失败',

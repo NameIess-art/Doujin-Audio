@@ -58,6 +58,14 @@ void main() {
         await overlay.stopOverlay();
         await WindowsDesktopService.instance.setFullscreen(true);
         await WindowsDesktopService.instance.setFullscreen(false);
+        const desktop = MethodChannel('doujin_audio/windows_desktop');
+        final hotkeys = await desktop.invokeMapMethod<String, bool>(
+          'getHotkeyStatus',
+        );
+        expect(hotkeys?.keys, unorderedEquals([
+          'toggle', 'previous', 'next', 'showWindow',
+        ]));
+        expect(hotkeys?.values, everyElement(isA<bool>()));
         final resumed = Completer<void>();
         await WindowsDesktopService.instance.attach((action) async {
           if (action == 'resume' && !resumed.isCompleted) resumed.complete();

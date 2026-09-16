@@ -169,7 +169,7 @@ class _SpeedWheelPageState extends ConsumerState<SpeedWheelPage> {
                       if (index < 0 || index >= _speeds.length) return null;
                       final speed = _speeds[index];
                       final selected = index == _selectedIndex;
-                      return GestureDetector(
+                      return InkWell(
                         onTap: () {
                           _wheelTargetIndex = null;
                           AppInteractionFeedback.trigger(

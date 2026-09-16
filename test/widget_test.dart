@@ -178,6 +178,35 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('Windows keyboard navigates visible main destinations', (tester) async {
+    await _pumpAppShell(tester);
+    debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+    addTearDown(() => debugDefaultTargetPlatformOverride = null);
+    tester.element(find.byType(MainScreen)).markNeedsBuild();
+    await tester.pump();
+    final stack = find.byKey(const ValueKey<String>('main_page_stack'));
+    Focus.of(tester.element(stack)).requestFocus();
+    await tester.pump();
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.digit4);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await _pumpMainScreenAnimations(tester);
+    expect(tester.widget<AppFadeThroughIndexedStack>(stack).index, 3);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await _pumpMainScreenAnimations(tester);
+    expect(tester.widget<AppFadeThroughIndexedStack>(stack).index, 2);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await _pumpMainScreenAnimations(tester);
+    expect(tester.widget<AppFadeThroughIndexedStack>(stack).index, 3);
+    debugDefaultTargetPlatformOverride = null;
+  });
+
   testWidgets('Windows foreground restore keeps subtitle overlay enabled', (tester) async {
     final calls = <String>[];
     const channel = MethodChannel('doujin_audio/subtitle_overlay');

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../ui/ui_interaction_coordinator.dart';
 import '../../app/theme/app_design_tokens.dart';
@@ -209,36 +210,48 @@ class _UnifiedPopupOverlay<T> extends StatelessWidget {
       reverseCurve: Curves.easeInCubic,
     );
 
-    return Material(
-      color: Colors.transparent,
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          Positioned.fill(
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: onDismiss,
-              child: const SizedBox.expand(),
-            ),
-          ),
-          Positioned(
-            left: rect.left,
-            top: rect.top,
-            width: rect.width,
-            child: FadeTransition(
-              opacity: curved,
-              child: ScaleTransition(
-                alignment: Alignment.topRight,
-                scale: Tween<double>(begin: 0.96, end: 1).animate(curved),
-                child: _UnifiedPopupMenuCard<T>(
-                  entries: entries,
-                  onSelected: onSelected,
-                  onTrailingSelected: onTrailingSelected,
+    return CallbackShortcuts(
+      bindings: {const SingleActivator(LogicalKeyboardKey.escape): onDismiss},
+      child: Shortcuts(
+        shortcuts: const {
+          SingleActivator(LogicalKeyboardKey.arrowDown): NextFocusIntent(),
+          SingleActivator(LogicalKeyboardKey.arrowUp): PreviousFocusIntent(),
+        },
+        child: FocusScope(
+          autofocus: true,
+          child: Material(
+            color: Colors.transparent,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                Positioned.fill(
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: onDismiss,
+                    child: const SizedBox.expand(),
+                  ),
                 ),
-              ),
+                Positioned(
+                  left: rect.left,
+                  top: rect.top,
+                  width: rect.width,
+                  child: FadeTransition(
+                    opacity: curved,
+                    child: ScaleTransition(
+                      alignment: Alignment.topRight,
+                      scale: Tween<double>(begin: 0.96, end: 1).animate(curved),
+                      child: _UnifiedPopupMenuCard<T>(
+                        entries: entries,
+                        onSelected: onSelected,
+                        onTrailingSelected: onTrailingSelected,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
-        ],
+        ),
       ),
     );
   }
@@ -289,6 +302,12 @@ class _UnifiedPopupMenuCard<T> extends StatelessWidget {
                 .map(
                   (entry) => _UnifiedPopupMenuRow<T>(
                     entry: entry,
+                    autofocus: identical(
+                      entry,
+                      entries
+                          .where((item) => item.enabled && !item.divider)
+                          .firstOrNull,
+                    ),
                     onSelected: onSelected,
                     onTrailingSelected: onTrailingSelected,
                   ),
@@ -304,11 +323,13 @@ class _UnifiedPopupMenuCard<T> extends StatelessWidget {
 class _UnifiedPopupMenuRow<T> extends StatelessWidget {
   const _UnifiedPopupMenuRow({
     required this.entry,
+    required this.autofocus,
     required this.onSelected,
     this.onTrailingSelected,
   });
 
   final UnifiedMenuEntry<T> entry;
+  final bool autofocus;
   final ValueChanged<T> onSelected;
   final ValueChanged<T>? onTrailingSelected;
 
@@ -331,6 +352,7 @@ class _UnifiedPopupMenuRow<T> extends StatelessWidget {
     return Material(
       color: Colors.transparent,
       child: InkWell(
+        autofocus: autofocus,
         onTap: entry.enabled && value != null
             ? () {
                 AppInteractionFeedback.trigger(

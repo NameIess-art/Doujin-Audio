@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../app/theme/app_design_tokens.dart';
 import 'app_edge_fade_mask.dart';
 import 'app_transitions.dart';
+import 'page_header_inset.dart';
 
 PageRouteBuilder<T> buildAppSearchPageRoute<T>({
   required BuildContext context,
@@ -79,7 +80,10 @@ class AppSearchPageScaffold<T> extends StatelessWidget {
             left: 0,
             right: 0,
             bottom: MediaQuery.viewInsetsOf(context).bottom,
-            child: body,
+            child: PageHeaderInset(
+              topInset: controlsTopInset(context),
+              child: body,
+            ),
           ),
           Positioned(
             top: 0,

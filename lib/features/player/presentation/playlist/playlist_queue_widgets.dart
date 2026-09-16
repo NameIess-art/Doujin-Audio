@@ -25,6 +25,7 @@ import '../../../../core/widgets/app_transitions.dart';
 import '../../../../core/widgets/async_cover_image.dart';
 import '../../../../core/widgets/duration_overlay.dart';
 import '../../../../core/widgets/library_like_cards.dart';
+import '../../../../core/widgets/page_header_inset.dart';
 import '../../../../core/widgets/swipe_reveal_card.dart';
 import '../../../../core/widgets/top_page_header.dart';
 import '../../../library/application/library_facade.dart';
@@ -1019,9 +1020,11 @@ class _PlaybackQueueAudioEditPageState
 
     return Scaffold(
       backgroundColor: cs.surface,
-      body: Stack(
-        children: [
-          Positioned.fill(
+      body: PageHeaderInset(
+        topInset: headerHeight,
+        child: Stack(
+          children: [
+            Positioned.fill(
             child: LayoutBuilder(
               builder: (context, constraints) {
                 final isLandscape =
@@ -1304,7 +1307,8 @@ class _PlaybackQueueAudioEditPageState
           ),
         ],
       ),
-    );
+    ),
+  );
   }
 }
 

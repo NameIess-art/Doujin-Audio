@@ -16,6 +16,7 @@ import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/async_cover_image.dart';
 import '../../../core/widgets/library_like_cards.dart';
 import '../../../core/widgets/operation_feedback.dart';
+import '../../../core/widgets/page_header_inset.dart';
 import '../../../core/widgets/top_page_header.dart';
 
 enum DlsiteMetadataReviewOutcome { applied, confirmed, skipped }
@@ -354,8 +355,10 @@ class _DlsiteMetadataReviewPageState
 
     return Scaffold(
       backgroundColor: Theme.of(context).colorScheme.surface,
-      body: Stack(
-        children: [
+      body: PageHeaderInset(
+        topInset: listTopPadding,
+        child: Stack(
+          children: [
           Positioned.fill(
             child: _loading
                 ? SingleChildScrollView(
@@ -627,7 +630,8 @@ class _DlsiteMetadataReviewPageState
           ),
         ],
       ),
-    );
+    ),
+  );
   }
 }
 

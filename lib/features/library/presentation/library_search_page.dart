@@ -593,7 +593,7 @@ class _LibrarySearchPageState extends ConsumerState<_LibrarySearchPage> {
   Widget build(BuildContext context) {
     ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
-    final settings = ref.watch(settingsStateProvider).value ?? SettingsState();
+    final blurEnabled = ref.watch(uiBlurEnabledProvider);
     final libraryFacade = ref.read(libraryFacadeProvider);
     final structureRevision = ref.watch(
       libraryListUiProvider.select((state) => state.structureRevision),
@@ -665,7 +665,7 @@ class _LibrarySearchPageState extends ConsumerState<_LibrarySearchPage> {
       onChanged: _onChanged,
       onSubmitted: _onSubmitted,
       onCloseOrClear: _closeOrClear,
-      blurEnabled: settings.uiBlurEffectEnabled,
+      blurEnabled: blurEnabled,
       body: HeroMode(
         key: const ValueKey<String>('library_search_hero_mode'),
         enabled: false,

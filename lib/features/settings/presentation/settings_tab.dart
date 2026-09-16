@@ -28,6 +28,7 @@ import '../../../core/widgets/app_dialog.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/confirm_action_dialog.dart';
 import '../../../core/widgets/mobile_overlay_inset.dart';
+import '../../../core/widgets/page_header_inset.dart';
 import '../../../core/widgets/scroll_activity_gate.dart';
 import '../../../core/widgets/subtitle_window_visual.dart';
 import '../../../core/widgets/top_page_header.dart';
@@ -202,17 +203,11 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
         AppPageHeaderMetrics.firstContentSpacing;
 
     return ScrollActivityGate(
-      child: Stack(
-        children: [
-          Positioned.fill(
-            child: MediaQuery(
-              data: MediaQuery.of(context).copyWith(
-                padding: MediaQuery.paddingOf(context).copyWith(
-                  top: defaultTargetPlatform == TargetPlatform.windows
-                      ? contentTopInset
-                      : MediaQuery.paddingOf(context).top,
-                ),
-              ),
+      child: PageHeaderInset(
+        topInset: contentTopInset,
+        child: Stack(
+          children: [
+            Positioned.fill(
               child: ListView(
                 controller: _scrollController,
                 padding: EdgeInsets.fromLTRB(
@@ -246,18 +241,18 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                 ],
               ),
             ),
-          ),
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: TopPageHeader(
-              key: headerKey,
-              icon: Icons.settings_rounded,
-              topCapsuleTitle: i18n.tr('settings'),
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: TopPageHeader(
+                key: headerKey,
+                icon: Icons.settings_rounded,
+                topCapsuleTitle: i18n.tr('settings'),
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -611,17 +606,11 @@ class _SettingsCategoryPageState extends ConsumerState<_SettingsCategoryPage> {
 
         return Scaffold(
           backgroundColor: cs.surface,
-          body: Stack(
-            children: [
-              Positioned.fill(
-                child: MediaQuery(
-                  data: MediaQuery.of(context).copyWith(
-                    padding: MediaQuery.paddingOf(context).copyWith(
-                      top: defaultTargetPlatform == TargetPlatform.windows
-                          ? contentTopInset
-                          : MediaQuery.paddingOf(context).top,
-                    ),
-                  ),
+          body: PageHeaderInset(
+            topInset: contentTopInset,
+            child: Stack(
+              children: [
+                Positioned.fill(
                   child: ListView(
                     controller: _scrollController,
                     padding: EdgeInsets.fromLTRB(16, contentTopInset, 16, 24),
@@ -630,58 +619,58 @@ class _SettingsCategoryPageState extends ConsumerState<_SettingsCategoryPage> {
                     ],
                   ),
                 ),
-              ),
-              if (_pinnedSectionIndex != null &&
-                  _pinnedSectionIndex! < _stickySections.length)
-                Positioned(
-                  top: pinnedTop,
-                  left: 16,
-                  right: 16,
-                  child: IgnorePointer(
-                    child: ExcludeSemantics(
-                      child: _SettingsSectionTitlePill(
-                        key: const ValueKey<String>(
-                          'settings_sticky_section_pill',
+                if (_pinnedSectionIndex != null &&
+                    _pinnedSectionIndex! < _stickySections.length)
+                  Positioned(
+                    top: pinnedTop,
+                    left: 16,
+                    right: 16,
+                    child: IgnorePointer(
+                      child: ExcludeSemantics(
+                        child: _SettingsSectionTitlePill(
+                          key: const ValueKey<String>(
+                            'settings_sticky_section_pill',
+                          ),
+                          title: _stickySections[_pinnedSectionIndex!].title,
                         ),
-                        title: _stickySections[_pinnedSectionIndex!].title,
                       ),
                     ),
                   ),
-                ),
-              if (_overlappingNextSectionIndex != null &&
-                  _overlappingNextSectionTop != null &&
-                  _overlappingNextSectionIndex! < _stickySections.length)
-                Positioned(
-                  top: _overlappingNextSectionTop!,
-                  left: 16,
-                  right: 16,
-                  child: IgnorePointer(
-                    child: ExcludeSemantics(
-                      child: _SettingsSectionTitlePill(
-                        key: const ValueKey<String>(
-                          'settings_overlapping_section_pill',
+                if (_overlappingNextSectionIndex != null &&
+                    _overlappingNextSectionTop != null &&
+                    _overlappingNextSectionIndex! < _stickySections.length)
+                  Positioned(
+                    top: _overlappingNextSectionTop!,
+                    left: 16,
+                    right: 16,
+                    child: IgnorePointer(
+                      child: ExcludeSemantics(
+                        child: _SettingsSectionTitlePill(
+                          key: const ValueKey<String>(
+                            'settings_overlapping_section_pill',
+                          ),
+                          title: _stickySections[_overlappingNextSectionIndex!]
+                              .title,
                         ),
-                        title: _stickySections[_overlappingNextSectionIndex!]
-                            .title,
                       ),
                     ),
                   ),
-                ),
-              Positioned(
-                top: 0,
-                left: 0,
-                right: 0,
-                child: TopPageHeader(
-                  icon: widget.category.icon,
-                  title: i18n.tr(widget.category.labelKey),
-                  leading: IconButton(
-                    onPressed: () => Navigator.of(context).maybePop(),
-                    icon: Icon(Icons.arrow_back_rounded, color: cs.onSurface),
-                    tooltip: i18n.tr('back'),
+                Positioned(
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  child: TopPageHeader(
+                    icon: widget.category.icon,
+                    title: i18n.tr(widget.category.labelKey),
+                    leading: IconButton(
+                      onPressed: () => Navigator.of(context).maybePop(),
+                      icon: Icon(Icons.arrow_back_rounded, color: cs.onSurface),
+                      tooltip: i18n.tr('back'),
+                    ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         );
       },

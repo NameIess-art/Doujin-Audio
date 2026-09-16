@@ -192,12 +192,16 @@ final coverGenerationProvider = Provider<int>((ref) {
 });
 
 final coverImageResolutionProvider = Provider<CoverImageResolution>((ref) {
-  return ref.watch(settingsStateProvider).value?.coverImageResolution ??
+  return ref.watch(
+        settingsStateProvider.select((s) => s.value?.coverImageResolution),
+      ) ??
       ref.watch(settingsRepositoryProvider).slice.state.coverImageResolution;
 });
 
 final coverImageDisplayModeProvider = Provider<CoverImageDisplayMode>((ref) {
-  return ref.watch(settingsStateProvider).value?.coverImageDisplayMode ??
+  return ref.watch(
+        settingsStateProvider.select((s) => s.value?.coverImageDisplayMode),
+      ) ??
       ref.watch(settingsRepositoryProvider).slice.state.coverImageDisplayMode;
 });
 
@@ -236,21 +240,28 @@ final isTrackActiveProvider = Provider.autoDispose.family<bool, String>((
 final mainOverlayUiProvider = Provider<MainOverlayUiState>((ref) {
   ref.watch(playbackStateProvider);
   final playbackState = ref.watch(playbackFacadeProvider).state;
-  final settingsState =
-      ref.watch(settingsStateProvider).value ??
-      ref.watch(settingsRepositoryProvider).slice.state;
+  final fallbackSettings = ref.watch(settingsRepositoryProvider).slice.state;
+  final (:showPlaybackCard, :startupReady) = ref.watch(
+    settingsStateProvider.select(
+      (s) => (
+        showPlaybackCard:
+            s.value?.showPlaybackCard ?? fallbackSettings.showPlaybackCard,
+        startupReady:
+            s.value?.isInitialized ?? fallbackSettings.isInitialized,
+      ),
+    ),
+  );
   ref.watch(subtitleSettingsProvider);
   final overlaySessions = overlaySessionsFromPlaybackState(playbackState);
-  final visibleSessions = settingsState.showPlaybackCard
+  final visibleSessions = showPlaybackCard
       ? overlaySessions
       : const <PlaybackSessionSnapshot>[];
-  final startupReady = settingsState.isInitialized;
   return MainOverlayUiState(
     overlaySessions: overlaySessions,
     visibleSessions: visibleSessions,
     playingSessionCount: playbackState.playingSessionCount,
     activeSessionCount: playbackState.activeSessions.length,
-    showPlaybackCard: settingsState.showPlaybackCard,
+    showPlaybackCard: showPlaybackCard,
     isInitialized: playbackState.isInitialized,
     startupReady: startupReady,
   );

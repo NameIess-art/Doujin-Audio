@@ -11,6 +11,7 @@ import '../domain/asmr_models.dart';
 import '../application/asmr_download_models.dart';
 import '../../../app/theme/app_design_tokens.dart';
 import '../../../core/widgets/app_transitions.dart';
+import '../../../core/widgets/page_header_inset.dart';
 import '../../../core/widgets/top_page_header.dart';
 
 class AsmrDownloadDetailsPage extends ConsumerStatefulWidget {
@@ -80,107 +81,110 @@ class _AsmrDownloadDetailsPageState
 
     return Scaffold(
       backgroundColor: Theme.of(context).colorScheme.surface,
-      body: Stack(
-        children: [
-          Positioned.fill(
-            child: CustomScrollView(
-              physics: const ClampingScrollPhysics(),
-              slivers: [
-                if (tracks.isEmpty)
-                  SliverFillRemaining(
-                    hasScrollBody: false,
-                    child: Center(
-                      child: Text(i18n.tr('asmr_download_no_files_selected')),
+      body: PageHeaderInset(
+        topInset: listTopPadding,
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: CustomScrollView(
+                physics: const ClampingScrollPhysics(),
+                slivers: [
+                  if (tracks.isEmpty)
+                    SliverFillRemaining(
+                      hasScrollBody: false,
+                      child: Center(
+                        child: Text(i18n.tr('asmr_download_no_files_selected')),
+                      ),
+                    )
+                  else
+                    SliverPadding(
+                      padding: EdgeInsets.fromLTRB(
+                        16,
+                        listTopPadding,
+                        16,
+                        MediaQuery.paddingOf(context).bottom + 16,
+                      ),
+                      sliver: SliverList.builder(
+                        itemCount: tracks.length,
+                        itemBuilder: (context, index) {
+                          return _AsmrDownloadDetailsNodeTile(
+                            node: tracks[index],
+                            depth: 0,
+                            task: task,
+                            i18n: i18n,
+                            onRetryFile: downloadManager == null
+                                ? null
+                                : (relativePath) => downloadManager
+                                      .retryFailedFile(widget.workId, relativePath),
+                          );
+                        },
+                      ),
                     ),
-                  )
-                else
-                  SliverPadding(
-                    padding: EdgeInsets.fromLTRB(
-                      16,
-                      listTopPadding,
-                      16,
-                      MediaQuery.paddingOf(context).bottom + 16,
-                    ),
-                    sliver: SliverList.builder(
-                      itemCount: tracks.length,
-                      itemBuilder: (context, index) {
-                        return _AsmrDownloadDetailsNodeTile(
-                          node: tracks[index],
-                          depth: 0,
-                          task: task,
-                          i18n: i18n,
-                          onRetryFile: downloadManager == null
-                              ? null
-                              : (relativePath) => downloadManager
-                                    .retryFailedFile(widget.workId, relativePath),
-                        );
-                      },
-                    ),
-                  ),
-              ],
+                ],
+              ),
             ),
-          ),
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: Theme(
-              data: asmrThemeData(context),
-              child: TopPageHeader(
-                key: _headerKey,
-                icon: Icons.info_outline_rounded,
-                iconColor: AppDesignTokens.of(context).asmrAccent,
-                leading: const BackButton(),
-                title: i18n.tr('asmr_download_details_title'),
-              additionalChild: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-                child: HeaderFloatingSurface(
-                  key: const ValueKey<String>('asmr_download_work_title'),
-                  height: null,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 9,
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        task.work.title,
-                        maxLines: 3,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: cs.onSurface,
-                          fontWeight: FontWeight.w700,
-                          height: 1.25,
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: Theme(
+                data: asmrThemeData(context),
+                child: TopPageHeader(
+                  key: _headerKey,
+                  icon: Icons.info_outline_rounded,
+                  iconColor: AppDesignTokens.of(context).asmrAccent,
+                  leading: const BackButton(),
+                  title: i18n.tr('asmr_download_details_title'),
+                additionalChild: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                  child: HeaderFloatingSurface(
+                    key: const ValueKey<String>('asmr_download_work_title'),
+                    height: null,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 9,
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          task.work.title,
+                          maxLines: 3,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            color: cs.onSurface,
+                            fontWeight: FontWeight.w700,
+                            height: 1.25,
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Icon(
-                            Icons.sd_storage_rounded,
-                            size: 15,
-                            color: cs.onSurfaceVariant,
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            '${_formatBytes(task.totalBytes > 0 && task.downloadedBytes > task.totalBytes ? task.totalBytes : task.downloadedBytes)} / ${_formatBytes(task.totalBytes)}',
-                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.sd_storage_rounded,
+                              size: 15,
                               color: cs.onSurfaceVariant,
-                              fontWeight: FontWeight.w600,
                             ),
-                          ),
-                        ],
-                      ),
-                    ],
+                            const SizedBox(width: 6),
+                            Text(
+                              '${_formatBytes(task.totalBytes > 0 && task.downloadedBytes > task.totalBytes ? task.totalBytes : task.downloadedBytes)} / ${_formatBytes(task.totalBytes)}',
+                              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                color: cs.onSurfaceVariant,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
             ),
           ),
+          ],
         ),
-        ],
       ),
     );
   }

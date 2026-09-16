@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -7,6 +6,7 @@ import 'package:pdfx/pdfx.dart';
 import '../../../app/localization/app_language_provider.dart';
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/theme/app_styles.dart';
+import '../../../core/widgets/page_header_inset.dart';
 import '../../../core/widgets/top_page_header.dart';
 import '../application/work_text_service.dart';
 
@@ -137,29 +137,16 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
     final file = _currentFile;
     final hasMultipleFiles = widget.files.length > 1;
 
-    final mediaQuery = MediaQuery.of(context);
-    final topPadding = mediaQuery.padding.top;
-    final bottomPadding = mediaQuery.padding.bottom;
-    final contentTopInset =
-        topPadding +
-        AppPageHeaderMetrics.padding.vertical +
-        AppPageHeaderMetrics.contentHeight +
-        AppPageHeaderMetrics.bottomSpacing +
-        AppPageHeaderMetrics.firstContentSpacing;
+    final bottomPadding = MediaQuery.paddingOf(context).bottom;
+    final contentTopInset = AppPageHeaderMetrics.contentTopInset(context);
 
     return Scaffold(
       backgroundColor: cs.surface,
-      body: Stack(
-        children: [
-          Positioned.fill(
-            child: MediaQuery(
-              data: mediaQuery.copyWith(
-                padding: mediaQuery.padding.copyWith(
-                  top: defaultTargetPlatform == TargetPlatform.windows
-                      ? contentTopInset
-                      : topPadding,
-                ),
-              ),
+      body: PageHeaderInset(
+        topInset: contentTopInset,
+        child: Stack(
+          children: [
+            Positioned.fill(
               child: _buildContent(
                 context,
                 theme,
@@ -168,7 +155,6 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
                 bottomPadding,
               ),
             ),
-          ),
           Positioned(
             top: 0,
             left: 0,
@@ -194,7 +180,8 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
               bottom: bottomPadding + 20,
               child: _buildBottomRightSwitcher(context, theme, cs, i18n),
             ),
-        ],
+          ],
+        ),
       ),
     );
   }

@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as path;
 
 import '../../../../app/application/audio_path_coordinator.dart';
+import '../../../../app/presentation/app_presentation_providers.dart';
 import '../../../../app/state/app_runtime_providers.dart';
 import '../../../../core/media/music_track.dart';
 import '../../../../core/media/natural_sort.dart';
@@ -495,6 +496,7 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
   Widget build(BuildContext context) {
     final visibleSegmentLabels = _segmentLabels;
     final cs = Theme.of(context).colorScheme;
+    final blurEnabled = ref.watch(uiBlurEnabledProvider);
     final session = widget.session;
     final playback = _playback;
     final paths = _paths;
@@ -694,54 +696,63 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
                                 topRight: Radius.circular(16),
                                 bottomRight: Radius.circular(16),
                               ),
-                              child: BackdropFilter(
-                                filter: ImageFilter.blur(
-                                  sigmaX: 16,
-                                  sigmaY: 16,
-                                ),
-                                child: Container(
-                                  color: cs.surface.withValues(alpha: 0.85),
-                                  child: SafeArea(
-                                    child: Padding(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 16,
-                                        vertical: 16,
-                                      ),
-                                      child: TimeSegmentPanel(
-                                        key: const ValueKey(
-                                          'segments_landscape',
+                              child: Builder(
+                                builder: (context) {
+                                  final panelBody = Container(
+                                    color: blurEnabled
+                                        ? cs.surface.withValues(alpha: 0.85)
+                                        : cs.surface,
+                                    child: SafeArea(
+                                      child: Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 16,
+                                          vertical: 16,
                                         ),
-                                        session: session,
-                                        playback: playback,
-                                        labels: visibleSegmentLabels,
-                                        selectedId: _selectedSegmentId,
-                                        showEditor: _segmentEditorVisible,
-                                        loading: _segmentLoading,
-                                        nameController: _segmentNameController,
-                                        draftStart: _draftStart,
-                                        draftEnd: _draftEnd,
-                                        draftColorValue: _draftColorValue,
-                                        loopSegmentId: timeSegments
-                                            .loopLabelIdForSession(
-                                              session.id,
-                                              trackKey: _segmentTrackKey,
-                                            ),
-                                        onSelect: _selectSegment,
-                                        onAdd: _startNewSegment,
-                                        onSetStart: _setDraftStartToCurrent,
-                                        onSetEnd: _setDraftEndToCurrent,
-                                        onEditStart: () =>
-                                            _editDraftTime(isStart: true),
-                                        onEditEnd: () =>
-                                            _editDraftTime(isStart: false),
-                                        onDelete: _deleteSelectedSegment,
-                                        onToggleLoop:
-                                            _toggleSelectedSegmentLoop,
-                                        onClose: collapseSegmentPanel,
+                                        child: TimeSegmentPanel(
+                                          key: const ValueKey(
+                                            'segments_landscape',
+                                          ),
+                                          session: session,
+                                          playback: playback,
+                                          labels: visibleSegmentLabels,
+                                          selectedId: _selectedSegmentId,
+                                          showEditor: _segmentEditorVisible,
+                                          loading: _segmentLoading,
+                                          nameController: _segmentNameController,
+                                          draftStart: _draftStart,
+                                          draftEnd: _draftEnd,
+                                          draftColorValue: _draftColorValue,
+                                          loopSegmentId: timeSegments
+                                              .loopLabelIdForSession(
+                                                session.id,
+                                                trackKey: _segmentTrackKey,
+                                              ),
+                                          onSelect: _selectSegment,
+                                          onAdd: _startNewSegment,
+                                          onSetStart: _setDraftStartToCurrent,
+                                          onSetEnd: _setDraftEndToCurrent,
+                                          onEditStart: () =>
+                                              _editDraftTime(isStart: true),
+                                          onEditEnd: () =>
+                                              _editDraftTime(isStart: false),
+                                          onDelete: _deleteSelectedSegment,
+                                          onToggleLoop:
+                                              _toggleSelectedSegmentLoop,
+                                          onClose: collapseSegmentPanel,
+                                        ),
                                       ),
                                     ),
-                                  ),
-                                ),
+                                  );
+                                  return blurEnabled
+                                      ? BackdropFilter(
+                                          filter: ImageFilter.blur(
+                                            sigmaX: 16,
+                                            sigmaY: 16,
+                                          ),
+                                          child: panelBody,
+                                        )
+                                      : panelBody;
+                                },
                               ),
                             ),
                           )
@@ -844,7 +855,7 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
         return SizedBox(
           width: double.infinity,
           child: ListView.builder(
-            shrinkWrap: true,
+            shrinkWrap: tree.length <= 8,
             padding: const EdgeInsets.fromLTRB(16, 4, 12, 24),
             keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
             itemCount: tree.length + 1,

@@ -65,7 +65,9 @@ class _GlobalUpdateOperationBanner extends ConsumerWidget {
 
     ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
-    final top = MediaQuery.paddingOf(context).top + 8;
+    final top = MediaQuery.paddingOf(context).top +
+        AppPageHeaderMetrics.toolbarHeight +
+        8;
     final hasError = operation.hasError;
     final progress = operation.progress;
     final percent = progress == null ? '--' : '${(progress * 100).round()}';

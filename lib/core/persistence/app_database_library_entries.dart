@@ -68,6 +68,7 @@ extension AppDatabaseLibraryEntries on AppDatabase {
     String libraryPath,
     Iterable<String> paths,
   ) async {
+    final normalizedLibraryPath = PathMatcher.normalize(libraryPath);
     final normalizedPaths = paths.map(PathMatcher.normalize).toSet();
     if (normalizedPaths.isEmpty) return;
     await _runDatabaseWrite((db) async {
@@ -76,7 +77,7 @@ extension AppDatabaseLibraryEntries on AppDatabase {
         batch.delete(
           'library_entries',
           where: 'library_path = ? AND path = ?',
-          whereArgs: [PathMatcher.normalize(libraryPath), entryPath],
+          whereArgs: [normalizedLibraryPath, entryPath],
         );
       }
       await batch.commit(noResult: true);

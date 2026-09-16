@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../core/platform/windows_desktop_service.dart';
 import '../../features/player/presentation/playback_providers.dart';
 import '../state/app_runtime_providers.dart';
 
@@ -166,30 +165,28 @@ class GlobalShortcuts extends ConsumerWidget {
                 Text(i18n.tr('keyboard_shortcuts_local')),
                 const SizedBox(height: 16),
                 Text(i18n.tr('keyboard_shortcuts_global')),
-                FutureBuilder<Map<String, bool>>(
-                  future: WindowsDesktopService.instance.getHotkeyStatus(),
-                  builder: (context, snapshot) {
-                    if (snapshot.hasError) {
-                      return Text(
-                        '${i18n.tr('keyboard_shortcuts_status_error')}: ${snapshot.error}',
-                      );
-                    }
-                    if (!snapshot.hasData) {
-                      return const LinearProgressIndicator();
-                    }
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        for (final entry in const {
-                          'toggle': 'Ctrl + Alt + Space',
-                          'previous': 'Ctrl + Alt + ←',
-                          'next': 'Ctrl + Alt + →',
-                          'showWindow': 'Ctrl + Alt + ↑',
-                        }.entries)
-                          Text(
-                            '${entry.value}: ${i18n.tr(snapshot.data![entry.key] == true ? 'keyboard_shortcuts_registered' : 'keyboard_shortcuts_unavailable')}',
-                          ),
-                      ],
+                Consumer(
+                  builder: (context, ref, _) {
+                    final statusAsync = ref.watch(windowsHotkeyStatusProvider);
+                    return statusAsync.when(
+                      loading: () => const LinearProgressIndicator(),
+                      error: (error, _) => Text(
+                        '${i18n.tr('keyboard_shortcuts_status_error')}: $error',
+                      ),
+                      data: (status) => Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          for (final entry in const {
+                            'toggle': 'Ctrl + Alt + Space',
+                            'previous': 'Ctrl + Alt + ←',
+                            'next': 'Ctrl + Alt + →',
+                            'showWindow': 'Ctrl + Alt + ↑',
+                          }.entries)
+                            Text(
+                              '${entry.value}: ${i18n.tr(status[entry.key] == true ? 'keyboard_shortcuts_registered' : 'keyboard_shortcuts_unavailable')}',
+                            ),
+                        ],
+                      ),
                     );
                   },
                 ),

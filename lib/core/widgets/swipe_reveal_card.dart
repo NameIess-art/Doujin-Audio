@@ -1128,13 +1128,15 @@ class PushPinOffIcon extends StatelessWidget {
     final effectiveColor =
         iconTheme.color ?? Theme.of(context).colorScheme.onSurface;
 
-    return SizedBox(
-      width: effectiveSize,
-      height: effectiveSize,
-      child: CustomPaint(
-        painter: PushPinOffPainter(
-          iconColor: effectiveColor,
-          size: effectiveSize,
+    return RepaintBoundary(
+      child: SizedBox(
+        width: effectiveSize,
+        height: effectiveSize,
+        child: CustomPaint(
+          painter: PushPinOffPainter(
+            iconColor: effectiveColor,
+            size: effectiveSize,
+          ),
         ),
       ),
     );

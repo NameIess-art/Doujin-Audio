@@ -60,4 +60,11 @@ abstract final class AppPageHeaderMetrics {
   static const double bottomSpacing = AppSpacing.xxs;
   static const double toolbarHeight = 62;
   static const double expandedToolbarHeight = 88;
+
+  static double contentTopInset(BuildContext context) =>
+      MediaQuery.paddingOf(context).top +
+      padding.vertical +
+      contentHeight +
+      bottomSpacing +
+      firstContentSpacing;
 }

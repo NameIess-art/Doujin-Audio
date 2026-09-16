@@ -698,12 +698,9 @@ class _PlaybackSecondaryControlsState
           width: 0.5,
         ),
       ),
-      child: ClipRRect(
-        borderRadius: borderRadius,
-        child: AnimatedSwitcher(
-          duration: const Duration(milliseconds: 200),
-          child: _volumeMode ? buildVolumeBar() : buildButtonsRow(),
-        ),
+      child: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 200),
+        child: _volumeMode ? buildVolumeBar() : buildButtonsRow(),
       ),
     );
 

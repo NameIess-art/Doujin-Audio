@@ -9,6 +9,7 @@ import '../../../app/theme/app_design_tokens.dart';
 import '../../../app/theme/app_styles.dart';
 import '../../../core/widgets/app_brand_icon.dart';
 import '../../../core/widgets/app_feedback.dart';
+import '../../../core/widgets/page_header_inset.dart';
 import '../../../core/widgets/top_page_header.dart';
 import '../application/app_update_service.dart';
 
@@ -94,8 +95,10 @@ class AboutPage extends ConsumerWidget {
 
     return Scaffold(
       backgroundColor: Theme.of(context).colorScheme.surface,
-      body: Stack(
-        children: [
+      body: PageHeaderInset(
+        topInset: headerHeight,
+        child: Stack(
+          children: [
           Positioned.fill(
             child: ListView(
               padding: EdgeInsets.fromLTRB(
@@ -191,7 +194,8 @@ class AboutPage extends ConsumerWidget {
           ),
         ],
       ),
-    );
+    ),
+  );
   }
 }
 

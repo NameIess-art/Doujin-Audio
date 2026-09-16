@@ -1,4 +1,5 @@
 import 'package:doujin_audio/core/widgets/drag_only_scrollbar.dart';
+import 'package:doujin_audio/core/widgets/page_header_inset.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -70,6 +71,99 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(controller.offset, greaterThan(afterDrag));
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  testWidgets(
+    'Android vertical list builds DragOnlyScrollbar and supports touch drag',
+    (tester) async {
+      final controller = ScrollController();
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData(platform: TargetPlatform.android),
+          home: Scaffold(
+            body: SizedBox(
+              width: 200,
+              height: 400,
+              child: DragOnlyScrollbar(
+                controller: controller,
+                child: ListView.builder(
+                  controller: controller,
+                  itemExtent: 40,
+                  itemCount: 100,
+                  itemBuilder: (_, index) => Text('Item $index'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(DragOnlyScrollbar), findsOneWidget);
+
+      final origin = tester.getTopLeft(find.byType(DragOnlyScrollbar));
+      final drag = await tester.startGesture(
+        origin + const Offset(196, 20),
+      );
+      await drag.moveBy(const Offset(0, 140));
+      await drag.up();
+      await tester.pumpAndSettle();
+      expect(controller.offset, greaterThan(0));
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  testWidgets(
+    'PageHeaderInset shifts scrollbar track below header',
+    (tester) async {
+      final controller = ScrollController();
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData(platform: TargetPlatform.android),
+          home: Scaffold(
+            body: PageHeaderInset(
+              topInset: 100,
+              child: SizedBox(
+                width: 200,
+                height: 400,
+                child: DragOnlyScrollbar(
+                  controller: controller,
+                  child: ListView.builder(
+                    controller: controller,
+                    itemExtent: 40,
+                    itemCount: 100,
+                    itemBuilder: (_, index) => Text('Item $index'),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(DragOnlyScrollbar), findsOneWidget);
+
+      final origin = tester.getTopLeft(find.byType(DragOnlyScrollbar));
+      // Dragging inside the header area (y = 20 < 100) must NOT hit the scrollbar thumb
+      final dragHeader = await tester.startGesture(
+        origin + const Offset(196, 20),
+      );
+      await dragHeader.moveBy(const Offset(0, 50));
+      await dragHeader.up();
+      await tester.pumpAndSettle();
+      expect(controller.offset, 0);
+
+      // Dragging below the header area (y = 110, where thumb starts) drags the scrollbar
+      final dragThumb = await tester.startGesture(
+        origin + const Offset(196, 110),
+      );
+      await dragThumb.moveBy(const Offset(0, 100));
+      await dragThumb.up();
+      await tester.pumpAndSettle();
+      expect(controller.offset, greaterThan(0));
       await tester.pumpWidget(const SizedBox.shrink());
     },
   );

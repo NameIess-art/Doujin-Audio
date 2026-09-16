@@ -23,9 +23,14 @@ extension _MainScreenLayout on _MainScreenState {
     final isLandscapeLayout =
         defaultTargetPlatform == TargetPlatform.windows ||
         MediaQuery.orientationOf(context) == Orientation.landscape;
-    final settingsState = ref.watch(settingsStateProvider).value;
-    final showLocal = settingsState?.showLocalLibrary ?? true;
-    final showAsmr = settingsState?.showAsmrOne ?? true;
+    final (:showLocal, :showAsmr) = ref.watch(
+      settingsStateProvider.select(
+        (s) => (
+          showLocal: s.value?.showLocalLibrary ?? true,
+          showAsmr: s.value?.showAsmrOne ?? true,
+        ),
+      ),
+    );
     final destinations = _resolveMainDestinations(
       showLocalLibrary: showLocal,
       showAsmrOne: showAsmr,
@@ -445,9 +450,14 @@ extension _MainScreenLayout on _MainScreenState {
           Expanded(
             child: LayoutBuilder(
               builder: (context, constraints) {
-                final settingsState = ref.watch(settingsStateProvider).value;
-                final showLocal = settingsState?.showLocalLibrary ?? true;
-                final showAsmr = settingsState?.showAsmrOne ?? true;
+                final (:showLocal, :showAsmr) = ref.watch(
+                  settingsStateProvider.select(
+                    (s) => (
+                      showLocal: s.value?.showLocalLibrary ?? true,
+                      showAsmr: s.value?.showAsmrOne ?? true,
+                    ),
+                  ),
+                );
                 final destinations = _resolveMainDestinations(
                   showLocalLibrary: showLocal,
                   showAsmrOne: showAsmr,

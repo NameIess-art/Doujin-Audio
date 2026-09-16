@@ -368,7 +368,11 @@ class EqualizerPage extends ConsumerWidget {
     final cs = Theme.of(context).colorScheme;
     final removalState = ref.watch(undoableRemovalStateProvider);
     final customPresets =
-        (ref.watch(settingsStateProvider).value?.customEqPresets ??
+        (ref.watch(
+                  settingsStateProvider.select(
+                    (s) => s.value?.customEqPresets,
+                  ),
+                ) ??
                 ref.read(settingsRepositoryProvider).customEqPresets)
             .where(
               (preset) =>

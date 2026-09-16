@@ -43,6 +43,7 @@ import '../../../core/widgets/app_scroll_physics.dart';
 import '../../../core/widgets/library_like_cards.dart';
 import '../../../core/widgets/duration_overlay.dart';
 import '../../../core/widgets/mobile_overlay_inset.dart';
+import '../../../core/widgets/page_header_inset.dart';
 import '../../../core/widgets/operation_feedback.dart';
 import '../../../core/widgets/scroll_activity_gate.dart';
 import '../../../core/widgets/search_highlight.dart';
@@ -1112,8 +1113,6 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
         MediaQuery.orientationOf(context) == Orientation.landscape;
     final listTopPadding = headerContentHeight;
     final listBottomPadding = listBottomInset + 16.0;
-    final listViewportBottomInset =
-        listBottomInset + (isLandscape ? 16.0 : 0.0);
     // Reduced cacheExtent to significantly lower memory footprint and improve
     // scroll/swipe performance.
     const listCacheExtent = 320.0;
@@ -1260,20 +1259,12 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
           }
           return false;
         },
-        child: Stack(
-          clipBehavior: Clip.none,
-          children: [
-            MediaQuery(
-              data: MediaQuery.of(context).copyWith(
-                padding: EdgeInsets.only(
-                  top: defaultTargetPlatform == TargetPlatform.windows
-                      ? listTopPadding
-                      : headerControlsFullHeight + 4,
-                  bottom: listViewportBottomInset,
-                  right: 4,
-                ),
-              ),
-              child: PlaceholderContentTransition(
+        child: PageHeaderInset(
+          topInset: listTopPadding,
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              PlaceholderContentTransition(
                 showPlaceholder: !listStateIsInitialized || showLibrarySkeleton,
                 placeholder: _LibraryLoadingSkeleton(
                   bottomInset: listBottomPadding,
@@ -1315,7 +1306,6 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                         ),
                       ),
               ),
-            ),
 
             // Scan progress card
             if (listStateIsScanning && !listStateIsBackgroundScanning)
@@ -1478,7 +1468,8 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
           ],
         ),
       ),
-    );
+    ),
+  );
   }
 
   Widget _buildHeaderLeftActions(

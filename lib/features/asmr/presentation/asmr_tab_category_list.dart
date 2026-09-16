@@ -418,15 +418,10 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
                     LibraryLikeCardMetrics.listHorizontalPadding,
                     widget.bottomInset + 24,
                   ),
-                  itemCount: 1,
+                  itemCount: 5,
                   itemBuilder: (context, index) {
-                    return Column(
-                      children: [
-                        for (int i = 0; i < 5; i++)
-                          LibraryLikeSkeletonCard(
-                            compactCoverLayout: useCompactSkeleton,
-                          ),
-                      ],
+                    return LibraryLikeSkeletonCard(
+                      compactCoverLayout: useCompactSkeleton,
                     );
                   },
                 ),

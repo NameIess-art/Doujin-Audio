@@ -296,23 +296,25 @@ class _UnifiedPopupMenuCard<T> extends StatelessWidget {
         ),
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 8),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: entries
-                .map(
-                  (entry) => _UnifiedPopupMenuRow<T>(
-                    entry: entry,
-                    autofocus: identical(
-                      entry,
-                      entries
-                          .where((item) => item.enabled && !item.divider)
-                          .firstOrNull,
-                    ),
-                    onSelected: onSelected,
-                    onTrailingSelected: onTrailingSelected,
-                  ),
-                )
-                .toList(growable: false),
+          child: Builder(
+            builder: (context) {
+              final firstAutofocusEntry = entries
+                  .where((item) => item.enabled && !item.divider)
+                  .firstOrNull;
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                children: entries
+                    .map(
+                      (entry) => _UnifiedPopupMenuRow<T>(
+                        entry: entry,
+                        autofocus: identical(entry, firstAutofocusEntry),
+                        onSelected: onSelected,
+                        onTrailingSelected: onTrailingSelected,
+                      ),
+                    )
+                    .toList(growable: false),
+              );
+            },
           ),
         ),
       ),

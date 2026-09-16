@@ -37,6 +37,7 @@ import '../../core/platform/power_platform_gateway.dart';
 import '../../core/platform/power_platform_service.dart';
 import '../../core/platform/video_display_platform_gateway.dart';
 import '../../core/platform/video_display_platform_service.dart';
+import '../../core/platform/windows_desktop_service.dart';
 import '../../features/video_converter/application/video_conversion_coordinator.dart';
 
 final themeProviderInstanceProvider = ChangeNotifierProvider<ThemeProvider>(
@@ -231,6 +232,10 @@ final videoConversionCoordinatorProvider =
       final uiOps = ref.watch(uiOperationServiceProvider);
       return VideoConversionCoordinator(uiOperationService: uiOps);
     });
+
+final windowsHotkeyStatusProvider = FutureProvider<Map<String, bool>>((ref) {
+  return WindowsDesktopService.instance.getHotkeyStatus();
+});
 
 List<Override> createAppRuntimeOverrides({
   required AppPersistenceCoordinator persistence,

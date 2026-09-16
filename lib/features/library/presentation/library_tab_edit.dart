@@ -12,6 +12,7 @@ import '../../../core/media/path_display.dart';
 import '../../../core/media/path_matcher.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/app_transitions.dart';
+import '../../../core/widgets/page_header_inset.dart';
 import '../../../core/widgets/top_page_header.dart';
 import '../application/library_entry_editor_service.dart';
 import '../application/library_facade.dart';
@@ -124,10 +125,13 @@ class LibraryManagementPage extends ConsumerWidget {
               !removalState.isHidden(libraryRemovalKey(libraryPath)),
         )
         .toList(growable: false);
+    final headerTopInset = MediaQuery.paddingOf(context).top + 60;
     return Scaffold(
       backgroundColor: cs.surface,
-      body: Stack(
-        children: [
+      body: PageHeaderInset(
+        topInset: headerTopInset,
+        child: Stack(
+          children: [
           if (visibleLibraries.isEmpty)
             Center(
               child: Text(
@@ -220,7 +224,8 @@ class LibraryManagementPage extends ConsumerWidget {
           ),
         ],
       ),
-    );
+    ),
+  );
   }
 }
 
@@ -453,10 +458,13 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage>
     final isEmpty = editTree.isEmpty;
     final snapshotError = _diskSnapshotError;
 
+    final headerTopInset = MediaQuery.paddingOf(context).top + 98;
     return Scaffold(
       backgroundColor: cs.surface,
-      body: Stack(
-        children: [
+      body: PageHeaderInset(
+        topInset: headerTopInset,
+        child: Stack(
+          children: [
           ListView.builder(
             padding: EdgeInsets.fromLTRB(
               16,
@@ -566,7 +574,8 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage>
           ),
         ],
       ),
-    );
+    ),
+  );
   }
 
   Widget _buildSearchBar(AppLanguageProvider i18n) {

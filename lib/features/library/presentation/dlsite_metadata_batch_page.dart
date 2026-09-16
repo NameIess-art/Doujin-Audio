@@ -16,6 +16,7 @@ import '../domain/audio_library_category.dart';
 import 'dlsite_metadata_review_page.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/operation_feedback.dart';
+import '../../../core/widgets/page_header_inset.dart';
 import '../../../core/widgets/top_page_header.dart';
 
 enum DlsiteMetadataBatchScope {
@@ -27,11 +28,7 @@ enum DlsiteMetadataBatchScope {
 }
 
 double _headerContentTopInset(BuildContext context) =>
-    MediaQuery.paddingOf(context).top +
-    AppPageHeaderMetrics.padding.vertical +
-    AppPageHeaderMetrics.contentHeight +
-    AppPageHeaderMetrics.bottomSpacing +
-    AppPageHeaderMetrics.firstContentSpacing;
+    AppPageHeaderMetrics.contentTopInset(context);
 
 class DlsiteMetadataBatchPage extends ConsumerStatefulWidget {
   const DlsiteMetadataBatchPage({
@@ -182,10 +179,13 @@ class _DlsiteMetadataBatchPageState
       context,
       listen: false,
     ).read(appLanguageProviderInstanceProvider);
+    final topInset = _headerContentTopInset(context);
     return Scaffold(
       backgroundColor: Theme.of(context).colorScheme.surface,
-      body: Stack(
-        children: [
+      body: PageHeaderInset(
+        topInset: topInset,
+        child: Stack(
+          children: [
           Positioned.fill(
             child: _loading
                 ? OperationSkeletonList(
@@ -248,7 +248,8 @@ class _DlsiteMetadataBatchPageState
           ),
         ],
       ),
-    );
+    ),
+  );
   }
 }
 
@@ -430,10 +431,14 @@ class _DlsiteMetadataWorkPickerPageState
     final filtered = _filteredEntries;
     final cs = Theme.of(context).colorScheme;
 
+    final topInset = _headerContentTopInset(context);
+
     return Scaffold(
       backgroundColor: Theme.of(context).colorScheme.surface,
-      body: Stack(
-        children: [
+      body: PageHeaderInset(
+        topInset: topInset,
+        child: Stack(
+          children: [
           Positioned.fill(
             child: ListView.builder(
               padding: EdgeInsets.only(
@@ -584,7 +589,8 @@ class _DlsiteMetadataWorkPickerPageState
           ),
         ],
       ),
-    );
+    ),
+  );
   }
 }
 
@@ -664,10 +670,14 @@ class _DlsiteMetadataBatchResultsPageState
       context,
       listen: false,
     ).read(appLanguageProviderInstanceProvider);
+    final topInset = _headerContentTopInset(context);
+
     return Scaffold(
       backgroundColor: Theme.of(context).colorScheme.surface,
-      body: Stack(
-        children: [
+      body: PageHeaderInset(
+        topInset: topInset,
+        child: Stack(
+          children: [
           Positioned.fill(
             child: AnimatedBuilder(
               animation: widget.session,
@@ -899,7 +909,8 @@ class _DlsiteMetadataBatchResultsPageState
           ),
         ],
       ),
-    );
+    ),
+  );
   }
 }
 

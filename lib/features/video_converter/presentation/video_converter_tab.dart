@@ -1,4 +1,3 @@
-import '../../settings/presentation/settings_providers.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -6,10 +5,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/theme/app_styles.dart';
 import '../../settings/application/settings_repository.dart';
-import '../../settings/application/settings_state.dart';
+import '../../settings/presentation/settings_providers.dart';
 import '../../../core/ui/ui_operation_service.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/operation_feedback.dart';
+import '../../../core/widgets/page_header_inset.dart';
 import '../../../core/widgets/top_page_header.dart';
 import '../../../core/widgets/unified_dropdown.dart';
 
@@ -23,13 +23,6 @@ String formatVideoConverterOutputDirectoryPath(String directoryPath) {
       : directoryPath;
 }
 
-double _videoConverterHeaderContentTopInset(BuildContext context) {
-  return MediaQuery.paddingOf(context).top +
-      AppPageHeaderMetrics.padding.vertical +
-      AppPageHeaderMetrics.contentHeight +
-      AppPageHeaderMetrics.bottomSpacing +
-      AppPageHeaderMetrics.firstContentSpacing;
-}
 
 class VideoConverterTab extends ConsumerStatefulWidget {
   const VideoConverterTab({super.key});
@@ -80,8 +73,16 @@ class _VideoConverterTabState extends ConsumerState<VideoConverterTab> {
     ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     final settings = ref.read(settingsRepositoryProvider);
-    final settingsState =
-        ref.watch(settingsStateProvider).value ?? SettingsState();
+    final (:selectedFormat, :selectedBitrate, :outputDirectoryPath) =
+        ref.watch(
+          settingsStateProvider.select(
+            (s) => (
+              selectedFormat: s.value?.converterFormat ?? 'mp3',
+              selectedBitrate: s.value?.converterBitrate ?? '320k',
+              outputDirectoryPath: s.value?.converterOutputDirectoryPath,
+            ),
+          ),
+        );
     final pickOperation = ref.watch(
       uiOperationForScopeProvider(UiOperationScope.videoConverterPick),
     );
@@ -92,9 +93,6 @@ class _VideoConverterTabState extends ConsumerState<VideoConverterTab> {
     final progress = coordinator.progress;
     final statusMessage = coordinator.statusMessage;
     final videoDurationMs = coordinator.videoDurationMs;
-    final selectedFormat = settingsState.converterFormat;
-    final selectedBitrate = settingsState.converterBitrate;
-    final outputDirectoryPath = settingsState.converterOutputDirectoryPath;
     final bitrateEnabled = selectedFormat != 'wav' && selectedFormat != 'flac';
     final descStyle = Theme.of(context).textTheme.bodySmall?.copyWith(
       fontSize: 11,
@@ -103,17 +101,21 @@ class _VideoConverterTabState extends ConsumerState<VideoConverterTab> {
     );
     final bottomActionInset = 88.0 + MediaQuery.paddingOf(context).bottom;
 
+    final topInset = AppPageHeaderMetrics.contentTopInset(context);
+
     return Scaffold(
       backgroundColor: Theme.of(context).colorScheme.surface,
-      body: Stack(
-        children: [
-          ListView(
-            padding: EdgeInsets.fromLTRB(
-              16,
-              _videoConverterHeaderContentTopInset(context),
-              16,
-              bottomActionInset,
-            ),
+      body: PageHeaderInset(
+        topInset: topInset,
+        child: Stack(
+          children: [
+            ListView(
+              padding: EdgeInsets.fromLTRB(
+                16,
+                topInset,
+                16,
+                bottomActionInset,
+              ),
             children: [
               Card(
                 margin: EdgeInsets.zero,
@@ -375,6 +377,7 @@ class _VideoConverterTabState extends ConsumerState<VideoConverterTab> {
           ),
         ],
       ),
-    );
+    ),
+  );
   }
 }

@@ -865,7 +865,10 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
       ),
       scrollbarTheme: ScrollbarThemeData(
         thickness: WidgetStateProperty.resolveWith((states) {
-          if (states.contains(WidgetState.hovered)) return 8;
+          if (states.contains(WidgetState.dragged) ||
+              states.contains(WidgetState.hovered)) {
+            return 8;
+          }
           return 4;
         }),
         thumbColor: WidgetStateProperty.resolveWith((states) {

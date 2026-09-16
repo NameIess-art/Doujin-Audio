@@ -21,6 +21,7 @@ import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/async_cover_image.dart';
 import '../../../core/widgets/mobile_overlay_inset.dart';
+import '../../../core/widgets/page_header_inset.dart';
 import '../../../core/widgets/scroll_activity_gate.dart';
 import '../../../core/widgets/sort_options_bottom_sheet.dart';
 import '../../../core/widgets/swipe_reveal_card.dart';
@@ -463,18 +464,12 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
     }
 
     return ScrollActivityGate(
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          MediaQuery(
-            data: MediaQuery.of(context).copyWith(
-              padding: EdgeInsets.only(
-                top: headerHeight + 4,
-                bottom: listBottomInset,
-                right: 4,
-              ),
-            ),
-            child: PlaceholderContentTransition(
+      child: PageHeaderInset(
+        topInset: topPadding,
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            PlaceholderContentTransition(
               showPlaceholder:
                   !_initialPlaceholderDismissed ||
                   !structureState.isInitialized,
@@ -515,7 +510,6 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                 ],
               ),
             ),
-          ),
           Positioned(
             top: 0,
             left: 0,
@@ -756,7 +750,8 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
           ),
         ],
       ),
-    );
+    ),
+  );
   }
 
   Future<void> _openTimerQuickMenu(BuildContext context) async {

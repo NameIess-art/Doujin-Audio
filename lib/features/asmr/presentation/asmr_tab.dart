@@ -34,6 +34,7 @@ import '../../../core/widgets/glass_refresh_indicator.dart';
 import '../../../core/widgets/library_like_cards.dart';
 import '../../../core/widgets/duration_overlay.dart';
 import '../../../core/widgets/mobile_overlay_inset.dart';
+import '../../../core/widgets/page_header_inset.dart';
 import '../../../core/widgets/operation_feedback.dart';
 import '../../../core/widgets/scroll_activity_gate.dart';
 import '../../../core/widgets/search_highlight.dart';
@@ -784,9 +785,11 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
     });
     final selectedWorks = _selectedWorks();
 
-    return Stack(
-      clipBehavior: Clip.none,
-      children: [
+    return PageHeaderInset(
+      topInset: headerContentHeight,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
         Positioned.fill(
           child: ColoredBox(color: Theme.of(context).colorScheme.surface),
         ),
@@ -929,7 +932,8 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
           ),
         ),
       ],
-    );
+    ),
+  );
   }
 
   void _schedulePageLanguageSync(AppLanguage language) {

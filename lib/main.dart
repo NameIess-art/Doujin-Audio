@@ -334,12 +334,12 @@ class _StretchOverscrollBehavior extends MaterialScrollBehavior {
     Widget child,
     ScrollableDetails details,
   ) {
-    if (defaultTargetPlatform != TargetPlatform.windows ||
-        axisDirectionToAxis(details.direction) != Axis.vertical) {
+    if (axisDirectionToAxis(details.direction) != Axis.vertical) {
       return child;
     }
     return DragOnlyScrollbar(
       controller: details.controller,
+      thumbVisibility: defaultTargetPlatform == TargetPlatform.windows,
       child: child,
     );
   }
@@ -510,7 +510,7 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp> {
       darkTheme: themeProvider.darkTheme,
       themeMode: themeProvider.themeMode,
       scrollBehavior: const _StretchOverscrollBehavior().copyWith(
-        scrollbars: defaultTargetPlatform == TargetPlatform.windows,
+        scrollbars: true,
         physics: const ClampingScrollPhysics(
           parent: AlwaysScrollableScrollPhysics(),
         ),

@@ -1612,6 +1612,85 @@ void main() {
     }
   });
 
+  test('deleting a task only removes its files and preserves unrelated files in folder', () async {
+    final tempDir = await Directory.systemTemp.createTemp(
+      'asmr_download_delete_preserves_',
+    );
+    final workDir = Directory('${tempDir.path}${Platform.pathSeparator}Work');
+    final downloadedTrack = File(
+      '${workDir.path}${Platform.pathSeparator}Track.mp3',
+    );
+    final unrelatedFile = File(
+      '${workDir.path}${Platform.pathSeparator}unrelated_user_note.txt',
+    );
+    final subDir = Directory('${workDir.path}${Platform.pathSeparator}SubFolder');
+    final unrelatedSubFile = File(
+      '${subDir.path}${Platform.pathSeparator}other.txt',
+    );
+    await downloadedTrack.create(recursive: true);
+    await downloadedTrack.writeAsBytes(const <int>[1, 2, 3]);
+    await unrelatedFile.create(recursive: true);
+    await unrelatedFile.writeAsString('keep me');
+    await unrelatedSubFile.create(recursive: true);
+    await unrelatedSubFile.writeAsString('keep sub');
+
+    final manager = _manager();
+    manager.debugSetCurrentTaskForTesting(
+      _failedTaskSnapshot(tempDir.path),
+    );
+
+    try {
+      await manager.deleteTask(1);
+
+      expect(manager.getTask(1), isNull);
+      expect(await downloadedTrack.exists(), isFalse);
+      expect(await unrelatedFile.exists(), isTrue);
+      expect(await unrelatedFile.readAsString(), 'keep me');
+      expect(await unrelatedSubFile.exists(), isTrue);
+      expect(await unrelatedSubFile.readAsString(), 'keep sub');
+      expect(await workDir.exists(), isTrue);
+    } finally {
+      manager.dispose();
+      if (await tempDir.exists()) await tempDir.delete(recursive: true);
+    }
+  });
+
+  test('deleting a task prunes empty subdirectories but keeps folder if other files exist', () async {
+    final tempDir = await Directory.systemTemp.createTemp(
+      'asmr_download_prune_sub_',
+    );
+    final workDir = Directory('${tempDir.path}${Platform.pathSeparator}Work');
+    final discDir = Directory('${workDir.path}${Platform.pathSeparator}Disc1');
+    final trackFile = File('${discDir.path}${Platform.pathSeparator}Track.mp3');
+    final userFile = File('${workDir.path}${Platform.pathSeparator}user.txt');
+
+    await trackFile.create(recursive: true);
+    await trackFile.writeAsBytes(const <int>[1, 2, 3]);
+    await userFile.create(recursive: true);
+    await userFile.writeAsString('user content');
+
+    final manager = _manager();
+    manager.debugSetCurrentTaskForTesting(
+      _failedTaskSnapshot(
+        tempDir.path,
+        completedFilePaths: const {'Disc1/Track.mp3'},
+      ),
+    );
+
+    try {
+      await manager.deleteTask(1);
+
+      expect(manager.getTask(1), isNull);
+      expect(await trackFile.exists(), isFalse);
+      expect(await discDir.exists(), isFalse);
+      expect(await userFile.exists(), isTrue);
+      expect(await workDir.exists(), isTrue);
+    } finally {
+      manager.dispose();
+      if (await tempDir.exists()) await tempDir.delete(recursive: true);
+    }
+  });
+
   test(
     'canceling a paused download removes task and downloaded files',
     () async {
@@ -3568,7 +3647,10 @@ AsmrDownloadManager _manager() {
   );
 }
 
-AsmrDownloadTaskSnapshot _failedTaskSnapshot(String destinationRoot) {
+AsmrDownloadTaskSnapshot _failedTaskSnapshot(
+  String destinationRoot, {
+  Set<String> completedFilePaths = const {'Track.mp3'},
+}) {
   return AsmrDownloadTaskSnapshot(
     work: _work(),
     destinationRoot: destinationRoot,
@@ -3582,6 +3664,7 @@ AsmrDownloadTaskSnapshot _failedTaskSnapshot(String destinationRoot) {
     totalBytes: 3,
     downloadedBytes: 3,
     startedAt: DateTime(2026),
+    completedFilePaths: completedFilePaths,
   );
 }
 

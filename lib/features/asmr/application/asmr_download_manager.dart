@@ -285,24 +285,30 @@ class AsmrDownloadManager {
   Future<void> deleteTask(int workId) async {
     final task = _store[workId];
     if (task == null) return;
-    final workRootPath = task.workRootPath;
-    final coverOutputPath = task.coverOutputPath;
+    final createdPaths = Set<String>.from(
+      _createdOutputPaths[workId] ?? const <String>{},
+    );
+    final createdJsons = Map<String, _CreatedJsonDocument>.from(
+      _createdJsonDocuments[workId] ?? const {},
+    );
     if (_activeTasks.contains(workId) || _queue.contains(workId)) {
-      await cancelTask(workId);
+      await cancelTask(workId, deleteDownloaded: false);
     } else {
       _store.remove(workId);
       _store.notifyTaskChanged();
       await flushPersistence();
-    }
-    await _deleteDownloadRoot(workRootPath);
-    if (coverOutputPath != null) {
-      await _deleteOutputPath(coverOutputPath);
     }
     _createdOutputPaths.remove(workId);
     _createdJsonDocuments.remove(workId);
     _resumingTasks.remove(workId);
     _manualRetryOnlyPaths.remove(workId);
     _plannedFilesMap.remove(workId);
+
+    await _deleteTaskDownloadedFiles(
+      task,
+      extraCreatedPaths: createdPaths,
+      createdJsonDocs: createdJsons,
+    );
   }
 
   Future<void> pauseTask(int workId) async {

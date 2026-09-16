@@ -9,26 +9,152 @@ extension AsmrDownloadCleanup on AsmrDownloadManager {
     }
   }
 
-  Future<void> _deleteDownloadRoot(String workRootPath) async {
-    if (PathMatcher.isContentUri(workRootPath)) {
-      try {
-        await _fileCacheGateway.deleteDocumentPath(workRootPath);
-      } catch (_) {
-        // Explicit task deletion is best effort.
+  Future<void> _deleteTaskDownloadedFiles(
+    AsmrDownloadTaskSnapshot task, {
+    Set<String> extraCreatedPaths = const <String>{},
+    Map<String, _CreatedJsonDocument> createdJsonDocs = const {},
+  }) async {
+    final workRootPath = task.workRootPath;
+    final isSaf = PathMatcher.isContentUri(workRootPath);
+
+    final filesToDelete = <String>{};
+
+    // 1. Files explicitly recorded as completed for this task
+    for (final relativePath in task.completedFilePaths) {
+      if (relativePath.startsWith('cover/')) {
+        continue;
       }
-      return;
+      filesToDelete.add(_joinFolderPath(workRootPath, relativePath));
     }
-    final directory = Directory(workRootPath);
-    for (var attempt = 0; attempt < 3; attempt++) {
-      try {
-        if (!await directory.exists()) return;
-        await directory.delete(recursive: true);
-        return;
-      } catch (_) {
-        if (attempt < 2) {
-          await Future<void>.delayed(const Duration(milliseconds: 40));
+
+    // 2. Cover file
+    if (task.coverOutputPath != null) {
+      filesToDelete.add(task.coverOutputPath!);
+    }
+    if (task.saveCover ||
+        task.completedFilePaths.any((p) => p.startsWith('cover/'))) {
+      for (final ext in const ['.jpg', '.png', '.webp', '.jpeg']) {
+        filesToDelete.add(_joinFolderPath(workRootPath, 'cover/cover$ext'));
+      }
+    }
+
+    // 3. Metadata document (doujin-audio.json)
+    if (task.saveMetadata) {
+      filesToDelete.add(_joinFolderPath(workRootPath, 'doujin-audio.json'));
+    }
+
+    // 4. Any actively created paths from memory (staging files, in-progress files)
+    filesToDelete.addAll(extraCreatedPaths);
+    filesToDelete.addAll(_createdOutputPaths[task.work.id] ?? const <String>{});
+
+    // 5. Staging files on local disk
+    if (!isSaf) {
+      for (final relativePath in task.completedFilePaths) {
+        try {
+          final staging = await _persistentStagingFile(
+            workRootPath,
+            relativePath,
+          );
+          if (await staging.exists()) {
+            filesToDelete.add(staging.path);
+          }
+        } catch (_) {}
+      }
+      if (task.saveCover) {
+        try {
+          final staging = await _persistentStagingFile(
+            workRootPath,
+            'cover/cover.cover',
+          );
+          if (await staging.exists()) {
+            filesToDelete.add(staging.path);
+          }
+        } catch (_) {}
+      }
+    }
+
+    // 6. If completedFilePaths was empty, fallback to planned files from selectedRoots
+    if (task.completedFilePaths.isEmpty) {
+      final planned = _collectPlannedFiles(task.selectedRoots);
+      for (final item in planned) {
+        if (!item.isCover) {
+          filesToDelete.add(_joinFolderPath(workRootPath, item.relativePath));
         }
       }
+    }
+
+    // 7. Created JSON documents
+    for (final entry in createdJsonDocs.entries) {
+      try {
+        await _jsonDocumentStore.delete(
+          location: entry.value.location,
+          expectedRevision: entry.value.revision,
+        );
+      } catch (_) {}
+    }
+
+    // 8. Delete each target file
+    for (final targetPath in filesToDelete) {
+      await _deleteOutputPath(targetPath);
+    }
+
+    // 9. Prune newly-empty directories on local filesystem
+    if (!isSaf) {
+      final normalizedWorkRoot = path.normalize(path.absolute(workRootPath));
+      final normalizedDestRoot = path.normalize(
+        path.absolute(task.destinationRoot),
+      );
+      if (normalizedWorkRoot != normalizedDestRoot) {
+        await _pruneEmptyDirectory(Directory(workRootPath));
+      } else {
+        final directory = Directory(workRootPath);
+        if (await directory.exists()) {
+          try {
+            await for (final entity in directory.list(followLinks: false)) {
+              if (entity is Directory) {
+                await _pruneEmptyDirectory(entity);
+              }
+            }
+          } catch (_) {}
+        }
+      }
+    }
+  }
+
+  Future<bool> _pruneEmptyDirectory(Directory directory) async {
+    try {
+      if (!await directory.exists()) return true;
+      final normalized = path.normalize(path.absolute(directory.path));
+      if (normalized == path.rootPrefix(normalized)) {
+        return false;
+      }
+      var hasEntries = false;
+      await for (final entity in directory.list(followLinks: false)) {
+        if (entity is Directory) {
+          final childIsEmpty = await _pruneEmptyDirectory(entity);
+          if (!childIsEmpty) {
+            hasEntries = true;
+          }
+        } else {
+          hasEntries = true;
+        }
+      }
+      if (!hasEntries) {
+        for (var attempt = 0; attempt < 3; attempt++) {
+          try {
+            await directory.delete();
+            return true;
+          } catch (_) {
+            if (attempt < 2) {
+              await Future<void>.delayed(const Duration(milliseconds: 40));
+            }
+          }
+        }
+        return false;
+      }
+      return false;
+    } catch (_) {
+      return false;
     }
   }
 

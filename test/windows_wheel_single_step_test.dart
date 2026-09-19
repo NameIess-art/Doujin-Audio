@@ -190,12 +190,7 @@ void main() {
       (tester) async {
         debugDefaultTargetPlatformOverride = TargetPlatform.windows;
         try {
-          final fixture = AppRuntimeWidgetTestFixture(
-            configureSettingsRepository: (settings) {
-              settings.playbackDetailSubtitleStyle = PlaybackDetailSubtitleStyle.timeline;
-              settings.syncSlice(isInitialized: true);
-            },
-          );
+          final fixture = AppRuntimeWidgetTestFixture();
           addTearDown(fixture.dispose);
 
           final cues = List.generate(

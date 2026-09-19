@@ -13,8 +13,6 @@ import '../../../../core/media/subtitle_parser.dart';
 import '../../../../core/logging/app_log_service.dart';
 import '../../../../core/ui/ui_interaction_coordinator.dart';
 import '../../../../core/widgets/app_feedback.dart';
-import '../../../settings/application/settings_state.dart';
-import '../../../settings/presentation/settings_providers.dart';
 import '../../application/playback_session_snapshot.dart';
 import '../../application/playback_subtitle_service.dart';
 import '../playback_error_text.dart';
@@ -41,9 +39,7 @@ class SessionSubtitlePanel extends ConsumerStatefulWidget {
 
 class _SessionSubtitlePanelState extends ConsumerState<SessionSubtitlePanel> {
   late final PlaybackPositionUiGate _positionGate;
-  final SubtitleTextCache _subtitleTextCache = SubtitleTextCache();
   SubtitleTrack? _subtitleTrack;
-  String? _subtitleText;
   int? _playbackSubtitleIndex;
   String? _loadedPath;
   bool _tickerModeEnabled = true;
@@ -118,7 +114,7 @@ class _SessionSubtitlePanelState extends ConsumerState<SessionSubtitlePanel> {
   }
 
   void _handlePositionTick() {
-    _updateSubtitleText(_positionGate.value.position);
+    _updateSubtitleIndex(_positionGate.value.position);
   }
 
   void _scheduleSubtitleTrackLoad() {
@@ -130,10 +126,8 @@ class _SessionSubtitlePanelState extends ConsumerState<SessionSubtitlePanel> {
     final isTrackChanged = _loadedPath != trackPath;
     _loadedPath = trackPath;
     if (isTrackChanged) {
-      _subtitleTextCache.clear();
       setState(() {
         _subtitleTrack = null;
-        _subtitleText = null;
         _playbackSubtitleIndex = null;
       });
     }
@@ -211,25 +205,15 @@ class _SessionSubtitlePanelState extends ConsumerState<SessionSubtitlePanel> {
   void _applySubtitleTrack(String trackPath, SubtitleTrack? track) {
     if (!mounted || _loadedPath != trackPath) return;
     _subtitleTrack = track;
-    _subtitleTextCache.clear();
-    _updateSubtitleText(_positionGate.value.position);
+    _updateSubtitleIndex(_positionGate.value.position);
   }
 
-  void _updateSubtitleText(Duration position) {
+  void _updateSubtitleIndex(Duration position) {
     if (!_tickerModeEnabled) return;
     final track = _subtitleTrack;
-    final nextText = _subtitleTextCache.resolve(
-      trackPath: widget.session.currentTrackPath,
-      position: position,
-      track: track,
-      persistent: true,
-    );
     final nextIndex = _timelineSubtitleIndexAt(track, position);
-    if (_subtitleText == nextText && _playbackSubtitleIndex == nextIndex) {
-      return;
-    }
+    if (_playbackSubtitleIndex == nextIndex) return;
     setState(() {
-      _subtitleText = nextText;
       _playbackSubtitleIndex = nextIndex;
     });
   }
@@ -322,16 +306,8 @@ class _SessionSubtitlePanelState extends ConsumerState<SessionSubtitlePanel> {
         ),
       );
     } else {
-      final subtitleStyle = ref.watch(
-        settingsStateProvider.select(
-          (state) =>
-              state.value?.playbackDetailSubtitleStyle ??
-              PlaybackDetailSubtitleStyle.compact,
-        ),
-      );
       final playbackSubtitleIndex = _playbackSubtitleIndex;
-      if (subtitleStyle == PlaybackDetailSubtitleStyle.timeline &&
-          subtitleTrack != null &&
+      if (subtitleTrack != null &&
           subtitleTrack.cues.isNotEmpty &&
           playbackSubtitleIndex != null) {
         content = _TimelineSubtitleView(
@@ -347,10 +323,7 @@ class _SessionSubtitlePanelState extends ConsumerState<SessionSubtitlePanel> {
           },
         );
       } else {
-        final subtitleText = _subtitleText;
-        content = subtitleText == null
-            ? const SizedBox.shrink(key: ValueKey('subtitle_empty'))
-            : _SubtitleChip(key: ValueKey(subtitleText), text: subtitleText);
+        content = const SizedBox.shrink(key: ValueKey('subtitle_empty'));
       }
     }
 
@@ -374,45 +347,6 @@ class _SessionSubtitlePanelState extends ConsumerState<SessionSubtitlePanel> {
           );
         },
         child: content,
-      ),
-    );
-  }
-}
-
-class _SubtitleChip extends StatelessWidget {
-  const _SubtitleChip({super.key, required this.text});
-
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    return Container(
-      margin: const EdgeInsets.only(top: 8),
-      width: double.infinity,
-      height: 44,
-      padding: EdgeInsets.zero,
-      alignment: Alignment.topCenter,
-      child: ClipRect(
-        child: SizedBox(
-          width: double.infinity,
-          child: Text(
-            text,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            textAlign: TextAlign.center,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              color: sessionDetailForeground(
-                cs,
-                SessionDetailForegroundLevel.medium,
-                darkFallback: cs.onSurface.withValues(alpha: 0.85),
-              ),
-              fontWeight: FontWeight.w600,
-              fontSize: 16,
-              height: 1.3,
-            ),
-          ),
-        ),
       ),
     );
   }

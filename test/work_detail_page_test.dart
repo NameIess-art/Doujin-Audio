@@ -8,6 +8,7 @@ import 'package:doujin_audio/core/app_language.dart';
 import 'package:doujin_audio/core/media/audio_detail.dart';
 import 'package:doujin_audio/core/media/dlsite_metadata.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
+import 'package:doujin_audio/core/widgets/async_cover_image.dart';
 import 'package:doujin_audio/core/widgets/top_page_header.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_metadata_service.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
@@ -261,6 +262,7 @@ void main() {
       // CV & tags
       expect(find.text('Remote CV'), findsOneWidget);
       expect(find.text('#Roleplay'), findsOneWidget);
+      expect(find.text('根目录'), findsOneWidget);
 
       // ASMR.ONE buttons: 下载, 收藏/取消收藏
       expect(find.byKey(const ValueKey<String>('asmr_work_detail_download')), findsOneWidget);
@@ -439,6 +441,7 @@ void main() {
 
       expect(find.text('1 / 2'), findsOneWidget);
       expect(find.text('01.jpg'), findsOneWidget);
+      expect(find.byType(LocalCoverImage), findsWidgets);
 
       // Next button
       await tester.tap(nextBtn);
@@ -456,6 +459,32 @@ void main() {
       await tester.pump(const Duration(milliseconds: 100));
 
       expect(coverSelected, 'path/to/02.jpg');
+    });
+
+    testWidgets('loads ASMR image URLs as network images', (tester) async {
+      SharedPreferences.setMockInitialValues(const <String, Object>{});
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+
+      await tester.pumpWidget(
+        fixture.build(
+          const WorkImageViewerPage(
+            images: [
+              WorkImageItem(
+                name: 'remote.jpg',
+                path: 'https://example.com/remote.jpg',
+                relativePath: 'images/remote.jpg',
+              ),
+            ],
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(find.byType(RetryingNetworkImage), findsOneWidget);
+      expect(find.byType(LocalCoverImage), findsNothing);
+
+      await tester.pumpWidget(const SizedBox.shrink());
     });
   });
 }

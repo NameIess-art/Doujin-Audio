@@ -10,7 +10,6 @@ import '../../core/media/music_track.dart';
 import '../../core/ui/ui_operation_service.dart';
 import '../../features/library/application/library_state_models.dart';
 import '../../features/library/presentation/library_cover_ui_controller.dart';
-import '../../features/player/application/playback_session_snapshot.dart';
 import '../../features/library/domain/library_node.dart';
 import '../../features/library/presentation/library_sorting.dart';
 import '../../features/player/presentation/playlist_sorting.dart';
@@ -331,27 +330,17 @@ final mainOverlayUiProvider = Provider<MainOverlayUiState>((ref) {
   ref.watch(playbackStateProvider);
   final playbackState = ref.watch(playbackFacadeProvider).state;
   final fallbackSettings = ref.watch(settingsRepositoryProvider).slice.state;
-  final (:showPlaybackCard, :startupReady) = ref.watch(
+  final startupReady = ref.watch(
     settingsStateProvider.select(
-      (s) => (
-        showPlaybackCard:
-            s.value?.showPlaybackCard ?? fallbackSettings.showPlaybackCard,
-        startupReady:
-            s.value?.isInitialized ?? fallbackSettings.isInitialized,
-      ),
+      (s) => s.value?.isInitialized ?? fallbackSettings.isInitialized,
     ),
   );
   ref.watch(subtitleSettingsProvider);
   final overlaySessions = overlaySessionsFromPlaybackState(playbackState);
-  final visibleSessions = showPlaybackCard
-      ? overlaySessions
-      : const <PlaybackSessionSnapshot>[];
   return MainOverlayUiState(
     overlaySessions: overlaySessions,
-    visibleSessions: visibleSessions,
     playingSessionCount: playbackState.playingSessionCount,
     activeSessionCount: playbackState.activeSessions.length,
-    showPlaybackCard: showPlaybackCard,
     isInitialized: playbackState.isInitialized,
     startupReady: startupReady,
   );

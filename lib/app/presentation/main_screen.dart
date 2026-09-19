@@ -969,15 +969,15 @@ class _MainScreenState extends ConsumerState<MainScreen>
                           if (isDesktop)
                             Consumer(
                               builder: (context, ref, _) {
-                                final visibleSessions = ref.watch(
+                                final overlaySessions = ref.watch(
                                   mainOverlayUiProvider.select(
-                                    (state) => state.visibleSessions,
+                                    (state) => state.overlaySessions,
                                   ),
                                 );
                                 return _buildDesktopNavigation(
                                   context,
                                   i18n,
-                                  visibleSessions,
+                                  overlaySessions,
                                 );
                               },
                             )
@@ -995,15 +995,15 @@ class _MainScreenState extends ConsumerState<MainScreen>
                       if (!isDesktop)
                         Consumer(
                           builder: (context, ref, _) {
-                            final visibleSessions = ref.watch(
+                            final overlaySessions = ref.watch(
                               mainOverlayUiProvider.select(
-                                (state) => state.visibleSessions,
+                                (state) => state.overlaySessions,
                               ),
                             );
                             return _buildMobileBottomDock(
                               context,
                               i18n: i18n,
-                              overlaySessions: visibleSessions,
+                              overlaySessions: overlaySessions,
                               tinyMode: isTinyWindow,
                             );
                           },

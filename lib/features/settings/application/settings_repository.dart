@@ -20,8 +20,6 @@ class SettingsRepository {
   String? converterOutputDirectoryPath;
   bool multiThreadPlaybackEnabled = false;
   bool notificationsEnabled = true;
-  bool showPlaybackCard = true;
-  bool autoPlayAddedSessions = true;
   bool autoCheckUpdates = false;
   ContentLanguagePreference dlsiteMetadataLanguage =
       ContentLanguagePreference.followPage;
@@ -45,8 +43,6 @@ class SettingsRepository {
   bool showAsmrOne = true;
   StartupPage startupPage = StartupPage.library;
   bool portraitLockEnabled = false;
-  PlaybackDetailSubtitleStyle playbackDetailSubtitleStyle =
-      PlaybackDetailSubtitleStyle.compact;
   CoverImageResolution coverImageResolution = CoverImageResolution.balanced;
   CoverImageDisplayMode coverImageDisplayMode = CoverImageDisplayMode.fill;
   bool preferEmbeddedAudioCover = true;
@@ -85,19 +81,11 @@ class SettingsRepository {
       multiThreadPlaybackEnabled =
           playback['multiThreadPlaybackEnabled'] as bool? ?? false;
       notificationsEnabled = playback['notificationsEnabled'] as bool? ?? true;
-      showPlaybackCard = playback['showPlaybackCard'] as bool? ?? true;
       startupPage = StartupPage.values.firstWhere(
         (value) => value.name == playback['startupPage'],
         orElse: () => StartupPage.library,
       );
       portraitLockEnabled = playback['portraitLockEnabled'] as bool? ?? false;
-      playbackDetailSubtitleStyle = PlaybackDetailSubtitleStyle.values
-          .firstWhere(
-            (value) => value.name == playback['playbackDetailSubtitleStyle'],
-            orElse: () => PlaybackDetailSubtitleStyle.compact,
-          );
-      autoPlayAddedSessions =
-          playback['autoPlayAddedSessions'] as bool? ?? true;
       autoCheckUpdates = playback['autoCheckUpdates'] as bool? ?? false;
       recordPlaybackProgress =
           playback['recordPlaybackProgress'] as bool? ?? true;
@@ -239,11 +227,8 @@ class SettingsRepository {
     return AppPreferences.writeJson(_playbackSettingsKey, <String, Object?>{
       'multiThreadPlaybackEnabled': multiThreadPlaybackEnabled,
       'notificationsEnabled': notificationsEnabled,
-      'showPlaybackCard': showPlaybackCard,
       'startupPage': startupPage.name,
       'portraitLockEnabled': portraitLockEnabled,
-      'playbackDetailSubtitleStyle': playbackDetailSubtitleStyle.name,
-      'autoPlayAddedSessions': autoPlayAddedSessions,
       'autoCheckUpdates': autoCheckUpdates,
       'recordPlaybackProgress': recordPlaybackProgress,
       'allowVideoPlayback': allowVideoPlayback,
@@ -494,16 +479,6 @@ class SettingsRepository {
     update: () => multiThreadPlaybackEnabled = enabled,
   );
 
-  Future<void> setShowPlaybackCard(bool enabled) => _setValue(
-    unchanged: showPlaybackCard == enabled,
-    update: () => showPlaybackCard = enabled,
-  );
-
-  Future<void> setAutoPlayAddedSessions(bool enabled) => _setValue(
-    unchanged: autoPlayAddedSessions == enabled,
-    update: () => autoPlayAddedSessions = enabled,
-  );
-
   Future<void> setAutoCheckUpdates(bool enabled) => _setValue(
     unchanged: autoCheckUpdates == enabled,
     update: () => autoCheckUpdates = enabled,
@@ -585,13 +560,6 @@ class SettingsRepository {
   Future<void> setPortraitLockEnabled(bool enabled) => _setValue(
     unchanged: portraitLockEnabled == enabled,
     update: () => portraitLockEnabled = enabled,
-  );
-
-  Future<void> setPlaybackDetailSubtitleStyle(
-    PlaybackDetailSubtitleStyle style,
-  ) => _setValue(
-    unchanged: playbackDetailSubtitleStyle == style,
-    update: () => playbackDetailSubtitleStyle = style,
   );
 
   Future<void> setCoverImageResolution(CoverImageResolution resolution) =>
@@ -712,8 +680,6 @@ class SettingsRepository {
     converterOutputDirectoryPath = null;
     multiThreadPlaybackEnabled = false;
     notificationsEnabled = true;
-    showPlaybackCard = true;
-    autoPlayAddedSessions = true;
     autoCheckUpdates = false;
     dlsiteMetadataLanguage = ContentLanguagePreference.followPage;
     librarySortCriterion = LibrarySortCriterion.name;
@@ -737,7 +703,6 @@ class SettingsRepository {
     showAsmrOne = true;
     startupPage = StartupPage.library;
     portraitLockEnabled = false;
-    playbackDetailSubtitleStyle = PlaybackDetailSubtitleStyle.compact;
     coverImageResolution = CoverImageResolution.balanced;
     coverImageDisplayMode = CoverImageDisplayMode.fill;
     preferEmbeddedAudioCover = true;
@@ -779,8 +744,6 @@ class SettingsRepository {
         converterOutputDirectoryPath: converterOutputDirectoryPath,
         multiThreadPlaybackEnabled: multiThreadPlaybackEnabled,
         notificationsEnabled: notificationsEnabled,
-        showPlaybackCard: showPlaybackCard,
-        autoPlayAddedSessions: autoPlayAddedSessions,
         autoCheckUpdates: autoCheckUpdates,
         dlsiteMetadataLanguage: dlsiteMetadataLanguage,
         librarySortCriterion: librarySortCriterion,
@@ -805,7 +768,6 @@ class SettingsRepository {
         showAsmrOne: showAsmrOne,
         startupPage: startupPage,
         portraitLockEnabled: portraitLockEnabled,
-        playbackDetailSubtitleStyle: playbackDetailSubtitleStyle,
         coverImageResolution: coverImageResolution,
         coverImageDisplayMode: coverImageDisplayMode,
         preferEmbeddedAudioCover: preferEmbeddedAudioCover,

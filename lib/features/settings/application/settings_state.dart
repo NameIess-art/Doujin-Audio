@@ -10,8 +10,6 @@ export '../../../core/media/cover_image_resolution.dart';
 
 enum StartupPage { asmrOne, library, playlist }
 
-enum PlaybackDetailSubtitleStyle { compact, timeline }
-
 enum AudioDeviceDisconnectBehavior { pause, continuePlayback }
 
 enum AudioFocusStrategy { standard, mixWithOthers }
@@ -51,8 +49,6 @@ class SettingsState {
     this.converterOutputDirectoryPath,
     this.multiThreadPlaybackEnabled = false,
     this.notificationsEnabled = true,
-    this.showPlaybackCard = true,
-    this.autoPlayAddedSessions = true,
     this.autoCheckUpdates = false,
     this.dlsiteMetadataLanguage = ContentLanguagePreference.followPage,
     this.librarySortCriterion = LibrarySortCriterion.name,
@@ -75,7 +71,6 @@ class SettingsState {
     this.showAsmrOne = true,
     this.startupPage = StartupPage.library,
     this.portraitLockEnabled = false,
-    this.playbackDetailSubtitleStyle = PlaybackDetailSubtitleStyle.compact,
     this.coverImageResolution = CoverImageResolution.balanced,
     this.coverImageDisplayMode = CoverImageDisplayMode.fill,
     this.preferEmbeddedAudioCover = true,
@@ -107,8 +102,6 @@ class SettingsState {
   final String? converterOutputDirectoryPath;
   final bool multiThreadPlaybackEnabled;
   final bool notificationsEnabled;
-  final bool showPlaybackCard;
-  final bool autoPlayAddedSessions;
   final bool autoCheckUpdates;
   final ContentLanguagePreference dlsiteMetadataLanguage;
   final LibrarySortCriterion librarySortCriterion;
@@ -131,7 +124,6 @@ class SettingsState {
   final bool showAsmrOne;
   final StartupPage startupPage;
   final bool portraitLockEnabled;
-  final PlaybackDetailSubtitleStyle playbackDetailSubtitleStyle;
   final CoverImageResolution coverImageResolution;
   final CoverImageDisplayMode coverImageDisplayMode;
   final bool preferEmbeddedAudioCover;
@@ -159,8 +151,6 @@ class SettingsState {
         other.converterOutputDirectoryPath == converterOutputDirectoryPath &&
         other.multiThreadPlaybackEnabled == multiThreadPlaybackEnabled &&
         other.notificationsEnabled == notificationsEnabled &&
-        other.showPlaybackCard == showPlaybackCard &&
-        other.autoPlayAddedSessions == autoPlayAddedSessions &&
         other.autoCheckUpdates == autoCheckUpdates &&
         other.dlsiteMetadataLanguage == dlsiteMetadataLanguage &&
         other.librarySortCriterion == librarySortCriterion &&
@@ -189,7 +179,6 @@ class SettingsState {
         other.showAsmrOne == showAsmrOne &&
         other.startupPage == startupPage &&
         other.portraitLockEnabled == portraitLockEnabled &&
-        other.playbackDetailSubtitleStyle == playbackDetailSubtitleStyle &&
         other.coverImageResolution == coverImageResolution &&
         other.coverImageDisplayMode == coverImageDisplayMode &&
         other.preferEmbeddedAudioCover == preferEmbeddedAudioCover &&
@@ -221,8 +210,6 @@ class SettingsState {
     converterOutputDirectoryPath,
     multiThreadPlaybackEnabled,
     notificationsEnabled,
-    showPlaybackCard,
-    autoPlayAddedSessions,
     autoCheckUpdates,
     dlsiteMetadataLanguage,
     librarySortCriterion,
@@ -245,7 +232,6 @@ class SettingsState {
     showAsmrOne,
     startupPage,
     portraitLockEnabled,
-    playbackDetailSubtitleStyle,
     coverImageResolution,
     coverImageDisplayMode,
     preferEmbeddedAudioCover,

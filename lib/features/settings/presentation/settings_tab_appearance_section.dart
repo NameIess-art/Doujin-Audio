@@ -236,47 +236,6 @@ List<Widget> _buildSettingsAppearanceSection({
       children: [
         Consumer(
           builder: (context, ref, _) {
-            final style = ref.watch(
-              settingsStateProvider.select(
-                (state) =>
-                    state.value?.playbackDetailSubtitleStyle ??
-                    PlaybackDetailSubtitleStyle.compact,
-              ),
-            );
-            final styleLabels = <PlaybackDetailSubtitleStyle, String>{
-              PlaybackDetailSubtitleStyle.compact: i18n.tr(
-                'playback_detail_subtitle_style_compact',
-              ),
-              PlaybackDetailSubtitleStyle.timeline: i18n.tr(
-                'playback_detail_subtitle_style_timeline',
-              ),
-            };
-            return ListTile(
-              title: _settingsTitle(i18n.tr('playback_detail_subtitle_style')),
-              leading: _settingsIcon(Icons.lyrics_rounded, cs.onSurface),
-              trailing: _settingsDropdown<PlaybackDetailSubtitleStyle>(
-                context,
-                value: style,
-                onChanged: (value) {
-                  if (value != null) {
-                    settings.setPlaybackDetailSubtitleStyle(value);
-                  }
-                },
-                items: PlaybackDetailSubtitleStyle.values
-                    .map(
-                      (value) => DropdownMenuItem<PlaybackDetailSubtitleStyle>(
-                        value: value,
-                        child: _settingsDropdownText(styleLabels[value]!),
-                      ),
-                    )
-                    .toList(),
-              ),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-            );
-          },
-        ),
-        Consumer(
-          builder: (context, ref, _) {
             final enabled = ref.watch(
               settingsStateProvider.select(
                 (state) => state.value?.blurPlayerBackgroundEnabled ?? true,
@@ -287,25 +246,6 @@ List<Widget> _buildSettingsAppearanceSection({
               onChanged: settings.setBlurPlayerBackgroundEnabled,
               title: _settingsTitle(i18n.tr('blur_player_background')),
               secondary: _settingsIcon(Icons.blur_on_rounded, cs.onSurface),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-            );
-          },
-        ),
-        Consumer(
-          builder: (context, ref, _) {
-            final enabled = ref.watch(
-              settingsStateProvider.select(
-                (state) => state.value?.showPlaybackCard ?? true,
-              ),
-            );
-            return SwitchListTile(
-              value: enabled,
-              onChanged: settings.setShowPlaybackCard,
-              title: _settingsTitle(i18n.tr('show_playback_card')),
-              secondary: _settingsIcon(
-                Icons.play_circle_outline_rounded,
-                cs.onSurface,
-              ),
               contentPadding: const EdgeInsets.symmetric(horizontal: 8),
             );
           },

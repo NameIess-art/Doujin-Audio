@@ -12,27 +12,6 @@ List<Widget> _buildSettingsPlaybackSection({
       children: [
         Consumer(
           builder: (context, ref, _) {
-            final autoPlay = ref.watch(
-              settingsStateProvider.select(
-                (s) => s.value?.autoPlayAddedSessions ?? true,
-              ),
-            );
-            return SwitchListTile(
-              value: autoPlay,
-              onChanged: settings.setAutoPlayAddedSessions,
-              title: _settingsTitle(i18n.tr('auto_play_added_sessions')),
-              secondary: _settingsIcon(
-                Icons.playlist_play_rounded,
-                cs.onSurface,
-              ),
-              shape: const RoundedRectangleBorder(
-                borderRadius: AppRadius.borderCard,
-              ),
-            );
-          },
-        ),
-        Consumer(
-          builder: (context, ref, _) {
             final allowVideoPlayback = ref.watch(
               settingsStateProvider.select(
                 (s) => s.value?.allowVideoPlayback ?? true,

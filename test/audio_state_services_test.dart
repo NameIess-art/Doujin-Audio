@@ -66,9 +66,7 @@ void main() {
         json.encode(<String, Object?>{
           'multiThreadPlaybackEnabled': true,
           'notificationsEnabled': false,
-          'showPlaybackCard': false,
           'startupPage': StartupPage.asmrOne.name,
-          'autoPlayAddedSessions': false,
           'autoCheckUpdates': true,
           'recordPlaybackProgress': false,
           'asmrPlaybackCacheEnabled': true,
@@ -166,9 +164,7 @@ void main() {
         ..converterBitrate = '192k'
         ..multiThreadPlaybackEnabled = true
         ..notificationsEnabled = false
-        ..showPlaybackCard = false
         ..startupPage = StartupPage.asmrOne
-        ..autoPlayAddedSessions = false
         ..autoCheckUpdates = true
         ..dlsiteMetadataLanguage = ContentLanguagePreference.en
         ..asmrPlaybackCacheEnabled = true
@@ -201,16 +197,10 @@ void main() {
               'notifications',
               isFalse,
             )
-            .having((state) => state.showPlaybackCard, 'show card', isFalse)
             .having(
               (state) => state.startupPage,
               'startup page',
               StartupPage.asmrOne,
-            )
-            .having(
-              (state) => state.autoPlayAddedSessions,
-              'auto play',
-              isFalse,
             )
             .having(
               (state) => state.autoCheckUpdates,
@@ -299,10 +289,6 @@ void main() {
       expect(state.allowDuplicateWorks, isFalse);
       expect(state.reduceAnimations, isFalse);
       expect(state.portraitLockEnabled, isFalse);
-      expect(
-        state.playbackDetailSubtitleStyle,
-        PlaybackDetailSubtitleStyle.compact,
-      );
       expect(state.coverImageDisplayMode, CoverImageDisplayMode.fill);
       expect(state.preferEmbeddedAudioCover, isTrue);
       expect(state.blurPlayerBackgroundEnabled, isTrue);
@@ -384,51 +370,6 @@ void main() {
       await restored.loadPersistedState();
       expect(restored.blurPlayerBackgroundEnabled, isFalse);
     });
-
-    test(
-      'playback detail subtitle style persists with safe fallback',
-      () async {
-        final repository = SettingsRepository();
-        addTearDown(repository.dispose);
-
-        await repository.setPlaybackDetailSubtitleStyle(
-          PlaybackDetailSubtitleStyle.timeline,
-        );
-
-        final saved =
-            json.decode(
-                  (await SharedPreferences.getInstance()).getString(
-                    'playback_settings_v1',
-                  )!,
-                )
-                as Map<String, dynamic>;
-        expect(
-          saved['playbackDetailSubtitleStyle'],
-          PlaybackDetailSubtitleStyle.timeline.name,
-        );
-
-        final restored = SettingsRepository();
-        addTearDown(restored.dispose);
-        await restored.loadPersistedState();
-        expect(
-          restored.playbackDetailSubtitleStyle,
-          PlaybackDetailSubtitleStyle.timeline,
-        );
-
-        SharedPreferences.setMockInitialValues(<String, Object>{
-          'playback_settings_v1': json.encode(<String, Object?>{
-            'playbackDetailSubtitleStyle': 'unknown',
-          }),
-        });
-        final invalid = SettingsRepository();
-        addTearDown(invalid.dispose);
-        await invalid.loadPersistedState();
-        expect(
-          invalid.playbackDetailSubtitleStyle,
-          PlaybackDetailSubtitleStyle.compact,
-        );
-      },
-    );
 
     test('cover display mode persists with safe fallback', () async {
       final repository = SettingsRepository();
@@ -693,12 +634,9 @@ void main() {
         addTearDown(repository.dispose);
 
         await repository.setStartupPage(StartupPage.playlist);
-        await repository.setAutoPlayAddedSessions(false);
-        await repository.setAutoPlayAddedSessions(false);
         await repository.setAsmrPlaybackCacheEnabled(true);
 
         expect(repository.slice.state.startupPage, StartupPage.playlist);
-        expect(repository.slice.state.autoPlayAddedSessions, isFalse);
         expect(repository.slice.state.asmrPlaybackCacheEnabled, isTrue);
         final saved =
             json.decode(
@@ -708,7 +646,6 @@ void main() {
                 )
                 as Map<String, dynamic>;
         expect(saved['startupPage'], 'playlist');
-        expect(saved['autoPlayAddedSessions'], isFalse);
         expect(saved['asmrPlaybackCacheEnabled'], isTrue);
       },
     );

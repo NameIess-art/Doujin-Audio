@@ -304,7 +304,7 @@ void main() {
       },
     );
 
-    test('added sessions follow the auto-play setting', () async {
+    test('added sessions stay paused unless playback is requested', () async {
       var prepareCalls = 0;
       var playCalls = 0;
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
@@ -325,14 +325,12 @@ void main() {
         isSingle: true,
       );
 
-      await runtimeGraph.settings.setAutoPlayAddedSessions(false);
       await runtimeGraph.playback.spawnSession(track);
       await runtimeGraph.playback.pendingSessionPreparation;
       expect(prepareCalls, 0);
       expect(playCalls, 0);
 
-      await runtimeGraph.settings.setAutoPlayAddedSessions(true);
-      await runtimeGraph.playback.spawnSession(track);
+      await runtimeGraph.playback.spawnSession(track, autoPlay: true);
       for (var i = 0; i < 20 && playCalls < 1; i++) {
         await Future<void>.delayed(const Duration(milliseconds: 10));
       }

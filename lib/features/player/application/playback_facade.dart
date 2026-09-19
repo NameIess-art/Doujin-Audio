@@ -44,7 +44,6 @@ typedef PlaybackHistoryUpdater =
       required bool updatePlayedAt,
     });
 
-bool _defaultAutoPlayAddedSessions() => true;
 bool _defaultAllowDuplicateWorks() => false;
 
 /// Owns playback sessions and the platform playback runtime.
@@ -108,7 +107,6 @@ final class PlaybackFacade {
   PlaybackQueueSessionSynchronizer? _synchronizePlaybackQueueSession;
   PlaybackCommandPort? _commandPort;
   PlaybackLoopModeSynchronizer? _synchronizeLoopMode;
-  bool Function() _autoPlayAddedSessions = _defaultAutoPlayAddedSessions;
   bool Function() _allowDuplicateWorks = _defaultAllowDuplicateWorks;
   bool _sessionObserversAttached = false;
   final Map<String, String> _retargetedPathAliases = <String, String>{};
@@ -211,11 +209,7 @@ final class PlaybackFacade {
     return references;
   }
 
-  void attachSessionDefaults({
-    required bool Function() autoPlayAddedSessions,
-    required bool Function() allowDuplicateWorks,
-  }) {
-    _autoPlayAddedSessions = autoPlayAddedSessions;
+  void attachSessionDefaults({required bool Function() allowDuplicateWorks}) {
     _allowDuplicateWorks = allowDuplicateWorks;
   }
 
@@ -282,7 +276,6 @@ final class PlaybackFacade {
     _synchronizePlaybackQueueSession = null;
     detachCommandPort();
     _synchronizeLoopMode = null;
-    _autoPlayAddedSessions = _defaultAutoPlayAddedSessions;
     _allowDuplicateWorks = _defaultAllowDuplicateWorks;
   }
 

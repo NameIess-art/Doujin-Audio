@@ -508,7 +508,7 @@ extension PlaybackQueuePathCoordinator on PlaybackFacade {
       if (!removed) return false;
     }
     final session = createTrackSession(track);
-    final shouldAutoPlay = autoPlay ?? _autoPlayAddedSessions();
+    final shouldAutoPlay = autoPlay ?? false;
     if (shouldAutoPlay) {
       unawaited(_enqueueSessionPreparation(session, nextPath: track.path));
     }
@@ -535,7 +535,7 @@ extension PlaybackQueuePathCoordinator on PlaybackFacade {
       loopMode: loopMode,
       customQueueTracks: List<MusicTrack>.unmodifiable(tracks),
     );
-    final shouldAutoPlay = autoPlay ?? _autoPlayAddedSessions();
+    final shouldAutoPlay = autoPlay ?? false;
     if (shouldAutoPlay) {
       unawaited(_enqueueSessionPreparation(session, nextPath: startTrack.path));
     }

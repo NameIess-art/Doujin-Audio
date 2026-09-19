@@ -111,10 +111,8 @@ void main() {
           mainOverlayUiProvider.overrideWithValue(
             const MainOverlayUiState(
               overlaySessions: <PlaybackSessionSnapshot>[],
-              visibleSessions: <PlaybackSessionSnapshot>[],
               playingSessionCount: 0,
               activeSessionCount: 0,
-              showPlaybackCard: false,
               isInitialized: true,
               startupReady: true,
             ),

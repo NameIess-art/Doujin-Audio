@@ -366,25 +366,40 @@ void main() {
     expect(multiPlaybackOverlay.map((session) => session.id), ['playing']);
   });
 
-  test('overlay remains during loading and hides after stopping', () {
-    final value = session(id: 'overlay', path: '/tracks/a.mp3');
-    addTearDown(value.shutdown);
-    List<PlaybackSessionSnapshot> overlay() => overlaySessionsFromPlaybackState(
-      PlaybackStateSliceData(activeSessions: [snapshot(value)]),
-    );
+  test(
+    'overlay keeps paused direct playback but hides paused playlist items',
+    () {
+      final direct = session(id: 'direct', path: '/tracks/direct.mp3')
+        ..isTemporary = true;
+      final playlist = session(id: 'playlist', path: '/tracks/playlist.mp3');
+      addTearDown(direct.shutdown);
+      addTearDown(playlist.shutdown);
+      List<PlaybackSessionSnapshot> overlay() =>
+          overlaySessionsFromPlaybackState(
+            PlaybackStateSliceData(
+              activeSessions: [snapshot(direct), snapshot(playlist)],
+            ),
+          );
 
-    value.beginPreparation(showLoading: true, autoPlay: true);
-    expect(snapshot(value).playbackRequested, isTrue);
-    expect(overlay().single.id, value.id);
-    value.state = const PlayerState(true, ProcessingState.buffering);
-    expect(overlay().single.id, value.id);
-    value.state = const PlayerState(true, ProcessingState.ready);
-    expect(overlay().single.id, value.id);
-    value.confirmPaused();
-    expect(overlay(), isEmpty);
-    value.state = const PlayerState(true, ProcessingState.completed);
-    expect(overlay(), isEmpty);
-  });
+      direct.beginPreparation(showLoading: true, autoPlay: true);
+      playlist.beginPreparation(showLoading: true, autoPlay: true);
+      expect(overlay().map((session) => session.id), ['direct', 'playlist']);
+
+      direct.state = const PlayerState(true, ProcessingState.buffering);
+      playlist.state = const PlayerState(true, ProcessingState.buffering);
+      expect(overlay().map((session) => session.id), ['direct', 'playlist']);
+
+      direct.state = const PlayerState(true, ProcessingState.ready);
+      playlist.state = const PlayerState(true, ProcessingState.ready);
+      direct.confirmPaused();
+      playlist.confirmPaused();
+      expect(overlay().map((session) => session.id), ['direct']);
+
+      direct.state = const PlayerState(true, ProcessingState.completed);
+      playlist.state = const PlayerState(true, ProcessingState.completed);
+      expect(overlay().map((session) => session.id), ['direct']);
+    },
+  );
 
   test('promoting a temporary session updates playlist structure', () {
     final value = session(id: 'temporary', path: '/tracks/a.mp3');

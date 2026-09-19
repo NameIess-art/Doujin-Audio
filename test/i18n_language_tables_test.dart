@@ -107,6 +107,10 @@ void main() {
   );
 
   test('action, subtitle and duration keys are localized properly', () {
+    expect(appLanguageZh['root_directory'], '根目录');
+    expect(appLanguageJa['root_directory'], 'ルートディレクトリ');
+    expect(appLanguageEn['root_directory'], 'Root directory');
+
     expect(appLanguageZh['download'], '下载');
     expect(appLanguageJa['download'], 'ダウンロード');
     expect(appLanguageEn['download'], 'Download');

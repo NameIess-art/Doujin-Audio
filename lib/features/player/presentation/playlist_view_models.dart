@@ -123,33 +123,27 @@ class PlaylistStructureState {
 class MainOverlayUiState {
   const MainOverlayUiState({
     required this.overlaySessions,
-    required this.visibleSessions,
     required this.playingSessionCount,
     required this.activeSessionCount,
-    required this.showPlaybackCard,
     required this.isInitialized,
     required this.startupReady,
   });
 
   final List<PlaybackSessionSnapshot> overlaySessions;
-  final List<PlaybackSessionSnapshot> visibleSessions;
   final int playingSessionCount;
   final int activeSessionCount;
-  final bool showPlaybackCard;
   final bool isInitialized;
   final bool startupReady;
 
   bool get hasPlayingSession => playingSessionCount > 0;
-  bool get hasNowPlaying => visibleSessions.isNotEmpty;
+  bool get hasNowPlaying => overlaySessions.isNotEmpty;
 
   @override
   bool operator ==(Object other) {
     return other is MainOverlayUiState &&
         listEquals(other.overlaySessions, overlaySessions) &&
-        listEquals(other.visibleSessions, visibleSessions) &&
         other.playingSessionCount == playingSessionCount &&
         other.activeSessionCount == activeSessionCount &&
-        other.showPlaybackCard == showPlaybackCard &&
         other.isInitialized == isInitialized &&
         other.startupReady == startupReady;
   }
@@ -157,10 +151,8 @@ class MainOverlayUiState {
   @override
   int get hashCode => Object.hash(
     Object.hashAll(overlaySessions),
-    Object.hashAll(visibleSessions),
     playingSessionCount,
     activeSessionCount,
-    showPlaybackCard,
     isInitialized,
     startupReady,
   );
@@ -387,9 +379,11 @@ List<PlaybackSessionSnapshot> overlaySessionsFromPlaybackState(
       .where(
         (session) =>
             session.currentTrackPath.isNotEmpty &&
-            session.playbackRequested &&
-            (session.isPlaybackLoading ||
-                session.state.processing == PlaybackProcessingStatus.ready),
+            (session.isTemporary ||
+                (session.playbackRequested &&
+                    (session.isPlaybackLoading ||
+                        session.state.processing ==
+                            PlaybackProcessingStatus.ready))),
       )
       .toList(growable: false);
 }

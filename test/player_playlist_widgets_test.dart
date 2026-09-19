@@ -114,7 +114,6 @@ Future<
 >
 _pumpSubtitleDetail({
   required WidgetTester tester,
-  required PlaybackDetailSubtitleStyle style,
   required SubtitleTrack subtitleTrack,
   required Duration initialPosition,
   Size physicalSize = const Size(1080, 2400),
@@ -142,10 +141,6 @@ _pumpSubtitleDetail({
   final coverCache = _RecordingPlaybackCoverCacheService();
   final fixture = AppRuntimeWidgetTestFixture(
     coverArtworkCacheService: coverCache,
-    configureSettingsRepository: (settings) {
-      settings.playbackDetailSubtitleStyle = style;
-      settings.syncSlice(isInitialized: true);
-    },
   );
   addTearDown(fixture.dispose);
   configureFixture?.call(fixture);
@@ -247,7 +242,6 @@ void main() {
   testWidgets('detail repeated close only pops its own route', (tester) async {
     await _pumpSubtitleDetail(
       tester: tester,
-      style: PlaybackDetailSubtitleStyle.timeline,
       subtitleTrack: SubtitleTrack(sourcePath: 'empty.srt', cues: const []),
       initialPosition: Duration.zero,
     );
@@ -268,7 +262,6 @@ void main() {
     (tester) async {
       await _pumpSubtitleDetail(
         tester: tester,
-        style: PlaybackDetailSubtitleStyle.timeline,
         subtitleTrack: SubtitleTrack(sourcePath: 'empty.srt', cues: const []),
         initialPosition: Duration.zero,
       );
@@ -326,7 +319,6 @@ void main() {
         );
         final harness = await _pumpSubtitleDetail(
           tester: tester,
-          style: PlaybackDetailSubtitleStyle.timeline,
           queueTracks: tracks,
           subtitleTrack: SubtitleTrack(sourcePath: 'empty.srt', cues: const []),
           initialPosition: Duration.zero,
@@ -387,7 +379,6 @@ void main() {
   ) async {
     final harness = await _pumpSubtitleDetail(
       tester: tester,
-      style: PlaybackDetailSubtitleStyle.timeline,
       subtitleTrack: SubtitleTrack(sourcePath: 'empty.srt', cues: const []),
       initialPosition: Duration.zero,
     );
@@ -430,7 +421,6 @@ void main() {
       );
       await _pumpSubtitleDetail(
         tester: tester,
-        style: PlaybackDetailSubtitleStyle.timeline,
         subtitleTrack: track,
         initialPosition: Duration(seconds: cueCount),
       );
@@ -492,7 +482,6 @@ void main() {
     );
     await _pumpSubtitleDetail(
       tester: tester,
-      style: PlaybackDetailSubtitleStyle.timeline,
       subtitleTrack: track,
       initialPosition: Duration.zero,
       preloadSubtitle: true,
@@ -522,7 +511,6 @@ void main() {
     );
     final harness = await _pumpSubtitleDetail(
       tester: tester,
-      style: PlaybackDetailSubtitleStyle.compact,
       subtitleTrack: track,
       initialPosition: const Duration(seconds: 2),
       preloadSubtitle: true,
@@ -568,7 +556,6 @@ void main() {
         var reads = 0;
         await _pumpSubtitleDetail(
           tester: tester,
-          style: PlaybackDetailSubtitleStyle.timeline,
           subtitleTrack: SubtitleTrack(sourcePath: 'empty.srt', cues: const []),
           initialPosition: Duration.zero,
           configureFixture: (fixture) {
@@ -631,7 +618,6 @@ void main() {
         );
         final harness = await _pumpSubtitleDetail(
           tester: tester,
-          style: PlaybackDetailSubtitleStyle.timeline,
           subtitleTrack: track,
           subtitleResult: result.future,
           initialPosition: Duration.zero,
@@ -1364,7 +1350,6 @@ void main() {
     (WidgetTester tester) async {
       final pumped = await _pumpSubtitleDetail(
         tester: tester,
-        style: PlaybackDetailSubtitleStyle.compact,
         initialPosition: const Duration(seconds: 30),
         subtitleTrack: SubtitleTrack(
           sourcePath: '/library/subtitles/track.vtt',
@@ -1512,7 +1497,6 @@ void main() {
   ) async {
     final pumped = await _pumpSubtitleDetail(
       tester: tester,
-      style: PlaybackDetailSubtitleStyle.compact,
       subtitleTrack: SubtitleTrack(
         sourcePath: '/library/subtitles/track.vtt',
         cues: <SubtitleCue>[],
@@ -3767,78 +3751,35 @@ void main() {
     },
   );
 
-  for (final style in PlaybackDetailSubtitleStyle.values) {
-    testWidgets('detail subtitle follows native progress without input $style', (
-      tester,
-    ) async {
-      final harness = await _pumpSubtitleDetail(
-        tester: tester,
-        style: style,
-        subtitleTrack: SubtitleTrack(
-          sourcePath: 'automatic.srt',
-          cues: List.generate(4, (index) => SubtitleCue(
-            start: Duration(seconds: index * 2),
-            end: Duration(seconds: (index + 1) * 2),
-            text: 'Automatic cue $index',
-          )),
-        ),
-        initialPosition: Duration.zero,
-      );
-      for (var index = 1; index < 4; index++) {
-        harness.session.applyNativeProgress(NativePlaybackProgressUpdate(
-          sessionId: harness.session.id,
-          position: Duration(seconds: index * 2),
-          bufferedPosition: const Duration(seconds: 8),
-          nativeElapsedRealtimeMs: index * 2000,
-        ));
-        await tester.pump();
-        await tester.pump(const Duration(milliseconds: 400));
-        // A throttled progress event starts the fade on this frame; let that
-        // animation finish before checking that its outgoing cue was removed.
-        await tester.pumpAndSettle();
-        if (style == PlaybackDetailSubtitleStyle.compact) {
-          expect(find.text('Automatic cue $index'), findsOneWidget);
-          expect(find.text('Automatic cue ${index - 1}'), findsNothing);
-        } else {
-          final cue = find.byKey(ValueKey('subtitle_timeline_cue_$index'));
-          final viewport = find.byKey(const ValueKey('subtitle_timeline_viewport'));
-          expect(tester.getCenter(cue).dy, closeTo(tester.getCenter(viewport).dy, 0.5));
-        }
-      }
-    });
-  }
-
-  testWidgets('compact playback subtitle centers wrapped text', (tester) async {
-    const subtitleText = 'First line\nsecond centered line';
-    final subtitleTrack = SubtitleTrack(
-      sourcePath: '/library/subtitles/track.srt',
-      cues: <SubtitleCue>[
-        const SubtitleCue(
-          start: Duration.zero,
-          end: Duration(seconds: 5),
-          text: subtitleText,
-        ),
-      ],
-    );
-    await _pumpSubtitleDetail(
+  testWidgets('timeline subtitle follows native progress without input', (
+    tester,
+  ) async {
+    final harness = await _pumpSubtitleDetail(
       tester: tester,
-      style: PlaybackDetailSubtitleStyle.compact,
-      subtitleTrack: subtitleTrack,
-      initialPosition: const Duration(seconds: 1),
-      physicalSize: const Size(1500, 2400),
+      subtitleTrack: SubtitleTrack(
+        sourcePath: 'automatic.srt',
+        cues: List.generate(4, (index) => SubtitleCue(
+          start: Duration(seconds: index * 2),
+          end: Duration(seconds: (index + 1) * 2),
+          text: 'Automatic cue $index',
+        )),
+      ),
+      initialPosition: Duration.zero,
     );
-    await pumpUntilFound(tester, find.text(subtitleText));
-
-    expect(
-      tester
-          .getSize(find.byKey(const ValueKey('playback_secondary_controls')))
-          .width,
-      366,
-    );
-
-    final text = tester.widget<Text>(find.text(subtitleText));
-    expect(text.textAlign, TextAlign.center);
-    expect(text.maxLines, 2);
+    for (var index = 1; index < 4; index++) {
+      harness.session.applyNativeProgress(NativePlaybackProgressUpdate(
+        sessionId: harness.session.id,
+        position: Duration(seconds: index * 2),
+        bufferedPosition: const Duration(seconds: 8),
+        nativeElapsedRealtimeMs: index * 2000,
+      ));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pumpAndSettle();
+      final cue = find.byKey(ValueKey('subtitle_timeline_cue_$index'));
+      final viewport = find.byKey(const ValueKey('subtitle_timeline_viewport'));
+      expect(tester.getCenter(cue).dy, closeTo(tester.getCenter(viewport).dy, 0.5));
+    }
   });
 
   testWidgets(
@@ -3930,7 +3871,6 @@ void main() {
     );
     final result = await _pumpSubtitleDetail(
       tester: tester,
-      style: PlaybackDetailSubtitleStyle.compact,
       subtitleTrack: subtitleTrack,
       initialPosition: Duration.zero,
     );
@@ -4032,11 +3972,6 @@ void main() {
       final coverCache = _RecordingPlaybackCoverCacheService();
       final fixture = AppRuntimeWidgetTestFixture(
         coverArtworkCacheService: coverCache,
-        configureSettingsRepository: (settings) {
-          settings.playbackDetailSubtitleStyle =
-              PlaybackDetailSubtitleStyle.compact;
-          settings.syncSlice(isInitialized: true);
-        },
       );
       addTearDown(fixture.dispose);
       fixture.runtimeGraph.library.addTracks(
@@ -4167,7 +4102,6 @@ void main() {
       );
       final result = await _pumpSubtitleDetail(
         tester: tester,
-        style: PlaybackDetailSubtitleStyle.timeline,
         subtitleTrack: subtitleTrack,
         initialPosition: const Duration(milliseconds: 2500),
       );
@@ -4331,7 +4265,6 @@ void main() {
     );
     await _pumpSubtitleDetail(
       tester: tester,
-      style: PlaybackDetailSubtitleStyle.timeline,
       subtitleTrack: subtitleTrack,
       initialPosition: const Duration(seconds: playbackIndex * 2),
     );
@@ -4383,7 +4316,6 @@ void main() {
     );
     await _pumpSubtitleDetail(
       tester: tester,
-      style: PlaybackDetailSubtitleStyle.timeline,
       subtitleTrack: subtitleTrack,
       initialPosition: const Duration(seconds: 1),
     );
@@ -4444,7 +4376,6 @@ void main() {
     );
     await _pumpSubtitleDetail(
       tester: tester,
-      style: PlaybackDetailSubtitleStyle.timeline,
       subtitleTrack: subtitleTrack,
       initialPosition: const Duration(seconds: 2),
     );

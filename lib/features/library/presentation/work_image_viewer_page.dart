@@ -152,17 +152,31 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage> {
             itemCount: widget.images.length,
             itemBuilder: (context, index) {
               final img = widget.images[index];
+              final imagePath = img.path.trim();
+              final isRemoteImage = imagePath.startsWith('http://') ||
+                  imagePath.startsWith('https://');
               return InteractiveViewer(
                 maxScale: 4.0,
                 child: Center(
-                  child: LocalCoverImage(
-                    path: img.path,
-                    seed: img.path,
-                    fit: BoxFit.contain,
-                    useDefaultCacheWidth: false,
-                    showIcon: true,
-                    icon: Icons.broken_image_rounded,
-                  ),
+                  child: isRemoteImage
+                      ? RetryingNetworkImage(
+                          url: imagePath,
+                          fit: BoxFit.contain,
+                          useDefaultCacheWidth: false,
+                          fallbackBuilder: (_) => CoverFallbackArtwork(
+                            seed: imagePath,
+                            showIcon: true,
+                            icon: Icons.broken_image_rounded,
+                          ),
+                        )
+                      : LocalCoverImage(
+                          path: imagePath,
+                          seed: imagePath,
+                          fit: BoxFit.contain,
+                          useDefaultCacheWidth: false,
+                          showIcon: true,
+                          icon: Icons.broken_image_rounded,
+                        ),
                 ),
               );
             },

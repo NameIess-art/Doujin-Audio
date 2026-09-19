@@ -1172,7 +1172,6 @@ void main() {
           persist: false,
         );
         await runtimeGraph.playback.spawnSession(oldTrack, autoPlay: false);
-        await runtimeGraph.settings.setAutoPlayAddedSessions(false);
 
         final databaseRepository = TestPersistenceRepository(
           database: AppDatabase.test(db),
@@ -1215,7 +1214,6 @@ void main() {
         expect(runtimeGraph.library.trackByPath(oldTrack.path), isNull);
         expect(runtimeGraph.library.trackByPath(restoredTrack.path), isNotNull);
         expect(runtimeGraph.library.watchedFolders, <String>['restored']);
-        expect(runtimeGraph.settings.autoPlayAddedSessions, isTrue);
         expect(runtimeGraph.playback.activeSessions, hasLength(1));
         expect(
           runtimeGraph.playback.activeSessions.single.id,

@@ -57,6 +57,7 @@ import 'features/player/application/timer_facade.dart';
 import 'core/logging/app_log_service.dart';
 import 'core/ui/ui_interaction_coordinator.dart';
 import 'core/widgets/app_feedback.dart';
+import 'app/theme/app_styles.dart';
 import 'app/theme/theme_provider.dart';
 import 'features/settings/application/app_preferences.dart';
 import 'features/settings/application/app_cache_service.dart';
@@ -338,6 +339,8 @@ class _RootPageRouteObserver extends NavigatorObserver {
   bool _disposed = false;
 
   PageRoute<dynamic>? get topRoute => _routes.lastOrNull;
+  PageRoute<dynamic>? get routeBelowTop =>
+      _routes.length < 2 ? null : _routes[_routes.length - 2];
 
   void _sync() {
     if (_syncScheduled || _disposed) return;
@@ -480,7 +483,7 @@ class _RoutedPlaybackDockState extends ConsumerState<_RoutedPlaybackDock> {
         child: Align(
           alignment: Alignment.bottomCenter,
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8),
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 430),
               child: FractionallySizedBox(
@@ -727,13 +730,21 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp> {
             builder: (context, revision, navigatorChild) {
               final isWorkDetailRoute =
                   _routeObserver.topRoute?.settings.name == workDetailRouteName;
+              final isPlaybackDetailAboveWorkDetail =
+                  _routeObserver.topRoute is SessionDetailRoute &&
+                  _routeObserver.routeBelowTop?.settings.name ==
+                      workDetailRouteName;
               final supportsRoutedDock =
                   defaultTargetPlatform != TargetPlatform.windows &&
                   mediaQuery.orientation == Orientation.portrait &&
                   mediaQuery.size.width < 980;
               final routeDockActive =
                   isWorkDetailRoute && supportsRoutedDock && hasOverlaySessions;
-              final routeDockInset = routeDockActive
+              final reserveWorkDetailDockInset =
+                  (isWorkDetailRoute || isPlaybackDetailAboveWorkDetail) &&
+                  supportsRoutedDock &&
+                  hasOverlaySessions;
+              final routeDockInset = reserveWorkDetailDockInset
                   ? kActiveSessionCarouselDockHeight +
                         12 +
                         mediaQuery.padding.bottom

@@ -130,7 +130,10 @@ void main() {
           builder: (context) => TextButton(
             onPressed: () => showAsmrWorkDetailSheet(
               context,
-              _work(voiceActors: const <String>['Voice A']),
+              _work(
+                voiceActors: const <String>['Voice A'],
+                tags: const <String>['Tag A'],
+              ),
             ),
             child: const Text('Open detail'),
           ),
@@ -144,7 +147,9 @@ void main() {
       const ValueKey<String>('work_detail_voice_actor_Voice A'),
     );
     expect(voiceActor, findsOneWidget);
-    expect(tester.getSize(voiceActor).height, greaterThanOrEqualTo(44));
+    final tag = find.byKey(const ValueKey<String>('work_detail_tag_#Tag A'));
+    expect(tag, findsOneWidget);
+    expect(tester.getSize(voiceActor).height, tester.getSize(tag).height);
     await tester.tap(voiceActor);
     await tester.pump();
     await tester.tap(find.byKey(const ValueKey<String>('work_detail_rj_copy')));
@@ -579,6 +584,7 @@ AsmrWork _work({
   int id = 123,
   String title = 'Test work',
   List<String> voiceActors = const <String>[],
+  List<String> tags = const <String>[],
 }) => AsmrWork(
   id: id,
   title: title,
@@ -596,6 +602,6 @@ AsmrWork _work({
   reviewCount: 0,
   rating: 0,
   voiceActors: voiceActors,
-  tags: const <String>[],
+  tags: tags,
   isFavorite: true,
 );

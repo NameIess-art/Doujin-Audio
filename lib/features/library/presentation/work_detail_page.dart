@@ -35,6 +35,11 @@ import 'work_image_viewer_page.dart';
 import 'work_text_viewer_page.dart';
 
 const String workDetailRouteName = '/work-detail';
+const double _workMetadataCapsuleRadius = 14;
+const EdgeInsets _workMetadataCapsulePadding = EdgeInsets.symmetric(
+  horizontal: 10,
+  vertical: 4,
+);
 
 enum _WorkEntryType { folder, audio, text, image }
 
@@ -1308,16 +1313,14 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
         child: InkWell(
           key: ValueKey<String>('work_detail_voice_actor_$voiceActor'),
           onTap: () => _copyText(context, voiceActor),
-          borderRadius: BorderRadius.circular(22),
+          borderRadius: BorderRadius.circular(_workMetadataCapsuleRadius),
           child: Container(
-            constraints: const BoxConstraints(minHeight: 44),
-            alignment: Alignment.center,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            padding: _workMetadataCapsulePadding,
             decoration: BoxDecoration(
               color: cs.primaryContainer.withValues(
                 alpha: isDark ? 0.34 : 0.56,
               ),
-              borderRadius: BorderRadius.circular(22),
+              borderRadius: BorderRadius.circular(_workMetadataCapsuleRadius),
               border: Border.all(
                 color: cs.primary.withValues(alpha: isDark ? 0.28 : 0.20),
               ),
@@ -1326,7 +1329,8 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
               voiceActor,
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                 color: cs.onPrimaryContainer,
-                fontWeight: FontWeight.w600,
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
               ),
             ),
           ),
@@ -1342,16 +1346,17 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
     return Material(
       color: Colors.transparent,
       child: InkWell(
+        key: ValueKey<String>('work_detail_tag_$displayLabel'),
         onTap: () =>
             _copyText(context, tag.startsWith('#') ? tag.substring(1) : tag),
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(_workMetadataCapsuleRadius),
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          padding: _workMetadataCapsulePadding,
           decoration: BoxDecoration(
             color: isDark
                 ? cs.surfaceContainerHighest.withValues(alpha: 0.5)
                 : cs.surfaceContainerHigh.withValues(alpha: 0.6),
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(_workMetadataCapsuleRadius),
             border: Border.all(
               color: cs.outlineVariant.withValues(alpha: isDark ? 0.3 : 0.45),
             ),

@@ -463,6 +463,9 @@ void main() {
     });
 
     await _pumpAppShell(tester);
+    final mainDockRect = tester.getRect(
+      find.byKey(const ValueKey<String>('mobile_bottom_capsule_surface')),
+    );
     double detailBottomInset = 0;
     final navigator = Navigator.of(tester.element(find.byType(MainScreen)));
     final unrelatedRoute = navigator.push<void>(
@@ -544,6 +547,36 @@ void main() {
     await tester.pump(const Duration(milliseconds: 210));
     final expandedWidth = tester.getSize(routeWidth).width;
     expect(expandedWidth, greaterThan(200));
+    expect(tester.getSize(routeDock).width, closeTo(mainDockRect.width, 0.01));
+    expect(tester.getRect(routeDock).left, closeTo(mainDockRect.left, 0.01));
+    expect(tester.getRect(routeDock).right, closeTo(mainDockRect.right, 0.01));
+
+    final rootOverlayInset = find.byType(MobileOverlayInset).first;
+    final reservedDetailInset = tester
+        .widget<MobileOverlayInset>(rootOverlayInset)
+        .bottomInset;
+    final playbackDetailFuture = navigator.push<void>(
+      buildSessionDetailRoute(sessionId: 'orientation_session'),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(
+      tester.widget<MobileOverlayInset>(rootOverlayInset).bottomInset,
+      reservedDetailInset,
+    );
+    expect(routeDock, findsNothing);
+
+    navigator.pop();
+    await playbackDetailFuture;
+    await tester.pump();
+    expect(
+      tester.widget<MobileOverlayInset>(rootOverlayInset).bottomInset,
+      reservedDetailInset,
+    );
+    await tester.pumpAndSettle();
+    expect(routeDock, findsOneWidget);
+    expect(tester.getSize(routeWidth).width, closeTo(expandedWidth, 0.1));
 
     navigator.pop();
     await tester.pump();

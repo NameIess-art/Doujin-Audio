@@ -34,6 +34,8 @@ import 'library_tab.dart';
 import 'work_image_viewer_page.dart';
 import 'work_text_viewer_page.dart';
 
+const String workDetailRouteName = '/work-detail';
+
 enum _WorkEntryType { folder, audio, text, image }
 
 enum _WorkEntryAction { play, add, remove }

@@ -45,6 +45,7 @@ import 'features/player/application/audio_state_services.dart';
 import 'features/library/application/library_facade.dart';
 import 'features/library/application/library_service.dart';
 import 'features/library/application/cover_image_cache_policy.dart';
+import 'features/library/presentation/work_detail_page.dart';
 import 'features/player/application/native_playback_repository.dart';
 import 'features/player/application/notification_facade.dart';
 import 'features/player/application/playback_facade.dart';
@@ -337,7 +338,6 @@ class _RootPageRouteObserver extends NavigatorObserver {
   bool _disposed = false;
 
   PageRoute<dynamic>? get topRoute => _routes.lastOrNull;
-  bool get hasSecondaryRoute => _routes.length > 1;
 
   void _sync() {
     if (_syncScheduled || _disposed) return;
@@ -725,13 +725,14 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp> {
             valueListenable: _routeRevision,
             child: navigatorChild,
             builder: (context, revision, navigatorChild) {
-              final hasSecondaryRoute = _routeObserver.hasSecondaryRoute;
+              final isWorkDetailRoute =
+                  _routeObserver.topRoute?.settings.name == workDetailRouteName;
               final supportsRoutedDock =
                   defaultTargetPlatform != TargetPlatform.windows &&
                   mediaQuery.orientation == Orientation.portrait &&
                   mediaQuery.size.width < 980;
               final routeDockActive =
-                  hasSecondaryRoute && supportsRoutedDock && hasOverlaySessions;
+                  isWorkDetailRoute && supportsRoutedDock && hasOverlaySessions;
               final routeDockInset = routeDockActive
                   ? kActiveSessionCarouselDockHeight +
                         12 +
@@ -746,10 +747,15 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp> {
                       color: Theme.of(context).colorScheme.surface,
                       child: navigatorChild!,
                     ),
-                    _RoutedPlaybackDock(
-                      active: routeDockActive,
-                      navigatorKey: _navigatorKey,
-                      currentRoute: _routeObserver.topRoute,
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      child: _RoutedPlaybackDock(
+                        active: routeDockActive,
+                        navigatorKey: _navigatorKey,
+                        currentRoute: _routeObserver.topRoute,
+                      ),
                     ),
                   ],
                 ),

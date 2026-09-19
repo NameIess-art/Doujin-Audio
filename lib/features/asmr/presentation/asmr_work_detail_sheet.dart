@@ -9,6 +9,7 @@ Future<void> showAsmrWorkDetailSheet(BuildContext context, AsmrWork work) {
     buildAppPageRoute<void>(
       context: context,
       style: AppPageTransitionStyle.sharedAxisZ,
+      settings: const RouteSettings(name: workDetailRouteName),
       child: WorkDetailPage.forAsmr(work: work),
     ),
   );

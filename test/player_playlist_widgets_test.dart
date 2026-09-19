@@ -985,6 +985,12 @@ void main() {
       );
       expect(tester.getSize(embeddedCard).height, 48);
       expect(
+        tester.getSize(
+          find.byKey(const ValueKey<String>('active_session_cover_circular_2')),
+        ),
+        const Size.square(40),
+      );
+      expect(
         tester
             .widgetList<InkWell>(
               find.descendant(of: embeddedCard, matching: find.byType(InkWell)),

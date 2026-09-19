@@ -28,12 +28,12 @@ class _ActiveSessionCard extends ConsumerWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     final cardHeight = embedded ? kActiveSessionCarouselDockHeight : 56.0;
-    final coverDistance = embedded ? 0.0 : 4.0;
+    const coverDistance = 4.0;
     final coverDimension = cardHeight - 2 * coverDistance;
     const coverRadius = LibraryLikeCardMetrics.coverRadius;
     final cardRadius = embedded ? cardHeight / 2 : coverRadius + coverDistance;
     final contentPadding = embedded
-        ? const EdgeInsets.only(right: 6)
+        ? const EdgeInsets.fromLTRB(4, 4, 6, 4)
         : const EdgeInsets.fromLTRB(3, 3, 6, 3);
 
     final view = ref.watch(
@@ -157,13 +157,16 @@ class _ActiveSessionCard extends ConsumerWidget {
                   ],
           ),
           child: dockCollapsed
-              ? Align(
-                  alignment: Alignment.centerLeft,
-                  child: _ActiveSessionCover(
-                    sessionId: session.id,
-                    track: currentTrack,
-                    coverPathFuture: coverPathFuture,
-                    dimension: cardHeight,
+              ? Padding(
+                  padding: const EdgeInsets.only(left: coverDistance),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: _ActiveSessionCover(
+                      sessionId: session.id,
+                      track: currentTrack,
+                      coverPathFuture: coverPathFuture,
+                      dimension: coverDimension,
+                    ),
                   ),
                 )
               : compact
@@ -186,7 +189,7 @@ class _ActiveSessionCard extends ConsumerWidget {
                         i18n: i18n,
                         showCover: false,
                         coverDimension: coverDimension,
-                        contentPadding: EdgeInsets.fromLTRB(
+                        contentPadding: const EdgeInsets.fromLTRB(
                           14,
                           coverDistance,
                           6,
@@ -205,7 +208,7 @@ class _ActiveSessionCard extends ConsumerWidget {
                   coverDimension: coverDimension,
                   contentPadding: showExpandedCover
                       ? contentPadding
-                      : EdgeInsets.fromLTRB(
+                      : const EdgeInsets.fromLTRB(
                           14,
                           coverDistance,
                           6,

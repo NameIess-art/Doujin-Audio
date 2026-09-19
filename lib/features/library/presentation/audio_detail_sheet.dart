@@ -96,6 +96,7 @@ Future<void> showAudioDetailSheet(
     buildAppPageRoute<void>(
       context: context,
       style: AppPageTransitionStyle.sharedAxisZ,
+      settings: const RouteSettings(name: workDetailRouteName),
       child: WorkDetailPage.forLocal(target: target),
     ),
   );

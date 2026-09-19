@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -1018,19 +1019,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
                         ),
                         const SizedBox(width: 8),
                         Expanded(
-                          child: SingleChildScrollView(
-                            scrollDirection: Axis.horizontal,
-                            child: Row(
-                              children: displayTags
-                                  .map(
-                                    (tag) => Padding(
-                                      padding: const EdgeInsets.only(right: 6),
-                                      child: _buildTagCapsule(context, cs, tag),
-                                    ),
-                                  )
-                                  .toList(growable: false),
-                            ),
-                          ),
+                          child: _buildTagScroller(context, cs, displayTags),
                         ),
                       ],
                     ),
@@ -1371,6 +1360,62 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildTagScroller(
+    BuildContext context,
+    ColorScheme cs,
+    List<String> tags,
+  ) {
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: tags
+                .map(
+                  (tag) => Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: _buildTagCapsule(context, cs, tag),
+                  ),
+                )
+                .toList(growable: false),
+          ),
+        ),
+        Positioned(
+          top: 0,
+          right: -16,
+          bottom: 0,
+          width: 48,
+          child: IgnorePointer(
+            key: const ValueKey<String>('work_detail_tag_edge_fade'),
+            child: ShaderMask(
+              blendMode: BlendMode.dstIn,
+              shaderCallback: (bounds) => const LinearGradient(
+                colors: [Colors.transparent, Colors.black],
+                stops: [0, 1],
+              ).createShader(bounds),
+              child: ClipRect(
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 6, sigmaY: 1.5),
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          cs.surface.withValues(alpha: 0),
+                          cs.surface.withValues(alpha: 0.86),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 

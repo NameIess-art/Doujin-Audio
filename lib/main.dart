@@ -345,7 +345,7 @@ class _RootPageRouteObserver extends NavigatorObserver {
   void _sync() {
     if (_syncScheduled || _disposed) return;
     _syncScheduled = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    scheduleMicrotask(() {
       _syncScheduled = false;
       if (!_disposed) revision.value++;
     });
@@ -400,11 +400,13 @@ class _RootPageRouteObserver extends NavigatorObserver {
 class _RoutedPlaybackDock extends ConsumerStatefulWidget {
   const _RoutedPlaybackDock({
     required this.active,
+    required this.obscured,
     required this.navigatorKey,
     required this.currentRoute,
   });
 
   final bool active;
+  final bool obscured;
   final GlobalKey<NavigatorState> navigatorKey;
   final Route<dynamic>? currentRoute;
 
@@ -467,7 +469,7 @@ class _RoutedPlaybackDockState extends ConsumerState<_RoutedPlaybackDock> {
         defaultTargetPlatform != TargetPlatform.windows &&
         MediaQuery.orientationOf(context) == Orientation.portrait &&
         size.width < 980;
-    if (!_visible || !supported || sessions.isEmpty) {
+    if (widget.obscured || !_visible || !supported || sessions.isEmpty) {
       return const SizedBox.shrink();
     }
     final duration = MediaQuery.disableAnimationsOf(context)
@@ -739,7 +741,9 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp> {
                   mediaQuery.orientation == Orientation.portrait &&
                   mediaQuery.size.width < 980;
               final routeDockActive =
-                  isWorkDetailRoute && supportsRoutedDock && hasOverlaySessions;
+                  (isWorkDetailRoute || isPlaybackDetailAboveWorkDetail) &&
+                  supportsRoutedDock &&
+                  hasOverlaySessions;
               final reserveWorkDetailDockInset =
                   (isWorkDetailRoute || isPlaybackDetailAboveWorkDetail) &&
                   supportsRoutedDock &&
@@ -764,6 +768,7 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp> {
                       bottom: 0,
                       child: _RoutedPlaybackDock(
                         active: routeDockActive,
+                        obscured: isPlaybackDetailAboveWorkDetail,
                         navigatorKey: _navigatorKey,
                         currentRoute: _routeObserver.topRoute,
                       ),

@@ -309,6 +309,10 @@ void main() {
   });
 
   test('loading threshold delays transient playback state', () async {
+    expect(
+      PlaybackSession.loadingIndicatorThreshold,
+      const Duration(milliseconds: 750),
+    );
     final session = PlaybackSession(
       id: 'session_1',
       currentTrackPath: '/audio/one.mp3',

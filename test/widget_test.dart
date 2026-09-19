@@ -485,15 +485,19 @@ void main() {
     await tester.pump();
 
     final routeFuture = navigator.push<void>(
-      MaterialPageRoute<void>(
+      buildAppPageRoute<void>(
+        context: navigator.context,
+        style: AppPageTransitionStyle.sharedAxisZ,
         settings: const RouteSettings(name: workDetailRouteName),
-        builder: (context) {
-          detailBottomInset = MobileOverlayInset.of(context);
-          return const Scaffold(
-            key: ValueKey<String>('test_detail_route'),
-            body: SizedBox.expand(),
-          );
-        },
+        child: Builder(
+          builder: (context) {
+            detailBottomInset = MobileOverlayInset.of(context);
+            return const Scaffold(
+              key: ValueKey<String>('test_detail_route'),
+              body: SizedBox.expand(),
+            );
+          },
+        ),
       ),
     );
 
@@ -555,16 +559,21 @@ void main() {
     final reservedDetailInset = tester
         .widget<MobileOverlayInset>(rootOverlayInset)
         .bottomInset;
+    final detailRoute = find.byKey(
+      const ValueKey<String>('test_detail_route'),
+      skipOffstage: false,
+    );
+    final detailRectBeforePlayback = tester.getRect(detailRoute);
     final playbackDetailFuture = navigator.push<void>(
       buildSessionDetailRoute(sessionId: 'orientation_session'),
     );
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
-    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump(const Duration(milliseconds: 110));
     expect(
       tester.widget<MobileOverlayInset>(rootOverlayInset).bottomInset,
       reservedDetailInset,
     );
+    expect(tester.getRect(detailRoute), detailRectBeforePlayback);
     expect(routeDock, findsNothing);
 
     navigator.pop();
@@ -574,7 +583,7 @@ void main() {
       tester.widget<MobileOverlayInset>(rootOverlayInset).bottomInset,
       reservedDetailInset,
     );
-    await tester.pumpAndSettle();
+    expect(tester.getRect(detailRoute), detailRectBeforePlayback);
     expect(routeDock, findsOneWidget);
     expect(tester.getSize(routeWidth).width, closeTo(expandedWidth, 0.1));
 

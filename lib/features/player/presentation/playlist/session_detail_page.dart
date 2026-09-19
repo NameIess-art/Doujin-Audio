@@ -71,6 +71,9 @@ class SessionDetailRoute extends PageRoute<void> {
   Duration get reverseTransitionDuration => Duration.zero;
 
   @override
+  bool canTransitionFrom(TransitionRoute<dynamic> previousRoute) => false;
+
+  @override
   Widget buildPage(
     BuildContext context,
     Animation<double> animation,

@@ -49,8 +49,6 @@ class SessionDetailContent extends ConsumerStatefulWidget {
     this.subtitleGlobalEnabled = false,
     this.onToggleSubtitle,
     this.onToggleGlobalSubtitle,
-    this.onShowAudioDetail,
-    this.onShowScriptText,
   });
 
   final PlaybackSessionSnapshot session;
@@ -64,8 +62,6 @@ class SessionDetailContent extends ConsumerStatefulWidget {
   final bool subtitleGlobalEnabled;
   final VoidCallback? onToggleSubtitle;
   final VoidCallback? onToggleGlobalSubtitle;
-  final VoidCallback? onShowAudioDetail;
-  final VoidCallback? onShowScriptText;
 
   @override
   ConsumerState<SessionDetailContent> createState() =>
@@ -561,8 +557,6 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
             ),
           );
         },
-        onShowAudioDetail: widget.onShowAudioDetail,
-        onShowScriptText: widget.onShowScriptText,
       );
     }
 

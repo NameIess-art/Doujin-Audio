@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -225,6 +226,53 @@ void main() {
   );
 
   testWidgets(
+    'WorkTextViewerPage lazily appends large text documents near the scroll end',
+    (tester) async {
+      SharedPreferences.setMockInitialValues(const <String, Object>{});
+      final language = AppLanguageProvider();
+      addTearDown(language.dispose);
+      await language.setLanguage(AppLanguage.zh);
+
+      const deferredMarker = 'DEFERRED_TEXT_SECTION';
+      final longText = '${'首段内容。\n' * 3000}$deferredMarker';
+      final fakeGateway = _FakeFileCacheGateway({
+        file1.path: Uint8List.fromList(utf8.encode(longText)),
+      });
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            appLanguageProviderInstanceProvider.overrideWithValue(language),
+            workTextServiceProvider.overrideWithValue(
+              WorkTextService(platformGateway: fakeGateway),
+            ),
+          ],
+          child: const MaterialApp(home: WorkTextViewerPage(files: [file1])),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      Text renderedText() => tester.widget<Text>(
+        find.byWidgetPredicate(
+          (widget) => widget is Text && widget.data?.startsWith('首段内容') == true,
+        ),
+      );
+
+      expect(renderedText().data, isNot(contains(deferredMarker)));
+
+      final scrollView = tester.widget<SingleChildScrollView>(
+        find.byType(SingleChildScrollView),
+      );
+      scrollView.controller!.jumpTo(
+        scrollView.controller!.position.maxScrollExtent,
+      );
+      await tester.pump();
+
+      expect(renderedText().data, contains(deferredMarker));
+    },
+  );
+
+  testWidgets(
     'WorkTextViewerPage renders markdown (.md) documents with MarkdownBody',
     (tester) async {
       SharedPreferences.setMockInitialValues(const <String, Object>{});
@@ -264,6 +312,58 @@ void main() {
       expect(find.text('README'), findsOneWidget);
       expect(find.text('README.md'), findsNothing);
       expect(find.textContaining('作品说明'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'WorkTextViewerPage lazily appends large markdown documents near the scroll end',
+    (tester) async {
+      SharedPreferences.setMockInitialValues(const <String, Object>{});
+      final language = AppLanguageProvider();
+      addTearDown(language.dispose);
+      await language.setLanguage(AppLanguage.zh);
+
+      const mdFile = WorkTextFile(
+        name: 'README.md',
+        relativePath: 'README.md',
+        path: '/works/RJ123/README.md',
+      );
+      const deferredMarker = 'DEFERRED_MARKDOWN_SECTION';
+      final markdown = '${'正文段落。\n\n' * 3000}## $deferredMarker';
+      final fakeGateway = _FakeFileCacheGateway({
+        mdFile.path: Uint8List.fromList(utf8.encode(markdown)),
+      });
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            appLanguageProviderInstanceProvider.overrideWithValue(language),
+            workTextServiceProvider.overrideWithValue(
+              WorkTextService(platformGateway: fakeGateway),
+            ),
+          ],
+          child: const MaterialApp(home: WorkTextViewerPage(files: [mdFile])),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        tester.widget<MarkdownBody>(find.byType(MarkdownBody)).data,
+        isNot(contains(deferredMarker)),
+      );
+
+      final scrollView = tester.widget<SingleChildScrollView>(
+        find.byType(SingleChildScrollView),
+      );
+      scrollView.controller!.jumpTo(
+        scrollView.controller!.position.maxScrollExtent,
+      );
+      await tester.pump();
+
+      expect(
+        tester.widget<MarkdownBody>(find.byType(MarkdownBody)).data,
+        contains(deferredMarker),
+      );
     },
   );
 
@@ -454,4 +554,3 @@ void main() {
     },
   );
 }
-

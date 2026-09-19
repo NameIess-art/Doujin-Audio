@@ -21,16 +21,6 @@ import '../../../../core/ui/ui_interaction_coordinator.dart';
 import '../../../../core/widgets/app_transitions.dart';
 import '../../../../core/widgets/async_cover_image.dart';
 import '../../../../core/widgets/marquee_text.dart';
-import '../../../asmr/domain/asmr_models.dart';
-import 'package:path/path.dart' as path;
-
-import '../../../../core/media/path_matcher.dart';
-import '../../../../core/widgets/app_feedback.dart';
-import '../../../asmr/presentation/asmr_providers.dart';
-import '../../../asmr/presentation/asmr_work_detail_sheet.dart';
-import '../../../library/application/work_text_service.dart';
-import '../../../library/presentation/audio_detail_sheet.dart';
-import '../../../library/presentation/work_text_viewer_page.dart';
 import '../../../settings/application/settings_state.dart';
 import '../../application/playback_session_snapshot.dart';
 import '../../application/subtitle_overlay_controller.dart';
@@ -819,107 +809,6 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
     );
   }
 
-  void _showAudioDetailForSession(
-    BuildContext context,
-    PlaybackSessionSnapshot session,
-    MusicTrack? track,
-  ) {
-    if (track?.isRemoteAsmr == true && track?.remoteMetadata != null) {
-      unawaited(
-        showAsmrWorkDetailSheet(
-          context,
-          AsmrWork.fromJson(Map<String, dynamic>.from(track!.remoteMetadata!)),
-        ),
-      );
-      return;
-    }
-
-    final target = ref
-        .read(libraryFacadeProvider)
-        .audioDetailTargetForPath(session.currentTrackPath);
-    unawaited(showAudioDetailSheet(context, target));
-  }
-
-  Future<void> _showScriptTextForSession(
-    BuildContext context,
-    PlaybackSessionSnapshot session,
-    MusicTrack? track,
-  ) async {
-    if (track?.isRemoteAsmr == true && track?.remoteMetadata != null) {
-      final work = AsmrWork.fromJson(
-        Map<String, dynamic>.from(track!.remoteMetadata!),
-      );
-      final controller = ref.read(asmrLibraryControllerProvider);
-      if (controller != null) {
-        final downloadManager = ref.read(asmrDownloadManagerProvider);
-        final files = await controller.findWorkTextFiles(
-          work,
-          downloadManager: downloadManager,
-        );
-        if (!context.mounted) return;
-        if (files.isEmpty) {
-          final i18n = ref.read(appLanguageProviderInstanceProvider);
-          showAppSnackBar(
-            context,
-            i18n.tr('script_text_not_found'),
-            tone: AppFeedbackTone.warning,
-          );
-          return;
-        }
-        int initialIndex = 0;
-        final trackRelPath =
-            track.remoteMetadata?['trackRelativePath'] as String?;
-        if (trackRelPath != null && trackRelPath.isNotEmpty) {
-          final targetStem =
-              path.basenameWithoutExtension(trackRelPath).toLowerCase();
-          for (var i = 0; i < files.length; i++) {
-            final fName = files[i].displayName.toLowerCase();
-            if (fName == targetStem ||
-                fName.contains(targetStem) ||
-                targetStem.contains(fName)) {
-              initialIndex = i;
-              break;
-            }
-          }
-        }
-        await Navigator.of(context).push<void>(
-          MaterialPageRoute(
-            builder: (_) => WorkTextViewerPage(
-              files: files,
-              initialIndex: initialIndex,
-            ),
-          ),
-        );
-        return;
-      }
-    }
-
-    final target = ref
-        .read(libraryFacadeProvider)
-        .audioDetailTargetForPath(session.currentTrackPath);
-    final folderPath = target.isLibraryRootFolder
-        ? target.targetPath
-        : (PathMatcher.parentPath(target.targetPath) ??
-            path.dirname(target.targetPath));
-    final service = ref.read(workTextServiceProvider);
-    final files = await service.findWorkTextFiles(folderPath);
-    if (!context.mounted) return;
-    if (files.isEmpty) {
-      final i18n = ref.read(appLanguageProviderInstanceProvider);
-      showAppSnackBar(
-        context,
-        i18n.tr('script_text_not_found'),
-        tone: AppFeedbackTone.warning,
-      );
-      return;
-    }
-    await Navigator.of(context).push<void>(
-      MaterialPageRoute(
-        builder: (_) => WorkTextViewerPage(files: files),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final session = widget.session;
@@ -1313,18 +1202,6 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                                         ),
                                       );
                                     },
-                                    onShowAudioDetail: () =>
-                                        _showAudioDetailForSession(
-                                          context,
-                                          session,
-                                          track,
-                                        ),
-                                    onShowScriptText: () =>
-                                        _showScriptTextForSession(
-                                          context,
-                                          session,
-                                          track,
-                                        ),
                                   );
                                 },
                               );

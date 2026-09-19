@@ -160,24 +160,25 @@ class _AsmrWorkTreeCardState extends ConsumerState<_AsmrWorkTreeCard> {
         destructive: false,
         color: asmrBlue,
         verticalActions: true,
-        actionLabel: i18n.tr('download'),
-        removeTooltip: i18n.tr('download'),
-        primaryActionIcon: Icons.download_rounded,
-        onRemove: () => unawaited(_downloadAsmrWorks(context, [widget.work])),
-        secondaryActionLabel: i18n.tr(
+        actionLabel: i18n.tr(
           widget.work.isFavorite
               ? 'asmr_unfavorite_action'
               : 'asmr_favorite_action',
         ),
-        secondaryActionTooltip: i18n.tr(
+        removeTooltip: i18n.tr(
           widget.work.isFavorite
               ? 'asmr_unfavorite_action'
               : 'asmr_favorite_action',
         ),
-        secondaryActionIcon: widget.work.isFavorite
+        primaryActionIcon: widget.work.isFavorite
             ? Icons.favorite_rounded
             : Icons.favorite_border_rounded,
-        onSecondaryAction: () => unawaited(_toggleFavorite(context)),
+        onRemove: () => unawaited(_toggleFavorite(context)),
+        secondaryActionLabel: i18n.tr('download'),
+        secondaryActionTooltip: i18n.tr('download'),
+        secondaryActionIcon: Icons.download_rounded,
+        onSecondaryAction: () =>
+            unawaited(_downloadAsmrWorks(context, [widget.work])),
         child: cardContent,
       ),
     );

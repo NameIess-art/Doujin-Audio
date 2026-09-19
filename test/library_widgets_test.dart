@@ -2833,9 +2833,9 @@ void main() {
       final fixture = AppRuntimeWidgetTestFixture();
       addTearDown(fixture.dispose);
       final runtimeGraph = fixture.runtimeGraph;
-      const libraryPath = '/library/pinned-test';
+      const libraryPath = '/library/RJ123456-pinned-test';
       final rootTrack = MusicTrack(
-        path: '/library/pinned-test/audio.mp3',
+        path: '$libraryPath/audio.mp3',
         displayName: 'audio.mp3',
         groupKey: libraryPath,
         groupTitle: 'pinned-test',
@@ -2857,7 +2857,10 @@ void main() {
       await pumpUntilNotFound(tester, find.byType(LibraryLikeSkeletonCard));
       await tester.pump(const Duration(milliseconds: 350));
 
-      final rootFolderFinder = find.text('pinned-test', findRichText: true);
+      final rootFolderFinder = find.text(
+        'RJ123456-pinned-test',
+        findRichText: true,
+      );
       final swipeCardFinder = find.ancestor(
         of: rootFolderFinder,
         matching: find.byType(SwipeRevealCard),
@@ -2901,6 +2904,32 @@ void main() {
         find.byKey(ValueKey<String>('library_pinned_${PathMatcher.normalize(libraryPath)}')),
         findsOneWidget,
       );
+      final rjPosition = tester.widget<Positioned>(
+        find
+            .ancestor(
+              of: find.text('RJ123456'),
+              matching: find.byType(Positioned),
+            )
+            .first,
+      );
+      expect(rjPosition.right, 4);
+      expect(rjPosition.top, 4);
+      expect(rjPosition.left, isNull);
+      final pinPosition = tester.widget<Positioned>(
+        find
+            .ancestor(
+              of: find.byKey(
+                ValueKey<String>(
+                  'library_pinned_${PathMatcher.normalize(libraryPath)}',
+                ),
+              ),
+              matching: find.byType(Positioned),
+            )
+            .first,
+      );
+      expect(pinPosition.left, 4);
+      expect(pinPosition.top, 4);
+      expect(pinPosition.right, isNull);
 
       // Swipe card now shows unpin
       final updatedSwipeCard = tester.widget<SwipeRevealCard>(swipeCardFinder);

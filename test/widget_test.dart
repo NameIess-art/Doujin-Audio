@@ -1189,6 +1189,17 @@ void main() {
     expect(workCard.shadowColor, Colors.transparent);
     expect(workCard.surfaceTintColor, Colors.transparent);
     expect((workCard.shape as RoundedRectangleBorder).side, BorderSide.none);
+    final rjPosition = tester.widget<Positioned>(
+      find
+          .ancestor(
+            of: find.text('RJ000001'),
+            matching: find.byType(Positioned),
+          )
+          .first,
+    );
+    expect(rjPosition.right, 4);
+    expect(rjPosition.top, 4);
+    expect(rjPosition.left, isNull);
     final swipeCard = tester.widget<SwipeRevealCard>(
       find.ancestor(of: workTitle, matching: find.byType(SwipeRevealCard)),
     );
@@ -1196,6 +1207,13 @@ void main() {
       swipeCard.closedColor,
       Theme.of(tester.element(workTitle)).colorScheme.surface,
     );
+    expect(swipeCard.secondaryActionLabel, harness.languageProvider.tr('download'));
+    expect(swipeCard.secondaryActionIcon, Icons.download_rounded);
+    expect(
+      swipeCard.actionLabel,
+      harness.languageProvider.tr('asmr_favorite_action'),
+    );
+    expect(swipeCard.primaryActionIcon, Icons.favorite_border_rounded);
     final collectedCategory = find.byKey(
       const ValueKey(AsmrCategoryType.collected),
     );
@@ -2120,7 +2138,7 @@ void main() {
       nonSingleLoopMode: SessionLoopMode.single,
       volume: 1,
       createdAt: DateTime(2026),
-      state: const PlayerState(false, ProcessingState.ready),
+      state: const PlayerState(true, ProcessingState.ready),
     );
     final secondSession = PlaybackSession(
       id: 'second_session',
@@ -2243,6 +2261,9 @@ void main() {
   testWidgets('mobile content inset updates with playback card visibility', (
     tester,
   ) async {
+    final previousPlatform = debugDefaultTargetPlatformOverride;
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    addTearDown(() => debugDefaultTargetPlatformOverride = previousPlatform);
     _setLogicalTestViewSize(tester, const Size(420, 840));
     final harness = await _pumpAppShell(tester, includePlaybackSession: false);
 
@@ -2258,7 +2279,7 @@ void main() {
       nonSingleLoopMode: SessionLoopMode.single,
       volume: 1,
       createdAt: DateTime(2026),
-      state: const PlayerState(false, ProcessingState.ready),
+      state: const PlayerState(true, ProcessingState.ready),
     );
     addTearDown(session.shutdown);
     harness.playbackService.registerSession(session);
@@ -2273,10 +2294,10 @@ void main() {
 
     for (
       var frame = 0;
-      frame < 4 && find.byType(ActiveSessionCarousel).evaluate().isEmpty;
+      frame < 10 && find.byType(ActiveSessionCarousel).evaluate().isEmpty;
       frame++
     ) {
-      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
     }
     expect(find.byType(ActiveSessionCarousel), findsOneWidget);
     final withCard = currentInset();
@@ -2292,14 +2313,15 @@ void main() {
     );
     for (
       var frame = 0;
-      frame < 4 && find.byType(ActiveSessionCarousel).evaluate().isNotEmpty;
+      frame < 10 && find.byType(ActiveSessionCarousel).evaluate().isNotEmpty;
       frame++
     ) {
-      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
     }
     expect(find.byType(ActiveSessionCarousel), findsNothing);
 
     expect(currentInset(), closeTo(withoutCard, 0.1));
+    debugDefaultTargetPlatformOverride = previousPlatform;
   });
 
   testWidgets('single audio detail uses the standard artwork layout', (

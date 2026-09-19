@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/async_cover_image.dart';
+import '../../../core/widgets/top_page_header.dart';
 
 @immutable
 class WorkImageItem {
@@ -166,141 +167,121 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage> {
               );
             },
           ),
-          // Top bar overlay
+          // Floating Top Page Header
           Positioned(
             top: 0,
             left: 0,
             right: 0,
-            child: SafeArea(
-              bottom: false,
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 8,
-                  vertical: 4,
-                ),
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [Colors.black87, Colors.transparent],
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    IconButton(
-                      icon: const Icon(
-                        Icons.arrow_back_rounded,
-                        color: Colors.white,
-                      ),
-                      onPressed: () => Navigator.of(context).maybePop(),
-                      tooltip: MaterialLocalizations.of(
-                        context,
-                      ).backButtonTooltip,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            currentImage.name,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 15,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          Text(
-                            '${_currentIndex + 1} / ${widget.images.length}',
-                            style: const TextStyle(
-                              color: Colors.white70,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    if (widget.onSetAsCover != null)
-                      TextButton.icon(
-                        key: const ValueKey<String>('viewer_set_as_cover_button'),
-                        onPressed: _isSettingCover ? null : _handleSetAsCover,
-                        icon: _isSettingCover
-                            ? const SizedBox.square(
-                                dimension: 16,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Colors.white,
-                                ),
-                              )
-                            : const Icon(
-                                Icons.photo_size_select_actual_outlined,
-                                color: Colors.white,
-                                size: 18,
-                              ),
-                        label: Text(
-                          ref
-                              .watch(appLanguageProviderInstanceProvider)
-                              .tr('audio_detail_set_cover'),
-                          style: const TextStyle(color: Colors.white, fontSize: 13),
-                        ),
-                        style: TextButton.styleFrom(
-                          backgroundColor: Colors.white12,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
+            child: TopPageHeader(
+              key: const ValueKey<String>('work_image_header'),
+              icon: Icons.image_outlined,
+              title: currentImage.name,
+              leading: IconButton(
+                icon: const Icon(Icons.arrow_back_rounded),
+                tooltip: MaterialLocalizations.of(context).backButtonTooltip,
+                onPressed: () => Navigator.of(context).maybePop(),
               ),
+              trailing: widget.onSetAsCover != null
+                  ? HeaderFloatingSurface(
+                      padding: EdgeInsets.zero,
+                      child: Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          key: const ValueKey<String>(
+                            'viewer_set_as_cover_button',
+                          ),
+                          borderRadius: BorderRadius.circular(19),
+                          onTap: _isSettingCover ? null : _handleSetAsCover,
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                if (_isSettingCover)
+                                  const SizedBox.square(
+                                    dimension: 16,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                else
+                                  Icon(
+                                    Icons.photo_size_select_actual_outlined,
+                                    size: 18,
+                                    color:
+                                        Theme.of(context).colorScheme.onSurface,
+                                  ),
+                                const SizedBox(width: 6),
+                                Text(
+                                  ref
+                                      .watch(appLanguageProviderInstanceProvider)
+                                      .tr('audio_detail_set_cover'),
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .labelMedium
+                                      ?.copyWith(
+                                        fontWeight: FontWeight.w600,
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.onSurface,
+                                      ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    )
+                  : null,
             ),
           ),
-          // Left navigation button
-          if (hasPrevious)
+          // Bottom-right switcher capsule
+          if (widget.images.length > 1)
             Positioned(
-              left: 12,
-              top: 0,
-              bottom: 0,
-              child: Center(
-                child: Material(
-                  color: Colors.black45,
-                  shape: const CircleBorder(),
-                  child: IconButton(
-                    key: const ValueKey<String>('image_viewer_prev_button'),
-                    icon: const Icon(
-                      Icons.chevron_left_rounded,
-                      color: Colors.white,
-                      size: 32,
+              right: 16,
+              bottom: MediaQuery.paddingOf(context).bottom + 20,
+              child: HeaderFloatingSurface(
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      key: const ValueKey<String>('image_viewer_prev_button'),
+                      iconSize: 18,
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints.tightFor(
+                        width: 32,
+                        height: 32,
+                      ),
+                      icon: const Icon(Icons.chevron_left_rounded),
+                      tooltip: 'Previous',
+                      onPressed: hasPrevious ? _goToPrevious : null,
                     ),
-                    onPressed: _goToPrevious,
-                    tooltip: 'Previous',
-                  ),
-                ),
-              ),
-            ),
-          // Right navigation button
-          if (hasNext)
-            Positioned(
-              right: 12,
-              top: 0,
-              bottom: 0,
-              child: Center(
-                child: Material(
-                  color: Colors.black45,
-                  shape: const CircleBorder(),
-                  child: IconButton(
-                    key: const ValueKey<String>('image_viewer_next_button'),
-                    icon: const Icon(
-                      Icons.chevron_right_rounded,
-                      color: Colors.white,
-                      size: 32,
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 6),
+                      child: Text(
+                        '${_currentIndex + 1} / ${widget.images.length}',
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 0.5,
+                              fontSize: 12.5,
+                              color: Theme.of(context).colorScheme.onSurface,
+                            ),
+                      ),
                     ),
-                    onPressed: _goToNext,
-                    tooltip: 'Next',
-                  ),
+                    IconButton(
+                      key: const ValueKey<String>('image_viewer_next_button'),
+                      iconSize: 18,
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints.tightFor(
+                        width: 32,
+                        height: 32,
+                      ),
+                      icon: const Icon(Icons.chevron_right_rounded),
+                      tooltip: 'Next',
+                      onPressed: hasNext ? _goToNext : null,
+                    ),
+                  ],
                 ),
               ),
             ),

@@ -387,8 +387,9 @@ List<PlaybackSessionSnapshot> overlaySessionsFromPlaybackState(
       .where(
         (session) =>
             session.currentTrackPath.isNotEmpty &&
-            session.state.playing &&
-            session.state.processing == PlaybackProcessingStatus.ready,
+            session.playbackRequested &&
+            (session.isPlaybackLoading ||
+                session.state.processing == PlaybackProcessingStatus.ready),
       )
       .toList(growable: false);
 }

@@ -1190,7 +1190,7 @@ class _RootFolderCardContent extends StatelessWidget {
             ),
             if (rjCode.isNotEmpty)
               Positioned(
-                left: 4,
+                right: 4,
                 top: 4,
                 child: RjCodeOverlay(rjCode: rjCode, maxWidth: coverWidth - 8),
               ),
@@ -1202,7 +1202,7 @@ class _RootFolderCardContent extends StatelessWidget {
               ),
             if (isPinned)
               Positioned(
-                right: 4,
+                left: 4,
                 top: 4,
                 child: _LibraryPinnedIndicator(path: folderPath),
               ),
@@ -1340,7 +1340,7 @@ class _SingleMediaFileCardContent extends StatelessWidget {
             ),
             if (rjCode.isNotEmpty)
               Positioned(
-                left: 4,
+                right: 4,
                 top: 4,
                 child: RjCodeOverlay(rjCode: rjCode, maxWidth: coverWidth - 8),
               ),
@@ -1352,7 +1352,7 @@ class _SingleMediaFileCardContent extends StatelessWidget {
               ),
             if (isPinned)
               Positioned(
-                right: 4,
+                left: 4,
                 top: 4,
                 child: _LibraryPinnedIndicator(path: track.path),
               ),

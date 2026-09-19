@@ -71,7 +71,7 @@ const Map<String, String> appLanguageEn = {
   'import_library': 'Add library',
   'refresh_watched_folder': 'Refresh watched folders',
   'more_actions': 'More actions',
-  'detail_add_to_queue': 'Add to queue',
+  'detail_add_to_queue': 'Add to playlist',
   'track_added_to_playlist': 'Added to playlist',
   'track_already_in_playlist': 'This item is already in the playlist',
   'sort_by': 'Sort by',

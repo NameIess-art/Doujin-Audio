@@ -3700,9 +3700,9 @@ void main() {
         of: secondaryControls,
         matching: find.byType(IconButton),
       );
-      expect(secondaryButtons, findsNWidgets(7));
+      expect(secondaryButtons, findsNWidgets(5));
       final buttonCenters = List<double>.generate(
-        7,
+        5,
         (index) => tester.getCenter(secondaryButtons.at(index)).dx,
       );
       final intervals = List<double>.generate(

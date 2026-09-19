@@ -64,7 +64,7 @@ class _AsmrWorkCover extends ConsumerWidget {
             ),
             if (rjCode.trim().isNotEmpty)
               Positioned(
-                left: 4,
+                right: 4,
                 top: 4,
                 child: RjCodeOverlay(
                   rjCode: rjCode,

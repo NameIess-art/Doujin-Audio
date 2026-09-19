@@ -25,11 +25,15 @@ class WorkTextViewerPage extends ConsumerStatefulWidget {
 }
 
 class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
+  static const int _contentChunkSize = 16 * 1024;
+  static const double _loadMoreThreshold = 800;
+
   late int _currentIndex;
   final ScrollController _scrollController = ScrollController();
 
   bool _loading = true;
   String _content = '';
+  int _visibleContentLength = 0;
   PdfController? _pdfController;
   String? _errorMessage;
   int _loadGeneration = 0;
@@ -37,6 +41,7 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
   @override
   void initState() {
     super.initState();
+    _scrollController.addListener(_loadMoreIfNeeded);
     _currentIndex = widget.initialIndex.clamp(
       0,
       widget.files.isEmpty ? 0 : widget.files.length - 1,
@@ -67,6 +72,7 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
       setState(() {
         _loading = false;
         _content = '';
+        _visibleContentLength = 0;
         _errorMessage = null;
       });
       return;
@@ -76,6 +82,7 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
       _loading = true;
       _errorMessage = null;
       _content = '';
+      _visibleContentLength = 0;
     });
 
     try {
@@ -103,7 +110,9 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
         setState(() {
           _loading = false;
           _content = result.text;
+          _visibleContentLength = _nextContentEnd(result.text, 0);
         });
+        _scheduleViewportFill(gen);
       }
     } catch (e) {
       if (!mounted || gen != _loadGeneration) return;
@@ -112,6 +121,64 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
         _errorMessage = e.toString();
       });
     }
+  }
+
+  String get _visibleContent => _content.substring(0, _visibleContentLength);
+
+  int _nextContentEnd(String content, int currentEnd) {
+    if (currentEnd >= content.length) return content.length;
+    var target = (currentEnd + _contentChunkSize).clamp(0, content.length);
+    if (target < content.length) {
+      final newline = content.indexOf('\n', target);
+      if (newline >= 0 && newline - target <= 1024) {
+        target = newline + 1;
+      } else if (target > 0 &&
+          _isHighSurrogate(content.codeUnitAt(target - 1)) &&
+          _isLowSurrogate(content.codeUnitAt(target))) {
+        target++;
+      }
+    }
+    return target;
+  }
+
+  bool _isHighSurrogate(int codeUnit) =>
+      codeUnit >= 0xD800 && codeUnit <= 0xDBFF;
+
+  bool _isLowSurrogate(int codeUnit) =>
+      codeUnit >= 0xDC00 && codeUnit <= 0xDFFF;
+
+  void _loadMoreIfNeeded() {
+    if (!_scrollController.hasClients ||
+        _scrollController.position.extentAfter > _loadMoreThreshold) {
+      return;
+    }
+    _appendContentChunk();
+  }
+
+  bool _appendContentChunk() {
+    if (_loading ||
+        _currentFile?.isPdf == true ||
+        _visibleContentLength >= _content.length) {
+      return false;
+    }
+    setState(() {
+      _visibleContentLength = _nextContentEnd(_content, _visibleContentLength);
+    });
+    return true;
+  }
+
+  void _scheduleViewportFill(int generation) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted ||
+          generation != _loadGeneration ||
+          !_scrollController.hasClients ||
+          _scrollController.position.maxScrollExtent > 0) {
+        return;
+      }
+      if (_appendContentChunk()) {
+        _scheduleViewportFill(generation);
+      }
+    });
   }
 
   void _onSwitchFile(int newIndex) {
@@ -378,7 +445,7 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
             child: SizedBox(
               width: double.infinity,
               child: MarkdownBody(
-                data: _content,
+                data: _visibleContent,
                 styleSheet: MarkdownStyleSheet.fromTheme(theme).copyWith(
                   p: theme.textTheme.bodyLarge?.copyWith(
                     height: 1.65,
@@ -441,7 +508,7 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
             child: SizedBox(
               width: double.infinity,
               child: Text(
-                _content,
+                _visibleContent,
                 style: theme.textTheme.bodyLarge?.copyWith(
                   height: 1.65,
                   letterSpacing: 0.2,

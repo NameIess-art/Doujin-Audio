@@ -39,8 +39,6 @@ class TransportPlaybackControlPanel extends ConsumerWidget {
     this.onToggleSubtitle,
     this.onToggleGlobalSubtitle,
     this.onShowSubtitleMenu,
-    this.onShowAudioDetail,
-    this.onShowScriptText,
   });
 
   final PlaybackSessionSnapshot session;
@@ -56,8 +54,6 @@ class TransportPlaybackControlPanel extends ConsumerWidget {
   final VoidCallback? onToggleSubtitle;
   final VoidCallback? onToggleGlobalSubtitle;
   final VoidCallback? onShowSubtitleMenu;
-  final VoidCallback? onShowAudioDetail;
-  final VoidCallback? onShowScriptText;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -84,8 +80,6 @@ class TransportPlaybackControlPanel extends ConsumerWidget {
       onToggleSubtitle: onToggleSubtitle,
       onToggleGlobalSubtitle: onToggleGlobalSubtitle,
       onShowSubtitleMenu: onShowSubtitleMenu,
-      onShowAudioDetail: onShowAudioDetail,
-      onShowScriptText: onShowScriptText,
     );
   }
 }
@@ -107,8 +101,6 @@ class _PlaybackControlPanel extends StatelessWidget {
     this.onToggleSubtitle,
     this.onToggleGlobalSubtitle,
     this.onShowSubtitleMenu,
-    this.onShowAudioDetail,
-    this.onShowScriptText,
   });
 
   final PlaybackSessionSnapshot session;
@@ -126,8 +118,6 @@ class _PlaybackControlPanel extends StatelessWidget {
   final VoidCallback? onToggleSubtitle;
   final VoidCallback? onToggleGlobalSubtitle;
   final VoidCallback? onShowSubtitleMenu;
-  final VoidCallback? onShowAudioDetail;
-  final VoidCallback? onShowScriptText;
 
   @override
   Widget build(BuildContext context) {
@@ -164,8 +154,6 @@ class _PlaybackControlPanel extends StatelessWidget {
                 onToggleSubtitle: onToggleSubtitle,
                 onToggleGlobalSubtitle: onToggleGlobalSubtitle,
                 onShowSubtitleMenu: onShowSubtitleMenu,
-                onShowAudioDetail: onShowAudioDetail,
-                onShowScriptText: onShowScriptText,
               ),
             ),
           ),
@@ -352,8 +340,6 @@ class _PlaybackSecondaryControls extends ConsumerStatefulWidget {
     this.onToggleSubtitle,
     this.onToggleGlobalSubtitle,
     this.onShowSubtitleMenu,
-    this.onShowAudioDetail,
-    this.onShowScriptText,
   });
 
   final PlaybackSessionSnapshot session;
@@ -368,8 +354,6 @@ class _PlaybackSecondaryControls extends ConsumerStatefulWidget {
   final VoidCallback? onToggleSubtitle;
   final VoidCallback? onToggleGlobalSubtitle;
   final VoidCallback? onShowSubtitleMenu;
-  final VoidCallback? onShowAudioDetail;
-  final VoidCallback? onShowScriptText;
 
   @override
   ConsumerState<_PlaybackSecondaryControls> createState() =>
@@ -656,17 +640,6 @@ class _PlaybackSecondaryControlsState
                   onPressed: widget.hasSiblings
                       ? widget.onShowTrackSwitcher
                       : null,
-                ),
-                _SecondaryControlButton(
-                  icon: Icons.info_outline_rounded,
-                  tooltip: i18n.tr('audio_detail'),
-                  onPressed: widget.onShowAudioDetail,
-                ),
-                _SecondaryControlButton(
-                  key: const ValueKey('session_script_text_button'),
-                  icon: Icons.description_outlined,
-                  tooltip: i18n.tr('script_text_tooltip'),
-                  onPressed: widget.onShowScriptText,
                 ),
               ],
             ),

@@ -366,7 +366,7 @@ void main() {
     expect(multiPlaybackOverlay.map((session) => session.id), ['playing']);
   });
 
-  test('overlay waits for ready playback and hides on pause or completion', () {
+  test('overlay remains during loading and hides after stopping', () {
     final value = session(id: 'overlay', path: '/tracks/a.mp3');
     addTearDown(value.shutdown);
     List<PlaybackSessionSnapshot> overlay() => overlaySessionsFromPlaybackState(
@@ -375,12 +375,12 @@ void main() {
 
     value.beginPreparation(showLoading: true, autoPlay: true);
     expect(snapshot(value).playbackRequested, isTrue);
-    expect(overlay(), isEmpty);
+    expect(overlay().single.id, value.id);
     value.state = const PlayerState(true, ProcessingState.buffering);
-    expect(overlay(), isEmpty);
+    expect(overlay().single.id, value.id);
     value.state = const PlayerState(true, ProcessingState.ready);
     expect(overlay().single.id, value.id);
-    value.state = const PlayerState(false, ProcessingState.ready);
+    value.confirmPaused();
     expect(overlay(), isEmpty);
     value.state = const PlayerState(true, ProcessingState.completed);
     expect(overlay(), isEmpty);

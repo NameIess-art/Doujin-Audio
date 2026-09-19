@@ -1,15 +1,37 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
+import 'package:doujin_audio/core/app_language.dart';
 import 'package:doujin_audio/core/media/audio_detail.dart';
+import 'package:doujin_audio/core/media/dlsite_metadata.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
+import 'package:doujin_audio/core/widgets/top_page_header.dart';
+import 'package:doujin_audio/features/asmr/application/asmr_metadata_service.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
+import 'package:doujin_audio/features/library/presentation/dlsite_metadata_review_page.dart';
 import 'package:doujin_audio/features/library/presentation/work_detail_page.dart';
 import 'package:doujin_audio/features/library/presentation/work_image_viewer_page.dart';
 import 'support/app_runtime_test_fixture.dart';
 import 'support/test_playback_commands.dart';
+
+class _WorkDetailAsmrMetadataService extends AsmrMetadataService {
+  @override
+  Future<DlsiteMetadata> fetchByRjCode(
+    String rjCode, {
+    AppLanguage language = AppLanguage.zh,
+  }) async {
+    return DlsiteMetadata(
+      rjCode: rjCode,
+      workTitle: 'Fetched work title',
+      circleName: 'Fetched circle',
+      voiceActors: const <String>[],
+      tags: const <String>[],
+    );
+  }
+}
 
 void main() {
   AppRuntimeTestFixture.initialize();
@@ -131,7 +153,9 @@ void main() {
 
     testWidgets('renders local work detail header, pinned RJ row and action buttons', (tester) async {
       SharedPreferences.setMockInitialValues(const <String, Object>{});
-      final fixture = AppRuntimeWidgetTestFixture();
+      final fixture = AppRuntimeWidgetTestFixture(
+        asmrMetadataService: _WorkDetailAsmrMetadataService(),
+      );
       addTearDown(fixture.dispose);
 
       const folderPath = r'C:\library\RJ123456 - Test Work';
@@ -182,10 +206,18 @@ void main() {
       expect(find.text('#Ear Cleaning'), findsOneWidget);
       expect(find.text('#Whisper'), findsOneWidget);
 
-      // Local action buttons: 补充信息, 下载, 置顶
+      // Local action buttons: 补充信息, 下载
       expect(find.byKey(const ValueKey<String>('work_detail_fetch_info')), findsOneWidget);
       expect(find.byKey(const ValueKey<String>('work_detail_download')), findsOneWidget);
-      expect(find.byKey(const ValueKey<String>('work_detail_pin')), findsOneWidget);
+      expect(find.byKey(const ValueKey<String>('work_detail_pin')), findsNothing);
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('work_detail_fetch_info')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byType(DlsiteMetadataReviewPage), findsOneWidget);
+      expect(find.text('Fetched work title'), findsOneWidget);
     });
 
     testWidgets('renders ASMR.ONE work detail header and actions', (tester) async {
@@ -290,12 +322,80 @@ void main() {
       await tester.pump(const Duration(milliseconds: 300));
 
       expect(find.byKey(const ValueKey<String>('work_detail_back_button')), findsOneWidget);
+      expect(
+        find.ancestor(
+          of: find.byKey(const ValueKey<String>('work_detail_back_button')),
+          matching: find.byType(HeaderFloatingButton),
+        ),
+        findsOneWidget,
+      );
 
       await tester.tap(find.byKey(const ValueKey<String>('work_detail_back_button')));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
 
       expect(find.text('Go'), findsOneWidget);
+    });
+
+    testWidgets('tags render in capsule style and clicking a tag copies to clipboard', (tester) async {
+      SharedPreferences.setMockInitialValues(const <String, Object>{});
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+
+      final copied = <String>[];
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        (call) async {
+          if (call.method == 'Clipboard.setData') {
+            copied.add((call.arguments as Map)['text'] as String);
+          }
+          return null;
+        },
+      );
+      addTearDown(() => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, null));
+
+      final asmrWork = AsmrWork(
+        id: 123456,
+        title: 'Work with tags',
+        circleName: 'Circle',
+        sourceId: 'RJ123456',
+        sourceType: 'asmr',
+        sourceUrl: '',
+        coverUrl: '',
+        thumbnailUrl: '',
+        mainCoverUrl: '',
+        releaseDate: null,
+        createDate: null,
+        duration: Duration.zero,
+        dlCount: 0,
+        reviewCount: 0,
+        rating: 0,
+        voiceActors: const <String>['CV1'],
+        tags: const <String>['耳かき', '#癒やし'],
+      );
+
+      await tester.pumpWidget(
+        fixture.build(
+          WorkDetailPage.forAsmr(work: asmrWork),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      expect(find.text('#耳かき'), findsOneWidget);
+      expect(find.text('#癒やし'), findsOneWidget);
+
+      await tester.tap(find.text('#耳かき'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      expect(copied, contains('耳かき'));
+
+      await tester.tap(find.text('#癒やし'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      expect(copied, contains('癒やし'));
     });
   });
 
@@ -325,12 +425,22 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 100));
 
+      expect(find.byKey(const ValueKey<String>('work_image_header')), findsOneWidget);
+      expect(find.byType(TopPageHeader), findsOneWidget);
+
+      final prevBtn = find.byKey(const ValueKey<String>('image_viewer_prev_button'));
+      final nextBtn = find.byKey(const ValueKey<String>('image_viewer_next_button'));
+      expect(prevBtn, findsOneWidget);
+      expect(nextBtn, findsOneWidget);
+
+      final prevSurface = find.ancestor(of: prevBtn, matching: find.byType(HeaderFloatingSurface));
+      final nextSurface = find.ancestor(of: nextBtn, matching: find.byType(HeaderFloatingSurface));
+      expect(tester.widget(prevSurface), same(tester.widget(nextSurface)));
+
       expect(find.text('1 / 2'), findsOneWidget);
       expect(find.text('01.jpg'), findsOneWidget);
 
       // Next button
-      final nextBtn = find.byKey(const ValueKey<String>('image_viewer_next_button'));
-      expect(nextBtn, findsOneWidget);
       await tester.tap(nextBtn);
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));

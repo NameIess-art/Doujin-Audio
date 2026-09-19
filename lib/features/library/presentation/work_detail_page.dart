@@ -13,18 +13,17 @@ import '../../../core/media/audio_detail.dart';
 import '../../../core/media/music_track.dart';
 import '../../../core/media/natural_sort.dart';
 import '../../../core/media/path_display.dart';
-import '../../../core/media/path_matcher.dart';
 import '../../../core/media/time_text_formatters.dart';
 import '../../../core/ui/ui_operation_service.dart';
 import '../../../core/ui/undoable_removal_service.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/async_cover_image.dart';
+import '../../../core/widgets/top_page_header.dart';
 import '../../asmr/application/asmr_library_controller.dart';
 import '../../asmr/domain/asmr_models.dart';
 import '../../asmr/presentation/asmr_download_page.dart';
 import '../../asmr/presentation/asmr_providers.dart';
 import '../../player/presentation/playback_providers.dart';
-import '../../settings/presentation/settings_providers.dart';
 import '../application/work_text_service.dart';
 import '../domain/library_node.dart';
 import 'dlsite_metadata_review_page.dart';
@@ -732,19 +731,25 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
   Future<void> _handleLocalFetchInfo() async {
     final detail = _localDetail;
     if (detail == null) return;
-    final rj = detail.rjCode.trim();
-    if (rj.isEmpty) {
+    final query = ref
+        .read(libraryFacadeProvider)
+        .buildDlsiteMetadataQuery(detail);
+    if (!query.hasQuery) {
       final i18n = ref.read(appLanguageProviderInstanceProvider);
       showAppSnackBar(
         context,
-        i18n.tr('dlsite_rj_required'),
+        i18n.tr('audio_detail_fetch_missing_query'),
         tone: AppFeedbackTone.warning,
       );
       return;
     }
     await Navigator.of(context).push<void>(
       MaterialPageRoute(
-        builder: (_) => DlsiteMetadataReviewPage(detail: detail),
+        builder: (_) => DlsiteMetadataReviewPage(
+          detail: detail,
+          rjCode: query.rjCode,
+          searchTitles: query.searchTitles,
+        ),
       ),
     );
     if (mounted) {
@@ -758,14 +763,6 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
       ref: ref,
       target: widget.localTarget!,
     );
-  }
-
-  Future<void> _handleLocalTogglePin() async {
-    final folderPath = widget.localTarget!.targetPath;
-    await ref
-        .read(settingsRepositoryProvider)
-        .toggleLibraryPathPinned(folderPath);
-    if (mounted) setState(() {});
   }
 
   // ASMR actions: Download, Toggle favorite
@@ -1022,16 +1019,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
                                   .map(
                                     (tag) => Padding(
                                       padding: const EdgeInsets.only(right: 6),
-                                      child: Chip(
-                                        label: Text(
-                                          tag.startsWith('#') ? tag : '#$tag',
-                                          style: const TextStyle(fontSize: 12),
-                                        ),
-                                        visualDensity: VisualDensity.compact,
-                                        materialTapTargetSize:
-                                            MaterialTapTargetSize.shrinkWrap,
-                                        padding: EdgeInsets.zero,
-                                      ),
+                                      child: _buildTagCapsule(context, cs, tag),
                                     ),
                                   )
                                   .toList(growable: false),
@@ -1073,36 +1061,6 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
-                        ),
-                        const SizedBox(width: 8),
-                        // 置顶
-                        Consumer(
-                          builder: (context, ref, _) {
-                            final isPinned = ref.watch(
-                              settingsStateProvider.select(
-                                (s) =>
-                                    s.value?.pinnedLibraryPaths.contains(
-                                      PathMatcher.normalize(
-                                        widget.localTarget!.targetPath,
-                                      ),
-                                    ) ??
-                                    false,
-                              ),
-                            );
-                            return IconButton.filledTonal(
-                              key: const ValueKey<String>('work_detail_pin'),
-                              onPressed: _handleLocalTogglePin,
-                              tooltip: i18n.tr(
-                                isPinned ? 'unpin_from_top' : 'pin_to_top',
-                              ),
-                              icon: Icon(
-                                isPinned
-                                    ? Icons.push_pin_rounded
-                                    : Icons.push_pin_outlined,
-                                color: isPinned ? cs.primary : null,
-                              ),
-                            );
-                          },
                         ),
                       ],
                     ),
@@ -1303,6 +1261,51 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
               ),
             ),
         ],
+      ),
+    );
+  }
+
+  void _copyTag(BuildContext context, String rawTag) {
+    final term = rawTag.startsWith('#') ? rawTag.substring(1) : rawTag;
+    Clipboard.setData(ClipboardData(text: term));
+    AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
+    showAppSnackBar(
+      context,
+      i18n.tr('copied_to_clipboard', {'value': term}),
+      icon: Icons.content_copy_rounded,
+    );
+  }
+
+  Widget _buildTagCapsule(BuildContext context, ColorScheme cs, String tag) {
+    final displayLabel = tag.startsWith('#') ? tag : '#$tag';
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () => _copyTag(context, tag),
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          decoration: BoxDecoration(
+            color: isDark
+                ? cs.surfaceContainerHighest.withValues(alpha: 0.5)
+                : cs.surfaceContainerHigh.withValues(alpha: 0.6),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: cs.outlineVariant.withValues(alpha: isDark ? 0.3 : 0.45),
+            ),
+          ),
+          child: Text(
+            displayLabel,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+              color: cs.onSurfaceVariant,
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -1614,17 +1617,11 @@ class _WorkDetailHeaderDelegate extends SliverPersistentHeaderDelegate {
           // Floating Back Button (top-left)
           Positioned(
             top: topSafeArea + 6,
-            left: 12,
-            child: Material(
-              color: Colors.black.withValues(alpha: 0.45),
-              shape: const CircleBorder(),
+            left: 16,
+            child: HeaderFloatingButton(
               child: IconButton(
                 key: const ValueKey<String>('work_detail_back_button'),
-                icon: const Icon(
-                  Icons.arrow_back_rounded,
-                  color: Colors.white,
-                  size: 22,
-                ),
+                icon: const Icon(Icons.arrow_back_rounded),
                 onPressed: onBackPressed,
                 tooltip: MaterialLocalizations.of(context).backButtonTooltip,
               ),

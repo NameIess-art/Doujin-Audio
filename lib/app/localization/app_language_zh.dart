@@ -63,7 +63,7 @@ const Map<String, String> appLanguageZh = {
   'import_library': '添加曲库',
   'refresh_watched_folder': '刷新监听文件夹',
   'more_actions': '更多操作',
-  'detail_add_to_queue': '添加至队列',
+  'detail_add_to_queue': '添加至列表',
   'track_added_to_playlist': '已添加至播放列表',
   'track_already_in_playlist': '该条目已在播放列表中',
   'sort_by': '排序依据',

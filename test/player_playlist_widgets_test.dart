@@ -3527,6 +3527,67 @@ void main() {
     await tester.pumpAndSettle();
   });
 
+  testWidgets('temporary video detail updates when only loadedPath changes', (
+    tester,
+  ) async {
+    final fixture = AppRuntimeWidgetTestFixture(
+      coverArtworkCacheService: _RecordingPlaybackCoverCacheService(),
+    );
+    addTearDown(fixture.dispose);
+    final tracks = [
+      for (final name in ['first', 'second'])
+        testMusicTrack(
+          name: name,
+          path: PathMatcher.normalize('/videos/$name.mp4'),
+          groupKey: PathMatcher.normalize('/videos'),
+          groupTitle: 'Videos',
+        ).copyWith(isVideo: true),
+    ];
+    fixture.runtimeGraph.library.addTracks(tracks, notify: false, persist: false);
+    final session = fixture.runtimeGraph.playback.createTrackSession(tracks[0])
+      ..isTemporary = true;
+    void sync() => fixture.playbackService.syncSlice(
+      activeSessions: [session],
+      playingSessionCount: 0,
+      focusedSessionId: session.id,
+      multiThreadPlaybackEnabled: false,
+      coverGeneration: 0,
+      isInitialized: true,
+    );
+    sync();
+    await tester.pumpWidget(fixture.build(const PlaylistTab()));
+    await tester.pumpAndSettle();
+    unawaited(
+      Navigator.of(tester.element(find.byType(PlaylistTab))).push(
+        buildSessionDetailRoute(sessionId: session.id),
+      ),
+    );
+    await tester.pumpAndSettle();
+    bool videoReady() => tester.widget<SessionVideoViewport>(
+      find.byType(SessionVideoViewport),
+    ).videoReady;
+    expect(videoReady(), isFalse);
+
+    session.loadedPath = tracks[0].path;
+    sync();
+    await tester.pumpAndSettle();
+    expect(videoReady(), isTrue);
+
+    session.currentTrackPath = tracks[1].path;
+    sync();
+    await tester.pumpAndSettle();
+    expect(videoReady(), isFalse);
+    session.loadedPath = tracks[1].path;
+    sync();
+    await tester.pumpAndSettle();
+    expect(videoReady(), isTrue);
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 200)),
+    );
+    await tester.pump(const Duration(milliseconds: 200));
+    await tester.pumpAndSettle();
+  });
+
   testWidgets(
     'single-file queue cover fills the card and switcher shows an audio entry',
     (WidgetTester tester) async {
@@ -4841,6 +4902,76 @@ void main() {
       expect(find.byType(TopPageHeader), findsOneWidget);
     },
   );
+
+  testWidgets('temporary playback stays above saved items without a pin action', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(500, 1000);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
+    final fixture = AppRuntimeWidgetTestFixture(
+      coverArtworkCacheService: _RecordingPlaybackCoverCacheService(),
+    );
+    addTearDown(fixture.dispose);
+    final tracks = [
+      testMusicTrack(
+        name: 'Saved audio',
+        path: PathMatcher.normalize('/saved/01.mp3'),
+        groupKey: PathMatcher.normalize('/saved'),
+        groupTitle: 'Saved',
+      ),
+      testMusicTrack(
+        name: 'Temporary audio',
+        path: PathMatcher.normalize('/temporary/01.mp3'),
+        groupKey: PathMatcher.normalize('/temporary'),
+        groupTitle: 'Temporary',
+      ),
+    ];
+    fixture.runtimeGraph.library.addTracks(tracks, notify: false, persist: false);
+    final saved = fixture.runtimeGraph.playback.createTrackSession(tracks[0]);
+    final temporary = fixture.runtimeGraph.playback.createTrackSession(tracks[1])
+      ..isTemporary = true;
+    fixture.playbackService.syncSlice(
+      activeSessions: [saved, temporary],
+      playingSessionCount: 0,
+      focusedSessionId: temporary.id,
+      multiThreadPlaybackEnabled: false,
+      coverGeneration: 0,
+      isInitialized: true,
+    );
+    await tester.pumpWidget(fixture.build(const PlaylistTab()));
+    await tester.pumpAndSettle();
+
+    final temporaryCard = find.byKey(
+      ValueKey<String>('playlist_card_content_${temporary.id}'),
+    );
+    final savedCard = find.byKey(
+      ValueKey<String>('playlist_card_content_${saved.id}'),
+    );
+    final divider = find.byKey(
+      const ValueKey('playlist_temporary_session_divider'),
+    );
+    expect(divider, findsOneWidget);
+    expect(
+      tester.getBottomLeft(temporaryCard).dy,
+      lessThanOrEqualTo(tester.getTopLeft(divider).dy),
+    );
+    expect(
+      tester.getBottomLeft(divider).dy,
+      lessThanOrEqualTo(tester.getTopLeft(savedCard).dy),
+    );
+    final temporarySwipe = tester.widget<SwipeRevealCard>(
+      find.ancestor(of: temporaryCard, matching: find.byType(SwipeRevealCard)),
+    );
+    expect(temporarySwipe.onLeadingAction, isNull);
+    await tester.longPress(find.text('Temporary audio'));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('playlist_batch_selection_header')),
+      findsNothing,
+    );
+  });
 
   testWidgets(
     'playlist multiselect batch pin pins and unpins selected sessions',

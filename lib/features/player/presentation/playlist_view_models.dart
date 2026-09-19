@@ -74,6 +74,7 @@ class PlaylistStructureEntry {
         other.sessionId == sessionId &&
         other.trackPath == trackPath &&
         other.isPlaybackQueue == isPlaybackQueue &&
+        other.session.isTemporary == session.isTemporary &&
         other.session.lastPlayedAt == session.lastPlayedAt &&
         other.queueColorValue == queueColorValue &&
         other.queueContentSignature == queueContentSignature;
@@ -84,6 +85,7 @@ class PlaylistStructureEntry {
     sessionId,
     trackPath,
     isPlaybackQueue,
+    session.isTemporary,
     session.lastPlayedAt,
     queueColorValue,
     queueContentSignature,
@@ -382,7 +384,12 @@ List<PlaybackSessionSnapshot> overlaySessionsFromPlaybackState(
   PlaybackStateSliceData playbackState,
 ) {
   return playbackState.activeSessions
-      .where((session) => session.currentTrackPath.isNotEmpty)
+      .where(
+        (session) =>
+            session.currentTrackPath.isNotEmpty &&
+            session.state.playing &&
+            session.state.processing == PlaybackProcessingStatus.ready,
+      )
       .toList(growable: false);
 }
 
@@ -468,25 +475,6 @@ PlaylistStructureEntry _playlistStructureEntry(
     trackPath: session.currentTrackPath,
     isPlaybackQueue: session.isPlaybackQueue,
     queueColorValue: session.playbackQueue?.colorValue,
-    queueContentSignature: _playlistQueueContentSignature(session),
-  );
-}
-
-int? _playlistQueueContentSignature(PlaybackSessionSnapshot session) {
-  final queue = session.playbackQueue;
-  if (queue == null) return null;
-  return Object.hash(
-    queue.name,
-    Object.hashAll(
-      queue.entries.map(
-        (entry) => Object.hash(
-          entry.id,
-          entry.kind,
-          entry.title,
-          entry.workRootPath,
-          Object.hashAll(entry.tracks.map((track) => track.path)),
-        ),
-      ),
-    ),
+    queueContentSignature: session.playbackQueue?.contentSignature,
   );
 }

@@ -518,6 +518,19 @@ class AsmrTrackFile {
   bool get isAudio =>
       (type == 'audio' || type == 'video') &&
       _asmrAudioExtensions.contains(resolvedExtension);
+  bool get isVideo =>
+      !isFolder &&
+      const {
+        '.mp4',
+        '.m4v',
+        '.webm',
+        '.mkv',
+        '.avi',
+        '.mov',
+        '.wmv',
+      }.contains(resolvedExtension);
+  String get stableKey =>
+      hash.trim().isNotEmpty ? 'hash:$hash' : 'path:$relativePath';
   bool get isSubtitle =>
       !isFolder && _asmrSubtitleExtensions.contains(resolvedExtension);
   bool get isText =>
@@ -534,7 +547,7 @@ class AsmrTrackFile {
       isAudio || children.any((child) => child.hasBrowsableContent);
   String get stemKey => _asmrMatchingStem(relativePath);
   String get baseNameStem => _asmrMatchingStem(title);
-  String get resolvedExtension => _resolvedExtensionForCandidates(<String?>[
+  late final String resolvedExtension = _resolvedExtensionForCandidates(<String?>[
     title,
     streamUrl,
     downloadUrl,
@@ -542,6 +555,22 @@ class AsmrTrackFile {
   ]);
   String get displayTitle =>
       isAudio ? path.basenameWithoutExtension(title) : title;
+
+  AsmrTrackFile withChildren(List<AsmrTrackFile> children) => AsmrTrackFile(
+    hash: hash,
+    title: title,
+    type: type,
+    streamUrl: streamUrl,
+    downloadUrl: downloadUrl,
+    lowQualityUrl: lowQualityUrl,
+    duration: duration,
+    size: size,
+    children: children,
+    workId: workId,
+    workTitle: workTitle,
+    sourceId: sourceId,
+    relativePath: relativePath,
+  );
 
   MusicTrack toMusicTrack({
     String? groupTitleOverride,
@@ -568,6 +597,7 @@ class AsmrTrackFile {
       groupTitle: groupTitleOverride ?? workTitle,
       groupSubtitle: sourceId,
       isSingle: false,
+      isVideo: isVideo,
       remoteCoverUrl: remoteCoverUrl,
       remoteMetadataKind: remoteMetadataKind,
       remoteMetadata: metadata,
@@ -611,21 +641,7 @@ class AsmrTrackFile {
 List<AsmrTrackFile> sortAsmrTrackTreeNaturally(Iterable<AsmrTrackFile> nodes) {
   final sorted = nodes.map((node) {
     if (node.children.isEmpty) return node;
-    return AsmrTrackFile(
-      hash: node.hash,
-      title: node.title,
-      type: node.type,
-      streamUrl: node.streamUrl,
-      downloadUrl: node.downloadUrl,
-      lowQualityUrl: node.lowQualityUrl,
-      duration: node.duration,
-      size: node.size,
-      children: sortAsmrTrackTreeNaturally(node.children),
-      workId: node.workId,
-      workTitle: node.workTitle,
-      sourceId: node.sourceId,
-      relativePath: node.relativePath,
-    );
+    return node.withChildren(sortAsmrTrackTreeNaturally(node.children));
   }).toList();
   sorted.sort((left, right) {
     return compareNaturalTreeEntries(

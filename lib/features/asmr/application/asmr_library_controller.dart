@@ -292,6 +292,9 @@ class AsmrLibraryController extends ChangeNotifier
   final LinkedHashMap<int, List<AsmrTrackFile>> _trackCache = LinkedHashMap();
   final LinkedHashMap<int, List<AsmrTrackFile>> _visibleTrackCache =
       LinkedHashMap();
+  Set<String> _hiddenTracks = <String>{};
+  final Map<int, ({AsmrWork work, List<MusicTrack> tracks})>
+  _playableTrackCache = {};
   final Set<int> _loadingTrackWorkIds = <int>{};
   final Map<int, Object> _trackTreeErrors = <int, Object>{};
   final Map<_AsmrWorkRequestKey, Future<AsmrWorkDetail>> _detailTasks =
@@ -417,6 +420,7 @@ class AsmrLibraryController extends ChangeNotifier
     _detailCache.clear();
     _trackCache.clear();
     _visibleTrackCache.clear();
+    _playableTrackCache.clear();
     _trackTreeErrors.clear();
   }
 
@@ -622,6 +626,11 @@ class AsmrLibraryController extends ChangeNotifier
     AsmrContentLanguage? defaultLanguage,
     required bool restoreAccountSession,
   }) async {
+    final hiddenTracks = await _preferencesStore.loadHiddenTracks();
+    if (_disposed) return;
+    _hiddenTracks = hiddenTracks;
+    _visibleTrackCache.clear();
+    _playableTrackCache.clear();
     final visibleCategories = await _preferencesStore.loadVisibleCategories();
     if (_disposed) return;
     _visibleCategories = visibleCategories;
@@ -713,6 +722,7 @@ class AsmrLibraryController extends ChangeNotifier
     _detailCache.clear();
     _trackCache.clear();
     _visibleTrackCache.clear();
+    _playableTrackCache.clear();
     _trackTreeErrors.clear();
     _filteredWorksCache.clear();
     await initialize();
@@ -926,6 +936,7 @@ class AsmrLibraryController extends ChangeNotifier
     _detailCache.clear();
     _trackCache.clear();
     _visibleTrackCache.clear();
+    _playableTrackCache.clear();
     _bumpAllTrackRevisions();
     _bumpGlobalRevision();
     notifyListeners();
@@ -1306,10 +1317,63 @@ class AsmrLibraryController extends ChangeNotifier
     return merged;
   }
 
+  bool isTrackHidden(int workId, AsmrTrackFile node) =>
+      _hiddenTracks.contains('$workId:${node.stableKey}');
+
+  Future<void> setTrackHidden(int workId, AsmrTrackFile node, bool hidden) {
+    return _runStateMutation(() async {
+      await initializeForVisiblePage();
+      final key = '$workId:${node.stableKey}';
+      if (_hiddenTracks.contains(key) == hidden) return;
+      final next = {..._hiddenTracks};
+      if (hidden) {
+        next.add(key);
+      } else {
+        next.remove(key);
+      }
+      await _preferencesStore.saveHiddenTracks(next);
+      if (_disposed) return;
+      _hiddenTracks = next;
+      _visibleTrackCache.remove(workId);
+      _playableTrackCache.remove(workId);
+      _bumpTrackRevision(workId);
+      notifyListeners();
+    });
+  }
+
   @override
   Future<List<MusicTrack>> loadPlayableTracks(AsmrWork work) async {
+    await initializeForVisiblePage();
     final tree = await ensureTrackTree(work);
-    return _flattenTracks(work, tree);
+    final cached = _playableTrackCache[work.id];
+    if (cached != null && identical(cached.work, work)) return cached.tracks;
+    final tracks = List<MusicTrack>.unmodifiable(_flattenTracks(work, tree));
+    _playableTrackCache[work.id] = (work: work, tracks: tracks);
+    return tracks;
+  }
+
+  @override
+  Future<MusicTrack?> loadPlayableTrack(
+    AsmrWork work,
+    AsmrTrackFile target,
+  ) async {
+    await initializeForVisiblePage();
+    final cached = _playableTrackCache[work.id];
+    if (cached != null && identical(cached.work, work)) {
+      return cached.tracks
+          .where(
+            (track) =>
+                track.remoteMetadata?['trackRelativePath'] ==
+                target.relativePath,
+          )
+          .firstOrNull;
+    }
+    final tree = await ensureTrackTree(work);
+    return _flattenTracks(
+      work,
+      tree,
+      includeAudioNode: (node) => node.stableKey == target.stableKey,
+    ).firstOrNull;
   }
 
   Future<List<WorkTextFile>> findWorkTextFiles(
@@ -1328,7 +1392,12 @@ class AsmrLibraryController extends ChangeNotifier
     AsmrWork work,
     AsmrTrackFile node,
   ) {
-    return _flattenTracks(work, <AsmrTrackFile>[node]);
+    if (node.isFolder) return _flattenTracks(work, <AsmrTrackFile>[node]);
+    return _flattenTracks(
+      work,
+      _cachedTrackTree(work.id) ?? <AsmrTrackFile>[node],
+      includeAudioNode: (candidate) => candidate.stableKey == node.stableKey,
+    );
   }
 
   @override
@@ -1346,7 +1415,8 @@ class AsmrLibraryController extends ChangeNotifier
       final fallbackIndex = tracks.indexWhere(
         (track) => track.path == targetTrackPath,
       );
-      if (fallbackIndex <= 0) return tracks;
+      if (fallbackIndex < 0) return const <MusicTrack>[];
+      if (fallbackIndex == 0) return tracks;
       return <MusicTrack>[
         ...tracks.skip(fallbackIndex),
         ...tracks.take(fallbackIndex),
@@ -1385,6 +1455,7 @@ class AsmrLibraryController extends ChangeNotifier
     Map<String, Object?> remoteMetadataForTrack(AsmrTrackFile node) {
       final metadata = Map<String, Object?>.from(work.toJson());
       metadata['trackRelativePath'] = node.relativePath;
+      metadata['trackStableKey'] = node.stableKey;
       metadata['trackDirectoryPath'] = path.dirname(node.relativePath);
       final subtitle =
           subtitleByStem[node.stemKey] ??
@@ -1410,6 +1481,7 @@ class AsmrLibraryController extends ChangeNotifier
     void visit(Iterable<AsmrTrackFile> nodes) {
       for (final node in nodes) {
         if (node.isAudio) {
+          if (_hiddenTracks.contains('${work.id}:${node.stableKey}')) continue;
           if (includeAudioNode != null && !includeAudioNode(node)) {
             continue;
           }
@@ -1634,6 +1706,7 @@ class AsmrLibraryController extends ChangeNotifier
     _trackCache.remove(workId);
     _trackCache[workId] = sortedTree;
     _visibleTrackCache.remove(workId);
+    _playableTrackCache.remove(workId);
     _trimTrackCache();
     return sortedTree;
   }
@@ -1647,6 +1720,7 @@ class AsmrLibraryController extends ChangeNotifier
       if (evictedWorkId < 0) return;
       _trackCache.remove(evictedWorkId);
       _visibleTrackCache.remove(evictedWorkId);
+      _playableTrackCache.remove(evictedWorkId);
     }
   }
 
@@ -1659,9 +1733,21 @@ class AsmrLibraryController extends ChangeNotifier
       _visibleTrackCache[workId] = cached;
       return cached;
     }
-    final visible = immutableList(
-      tree.where((node) => node.hasBrowsableContent),
-    );
+    List<AsmrTrackFile> filter(List<AsmrTrackFile> nodes) {
+      final result = <AsmrTrackFile>[];
+      for (final node in nodes) {
+        if (node.isFolder) {
+          final children = filter(node.children);
+          if (children.isNotEmpty) result.add(node.withChildren(children));
+        } else if (node.hasBrowsableContent &&
+            !_hiddenTracks.contains('$workId:${node.stableKey}')) {
+          result.add(node);
+        }
+      }
+      return result;
+    }
+
+    final visible = immutableList(filter(tree));
     _visibleTrackCache[workId] = visible;
     while (_visibleTrackCache.length > _trackCacheLimit) {
       _visibleTrackCache.remove(_visibleTrackCache.keys.first);

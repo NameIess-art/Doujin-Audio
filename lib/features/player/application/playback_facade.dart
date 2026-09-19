@@ -3,6 +3,7 @@ import 'dart:collection';
 import 'dart:math';
 
 import '../../../core/errors/native_result.dart';
+import '../../../core/immutable_collections.dart';
 import '../../../core/media/music_track.dart';
 import '../../../core/media/path_matcher.dart';
 import '../../../core/media/path_display.dart';
@@ -115,6 +116,8 @@ final class PlaybackFacade {
   final Set<String> _deferredVolumeReloadSessionIds = <String>{};
   int _transportCommandSequence = 0;
   int _sessionSeed = 0;
+  int _directPlayRevision = 0;
+  PlaybackSession? _directPlaybackSession;
   bool _persistenceEnabled = true;
   bool _backgroundMode = false;
   Timer? _savePlaybackStateTimer;
@@ -366,6 +369,7 @@ final class PlaybackFacade {
     SessionLoopMode loopMode = SessionLoopMode.folderSequential,
     double? volume,
     List<MusicTrack>? customQueueTracks,
+    bool isTemporary = false,
   }) {
     final session =
         PlaybackSession(
@@ -379,12 +383,13 @@ final class PlaybackFacade {
             createdAt: DateTime.now(),
             state: const PlayerState(false, ProcessingState.idle),
             customQueueTracks: customQueueTracks,
+            isTemporary: isTemporary,
           )
           ..speed = 1.0
           ..channelSwapEnabled = false
           ..audioEffects = AudioEffectsState.flat;
     registerSession(session);
-    _scheduleNewSessionPersistence();
+    if (!isTemporary) _scheduleNewSessionPersistence();
     return session;
   }
 
@@ -1117,6 +1122,17 @@ final class PlaybackFacade {
       PlaybackQueuePathCoordinator(this).clearRetargetedPaths();
   Future<void> retargetPath(String oldPath, String newPath) =>
       PlaybackQueuePathCoordinator(this).retargetPath(oldPath, newPath);
+  Future<bool> playDirect(
+    FutureOr<List<MusicTrack>> tracks, {
+    int startIndex = 0,
+    SessionLoopMode loopMode = SessionLoopMode.folderSequential,
+  }) => PlaybackQueuePathCoordinator(
+    this,
+  ).playDirect(tracks, startIndex: startIndex, loopMode: loopMode);
+
+  Future<bool> addTrackToPlaylist(MusicTrack track) =>
+      PlaybackQueuePathCoordinator(this).addTrackToPlaylist(track);
+
   Future<bool> launchQueue(
     List<MusicTrack> tracks, {
     bool? autoPlay,

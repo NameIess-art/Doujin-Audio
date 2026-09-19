@@ -73,6 +73,21 @@ class _AsmrWorkTreeCardState extends ConsumerState<_AsmrWorkTreeCard> {
     );
   }
 
+  Future<void> _toggleFavorite(BuildContext context) async {
+    final wasFavorite = widget.work.isFavorite;
+    await _toggleAsmrWorksFavorite(ref, [widget.work]);
+    if (!context.mounted) return;
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
+    showAppSnackBar(
+      context,
+      i18n.tr(wasFavorite ? 'asmr_favorite_removed' : 'asmr_favorite_added'),
+      tone: wasFavorite ? AppFeedbackTone.info : AppFeedbackTone.success,
+      icon: wasFavorite
+          ? Icons.favorite_border_rounded
+          : Icons.favorite_rounded,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     _readOrWatch(appLanguageStateProvider);
@@ -87,6 +102,50 @@ class _AsmrWorkTreeCardState extends ConsumerState<_AsmrWorkTreeCard> {
     ).isBusy;
     const cardShape = LibraryLikeCardMetrics.cardShape;
 
+    final cardContent = Card(
+      margin: EdgeInsets.zero,
+      clipBehavior: Clip.hardEdge,
+      shape: cardShape,
+      color: widget.isSelected
+          ? cs.primaryContainer.withValues(alpha: 0.25)
+          : Colors.transparent,
+      elevation: 0,
+      shadowColor: Colors.transparent,
+      surfaceTintColor: Colors.transparent,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: _rootTileHeight),
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpacing.xs),
+          child: SearchHighlightScope(
+            query: widget.searchQuery,
+            child: LibraryLikeMetadataWorkCardContent(
+              title: widget.work.title,
+              metadata: _workMetadata(widget.work),
+              circleLabel: i18n.tr('asmr_circle_label'),
+              tagsLabel: i18n.tr('asmr_tags_label'),
+              releaseDateLabel: i18n.tr('card_info_release_date'),
+              ratingLabel: i18n.tr('card_info_rating'),
+              listSeparator: '\u3001',
+              coverBuilder: (coverWidth) => _AsmrWorkCover(
+                url: _asmrWorkListCoverUrl(widget.work),
+                width: coverWidth,
+                duration: widget.work.duration,
+                isActive: widget.isActive,
+                isSelected: widget.isSelected,
+                rjCode: widget.work.rjCode,
+              ),
+              onPlay: () => unawaited(_playWork(context)),
+              playTooltip: i18n.tr('asmr_add_to_playlist'),
+              accentColor: asmrBlue,
+              enableMarquee: false,
+              enableTitleMarquee: false,
+              playLoading: playBusy,
+            ),
+          ),
+        ),
+      ),
+    );
+
     return InkWell(
       canRequestFocus: widget.isSelectionMode,
       onLongPress: widget.onLongPress,
@@ -94,48 +153,32 @@ class _AsmrWorkTreeCardState extends ConsumerState<_AsmrWorkTreeCard> {
           ? widget.onToggleSelect
           : () => unawaited(showAsmrWorkDetailSheet(context, widget.work)),
       borderRadius: cardShape.borderRadius as BorderRadius?,
-      child: Card(
-        margin: EdgeInsets.zero,
-        clipBehavior: Clip.hardEdge,
+      child: SwipeRevealCard(
         shape: cardShape,
-        color: widget.isSelected
-            ? cs.primaryContainer.withValues(alpha: 0.25)
-            : Colors.transparent,
-        elevation: 0,
-        shadowColor: Colors.transparent,
-        surfaceTintColor: Colors.transparent,
-        child: Padding(
-          padding: LibraryLikeCardMetrics.rootTilePadding,
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(minHeight: _rootTileHeight),
-            child: SearchHighlightScope(
-              query: widget.searchQuery,
-              child: LibraryLikeMetadataWorkCardContent(
-                title: widget.work.title,
-                metadata: _workMetadata(widget.work),
-                circleLabel: i18n.tr('asmr_circle_label'),
-                tagsLabel: i18n.tr('asmr_tags_label'),
-                releaseDateLabel: i18n.tr('card_info_release_date'),
-                ratingLabel: i18n.tr('card_info_rating'),
-                listSeparator: '\u3001',
-                coverBuilder: (coverWidth) => _AsmrWorkCover(
-                  url: _asmrWorkListCoverUrl(widget.work),
-                  width: coverWidth,
-                  duration: widget.work.duration,
-                  isActive: widget.isActive,
-                  isSelected: widget.isSelected,
-                  rjCode: widget.work.rjCode,
-                ),
-                onPlay: () => unawaited(_playWork(context)),
-                playTooltip: i18n.tr('asmr_add_to_playlist'),
-                accentColor: asmrBlue,
-                enableMarquee: false,
-                enableTitleMarquee: false,
-                playLoading: playBusy,
-              ),
-            ),
-          ),
+        enabled: !widget.isSelectionMode,
+        closedColor: cs.surface,
+        destructive: false,
+        color: asmrBlue,
+        verticalActions: true,
+        actionLabel: i18n.tr('download'),
+        removeTooltip: i18n.tr('download'),
+        primaryActionIcon: Icons.download_rounded,
+        onRemove: () => unawaited(_downloadAsmrWorks(context, [widget.work])),
+        secondaryActionLabel: i18n.tr(
+          widget.work.isFavorite
+              ? 'asmr_unfavorite_action'
+              : 'asmr_favorite_action',
         ),
+        secondaryActionTooltip: i18n.tr(
+          widget.work.isFavorite
+              ? 'asmr_unfavorite_action'
+              : 'asmr_favorite_action',
+        ),
+        secondaryActionIcon: widget.work.isFavorite
+            ? Icons.favorite_rounded
+            : Icons.favorite_border_rounded,
+        onSecondaryAction: () => unawaited(_toggleFavorite(context)),
+        child: cardContent,
       ),
     );
   }

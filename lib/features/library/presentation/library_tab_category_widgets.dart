@@ -843,32 +843,28 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
           removeTooltip: entry.isFolder
               ? i18n.tr('remove_audio_folder')
               : i18n.tr('remove_audio'),
-          secondaryActionLabel:
-              i18n.tr(isPinned ? 'unpin_from_top' : 'pin_to_top'),
-          secondaryActionTooltip:
-              i18n.tr(isPinned ? 'unpin_from_top' : 'pin_to_top'),
-          secondaryActionIcon: Icons.push_pin_rounded,
-          secondaryActionIconWidget: isPinned ? const PushPinOffIcon() : null,
+          secondaryActionLabel: i18n.tr('download'),
+          secondaryActionTooltip: i18n.tr('download'),
+          secondaryActionIcon: Icons.download_rounded,
           verticalActions: useFeaturedCard,
           onSecondaryAction: () => unawaited(
-            ref
-                .read(settingsRepositoryProvider)
-                .toggleLibraryPathPinned(entry.path),
-          ),
-          onLeadingAction: () =>
-              unawaited(showAudioDetailSheet(context, entry.target)),
-          leadingActionLabel: i18n.tr('audio_detail'),
-          leadingActionTooltip: i18n.tr('audio_detail'),
-          leadingActionIcon: Icons.info_outline_rounded,
-          onSecondaryLeadingAction: () => unawaited(
             downloadAudioTargetFromAsmr(
               context: context,
               ref: ref,
               target: entry.target,
             ),
           ),
-          secondaryLeadingActionLabel: i18n.tr('download'),
-          secondaryLeadingActionTooltip: i18n.tr('download'),
+          onLeadingAction: () => unawaited(
+            ref
+                .read(settingsRepositoryProvider)
+                .toggleLibraryPathPinned(entry.path),
+          ),
+          leadingActionLabel:
+              i18n.tr(isPinned ? 'unpin_from_top' : 'pin_to_top'),
+          leadingActionTooltip:
+              i18n.tr(isPinned ? 'unpin_from_top' : 'pin_to_top'),
+          leadingActionIcon: Icons.push_pin_rounded,
+          leadingActionIconWidget: isPinned ? const PushPinOffIcon() : null,
           onRemove: () => _remove(context, ref),
           child: Card(
             margin: EdgeInsets.zero,
@@ -924,7 +920,7 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
   }) {
     if (entry.isFolder) {
       return Padding(
-        padding: const EdgeInsets.all(AppSpacing.sm),
+        padding: const EdgeInsets.all(AppSpacing.xs),
         child: _RootFolderCardContent(
           folderPath: entry.path,
           folderName: entry.title,

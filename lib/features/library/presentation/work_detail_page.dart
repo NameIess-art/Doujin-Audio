@@ -16,6 +16,7 @@ import '../../../core/media/path_display.dart';
 import '../../../core/media/path_matcher.dart';
 import '../../../core/media/time_text_formatters.dart';
 import '../../../core/ui/ui_operation_service.dart';
+import '../../../core/ui/undoable_removal_service.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/async_cover_image.dart';
 import '../../asmr/application/asmr_library_controller.dart';
@@ -28,11 +29,14 @@ import '../application/work_text_service.dart';
 import '../domain/library_node.dart';
 import 'dlsite_metadata_review_page.dart';
 import 'library_providers.dart';
+import 'library_removal_feedback.dart';
 import 'library_tab.dart';
 import 'work_image_viewer_page.dart';
 import 'work_text_viewer_page.dart';
 
 enum _WorkEntryType { folder, audio, text, image }
+
+enum _WorkEntryAction { play, add, remove }
 
 class _WorkEntryItem {
   const _WorkEntryItem({
@@ -93,10 +97,18 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
   // ASMR state
   List<AsmrTrackFile>? _asmrTree;
   bool _loadingAsmr = true;
+  int _playRequest = 0;
 
   // Breadcrumb navigation state
   // Path stack: e.g. [] for root, ['EXデータ'] for subfolder
   final List<String> _currentPathSegments = [];
+  final ScrollController _breadcrumbScrollController = ScrollController();
+
+  @override
+  void dispose() {
+    _breadcrumbScrollController.dispose();
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -121,37 +133,41 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
     try {
       final detailFuture = library.loadAudioDetail(target);
       final treeFuture = library.loadLibraryFolderTree(folderPath);
-      final textsFuture = textService.findWorkTextFiles(folderPath);
-      final coverFuture = library.coverPathFutureForFolder(folderPath);
-      final imagesFuture = library.discoverCoverCandidatesInFolder(
-        folderPath,
-      );
 
       final detailResult = await detailFuture;
       final tree = await treeFuture;
-      final texts = await textsFuture;
-      final currentCover = await coverFuture;
-      final candidateImages = await imagesFuture;
-
-      final imageItems = <WorkImageItem>[];
-      for (final imgPath in candidateImages) {
-        final name = p.basename(imgPath);
-        var rel = p.relative(imgPath, from: folderPath).replaceAll(r'\', '/');
-        if (rel.startsWith('..')) rel = name;
-        imageItems.add(
-          WorkImageItem(name: name, path: imgPath, relativePath: rel),
-        );
-      }
 
       if (!mounted) return;
       setState(() {
         _localDetail = detailResult.detail;
         _localFolderNode = tree;
-        _localTextFiles = texts;
-        _localImageFiles = imageItems;
-        _localManualCover = currentCover;
         _loadingLocal = false;
       });
+
+      unawaited(() async {
+        try {
+          final texts = await textService.findWorkTextFiles(folderPath);
+          final currentCover = await library.coverPathFutureForFolder(folderPath);
+          final candidateImages = await library.discoverCoverCandidatesInFolder(
+            folderPath,
+          );
+          final imageItems = <WorkImageItem>[];
+          for (final imgPath in candidateImages) {
+            final name = p.basename(imgPath);
+            var rel = p.relative(imgPath, from: folderPath).replaceAll(r'\', '/');
+            if (rel.startsWith('..')) rel = name;
+            imageItems.add(
+              WorkImageItem(name: name, path: imgPath, relativePath: rel),
+            );
+          }
+          if (!mounted) return;
+          setState(() {
+            _localTextFiles = texts;
+            _localImageFiles = imageItems;
+            _localManualCover = currentCover;
+          });
+        } catch (_) {}
+      }());
     } catch (_) {
       if (!mounted) return;
       setState(() {
@@ -168,6 +184,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
     }
     setState(() => _loadingAsmr = true);
     try {
+      await controller.initializeForVisiblePage();
       final tree = await controller.ensureTrackTree(widget.asmrWork!);
       if (!mounted) return;
       setState(() {
@@ -182,10 +199,18 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
 
   String get _currentRelativePath => _currentPathSegments.join('/');
 
-  // Navigate deeper into subfolder
   void _enterFolder(String folderName) {
     setState(() {
       _currentPathSegments.add(folderName);
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_breadcrumbScrollController.hasClients) {
+        _breadcrumbScrollController.animateTo(
+          _breadcrumbScrollController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOut,
+        );
+      }
     });
   }
 
@@ -248,6 +273,11 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
             ),
           );
         } else if (child is TrackNode) {
+          if (ref
+              .read(undoableRemovalStateProvider)
+              .isHidden(libraryRemovalKey(child.track.path))) {
+            continue;
+          }
           entries.add(
             _WorkEntryItem(
               name: child.track.displayName,
@@ -348,6 +378,12 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
           ),
         );
       } else if (node.isAudio) {
+        if (ref
+                .read(asmrLibraryControllerProvider)
+                ?.isTrackHidden(widget.asmrWork!.id, node) ??
+            false) {
+          continue;
+        }
         entries.add(
           _WorkEntryItem(
             name: node.displayTitle,
@@ -450,17 +486,157 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
     }
   }
 
-  // Play an audio item
-  Future<void> _playAudioItem(_WorkEntryItem item) async {
+  Future<bool> _playAudioItem(_WorkEntryItem item) async {
     if (widget.isLocal && item.track != null) {
       final playback = ref.read(playbackFacadeProvider);
-      await playback.spawnSession(item.track!, autoPlay: true);
+      final tracks = _localFolderNode?.allTracks ?? [item.track!];
+      final index = tracks.indexWhere(
+        (track) => track.path == item.track!.path,
+      );
+      if (index < 0) throw StateError('The selected media is unavailable.');
+      return playback.playDirect(tracks, startIndex: index);
     } else if (widget.isAsmr && item.asmrNode != null) {
       final playback = ref.read(asmrPlaybackCoordinatorProvider);
       if (playback != null) {
-        await playback.playTrack(widget.asmrWork!, item.asmrNode!);
+        return playback.playDirectTrack(widget.asmrWork!, item.asmrNode!);
       }
     }
+    throw StateError('Playback is unavailable.');
+  }
+
+  Future<void> _handleEntryAction(
+    _WorkEntryItem item,
+    _WorkEntryAction action,
+  ) async {
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
+    try {
+      switch (action) {
+        case _WorkEntryAction.play:
+          final request = ++_playRequest;
+          final played = await _playAudioItem(item);
+          if (request == _playRequest && !played) {
+            throw StateError('Playback could not start.');
+          }
+        case _WorkEntryAction.add:
+          final added = widget.isLocal && item.track != null
+              ? await ref
+                    .read(playbackFacadeProvider)
+                    .addTrackToPlaylist(item.track!)
+              : await ref
+                        .read(asmrPlaybackCoordinatorProvider)
+                        ?.addTrackToPlaylist(
+                          widget.asmrWork!,
+                          item.asmrNode!,
+                        ) ??
+                    (throw StateError('Playback is unavailable.'));
+          if (mounted) {
+            showAppSnackBar(
+              context,
+              i18n.tr(
+                added ? 'track_added_to_playlist' : 'track_already_in_playlist',
+              ),
+            );
+          }
+        case _WorkEntryAction.remove:
+          if (widget.isLocal && item.track != null) {
+            await stageLibraryRemoval(
+              context,
+              ref,
+              targetPath: item.track!.path,
+              target: LibraryRemovalTarget.track,
+            );
+          } else {
+            final controller = ref.read(asmrLibraryControllerProvider);
+            if (controller == null || item.asmrNode == null) return;
+            final workId = widget.asmrWork!.id;
+            final node = item.asmrNode!;
+            await showUndoableRemovalFeedback(
+              context,
+              service: ref.read(undoableRemovalServiceProvider),
+              action: UndoableRemovalAction(
+                key: UndoableRemovalKey(
+                  'asmr-track',
+                  '$workId:${node.stableKey}',
+                ),
+                prepare: () async {
+                  await controller.setTrackHidden(workId, node, true);
+                  return true;
+                },
+                commit: () {},
+                undo: () => controller.setTrackHidden(workId, node, false),
+              ),
+              message: i18n.tr('audio_removed'),
+              batchMessage: (count) =>
+                  i18n.tr('items_removed_count', {'count': count}),
+              undoLabel: i18n.tr('undo'),
+              failureMessage: i18n.tr('removal_failed'),
+            );
+          }
+      }
+    } catch (_) {
+      if (mounted) {
+        showAppSnackBar(
+          context,
+          i18n.tr('operation_failed_retry'),
+          tone: AppFeedbackTone.destructive,
+        );
+      }
+    }
+  }
+
+  List<PopupMenuEntry<_WorkEntryAction>> _entryMenuItems() {
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
+    final color = Theme.of(context).colorScheme.primary;
+    return [
+      for (final (action, icon, label) in [
+        (_WorkEntryAction.play, Icons.play_arrow_rounded, 'play'),
+        (
+          _WorkEntryAction.add,
+          Icons.playlist_add_rounded,
+          'detail_add_to_queue',
+        ),
+        (
+          _WorkEntryAction.remove,
+          Icons.remove_circle_outline_rounded,
+          'remove',
+        ),
+      ])
+        PopupMenuItem(
+          value: action,
+          height: 40,
+          child: Row(
+            children: [
+              Icon(icon, size: 20, color: color),
+              const SizedBox(width: 12),
+              Text(i18n.tr(label)),
+            ],
+          ),
+        ),
+    ];
+  }
+
+  Future<void> _showEntryContextMenu(
+    _WorkEntryItem item,
+    Offset position,
+  ) async {
+    final overlay =
+        Overlay.of(context).context.findRenderObject()! as RenderBox;
+    final action = await showMenu<_WorkEntryAction>(
+      context: context,
+      position: RelativeRect.fromSize(
+        overlay.globalToLocal(position) & Size.zero,
+        overlay.size,
+      ),
+      items: _entryMenuItems(),
+    );
+    if (mounted && action != null) await _handleEntryAction(item, action);
+  }
+
+  Future<void> _refreshLocalTree() async {
+    final tree = await ref
+        .read(libraryFacadeProvider)
+        .loadLibraryFolderTree(widget.localTarget!.targetPath);
+    if (mounted) setState(() => _localFolderNode = tree);
   }
 
   // Open text file
@@ -660,6 +836,19 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.isLocal) {
+      ref.watch(undoableRemovalStateProvider);
+      ref.listen(
+        libraryStateProvider.select((state) => state.value?.structureRevision),
+        (previous, next) {
+          if (previous != null && next != previous) {
+            unawaited(_refreshLocalTree());
+          }
+        },
+      );
+    } else {
+      ref.watch(asmrTrackTreeStateProvider(widget.asmrWork!.id));
+    }
     final i18n = ref.watch(appLanguageProviderInstanceProvider);
     final cs = Theme.of(context).colorScheme;
     final tokens = AppDesignTokens.of(context);
@@ -984,61 +1173,82 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
                   // 3. Navigation Breadcrumb Bar
                   Row(
                     children: [
-                      InkWell(
-                        borderRadius: BorderRadius.circular(8),
-                        onTap: () => _navigateToBreadcrumbIndex(-1),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 6,
-                            vertical: 4,
+                      Expanded(
+                        child: SingleChildScrollView(
+                          controller: _breadcrumbScrollController,
+                          scrollDirection: Axis.horizontal,
+                          physics: const BouncingScrollPhysics(
+                            parent: AlwaysScrollableScrollPhysics(),
                           ),
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Icon(
-                                Icons.home_rounded,
-                                size: 18,
-                                color: cs.primary,
-                              ),
-                              const SizedBox(width: 4),
-                              Text(
-                                i18n.tr('root_directory'),
-                                style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  color: cs.primary,
-                                  fontSize: 13,
+                              InkWell(
+                                borderRadius: BorderRadius.circular(8),
+                                onTap: () => _navigateToBreadcrumbIndex(-1),
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 6,
+                                    vertical: 4,
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        Icons.home_rounded,
+                                        size: 18,
+                                        color: cs.primary,
+                                      ),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        i18n.tr('root_directory'),
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          color: cs.primary,
+                                          fontSize: 13,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               ),
+                              for (var i = 0;
+                                  i < _currentPathSegments.length;
+                                  i++) ...[
+                                const Text(
+                                  ' > ',
+                                  style: TextStyle(color: Colors.grey),
+                                ),
+                                InkWell(
+                                  borderRadius: BorderRadius.circular(8),
+                                  onTap: () => _navigateToBreadcrumbIndex(i),
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 4,
+                                      vertical: 4,
+                                    ),
+                                    child: Text(
+                                      _currentPathSegments[i],
+                                      style: TextStyle(
+                                        fontWeight:
+                                            i == _currentPathSegments.length - 1
+                                                ? FontWeight.bold
+                                                : FontWeight.normal,
+                                        color:
+                                            i == _currentPathSegments.length - 1
+                                                ? cs.onSurface
+                                                : cs.primary,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ],
                           ),
                         ),
                       ),
-                      for (var i = 0; i < _currentPathSegments.length; i++) ...[
-                        const Text(' > ', style: TextStyle(color: Colors.grey)),
-                        InkWell(
-                          borderRadius: BorderRadius.circular(8),
-                          onTap: () => _navigateToBreadcrumbIndex(i),
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 4,
-                              vertical: 4,
-                            ),
-                            child: Text(
-                              _currentPathSegments[i],
-                              style: TextStyle(
-                                fontWeight: i == _currentPathSegments.length - 1
-                                    ? FontWeight.bold
-                                    : FontWeight.normal,
-                                color: i == _currentPathSegments.length - 1
-                                    ? cs.onSurface
-                                    : cs.primary,
-                                fontSize: 13,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                      const Spacer(),
+                      const SizedBox(width: 8),
                       Text(
                         '${currentEntries.length} 项',
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -1123,37 +1333,50 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
         final durationStr = item.duration != null && item.duration! > Duration.zero
             ? formatDurationCompact(item.duration!)
             : '';
-        return ListTile(
-          dense: true,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-          leading: Icon(
-            Icons.audiotrack_rounded,
-            color: widget.isAsmr ? asmrBlue : cs.primary,
-          ),
-          title: Text(
-            item.name,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-          trailing: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (durationStr.isNotEmpty)
-                Text(
-                  durationStr,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: cs.onSurfaceVariant,
-                      ),
+        return GestureDetector(
+          onSecondaryTapDown: defaultTargetPlatform == TargetPlatform.windows
+              ? (details) => _showEntryContextMenu(item, details.globalPosition)
+              : null,
+          child: ListTile(
+            dense: true,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+            leading: Icon(
+              (item.track?.isVideo ?? item.asmrNode?.isVideo ?? false)
+                  ? Icons.videocam_outlined
+                  : Icons.audiotrack_rounded,
+              color: widget.isAsmr ? asmrBlue : cs.primary,
+            ),
+            title: Text(
+              item.name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (durationStr.isNotEmpty)
+                  Text(
+                    durationStr,
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+                  ),
+                const SizedBox(width: 4),
+                PopupMenuButton<_WorkEntryAction>(
+                  key: ValueKey('work_entry_more_${item.relativePath}'),
+                  icon: const Icon(Icons.more_vert_rounded, size: 22),
+                  tooltip: ref
+                      .read(appLanguageProviderInstanceProvider)
+                      .tr('more_actions'),
+                  itemBuilder: (_) => _entryMenuItems(),
+                  onSelected: (action) => _handleEntryAction(item, action),
                 ),
-              const SizedBox(width: 4),
-              IconButton(
-                icon: const Icon(Icons.play_circle_outline_rounded, size: 22),
-                color: widget.isAsmr ? asmrBlue : cs.primary,
-                onPressed: () => _playAudioItem(item),
-              ),
-            ],
+              ],
+            ),
+            onTap: () => _handleEntryAction(item, _WorkEntryAction.play),
           ),
-          onTap: () => _playAudioItem(item),
         );
 
       case _WorkEntryType.text:

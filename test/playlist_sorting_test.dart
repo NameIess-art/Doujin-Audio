@@ -13,9 +13,11 @@ PlaybackSessionSnapshot _session(
   String id, {
   String? name,
   DateTime? createdAt,
+  bool isTemporary = false,
 }) {
   final s = PlaybackSession(
     id: id,
+    isTemporary: isTemporary,
     currentTrackPath: '/audio/${name ?? id}.mp3',
     loopMode: SessionLoopMode.folderSequential,
     nonSingleLoopMode: SessionLoopMode.folderSequential,
@@ -35,6 +37,29 @@ void main() {
     final graph = createTestRuntimeGraph();
     library = graph.library;
   });
+
+  test(
+    'temporary session stays above pinned entries in either sort direction',
+    () {
+      final temporary = _session('temporary', isTemporary: true);
+      final saved = _session('saved');
+      for (final ascending in [true, false]) {
+        final sorted = sortPlaylistSessions(
+          sessions: [saved, temporary],
+          criterion: PlaylistSortCriterion.name,
+          ascending: ascending,
+          groupByLibrary: true,
+          library: library,
+          trackForSession: (session) {
+            expect(session.isTemporary, isFalse);
+            return null;
+          },
+          pinnedSessionIds: {saved.id},
+        );
+        expect(sorted.map((session) => session.id), ['temporary', 'saved']);
+      }
+    },
+  );
 
   test('sortPlaylistSessions moves single pinned session to top', () {
     final s1 = _session('s1', name: 'Alpha');

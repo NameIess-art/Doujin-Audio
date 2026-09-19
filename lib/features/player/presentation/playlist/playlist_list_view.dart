@@ -15,7 +15,6 @@ import '../../../../core/widgets/app_feedback.dart';
 import '../../../../core/widgets/app_transitions.dart';
 import '../../../../core/widgets/async_cover_image.dart';
 import '../../../../core/widgets/library_like_cards.dart';
-import '../../../../core/widgets/rj_code_overlay.dart';
 import '../../../../core/widgets/shimmer_loading.dart';
 import '../../../../core/widgets/swipe_reveal_card.dart';
 import '../../../library/application/library_facade.dart';
@@ -466,12 +465,6 @@ class SessionListCard extends ConsumerWidget {
         : (currentTrack != null && !currentTrack.isSingle)
         ? currentTrack.groupTitle
         : i18n.tr('imported_files');
-    final rjCode =
-        AudioDetail.findRjCodeInText(currentTrack?.groupSubtitle ?? '') ??
-        AudioDetail.findRjCodeInText(folderName) ??
-        AudioDetail.findRjCodeInText(cardState.trackPath) ??
-        AudioDetail.findRjCodeInText(displayName) ??
-        '';
     final isPlaying = cardState.isPlaying;
 
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -575,15 +568,6 @@ class SessionListCard extends ConsumerWidget {
                                 duration: track?.duration,
                                 detailDuration: detailDuration,
                               ),
-                              if (rjCode.isNotEmpty)
-                                Positioned(
-                                  left: 4,
-                                  top: 4,
-                                  child: RjCodeOverlay(
-                                    rjCode: rjCode,
-                                    maxWidth: playlistCoverSize - 8,
-                                  ),
-                                ),
                               Positioned(
                                 left: 4,
                                 bottom: 4,
@@ -595,7 +579,7 @@ class SessionListCard extends ConsumerWidget {
                               if (isPinned)
                                 Positioned(
                                   top: 4,
-                                  right: 4,
+                                  left: 4,
                                   child: PlaylistPinnedIndicator(
                                     sessionId: sessionId,
                                     color: isAsmrOne ? asmrBlue : localPlayRose,

@@ -48,6 +48,7 @@ class NativePlaybackRepository {
     bool shuffle = false,
     List<Uri>? candidateUris,
     bool deferPlayerCreation = false,
+    bool isTemporary = false,
   }) {
     return _bridge.prepareSession(
       sessionId: sessionId,
@@ -68,6 +69,7 @@ class NativePlaybackRepository {
       shuffle: shuffle,
       candidateUris: candidateUris,
       deferPlayerCreation: deferPlayerCreation,
+      isTemporary: isTemporary,
     );
   }
 

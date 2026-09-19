@@ -43,6 +43,7 @@ extension PlaybackCommandRestore on PlaybackCommandCoordinator {
               : Uri.file(track.path);
           final prepareResult = await _nativePlaybackRepository.prepareSession(
             sessionId: session.id,
+            isTemporary: session.isTemporary,
             uri: uri,
             title: track.displayName,
             path: track.path,

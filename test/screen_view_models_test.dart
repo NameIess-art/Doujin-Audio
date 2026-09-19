@@ -338,7 +338,7 @@ void main() {
     );
   });
 
-  test('overlay state shows every session in both playback modes', () {
+  test('overlay state shows only confirmed playing sessions in both modes', () {
     final paused = session(id: 'paused', path: '/tracks/a.mp3');
     final playing = session(
       id: 'playing',
@@ -362,14 +362,42 @@ void main() {
       ),
     );
 
-    expect(singlePlaybackOverlay.map((session) => session.id), [
-      'paused',
-      'playing',
-    ]);
-    expect(multiPlaybackOverlay.map((session) => session.id), [
-      'paused',
-      'playing',
-    ]);
+    expect(singlePlaybackOverlay.map((session) => session.id), ['playing']);
+    expect(multiPlaybackOverlay.map((session) => session.id), ['playing']);
+  });
+
+  test('overlay waits for ready playback and hides on pause or completion', () {
+    final value = session(id: 'overlay', path: '/tracks/a.mp3');
+    addTearDown(value.shutdown);
+    List<PlaybackSessionSnapshot> overlay() => overlaySessionsFromPlaybackState(
+      PlaybackStateSliceData(activeSessions: [snapshot(value)]),
+    );
+
+    value.beginPreparation(showLoading: true, autoPlay: true);
+    expect(snapshot(value).playbackRequested, isTrue);
+    expect(overlay(), isEmpty);
+    value.state = const PlayerState(true, ProcessingState.buffering);
+    expect(overlay(), isEmpty);
+    value.state = const PlayerState(true, ProcessingState.ready);
+    expect(overlay().single.id, value.id);
+    value.state = const PlayerState(false, ProcessingState.ready);
+    expect(overlay(), isEmpty);
+    value.state = const PlayerState(true, ProcessingState.completed);
+    expect(overlay(), isEmpty);
+  });
+
+  test('promoting a temporary session updates playlist structure', () {
+    final value = session(id: 'temporary', path: '/tracks/a.mp3');
+    addTearDown(value.shutdown);
+    value.isTemporary = true;
+    PlaylistStructureState structure() =>
+        playlistStructureStateFromPlaybackState(
+          PlaybackStateSliceData(activeSessions: [snapshot(value)]),
+        );
+    final temporary = structure();
+    expect(temporary.entries.single.session.isTemporary, isTrue);
+    value.isTemporary = false;
+    expect(structure(), isNot(temporary));
   });
 
   test('session detail view state tracks only detail page inputs', () {

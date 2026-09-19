@@ -26,7 +26,8 @@ internal data class NativePrepareSessionArguments(
     val repeatAll: Boolean,
     val shuffle: Boolean,
     val candidateUris: List<String>,
-    val deferPlayerCreation: Boolean
+    val deferPlayerCreation: Boolean,
+    val isTemporary: Boolean = false
 )
 
 internal data class NativeRepeatOneArguments(
@@ -92,7 +93,11 @@ internal object NativePlaybackCommandPayloads {
             repeatAll = raw.requiredBoolean("repeatAll"),
             shuffle = raw.requiredBoolean("shuffle"),
             candidateUris = candidateUris,
-            deferPlayerCreation = raw.requiredBoolean("deferPlayerCreation")
+            deferPlayerCreation = raw.requiredBoolean("deferPlayerCreation"),
+            isTemporary = raw["isTemporary"]?.let {
+                require(it is Boolean) { "isTemporary must be a boolean." }
+                it
+            } ?: false
         )
     }
 

@@ -121,6 +121,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
   void _reconcileSelection(PlaylistStructureState structureState) {
     if (!_isSelectionMode) return;
     final availableSessionIds = structureState.entries
+        .where((entry) => !entry.session.isTemporary)
         .map((entry) => entry.sessionId)
         .toSet();
     if (_selectedSessionIds.every(availableSessionIds.contains)) return;
@@ -380,7 +381,9 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
       }
       final structure = visibleEntries[index];
       final session = structure.session;
-      final isPinned = pinnedPlaylistSessionIds.contains(session.id);
+      final isTemporary = session.isTemporary;
+      final isPinned =
+          !isTemporary && pinnedPlaylistSessionIds.contains(session.id);
       final track = paths.sessionTrackForPath(session.id, structure.trackPath);
       final coverPath = library.resolvedPlaybackCoverPathForTrack(track);
       final child = RepaintBoundary(
@@ -391,14 +394,18 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                 playback: playback,
                 coverCacheWidth: coverCacheWidth,
                 showSubtitles: subtitleSettings.isGlobalEnabled(session.id),
-                isSelectionMode: _isSelectionMode,
+                isSelectionMode: _isSelectionMode && !isTemporary,
                 isSelected: _selectedSessionIds.contains(session.id),
                 isPinned: isPinned,
-                onLongPress: () => _enterSelectionMode(session.id),
+                onLongPress: isTemporary
+                    ? null
+                    : () => _enterSelectionMode(session.id),
                 onToggleSelect: () => _toggleSessionSelection(session.id),
-                onTogglePin: () => ref
-                    .read(settingsRepositoryProvider)
-                    .togglePlaylistSessionPinned(session.id),
+                onTogglePin: isTemporary
+                    ? null
+                    : () => ref
+                          .read(settingsRepositoryProvider)
+                          .togglePlaylistSessionPinned(session.id),
                 onOpen: () => session.currentTrackPath.isEmpty
                     ? showAppSnackBar(
                         context,
@@ -418,18 +425,38 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                 showSubtitles: subtitleSettings.isGlobalEnabled(session.id),
                 library: library,
                 playback: playback,
-                isSelectionMode: _isSelectionMode,
+                isSelectionMode: _isSelectionMode && !isTemporary,
                 isSelected: _selectedSessionIds.contains(session.id),
                 isPinned: isPinned,
-                onLongPress: () => _enterSelectionMode(session.id),
+                onLongPress: isTemporary
+                    ? null
+                    : () => _enterSelectionMode(session.id),
                 onToggleSelect: () => _toggleSessionSelection(session.id),
-                onTogglePin: () => ref
-                    .read(settingsRepositoryProvider)
-                    .togglePlaylistSessionPinned(session.id),
+                onTogglePin: isTemporary
+                    ? null
+                    : () => ref
+                          .read(settingsRepositoryProvider)
+                          .togglePlaylistSessionPinned(session.id),
                 onOpen: () => _openSessionDetail(context, session.id),
               ),
       );
-      return KeyedSubtree(key: ValueKey(session.id), child: child);
+      return KeyedSubtree(
+        key: ValueKey(session.id),
+        child: isTemporary && index + 1 < visibleEntries.length
+            ? Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  child,
+                  const Divider(
+                    key: ValueKey('playlist_temporary_session_divider'),
+                    height: 24,
+                    indent: 12,
+                    endIndent: 12,
+                  ),
+                ],
+              )
+            : child,
+      );
     }
 
     return ScrollActivityGate(

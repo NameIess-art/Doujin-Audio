@@ -166,7 +166,7 @@ class NativePlaybackService : MediaSessionService() {
             hasActivePlayback = ::hasActivePlayback,
             storedSessions = {
                 val intendedSessionIds = playbackRecovery.intendedSessionIds
-                sessionManager.allSessions.map { session ->
+                sessionManager.allSessions.filterNot { it.isTemporary }.map { session ->
                     session.storedSnapshot().let { stored ->
                         if (session.sessionId in intendedSessionIds) {
                             stored.copy(playWhenReady = true)
@@ -763,6 +763,7 @@ class NativePlaybackService : MediaSessionService() {
                 .withPlaybackCandidateUris(args.candidateUris)
         }
         val nativeSession = sessionManager.getOrCreate(sessionId)
+        nativeSession.isTemporary = args.isTemporary
         focusRecovery.removePending(sessionId)
         return try {
             nativeSession.applyAudioEffects(args.audioEffects)

@@ -218,6 +218,7 @@ class _DetailStructure {
       coverGeneration == other.coverGeneration &&
       session?.id == other.session?.id &&
       session?.currentTrackPath == other.session?.currentTrackPath &&
+      session?.loadedPath == other.session?.loadedPath &&
       session?.currentQueueIndex == other.session?.currentQueueIndex &&
       session?.playbackQueue == other.session?.playbackQueue &&
       session?.positionStream == other.session?.positionStream &&
@@ -229,6 +230,7 @@ class _DetailStructure {
     coverGeneration,
     session?.id,
     session?.currentTrackPath,
+    session?.loadedPath,
     session?.currentQueueIndex,
     session?.playbackQueue,
     session?.positionStream,

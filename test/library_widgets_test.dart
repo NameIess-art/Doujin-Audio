@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'support/runtime_test_models.dart';
 import 'package:doujin_audio/features/library/presentation/library_tab.dart';
 import 'package:doujin_audio/features/library/presentation/library_tab_edit.dart';
+import 'package:doujin_audio/features/library/presentation/work_detail_page.dart';
 import 'package:doujin_audio/core/widgets/app_scroll_physics.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/core/widgets/async_cover_image.dart';
@@ -587,7 +588,7 @@ void main() {
     await tester.pump();
 
     expect(tester.takeException(), isNull);
-    expect(find.byType(ExpansionTile), findsOneWidget);
+    expect(find.byType(ListTile), findsOneWidget);
 
     await tester.runAsync(
       () => Future<void>.delayed(const Duration(milliseconds: 30)),
@@ -598,7 +599,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
   });
 
-  testWidgets('deep library folders collapse and restore visible descendants', (
+  testWidgets('deep library folders navigate through hierarchy in WorkDetailPage', (
     WidgetTester tester,
   ) async {
     final fixture = AppRuntimeWidgetTestFixture();
@@ -623,36 +624,13 @@ void main() {
     await tester.pump();
     await pumpUntilLibraryTreeReady(tester, fixture.runtimeGraph.library);
     await pumpUntilNotFound(tester, find.byType(LibraryLikeSkeletonCard));
-    await tester.tap(find.byType(ExpansionTile).first);
+    await tester.tap(find.byType(ListTile).first);
+    await pumpUntilFound(tester, find.byType(WorkDetailPage));
     await pumpUntilFound(tester, find.text('Disc', findRichText: true));
-    await tester.pump(kAppMotionStandard);
-    await tester.pump();
-    await tester.tap(find.text('Disc', findRichText: true));
-    await tester.pump(kAppMotionStandard);
-    await tester.pump();
-    expect(find.text('Chapter', findRichText: true), findsOneWidget);
-    await tester.tap(find.text('Chapter', findRichText: true));
-    await pumpUntilFound(tester, find.text('Deep track', findRichText: true));
-
-    await tester.tap(find.text('Disc', findRichText: true));
-    await tester.pump();
-    expect(find.text('Deep track', findRichText: true), findsOneWidget);
-    final collapsingReveal = tester.widget<AnimatedTreeReveal>(
-      find
-          .ancestor(
-            of: find.text('Deep track', findRichText: true),
-            matching: find.byType(AnimatedTreeReveal),
-          )
-          .first,
-    );
-    expect(collapsingReveal.visible, isFalse);
-    await tester.pump(kAppMotionStandard ~/ 2);
-    expect(find.text('Deep track', findRichText: true), findsOneWidget);
-    await tester.pump(kAppMotionStandard);
-    await tester.pump();
-    expect(find.text('Deep track', findRichText: true), findsNothing);
     await tester.tap(find.text('Disc', findRichText: true));
     await pumpUntilFound(tester, find.text('Chapter', findRichText: true));
+    await tester.tap(find.text('Chapter', findRichText: true));
+    await pumpUntilFound(tester, find.text('Deep track', findRichText: true));
     expect(find.text('Deep track', findRichText: true), findsOneWidget);
   });
 
@@ -687,7 +665,8 @@ void main() {
     await pumpUntilNotFound(tester, find.byType(LibraryLikeSkeletonCard));
     expect(find.text('Content track', findRichText: true), findsNothing);
 
-    await tester.tap(find.byType(ExpansionTile).first);
+    await tester.tap(find.byType(ListTile).first);
+    await pumpUntilFound(tester, find.byType(WorkDetailPage));
     await pumpUntilFound(
       tester,
       find.text('Content track', findRichText: true),
@@ -722,7 +701,8 @@ void main() {
     await pumpUntilNotFound(tester, find.byType(LibraryLikeSkeletonCard));
 
     final expansionStopwatch = Stopwatch()..start();
-    await tester.tap(find.byType(ExpansionTile).first);
+    await tester.tap(find.byType(ListTile).first);
+    await pumpUntilFound(tester, find.byType(WorkDetailPage));
     await pumpUntilFound(
       tester,
       find.text('Lazy track 0000', findRichText: true),
@@ -733,7 +713,7 @@ void main() {
     expect(
       builtRows.evaluate().length,
       lessThan(100),
-      reason: 'Expanding a large folder must not build every track at once',
+      reason: 'Opening a large folder must not build every track at once',
     );
     debugPrint(
       'large_folder_expand '
@@ -741,15 +721,16 @@ void main() {
       'builtRows=${builtRows.evaluate().length} totalRows=${tracks.length}',
     );
 
+    final detailScrollable = find.descendant(
+      of: find.byType(WorkDetailPage),
+      matching: find.byWidgetPredicate(
+        (w) => w is Scrollable && w.axisDirection == AxisDirection.down,
+      ),
+    );
     await tester.scrollUntilVisible(
       find.text('Lazy track 1999', findRichText: true),
       600,
-      scrollable: find
-          .descendant(
-            of: find.byKey(const PageStorageKey<String>('library_list')),
-            matching: find.byType(Scrollable),
-          )
-          .first,
+      scrollable: detailScrollable,
       maxScrolls: 400,
     );
     expect(find.text('Lazy track 1999', findRichText: true), findsOneWidget);
@@ -1047,7 +1028,7 @@ void main() {
   });
 
   testWidgets(
-    'removing a folder audio keeps the folder expanded and shows context',
+    'removing a library audio shows undo and retains other audios',
     (WidgetTester tester) async {
       final fixture = AppRuntimeWidgetTestFixture();
       addTearDown(fixture.dispose);
@@ -1058,12 +1039,14 @@ void main() {
         path: '$folderPath/remove.mp3',
         groupKey: folderPath,
         groupTitle: 'Remove folder audio',
+        isSingle: true,
       );
       final retainedTrack = testMusicTrack(
         name: 'Keep this track',
         path: '$folderPath/keep.mp3',
         groupKey: folderPath,
         groupTitle: 'Remove folder audio',
+        isSingle: true,
       );
       runtimeGraph.library.addWatchedFolder(folderPath, notify: false);
       runtimeGraph.library.addTracks(
@@ -1079,19 +1062,6 @@ void main() {
       await pumpUntilNotFound(tester, find.byType(LibraryLikeSkeletonCard));
       await tester.pump(const Duration(milliseconds: 350));
 
-      final folderTile = find.byType(ExpansionTile).first;
-      await tester.ensureVisible(folderTile);
-      await tester.tap(folderTile);
-      await pumpUntilFound(
-        tester,
-        find.text('Remove this track', findRichText: true),
-      );
-      final trackCard = find.ancestor(
-        of: find.text('Remove this track', findRichText: true),
-        matching: find.byType(SwipeRevealCard),
-      );
-      tester.widget<SwipeRevealCard>(trackCard.first).onRemove();
-
       final removedTrackFinder = find.text(
         'Remove this track',
         findRichText: true,
@@ -1100,13 +1070,20 @@ void main() {
         'Keep this track',
         findRichText: true,
       );
+      await pumpUntilFound(tester, removedTrackFinder);
+      final trackCard = find.ancestor(
+        of: removedTrackFinder,
+        matching: find.byType(SwipeRevealCard),
+      );
+      tester.widget<SwipeRevealCard>(trackCard.first).onRemove();
+
       var removalCompleted = false;
       for (var i = 0; i < 200; i++) {
         await tester.pump(const Duration(milliseconds: 50));
         expect(
           retainedTrackFinder,
           findsOneWidget,
-          reason: 'The expanded folder should not blank while refreshing',
+          reason: 'The remaining track should not blank while refreshing',
         );
         if (removedTrackFinder.evaluate().isEmpty) {
           removalCompleted = true;
@@ -1133,18 +1110,11 @@ void main() {
       await pumpUntilFound(tester, removedTrackFinder);
 
       expect(find.text('Keep this track', findRichText: true), findsOneWidget);
-      expect(
-        tester
-            .widget<ExpansionTile>(find.byType(ExpansionTile).first)
-            .controller!
-            .isExpanded,
-        isTrue,
-      );
     },
   );
 
   testWidgets(
-    'excluding a library audio keeps the folder expanded while refreshing',
+    'excluding a library audio keeps the view stable while refreshing',
     (WidgetTester tester) async {
       final fixture = AppRuntimeWidgetTestFixture();
       addTearDown(fixture.dispose);
@@ -1155,12 +1125,14 @@ void main() {
         path: '$libraryPath/exclude.mp3',
         groupKey: libraryPath,
         groupTitle: 'Recoverable audio',
+        isSingle: true,
       );
       final retainedTrack = testMusicTrack(
         name: 'Retain this track',
         path: '$libraryPath/retain.mp3',
         groupKey: libraryPath,
         groupTitle: 'Recoverable audio',
+        isSingle: true,
       );
       runtimeGraph.library
         ..addWatchedLibrary(libraryPath, notify: false)
@@ -1181,9 +1153,6 @@ void main() {
       await pumpUntilNotFound(tester, find.byType(LibraryLikeSkeletonCard));
       await tester.pump(const Duration(milliseconds: 350));
 
-      final folderTile = find.byType(ExpansionTile).first;
-      await tester.ensureVisible(folderTile);
-      await tester.tap(folderTile);
       final removedTrackFinder = find.text(
         'Exclude this track',
         findRichText: true,
@@ -1205,7 +1174,7 @@ void main() {
         expect(
           retainedTrackFinder,
           findsOneWidget,
-          reason: 'Recoverable exclusion should not blank the open folder',
+          reason: 'Recoverable exclusion should not blank the view',
         );
         if (removedTrackFinder.evaluate().isEmpty) {
           removalCompleted = true;
@@ -1239,13 +1208,6 @@ void main() {
       expect(
         runtimeGraph.library.excludedTracksForLibrary(libraryPath),
         <String>[PathMatcher.normalize(removedTrack.path)],
-      );
-      expect(
-        tester
-            .widget<ExpansionTile>(find.byType(ExpansionTile).first)
-            .controller!
-            .isExpanded,
-        isTrue,
       );
     },
   );
@@ -1619,23 +1581,17 @@ void main() {
       matching: find.byType(PlaceholderContentTransition),
     );
     expect(searchContentTransition, findsOneWidget);
-    final searchResultExpansionTiles = find.descendant(
+    final searchResultTiles = find.descendant(
       of: find.byKey(const ValueKey<String>('library_search_results_all')),
-      matching: find.byType(ExpansionTile),
+      matching: find.byType(ListTile),
     );
-    expect(searchResultExpansionTiles, findsOneWidget);
+    expect(searchResultTiles, findsOneWidget);
     final searchHeroMode = tester.widget<HeroMode>(
       find.byKey(const ValueKey<String>('library_search_hero_mode')),
     );
     expect(searchHeroMode.enabled, isFalse);
     expect(
-      tester
-          .widget<ExpansionTile>(searchResultExpansionTiles)
-          .initiallyExpanded,
-      isFalse,
-    );
-    expect(
-      tester.getTopLeft(searchResultExpansionTiles).dy,
+      tester.getTopLeft(searchResultTiles).dy,
       greaterThanOrEqualTo(
         tester
             .getBottomLeft(
@@ -2779,15 +2735,24 @@ void main() {
         ..addTracks(<MusicTrack>[rootTrack], notify: false, persist: false);
       fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 0);
 
-      await tester.pumpWidget(fixture.build(const LibraryTab()));
-      await tester.pump();
-      await pumpUntilLibraryTreeReady(tester, runtimeGraph.library);
-      await pumpUntilNotFound(tester, find.byType(LibraryLikeSkeletonCard));
-      await tester.pump(const Duration(milliseconds: 350));
+      final childFolder = FolderNode(
+        'disc',
+        '/library/tree-height/disc',
+        depth: 1,
+      );
+      childFolder.addChild(TrackNode(rootTrack));
 
-      final rootFolderTile = find.byType(ExpansionTile).first;
-      await tester.ensureVisible(rootFolderTile);
-      await tester.tap(rootFolderTile);
+      await tester.pumpWidget(
+        fixture.build(
+          Material(
+            child: SingleChildScrollView(
+              child: LibraryTreeItem(
+                node: childFolder,
+              ),
+            ),
+          ),
+        ),
+      );
       await tester.pumpAndSettle();
 
       final discFolderFinder = find.text('disc', findRichText: true);
@@ -2903,21 +2868,18 @@ void main() {
       expect(swipeCard.onLeadingAction, isNotNull);
       expect(
         swipeCard.leadingActionLabel,
-        fixture.languageProvider.tr('audio_detail'),
+        fixture.languageProvider.tr('pin_to_top'),
       );
-      expect(swipeCard.leadingActionIcon, Icons.info_outline_rounded);
-      expect(swipeCard.onSecondaryLeadingAction, isNotNull);
-      expect(
-        swipeCard.secondaryLeadingActionLabel,
-        fixture.languageProvider.tr('download'),
-      );
+      expect(swipeCard.leadingActionIcon, Icons.push_pin_rounded);
+      expect(swipeCard.leadingActionIconWidget, isNull);
+      expect(swipeCard.onSecondaryLeadingAction, isNull);
+      expect(swipeCard.secondaryLeadingActionLabel, isNull);
       expect(swipeCard.onSecondaryAction, isNotNull);
       expect(
         swipeCard.secondaryActionLabel,
-        fixture.languageProvider.tr('pin_to_top'),
+        fixture.languageProvider.tr('download'),
       );
-      expect(swipeCard.secondaryActionIcon, Icons.push_pin_rounded);
-      expect(swipeCard.secondaryActionIconWidget, isNull);
+      expect(swipeCard.secondaryActionIcon, Icons.download_rounded);
 
       // Pin badge not shown initially
       expect(
@@ -2926,7 +2888,7 @@ void main() {
       );
 
       // Toggle pin
-      swipeCard.onSecondaryAction!();
+      swipeCard.onLeadingAction!();
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
 
@@ -2943,10 +2905,10 @@ void main() {
       // Swipe card now shows unpin
       final updatedSwipeCard = tester.widget<SwipeRevealCard>(swipeCardFinder);
       expect(
-        updatedSwipeCard.secondaryActionLabel,
+        updatedSwipeCard.leadingActionLabel,
         fixture.languageProvider.tr('unpin_from_top'),
       );
-      expect(updatedSwipeCard.secondaryActionIconWidget, isA<PushPinOffIcon>());
+      expect(updatedSwipeCard.leadingActionIconWidget, isA<PushPinOffIcon>());
 
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.runAsync(
@@ -2957,7 +2919,7 @@ void main() {
   );
 
   testWidgets(
-    'root folder card right-swipe download action finds ASMR work and navigates to AsmrDownloadPage',
+    'root folder card left-swipe download action finds ASMR work and navigates to AsmrDownloadPage',
     (WidgetTester tester) async {
       final fixture = AppRuntimeWidgetTestFixture();
       addTearDown(fixture.dispose);
@@ -3027,13 +2989,13 @@ void main() {
       expect(swipeCardFinder, findsOneWidget);
 
       final swipeCard = tester.widget<SwipeRevealCard>(swipeCardFinder);
-      expect(swipeCard.onSecondaryLeadingAction, isNotNull);
+      expect(swipeCard.onSecondaryAction, isNotNull);
       expect(
-        swipeCard.secondaryLeadingActionLabel,
+        swipeCard.secondaryActionLabel,
         fixture.languageProvider.tr('download'),
       );
 
-      swipeCard.onSecondaryLeadingAction!();
+      swipeCard.onSecondaryAction!();
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 100));
 
@@ -3215,6 +3177,57 @@ void main() {
         () => Future<void>.delayed(const Duration(milliseconds: 30)),
       );
       await tester.pump();
+    },
+  );
+
+  testWidgets(
+    'root folder card tap opens WorkDetailPage and does not expand folder tree inline',
+    (WidgetTester tester) async {
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      final runtimeGraph = fixture.runtimeGraph;
+      const libraryPath = '/library/Works/Work_A';
+      final track1 = MusicTrack(
+        path: '/library/Works/Work_A/Disc1/track1.mp3',
+        displayName: 'track1.mp3',
+        groupKey: libraryPath,
+        groupTitle: 'Work_A',
+        groupSubtitle: '',
+        isSingle: false,
+        duration: const Duration(minutes: 2),
+      );
+
+      runtimeGraph.library
+        ..addWatchedLibrary(libraryPath, notify: false)
+        ..recordLibraryEntriesForTracks(libraryPath, <MusicTrack>[
+          track1,
+        ], persist: false)
+        ..addTracks(<MusicTrack>[track1], notify: false, persist: false);
+      fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 0);
+
+      await tester.pumpWidget(fixture.build(const LibraryTab()));
+      await tester.pump();
+      await pumpUntilLibraryTreeReady(tester, runtimeGraph.library);
+      await pumpUntilNotFound(tester, find.byType(LibraryLikeSkeletonCard));
+      await tester.pump(const Duration(milliseconds: 350));
+
+      final rootFolderFinder = find.text('Work_A', findRichText: true);
+      expect(rootFolderFinder, findsOneWidget);
+
+      // Card is not an ExpansionTile
+      final expansionTileFinder = find.ancestor(
+        of: rootFolderFinder,
+        matching: find.byType(ExpansionTile),
+      );
+      expect(expansionTileFinder, findsNothing);
+
+      // Tap card
+      await tester.tap(rootFolderFinder);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      // Navigated to WorkDetailPage
+      expect(find.byType(WorkDetailPage), findsOneWidget);
     },
   );
 }

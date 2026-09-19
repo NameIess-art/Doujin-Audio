@@ -14,6 +14,25 @@ void main() {
         .setMockMethodCallHandler(channel, null);
   });
 
+  test(
+    'temporary preparation carries persistence exclusion',
+    () async {
+      final calls = <MethodCall>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+            calls.add(call);
+            return <String, Object?>{'ok': true, 'value': null};
+          });
+      await NativePlaybackBridge.instance.prepareSession(
+        sessionId: 'temporary',
+        uri: Uri.parse('https://example.com/a.mp3'),
+        title: 'Audio',
+        isTemporary: true,
+      );
+      expect((calls.single.arguments as Map)['isTemporary'], isTrue);
+    },
+  );
+
   test('progress event decodes independently from legacy snapshots', () {
     final updates = parseNativePlaybackProgressEvent(<String, Object?>{
       'eventType': 'progress',

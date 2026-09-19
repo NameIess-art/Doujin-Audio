@@ -38,6 +38,7 @@ import '../../../core/widgets/page_header_inset.dart';
 import '../../../core/widgets/operation_feedback.dart';
 import '../../../core/widgets/scroll_activity_gate.dart';
 import '../../../core/widgets/search_highlight.dart';
+import '../../../core/widgets/swipe_reveal_card.dart';
 import '../../../core/widgets/top_page_header.dart';
 
 import 'asmr_download_page.dart';

@@ -456,6 +456,126 @@ void registerAsmrControllerStateTests({
     },
   );
 
+  test(
+    'hidden ASMR tracks persist, isolate works and can be restored',
+    () async {
+      await resetPrefs();
+      final node = _trackFile('track.mp3', 'Disc/track.mp3');
+      final work = _work(id: 71, title: 'Hidden tracks');
+      final tree = [
+        _trackFolder('Disc', 'Disc', children: [node]),
+      ];
+      AsmrLibraryController createController() => createTestAsmrController(
+        preferencesStore: preferences,
+        persistenceRepository: persistenceRepository(),
+        apiService: _FakeAsmrApiService(trackTree: tree),
+      );
+      final controller = createController();
+      final before = await controller.loadPlayableTracks(work);
+      expect(await controller.loadPlayableTracks(work), same(before));
+      await controller.setTrackHidden(work.id, node, true);
+      expect(controller.trackTreeViewState(work.id).visibleTree, isEmpty);
+      expect(await controller.loadPlayableTracks(work), isEmpty);
+      expect(await controller.loadPlayableTrack(work, node), isNull);
+      expect(before, hasLength(1));
+      expect(
+        await controller.loadPlayableTracks(_work(id: 72, title: 'Other')),
+        hasLength(1),
+      );
+      final restarted = createController();
+      expect(await restarted.loadPlayableTracks(work), isEmpty);
+      await restarted.setTrackHidden(work.id, node, false);
+      expect(await restarted.loadPlayableTracks(work), hasLength(1));
+      expect(
+        restarted.trackTreeViewState(work.id).visibleTree!.single.children,
+        hasLength(1),
+      );
+    },
+  );
+
+  test(
+    'hashless hidden tracks retain identity across signed URL changes',
+    () async {
+      await resetPrefs();
+      AsmrTrackFile node(String url) => AsmrTrackFile.fromJson({
+        'title': 'clip.mp4',
+        'type': 'video',
+        'mediaStreamUrl': url,
+      }, parentPath: 'Disc');
+      final first = node('https://example.test/clip.mp4?token=first');
+      final refreshed = node('https://example.test/clip.mp4?token=second');
+      final controller = createTestAsmrController(
+        preferencesStore: preferences,
+        persistenceRepository: persistenceRepository(),
+        apiService: _FakeAsmrApiService(trackTree: [refreshed]),
+      );
+      final work = _work(id: 73, title: 'Video');
+      expect(
+        (await controller.loadPlayableTrack(work, refreshed))!.isVideo,
+        isTrue,
+      );
+      await controller.setTrackHidden(work.id, first, true);
+      expect(controller.isTrackHidden(work.id, refreshed), isTrue);
+      expect(await controller.loadPlayableTracks(work), isEmpty);
+      await controller.reloadPersistedState();
+      expect(await controller.loadPlayableTracks(work), isEmpty);
+    },
+  );
+
+  test(
+    'failed hidden-track write preserves visible and playable state',
+    () async {
+      await resetPrefs();
+      final node = _trackFile('track.mp3', 'track.mp3');
+      final work = _work(id: 74, title: 'Write failure');
+      final controller = createTestAsmrController(
+        preferencesStore: _FailingHiddenTrackPreferences(
+          repository: persistenceRepository(),
+        ),
+        persistenceRepository: persistenceRepository(),
+        apiService: _FakeAsmrApiService(trackTree: [node]),
+      );
+      final tracks = await controller.loadPlayableTracks(work);
+      await expectLater(
+        controller.setTrackHidden(work.id, node, true),
+        throwsA(isA<FileSystemException>()),
+      );
+      expect(controller.isTrackHidden(work.id, node), isFalse);
+      expect(controller.trackTreeViewState(work.id).visibleTree, hasLength(1));
+      expect(await controller.loadPlayableTracks(work), same(tracks));
+    },
+  );
+
+  test(
+    'hidden target does not fall through to another playable track',
+    () async {
+      await resetPrefs();
+      final target = _trackFile('a.mp3', 'a.mp3');
+      final other = _trackFile('b.mp3', 'b.mp3');
+      final work = _work(id: 75, title: 'Removed target');
+      final controller = createTestAsmrController(
+        preferencesStore: preferences,
+        persistenceRepository: persistenceRepository(),
+        apiService: _FakeAsmrApiService(trackTree: [target, other]),
+      );
+      final initial = await controller.loadPlayableTracks(work);
+      expect(initial.first.remoteMetadata?['trackStableKey'], target.stableKey);
+      await controller.setTrackHidden(work.id, target, true);
+      expect(await controller.loadPlayableTracks(work), hasLength(1));
+      expect(
+        await controller.loadPlayableTracksStartingAt(work, target),
+        isEmpty,
+      );
+      expect(
+        (await controller.loadPlayableTracksStartingAt(
+          work,
+          other,
+        )).single.displayName,
+        'b',
+      );
+    },
+  );
+
   test('ASMR detail cache keeps the most recently used 128 works', () async {
     await resetPrefs();
     final api = _FakeAsmrApiService();
@@ -1004,4 +1124,13 @@ void registerAsmrControllerStateTests({
       );
     },
   );
+}
+
+class _FailingHiddenTrackPreferences extends AsmrPreferencesStore {
+  _FailingHiddenTrackPreferences({required super.repository});
+
+  @override
+  Future<void> saveHiddenTracks(Set<String> keys) async {
+    throw const FileSystemException('forced hidden-track write failure');
+  }
 }

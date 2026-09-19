@@ -294,6 +294,7 @@ abstract interface class NativePlaybackBridgeBase {
     bool shuffle = false,
     List<Uri>? candidateUris,
     bool deferPlayerCreation = false,
+    bool isTemporary = false,
   });
 
   Future<NativeResult<NativePlaybackSnapshot>> play(
@@ -568,6 +569,7 @@ class NativePlaybackBridge implements NativePlaybackBridgeBase {
     bool shuffle = false,
     List<Uri>? candidateUris,
     bool deferPlayerCreation = false,
+    bool isTemporary = false,
   }) {
     return _invokeSnapshot(NativePlaybackMethod.prepareSession, {
       'sessionId': sessionId,
@@ -602,6 +604,7 @@ class NativePlaybackBridge implements NativePlaybackBridgeBase {
             .map((candidate) => candidate.toString())
             .toList(growable: false),
       'deferPlayerCreation': deferPlayerCreation,
+      'isTemporary': isTemporary,
     });
   }
 

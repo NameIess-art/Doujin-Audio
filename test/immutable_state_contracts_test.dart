@@ -6,8 +6,76 @@ import 'package:doujin_audio/core/media/music_track.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
 import 'package:doujin_audio/features/library/domain/library_node.dart';
 import 'package:doujin_audio/features/player/domain/audio_effects.dart';
+import 'package:doujin_audio/features/player/domain/playback_queue.dart';
+
+class _CountingQueueEntry extends PlaybackQueueEntry {
+  _CountingQueueEntry(int index, List<MusicTrack> tracks)
+    : super(
+        id: 'entry-$index',
+        kind: PlaybackQueueEntryKind.work,
+        title: 'Work $index',
+        tracks: tracks,
+      );
+
+  int trackReads = 0;
+
+  @override
+  List<MusicTrack> get tracks {
+    trackReads++;
+    return super.tracks;
+  }
+}
 
 void main() {
+  test('large immutable queues reuse expansion and signature between updates', () {
+    final entries = List.generate(100, (work) {
+      return _CountingQueueEntry(
+        work,
+        List.generate(
+          100,
+          (track) => MusicTrack(
+            path: '/work-$work/track-$track.mp3',
+            displayName: 'Track $track',
+            groupKey: '/work-$work',
+            groupTitle: 'Work $work',
+            groupSubtitle: '',
+            isSingle: false,
+          ),
+        ),
+      );
+    });
+    final queue = PlaybackQueueDefinition(name: 'Large queue', entries: entries);
+    final expanded = queue.expandedTracks;
+    final signature = queue.contentSignature;
+    expect(expanded, hasLength(10000));
+    expect(expanded.first.path, '/work-0/track-0.mp3');
+    expect(expanded.last.path, '/work-99/track-99.mp3');
+    expect(entries.every((entry) => entry.trackReads == 2), isTrue);
+    expect(() => expanded.clear(), throwsUnsupportedError);
+
+    final watch = Stopwatch()..start();
+    var reused = true;
+    for (var i = 0; i < 10000; i++) {
+      reused = reused && identical(queue.expandedTracks, expanded);
+      reused = reused && queue.contentSignature == signature;
+    }
+    watch.stop();
+    expect(reused, isTrue);
+    expect(entries.every((entry) => entry.trackReads == 2), isTrue);
+    // Report timing without a machine-dependent performance threshold.
+    // ignore: avoid_print
+    print(
+      '10000 tracks, 10000 repeated expansion/signature reads: '
+      '${watch.elapsedMicroseconds} us; 0 additional entry traversals',
+    );
+
+    final changed = queue.copyWith(entries: entries.sublist(0, 99));
+    expect(changed.expandedTracks, hasLength(9900));
+    expect(changed.contentSignature, isNot(signature));
+    expect(queue.expandedTracks, same(expanded));
+    expect(queue.contentSignature, signature);
+  });
+
   test('immutable collection helpers detach external read-only views', () {
     final listBacking = <String>['one'];
     final mapBacking = <String, int>{'one': 1};

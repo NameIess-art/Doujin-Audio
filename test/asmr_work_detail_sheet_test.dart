@@ -315,7 +315,7 @@ void main() {
   );
 
   testWidgets(
-    'ASMR work card has no swipe actions and tapping opens WorkDetailPage',
+    'ASMR work card left-swipe reveals favorite and download actions and tapping opens WorkDetailPage',
     (tester) async {
       SharedPreferences.setMockInitialValues(const <String, Object>{});
       final fixture = AppRuntimeWidgetTestFixture();
@@ -348,12 +348,16 @@ void main() {
       await tester.drag(card, const Offset(-180, 0));
       await tester.pumpAndSettle();
 
-      // Swipe gestures have been removed
+      // Swiping left reveals favorite and download actions
+      expect(find.byTooltip('取消收藏'), findsOneWidget);
+      expect(find.byTooltip('下载'), findsOneWidget);
       expect(find.byTooltip('查看作品详细信息'), findsNothing);
-      expect(find.byTooltip('取消收藏'), findsNothing);
       expect(find.text('查看文档/文本'), findsNothing);
-      expect(find.byTooltip('查看文档/文本'), findsNothing);
       expect(find.byIcon(Icons.description_outlined), findsNothing);
+
+      // Close swipe by dragging right
+      await tester.drag(card, const Offset(180, 0));
+      await tester.pumpAndSettle();
 
       // Tapping card opens WorkDetailPage
       await tester.tap(card);

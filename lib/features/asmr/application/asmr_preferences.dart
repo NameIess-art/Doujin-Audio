@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import '../../../core/app_language.dart';
 import '../domain/asmr_models.dart';
 import '../domain/asmr_persistence_repository.dart';
@@ -6,6 +8,7 @@ class AsmrPreferencesStore {
   AsmrPreferencesStore({required AsmrPersistenceRepository repository})
     : _repository = repository;
 
+  static const String _hiddenTracksKey = 'asmr_hidden_tracks_v1';
   static const String _lastSyncAtKey = 'asmr_last_sync_at_v1';
   static const String _syncOutboxSeededKey = 'asmr_sync_outbox_seeded_v2';
   static const String _contentLanguageKey = 'asmr_content_language_v1';
@@ -15,6 +18,7 @@ class AsmrPreferencesStore {
   Future<void> clearForTest() async {
     await _repository.clearForTest();
     for (final key in [
+      _hiddenTracksKey,
       _contentLanguageKey,
       _lastSyncAtKey,
       _syncOutboxSeededKey,
@@ -22,6 +26,18 @@ class AsmrPreferencesStore {
       await _repository.saveSetting(key, null);
     }
   }
+
+  Future<Set<String>> loadHiddenTracks() async {
+    final raw = await _repository.loadSetting(_hiddenTracksKey);
+    return raw == null
+        ? <String>{}
+        : (jsonDecode(raw) as List).cast<String>().toSet();
+  }
+
+  Future<void> saveHiddenTracks(Set<String> keys) => _repository.saveSetting(
+    _hiddenTracksKey,
+    keys.isEmpty ? null : jsonEncode(keys.toList()..sort()),
+  );
 
   Future<List<AsmrCategoryType>> loadVisibleCategories() async {
     final stored = await _repository.loadVisibleCategoryNames();

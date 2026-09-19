@@ -129,6 +129,7 @@ class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
     bool shuffle = false,
     List<Uri>? candidateUris,
     bool deferPlayerCreation = false,
+    bool isTemporary = false,
   }) => _run(() async {
     if (sessionId.trim().isEmpty || uri.toString().isEmpty) {
       throw ArgumentError('sessionId and uri are required');

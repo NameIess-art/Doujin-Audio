@@ -1,5 +1,3 @@
-import 'package:flutter/foundation.dart';
-
 import '../../../core/immutable_collections.dart';
 import '../../../core/media/music_track.dart';
 
@@ -28,7 +26,7 @@ class PlaybackQueueEntry {
           kind == other.kind &&
           title == other.title &&
           workRootPath == other.workRootPath &&
-          listEquals(tracks, other.tracks);
+          _listEquals(tracks, other.tracks);
 
   @override
   int get hashCode =>
@@ -70,8 +68,24 @@ class PlaybackQueueDefinition {
   final int? colorValue;
   final List<PlaybackQueueEntry> entries;
 
-  List<MusicTrack> get expandedTracks =>
-      immutableList(entries.expand((entry) => entry.tracks));
+  late final List<MusicTrack> expandedTracks = immutableList(
+    entries.expand((entry) => entry.tracks),
+  );
+
+  late final int contentSignature = Object.hash(
+    name,
+    Object.hashAll(
+      entries.map(
+        (entry) => Object.hash(
+          entry.id,
+          entry.kind,
+          entry.title,
+          entry.workRootPath,
+          Object.hashAll(entry.tracks.map((track) => track.path)),
+        ),
+      ),
+    ),
+  );
 
   PlaybackQueueDefinition copyWith({
     String? name,
@@ -92,7 +106,7 @@ class PlaybackQueueDefinition {
       other is PlaybackQueueDefinition &&
           name == other.name &&
           colorValue == other.colorValue &&
-          listEquals(entries, other.entries);
+          _listEquals(entries, other.entries);
 
   @override
   int get hashCode => Object.hash(name, colorValue, Object.hashAll(entries));
@@ -113,4 +127,13 @@ class PlaybackQueueDefinition {
           .toList(growable: false),
     );
   }
+}
+
+bool _listEquals<T>(List<T> first, List<T> second) {
+  if (identical(first, second)) return true;
+  if (first.length != second.length) return false;
+  for (var index = 0; index < first.length; index++) {
+    if (first[index] != second[index]) return false;
+  }
+  return true;
 }

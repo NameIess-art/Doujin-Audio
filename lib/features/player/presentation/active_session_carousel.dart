@@ -121,9 +121,7 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
     final sessionId = _carouselSnapListenable.value;
     if (sessionId == null || sessionId == _lastCarouselSnapSessionId) return;
     final sessions =
-        widget.sessions ??
-        (ref.read(playbackStateProvider).value?.activeSessions ??
-            const <PlaybackSessionSnapshot>[]);
+        widget.sessions ?? ref.read(mainOverlayUiProvider).overlaySessions;
     final targetIndex = sessions.indexWhere((s) => s.id == sessionId);
     if (targetIndex < 0 || !_pageController.hasClients) return;
     _lastCarouselSnapSessionId = sessionId;
@@ -228,10 +226,7 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
       sessions = providedSessions;
     } else {
       sessions = ref.watch(
-        playbackStateProvider.select(
-          (state) =>
-              state.value?.activeSessions ?? const <PlaybackSessionSnapshot>[],
-        ),
+        mainOverlayUiProvider.select((state) => state.overlaySessions),
       );
     }
     if (sessions.isEmpty) {

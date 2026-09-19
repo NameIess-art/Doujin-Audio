@@ -98,8 +98,9 @@ class _LibraryLeadingIndicators extends StatelessWidget {
   }
 }
 
-class _LibraryTreeItem extends StatelessWidget {
-  const _LibraryTreeItem({
+@visibleForTesting
+class LibraryTreeItem extends StatelessWidget {
+  const LibraryTreeItem({
     super.key,
     required this.node,
     this.initiallyExpanded = false,
@@ -154,6 +155,8 @@ class _LibraryTreeItem extends StatelessWidget {
     return const SizedBox.shrink();
   }
 }
+
+typedef _LibraryTreeItem = LibraryTreeItem;
 
 class _FolderNodeWidget extends ConsumerStatefulWidget {
   const _FolderNodeWidget({
@@ -380,235 +383,205 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
     final tokens = AppDesignTokens.of(context);
     final folderRadius = BorderRadius.circular(tokens.radiusSmall);
 
-    Widget content = Theme(
-      data: Theme.of(context).copyWith(
-        dividerColor: Colors.transparent,
-        listTileTheme: isRootFolder
-            ? null
-            : const ListTileThemeData(
-                minVerticalPadding: 0,
-                visualDensity: VisualDensity(vertical: -4),
-              ),
-      ),
-      child: ExpansionTile(
-        expansionAnimationStyle: appExpansionAnimationStyle(context),
-        key: PageStorageKey<String>('library-folder:${folder.path}'),
-        controller: _expansionController,
-        initiallyExpanded: widget.initiallyExpanded,
-        minTileHeight: isRootFolder
-            ? _rootFolderTileHeight
-            : _childFolderTileHeight,
-        visualDensity: isRootFolder ? null : const VisualDensity(vertical: -4),
-        enabled: !widget.isSelectionMode,
-        onExpansionChanged: (expanded) {
-          if (_expanded == expanded) return;
-          setState(() {
-            _expanded = expanded;
-          });
-          widget.onFolderExpansionChanged?.call(widget.folder, expanded);
-          if (expanded && widget.renderChildrenInline) {
-            unawaited(_loadChildren());
-          }
-        },
-        shape: isRootFolder
-            ? RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(
-                  LibraryLikeCardMetrics.cardRadius,
+    final Widget content;
+    if (isRootFolder) {
+      content = ListTile(
+        contentPadding: LibraryLikeCardMetrics.rootTilePadding,
+        minTileHeight: _rootFolderTileHeight,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(
+            LibraryLikeCardMetrics.cardRadius,
+          ),
+        ),
+        title: _RootFolderCardContent(
+          folderPath: folder.path,
+          folderName: folder.name,
+          folderDuration: folder.totalDuration,
+          detail: rootDetail,
+          detailLoading: isRootDetailLoading,
+          expanded: false,
+          hasChildren: false,
+          onPlay: () => unawaited(_playFolder(context, playback)),
+          index: widget.index,
+          isSelected: widget.isSelected,
+          isPinned: isPinned,
+        ),
+      );
+    } else {
+      content = Theme(
+        data: Theme.of(context).copyWith(
+          dividerColor: Colors.transparent,
+          listTileTheme: const ListTileThemeData(
+            minVerticalPadding: 0,
+            visualDensity: VisualDensity(vertical: -4),
+          ),
+        ),
+        child: ExpansionTile(
+          expansionAnimationStyle: appExpansionAnimationStyle(context),
+          key: PageStorageKey<String>('library-folder:${folder.path}'),
+          controller: _expansionController,
+          initiallyExpanded: widget.initiallyExpanded,
+          minTileHeight: _childFolderTileHeight,
+          visualDensity: const VisualDensity(vertical: -4),
+          enabled: !widget.isSelectionMode,
+          onExpansionChanged: (expanded) {
+            if (_expanded == expanded) return;
+            setState(() {
+              _expanded = expanded;
+            });
+            widget.onFolderExpansionChanged?.call(widget.folder, expanded);
+            if (expanded && widget.renderChildrenInline) {
+              unawaited(_loadChildren());
+            }
+          },
+          shape: RoundedRectangleBorder(borderRadius: folderRadius),
+          collapsedShape: RoundedRectangleBorder(borderRadius: folderRadius),
+          tilePadding: const EdgeInsets.fromLTRB(6, 0, 4, 0),
+          childrenPadding: const EdgeInsets.fromLTRB(4, 0, 0, 0),
+          title: SizedBox(
+            height: _childFolderTileHeight,
+            child: Row(
+              children: [
+                Icon(
+                  _expanded
+                      ? Icons.folder_open_rounded
+                      : Icons.folder_rounded,
+                  size: 20,
+                  color: cs.primary.withValues(alpha: 0.8),
                 ),
-              )
-            : RoundedRectangleBorder(borderRadius: folderRadius),
-        collapsedShape: isRootFolder
-            ? RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(
-                  LibraryLikeCardMetrics.cardRadius,
-                ),
-              )
-            : RoundedRectangleBorder(borderRadius: folderRadius),
-        showTrailingIcon: !isRootFolder,
-        tilePadding: isRootFolder
-            ? LibraryLikeCardMetrics.rootTilePadding
-            : const EdgeInsets.fromLTRB(6, 0, 4, 0),
-        childrenPadding: EdgeInsets.fromLTRB(isRootFolder ? 8 : 4, 0, 0, 0),
-        title: isRootFolder
-            ? _RootFolderCardContent(
-                folderPath: folder.path,
-                folderName: folder.name,
-                folderDuration: folder.totalDuration,
-                detail: rootDetail,
-                detailLoading: isRootDetailLoading,
-                expanded: _expanded,
-                hasChildren: hasChildren,
-                onPlay: () => unawaited(_playFolder(context, playback)),
-                index: widget.index,
-                isSelected: widget.isSelected,
-                isPinned: isPinned,
-              )
-            : SizedBox(
-                height: _childFolderTileHeight,
-                child: Row(
-                  children: [
-                    Icon(
-                      _expanded
-                          ? Icons.folder_open_rounded
-                          : Icons.folder_rounded,
-                      size: 20,
-                      color: cs.primary.withValues(alpha: 0.8),
-                    ),
-                    const SizedBox(width: AppSpacing.sm),
-                    Expanded(
-                      child: SizedBox(
-                        height: _childFolderTitleBlockHeight,
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            SearchHighlightedText(
-                              text: folder.name,
-                              terms: extractSearchTerms(widget.searchQuery),
-                              style:
-                                  Theme.of(
-                                    context,
-                                  ).textTheme.titleMedium?.copyWith(
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: 13,
-                                    height: 1.06,
-                                    color: cs.onSurface.withValues(alpha: 0.9),
-                                  ) ??
-                                  const TextStyle(),
-                            ),
-                          ],
+                const SizedBox(width: AppSpacing.sm),
+                Expanded(
+                  child: SizedBox(
+                    height: _childFolderTitleBlockHeight,
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        SearchHighlightedText(
+                          text: folder.name,
+                          terms: extractSearchTerms(widget.searchQuery),
+                          style:
+                              Theme.of(
+                                context,
+                              ).textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.w700,
+                                fontSize: 13,
+                                height: 1.06,
+                                color: cs.onSurface.withValues(alpha: 0.9),
+                              ) ??
+                              const TextStyle(),
                         ),
-                      ),
+                      ],
                     ),
-                  ],
+                  ),
                 ),
-              ),
-        trailing: isRootFolder
-            ? null
-            : SizedBox(
-                width: 62,
-                height: _childFolderTileHeight,
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    IconButton(
-                      onPressed: () =>
-                          unawaited(_playFolder(context, playback)),
-                      visualDensity: VisualDensity.compact,
-                      tooltip: i18n.tr('add_to_playlist'),
-                      style: IconButton.styleFrom(
-                        foregroundColor: cs.primary,
-                        minimumSize: const Size(40, 40),
-                        maximumSize: const Size(40, 40),
-                        padding: EdgeInsets.zero,
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      ),
-                      icon: const Icon(Icons.add_circle_rounded, size: 25),
-                    ),
-                    const SizedBox(width: 2),
-                    if (hasChildren)
-                      Padding(
-                        padding: const EdgeInsets.only(right: 6),
-                        child: IgnorePointer(
-                          child: AnimatedRotation(
-                            turns: _expanded ? 0.5 : 0,
-                            duration: const Duration(milliseconds: 180),
-                            curve: Curves.easeOutCubic,
-                            child: Icon(
-                              Icons.expand_more_rounded,
-                              color: cs.onSurfaceVariant,
-                              size: 20,
-                            ),
-                          ),
-                        ),
-                      ),
-                  ],
+              ],
+            ),
+          ),
+          trailing: SizedBox(
+            width: 62,
+            height: _childFolderTileHeight,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                IconButton(
+                  onPressed: () =>
+                      unawaited(_playFolder(context, playback)),
+                  visualDensity: VisualDensity.compact,
+                  tooltip: i18n.tr('add_to_playlist'),
+                  style: IconButton.styleFrom(
+                    foregroundColor: cs.primary,
+                    minimumSize: const Size(40, 40),
+                    maximumSize: const Size(40, 40),
+                    padding: EdgeInsets.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  icon: const Icon(Icons.add_circle_rounded, size: 25),
                 ),
-              ),
-        children: !_expanded || !widget.renderChildrenInline
-            ? const <Widget>[]
-            : <Widget>[
-                if (_isLoadingChildren)
-                  const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 12),
-                    child: Center(child: CircularProgressIndicator()),
-                  )
-                else if (_hasLoadError)
+                const SizedBox(width: 2),
+                if (hasChildren)
                   Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 6,
-                    ),
-                    child: OperationStatusBanner(
-                      key: ValueKey<String>(
-                        'folder_children_error:${folder.path}',
-                      ),
-                      label: i18n.tr('operation_failed_retry'),
-                      onRetry: () => unawaited(_loadChildren(refresh: true)),
-                      retryTooltip: i18n.tr('retry'),
-                    ),
-                  )
-                else
-                  ...folder.children.map(
-                    (childNode) => Padding(
-                      padding: EdgeInsets.zero,
-                      child: RepaintBoundary(
-                        child: _LibraryTreeItem(
-                          key: ValueKey(childNode.path),
-                          node: childNode,
-                          initiallyExpanded:
-                              widget.onFolderExpansionChanged == null
-                              ? widget.initiallyExpanded
-                              : false,
-                          onFolderExpansionChanged:
-                              widget.onFolderExpansionChanged,
-                          searchQuery: widget.searchQuery,
+                    padding: const EdgeInsets.only(right: 6),
+                    child: IgnorePointer(
+                      child: AnimatedRotation(
+                        turns: _expanded ? 0.5 : 0,
+                        duration: const Duration(milliseconds: 180),
+                        curve: Curves.easeOutCubic,
+                        child: Icon(
+                          Icons.expand_more_rounded,
+                          color: cs.onSurfaceVariant,
+                          size: 20,
                         ),
                       ),
                     ),
                   ),
               ],
-      ),
-    );
+            ),
+          ),
+          children: !_expanded || !widget.renderChildrenInline
+              ? const <Widget>[]
+              : <Widget>[
+                  if (_isLoadingChildren)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 12),
+                      child: Center(child: CircularProgressIndicator()),
+                    )
+                  else if (_hasLoadError)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 6,
+                      ),
+                      child: OperationStatusBanner(
+                        key: ValueKey<String>(
+                          'folder_children_error:${folder.path}',
+                        ),
+                        label: i18n.tr('operation_failed_retry'),
+                        onRetry: () => unawaited(_loadChildren(refresh: true)),
+                        retryTooltip: i18n.tr('retry'),
+                      ),
+                    )
+                  else
+                    ...folder.children.map(
+                      (childNode) => Padding(
+                        padding: EdgeInsets.zero,
+                        child: RepaintBoundary(
+                          child: _LibraryTreeItem(
+                            key: ValueKey(childNode.path),
+                            node: childNode,
+                            initiallyExpanded:
+                                widget.onFolderExpansionChanged == null
+                                ? widget.initiallyExpanded
+                                : false,
+                            onFolderExpansionChanged:
+                                widget.onFolderExpansionChanged,
+                            searchQuery: widget.searchQuery,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+        ),
+      );
+    }
 
     final folderShape = isRootFolder
         ? cardShape
         : RoundedRectangleBorder(borderRadius: folderRadius);
-    final Widget cardContent;
-    if (isRootFolder) {
-      cardContent = Card(
-        margin: EdgeInsets.zero,
-        clipBehavior: Clip.antiAlias,
-        shape: cardShape,
-        color: widget.isSelected
-            ? cs.primaryContainer.withValues(alpha: 0.25)
-            : Colors.transparent,
-        elevation: 0,
-        shadowColor: Colors.transparent,
-        surfaceTintColor: Colors.transparent,
-        child: Padding(
-          padding: LibraryLikeCardMetrics.rootTilePadding,
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(minHeight: _rootFolderTileHeight),
-            child: _RootFolderCardContent(
-              folderPath: folder.path,
-              folderName: folder.name,
-              folderDuration: folder.totalDuration,
-              detail: rootDetail,
-              detailLoading: isRootDetailLoading,
-              expanded: false,
-              hasChildren: false,
-              onPlay: () => unawaited(_playFolder(context, playback)),
-              index: widget.index,
-              isSelected: widget.isSelected,
-              isPinned: isPinned,
-            ),
-          ),
-        ),
-      );
-    } else {
-      cardContent = content;
-    }
+    final cardContent = isRootFolder
+        ? Card(
+            margin: EdgeInsets.zero,
+            clipBehavior: Clip.antiAlias,
+            shape: cardShape,
+            color: widget.isSelected
+                ? cs.primaryContainer.withValues(alpha: 0.25)
+                : Colors.transparent,
+            elevation: 0,
+            shadowColor: Colors.transparent,
+            surfaceTintColor: Colors.transparent,
+            child: content,
+          )
+        : content;
 
     final result = InkWell(
       canRequestFocus: widget.isSelectionMode,
@@ -623,40 +596,18 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
                     ),
                   )
                 : null),
+      borderRadius: folderShape.borderRadius as BorderRadius?,
       child: SwipeRevealCard(
         shape: folderShape,
         enabled: !widget.isSelectionMode,
         closedColor: cs.surface,
         actionLabel: i18n.tr('remove'),
         removeTooltip: i18n.tr('remove_audio_folder'),
-        secondaryActionLabel: isRootFolder
-            ? i18n.tr(isPinned ? 'unpin_from_top' : 'pin_to_top')
-            : null,
-        secondaryActionTooltip: isRootFolder
-            ? i18n.tr(isPinned ? 'unpin_from_top' : 'pin_to_top')
-            : null,
-        secondaryActionIcon: Icons.push_pin_rounded,
-        secondaryActionIconWidget: isPinned ? const PushPinOffIcon() : null,
+        secondaryActionLabel: isRootFolder ? i18n.tr('download') : null,
+        secondaryActionTooltip: isRootFolder ? i18n.tr('download') : null,
+        secondaryActionIcon: Icons.download_rounded,
         verticalActions: isRootFolder,
         onSecondaryAction: isRootFolder
-            ? () => unawaited(
-                ref
-                    .read(settingsRepositoryProvider)
-                    .toggleLibraryPathPinned(widget.folder.path),
-              )
-            : null,
-        onLeadingAction: isRootFolder
-            ? () => unawaited(
-                showAudioDetailSheet(
-                  context,
-                  AudioDetailTarget.libraryRootFolder(widget.folder.path),
-                ),
-              )
-            : null,
-        leadingActionLabel: isRootFolder ? i18n.tr('audio_detail') : null,
-        leadingActionTooltip: isRootFolder ? i18n.tr('audio_detail') : null,
-        leadingActionIcon: Icons.info_outline_rounded,
-        onSecondaryLeadingAction: isRootFolder
             ? () => unawaited(
                 downloadAudioTargetFromAsmr(
                   context: context,
@@ -667,10 +618,21 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
                 ),
               )
             : null,
-        secondaryLeadingActionLabel: isRootFolder ? i18n.tr('download') : null,
-        secondaryLeadingActionTooltip: isRootFolder
-            ? i18n.tr('download')
+        onLeadingAction: isRootFolder
+            ? () => unawaited(
+                ref
+                    .read(settingsRepositoryProvider)
+                    .toggleLibraryPathPinned(widget.folder.path),
+              )
             : null,
+        leadingActionLabel: isRootFolder
+            ? i18n.tr(isPinned ? 'unpin_from_top' : 'pin_to_top')
+            : null,
+        leadingActionTooltip: isRootFolder
+            ? i18n.tr(isPinned ? 'unpin_from_top' : 'pin_to_top')
+            : null,
+        leadingActionIcon: Icons.push_pin_rounded,
+        leadingActionIconWidget: isPinned ? const PushPinOffIcon() : null,
         onRemove: () => _removeFolder(context),
         onWillReveal: _expansionController.collapse,
         child: cardContent,
@@ -787,45 +749,45 @@ class _TrackNodeWidget extends ConsumerWidget {
       return InkWell(
         canRequestFocus: isSelectionMode,
         onLongPress: onLongPress,
-        onTap: isSelectionMode ? onToggleSelect : null,
+        onTap: isSelectionMode
+            ? onToggleSelect
+            : () => unawaited(
+                showAudioDetailSheet(
+                  context,
+                  AudioDetailTarget.singleAudioFile(track.path),
+                ),
+              ),
+        borderRadius: cardShape.borderRadius as BorderRadius?,
         child: SwipeRevealCard(
           shape: cardShape,
           enabled: !isSelectionMode,
           closedColor: cs.surface,
           actionLabel: i18n.tr('remove'),
           removeTooltip: i18n.tr('remove_audio'),
-          secondaryActionLabel: i18n.tr(
-            isPinned ? 'unpin_from_top' : 'pin_to_top',
-          ),
-          secondaryActionTooltip: i18n.tr(
-            isPinned ? 'unpin_from_top' : 'pin_to_top',
-          ),
-          secondaryActionIcon: Icons.push_pin_rounded,
-          secondaryActionIconWidget: isPinned ? const PushPinOffIcon() : null,
+          secondaryActionLabel: i18n.tr('download'),
+          secondaryActionTooltip: i18n.tr('download'),
+          secondaryActionIcon: Icons.download_rounded,
           verticalActions: useFeaturedCard,
           onSecondaryAction: () => unawaited(
-            ref
-                .read(settingsRepositoryProvider)
-                .toggleLibraryPathPinned(track.path),
-          ),
-          onLeadingAction: () => unawaited(
-            showAudioDetailSheet(
-              context,
-              AudioDetailTarget.singleAudioFile(track.path),
-            ),
-          ),
-          leadingActionLabel: i18n.tr('audio_detail'),
-          leadingActionTooltip: i18n.tr('audio_detail'),
-          leadingActionIcon: Icons.info_outline_rounded,
-          onSecondaryLeadingAction: () => unawaited(
             downloadAudioTargetFromAsmr(
               context: context,
               ref: ref,
               target: AudioDetailTarget.singleAudioFile(track.path),
             ),
           ),
-          secondaryLeadingActionLabel: i18n.tr('download'),
-          secondaryLeadingActionTooltip: i18n.tr('download'),
+          onLeadingAction: () => unawaited(
+            ref
+                .read(settingsRepositoryProvider)
+                .toggleLibraryPathPinned(track.path),
+          ),
+          leadingActionLabel: i18n.tr(
+            isPinned ? 'unpin_from_top' : 'pin_to_top',
+          ),
+          leadingActionTooltip: i18n.tr(
+            isPinned ? 'unpin_from_top' : 'pin_to_top',
+          ),
+          leadingActionIcon: Icons.push_pin_rounded,
+          leadingActionIconWidget: isPinned ? const PushPinOffIcon() : null,
           onRemove: () => _removeTrack(context, ref, track),
           child: Card(
             margin: EdgeInsets.zero,

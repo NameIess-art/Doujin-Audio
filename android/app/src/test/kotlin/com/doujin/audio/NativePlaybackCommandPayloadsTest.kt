@@ -11,6 +11,14 @@ import org.junit.Test
 
 class NativePlaybackCommandPayloadsTest {
     @Test
+    fun `temporary session marker is explicit and normal sessions retain persistence`() {
+        assertFalse(NativePlaybackCommandPayloads.parsePrepareSession(validPreparePayload()).isTemporary)
+        assertTrue(NativePlaybackCommandPayloads.parsePrepareSession(
+            validPreparePayload() + ("isTemporary" to true)
+        ).isTemporary)
+    }
+
+    @Test
     fun `bridge rejects unknown methods before starting service`() {
         assertTrue(isSupportedNativePlaybackMethod(NativePlaybackMethods.SNAPSHOT))
         assertFalse(isSupportedNativePlaybackMethod("unknownPlaybackMethod"))

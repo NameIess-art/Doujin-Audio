@@ -4,10 +4,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'package:doujin_audio/core/media/audio_detail.dart';
+import 'package:doujin_audio/core/media/music_track.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
 import 'package:doujin_audio/features/library/presentation/work_detail_page.dart';
 import 'package:doujin_audio/features/library/presentation/work_image_viewer_page.dart';
 import 'support/app_runtime_test_fixture.dart';
+import 'support/test_playback_commands.dart';
 
 void main() {
   AppRuntimeTestFixture.initialize();
@@ -22,6 +24,111 @@ void main() {
   });
 
   group('WorkDetailPage', () {
+    testWidgets(
+      'audio and video menus add one item without starting playback and remove with undo',
+      (tester) async {
+        SharedPreferences.setMockInitialValues(const <String, Object>{});
+        final fixture = AppRuntimeWidgetTestFixture();
+        addTearDown(fixture.dispose);
+        var prepareCount = 0;
+        var playSucceeds = true;
+        fixture.playback.detachCommandPort();
+        fixture.playback.attachPlaybackCommands(
+          prepareSession: (session, {required nextPath, autoPlay = true,
+            forceStartAtZero = false, showLoading = true, targetQueueIndex}) async {
+            prepareCount++;
+            session.currentTrackPath = nextPath;
+            return playSucceeds;
+          },
+          pauseSession: (_) async {},
+          startSession: (_, {required shouldStartTriggerCountdown}) async => true,
+          resolveAdvance: (_, {required forward}) => null,
+          hasAdjacent: (_, {required forward}) => false,
+        );
+        await tester.binding.setSurfaceSize(const Size(1000, 1200));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        const folderPath = '/library/menu-work';
+        const target = AudioDetailTarget(
+          targetType: AudioDetailTargetType.libraryRootFolder,
+          targetPath: folderPath,
+        );
+        final tracks = [
+          for (final video in [false, true])
+            MusicTrack(
+              path: '$folderPath/${video ? 'video.mp4' : 'audio.mp3'}',
+              displayName: video ? 'Video entry' : 'Audio entry',
+              groupKey: folderPath,
+              groupTitle: 'Menu work',
+              groupSubtitle: '',
+              isSingle: false,
+              isVideo: video,
+            ),
+        ];
+        fixture.library.addWatchedFolder(folderPath, notify: false);
+        fixture.library.addTracks(tracks, persist: false);
+        await tester.pumpWidget(
+          fixture.build(const WorkDetailPage.forLocal(target: target)),
+        );
+        for (
+          var i = 0;
+          i < 40 && find.text('Audio entry').evaluate().isEmpty;
+          i++
+        ) {
+          await tester.pump(const Duration(milliseconds: 50));
+          await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 10)),
+          );
+        }
+        expect(find.text('Audio entry'), findsOneWidget);
+        expect(find.byIcon(Icons.videocam_outlined), findsOneWidget);
+        final more = find.byKey(
+          ValueKey('work_entry_more_${tracks.first.path}'),
+        );
+        await tester.tap(more);
+        await tester.pumpAndSettle();
+        expect(find.text(fixture.languageProvider.tr('play')), findsOneWidget);
+        await tester.tap(
+          find.text(fixture.languageProvider.tr('detail_add_to_queue')),
+        );
+        await tester.pumpAndSettle();
+        expect(fixture.playback.sessions.length, 1);
+        expect(fixture.playback.sessions.values.single.isTemporary, isFalse);
+        expect(
+          fixture.playback.sessions.values.single.effectivePlaying,
+          isFalse,
+        );
+        expect(
+          fixture.playback.sessions.values.single.currentTrackPath,
+          tracks.first.path,
+        );
+        expect(prepareCount, 0);
+
+        await tester.tap(find.text('Video entry'));
+        await tester.pumpAndSettle();
+        expect(prepareCount, 1);
+        expect(fixture.playback.sessions.length, 2);
+        final temporary = fixture.playback.sessions.values.singleWhere((session) => session.isTemporary);
+        expect(temporary.currentTrackPath, tracks.last.path);
+        expect(temporary.customQueueTracks?.length, 2);
+
+        await tester.tap(more);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text(fixture.languageProvider.tr('remove')));
+        await tester.pumpAndSettle();
+        expect(find.text('Audio entry'), findsNothing);
+        expect(find.text('Video entry'), findsOneWidget);
+        await fixture.undoableRemovalService.undoPending();
+        await tester.pumpAndSettle();
+        expect(find.text('Audio entry'), findsOneWidget);
+        playSucceeds = false;
+        await tester.tap(find.text('Video entry'));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
+        expect(prepareCount, 2);
+        expect(find.textContaining(fixture.languageProvider.tr('operation_failed_retry')), findsOneWidget);
+      },
+    );
+
     testWidgets('renders local work detail header, pinned RJ row and action buttons', (tester) async {
       SharedPreferences.setMockInitialValues(const <String, Object>{});
       final fixture = AppRuntimeWidgetTestFixture();

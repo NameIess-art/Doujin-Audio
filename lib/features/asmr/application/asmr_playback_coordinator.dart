@@ -11,6 +11,8 @@ abstract interface class AsmrPlaybackSource {
     AsmrTrackFile target,
   );
 
+  Future<MusicTrack?> loadPlayableTrack(AsmrWork work, AsmrTrackFile target);
+
   Future<void> recordHistory(AsmrWork work);
 }
 
@@ -23,6 +25,22 @@ class AsmrPlaybackCoordinator {
 
   final AsmrPlaybackSource _source;
   final PlaybackSessionLauncher _launcher;
+
+  Future<bool> playDirectTrack(AsmrWork work, AsmrTrackFile target) async {
+    // Pass the pending load to the launcher so a later local or remote click
+    // supersedes this request before its network work completes.
+    final started = await _launcher.playDirect(
+      _source.loadPlayableTracksStartingAt(work, target),
+    );
+    if (started) await _source.recordHistory(work);
+    return started;
+  }
+
+  Future<bool> addTrackToPlaylist(AsmrWork work, AsmrTrackFile target) async {
+    final track = await _source.loadPlayableTrack(work, target);
+    if (track == null) throw StateError('The selected media is unavailable.');
+    return _launcher.addTrackToPlaylist(track);
+  }
 
   Future<void> playWork(AsmrWork work, {bool? autoPlay}) async {
     final tracks = await _source.loadPlayableTracks(work);

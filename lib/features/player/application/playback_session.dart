@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import '../../../core/media/music_track.dart';
+import '../../../core/immutable_collections.dart';
 import '../domain/audio_effects.dart';
 import '../domain/playback_mode.dart';
 import '../domain/playback_queue.dart';
@@ -18,12 +19,16 @@ class PlaybackSession {
     required this.createdAt,
     required this.state,
     this.lastPlayedAt,
-    this.customQueueTracks,
+    List<MusicTrack>? customQueueTracks,
     this.playbackQueue,
     this.currentQueueIndex = 0,
-  });
+    this.isTemporary = false,
+  }) : _customQueueTracks = customQueueTracks == null
+           ? null
+           : immutableList(customQueueTracks);
 
   final String id;
+  bool isTemporary;
   final DateTime createdAt;
   DateTime? lastPlayedAt;
   final List<StreamSubscription<dynamic>> subscriptions = [];
@@ -37,7 +42,12 @@ class PlaybackSession {
       StreamController<Duration>.broadcast();
   Timer? _loadingIndicatorTimer;
   bool _suppressTransientLoading = false;
-  List<MusicTrack>? customQueueTracks;
+  List<MusicTrack>? _customQueueTracks;
+  List<MusicTrack>? get customQueueTracks => _customQueueTracks;
+  set customQueueTracks(List<MusicTrack>? tracks) {
+    _customQueueTracks = tracks == null ? null : immutableList(tracks);
+  }
+
   PlaybackQueueDefinition? playbackQueue;
   int currentQueueIndex;
   bool get isPlaybackQueue => playbackQueue != null;

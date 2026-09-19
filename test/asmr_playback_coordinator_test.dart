@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
@@ -105,6 +107,48 @@ void main() {
   });
 
   test(
+    'direct track playback passes the pending work queue to the launcher',
+    () async {
+      final source = _FakeAsmrPlaybackSource(
+        trackQueue: [_track('selected'), _track('next')],
+      );
+      final launcher = _RecordingPlaybackSessionLauncher();
+      final coordinator = AsmrPlaybackCoordinator(
+        source: source,
+        launcher: launcher,
+      );
+
+      expect(await coordinator.playDirectTrack(work, target), isTrue);
+
+      expect(launcher.directCount, 1);
+      expect(launcher.launchCount, 0);
+      expect(launcher.tracks.map((track) => track.path), ['selected', 'next']);
+      expect(source.recordedWorks, [work]);
+    },
+  );
+
+  test(
+    'adding one track only registers that item without playing or recording history',
+    () async {
+      final source = _FakeAsmrPlaybackSource(
+        trackQueue: [_track('selected'), _track('next')],
+      );
+      final launcher = _RecordingPlaybackSessionLauncher();
+      final coordinator = AsmrPlaybackCoordinator(
+        source: source,
+        launcher: launcher,
+      );
+
+      expect(await coordinator.addTrackToPlaylist(work, target), isTrue);
+
+      expect(launcher.addedTrack?.path, 'selected');
+      expect(launcher.launchCount, 0);
+      expect(launcher.directCount, 0);
+      expect(source.recordedWorks, isEmpty);
+    },
+  );
+
+  test(
     'empty playable result does not update history or launch playback',
     () async {
       final source = _FakeAsmrPlaybackSource();
@@ -143,6 +187,12 @@ class _FakeAsmrPlaybackSource implements AsmrPlaybackSource {
   AsmrTrackFile? requestedTarget;
 
   @override
+  Future<MusicTrack?> loadPlayableTrack(
+    AsmrWork work,
+    AsmrTrackFile target,
+  ) async => trackQueue.firstOrNull;
+
+  @override
   Future<List<MusicTrack>> loadPlayableTracks(AsmrWork work) async =>
       workTracks;
 
@@ -163,9 +213,29 @@ class _FakeAsmrPlaybackSource implements AsmrPlaybackSource {
 
 class _RecordingPlaybackSessionLauncher implements PlaybackSessionLauncher {
   int launchCount = 0;
+  int directCount = 0;
+  MusicTrack? addedTrack;
   List<MusicTrack> tracks = const <MusicTrack>[];
   bool? autoPlay;
   SessionLoopMode? loopMode;
+
+  @override
+  Future<bool> playDirect(
+    FutureOr<List<MusicTrack>> tracks, {
+    int startIndex = 0,
+    SessionLoopMode loopMode = SessionLoopMode.folderSequential,
+  }) async {
+    directCount++;
+    this.tracks = await tracks;
+    this.loopMode = loopMode;
+    return this.tracks.isNotEmpty;
+  }
+
+  @override
+  Future<bool> addTrackToPlaylist(MusicTrack track) async {
+    addedTrack = track;
+    return true;
+  }
 
   @override
   Future<bool> launchQueue(

@@ -394,6 +394,101 @@ extension PlaybackQueuePathCoordinator on PlaybackFacade {
     await savePersistedState();
   }
 
+  bool _sameTrack(MusicTrack first, MusicTrack second) {
+    if (first.isRemoteAsmr && second.isRemoteAsmr) {
+      final workId = first.remoteMetadata?['id'];
+      final stableKey = first.remoteMetadata?['trackStableKey'];
+      final otherStableKey = second.remoteMetadata?['trackStableKey'];
+      if (workId != null &&
+          stableKey is String &&
+          stableKey.isNotEmpty &&
+          otherStableKey is String &&
+          otherStableKey.isNotEmpty) {
+        return workId == second.remoteMetadata?['id'] &&
+            stableKey == otherStableKey;
+      }
+      final relativePath = first.remoteMetadata?['trackRelativePath'];
+      if (workId != null && relativePath is String && relativePath.isNotEmpty) {
+        return workId == second.remoteMetadata?['id'] &&
+            relativePath == second.remoteMetadata?['trackRelativePath'];
+      }
+    }
+    return PathMatcher.equalsNormalized(first.path, second.path);
+  }
+
+  bool _matchesCurrentTrack(PlaybackSession session, MusicTrack track) {
+    if (PathMatcher.equalsNormalized(session.currentTrackPath, track.path)) {
+      return true;
+    }
+    final current = session.customQueueTracks
+        ?.where(
+          (item) =>
+              PathMatcher.equalsNormalized(item.path, session.currentTrackPath),
+        )
+        .firstOrNull;
+    return current != null && _sameTrack(current, track);
+  }
+
+  Future<bool> playDirect(
+    FutureOr<List<MusicTrack>> tracks, {
+    int startIndex = 0,
+    SessionLoopMode loopMode = SessionLoopMode.folderSequential,
+  }) async {
+    final revision = ++_directPlayRevision;
+    _directPlaybackSession?.invalidatePreparation();
+    final List<MusicTrack> resolvedTracks;
+    try {
+      resolvedTracks = tracks is List<MusicTrack> ? tracks : await tracks;
+    } catch (_) {
+      if (revision != _directPlayRevision) return false;
+      rethrow;
+    }
+    if (revision != _directPlayRevision || resolvedTracks.isEmpty) return false;
+    final index = startIndex.clamp(0, resolvedTracks.length - 1);
+    final track = resolvedTracks[index];
+    final queueTracks = immutableList(resolvedTracks);
+    final session =
+        _service.sessions.values
+            .where((candidate) => candidate.isTemporary)
+            .firstOrNull ??
+        createTrackSession(
+          track,
+          loopMode: loopMode,
+          customQueueTracks: queueTracks,
+          isTemporary: true,
+        );
+    _directPlaybackSession = session;
+    session.customQueueTracks = queueTracks;
+    session.loopMode = loopMode;
+    session.nonSingleLoopMode = loopMode;
+    session.currentQueueIndex = index;
+    session.nativePlaybackQueueCacheKey = null;
+    session.nativePlaybackQueueCache = null;
+    session.lastPlayedAt = DateTime.now();
+    _service.markActiveSessionsDirty();
+    publishSessionActivated(session.id);
+    final prepared = await _commandPort?.prepareSession(
+      session,
+      nextPath: track.path,
+      targetQueueIndex: index,
+    );
+    return revision == _directPlayRevision && (prepared ?? true);
+  }
+
+  Future<bool> addTrackToPlaylist(MusicTrack track) async {
+    final existing = _service.sessions.values
+        .where(
+          (session) =>
+              !session.isTemporary &&
+              !session.isPlaybackQueue &&
+              _matchesCurrentTrack(session, track),
+        )
+        .firstOrNull;
+    if (existing != null) return false;
+    createTrackSession(track, customQueueTracks: [track]);
+    return true;
+  }
+
   Future<bool> launchQueue(
     List<MusicTrack> tracks, {
     bool? autoPlay,

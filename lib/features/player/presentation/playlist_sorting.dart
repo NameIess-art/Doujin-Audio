@@ -19,11 +19,12 @@ List<PlaybackSessionSnapshot> sortPlaylistSessions({
   if (sessions.length < 2) return sessions;
   final items = [
     for (final session in sessions)
-      (
-        session: session,
-        value: _playlistSortValue(session, library, trackForSession),
-        pinned: pinnedSessionIds.contains(session.id),
-      ),
+      if (!session.isTemporary)
+        (
+          session: session,
+          value: _playlistSortValue(session, library, trackForSession),
+          pinned: pinnedSessionIds.contains(session.id),
+        ),
   ];
   items.sort((left, right) {
     if (left.pinned != right.pinned) {
@@ -54,9 +55,10 @@ List<PlaybackSessionSnapshot> sortPlaylistSessions({
       caseSensitive: true,
     );
   });
-  return List<PlaybackSessionSnapshot>.unmodifiable(
-    items.map((e) => e.session),
-  );
+  return List<PlaybackSessionSnapshot>.unmodifiable([
+    ...sessions.where((session) => session.isTemporary),
+    ...items.map((e) => e.session),
+  ]);
 }
 
 class PlaylistSortValue {

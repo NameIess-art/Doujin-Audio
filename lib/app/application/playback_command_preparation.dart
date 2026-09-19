@@ -341,6 +341,7 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
       );
       final result = await _nativePlaybackRepository.prepareSession(
         sessionId: session.id,
+        isTemporary: session.isTemporary,
         uri: target.uri,
         title: target.title,
         path: target.resolvedPath,

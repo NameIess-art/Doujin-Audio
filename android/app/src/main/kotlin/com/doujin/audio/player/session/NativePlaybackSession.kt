@@ -155,6 +155,7 @@ internal class NativePlaybackSession(
         private set
     var speed: Float = 1f
     private var temporarySpeed: Float? = null
+    var isTemporary: Boolean = false
     var repeatOne: Boolean = false
     var repeatAll: Boolean = false
     var shuffleModeEnabled: Boolean = false

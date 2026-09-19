@@ -31,6 +31,7 @@ class PlaybackStatus {
 class PlaybackSessionSnapshot {
   PlaybackSessionSnapshot({
     required this.id,
+    this.isTemporary = false,
     required this.createdAt,
     required this.lastPlayedAt,
     required this.currentTrackPath,
@@ -64,6 +65,7 @@ class PlaybackSessionSnapshot {
   factory PlaybackSessionSnapshot.fromRuntime(PlaybackSession session) {
     return PlaybackSessionSnapshot(
       id: session.id,
+      isTemporary: session.isTemporary,
       createdAt: session.createdAt,
       lastPlayedAt: session.lastPlayedAt,
       currentTrackPath: session.currentTrackPath,
@@ -99,6 +101,7 @@ class PlaybackSessionSnapshot {
   }
 
   final String id;
+  final bool isTemporary;
   final DateTime createdAt;
   final DateTime? lastPlayedAt;
   final String currentTrackPath;
@@ -132,6 +135,7 @@ class PlaybackSessionSnapshot {
   bool operator ==(Object other) {
     return other is PlaybackSessionSnapshot &&
         other.id == id &&
+        other.isTemporary == isTemporary &&
         other.createdAt == createdAt &&
         other.lastPlayedAt == lastPlayedAt &&
         other.currentTrackPath == currentTrackPath &&
@@ -160,6 +164,7 @@ class PlaybackSessionSnapshot {
   @override
   int get hashCode => Object.hashAll(<Object?>[
     id,
+    isTemporary,
     createdAt,
     lastPlayedAt,
     currentTrackPath,

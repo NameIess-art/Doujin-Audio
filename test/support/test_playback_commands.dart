@@ -101,6 +101,7 @@ final class _DelegatePlaybackCommandPort implements PlaybackCommandPort {
   PlaybackAdvanceResult? resolveAdvance(
     PlaybackSession session, {
     required bool forward,
+    bool manualAdvance = false,
   }) => _resolveAdvance(session, forward: forward);
 
   @override

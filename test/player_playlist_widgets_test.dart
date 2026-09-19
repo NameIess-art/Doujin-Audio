@@ -302,6 +302,7 @@ void main() {
       expect(UiInteractionCoordinator.instance.isInteracting, isTrue);
       drag.onVerticalDragCancel!();
       await tester.pumpAndSettle();
+      await tester.pump(UiInteractionCoordinator.instance.idleDelay + const Duration(milliseconds: 20));
       expect(find.byType(SessionDetailPage), findsOneWidget);
       expect(UiInteractionCoordinator.instance.isInteracting, isFalse);
       expect(tester.takeException(), isNull);
@@ -499,6 +500,62 @@ void main() {
           SessionSubtitlePanel(session: session, transitionActive: busy),
     );
     expect(find.text('Cached line'), findsOneWidget);
+  });
+
+  testWidgets('SessionSubtitlePanel holds subtitle text across gaps and during buffering', (tester) async {
+    final busy = ValueNotifier(false);
+    addTearDown(busy.dispose);
+    final track = SubtitleTrack(
+      sourcePath: 'asmr.vtt',
+      cues: const [
+        SubtitleCue(
+          start: Duration(seconds: 1),
+          end: Duration(seconds: 3),
+          text: 'Line 1',
+        ),
+        SubtitleCue(
+          start: Duration(seconds: 10),
+          end: Duration(seconds: 12),
+          text: 'Line 2',
+        ),
+      ],
+    );
+    final harness = await _pumpSubtitleDetail(
+      tester: tester,
+      style: PlaybackDetailSubtitleStyle.compact,
+      subtitleTrack: track,
+      initialPosition: const Duration(seconds: 2),
+      preloadSubtitle: true,
+      detailBuilder: (session) =>
+          SessionSubtitlePanel(session: session, transitionActive: busy),
+    );
+    expect(find.text('Line 1'), findsOneWidget);
+
+    // In the gap between 3s and 10s: Line 1 should persist
+    harness.session.setOptimisticPosition(const Duration(seconds: 5));
+    await tester.pump();
+    expect(find.text('Line 1'), findsOneWidget);
+
+    // Audio buffering occurs (isPlaybackLoading = true) while track is loaded
+    harness.session.state = const PlayerState(true, ProcessingState.buffering);
+    harness.fixture.playbackService.syncSlice(
+      activeSessions: <PlaybackSession>[harness.session],
+      playingSessionCount: 1,
+      focusedSessionId: harness.session.id,
+      multiThreadPlaybackEnabled: false,
+      coverGeneration: harness.coverCache.generation,
+      isInitialized: true,
+    );
+    await tester.pump();
+    // Subtitle must NOT be replaced with loading
+    expect(find.byKey(const ValueKey('subtitle_loading')), findsNothing);
+    expect(find.text('Line 1'), findsOneWidget);
+
+    // Reaching Line 2
+    harness.session.setOptimisticPosition(const Duration(seconds: 11));
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pumpAndSettle();
+    expect(find.text('Line 2'), findsOneWidget);
   });
 
   for (final disposeBeforeResult in [false, true]) {

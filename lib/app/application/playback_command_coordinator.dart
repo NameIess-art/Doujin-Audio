@@ -233,7 +233,12 @@ final class PlaybackCommandCoordinator
   PlaybackAdvanceResult? resolveAdvance(
     PlaybackSession session, {
     required bool forward,
-  }) => _nextPathFor(session, forward: forward);
+    bool manualAdvance = false,
+  }) => _nextPathFor(
+    session,
+    forward: forward,
+    manualAdvance: manualAdvance,
+  );
 
   @override
   bool hasAdjacent(PlaybackSession session, {required bool forward}) =>

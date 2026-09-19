@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
@@ -94,3 +95,40 @@ class _DragOnlyScrollbarState extends RawScrollbarState<DragOnlyScrollbar> {
       );
   }
 }
+
+class AppScrollBehavior extends MaterialScrollBehavior {
+  const AppScrollBehavior();
+
+  @override
+  Widget buildScrollbar(
+    BuildContext context,
+    Widget child,
+    ScrollableDetails details,
+  ) {
+    if (axisDirectionToAxis(details.direction) != Axis.vertical) {
+      return child;
+    }
+    return DragOnlyScrollbar(
+      controller: details.controller,
+      thumbVisibility: defaultTargetPlatform == TargetPlatform.windows,
+      child: child,
+    );
+  }
+
+  @override
+  Widget buildOverscrollIndicator(
+    BuildContext context,
+    Widget child,
+    ScrollableDetails details,
+  ) {
+    if (details.direction == AxisDirection.left ||
+        details.direction == AxisDirection.right) {
+      return child;
+    }
+    return StretchingOverscrollIndicator(
+      axisDirection: details.direction,
+      child: child,
+    );
+  }
+}
+

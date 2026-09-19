@@ -11,6 +11,7 @@ import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_download_page.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_tab.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_work_detail_sheet.dart';
+import 'package:doujin_audio/features/library/presentation/work_detail_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -43,6 +44,24 @@ void main() {
     await tester.pumpAndSettle();
     expect(copied, ['Test circle']);
   }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
+
+  testWidgets('WorkDetailPage renders ASMR work detail header and actions', (tester) async {
+    SharedPreferences.setMockInitialValues(const <String, Object>{});
+    final fixture = AppRuntimeWidgetTestFixture();
+    addTearDown(fixture.dispose);
+    await tester.pumpWidget(fixture.build(Builder(builder: (context) => TextButton(
+      onPressed: () => showAsmrWorkDetailSheet(context, _work()),
+      child: const Text('Open detail'),
+    ))));
+    await tester.tap(find.text('Open detail'));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey<String>('asmr_work_detail_download')), findsOneWidget);
+    expect(find.byKey(const ValueKey<String>('asmr_work_detail_favorite')), findsOneWidget);
+    expect(find.text('Test work'), findsOneWidget);
+    expect(find.text('RJ000123'), findsOneWidget);
+    expect(find.text('Test circle'), findsOneWidget);
+  });
 
   setUp(UiInteractionCoordinator.instance.resetForTest);
   tearDown(UiInteractionCoordinator.instance.resetForTest);
@@ -164,7 +183,7 @@ void main() {
   });
 
   testWidgets(
-    'detail sheet shows favorite button to the left of download button and allows undoing unfavorite',
+    'detail sheet shows download and favorite buttons and allows undoing unfavorite',
     (WidgetTester tester) async {
       SharedPreferences.setMockInitialValues(const <String, Object>{});
       final fixture = AppRuntimeWidgetTestFixture();
@@ -204,9 +223,9 @@ void main() {
       expect(favoriteButtonFinder, findsOneWidget);
       expect(downloadButtonFinder, findsOneWidget);
 
-      final favoriteRight = tester.getTopRight(favoriteButtonFinder).dx;
-      final downloadLeft = tester.getTopLeft(downloadButtonFinder).dx;
-      expect(favoriteRight, lessThanOrEqualTo(downloadLeft));
+      final downloadRight = tester.getTopRight(downloadButtonFinder).dx;
+      final favoriteLeft = tester.getTopLeft(favoriteButtonFinder).dx;
+      expect(downloadRight, lessThanOrEqualTo(favoriteLeft));
 
       expect(controller.isFavorite(work.id), isTrue);
 
@@ -292,6 +311,55 @@ void main() {
       final work2FinalTop =
           tester.getTopLeft(find.text('Second Favorite Work')).dy;
       expect(work2FinalTop, lessThan(work2MidTop));
+    },
+  );
+
+  testWidgets(
+    'ASMR work card has no swipe actions and tapping opens WorkDetailPage',
+    (tester) async {
+      SharedPreferences.setMockInitialValues(const <String, Object>{});
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      await fixture.languageProvider.setLanguage(AppLanguage.zh);
+
+      final work = _work(id: 201, title: 'Swipe Test Work');
+      final controller = _TestFavoritesAsmrLibraryController(
+        createTestAsmrServices(),
+        <AsmrWork>[work],
+      );
+      addTearDown(controller.dispose);
+
+      await tester.pumpWidget(
+        fixture.build(
+          const AsmrTab(),
+          overrides: [
+            asmrLibraryControllerProvider.overrideWithValue(controller),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('收藏'));
+      await tester.pumpAndSettle();
+
+      final card = find.byKey(const ValueKey<String>('asmr-work-201'));
+      expect(card, findsOneWidget);
+
+      await tester.drag(card, const Offset(-180, 0));
+      await tester.pumpAndSettle();
+
+      // Swipe gestures have been removed
+      expect(find.byTooltip('查看作品详细信息'), findsNothing);
+      expect(find.byTooltip('取消收藏'), findsNothing);
+      expect(find.text('查看文档/文本'), findsNothing);
+      expect(find.byTooltip('查看文档/文本'), findsNothing);
+      expect(find.byIcon(Icons.description_outlined), findsNothing);
+
+      // Tapping card opens WorkDetailPage
+      await tester.tap(card);
+      await tester.pumpAndSettle();
+      expect(find.byType(WorkDetailPage), findsOneWidget);
+      expect(find.text('Swipe Test Work'), findsOneWidget);
     },
   );
 }

@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../app/theme/app_styles.dart';
-import '../media/card_info_field.dart';
 import '../media/time_text_formatters.dart';
 import 'async_cover_image.dart';
 import 'app_feedback.dart';
@@ -294,110 +293,88 @@ class _SkeletonInfoLine extends StatelessWidget {
 }
 
 class LibraryLikeInfoLineData {
-  const LibraryLikeInfoLineData(this.label, this.text, {this.lines = 1});
+  const LibraryLikeInfoLineData(
+    this.label,
+    this.text, {
+    this.lines = 1,
+    this.secondaryLabel,
+    this.secondaryText,
+  }) : assert(
+         (secondaryLabel == null) == (secondaryText == null),
+         'Secondary label and text must be provided together.',
+       );
 
   static const int maxLines = 6;
 
   final String label;
   final String text;
   final int lines;
+  final String? secondaryLabel;
+  final String? secondaryText;
 }
 
 class LibraryLikeInfoMetadata {
   const LibraryLikeInfoMetadata({
-    this.rjCode = '',
     this.voiceActors = const <String>[],
     this.circleName = '',
     this.tags = const <String>[],
     this.releaseDate,
-    this.duration,
-    this.salesCount,
     this.rating,
   });
 
-  final String rjCode;
   final List<String> voiceActors;
   final String circleName;
   final List<String> tags;
   final DateTime? releaseDate;
-  final Duration? duration;
-  final int? salesCount;
   final double? rating;
 }
 
 List<LibraryLikeInfoLineData> buildLibraryLikeInfoLines({
-  required Iterable<CardInfoField> fields,
   required LibraryLikeInfoMetadata metadata,
   required String circleLabel,
   required String tagsLabel,
   required String releaseDateLabel,
-  required String salesCountLabel,
   required String ratingLabel,
   String listSeparator = '\uFF0C',
 }) {
-  final selectedFields = fields.toList(growable: false);
   final result = <LibraryLikeInfoLineData>[];
-  for (final field in selectedFields) {
-    switch (field) {
-      case CardInfoField.rjCode:
-        final value = metadata.rjCode.trim();
-        if (value.isNotEmpty) {
-          result.add(LibraryLikeInfoLineData('RJ', value));
-        }
-        break;
-      case CardInfoField.voiceActors:
-        if (metadata.voiceActors.isNotEmpty) {
-          result.add(
-            LibraryLikeInfoLineData(
-              'CV',
-              _normalizeLibraryLikeList(
-                metadata.voiceActors,
-              ).join(listSeparator),
-            ),
-          );
-        }
-        break;
-      case CardInfoField.circleName:
-        final value = metadata.circleName.trim();
-        if (value.isNotEmpty) {
-          result.add(LibraryLikeInfoLineData(circleLabel, value));
-        }
-        break;
-      case CardInfoField.tags:
-        if (metadata.tags.isNotEmpty) {
-          result.add(
-            LibraryLikeInfoLineData(
-              tagsLabel,
-              _normalizeLibraryLikeList(metadata.tags).join(listSeparator),
-              lines: CardInfoField.tagLineCountForSelection(
-                selectedFields.length,
-              ),
-            ),
-          );
-        }
-        break;
-      case CardInfoField.releaseDate:
-        final value = formatLibraryLikeDate(metadata.releaseDate);
-        if (value.isNotEmpty) {
-          result.add(LibraryLikeInfoLineData(releaseDateLabel, value));
-        }
-        break;
-
-      case CardInfoField.salesCount:
-        final value = metadata.salesCount;
-        if (value != null && value > 0) {
-          result.add(
-            LibraryLikeInfoLineData(salesCountLabel, value.toString()),
-          );
-        }
-        break;
-      case CardInfoField.rating:
-        final value = formatLibraryLikeRating(metadata.rating);
-        if (value.isNotEmpty) {
-          result.add(LibraryLikeInfoLineData(ratingLabel, value));
-        }
-        break;
-    }
+  if (metadata.voiceActors.isNotEmpty) {
+    result.add(
+      LibraryLikeInfoLineData(
+        'CV',
+        _normalizeLibraryLikeList(metadata.voiceActors).join(listSeparator),
+      ),
+    );
+  }
+  final circle = metadata.circleName.trim();
+  if (circle.isNotEmpty) {
+    result.add(LibraryLikeInfoLineData(circleLabel, circle));
+  }
+  if (metadata.tags.isNotEmpty) {
+    final remainingLines = (5 - result.length).clamp(1, 5);
+    result.add(
+      LibraryLikeInfoLineData(
+        tagsLabel,
+        _normalizeLibraryLikeList(metadata.tags).join(listSeparator),
+        lines: remainingLines,
+      ),
+    );
+  }
+  final releaseDate = formatLibraryLikeDate(metadata.releaseDate);
+  final rating = formatLibraryLikeRating(metadata.rating);
+  if (releaseDate.isNotEmpty && rating.isNotEmpty) {
+    result.add(
+      LibraryLikeInfoLineData(
+        releaseDateLabel,
+        releaseDate,
+        secondaryLabel: ratingLabel,
+        secondaryText: rating,
+      ),
+    );
+  } else if (releaseDate.isNotEmpty) {
+    result.add(LibraryLikeInfoLineData(releaseDateLabel, releaseDate));
+  } else if (rating.isNotEmpty) {
+    result.add(LibraryLikeInfoLineData(ratingLabel, rating));
   }
   return result;
 }
@@ -588,6 +565,8 @@ class LibraryLikeWorkCardContent extends StatelessWidget {
                               LibraryLikeDetailInfoLine(
                                 label: line.label,
                                 text: line.text,
+                                secondaryLabel: line.secondaryLabel,
+                                secondaryText: line.secondaryText,
                                 style: infoStyle,
                                 loading: false,
                                 lines: line.lines,
@@ -695,12 +674,10 @@ class LibraryLikeMetadataWorkCardContent extends StatelessWidget {
   const LibraryLikeMetadataWorkCardContent({
     super.key,
     required this.title,
-    required this.fields,
     required this.metadata,
     required this.circleLabel,
     required this.tagsLabel,
     required this.releaseDateLabel,
-    required this.salesCountLabel,
     required this.ratingLabel,
     required this.coverBuilder,
     required this.onPlay,
@@ -717,12 +694,10 @@ class LibraryLikeMetadataWorkCardContent extends StatelessWidget {
   });
 
   final String title;
-  final Iterable<CardInfoField> fields;
   final LibraryLikeInfoMetadata metadata;
   final String circleLabel;
   final String tagsLabel;
   final String releaseDateLabel;
-  final String salesCountLabel;
   final String ratingLabel;
   final String listSeparator;
   final bool loading;
@@ -744,12 +719,10 @@ class LibraryLikeMetadataWorkCardContent extends StatelessWidget {
       lines: loading
           ? const <LibraryLikeInfoLineData>[]
           : buildLibraryLikeInfoLines(
-              fields: fields,
               metadata: metadata,
               circleLabel: circleLabel,
               tagsLabel: tagsLabel,
               releaseDateLabel: releaseDateLabel,
-              salesCountLabel: salesCountLabel,
               ratingLabel: ratingLabel,
               listSeparator: listSeparator,
             ),
@@ -763,7 +736,6 @@ class LibraryLikeMetadataWorkCardContent extends StatelessWidget {
       enableTitleMarquee: enableTitleMarquee,
       playLoading: playLoading,
       extraTrailing: extraTrailing,
-      compactCoverLayout: fields.isEmpty,
     );
   }
 }
@@ -828,6 +800,8 @@ class LibraryLikeSingleAudioCardContent extends StatelessWidget {
                 LibraryLikeDetailInfoLine(
                   label: line.label,
                   text: line.text,
+                  secondaryLabel: line.secondaryLabel,
+                  secondaryText: line.secondaryText,
                   style: infoStyle,
                   loading: false,
                   lines: line.lines,
@@ -847,15 +821,22 @@ class LibraryLikeDetailInfoLine extends StatelessWidget {
     super.key,
     required this.label,
     required this.text,
+    this.secondaryLabel,
+    this.secondaryText,
     required this.style,
     required this.loading,
     this.lines = 1,
     this.accentColor,
     this.enableMarquee = true,
-  });
+  }) : assert(
+         (secondaryLabel == null) == (secondaryText == null),
+         'Secondary label and text must be provided together.',
+       );
 
   final String label;
   final String text;
+  final String? secondaryLabel;
+  final String? secondaryText;
   final TextStyle style;
   final bool loading;
   final int lines;
@@ -872,19 +853,43 @@ class LibraryLikeDetailInfoLine extends StatelessWidget {
     );
     final fixedLabelStyle = _libraryLikeFixedLineStyle(labelStyle);
     final fixedStyle = _libraryLikeFixedLineStyle(style);
-    final labelWidget = enableMarquee && label.characters.length > 3
+    Widget buildLabel(String value) =>
+        enableMarquee && value.characters.length > 3
         ? MarqueeText(
-            text: label,
+            text: value,
             style: fixedLabelStyle,
             scrollSpeed: 18,
             edgePadding: 2,
           )
         : Text(
-            label,
+            value,
             maxLines: 1,
             overflow: TextOverflow.clip,
             style: fixedLabelStyle,
           );
+
+    Widget buildValue(String value) => loading
+        ? Align(
+            alignment: Alignment.centerLeft,
+            child: Icon(
+              Icons.hourglass_top_rounded,
+              size: 12,
+              color: accentColor ?? cs.primary,
+            ),
+          )
+        : lineCount > 1
+        ? _LibraryLikeMultiLineInfoText(
+            text: value,
+            style: fixedStyle,
+            lines: lineCount,
+            enableMarquee: enableMarquee,
+          )
+        : enableMarquee
+        ? MarqueeText(text: value, style: fixedStyle, scrollSpeed: 24)
+        : SearchHighlightedText(text: value, maxLines: 1, style: fixedStyle);
+
+    final secondaryLabel = this.secondaryLabel;
+    final secondaryText = this.secondaryText;
     final content = Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -892,35 +897,21 @@ class LibraryLikeDetailInfoLine extends StatelessWidget {
           width: 28,
           child: SizedBox(
             height: _libraryLikeInfoLineHeight,
-            child: labelWidget,
+            child: buildLabel(label),
           ),
         ),
         const SizedBox(width: 5),
-        Expanded(
-          child: loading
-              ? Align(
-                  alignment: Alignment.centerLeft,
-                  child: Icon(
-                    Icons.hourglass_top_rounded,
-                    size: 12,
-                    color: accentColor ?? cs.primary,
-                  ),
-                )
-              : lineCount > 1
-              ? _LibraryLikeMultiLineInfoText(
-                  text: text,
-                  style: fixedStyle,
-                  lines: lineCount,
-                  enableMarquee: enableMarquee,
-                )
-              : enableMarquee
-              ? MarqueeText(text: text, style: fixedStyle, scrollSpeed: 24)
-              : SearchHighlightedText(
-                  text: text,
-                  maxLines: 1,
-                  style: fixedStyle,
-                ),
-        ),
+        Expanded(child: buildValue(text)),
+        if (secondaryLabel != null && secondaryText != null) ...[
+          const SizedBox(width: 8),
+          SizedBox(
+            width: 28,
+            height: _libraryLikeInfoLineHeight,
+            child: buildLabel(secondaryLabel),
+          ),
+          const SizedBox(width: 5),
+          SizedBox(width: 32, child: buildValue(secondaryText)),
+        ],
       ],
     );
 

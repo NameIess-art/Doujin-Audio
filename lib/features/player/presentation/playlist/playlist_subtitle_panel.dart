@@ -127,13 +127,16 @@ class _SessionSubtitlePanelState extends ConsumerState<SessionSubtitlePanel> {
     _pendingSubtitle = null;
     UiInteractionCoordinator.instance.cancelCommit(_commitKey);
     final trackPath = widget.session.currentTrackPath;
+    final isTrackChanged = _loadedPath != trackPath;
     _loadedPath = trackPath;
-    _subtitleTextCache.clear();
-    setState(() {
-      _subtitleTrack = null;
-      _subtitleText = null;
-      _playbackSubtitleIndex = null;
-    });
+    if (isTrackChanged) {
+      _subtitleTextCache.clear();
+      setState(() {
+        _subtitleTrack = null;
+        _subtitleText = null;
+        _playbackSubtitleIndex = null;
+      });
+    }
     final subtitles = _subtitleService;
     if (subtitles.hasResult(trackPath)) {
       _applySubtitleTrack(trackPath, subtitles.trackSync(trackPath));
@@ -200,7 +203,7 @@ class _SessionSubtitlePanelState extends ConsumerState<SessionSubtitlePanel> {
           _applySubtitleTrack(trackPath, updated);
         }
       }
-    } else {
+    } else if (!subtitles.isLoading(trackPath)) {
       _scheduleSubtitleTrackLoad();
     }
   }
@@ -219,6 +222,7 @@ class _SessionSubtitlePanelState extends ConsumerState<SessionSubtitlePanel> {
       trackPath: widget.session.currentTrackPath,
       position: position,
       track: track,
+      persistent: true,
     );
     final nextIndex = _timelineSubtitleIndexAt(track, position);
     if (_subtitleText == nextText && _playbackSubtitleIndex == nextIndex) {
@@ -257,12 +261,12 @@ class _SessionSubtitlePanelState extends ConsumerState<SessionSubtitlePanel> {
       sessionDetailTransportProvider(widget.session.id).select(
         (state) => (
           state == null ? widget.session.playbackError : state.playbackError,
-          state?.isLoading,
+          state?.isLoading ?? widget.session.isLoading,
         ),
       ),
     );
     final playbackError = detail.$1;
-    final isLoading = detail.$2 ?? widget.session.isPlaybackLoading;
+    final isLoading = detail.$2;
     ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     final transitionDuration = MediaQuery.disableAnimationsOf(context)
@@ -270,6 +274,7 @@ class _SessionSubtitlePanelState extends ConsumerState<SessionSubtitlePanel> {
         : AppDesignTokens.of(context).motionStandard;
 
     late final Widget content;
+    final subtitleTrack = _subtitleTrack;
     if (!widget.subtitleEnabled) {
       content = const SizedBox.shrink(key: ValueKey('subtitle_empty'));
     } else if (isLoading) {
@@ -324,7 +329,6 @@ class _SessionSubtitlePanelState extends ConsumerState<SessionSubtitlePanel> {
               PlaybackDetailSubtitleStyle.compact,
         ),
       );
-      final subtitleTrack = _subtitleTrack;
       final playbackSubtitleIndex = _playbackSubtitleIndex;
       if (subtitleStyle == PlaybackDetailSubtitleStyle.timeline &&
           subtitleTrack != null &&

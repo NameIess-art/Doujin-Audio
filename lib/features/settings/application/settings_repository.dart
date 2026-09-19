@@ -2,7 +2,6 @@ import 'package:flutter/foundation.dart';
 
 import '../../../core/state/audio_state_slice.dart';
 import '../../../core/app_language.dart';
-import '../../../core/media/card_info_field.dart';
 import '../../../core/media/path_matcher.dart';
 import '../../../core/ui/app_interaction_feedback_settings.dart';
 import '../../asmr/domain/asmr_download.dart';
@@ -26,7 +25,6 @@ class SettingsRepository {
   bool autoCheckUpdates = false;
   ContentLanguagePreference dlsiteMetadataLanguage =
       ContentLanguagePreference.followPage;
-  List<CardInfoField> cardInfoFields = CardInfoField.defaults;
   LibrarySortCriterion librarySortCriterion = LibrarySortCriterion.name;
   bool librarySortAscending = true;
   bool libraryGroupByLibrary = false;
@@ -178,7 +176,6 @@ class SettingsRepository {
       dlsiteMetadataLanguage = ContentLanguagePreference.fromName(
         playback['dlsiteMetadataLanguage'],
       );
-      cardInfoFields = CardInfoField.decode(playback['cardInfoFields']);
       librarySortCriterion = LibrarySortCriterion.values.firstWhere(
         (value) => value.name == playback['librarySortCriterion'],
         orElse: () => LibrarySortCriterion.name,
@@ -196,15 +193,13 @@ class SettingsRepository {
           playback['playlistGroupByLibrary'] as bool? ?? false;
       final pinnedLibList = playback['pinnedLibraryPaths'];
       if (pinnedLibList is List) {
-        pinnedLibraryPaths =
-            pinnedLibList.map((e) => e.toString()).toList();
+        pinnedLibraryPaths = pinnedLibList.map((e) => e.toString()).toList();
       } else {
         pinnedLibraryPaths = <String>[];
       }
       final pinnedList = playback['pinnedPlaylistSessionIds'];
       if (pinnedList is List) {
-        pinnedPlaylistSessionIds =
-            pinnedList.map((e) => e.toString()).toList();
+        pinnedPlaylistSessionIds = pinnedList.map((e) => e.toString()).toList();
       } else {
         pinnedPlaylistSessionIds = <String>[];
       }
@@ -271,9 +266,6 @@ class SettingsRepository {
           .map((field) => field.name)
           .toList(growable: false),
       'dlsiteMetadataLanguage': dlsiteMetadataLanguage.name,
-      'cardInfoFields': cardInfoFields
-          .map((field) => field.name)
-          .toList(growable: false),
       'librarySortCriterion': librarySortCriterion.name,
       'librarySortAscending': librarySortAscending,
       'libraryGroupByLibrary': libraryGroupByLibrary,
@@ -343,14 +335,6 @@ class SettingsRepository {
     await persist();
   }
 
-  Future<void> setCardInfoFields(Iterable<CardInfoField> fields) async {
-    final normalized = CardInfoField.normalize(fields);
-    if (listEquals(cardInfoFields, normalized)) return;
-    cardInfoFields = normalized;
-    syncSlice(isInitialized: slice.state.isInitialized);
-    await persist();
-  }
-
   Future<void> setLibrarySortCriterion(LibrarySortCriterion criterion) =>
       _setValue(
         unchanged: librarySortCriterion == criterion,
@@ -416,7 +400,9 @@ class SettingsRepository {
   );
 
   Future<void> pinLibraryPaths(Iterable<String> paths) {
-    final normalizedList = paths.map(PathMatcher.normalize).toList(growable: false);
+    final normalizedList = paths
+        .map(PathMatcher.normalize)
+        .toList(growable: false);
     final updated = List<String>.of(pinnedLibraryPaths);
     var changed = false;
     for (final p in normalizedList) {
@@ -433,7 +419,9 @@ class SettingsRepository {
 
   Future<void> unpinLibraryPaths(Iterable<String> paths) {
     final targetSet = paths.map(PathMatcher.normalize).toSet();
-    final updated = pinnedLibraryPaths.where((p) => !targetSet.contains(p)).toList();
+    final updated = pinnedLibraryPaths
+        .where((p) => !targetSet.contains(p))
+        .toList();
     return _setValue(
       unchanged: updated.length == pinnedLibraryPaths.length,
       update: () => pinnedLibraryPaths = updated,
@@ -441,7 +429,9 @@ class SettingsRepository {
   }
 
   Future<void> toggleLibraryPathsPinned(Iterable<String> paths) {
-    final normalizedList = paths.map(PathMatcher.normalize).toList(growable: false);
+    final normalizedList = paths
+        .map(PathMatcher.normalize)
+        .toList(growable: false);
     if (normalizedList.isEmpty) return Future.value();
     final allPinned = normalizedList.every(pinnedLibraryPaths.contains);
     if (allPinned) {
@@ -454,8 +444,7 @@ class SettingsRepository {
   Future<void> toggleLibraryPathPinned(String path) =>
       toggleLibraryPathsPinned([path]);
 
-  Future<void> unpinLibraryPath(String path) =>
-      unpinLibraryPaths([path]);
+  Future<void> unpinLibraryPath(String path) => unpinLibraryPaths([path]);
 
   Future<void> pinPlaylistSessions(Iterable<String> sessionIds) {
     final updated = List<String>.of(pinnedPlaylistSessionIds);
@@ -474,7 +463,9 @@ class SettingsRepository {
 
   Future<void> unpinPlaylistSessions(Iterable<String> sessionIds) {
     final targetSet = sessionIds.toSet();
-    final updated = pinnedPlaylistSessionIds.where((id) => !targetSet.contains(id)).toList();
+    final updated = pinnedPlaylistSessionIds
+        .where((id) => !targetSet.contains(id))
+        .toList();
     return _setValue(
       unchanged: updated.length == pinnedPlaylistSessionIds.length,
       update: () => pinnedPlaylistSessionIds = updated,
@@ -578,8 +569,9 @@ class SettingsRepository {
     if (showAsmrOne == enabled) return;
     showAsmrOne = enabled;
     if (!enabled && startupPage == StartupPage.asmrOne) {
-      startupPage =
-          showLocalLibrary ? StartupPage.library : StartupPage.playlist;
+      startupPage = showLocalLibrary
+          ? StartupPage.library
+          : StartupPage.playlist;
     }
     await persist();
     syncSlice();
@@ -688,7 +680,6 @@ class SettingsRepository {
     update: () => interruptionResumeBehavior = behavior,
   );
 
-
   Future<void> setAllowDuplicateWorks(bool enabled) => _setValue(
     unchanged: allowDuplicateWorks == enabled,
     update: () => allowDuplicateWorks = enabled,
@@ -725,7 +716,6 @@ class SettingsRepository {
     autoPlayAddedSessions = true;
     autoCheckUpdates = false;
     dlsiteMetadataLanguage = ContentLanguagePreference.followPage;
-    cardInfoFields = CardInfoField.defaults;
     librarySortCriterion = LibrarySortCriterion.name;
     librarySortAscending = true;
     libraryGroupByLibrary = false;
@@ -793,7 +783,6 @@ class SettingsRepository {
         autoPlayAddedSessions: autoPlayAddedSessions,
         autoCheckUpdates: autoCheckUpdates,
         dlsiteMetadataLanguage: dlsiteMetadataLanguage,
-        cardInfoFields: List<CardInfoField>.unmodifiable(cardInfoFields),
         librarySortCriterion: librarySortCriterion,
         librarySortAscending: librarySortAscending,
         libraryGroupByLibrary: libraryGroupByLibrary,
@@ -801,8 +790,9 @@ class SettingsRepository {
         playlistSortCriterion: playlistSortCriterion,
         playlistSortAscending: playlistSortAscending,
         playlistGroupByLibrary: playlistGroupByLibrary,
-        pinnedPlaylistSessionIds:
-            List<String>.unmodifiable(pinnedPlaylistSessionIds),
+        pinnedPlaylistSessionIds: List<String>.unmodifiable(
+          pinnedPlaylistSessionIds,
+        ),
         customEqPresets: List<EqPreset>.unmodifiable(customEqPresets),
         maxCacheBytes: maxCacheBytes,
         asmrPlaybackCacheEnabled: asmrPlaybackCacheEnabled,

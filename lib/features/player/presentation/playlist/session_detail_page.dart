@@ -26,6 +26,7 @@ import 'package:path/path.dart' as path;
 
 import '../../../../core/media/path_matcher.dart';
 import '../../../../core/widgets/app_feedback.dart';
+import '../../../asmr/presentation/asmr_providers.dart';
 import '../../../asmr/presentation/asmr_work_detail_sheet.dart';
 import '../../../library/application/work_text_service.dart';
 import '../../../library/presentation/audio_detail_sheet.dart';
@@ -251,6 +252,9 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
   final ValueNotifier<bool> _segmentPanelExpandedNotifier = ValueNotifier(
     false,
   );
+  String? _cachedTrackPath;
+  int? _cachedCoverGeneration;
+  Future<String?>? _cachedCoverFuture;
 
   @override
   void initState() {
@@ -564,20 +568,26 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
           child: RepaintBoundary(
             child: Builder(
               builder: (context) {
-                ref.watch(coverGenerationProvider);
+                final coverGen = ref.watch(coverGenerationProvider);
                 final pageSession = playback.sessionSnapshotById(
                   _currentSessionId,
                 );
                 if (pageSession == null) {
                   return const SizedBox.shrink();
                 }
-                final detailTrack = paths.trackByPath(
-                  pageSession.currentTrackPath,
-                );
-                final coverPathFuture = coverFutureForTrack(
-                  ref.read(libraryFacadeProvider),
-                  detailTrack,
-                );
+                final trackPath = pageSession.currentTrackPath;
+                if (_cachedCoverFuture == null ||
+                    _cachedTrackPath != trackPath ||
+                    _cachedCoverGeneration != coverGen) {
+                  _cachedTrackPath = trackPath;
+                  _cachedCoverGeneration = coverGen;
+                  final detailTrack = paths.trackByPath(trackPath);
+                  _cachedCoverFuture = coverFutureForTrack(
+                    ref.read(libraryFacadeProvider),
+                    detailTrack,
+                  );
+                }
+                final coverPathFuture = _cachedCoverFuture!;
 
                 return _SessionDetailScaffold(
                   session: pageSession,
@@ -833,6 +843,55 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
     PlaybackSessionSnapshot session,
     MusicTrack? track,
   ) async {
+    if (track?.isRemoteAsmr == true && track?.remoteMetadata != null) {
+      final work = AsmrWork.fromJson(
+        Map<String, dynamic>.from(track!.remoteMetadata!),
+      );
+      final controller = ref.read(asmrLibraryControllerProvider);
+      if (controller != null) {
+        final downloadManager = ref.read(asmrDownloadManagerProvider);
+        final files = await controller.findWorkTextFiles(
+          work,
+          downloadManager: downloadManager,
+        );
+        if (!context.mounted) return;
+        if (files.isEmpty) {
+          final i18n = ref.read(appLanguageProviderInstanceProvider);
+          showAppSnackBar(
+            context,
+            i18n.tr('script_text_not_found'),
+            tone: AppFeedbackTone.warning,
+          );
+          return;
+        }
+        int initialIndex = 0;
+        final trackRelPath =
+            track.remoteMetadata?['trackRelativePath'] as String?;
+        if (trackRelPath != null && trackRelPath.isNotEmpty) {
+          final targetStem =
+              path.basenameWithoutExtension(trackRelPath).toLowerCase();
+          for (var i = 0; i < files.length; i++) {
+            final fName = files[i].displayName.toLowerCase();
+            if (fName == targetStem ||
+                fName.contains(targetStem) ||
+                targetStem.contains(fName)) {
+              initialIndex = i;
+              break;
+            }
+          }
+        }
+        await Navigator.of(context).push<void>(
+          MaterialPageRoute(
+            builder: (_) => WorkTextViewerPage(
+              files: files,
+              initialIndex: initialIndex,
+            ),
+          ),
+        );
+        return;
+      }
+    }
+
     final target = ref
         .read(libraryFacadeProvider)
         .audioDetailTargetForPath(session.currentTrackPath);
@@ -978,7 +1037,10 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                               ),
                               child: AsyncCoverImage(
                                 future: coverPathFuture,
-                                requestKey: session.id,
+                                requestKey: (
+                                  session.id,
+                                  session.currentTrackPath,
+                                ),
                                 initialPath: library
                                     .resolvedPlaybackCoverPathForTrack(track),
                                 retryFutureBuilder: () => coverFutureForTrack(

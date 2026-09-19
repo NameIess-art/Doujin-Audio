@@ -861,7 +861,7 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
           leadingActionTooltip: i18n.tr('audio_detail'),
           leadingActionIcon: Icons.info_outline_rounded,
           onSecondaryLeadingAction: () => unawaited(
-            _downloadAudioTargetFromAsmr(
+            downloadAudioTargetFromAsmr(
               context: context,
               ref: ref,
               target: entry.target,

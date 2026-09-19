@@ -62,4 +62,104 @@ void main() {
 
     expect(values, <String>['トラック１', 'トラック２', 'トラック１０', 'トラック１１']);
   });
+
+  test('compareNatural sorts Chinese chapter numerals naturally (user case)', () {
+    final values = <String>[
+      '第一篇 催眠音声',
+      '第三篇 催眠音声',
+      '第二篇 催眠音声',
+      '第五篇 催眠音声',
+      '第六篇 催眠音声',
+      '第四篇 催眠音声',
+    ]..sort(compareNatural);
+
+    expect(values, <String>[
+      '第一篇 催眠音声',
+      '第二篇 催眠音声',
+      '第三篇 催眠音声',
+      '第四篇 催眠音声',
+      '第五篇 催眠音声',
+      '第六篇 催眠音声',
+    ]);
+  });
+
+  test('compareNatural sorts Chinese numerals beyond ten naturally', () {
+    final values = <String>[
+      '第二十篇',
+      '第十篇',
+      '第一篇',
+      '第十一篇',
+      '第十二篇',
+      '第二篇',
+      '第九篇',
+      '第一百篇',
+      '第二十一篇',
+    ]..sort(compareNatural);
+
+    expect(values, <String>[
+      '第一篇',
+      '第二篇',
+      '第九篇',
+      '第十篇',
+      '第十一篇',
+      '第十二篇',
+      '第二十篇',
+      '第二十一篇',
+      '第一百篇',
+    ]);
+  });
+
+  test('compareNatural sorts mixed Arabic and Chinese numerals naturally', () {
+    final values = <String>[
+      '第10篇',
+      '第2篇',
+      '第一篇',
+      '第四篇',
+      '第3篇',
+    ]..sort(compareNatural);
+
+    expect(values, <String>[
+      '第一篇',
+      '第2篇',
+      '第3篇',
+      '第四篇',
+      '第10篇',
+    ]);
+  });
+
+  test('compareNatural sorts Japanese kanji numerals naturally', () {
+    final values = <String>[
+      '第拾話',
+      '第壱話',
+      '第参話',
+      '第弐話',
+      '第拾壱話',
+    ]..sort(compareNatural);
+
+    expect(values, <String>[
+      '第壱話',
+      '第弐話',
+      '第参話',
+      '第拾話',
+      '第拾壱話',
+    ]);
+  });
+
+  test('compareNatural sorts Chinese enumerated lists naturally', () {
+    final values = <String>[
+      '十、总结',
+      '一、前言',
+      '三、高潮',
+      '二、发展',
+      '十一、附录',
+    ]..sort(compareNatural);
+
+    expect(values, <String>[
+      '一、前言',
+      '二、发展',
+      '三、高潮',
+      '十、总结',
+      '十一、附录',
+    ]);
+  });
 }

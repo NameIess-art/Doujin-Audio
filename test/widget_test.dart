@@ -178,7 +178,9 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('Windows keyboard navigates visible main destinations', (tester) async {
+  testWidgets('Windows keyboard navigates visible main destinations', (
+    tester,
+  ) async {
     await _pumpAppShell(tester);
     debugDefaultTargetPlatformOverride = TargetPlatform.windows;
     addTearDown(() => debugDefaultTargetPlatformOverride = null);
@@ -207,27 +209,44 @@ void main() {
     debugDefaultTargetPlatformOverride = null;
   });
 
-  testWidgets('Windows foreground restore keeps subtitle overlay enabled', (tester) async {
+  testWidgets('Windows foreground restore keeps subtitle overlay enabled', (
+    tester,
+  ) async {
     final calls = <String>[];
     const channel = MethodChannel('doujin_audio/subtitle_overlay');
-    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, (call) async {
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, (
+      call,
+    ) async {
       calls.add(call.method);
       return <String, Object?>{'ok': true, 'value': true};
     });
-    addTearDown(() => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, null));
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        channel,
+        null,
+      ),
+    );
     await _pumpAppShell(tester);
     debugDefaultTargetPlatformOverride = TargetPlatform.windows;
     addTearDown(() => debugDefaultTargetPlatformOverride = null);
-    final container = ProviderScope.containerOf(tester.element(find.byType(MainScreen)));
-    container.read(subtitleSettingsProvider.notifier).setGlobalEnabled('orientation_session', true);
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(MainScreen)),
+    );
+    container
+        .read(subtitleSettingsProvider.notifier)
+        .setGlobalEnabled('orientation_session', true);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 200));
     expect(calls, contains('startOverlay'));
-    WidgetsBinding.instance.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+    WidgetsBinding.instance.handleAppLifecycleStateChanged(
+      AppLifecycleState.hidden,
+    );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 200));
     calls.clear();
-    WidgetsBinding.instance.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    WidgetsBinding.instance.handleAppLifecycleStateChanged(
+      AppLifecycleState.resumed,
+    );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 200));
     expect(calls, contains('startOverlay'));
@@ -446,7 +465,9 @@ void main() {
     );
     expect(
       positioned.top,
-      MediaQuery.paddingOf(tester.element(find.byType(MainScreen))).top + 8,
+      MediaQuery.paddingOf(tester.element(find.byType(MainScreen))).top +
+          AppPageHeaderMetrics.toolbarHeight +
+          8,
     );
 
     pending.complete();
@@ -915,20 +936,14 @@ void main() {
             const ValueKey<String>('audio_library_asmr_page'),
             skipOffstage: false,
           ),
-          matching: find.byType(SwipeRevealCard, skipOffstage: false),
+          matching: find.byType(Card, skipOffstage: false),
           skipOffstage: false,
         )
         .first;
-    final asmrSwipeCard = tester.widget<SwipeRevealCard>(asmrCard);
     expect(
       tester.getTopLeft(asmrCard).dy,
       closeTo(tester.getTopLeft(localCard).dy, 0.01),
     );
-    expect(asmrSwipeCard.verticalActions, isTrue);
-    expect(asmrSwipeCard.onLeadingAction, isNotNull);
-    expect(asmrSwipeCard.leadingActionIcon, Icons.download_rounded);
-    expect(asmrSwipeCard.secondaryActionIcon, Icons.info_outline_rounded);
-    expect(asmrSwipeCard.primaryActionIcon, Icons.favorite_border_rounded);
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(seconds: 10));
     unawaited(coverUi.dispose());
@@ -1203,61 +1218,6 @@ void main() {
     );
   });
 
-  testWidgets('ASMR empty card info keeps every work compact while loading', (
-    tester,
-  ) async {
-    final controller = _QueuedEmptyAsmrLibraryController(
-      services: createTestAsmrServices(),
-    );
-    final harness = AppRuntimeWidgetTestFixture(
-      configureSettingsRepository: (settings) {
-        settings.cardInfoFields = const <CardInfoField>[];
-        settings.syncSlice(isInitialized: true);
-      },
-    );
-    addTearDown(controller.dispose);
-    addTearDown(harness.dispose);
-
-    await tester.pumpWidget(
-      harness.build(
-        const AsmrTab(),
-        overrides: [
-          asmrLibraryControllerProvider.overrideWithValue(controller),
-        ],
-      ),
-    );
-    await tester.pump();
-    await tester.pump();
-
-    final contentList = find.descendant(
-      of: find.byKey(const ValueKey(AsmrCategoryType.collected)),
-      matching: find.byKey(const ValueKey('content')),
-    );
-    final workContents = find.descendant(
-      of: contentList,
-      matching: find.byType(LibraryLikeWorkCardContent),
-    );
-    final workCards = find.descendant(
-      of: contentList,
-      matching: find.byType(SwipeRevealCard),
-    );
-
-    expect(workContents, findsNWidgets(2));
-    expect(workCards, findsNWidgets(2));
-    for (final content in workContents.evaluate()) {
-      expect(
-        tester.getSize(find.byWidget(content.widget)).height,
-        LibraryLikeCardMetrics.compactContentHeight,
-      );
-    }
-    for (final card in workCards.evaluate()) {
-      expect(
-        tester.getSize(find.byWidget(card.widget)).height,
-        LibraryLikeCardMetrics.compactRootTileHeight,
-      );
-    }
-  });
-
   testWidgets('ASMR quick return to top keeps content below expanded header', (
     tester,
   ) async {
@@ -1500,8 +1460,16 @@ void main() {
     final fileList = find.byKey(
       const ValueKey<String>('asmr_download_file_list'),
     );
+    final downloadButton = find.byKey(
+      const ValueKey<String>('asmr_download_start_button'),
+    );
     expect(summary, findsOneWidget);
     expect(fileList, findsOneWidget);
+    expect(downloadButton, findsOneWidget);
+    expect(
+      find.descendant(of: downloadButton, matching: find.text('下载')),
+      findsOneWidget,
+    );
     expect(tester.getSize(summary).height, greaterThan(100));
     expect(
       tester.getRect(find.text('Track.mp3')).top -

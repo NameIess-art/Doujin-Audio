@@ -18,7 +18,6 @@ import '../application/app_update_service.dart';
 import '../application/settings_repository.dart';
 import '../application/settings_state.dart';
 import '../../../core/media/path_display.dart';
-import '../../../core/media/card_info_field.dart';
 import '../../../core/ui/permission_action_controller.dart';
 import '../../../core/ui/ui_operation_service.dart';
 import '../../../app/theme/app_design_tokens.dart';
@@ -153,13 +152,6 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
     );
   }
 
-  void _showCardInfoFieldsSettings(BuildContext context) {
-    AppBottomSheet.show<void>(
-      context: context,
-      builder: (_) => const _CardInfoFieldsSettingsSheet(),
-    );
-  }
-
   Future<void> _chooseAsmrDownloadDestination() async {
     final i18n = ProviderScope.containerOf(
       context,
@@ -271,8 +263,6 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
           currentVersion: _ensureAppVersionFuture(),
           onShowSubtitleWindowSettings: () =>
               _showSubtitleWindowSettings(context),
-          onShowCardInfoFieldsSettings: () =>
-              _showCardInfoFieldsSettings(context),
           onChooseAsmrDownloadDestination: _chooseAsmrDownloadDestination,
           onClearApplicationCache: () => _clearApplicationCache(context),
           onCheckForUpdates: () => _checkForUpdates(context),
@@ -377,7 +367,6 @@ class _SettingsCategoryPage extends ConsumerStatefulWidget {
     required this.updateInfoListenable,
     required this.currentVersion,
     required this.onShowSubtitleWindowSettings,
-    required this.onShowCardInfoFieldsSettings,
     required this.onChooseAsmrDownloadDestination,
     required this.onClearApplicationCache,
     required this.onCheckForUpdates,
@@ -387,7 +376,6 @@ class _SettingsCategoryPage extends ConsumerStatefulWidget {
   final ValueListenable<AppUpdateInfo?> updateInfoListenable;
   final Future<AppVersionInfo> currentVersion;
   final VoidCallback onShowSubtitleWindowSettings;
-  final VoidCallback onShowCardInfoFieldsSettings;
   final VoidCallback onChooseAsmrDownloadDestination;
   final VoidCallback onClearApplicationCache;
   final VoidCallback onCheckForUpdates;
@@ -570,7 +558,6 @@ class _SettingsCategoryPageState extends ConsumerState<_SettingsCategoryPage> {
             settingsController: settingsController,
             cs: cs,
             onShowSubtitleWindowSettings: widget.onShowSubtitleWindowSettings,
-            onShowCardInfoFieldsSettings: widget.onShowCardInfoFieldsSettings,
           ),
           _SettingsCategory.playback => _buildSettingsPlaybackSection(
             i18n: i18n,

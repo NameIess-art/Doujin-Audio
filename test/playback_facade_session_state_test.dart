@@ -549,6 +549,60 @@ void main() {
   });
 
   test(
+    'rapid seekSession calls coalesce pending seeks and update optimistic position immediately',
+    () async {
+      final library = _createLibraryFacade();
+      final native = _RecordingNativePlaybackRepository();
+      final playback = PlaybackFacade.create(
+        databaseRepository:
+            library.databaseRepository as PlaybackPersistenceRepository,
+        nativeRepository: native,
+      );
+      final session = _session('rapid-seek')
+        ..duration = const Duration(seconds: 100);
+      playback.registerSession(session);
+      addTearDown(() async {
+        await playback.dispose();
+        await library.dispose();
+      });
+
+      // Block the first native seek so subsequent seeks are coalesced.
+      final gate = Completer<NativeResult<NativePlaybackSnapshot>>();
+      native.seekGate = gate;
+
+      // First seek dispatches to native and blocks on gate
+      final firstSeek = playback.seekSession(session.id, const Duration(seconds: 10));
+      expect(session.position, const Duration(seconds: 10));
+      expect(native.seekPositions, <Duration>[const Duration(seconds: 10)]);
+
+      // Second rapid seek updates optimistic position immediately, pending native seek is queued
+      final secondSeek = playback.seekSession(session.id, const Duration(seconds: 20));
+      expect(session.position, const Duration(seconds: 20));
+      expect(native.seekPositions, <Duration>[const Duration(seconds: 10)]);
+
+      // Third rapid seek updates optimistic position and coalesces into the pending native seek
+      final thirdSeek = playback.seekSession(session.id, const Duration(seconds: 30));
+      expect(session.position, const Duration(seconds: 30));
+      expect(native.seekPositions, <Duration>[const Duration(seconds: 10)]);
+
+      // Now resolve the first native seek
+      native.seekGate = null;
+      gate.complete(const NativeSuccess<NativePlaybackSnapshot>());
+      await firstSeek;
+
+      // Wait for the coalesced pending seek to complete
+      await Future.wait([secondSeek, thirdSeek]);
+
+      // The intermediate seek (20s) was coalesced away, only the latest seek (30s) was dispatched!
+      expect(native.seekPositions, <Duration>[
+        const Duration(seconds: 10),
+        const Duration(seconds: 30),
+      ]);
+      expect(session.position, const Duration(seconds: 30));
+    },
+  );
+
+  test(
     'playback error retries an existing native source through transport',
     () async {
       final library = _createLibraryFacade();
@@ -1734,6 +1788,7 @@ final class _RecordingNativePlaybackRepository
   bool failClearAll = false;
   final Set<String> failedRemovalSessionIds = <String>{};
   Completer<NativeResult<NativePlaybackSnapshot>>? speedGate;
+  Completer<NativeResult<NativePlaybackSnapshot>>? seekGate;
   int audioEffectsCalls = 0;
   bool failAudioEffects = false;
   int disposeCount = 0;
@@ -1767,6 +1822,8 @@ final class _RecordingNativePlaybackRepository
     Duration position,
   ) async {
     seekPositions.add(position);
+    final gate = seekGate;
+    if (gate != null) return gate.future;
     return const NativeFailure<NativePlaybackSnapshot>('not needed');
   }
 

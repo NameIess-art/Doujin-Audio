@@ -520,6 +520,16 @@ class AsmrTrackFile {
       _asmrAudioExtensions.contains(resolvedExtension);
   bool get isSubtitle =>
       !isFolder && _asmrSubtitleExtensions.contains(resolvedExtension);
+  bool get isText =>
+      !isFolder &&
+      !isSubtitle &&
+      (_asmrTextExtensions.contains(resolvedExtension) ||
+          (type == 'text' &&
+              !_asmrSubtitleExtensions.contains(resolvedExtension)) ||
+          type == 'pdf');
+  bool get isImage =>
+      !isFolder &&
+      (_asmrImageExtensions.contains(resolvedExtension) || type == 'image');
   bool get hasBrowsableContent =>
       isAudio || children.any((child) => child.hasBrowsableContent);
   String get stemKey => _asmrMatchingStem(relativePath);
@@ -655,6 +665,21 @@ const Set<String> _asmrSubtitleExtensions = <String>{
   '.srt',
   '.ass',
   '.ssa',
+};
+
+const Set<String> _asmrTextExtensions = <String>{
+  '.txt',
+  '.md',
+  '.pdf',
+};
+
+const Set<String> _asmrImageExtensions = <String>{
+  '.jpg',
+  '.jpeg',
+  '.png',
+  '.webp',
+  '.gif',
+  '.bmp',
 };
 
 String _asmrMatchingStem(String value) {

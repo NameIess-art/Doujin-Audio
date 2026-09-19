@@ -412,7 +412,9 @@ class PlaybackSession {
       _loadingIndicatorTimer = null;
       if (isDisposed) return;
       _suppressTransientLoading = false;
-      _stateController.add(state);
+      if (isPlaybackLoading) {
+        _stateController.add(state);
+      }
     });
   }
 

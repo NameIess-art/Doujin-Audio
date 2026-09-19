@@ -8,7 +8,6 @@ List<Widget> _buildSettingsAppearanceSection({
   required SettingsCommandController settingsController,
   required ColorScheme cs,
   required VoidCallback onShowSubtitleWindowSettings,
-  required VoidCallback onShowCardInfoFieldsSettings,
 }) {
   final themeProvider = ref.watch(themeProviderInstanceProvider);
   final coverResolutionLabels = <CoverImageResolution, String>{
@@ -308,35 +307,6 @@ List<Widget> _buildSettingsAppearanceSection({
                 cs.onSurface,
               ),
               contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-            );
-          },
-        ),
-        Consumer(
-          builder: (context, ref, _) {
-            final fields = ref.watch(
-              settingsStateProvider.select(
-                (state) =>
-                    state.value?.cardInfoFields ?? CardInfoField.defaults,
-              ),
-            );
-            final summary = fields.isEmpty
-                ? i18n.tr('card_info_none')
-                : fields
-                      .map((field) => _cardInfoFieldLabel(i18n, field))
-                      .join('\uFF0C');
-            return ListTile(
-              title: _SettingsTitleBlock(
-                title: i18n.tr('card_info_display'),
-                subtitle: Text(summary, softWrap: true),
-              ),
-              leading: _settingsIcon(Icons.badge_rounded, cs.onSurface),
-              trailing: Icon(
-                Icons.chevron_right_rounded,
-                size: 20,
-                color: cs.onSurfaceVariant,
-              ),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-              onTap: onShowCardInfoFieldsSettings,
             );
           },
         ),

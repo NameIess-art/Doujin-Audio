@@ -17,7 +17,7 @@ import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/presentation/app_presentation_providers.dart';
 import '../../../core/media/music_track.dart';
 import '../../../core/media/audio_detail.dart';
-import '../../../core/media/card_info_field.dart';
+import '../../../core/widgets/rj_code_overlay.dart';
 import '../../../core/media/search_query_utils.dart';
 import '../../player/application/playback_facade.dart';
 import '../../settings/application/settings_state.dart';
@@ -56,7 +56,6 @@ import 'audio_detail_sheet.dart';
 import '../../asmr/presentation/asmr_download_page.dart';
 import 'dlsite_metadata_batch_page.dart';
 import 'library_scan_feedback.dart';
-import 'library_sorting.dart';
 import '../../../app/presentation/screen_view_models.dart';
 import '../../video_converter/presentation/video_converter_tab.dart';
 import '../../../app/theme/app_styles.dart';
@@ -248,11 +247,15 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
   @override
   double get defaultHeaderHeight => AppPageHeaderMetrics.expandedToolbarHeight;
 
-  bool get _isActive =>
-      (widget.activeTabIndexListenable == null ||
-          widget.activeTabIndexListenable!.value == tabIndex) &&
-      (widget.activeSectionListenable == null ||
-          widget.activeSectionListenable!.value == widget.sectionIndex);
+  bool get _isActive {
+    final route = ModalRoute.of(context);
+    final isRouteCurrent = route == null || route.isCurrent;
+    return isRouteCurrent &&
+        (widget.activeTabIndexListenable == null ||
+            widget.activeTabIndexListenable!.value == tabIndex) &&
+        (widget.activeSectionListenable == null ||
+            widget.activeSectionListenable!.value == widget.sectionIndex);
+  }
 
   @override
   bool get handlesScrollToTop => _isActive;
@@ -302,15 +305,6 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
 
   final ScrollController _scrollController = ScrollController();
   int? _cardSnapshotRequestRevision;
-  List<LibraryNode>? _sortedTreeCache;
-  List<LibraryNode>? _sortedTreeSource;
-  LibrarySortCriterion? _sortedTreeCriterion;
-  bool? _sortedTreeAscending;
-  bool? _sortedTreeGroupByLibrary;
-  int? _sortedTreeStructureRevision;
-  int? _sortedTreeContentRevision;
-  int? _sortedTreeDetailRevision;
-  Set<String>? _sortedTreePinnedPaths;
 
   @override
   int get tabIndex => widget.tabIndex;
@@ -537,6 +531,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
       }
     }
 
+    final staleExpandedFolders = <String>[];
     for (final node in tree) {
       if (node is! FolderNode) {
         addNode(node, 0);
@@ -549,10 +544,16 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
           loaded?.revision != structureRevision &&
           _loadingFolderTreeRevisions[normalizedPath] != structureRevision &&
           !_folderTreeErrorPaths.contains(normalizedPath)) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) unawaited(_loadExpandedFolderTree(node.path));
-        });
+        staleExpandedFolders.add(node.path);
       }
+    }
+    if (staleExpandedFolders.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        for (final path in staleExpandedFolders) {
+          unawaited(_loadExpandedFolderTree(path));
+        }
+      });
     }
     _visibleItemsSource = tree;
     _visibleItemsStructureRevision = structureRevision;
@@ -947,47 +948,6 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     });
   }
 
-  List<LibraryNode> _sortTreeIfNeeded({
-    required List<LibraryNode> rawTree,
-    required LibraryFacade libraryFacade,
-    required LibrarySortCriterion criterion,
-    required bool ascending,
-    required bool groupByLibrary,
-    required int structureRevision,
-    required int contentRevision,
-    required int detailRevision,
-    required Set<String> pinnedPaths,
-  }) {
-    if (identical(_sortedTreeSource, rawTree) &&
-        _sortedTreeCriterion == criterion &&
-        _sortedTreeAscending == ascending &&
-        _sortedTreeGroupByLibrary == groupByLibrary &&
-        _sortedTreeStructureRevision == structureRevision &&
-        _sortedTreeContentRevision == contentRevision &&
-        _sortedTreeDetailRevision == detailRevision &&
-        setEquals(_sortedTreePinnedPaths, pinnedPaths)) {
-      return _sortedTreeCache!;
-    }
-
-    final sortedTree = sortLibraryNodes(
-      nodes: rawTree,
-      criterion: criterion,
-      ascending: ascending,
-      groupByLibrary: groupByLibrary,
-      library: libraryFacade,
-      pinnedPaths: pinnedPaths,
-    );
-    _sortedTreeSource = rawTree;
-    _sortedTreeCriterion = criterion;
-    _sortedTreeAscending = ascending;
-    _sortedTreeGroupByLibrary = groupByLibrary;
-    _sortedTreeStructureRevision = structureRevision;
-    _sortedTreeContentRevision = contentRevision;
-    _sortedTreeDetailRevision = detailRevision;
-    _sortedTreePinnedPaths = Set<String>.unmodifiable(pinnedPaths);
-    return _sortedTreeCache = sortedTree;
-  }
-
   @override
   void dispose() {
     widget.activeTabIndexListenable?.removeListener(_handleActiveTabChanged);
@@ -1019,9 +979,6 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     final libraryHeaderHasWatchedSources = _readOrWatch(
       libraryHeaderUiProvider.select((s) => s.hasWatchedSources),
     );
-    final listStateRawTree = _readOrWatch(
-      libraryListUiProvider.select((s) => s.rawTree),
-    );
     final listStateStructureRevision = _readOrWatch(
       libraryListUiProvider.select((s) => s.structureRevision),
     );
@@ -1039,23 +996,6 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     );
     final listStateCanPullRefresh = _readOrWatch(
       libraryListUiProvider.select((s) => s.canPullRefresh),
-    );
-    final libraryDetailRevision = _readOrWatch(libraryDetailRevisionProvider);
-    final librarySortCriterion = _readOrWatch(
-      settingsStateProvider.select(
-        (state) =>
-            state.value?.librarySortCriterion ?? LibrarySortCriterion.name,
-      ),
-    );
-    final librarySortAscending = _readOrWatch(
-      settingsStateProvider.select(
-        (state) => state.value?.librarySortAscending ?? true,
-      ),
-    );
-    final libraryGroupByLibrary = _readOrWatch(
-      settingsStateProvider.select(
-        (state) => state.value?.libraryGroupByLibrary ?? false,
-      ),
     );
     final pinnedLibraryPaths = _readOrWatch(
       settingsStateProvider.select(
@@ -1086,22 +1026,16 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
         snapshotRevision: listStateStructureRevision,
       );
     }
-    final tree = _sortTreeIfNeeded(
-      rawTree: listStateRawTree,
-      libraryFacade: libraryFacade,
-      criterion: librarySortCriterion,
-      ascending: librarySortAscending,
-      groupByLibrary: libraryGroupByLibrary,
-      structureRevision: listStateStructureRevision,
-      contentRevision: libraryFacade.contentRevision,
-      detailRevision: libraryDetailRevision,
-      pinnedPaths: pinnedLibraryPaths,
-    );
+    final tree = _isActive
+        ? ref.watch(librarySortedTreeUiProvider)
+        : ref.read(librarySortedTreeUiProvider);
     final visibleItems = _visibleLibraryItems(
       tree: tree,
       structureRevision: listStateStructureRevision,
     );
-    final selectedSelections = _selectedLibrarySelections(tree);
+    final selectedSelections = _isSelectionMode
+        ? _selectedLibrarySelections(tree)
+        : const <_LibraryBatchSelection>[];
     final bottomInset = MobileOverlayInset.of(context);
 
     final headerControlsFullHeight = this.headerControlsFullHeight;
@@ -1559,12 +1493,8 @@ class _LibraryLoadingSkeleton extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final useCompactCard = ref.watch(
-      settingsStateProvider.select(
-        (state) => state.value?.cardInfoFields.isEmpty ?? false,
-      ),
-    );
     return ListView(
+      primary: false,
       physics: const NeverScrollableScrollPhysics(),
       padding: EdgeInsets.fromLTRB(
         LibraryLikeCardMetrics.listHorizontalPadding,
@@ -1574,7 +1504,7 @@ class _LibraryLoadingSkeleton extends ConsumerWidget {
       ),
       children: [
         for (int i = 0; i < 5; i++)
-          LibraryLikeSkeletonCard(compactCoverLayout: useCompactCard),
+          const LibraryLikeSkeletonCard(),
       ],
     );
   }

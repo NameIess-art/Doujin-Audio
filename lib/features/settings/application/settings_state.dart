@@ -2,7 +2,6 @@ import 'package:flutter/foundation.dart';
 
 import '../../../core/app_language.dart';
 import '../../../core/immutable_collections.dart';
-import '../../../core/media/card_info_field.dart';
 import '../../../core/media/cover_image_resolution.dart';
 import '../../asmr/domain/asmr_download.dart';
 import '../../player/domain/audio_effects.dart';
@@ -56,7 +55,6 @@ class SettingsState {
     this.autoPlayAddedSessions = true,
     this.autoCheckUpdates = false,
     this.dlsiteMetadataLanguage = ContentLanguagePreference.followPage,
-    List<CardInfoField> cardInfoFields = CardInfoField.defaults,
     this.librarySortCriterion = LibrarySortCriterion.name,
     this.librarySortAscending = true,
     this.libraryGroupByLibrary = false,
@@ -97,8 +95,7 @@ class SettingsState {
     this.allowDuplicateWorks = false,
     this.reduceAnimations = false,
     this.isInitialized = false,
-  }) : cardInfoFields = immutableList(cardInfoFields),
-       pinnedLibraryPaths = immutableList(pinnedLibraryPaths),
+  }) : pinnedLibraryPaths = immutableList(pinnedLibraryPaths),
        pinnedPlaylistSessionIds = immutableList(pinnedPlaylistSessionIds),
        customEqPresets = immutableList(customEqPresets),
        asmrDownloadFolderNameFields = immutableList(
@@ -114,7 +111,6 @@ class SettingsState {
   final bool autoPlayAddedSessions;
   final bool autoCheckUpdates;
   final ContentLanguagePreference dlsiteMetadataLanguage;
-  final List<CardInfoField> cardInfoFields;
   final LibrarySortCriterion librarySortCriterion;
   final bool librarySortAscending;
   final bool libraryGroupByLibrary;
@@ -167,7 +163,6 @@ class SettingsState {
         other.autoPlayAddedSessions == autoPlayAddedSessions &&
         other.autoCheckUpdates == autoCheckUpdates &&
         other.dlsiteMetadataLanguage == dlsiteMetadataLanguage &&
-        listEquals(other.cardInfoFields, cardInfoFields) &&
         other.librarySortCriterion == librarySortCriterion &&
         other.librarySortAscending == librarySortAscending &&
         other.libraryGroupByLibrary == libraryGroupByLibrary &&
@@ -230,7 +225,6 @@ class SettingsState {
     autoPlayAddedSessions,
     autoCheckUpdates,
     dlsiteMetadataLanguage,
-    Object.hashAll(cardInfoFields),
     librarySortCriterion,
     librarySortAscending,
     libraryGroupByLibrary,

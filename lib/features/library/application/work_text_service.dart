@@ -1,8 +1,11 @@
 import 'dart:convert';
+import 'dart:io';
+import 'dart:typed_data';
 import 'package:charset/charset.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/logging/app_log_service.dart';
 import '../../../core/platform/file_cache_platform_gateway.dart';
 
 enum WorkTextEncoding {
@@ -157,10 +160,14 @@ String _decodeWithEncoding(Uint8List bytes, WorkTextEncoding encoding) {
 }
 
 class WorkTextService {
-  WorkTextService({FileCachePlatformGateway? platformGateway})
-    : _platformGateway = platformGateway ?? FileCachePlatformGateway.instance;
+  WorkTextService({
+    FileCachePlatformGateway? platformGateway,
+    HttpClient Function()? httpClientFactory,
+  }) : _platformGateway = platformGateway ?? FileCachePlatformGateway.instance,
+       _httpClientFactory = httpClientFactory ?? HttpClient.new;
 
   final FileCachePlatformGateway _platformGateway;
+  final HttpClient Function() _httpClientFactory;
 
   Future<List<WorkTextFile>> findWorkTextFiles(String workFolderPath) async {
     if (workFolderPath.trim().isEmpty) return const [];
@@ -181,14 +188,47 @@ class WorkTextService {
     WorkTextFile file, {
     WorkTextEncoding? encodingOverride,
   }) async {
-    final bytes = await _platformGateway.readDocumentBytes(file.path);
+    final bytes = await readDocumentBytes(file);
     if (bytes == null) {
       return (text: '', encoding: encodingOverride ?? WorkTextEncoding.utf8);
     }
     return decodeWorkText(bytes, overrideEncoding: encodingOverride);
   }
 
-  Future<Uint8List?> readDocumentBytes(WorkTextFile file) {
+  Future<Uint8List?> readDocumentBytes(WorkTextFile file) async {
+    final filePath = file.path.trim();
+    if (filePath.startsWith('http://') || filePath.startsWith('https://')) {
+      final uri = Uri.tryParse(filePath);
+      if (uri == null) return null;
+      final client = _httpClientFactory();
+      HttpClientRequest? request;
+      try {
+        try {
+          client.connectionTimeout = const Duration(seconds: 15);
+        } catch (_) {}
+        request = await client.getUrl(uri).timeout(const Duration(seconds: 15));
+        final response =
+            await request.close().timeout(const Duration(seconds: 15));
+        if (response.statusCode < 200 || response.statusCode >= 300) {
+          return null;
+        }
+        final bytesBuilder = BytesBuilder(copy: false);
+        await for (final chunk in response.timeout(const Duration(seconds: 30))) {
+          bytesBuilder.add(chunk);
+        }
+        return bytesBuilder.takeBytes();
+      } catch (error, stackTrace) {
+        request?.abort(error);
+        AppLogService.warning(
+          'read_remote_document_bytes_failed',
+          error: error,
+          stackTrace: stackTrace,
+        );
+        return null;
+      } finally {
+        client.close(force: true);
+      }
+    }
     return _platformGateway.readDocumentBytes(file.path);
   }
 }

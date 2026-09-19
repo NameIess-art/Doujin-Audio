@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:collection';
+import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as path;
 
@@ -7,8 +8,11 @@ import '../../../core/persistence/persisted_state_reloader.dart';
 import '../../../core/immutable_collections.dart';
 import '../domain/asmr_models.dart';
 import '../../../core/media/music_track.dart';
+import '../../../core/media/path_matcher.dart';
+import '../../library/application/work_text_service.dart';
 import 'asmr_api_service.dart';
 import 'asmr_account_sync_service.dart';
+import 'asmr_download_manager.dart';
 import 'asmr_playback_coordinator.dart';
 import 'asmr_preferences.dart';
 import 'asmr_remote_catalog_service.dart';
@@ -1308,6 +1312,18 @@ class AsmrLibraryController extends ChangeNotifier
     return _flattenTracks(work, tree);
   }
 
+  Future<List<WorkTextFile>> findWorkTextFiles(
+    AsmrWork work, {
+    AsmrDownloadManager? downloadManager,
+  }) async {
+    final tree = await ensureTrackTree(work);
+    return collectAsmrWorkTextFiles(
+      tree,
+      downloadManager: downloadManager,
+      workId: work.id,
+    );
+  }
+
   List<MusicTrack> buildPlayableTracksFromNode(
     AsmrWork work,
     AsmrTrackFile node,
@@ -1682,4 +1698,66 @@ class AsmrLibraryController extends ChangeNotifier
     _contentEpoch++;
     super.dispose();
   }
+}
+
+List<WorkTextFile> collectAsmrWorkTextFiles(
+  Iterable<AsmrTrackFile> tree, {
+  AsmrDownloadManager? downloadManager,
+  int? workId,
+}) {
+  final result = <WorkTextFile>[];
+  final task = workId != null ? downloadManager?.getTask(workId) : null;
+  final destinationRoot = task?.destinationRoot;
+  final workFolderName = task?.workFolderName;
+
+  void visit(Iterable<AsmrTrackFile> nodes) {
+    for (final node in nodes) {
+      if (node.isFolder) {
+        visit(node.children);
+      } else if (node.isText) {
+        String? localPath;
+        if (destinationRoot != null &&
+            destinationRoot.isNotEmpty &&
+            workFolderName != null &&
+            workFolderName.isNotEmpty &&
+            !PathMatcher.isContentUri(destinationRoot)) {
+          final candidate = path.join(
+            destinationRoot,
+            workFolderName,
+            node.relativePath,
+          );
+          if (File(candidate).existsSync()) {
+            localPath = candidate;
+          }
+        }
+
+        final usesOfficialMedia = <String?>[
+          node.streamUrl,
+          node.downloadUrl,
+          node.lowQualityUrl,
+        ].any(AsmrApiService.isOfficialMediaUrl);
+
+        final url = usesOfficialMedia
+            ? AsmrApiService.mediaStreamUrlsForHash(node.hash).firstOrNull ??
+                node.streamUrl ??
+                node.downloadUrl ??
+                ''
+            : (node.streamUrl ?? node.downloadUrl ?? '');
+
+        final resolvedPath = localPath ?? url;
+        if (resolvedPath.isNotEmpty) {
+          result.add(
+            WorkTextFile(
+              name: node.title,
+              relativePath: node.relativePath,
+              path: resolvedPath,
+            ),
+          );
+        }
+      }
+    }
+  }
+
+  visit(tree);
+  return result;
 }

@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+
 import '../../../core/immutable_collections.dart';
 import '../../../core/media/music_track.dart';
 
@@ -17,6 +19,20 @@ class PlaybackQueueEntry {
   final String title;
   final List<MusicTrack> tracks;
   final String? workRootPath;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is PlaybackQueueEntry &&
+          id == other.id &&
+          kind == other.kind &&
+          title == other.title &&
+          workRootPath == other.workRootPath &&
+          listEquals(tracks, other.tracks);
+
+  @override
+  int get hashCode =>
+      Object.hash(id, kind, title, workRootPath, Object.hashAll(tracks));
 
   Map<String, Object?> toJson() => <String, Object?>{
     'id': id,
@@ -69,6 +85,17 @@ class PlaybackQueueDefinition {
       entries: entries ?? this.entries,
     );
   }
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is PlaybackQueueDefinition &&
+          name == other.name &&
+          colorValue == other.colorValue &&
+          listEquals(entries, other.entries);
+
+  @override
+  int get hashCode => Object.hash(name, colorValue, Object.hashAll(entries));
 
   Map<String, Object?> toJson() => <String, Object?>{
     'name': name,

@@ -11,6 +11,9 @@ import '../../core/ui/ui_operation_service.dart';
 import '../../features/library/application/library_state_models.dart';
 import '../../features/library/presentation/library_cover_ui_controller.dart';
 import '../../features/player/application/playback_session_snapshot.dart';
+import '../../features/library/domain/library_node.dart';
+import '../../features/library/presentation/library_sorting.dart';
+import '../../features/player/presentation/playlist_sorting.dart';
 import '../../features/settings/application/settings_state.dart';
 import '../state/app_runtime_providers.dart';
 import '../state/subtitle_settings_provider.dart';
@@ -111,6 +114,43 @@ final libraryListUiProvider = Provider<LibraryListState>((ref) {
   );
 });
 
+final librarySortedTreeUiProvider = Provider<List<LibraryNode>>((ref) {
+  final listState = ref.watch(libraryListUiProvider);
+  final criterion = ref.watch(
+    settingsStateProvider.select(
+      (state) =>
+          state.value?.librarySortCriterion ?? LibrarySortCriterion.name,
+    ),
+  );
+  final ascending = ref.watch(
+    settingsStateProvider.select(
+      (state) => state.value?.librarySortAscending ?? true,
+    ),
+  );
+  final groupByLibrary = ref.watch(
+    settingsStateProvider.select(
+      (state) => state.value?.libraryGroupByLibrary ?? false,
+    ),
+  );
+  final pinnedPaths = ref.watch(
+    settingsStateProvider.select(
+      (state) =>
+          state.value?.pinnedLibraryPaths.toSet() ?? const <String>{},
+    ),
+  );
+  ref.watch(libraryDetailRevisionProvider);
+  final libraryFacade = ref.watch(libraryFacadeProvider);
+
+  return sortLibraryNodes(
+    nodes: listState.rawTree,
+    criterion: criterion,
+    ascending: ascending,
+    groupByLibrary: groupByLibrary,
+    library: libraryFacade,
+    pinnedPaths: pinnedPaths,
+  );
+});
+
 final libraryScanUiProvider = Provider<LibraryScanUiState>((ref) {
   final serviceState = ref.watch(libraryFacadeProvider).state;
   final state = ref.watch(libraryStateProvider).value ?? serviceState;
@@ -173,6 +213,56 @@ final playlistStructureUiProvider = Provider<PlaylistStructureState>((ref) {
   final playbackState = ref.watch(playbackFacadeProvider).state;
   return playlistStructureStateFromPlaybackState(playbackState);
 });
+
+final playlistSortedEntriesUiProvider =
+    Provider<List<PlaylistStructureEntry>>((ref) {
+      final structureState = ref.watch(playlistStructureUiProvider);
+      final criterion = ref.watch(
+        settingsStateProvider.select(
+          (state) =>
+              state.value?.playlistSortCriterion ?? PlaylistSortCriterion.name,
+        ),
+      );
+      final ascending = ref.watch(
+        settingsStateProvider.select(
+          (state) => state.value?.playlistSortAscending ?? true,
+        ),
+      );
+      final groupByLibrary = ref.watch(
+        settingsStateProvider.select(
+          (state) => state.value?.playlistGroupByLibrary ?? false,
+        ),
+      );
+      final pinnedSessionIds = ref.watch(
+        settingsStateProvider.select(
+          (state) =>
+              state.value?.pinnedPlaylistSessionIds.toSet() ?? const <String>{},
+        ),
+      );
+      ref.watch(libraryDetailRevisionProvider);
+      final library = ref.watch(libraryFacadeProvider);
+      final paths = ref.watch(audioPathCoordinatorProvider);
+
+      final sortedSessions = sortPlaylistSessions(
+        sessions: structureState.entries
+            .map((entry) => entry.session)
+            .toList(growable: false),
+        criterion: criterion,
+        ascending: ascending,
+        groupByLibrary: groupByLibrary,
+        library: library,
+        trackForSession: (session) =>
+            paths.sessionTrackForPath(session.id, session.currentTrackPath),
+        pinnedSessionIds: pinnedSessionIds,
+      );
+      final entriesBySessionId = <String, PlaylistStructureEntry>{
+        for (final entry in structureState.entries) entry.sessionId: entry,
+      };
+      return sortedSessions
+          .map((session) => entriesBySessionId[session.id])
+          .whereType<PlaylistStructureEntry>()
+          .toList(growable: false);
+    });
 
 final playlistSessionCardStateProvider = Provider.autoDispose
     .family<PlaylistSessionCardState?, String>((ref, sessionId) {

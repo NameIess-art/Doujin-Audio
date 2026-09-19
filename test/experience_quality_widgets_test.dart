@@ -7,7 +7,6 @@ import 'package:doujin_audio/app/localization/app_language_zh.dart';
 import 'package:doujin_audio/app/theme/app_styles.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
 import 'package:doujin_audio/core/media/audio_detail.dart';
-import 'package:doujin_audio/core/media/card_info_field.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/core/widgets/async_cover_image.dart';
 import 'package:doujin_audio/core/widgets/library_like_cards.dart';
@@ -247,34 +246,29 @@ void main() {
         );
 
     final lines = buildLibraryLikeInfoLines(
-      fields: CardInfoField.values,
       metadata: LibraryLikeInfoMetadata(
-        rjCode: detail.rjCode,
         voiceActors: detail.voiceActors,
         circleName: detail.circleName,
         tags: detail.tags,
         releaseDate: detail.releaseDate,
-        duration: detail.duration,
-        salesCount: detail.salesCount,
         rating: detail.rating,
       ),
       circleLabel: 'Circle',
       tagsLabel: 'Tags',
       releaseDateLabel: 'Release',
-      salesCountLabel: 'Sales',
       ratingLabel: 'Rating',
     );
 
     expect(
-      lines.map((line) => '${line.label}:${line.text}:${line.lines}'),
+      lines.map(
+        (line) =>
+            '${line.label}:${line.text}:${line.secondaryLabel}:${line.secondaryText}:${line.lines}',
+      ),
       <String>[
-        'RJ:RJ123456:1',
-        'CV:Alice，Bob:1',
-        'Circle:Circle:1',
-        'Tags:sleep，voice:1',
-        'Release:2026-07-02:1',
-        'Sales:1200:1',
-        'Rating:4:1',
+        'CV:Alice，Bob:null:null:1',
+        'Circle:Circle:null:null:1',
+        'Tags:sleep，voice:null:null:3',
+        'Release:2026-07-02:Rating:4:1',
       ],
     );
   });
@@ -301,37 +295,72 @@ void main() {
     );
 
     final lines = buildLibraryLikeInfoLines(
-      fields: CardInfoField.values,
       metadata: LibraryLikeInfoMetadata(
-        rjCode: work.rjCode,
         voiceActors: work.voiceActors,
         circleName: work.circleName,
         tags: work.tags,
         releaseDate: work.releaseDate,
-        duration: work.duration,
-        salesCount: work.dlCount,
         rating: work.rating,
       ),
       circleLabel: 'Circle',
       tagsLabel: 'Tags',
       releaseDateLabel: 'Release',
-      salesCountLabel: 'Sales',
       ratingLabel: 'Rating',
       listSeparator: '、',
     );
 
     expect(
-      lines.map((line) => '${line.label}:${line.text}:${line.lines}'),
+      lines.map(
+        (line) =>
+            '${line.label}:${line.text}:${line.secondaryLabel}:${line.secondaryText}:${line.lines}',
+      ),
       <String>[
-        'RJ:RJ654321:1',
-        'CV:Voice A、Voice B:1',
-        'Circle:Circle:1',
-        'Tags:ASMR、Sleep:1',
-        'Release:2026-06-09:1',
-        'Sales:345:1',
-        'Rating:4.5:1',
+        'CV:Voice A、Voice B:null:null:1',
+        'Circle:Circle:null:null:1',
+        'Tags:ASMR、Sleep:null:null:3',
+        'Release:2026-06-09:Rating:4.5:1',
       ],
     );
+  });
+
+  testWidgets('release date and rating share the final card info row', (
+    tester,
+  ) async {
+    final lines = buildLibraryLikeInfoLines(
+      metadata: LibraryLikeInfoMetadata(
+        voiceActors: const <String>['Voice'],
+        circleName: 'Circle',
+        tags: const <String>['ASMR', 'Sleep'],
+        releaseDate: DateTime(2026, 6, 9),
+        rating: 4.5,
+      ),
+      circleLabel: 'Circle label',
+      tagsLabel: 'Tags',
+      releaseDateLabel: 'Release',
+      ratingLabel: 'Rating',
+    );
+
+    await tester.pumpWidget(
+      _buildSurface(
+        _buildFeaturedCard(
+          title: 'Work',
+          coverKey: const ValueKey('footer-info-cover'),
+          lines: lines,
+        ),
+      ),
+    );
+
+    expect(lines.last.secondaryLabel, 'Rating');
+    expect(
+      tester.getTopLeft(find.text('Release')).dy,
+      tester.getTopLeft(find.text('Rating')).dy,
+    );
+    expect(
+      tester.getTopLeft(find.text('Release')).dy,
+      greaterThan(tester.getTopLeft(find.text('Tags')).dy),
+    );
+    expect(find.text('2026-06-09'), findsOneWidget);
+    expect(find.text('4.5'), findsOneWidget);
   });
 
   testWidgets('library card metrics keep the compact P2 baseline', (
@@ -464,27 +493,34 @@ void main() {
     expect(bottomRect.top, equals(topRect.bottom));
   });
 
-  test('splitCompactCardTitle preserves short titles and splits long titles', () {
-    const style = TextStyle(fontSize: 14, height: 1.06, fontWeight: FontWeight.w800);
+  test(
+    'splitCompactCardTitle preserves short titles and splits long titles',
+    () {
+      const style = TextStyle(
+        fontSize: 14,
+        height: 1.06,
+        fontWeight: FontWeight.w800,
+      );
 
-    final (shortTop, shortBot) = splitCompactCardTitle(
-      title: 'Short',
-      style: style,
-      maxWidth: 206,
-      textDirection: TextDirection.ltr,
-    );
-    expect(shortTop, 'Short');
-    expect(shortBot, isEmpty);
+      final (shortTop, shortBot) = splitCompactCardTitle(
+        title: 'Short',
+        style: style,
+        maxWidth: 206,
+        textDirection: TextDirection.ltr,
+      );
+      expect(shortTop, 'Short');
+      expect(shortBot, isEmpty);
 
-    final (longTop, longBot) = splitCompactCardTitle(
-      title: 'A long work title that remains on the right of its cover',
-      style: style,
-      maxWidth: 206,
-      textDirection: TextDirection.ltr,
-    );
-    expect(longTop, 'A long work title that remains on the');
-    expect(longBot, 'right of its cover');
-  });
+      final (longTop, longBot) = splitCompactCardTitle(
+        title: 'A long work title that remains on the right of its cover',
+        style: style,
+        maxWidth: 206,
+        textDirection: TextDirection.ltr,
+      );
+      expect(longTop, 'A long work title that remains on the');
+      expect(longBot, 'right of its cover');
+    },
+  );
 
   testWidgets('compact card with short title keeps title in top block', (
     tester,
@@ -537,10 +573,12 @@ void main() {
         ),
       );
 
-      final shortAddRect =
-          tester.getRect(find.byIcon(Icons.add_circle_rounded));
-      final shortExpandRect =
-          tester.getRect(find.byIcon(Icons.expand_more_rounded));
+      final shortAddRect = tester.getRect(
+        find.byIcon(Icons.add_circle_rounded),
+      );
+      final shortExpandRect = tester.getRect(
+        find.byIcon(Icons.expand_more_rounded),
+      );
 
       await tester.pumpWidget(
         _buildSurface(
@@ -557,57 +595,54 @@ void main() {
         ),
       );
 
-      final longAddRect =
-          tester.getRect(find.byIcon(Icons.add_circle_rounded));
-      final longExpandRect =
-          tester.getRect(find.byIcon(Icons.expand_more_rounded));
+      final longAddRect = tester.getRect(find.byIcon(Icons.add_circle_rounded));
+      final longExpandRect = tester.getRect(
+        find.byIcon(Icons.expand_more_rounded),
+      );
 
       expect(longAddRect, equals(shortAddRect));
       expect(longExpandRect, equals(shortExpandRect));
     },
   );
 
-  testWidgets(
-    'metadata card keeps the configured compact layout while the cover loads',
-    (tester) async {
-      const coverKey = ValueKey('metadata-compact-cover');
+  testWidgets('metadata card keeps the full layout while the cover loads', (
+    tester,
+  ) async {
+    const coverKey = ValueKey('metadata-compact-cover');
 
-      Widget buildCard({required bool loading}) {
-        return _buildSurface(
-          LibraryLikeMetadataWorkCardContent(
-            title: 'Work',
-            fields: const <CardInfoField>[],
-            metadata: const LibraryLikeInfoMetadata(),
-            circleLabel: 'Circle',
-            tagsLabel: 'Tags',
-            releaseDateLabel: 'Release',
-            salesCountLabel: 'Sales',
-            ratingLabel: 'Rating',
-            onPlay: () {},
-            playTooltip: 'add',
-            loading: loading,
-            coverBuilder: (coverWidth) => SizedBox(
-              key: coverKey,
-              width: coverWidth,
-              height: coverWidth / LibraryLikeCardMetrics.coverAspectRatio,
-            ),
+    Widget buildCard({required bool loading}) {
+      return _buildSurface(
+        LibraryLikeMetadataWorkCardContent(
+          title: 'Work',
+          metadata: const LibraryLikeInfoMetadata(),
+          circleLabel: 'Circle',
+          tagsLabel: 'Tags',
+          releaseDateLabel: 'Release',
+          ratingLabel: 'Rating',
+          onPlay: () {},
+          playTooltip: 'add',
+          loading: loading,
+          coverBuilder: (coverWidth) => SizedBox(
+            key: coverKey,
+            width: coverWidth,
+            height: coverWidth / LibraryLikeCardMetrics.coverAspectRatio,
           ),
-        );
-      }
-
-      await tester.pumpWidget(buildCard(loading: true));
-      expect(
-        tester.getSize(find.byType(LibraryLikeWorkCardContent)).height,
-        LibraryLikeCardMetrics.compactContentHeight,
+        ),
       );
+    }
 
-      await tester.pumpWidget(buildCard(loading: false));
-      expect(
-        tester.getSize(find.byType(LibraryLikeWorkCardContent)).height,
-        LibraryLikeCardMetrics.compactContentHeight,
-      );
-    },
-  );
+    await tester.pumpWidget(buildCard(loading: true));
+    expect(
+      tester.getSize(find.byType(LibraryLikeWorkCardContent)).height,
+      LibraryLikeCardMetrics.contentHeight,
+    );
+
+    await tester.pumpWidget(buildCard(loading: false));
+    expect(
+      tester.getSize(find.byType(LibraryLikeWorkCardContent)).height,
+      LibraryLikeCardMetrics.contentHeight,
+    );
+  });
 
   testWidgets('library-like skeleton cards blend into the page surface', (
     tester,

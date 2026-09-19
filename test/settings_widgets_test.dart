@@ -45,30 +45,47 @@ void main() {
     await AppRuntimeTestFixture.disposeSharedDatabase(testDatabase);
   });
 
-  testWidgets('Windows scrollbar starts below the page header', (tester) async {
-    final fixture = AppRuntimeWidgetTestFixture();
-    addTearDown(fixture.dispose);
-    await tester.pumpWidget(fixture.build(const SettingsTab()));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 200));
-    void expectTrackBelowHeader() {
-      final headerBottom = tester.getBottomLeft(find.byType(TopPageHeader)).dy;
-      final paints = find.byWidgetPredicate((widget) =>
-          widget is CustomPaint && widget.foregroundPainter is ScrollbarPainter);
-      expect(paints, findsWidgets);
-      for (final element in paints.evaluate()) {
-        final painter = (element.widget as CustomPaint).foregroundPainter! as ScrollbarPainter;
-        final top = tester.getTopLeft(find.byWidget(element.widget)).dy;
-        expect(top + painter.padding.resolve(TextDirection.ltr).top, greaterThanOrEqualTo(headerBottom));
+  testWidgets(
+    'Windows scrollbar starts below the page header',
+    (tester) async {
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      await tester.pumpWidget(fixture.build(const SettingsTab()));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+      void expectTrackBelowHeader() {
+        final headerBottom = tester
+            .getBottomLeft(find.byType(TopPageHeader))
+            .dy;
+        final paints = find.byWidgetPredicate(
+          (widget) =>
+              widget is CustomPaint &&
+              widget.foregroundPainter is ScrollbarPainter,
+        );
+        expect(paints, findsWidgets);
+        for (final element in paints.evaluate()) {
+          final painter =
+              (element.widget as CustomPaint).foregroundPainter!
+                  as ScrollbarPainter;
+          final top = tester.getTopLeft(find.byWidget(element.widget)).dy;
+          expect(
+            top + painter.padding.resolve(TextDirection.ltr).top,
+            greaterThanOrEqualTo(headerBottom),
+          );
+        }
       }
-    }
-    expectTrackBelowHeader();
-    await tester.tap(find.text(fixture.languageProvider.tr('section_common')));
-    await tester.pumpAndSettle();
-    expectTrackBelowHeader();
-    await tester.pumpWidget(const SizedBox.shrink());
-    await tester.pump(const Duration(seconds: 1));
-  }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
+
+      expectTrackBelowHeader();
+      await tester.tap(
+        find.text(fixture.languageProvider.tr('section_common')),
+      );
+      await tester.pumpAndSettle();
+      expectTrackBelowHeader();
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(seconds: 1));
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.windows),
+  );
 
   testWidgets(
     'Windows hides Android permissions, cache and orientation settings',
@@ -766,80 +783,6 @@ void main() {
     );
   });
 
-  testWidgets('card info fields reorder like download folder name fields', (
-    tester,
-  ) async {
-    final settingsRepository = _DeferredCardInfoSettingsRepository();
-    final harness = AppRuntimeWidgetTestFixture(
-      providedSettingsRepository: settingsRepository,
-    );
-    addTearDown(harness.dispose);
-    await tester.pumpWidget(harness.build(const SettingsTab()));
-    await tester.pump();
-
-    final i18n = harness.languageProvider;
-    await tester.tap(find.text(i18n.tr('section_appearance')));
-    await tester.pumpAndSettle();
-    final cardInfoTile = find.widgetWithText(
-      ListTile,
-      i18n.tr('card_info_display'),
-    );
-    await Scrollable.ensureVisible(
-      tester.element(cardInfoTile),
-      alignment: 0.5,
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(cardInfoTile);
-    await tester.pumpAndSettle();
-
-    final rjCode = i18n.tr('audio_detail_rj_code');
-    final voiceActors = i18n.tr('audio_detail_voice_actors');
-    final initialReorderableKey = tester
-        .widget<ReorderableListView>(find.byType(ReorderableListView))
-        .key;
-    final rjTile = find.widgetWithText(CheckboxListTile, rjCode);
-    final rjHandle = find.descendant(
-      of: rjTile,
-      matching: find.byType(ReorderableDragStartListener),
-    );
-
-    await tester.drag(rjHandle, const Offset(0, 120));
-    await tester.pumpAndSettle();
-
-    expect(
-      tester.widget<ReorderableListView>(find.byType(ReorderableListView)).key,
-      isNot(initialReorderableKey),
-    );
-    expect(settingsRepository.cardInfoFieldUpdates.single, const [
-      CardInfoField.voiceActors,
-      CardInfoField.rjCode,
-    ]);
-    expect(
-      tester.getTopLeft(find.widgetWithText(CheckboxListTile, voiceActors)).dy,
-      lessThan(
-        tester.getTopLeft(find.widgetWithText(CheckboxListTile, rjCode)).dy,
-      ),
-      reason: 'The rendered order must update before persistence completes.',
-    );
-
-    final reorderedRjTile = find.widgetWithText(CheckboxListTile, rjCode);
-    await tester.tap(
-      find.descendant(of: reorderedRjTile, matching: find.byType(Checkbox)),
-    );
-    await tester.pumpAndSettle();
-    expect(settingsRepository.cardInfoFieldUpdates.last, const [
-      CardInfoField.voiceActors,
-    ]);
-    expect(
-      tester
-          .widget<CheckboxListTile>(
-            find.widgetWithText(CheckboxListTile, rjCode),
-          )
-          .value,
-      isFalse,
-    );
-  });
-
   testWidgets('settings home uses separated category cards', (tester) async {
     final harness = AppRuntimeWidgetTestFixture();
     addTearDown(harness.dispose);
@@ -1181,71 +1124,6 @@ void main() {
       }
     },
   );
-
-  testWidgets('card info settings enforce the selected field limit', (
-    tester,
-  ) async {
-    final harness = AppRuntimeWidgetTestFixture();
-    addTearDown(harness.dispose);
-    await tester.pumpWidget(harness.build(const SettingsTab()));
-    await tester.pump();
-
-    final i18n = harness.languageProvider;
-    await tester.tap(find.text(i18n.tr('section_appearance')));
-    await tester.pumpAndSettle();
-
-    final cardInfoTile = find.widgetWithText(
-      ListTile,
-      i18n.tr('card_info_display'),
-    );
-    await Scrollable.ensureVisible(
-      tester.element(cardInfoTile),
-      alignment: 0.5,
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(cardInfoTile);
-    await tester.pumpAndSettle();
-
-    expect(
-      find.text(
-        i18n.tr('card_info_display_subtitle', {'count': '4', 'max': '6'}),
-      ),
-      findsOneWidget,
-    );
-
-    await tester.tap(
-      find.widgetWithText(
-        CheckboxListTile,
-        i18n.tr('audio_detail_release_date'),
-      ),
-    );
-    await tester.pump();
-    expect(harness.settingsRepository.cardInfoFields, hasLength(5));
-    final salesTile = tester.widget<CheckboxListTile>(
-      find.widgetWithText(
-        CheckboxListTile,
-        i18n.tr('audio_detail_sales_count'),
-      ),
-    );
-    expect(salesTile.onChanged, isNotNull);
-
-    await tester.tap(
-      find.widgetWithText(
-        CheckboxListTile,
-        i18n.tr('audio_detail_sales_count'),
-      ),
-    );
-    await tester.pump();
-
-    expect(
-      harness.settingsRepository.cardInfoFields,
-      hasLength(CardInfoField.maxSelected),
-    );
-    final ratingTile = tester.widget<CheckboxListTile>(
-      find.widgetWithText(CheckboxListTile, i18n.tr('audio_detail_rating')),
-    );
-    expect(ratingTile.onChanged, isNull);
-  });
 
   testWidgets('appearance changes playback detail subtitle style', (
     tester,
@@ -1735,22 +1613,6 @@ final class _DeferredFolderNameSettingsRepository extends SettingsRepository {
     Iterable<AsmrDownloadFolderNameField> fields,
   ) {
     folderNameFieldUpdates.add(List.of(fields));
-    return _pendingPersistence.future;
-  }
-}
-
-final class _DeferredCardInfoSettingsRepository extends SettingsRepository {
-  _DeferredCardInfoSettingsRepository() {
-    cardInfoFields = const [CardInfoField.rjCode, CardInfoField.voiceActors];
-    syncSlice(isInitialized: true);
-  }
-
-  final List<List<CardInfoField>> cardInfoFieldUpdates = [];
-  final Completer<void> _pendingPersistence = Completer<void>();
-
-  @override
-  Future<void> setCardInfoFields(Iterable<CardInfoField> fields) {
-    cardInfoFieldUpdates.add(List.of(fields));
     return _pendingPersistence.future;
   }
 }

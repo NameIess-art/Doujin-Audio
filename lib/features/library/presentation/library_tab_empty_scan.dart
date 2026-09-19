@@ -64,6 +64,7 @@ class _LibraryEmptyState extends StatelessWidget {
       builder: (context, constraints) {
         final availableHeight = constraints.maxHeight - topInset - bottomInset;
         return ListView(
+          primary: false,
           padding: EdgeInsets.fromLTRB(
             AppSpacing.xl,
             topInset,

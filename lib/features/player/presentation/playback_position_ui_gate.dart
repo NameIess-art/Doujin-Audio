@@ -101,15 +101,32 @@ class PlaybackPositionUiGate extends ChangeNotifier {
 
   void updateSession(PlaybackSessionSnapshot session) {
     if (identical(_session, session)) return;
-    _sessionGeneration++;
-    _throttleTimer?.cancel();
-    _throttleTimer = null;
-    _unbindSession();
+    final streamsChanged = _session.id != session.id ||
+        _session.positionStream != session.positionStream ||
+        _session.durationStream != session.durationStream ||
+        _session.bufferedPositionStream != session.bufferedPositionStream;
+    final trackChanged = _session.currentTrackPath != session.currentTrackPath;
     _session = session;
-    _value = PlaybackPositionUiSnapshot.fromSession(session);
-    _dirty = false;
-    _bindSession();
-    _publish(force: true);
+    if (streamsChanged) {
+      _sessionGeneration++;
+      _throttleTimer?.cancel();
+      _throttleTimer = null;
+      _unbindSession();
+      _value = PlaybackPositionUiSnapshot.fromSession(session);
+      _dirty = false;
+      _bindSession();
+      _publish(force: true);
+    } else {
+      final nextValue = _value.copyWith(
+        position: trackChanged ? session.position : null,
+        duration: session.duration,
+        bufferedPosition: session.bufferedPosition,
+      );
+      if (_value != nextValue) {
+        _value = nextValue;
+        _publish(force: trackChanged);
+      }
+    }
   }
 
   void _bindSession() {
@@ -205,28 +222,24 @@ class SubtitleTextCache {
   SubtitleTrack? _track;
   SubtitleCue? _cue;
   String? _text;
+  bool _persistent = false;
 
   String? resolve({
     required String trackPath,
     required Duration position,
     required SubtitleTrack? track,
+    bool persistent = false,
   }) {
-    if (_trackPath != trackPath || !identical(_track, track)) {
+    if (_trackPath != trackPath ||
+        !identical(_track, track) ||
+        _persistent != persistent) {
       _trackPath = trackPath;
       _track = track;
+      _persistent = persistent;
       _cue = null;
       _text = null;
     }
-    final effectivePosition = track == null
-        ? position
-        : position - track.offset;
-    final cachedCue = _cue;
-    if (cachedCue != null &&
-        effectivePosition >= Duration.zero &&
-        cachedCue.contains(effectivePosition)) {
-      return _text;
-    }
-    final nextCue = track?.cueAt(position);
+    final nextCue = track?.cueAt(position, persistent: persistent);
     if (identical(nextCue, _cue)) {
       return _text;
     }
@@ -241,5 +254,6 @@ class SubtitleTextCache {
     _track = null;
     _cue = null;
     _text = null;
+    _persistent = false;
   }
 }

@@ -5,7 +5,6 @@ import 'package:doujin_audio/features/asmr/domain/asmr_download.dart';
 import 'package:doujin_audio/app/localization/app_language_provider.dart';
 import 'package:doujin_audio/features/library/domain/library_entry.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
-import 'package:doujin_audio/core/media/card_info_field.dart';
 import 'package:doujin_audio/features/player/domain/playback_mode.dart';
 import 'package:doujin_audio/features/player/application/playback_session.dart';
 import 'package:doujin_audio/features/player/application/audio_state_services.dart';
@@ -686,31 +685,6 @@ void main() {
         );
       },
     );
-
-    test('card info fields normalize, publish, and persist', () async {
-      final repository = SettingsRepository();
-      addTearDown(repository.dispose);
-
-      await repository.setCardInfoFields(const <CardInfoField>[
-        CardInfoField.rjCode,
-        CardInfoField.rjCode,
-        CardInfoField.voiceActors,
-      ]);
-
-      expect(repository.cardInfoFields, const <CardInfoField>[
-        CardInfoField.rjCode,
-        CardInfoField.voiceActors,
-      ]);
-      expect(repository.slice.state.cardInfoFields, repository.cardInfoFields);
-      final saved =
-          json.decode(
-                (await SharedPreferences.getInstance()).getString(
-                  'playback_settings_v1',
-                )!,
-              )
-              as Map<String, dynamic>;
-      expect(saved['cardInfoFields'], <String>['rjCode', 'voiceActors']);
-    });
 
     test(
       'owned settings commands publish and persist only on change',

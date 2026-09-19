@@ -188,6 +188,7 @@ class SessionDetailViewState {
     required this.loopMode,
     required this.isPlaying,
     required this.isLoading,
+    required this.isPlaybackLoading,
     required this.channelSwapEnabled,
     required this.volume,
     required this.speed,
@@ -201,6 +202,7 @@ class SessionDetailViewState {
   final SessionLoopMode loopMode;
   final bool isPlaying;
   final bool isLoading;
+  final bool isPlaybackLoading;
   final bool channelSwapEnabled;
   final double volume;
   final double speed;
@@ -218,6 +220,7 @@ class SessionDetailViewState {
         other.loopMode == loopMode &&
         other.isPlaying == isPlaying &&
         other.isLoading == isLoading &&
+        other.isPlaybackLoading == isPlaybackLoading &&
         other.channelSwapEnabled == channelSwapEnabled &&
         other.volume == volume &&
         other.speed == speed &&
@@ -233,6 +236,7 @@ class SessionDetailViewState {
     loopMode,
     isPlaying,
     isLoading,
+    isPlaybackLoading,
     channelSwapEnabled,
     volume,
     speed,
@@ -403,7 +407,8 @@ SessionDetailViewState? sessionDetailViewStateFromPlaybackState(
       trackPath: session.currentTrackPath,
       loopMode: session.loopMode,
       isPlaying: session.playbackRequested,
-      isLoading: session.isPlaybackLoading && session.playbackRequested,
+      isLoading: session.isLoading,
+      isPlaybackLoading: session.isPlaybackLoading && session.playbackRequested,
       channelSwapEnabled: session.channelSwapEnabled,
       volume: session.volume,
       speed: session.speed,

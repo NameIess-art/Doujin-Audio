@@ -18,7 +18,7 @@ import '../application/asmr_api_service.dart';
 import '../application/asmr_library_controller.dart';
 import '../../../core/media/search_query_utils.dart';
 import '../../../core/media/time_text_formatters.dart';
-import '../../../core/media/card_info_field.dart';
+import '../../../core/widgets/rj_code_overlay.dart';
 import '../../../core/logging/app_log_service.dart';
 import '../../../core/ui/ui_operation_service.dart';
 import '../../../core/ui/ui_interaction_coordinator.dart';
@@ -38,7 +38,6 @@ import '../../../core/widgets/page_header_inset.dart';
 import '../../../core/widgets/operation_feedback.dart';
 import '../../../core/widgets/scroll_activity_gate.dart';
 import '../../../core/widgets/search_highlight.dart';
-import '../../../core/widgets/swipe_reveal_card.dart';
 import '../../../core/widgets/top_page_header.dart';
 
 import 'asmr_download_page.dart';
@@ -262,11 +261,15 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
   @override
   bool get wantKeepAlive => true;
 
-  bool get _isActive =>
-      (widget.activeTabIndexListenable == null ||
-          widget.activeTabIndexListenable!.value == tabIndex) &&
-      (widget.activeSectionListenable == null ||
-          widget.activeSectionListenable!.value == widget.sectionIndex);
+  bool get _isActive {
+    final route = ModalRoute.of(context);
+    final isRouteCurrent = route == null || route.isCurrent;
+    return isRouteCurrent &&
+        (widget.activeTabIndexListenable == null ||
+            widget.activeTabIndexListenable!.value == tabIndex) &&
+        (widget.activeSectionListenable == null ||
+            widget.activeSectionListenable!.value == widget.sectionIndex);
+  }
 
   @override
   bool get handlesScrollToTop => _isActive;
@@ -769,11 +772,6 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
         : _minimumExpandedHeaderHeight(context);
     final headerContentHeight = effectiveHeaderHeight + 4.0;
     final globalInitialized = globalState?.initialized ?? false;
-    final useCompactSkeleton = _readOrWatch(
-      settingsStateProvider.select(
-        (state) => state.value?.cardInfoFields.isEmpty ?? false,
-      ),
-    );
     final categoryState = _readOrWatch(
       asmrCategoryStateProvider((category: _selectedCategory, searchQuery: '')),
     ).value;
@@ -783,7 +781,8 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
     final asmrStatsText = i18n.tr('asmr_header_stats', {
       'count': totalWorks.toString(),
     });
-    final selectedWorks = _selectedWorks();
+    final selectedWorks =
+        _isSelectionMode ? _selectedWorks() : const <AsmrWork>[];
 
     return PageHeaderInset(
       topInset: headerContentHeight,
@@ -798,6 +797,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
             showPlaceholder: !globalInitialized,
             placeholder: ListView(
               key: const ValueKey('asmr_initial_placeholder'),
+              primary: false,
               physics: const NeverScrollableScrollPhysics(),
               padding: EdgeInsets.fromLTRB(
                 LibraryLikeCardMetrics.listHorizontalPadding,
@@ -807,9 +807,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
               ),
               children: [
                 for (int i = 0; i < 5; i++)
-                  LibraryLikeSkeletonCard(
-                    compactCoverLayout: useCompactSkeleton,
-                  ),
+                  const LibraryLikeSkeletonCard(),
               ],
             ),
             content: AnimatedSwitcher(

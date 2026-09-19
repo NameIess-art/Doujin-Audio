@@ -7,6 +7,7 @@ class _AsmrWorkCover extends ConsumerWidget {
     required this.isActive,
     this.isSelected = false,
     this.duration,
+    this.rjCode = '',
   });
 
   final String url;
@@ -14,6 +15,7 @@ class _AsmrWorkCover extends ConsumerWidget {
   final bool isActive;
   final bool isSelected;
   final Duration? duration;
+  final String rjCode;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -60,6 +62,15 @@ class _AsmrWorkCover extends ConsumerWidget {
                           CoverFallbackArtwork(seed: url, compact: true),
                     ),
             ),
+            if (rjCode.trim().isNotEmpty)
+              Positioned(
+                left: 4,
+                top: 4,
+                child: RjCodeOverlay(
+                  rjCode: rjCode,
+                  maxWidth: width - 8,
+                ),
+              ),
             if (duration != null && duration! > Duration.zero)
               Positioned(
                 right: 4,

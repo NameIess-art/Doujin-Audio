@@ -42,27 +42,42 @@ class SubtitleTrack {
     );
   }
 
-  SubtitleCue? cueAt(Duration position) {
+  SubtitleCue? cueAt(Duration position, {bool persistent = false}) {
     if (cues.isEmpty) return null;
     final effectivePosition = position - offset;
     if (effectivePosition < Duration.zero) return null;
+    if (persistent && effectivePosition < cues.first.start) return null;
 
     var low = 0;
     var high = cues.length - 1;
 
+    if (!persistent) {
+      while (low <= high) {
+        final mid = low + ((high - low) >> 1);
+        final cue = cues[mid];
+        if (effectivePosition < cue.start) {
+          high = mid - 1;
+        } else if (effectivePosition >= cue.end) {
+          low = mid + 1;
+        } else {
+          return cue;
+        }
+      }
+      return null;
+    }
+
+    var result = 0;
     while (low <= high) {
       final mid = low + ((high - low) >> 1);
-      final cue = cues[mid];
-      if (effectivePosition < cue.start) {
-        high = mid - 1;
-      } else if (effectivePosition >= cue.end) {
+      if (cues[mid].start <= effectivePosition) {
+        result = mid;
         low = mid + 1;
       } else {
-        return cue;
+        high = mid - 1;
       }
     }
 
-    return null;
+    return cues[result];
   }
 }
 

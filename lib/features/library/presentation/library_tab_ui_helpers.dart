@@ -276,7 +276,7 @@ extension _LibraryTabUiHelpers on _LibraryTabState {
   }
 }
 
-Future<void> _downloadAudioTargetFromAsmr({
+Future<void> downloadAudioTargetFromAsmr({
   required BuildContext context,
   required WidgetRef ref,
   required AudioDetailTarget target,

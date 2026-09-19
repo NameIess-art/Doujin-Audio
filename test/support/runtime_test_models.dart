@@ -1,5 +1,4 @@
 export 'package:doujin_audio/core/media/audio_detail.dart';
-export 'package:doujin_audio/core/media/card_info_field.dart';
 export 'package:doujin_audio/core/media/dlsite_metadata.dart';
 export 'package:doujin_audio/core/media/music_track.dart';
 export 'package:doujin_audio/features/asmr/domain/asmr_download.dart';

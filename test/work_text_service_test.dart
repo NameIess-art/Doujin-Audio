@@ -4,6 +4,8 @@ import 'dart:typed_data';
 import 'package:charset/charset.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/core/platform/file_cache_platform_gateway.dart';
+import 'package:doujin_audio/features/asmr/application/asmr_library_controller.dart';
+import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
 import 'package:doujin_audio/features/library/application/work_text_service.dart';
 
 class _FakeFileCacheGateway extends Fake implements FileCachePlatformGateway {
@@ -244,6 +246,140 @@ void main() {
         path: '/path/part.1.final.script.txt',
       );
       expect(multiDotFile.displayName, 'part.1.final.script');
+    });
+  });
+
+  group('ASMR WorkText support', () {
+    test('AsmrTrackFile.isText identifies .txt, .md, .pdf and excludes audio/subtitles', () {
+      final txtNode = AsmrTrackFile(
+        hash: 'h1',
+        title: '台本.txt',
+        type: 'text',
+        streamUrl: 'https://api.asmr-200.com/stream/h1',
+        downloadUrl: null,
+        lowQualityUrl: null,
+        duration: Duration.zero,
+        size: 100,
+        children: const [],
+        workId: 123,
+        workTitle: 'Work 123',
+        sourceId: 'RJ123',
+        relativePath: '台本.txt',
+      );
+      expect(txtNode.isText, isTrue);
+      expect(txtNode.isAudio, isFalse);
+      expect(txtNode.isSubtitle, isFalse);
+
+      final pdfNode = AsmrTrackFile(
+        hash: 'h2',
+        title: 'booklet.pdf',
+        type: 'other',
+        streamUrl: 'https://api.asmr-200.com/stream/h2',
+        downloadUrl: null,
+        lowQualityUrl: null,
+        duration: Duration.zero,
+        size: 500,
+        children: const [],
+        workId: 123,
+        workTitle: 'Work 123',
+        sourceId: 'RJ123',
+        relativePath: 'booklet.pdf',
+      );
+      expect(pdfNode.isText, isTrue);
+
+      final audioNode = AsmrTrackFile(
+        hash: 'h3',
+        title: '01.mp3',
+        type: 'audio',
+        streamUrl: 'https://api.asmr-200.com/stream/h3',
+        downloadUrl: null,
+        lowQualityUrl: null,
+        duration: const Duration(minutes: 5),
+        size: 1000,
+        children: const [],
+        workId: 123,
+        workTitle: 'Work 123',
+        sourceId: 'RJ123',
+        relativePath: '01.mp3',
+      );
+      expect(audioNode.isText, isFalse);
+      expect(audioNode.isAudio, isTrue);
+
+      final subtitleNode = AsmrTrackFile(
+        hash: 'h4',
+        title: '01.vtt',
+        type: 'text',
+        streamUrl: 'https://api.asmr-200.com/stream/h4',
+        downloadUrl: null,
+        lowQualityUrl: null,
+        duration: Duration.zero,
+        size: 200,
+        children: const [],
+        workId: 123,
+        workTitle: 'Work 123',
+        sourceId: 'RJ123',
+        relativePath: '01.vtt',
+      );
+      expect(subtitleNode.isText, isFalse);
+      expect(subtitleNode.isSubtitle, isTrue);
+    });
+
+    test('collectAsmrWorkTextFiles collects all text nodes from track tree', () {
+      final tree = <AsmrTrackFile>[
+        AsmrTrackFile(
+          hash: 'dir1',
+          title: 'Docs',
+          type: 'folder',
+          streamUrl: null,
+          downloadUrl: null,
+          lowQualityUrl: null,
+          duration: Duration.zero,
+          size: 0,
+          children: [
+            AsmrTrackFile(
+              hash: 'h_txt',
+              title: '台本_第1話.txt',
+              type: 'text',
+              streamUrl: 'https://api.asmr-200.com/stream/h_txt',
+              downloadUrl: null,
+              lowQualityUrl: null,
+              duration: Duration.zero,
+              size: 500,
+              children: const [],
+              workId: 123,
+              workTitle: 'Work 123',
+              sourceId: 'RJ123',
+              relativePath: 'Docs/台本_第1話.txt',
+            ),
+          ],
+          workId: 123,
+          workTitle: 'Work 123',
+          sourceId: 'RJ123',
+          relativePath: 'Docs',
+        ),
+        AsmrTrackFile(
+          hash: 'h_audio',
+          title: '01_Track.wav',
+          type: 'audio',
+          streamUrl: 'https://api.asmr-200.com/stream/h_audio',
+          downloadUrl: null,
+          lowQualityUrl: null,
+          duration: const Duration(minutes: 10),
+          size: 50000,
+          children: const [],
+          workId: 123,
+          workTitle: 'Work 123',
+          sourceId: 'RJ123',
+          relativePath: '01_Track.wav',
+        ),
+      ];
+
+      final files = collectAsmrWorkTextFiles(tree);
+      expect(files.length, 1);
+      expect(files.first.name, '台本_第1話.txt');
+      expect(files.first.relativePath, 'Docs/台本_第1話.txt');
+      expect(files.first.path, contains('/api/media/stream/h_txt'));
+      expect(files.first.docType, WorkDocType.text);
     });
   });
 }

@@ -354,7 +354,8 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
     final cs = Theme.of(context).colorScheme;
     final folder = _loadedFolder ?? widget.folder;
     final isRootFolder = folder.depth == 0;
-    final isPinned = isRootFolder &&
+    final isPinned =
+        isRootFolder &&
         ref.watch(
           settingsStateProvider.select(
             (s) =>
@@ -376,14 +377,6 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
     const cardShape = LibraryLikeCardMetrics.cardShape;
     final rootDetail = rootDetailState?.value;
     final isRootDetailLoading = rootDetailState?.isLoading ?? false;
-    final rootCardInfoFields = isRootFolder
-        ? ref.watch(
-            settingsStateProvider.select(
-              (state) => state.value?.cardInfoFields ?? CardInfoField.defaults,
-            ),
-          )
-        : const <CardInfoField>[];
-    final useCompactRootCard = isRootFolder && rootCardInfoFields.isEmpty;
     final tokens = AppDesignTokens.of(context);
     final folderRadius = BorderRadius.circular(tokens.radiusSmall);
 
@@ -403,9 +396,7 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
         controller: _expansionController,
         initiallyExpanded: widget.initiallyExpanded,
         minTileHeight: isRootFolder
-            ? (useCompactRootCard
-                  ? LibraryLikeCardMetrics.compactRootTileHeight
-                  : _rootFolderTileHeight)
+            ? _rootFolderTileHeight
             : _childFolderTileHeight,
         visualDensity: isRootFolder ? null : const VisualDensity(vertical: -4),
         enabled: !widget.isSelectionMode,
@@ -583,25 +574,55 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
     final folderShape = isRootFolder
         ? cardShape
         : RoundedRectangleBorder(borderRadius: folderRadius);
-    final cardContent = isRootFolder
-        ? Card(
-            margin: EdgeInsets.zero,
-            clipBehavior: Clip.antiAlias,
-            shape: cardShape,
-            color: widget.isSelected
-                ? cs.primaryContainer.withValues(alpha: 0.25)
-                : Colors.transparent,
-            elevation: 0,
-            shadowColor: Colors.transparent,
-            surfaceTintColor: Colors.transparent,
-            child: content,
-          )
-        : content;
+    final Widget cardContent;
+    if (isRootFolder) {
+      cardContent = Card(
+        margin: EdgeInsets.zero,
+        clipBehavior: Clip.antiAlias,
+        shape: cardShape,
+        color: widget.isSelected
+            ? cs.primaryContainer.withValues(alpha: 0.25)
+            : Colors.transparent,
+        elevation: 0,
+        shadowColor: Colors.transparent,
+        surfaceTintColor: Colors.transparent,
+        child: Padding(
+          padding: LibraryLikeCardMetrics.rootTilePadding,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: _rootFolderTileHeight),
+            child: _RootFolderCardContent(
+              folderPath: folder.path,
+              folderName: folder.name,
+              folderDuration: folder.totalDuration,
+              detail: rootDetail,
+              detailLoading: isRootDetailLoading,
+              expanded: false,
+              hasChildren: false,
+              onPlay: () => unawaited(_playFolder(context, playback)),
+              index: widget.index,
+              isSelected: widget.isSelected,
+              isPinned: isPinned,
+            ),
+          ),
+        ),
+      );
+    } else {
+      cardContent = content;
+    }
 
     final result = InkWell(
       canRequestFocus: widget.isSelectionMode,
       onLongPress: widget.onLongPress,
-      onTap: widget.isSelectionMode ? widget.onToggleSelect : null,
+      onTap: widget.isSelectionMode
+          ? widget.onToggleSelect
+          : (isRootFolder
+                ? () => unawaited(
+                    showAudioDetailSheet(
+                      context,
+                      AudioDetailTarget.libraryRootFolder(folder.path),
+                    ),
+                  )
+                : null),
       child: SwipeRevealCard(
         shape: folderShape,
         enabled: !widget.isSelectionMode,
@@ -637,7 +658,7 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
         leadingActionIcon: Icons.info_outline_rounded,
         onSecondaryLeadingAction: isRootFolder
             ? () => unawaited(
-                _downloadAudioTargetFromAsmr(
+                downloadAudioTargetFromAsmr(
                   context: context,
                   ref: ref,
                   target: AudioDetailTarget.libraryRootFolder(
@@ -647,8 +668,9 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
               )
             : null,
         secondaryLeadingActionLabel: isRootFolder ? i18n.tr('download') : null,
-        secondaryLeadingActionTooltip:
-            isRootFolder ? i18n.tr('download') : null,
+        secondaryLeadingActionTooltip: isRootFolder
+            ? i18n.tr('download')
+            : null,
         onRemove: () => _removeFolder(context),
         onWillReveal: _expansionController.collapse,
         child: cardContent,
@@ -704,7 +726,8 @@ class _TrackNodeWidget extends ConsumerWidget {
     final playback = ref.read(playbackFacadeProvider);
     final cs = Theme.of(context).colorScheme;
     final track = trackNode.track;
-    final isPinned = track.isSingle &&
+    final isPinned =
+        track.isSingle &&
         ref.watch(
           settingsStateProvider.select(
             (s) =>
@@ -771,10 +794,12 @@ class _TrackNodeWidget extends ConsumerWidget {
           closedColor: cs.surface,
           actionLabel: i18n.tr('remove'),
           removeTooltip: i18n.tr('remove_audio'),
-          secondaryActionLabel:
-              i18n.tr(isPinned ? 'unpin_from_top' : 'pin_to_top'),
-          secondaryActionTooltip:
-              i18n.tr(isPinned ? 'unpin_from_top' : 'pin_to_top'),
+          secondaryActionLabel: i18n.tr(
+            isPinned ? 'unpin_from_top' : 'pin_to_top',
+          ),
+          secondaryActionTooltip: i18n.tr(
+            isPinned ? 'unpin_from_top' : 'pin_to_top',
+          ),
           secondaryActionIcon: Icons.push_pin_rounded,
           secondaryActionIconWidget: isPinned ? const PushPinOffIcon() : null,
           verticalActions: useFeaturedCard,
@@ -793,7 +818,7 @@ class _TrackNodeWidget extends ConsumerWidget {
           leadingActionTooltip: i18n.tr('audio_detail'),
           leadingActionIcon: Icons.info_outline_rounded,
           onSecondaryLeadingAction: () => unawaited(
-            _downloadAudioTargetFromAsmr(
+            downloadAudioTargetFromAsmr(
               context: context,
               ref: ref,
               target: AudioDetailTarget.singleAudioFile(track.path),
@@ -860,7 +885,10 @@ class _TrackNodeWidget extends ConsumerWidget {
                                 padding: EdgeInsets.zero,
                                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                               ),
-                              icon: const Icon(Icons.add_circle_rounded, size: 25),
+                              icon: const Icon(
+                                Icons.add_circle_rounded,
+                                size: 25,
+                              ),
                             ),
                           ),
                         ],
@@ -1183,28 +1211,42 @@ class _RootFolderCardContent extends StatelessWidget {
       showExpandIndicator: hasChildren,
       onPlay: onPlay,
       index: index,
-      coverBuilder: (coverWidth) => Stack(
-        clipBehavior: Clip.none,
-        children: [
-          _LibraryCoverThumbnail(
-            folderPath: folderPath,
-            width: coverWidth,
-            duration: detail?.duration ?? folderDuration,
-          ),
-          if (isSelected)
-            const Positioned(
-              left: 4,
-              bottom: 4,
-              child: _LibrarySelectionIndicator(),
+      coverBuilder: (coverWidth) {
+        final rj = detail?.rjCode.trim() ?? '';
+        final rjCode = rj.isNotEmpty
+            ? rj
+            : (AudioDetail.findRjCodeInText(folderName) ??
+                  AudioDetail.findRjCodeInText(folderPath) ??
+                  '');
+        return Stack(
+          clipBehavior: Clip.none,
+          children: [
+            _LibraryCoverThumbnail(
+              folderPath: folderPath,
+              width: coverWidth,
+              duration: detail?.duration ?? folderDuration,
             ),
-          if (isPinned)
-            Positioned(
-              left: 4,
-              top: 4,
-              child: _LibraryPinnedIndicator(path: folderPath),
-            ),
-        ],
-      ),
+            if (rjCode.isNotEmpty)
+              Positioned(
+                left: 4,
+                top: 4,
+                child: RjCodeOverlay(rjCode: rjCode, maxWidth: coverWidth - 8),
+              ),
+            if (isSelected)
+              const Positioned(
+                left: 4,
+                bottom: 4,
+                child: _LibrarySelectionIndicator(),
+              ),
+            if (isPinned)
+              Positioned(
+                right: 4,
+                top: 4,
+                child: _LibraryPinnedIndicator(path: folderPath),
+              ),
+          ],
+        );
+      },
     );
   }
 }
@@ -1236,19 +1278,12 @@ class _AudioDetailWorkCardContent extends ConsumerWidget {
       context,
       listen: false,
     ).read(appLanguageProviderInstanceProvider);
-    final fields = ref.watch(
-      settingsStateProvider.select(
-        (state) => state.value?.cardInfoFields ?? CardInfoField.defaults,
-      ),
-    );
     return LibraryLikeMetadataWorkCardContent(
       title: title,
-      fields: fields,
       metadata: _audioDetailMetadata(detail),
       circleLabel: i18n.tr('library_category_circles'),
       tagsLabel: i18n.tr('library_category_tags'),
       releaseDateLabel: i18n.tr('card_info_release_date'),
-      salesCountLabel: i18n.tr('card_info_sales_count'),
       ratingLabel: i18n.tr('card_info_rating'),
       loading: detailLoading || detail == null,
       coverBuilder: coverBuilder,
@@ -1279,14 +1314,18 @@ class _SingleAudioFileCardContent extends ConsumerWidget {
       context,
       listen: false,
     ).read(appLanguageProviderInstanceProvider);
-    final fields = ref.watch(
-      settingsStateProvider.select(
-        (state) => state.value?.cardInfoFields ?? CardInfoField.defaults,
-      ),
-    );
+    final lines = (detailLoading || detail == null)
+        ? const <LibraryLikeInfoLineData>[]
+        : buildLibraryLikeInfoLines(
+            metadata: _audioDetailMetadata(detail),
+            circleLabel: i18n.tr('library_category_circles'),
+            tagsLabel: i18n.tr('library_category_tags'),
+            releaseDateLabel: i18n.tr('card_info_release_date'),
+            ratingLabel: i18n.tr('card_info_rating'),
+          );
     return LibraryLikeSingleAudioCardContent(
       title: title,
-      lines: _audioDetailInfoLines(i18n, detail, detailLoading, fields),
+      lines: lines,
       enableMarquee: false,
       enableTitleMarquee: false,
     );
@@ -1322,28 +1361,42 @@ class _SingleMediaFileCardContent extends StatelessWidget {
       detailLoading: detailLoading,
       onPlay: onPlay,
       index: index,
-      coverBuilder: (coverWidth) => Stack(
-        clipBehavior: Clip.none,
-        children: [
-          _LibraryTrackCoverThumbnail(
-            track: track,
-            width: coverWidth,
-            duration: detail?.duration ?? track.duration,
-          ),
-          if (isSelected)
-            const Positioned(
-              left: 4,
-              bottom: 4,
-              child: _LibrarySelectionIndicator(),
+      coverBuilder: (coverWidth) {
+        final rj = detail?.rjCode.trim() ?? '';
+        final rjCode = rj.isNotEmpty
+            ? rj
+            : (AudioDetail.findRjCodeInText(title) ??
+                  AudioDetail.findRjCodeInText(track.path) ??
+                  '');
+        return Stack(
+          clipBehavior: Clip.none,
+          children: [
+            _LibraryTrackCoverThumbnail(
+              track: track,
+              width: coverWidth,
+              duration: detail?.duration ?? track.duration,
             ),
-          if (isPinned)
-            Positioned(
-              left: 4,
-              top: 4,
-              child: _LibraryPinnedIndicator(path: track.path),
-            ),
-        ],
-      ),
+            if (rjCode.isNotEmpty)
+              Positioned(
+                left: 4,
+                top: 4,
+                child: RjCodeOverlay(rjCode: rjCode, maxWidth: coverWidth - 8),
+              ),
+            if (isSelected)
+              const Positioned(
+                left: 4,
+                bottom: 4,
+                child: _LibrarySelectionIndicator(),
+              ),
+            if (isPinned)
+              Positioned(
+                right: 4,
+                top: 4,
+                child: _LibraryPinnedIndicator(path: track.path),
+              ),
+          ],
+        );
+      },
     );
   }
 }
@@ -1352,35 +1405,10 @@ LibraryLikeInfoMetadata _audioDetailMetadata(AudioDetail? detail) {
   final d = detail;
   if (d == null) return const LibraryLikeInfoMetadata();
   return LibraryLikeInfoMetadata(
-    rjCode: d.rjCode,
     voiceActors: d.voiceActors,
     circleName: d.circleName,
     tags: d.tags,
     releaseDate: d.releaseDate,
-    duration: d.duration,
-    salesCount: d.salesCount,
     rating: d.rating,
-  );
-}
-
-List<LibraryLikeInfoLineData> _audioDetailInfoLines(
-  AppLanguageProvider i18n,
-  AudioDetail? detail,
-  bool detailLoading,
-  List<CardInfoField> fields,
-) {
-  final d = detail;
-  if (detailLoading || d == null) {
-    return const <LibraryLikeInfoLineData>[];
-  }
-
-  return buildLibraryLikeInfoLines(
-    fields: fields,
-    metadata: _audioDetailMetadata(d),
-    circleLabel: i18n.tr('library_category_circles'),
-    tagsLabel: i18n.tr('library_category_tags'),
-    releaseDateLabel: i18n.tr('card_info_release_date'),
-    salesCountLabel: i18n.tr('card_info_sales_count'),
-    ratingLabel: i18n.tr('card_info_rating'),
   );
 }

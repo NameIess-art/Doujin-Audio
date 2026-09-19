@@ -293,6 +293,7 @@ extension PlaybackCommandTransport on PlaybackCommandCoordinator {
   PlaybackAdvanceResult? _nextPathFor(
     PlaybackSession session, {
     required bool forward,
+    bool manualAdvance = false,
   }) {
     if (_hasDetachedPlaybackQueueCurrent(session) &&
         session.playbackQueue!.expandedTracks.isEmpty) {
@@ -306,6 +307,7 @@ extension PlaybackCommandTransport on PlaybackCommandCoordinator {
       forward: forward,
       loopMode: session.loopMode,
       nextInt: _random.nextInt,
+      manualAdvance: manualAdvance,
     );
   }
 

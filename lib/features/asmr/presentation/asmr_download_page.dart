@@ -427,11 +427,13 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
                 bottom: 16 + bottomInset,
                 right: 16,
                 child: HeaderFloatingSurface(
+                  key: const ValueKey<String>('asmr_download_start_button'),
                   height: 46,
                   radius: 23,
                   padding: EdgeInsets.zero,
                   child: Material(
-                    color: Colors.transparent,
+                    color: asmrBlue,
+                    borderRadius: BorderRadius.circular(23),
                     child: InkWell(
                       borderRadius: BorderRadius.circular(23),
                       onTap: _starting ? null : _startDownload,
@@ -462,9 +464,7 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
                               ),
                             const SizedBox(width: 8),
                             Text(
-                              i18n.tr('asmr_download_start_count', {
-                                'count': '$selectedLeafCount',
-                              }),
+                              i18n.tr('asmr_download_action'),
                               style: Theme.of(context)
                                   .textTheme
                                   .labelLarge

@@ -1,30 +1,5 @@
 part of 'asmr_tab.dart';
 
-enum _AsmrVisibleItemKind { work, loading, error, empty, node }
-
-class _AsmrVisibleItem {
-  const _AsmrVisibleItem._({
-    required this.kind,
-    required this.work,
-    this.node,
-    this.depth = 0,
-    this.error,
-    this.revealed = true,
-    this.animateInitialReveal = false,
-  });
-
-  const _AsmrVisibleItem.work(AsmrWork work)
-    : this._(kind: _AsmrVisibleItemKind.work, work: work);
-
-  final _AsmrVisibleItemKind kind;
-  final AsmrWork work;
-  final AsmrTrackFile? node;
-  final int depth;
-  final Object? error;
-  final bool revealed;
-  final bool animateInitialReveal;
-}
-
 class _CollapsingAsmrWork {
   _CollapsingAsmrWork({
     required this.work,
@@ -94,112 +69,40 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
   bool _refreshTriggeredInCurrentScroll = false;
   bool _loadMoreTriggeredInCurrentScroll = false;
   bool _automaticLoadMoreScheduled = false;
-  final Set<int> _expandedWorkIds = <int>{};
-  final Map<int, Set<String>> _expandedFolderPaths = <int, Set<String>>{};
-  final Map<String, bool> _treeExpansionMotions = <String, bool>{};
-  final Map<String, Timer> _treeExpansionMotionTimers = <String, Timer>{};
   final Map<int, _CollapsingAsmrWork> _collapsingWorks =
       <int, _CollapsingAsmrWork>{};
   List<AsmrWork>? _lastFavoritesWorks;
   String? _lastFavoritesQuery;
-  List<_AsmrVisibleItem> _visibleItems = const <_AsmrVisibleItem>[];
-  List<AsmrWork>? _visibleItemsWorks;
-  int? _visibleItemsCategoryRevision;
-  int _visibleItemsExpansionVersion = 0;
-  int _visibleItemsCacheExpansionVersion = -1;
-  int _visibleItemsTreeFingerprint = 0;
+  List<AsmrWork> _visibleWorks = const <AsmrWork>[];
+  List<AsmrWork>? _visibleWorksSource;
+  int? _visibleWorksCategoryRevision;
 
   @visibleForTesting
-  Object get visibleItemsCache => _visibleItems;
+  Object get visibleItemsCache => _visibleWorks;
 
   @override
   void didUpdateWidget(covariant _AsmrCategoryList oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (!oldWidget.isSelectionMode && widget.isSelectionMode) {
-      _expandedWorkIds.clear();
-      _expandedFolderPaths.clear();
-      _treeExpansionMotions.clear();
-      for (final timer in _treeExpansionMotionTimers.values) {
-        timer.cancel();
-      }
-      _treeExpansionMotionTimers.clear();
-      _visibleItemsExpansionVersion++;
-    }
     if (oldWidget.category != widget.category ||
         normalizeSearchQuery(oldWidget.searchQuery) !=
             normalizeSearchQuery(widget.searchQuery)) {
-      _expandedWorkIds.clear();
-      _expandedFolderPaths.clear();
-      _treeExpansionMotions.clear();
-      for (final timer in _treeExpansionMotionTimers.values) {
-        timer.cancel();
-      }
-      _treeExpansionMotionTimers.clear();
       for (final entry in _collapsingWorks.values) {
         entry.dispose();
       }
       _collapsingWorks.clear();
       _lastFavoritesWorks = null;
       _lastFavoritesQuery = null;
-      _visibleItemsWorks = null;
-      _visibleItemsExpansionVersion++;
+      _visibleWorksSource = null;
     }
   }
 
   @override
   void dispose() {
-    for (final timer in _treeExpansionMotionTimers.values) {
-      timer.cancel();
-    }
     for (final entry in _collapsingWorks.values) {
       entry.dispose();
     }
     _collapsingWorks.clear();
     super.dispose();
-  }
-
-  void _handleWorkExpansion(int workId, bool expanded) {
-    final motionKey = 'work:$workId';
-    final changed = expanded
-        ? _expandedWorkIds.add(workId)
-        : _expandedWorkIds.remove(workId);
-    if (!changed) return;
-    _startTreeExpansionMotion(motionKey, expanded);
-  }
-
-  void _handleFolderExpansion(int workId, String folderPath, bool expanded) {
-    final motionKey = 'folder:$workId:$folderPath';
-    final expandedPaths = _expandedFolderPaths.putIfAbsent(
-      workId,
-      () => <String>{},
-    );
-    final changed = expanded
-        ? expandedPaths.add(folderPath)
-        : expandedPaths.remove(folderPath);
-    if (!changed) return;
-    _startTreeExpansionMotion(motionKey, expanded);
-  }
-
-  void _startTreeExpansionMotion(String motionKey, bool expanded) {
-    _treeExpansionMotionTimers.remove(motionKey)?.cancel();
-    final animate = !MediaQuery.disableAnimationsOf(context);
-    setState(() {
-      if (animate) {
-        _treeExpansionMotions[motionKey] = expanded;
-      } else {
-        _treeExpansionMotions.remove(motionKey);
-      }
-      _visibleItemsExpansionVersion++;
-    });
-    if (!animate) return;
-    _treeExpansionMotionTimers[motionKey] = Timer(kAppMotionStandard, () {
-      _treeExpansionMotionTimers.remove(motionKey);
-      if (!mounted || _treeExpansionMotions[motionKey] != expanded) return;
-      setState(() {
-        _treeExpansionMotions.remove(motionKey);
-        _visibleItemsExpansionVersion++;
-      });
-    });
   }
 
   @override
@@ -264,8 +167,6 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
           final previousWork = _lastFavoritesWorks![i];
           if (!currentWorkIds.contains(previousWork.id) &&
               !_collapsingWorks.containsKey(previousWork.id)) {
-            _expandedWorkIds.remove(previousWork.id);
-            _expandedFolderPaths.remove(previousWork.id);
             final workId = previousWork.id;
             _collapsingWorks[workId] = _CollapsingAsmrWork(
               work: previousWork,
@@ -276,7 +177,6 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
                 setState(() {
                   final entry = _collapsingWorks.remove(workId);
                   entry?.dispose();
-                  _visibleItemsExpansionVersion++;
                 });
               },
             );
@@ -299,36 +199,17 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
       }
     }
 
-    final trackStates = <int, AsmrTrackTreeViewState>{};
-    final closingWorkIds = effectiveWorks
-        .where((work) => _treeExpansionMotions['work:${work.id}'] == false)
-        .map((work) => work.id);
-    for (final workId in <int>{..._expandedWorkIds, ...closingWorkIds}) {
-      final provider = asmrTrackTreeStateProvider(workId);
-      final controllerState = ref
-          .read(asmrLibraryControllerProvider)
-          ?.trackTreeViewState(workId);
-      final trackState =
-          (widget.isActive ? ref.watch(provider) : ref.read(provider)).value ??
-          controllerState;
-      if (trackState != null) trackStates[workId] = trackState;
-    }
-    final visibleItems = _buildVisibleItems(
+    final visibleWorks = _buildVisibleWorks(
       works: effectiveWorks,
       categoryRevision: state.revision,
-      trackStates: trackStates,
     );
+
     final showPlaceholder =
         (widget.isLoadPending && normalizedSearchQuery.isNotEmpty) ||
         (effectiveWorks.isEmpty &&
             (widget.isLoadPending ||
                 state.isLoading ||
                 !state.hasAttemptedLoad));
-    final useCompactSkeleton = ref.watch(
-      settingsStateProvider.select(
-        (state) => state.value?.cardInfoFields.isEmpty ?? false,
-      ),
-    );
     if (widget.isActive) {
       ref.watch(appLanguageStateProvider);
     } else {
@@ -411,6 +292,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
                 showPlaceholder: showPlaceholder,
                 placeholder: ListView.builder(
                   key: const ValueKey('loading'),
+                  primary: false,
                   physics: const NeverScrollableScrollPhysics(),
                   padding: EdgeInsets.fromLTRB(
                     LibraryLikeCardMetrics.listHorizontalPadding,
@@ -420,9 +302,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
                   ),
                   itemCount: 5,
                   itemBuilder: (context, index) {
-                    return LibraryLikeSkeletonCard(
-                      compactCoverLayout: useCompactSkeleton,
-                    );
+                    return const LibraryLikeSkeletonCard();
                   },
                 ),
                 content: ListView.builder(
@@ -440,7 +320,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
                   ),
                   itemCount: effectiveWorks.isEmpty
                       ? 1
-                      : visibleItems.length +
+                      : visibleWorks.length +
                             ((state.isLoadingMore || state.hasMore) ? 1 : 0),
                   itemBuilder: (context, index) {
                     if (effectiveWorks.isEmpty) {
@@ -463,7 +343,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
                         ),
                       );
                     }
-                    if (index >= visibleItems.length) {
+                    if (index >= visibleWorks.length) {
                       if (!state.needsLoadMoreRetry) {
                         _scheduleAutomaticLoadMore(state);
                       }
@@ -495,12 +375,39 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
                         ),
                       );
                     }
-                    return _buildVisibleItem(
-                      context,
-                      visibleItems[index],
-                      i18n: i18n,
-                      asmrBlue: asmrBlue,
+                    final work = visibleWorks[index];
+                    final workCard = RepaintBoundary(
+                      key: ValueKey<String>('asmr-work-${work.id}'),
+                      child: _AsmrWorkTreeCard(
+                        work: work,
+                        searchQuery: widget.searchQuery,
+                        isActive: widget.isActive,
+                        isSelectionMode: widget.isSelectionMode,
+                        isSelected: widget.selectedWorkIds.contains(work.id),
+                        onLongPress: () => widget.onEnterSelectionMode(work),
+                        onToggleSelect: () => widget.onToggleSelection(work),
+                      ),
                     );
+                    final collapsing = _collapsingWorks[work.id];
+                    if (collapsing != null) {
+                      return AnimatedBuilder(
+                        animation: collapsing.controller,
+                        builder: (context, child) {
+                          return SizeTransition(
+                            sizeFactor: collapsing.animation,
+                            axisAlignment: -1.0,
+                            child: FadeTransition(
+                              opacity: collapsing.animation,
+                              child: IgnorePointer(
+                                child: ExcludeSemantics(child: child),
+                              ),
+                            ),
+                          );
+                        },
+                        child: workCard,
+                      );
+                    }
+                    return workCard;
                   },
                 ),
               ),
@@ -511,284 +418,18 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
     );
   }
 
-  List<_AsmrVisibleItem> _buildVisibleItems({
+  List<AsmrWork> _buildVisibleWorks({
     required List<AsmrWork> works,
     required int categoryRevision,
-    required Map<int, AsmrTrackTreeViewState> trackStates,
   }) {
-    var treeFingerprint = 0;
-    for (final entry in trackStates.entries) {
-      treeFingerprint = Object.hash(
-        treeFingerprint,
-        entry.key,
-        entry.value.revision,
-        identityHashCode(entry.value.tree),
-        entry.value.isLoading,
-        entry.value.operationError,
-      );
-    }
-    if (identical(_visibleItemsWorks, works) &&
-        _visibleItemsCategoryRevision == categoryRevision &&
-        _visibleItemsCacheExpansionVersion == _visibleItemsExpansionVersion &&
-        _visibleItemsTreeFingerprint == treeFingerprint &&
+    if (identical(_visibleWorksSource, works) &&
+        _visibleWorksCategoryRevision == categoryRevision &&
         _collapsingWorks.isEmpty) {
-      return _visibleItems;
+      return _visibleWorks;
     }
-
-    final currentWorkIds = works.map((work) => work.id).toSet();
-    final previousExpandedWorkCount = _expandedWorkIds.length;
-    _expandedWorkIds.removeWhere((workId) => !currentWorkIds.contains(workId));
-    _expandedFolderPaths.removeWhere(
-      (workId, _) => !currentWorkIds.contains(workId),
-    );
-    if (_expandedWorkIds.length != previousExpandedWorkCount) {
-      _visibleItemsExpansionVersion++;
-    }
-
-    final result = <_AsmrVisibleItem>[];
-    for (final work in works) {
-      result.add(_AsmrVisibleItem.work(work));
-      final workExpanded = _expandedWorkIds.contains(work.id);
-      final workMotion = _treeExpansionMotions['work:${work.id}'];
-      if (!workExpanded && workMotion != false) continue;
-      final animateWorkReveal = workExpanded && workMotion == true;
-      final treeState = trackStates[work.id];
-      final tree = treeState?.tree;
-      final visibleTree = treeState?.visibleTree;
-      if (treeState == null || (tree == null && treeState.isLoading)) {
-        result.add(
-          _AsmrVisibleItem._(
-            kind: _AsmrVisibleItemKind.loading,
-            work: work,
-            revealed: workExpanded,
-            animateInitialReveal: animateWorkReveal,
-          ),
-        );
-        continue;
-      }
-      final error = treeState.operationError;
-      if (tree == null && error != null) {
-        result.add(
-          _AsmrVisibleItem._(
-            kind: _AsmrVisibleItemKind.error,
-            work: work,
-            error: error,
-            revealed: workExpanded,
-            animateInitialReveal: animateWorkReveal,
-          ),
-        );
-        continue;
-      }
-      if (visibleTree == null || visibleTree.isEmpty) {
-        result.add(
-          _AsmrVisibleItem._(
-            kind: _AsmrVisibleItemKind.empty,
-            work: work,
-            revealed: workExpanded,
-            animateInitialReveal: animateWorkReveal,
-          ),
-        );
-        continue;
-      }
-
-      final expandedPaths = _expandedFolderPaths.putIfAbsent(
-        work.id,
-        () => <String>{},
-      );
-      final validFolderPaths = <String>{};
-      void collectFolderPaths(Iterable<AsmrTrackFile> nodes) {
-        for (final node in nodes) {
-          if (!node.isFolder || !node.hasBrowsableContent) continue;
-          validFolderPaths.add(node.relativePath);
-          collectFolderPaths(node.children);
-        }
-      }
-
-      collectFolderPaths(visibleTree);
-      expandedPaths.retainAll(validFolderPaths);
-
-      void addNode(
-        AsmrTrackFile node,
-        int depth, {
-        required bool revealed,
-        required bool animateInitialReveal,
-      }) {
-        if (!node.hasBrowsableContent) return;
-        result.add(
-          _AsmrVisibleItem._(
-            kind: _AsmrVisibleItemKind.node,
-            work: work,
-            node: node,
-            depth: depth,
-            revealed: revealed,
-            animateInitialReveal: animateInitialReveal,
-          ),
-        );
-        if (!node.isFolder) return;
-        final expanded = expandedPaths.contains(node.relativePath);
-        final motion =
-            _treeExpansionMotions['folder:${work.id}:${node.relativePath}'];
-        if (!expanded && motion != false) return;
-        final revealChildren = revealed && expanded;
-        final animateChildren =
-            animateInitialReveal || (revealChildren && motion == true);
-        for (final child in node.children) {
-          addNode(
-            child,
-            depth + 1,
-            revealed: revealChildren,
-            animateInitialReveal: animateChildren,
-          );
-        }
-      }
-
-      for (final node in visibleTree) {
-        addNode(
-          node,
-          1,
-          revealed: workExpanded,
-          animateInitialReveal: animateWorkReveal,
-        );
-      }
-    }
-    _visibleItemsWorks = works;
-    _visibleItemsCategoryRevision = categoryRevision;
-    _visibleItemsCacheExpansionVersion = _visibleItemsExpansionVersion;
-    _visibleItemsTreeFingerprint = treeFingerprint;
-    return _visibleItems = result;
-  }
-
-  Widget _buildVisibleItem(
-    BuildContext context,
-    _AsmrVisibleItem item, {
-    required AppLanguageProvider i18n,
-    required Color asmrBlue,
-  }) {
-    Widget animatedTreeItem(String key, Widget child) {
-      return AnimatedTreeReveal(
-        key: ValueKey<String>(key),
-        visible: item.revealed,
-        animateInitial: item.animateInitialReveal,
-        child: child,
-      );
-    }
-
-    switch (item.kind) {
-      case _AsmrVisibleItemKind.work:
-        final workCard = RepaintBoundary(
-          key: ValueKey<String>('asmr-work-${item.work.id}'),
-          child: _AsmrWorkTreeCard(
-            work: item.work,
-            searchQuery: widget.searchQuery,
-            isActive: widget.isActive,
-            expanded: _expandedWorkIds.contains(item.work.id),
-            isSelectionMode: widget.isSelectionMode,
-            isSelected: widget.selectedWorkIds.contains(item.work.id),
-            onLongPress: () => widget.onEnterSelectionMode(item.work),
-            onToggleSelect: () => widget.onToggleSelection(item.work),
-            onExpansionChanged: (expanded) =>
-                _handleWorkExpansion(item.work.id, expanded),
-          ),
-        );
-        final collapsing = _collapsingWorks[item.work.id];
-        if (collapsing != null) {
-          return AnimatedBuilder(
-            animation: collapsing.controller,
-            builder: (context, child) {
-              return SizeTransition(
-                sizeFactor: collapsing.animation,
-                axisAlignment: -1.0,
-                child: FadeTransition(
-                  opacity: collapsing.animation,
-                  child: IgnorePointer(child: ExcludeSemantics(child: child)),
-                ),
-              );
-            },
-            child: workCard,
-          );
-        }
-        return workCard;
-      case _AsmrVisibleItemKind.node:
-        final node = item.node!;
-        final expanded =
-            _expandedFolderPaths[item.work.id]?.contains(node.relativePath) ??
-            false;
-        return animatedTreeItem(
-          'asmr-tree-${item.work.id}-${node.relativePath}',
-          Padding(
-            padding: EdgeInsets.only(left: item.depth * 8.0),
-            child: RepaintBoundary(
-              child: _AsmrTrackTreeNode(
-                work: item.work,
-                node: node,
-                isActive: widget.isActive,
-                expanded: expanded,
-                onExpansionChanged: node.isFolder
-                    ? (nextExpanded) => _handleFolderExpansion(
-                        item.work.id,
-                        node.relativePath,
-                        nextExpanded,
-                      )
-                    : null,
-              ),
-            ),
-          ),
-        );
-      case _AsmrVisibleItemKind.loading:
-        return animatedTreeItem(
-          'asmr-track-tree-loading-${item.work.id}',
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 12),
-            child: Center(child: CircularProgressIndicator(color: asmrBlue)),
-          ),
-        );
-      case _AsmrVisibleItemKind.error:
-        return animatedTreeItem(
-          'asmr-track-tree-error-${item.work.id}',
-          Padding(
-            padding: const EdgeInsets.only(top: 4, bottom: 12),
-            child: OperationStatusBanner(
-              label: i18n.tr('operation_failed_retry'),
-              error: item.error,
-              retryTooltip: i18n.tr('retry'),
-              onRetry: () => unawaited(_retryTrackTree(item.work)),
-            ),
-          ),
-        );
-      case _AsmrVisibleItemKind.empty:
-        return animatedTreeItem(
-          'asmr-track-tree-empty-${item.work.id}',
-          Padding(
-            padding: const EdgeInsets.only(top: 4, bottom: 12),
-            child: Text(
-              i18n.tr('asmr_empty_track_tree'),
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-        );
-    }
-  }
-
-  Future<void> _retryTrackTree(AsmrWork work) async {
-    final controller = ref.read(asmrLibraryControllerProvider);
-    if (controller == null) return;
-    try {
-      await ref
-          .read(uiOperationServiceProvider)
-          .run<List<AsmrTrackFile>>(
-            scope: UiOperationScope.asmrWork(
-              AsmrOperationKind.trackTree,
-              work.id,
-            ),
-            labelKey: 'loading_dot',
-            task: (_) => controller.ensureTrackTree(work),
-          );
-    } catch (_) {
-      // The controller owns the stable error state used by the retry row.
-    }
+    _visibleWorksSource = works;
+    _visibleWorksCategoryRevision = categoryRevision;
+    return _visibleWorks = works;
   }
 
   void _loadMoreOncePerScroll(AsmrCategoryViewState state) {

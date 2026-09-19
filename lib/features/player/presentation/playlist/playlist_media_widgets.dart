@@ -63,7 +63,10 @@ class SessionHeroArtwork extends ConsumerWidget {
               enabled: true,
               child: AsyncLocalCoverImage(
                 future: coverPathFuture,
-                requestKey: sessionId,
+                requestKey: (
+                  sessionId,
+                  track?.path ?? session.currentTrackPath,
+                ),
                 initialPath: initialCoverPath,
                 seed: track?.displayName ?? track?.path ?? sessionId,
                 cacheWidth: coverCacheWidth,

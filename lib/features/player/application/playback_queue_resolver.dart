@@ -103,6 +103,7 @@ class PlaybackQueueResolver {
     required bool forward,
     required SessionLoopMode loopMode,
     required NextInt nextInt,
+    bool manualAdvance = false,
   }) {
     final paths = scope.paths;
     if (paths.isEmpty) return null;
@@ -111,7 +112,8 @@ class PlaybackQueueResolver {
               ? SessionLoopMode.crossSequential
               : loopMode)
         : loopMode;
-    if (effectiveLoopMode == SessionLoopMode.single || paths.length == 1) {
+    if (paths.length == 1 ||
+        (!manualAdvance && effectiveLoopMode == SessionLoopMode.single)) {
       return PlaybackAdvanceResult(
         path: paths[scope.currentIndex.clamp(0, paths.length - 1)],
         queueIndex: scope.isCustomQueue
@@ -195,14 +197,6 @@ class PlaybackQueueResolver {
     required bool isPlaybackQueue,
     required TrackFolderKeyResolver folderKeyForTrack,
   }) {
-    if (loopMode == SessionLoopMode.single && !isPlaybackQueue) {
-      final index = currentTrack == null
-          ? -1
-          : customQueueTracks.indexWhere(
-              (track) => identical(track, currentTrack),
-            );
-      return index < 0 ? const <int>[] : <int>[index];
-    }
     final folderKey = currentTrack == null
         ? null
         : folderKeyForTrack(currentTrack);

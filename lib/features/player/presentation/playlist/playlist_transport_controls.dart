@@ -64,7 +64,7 @@ class TransportPlaybackControlPanel extends ConsumerWidget {
     final transport = ref.watch(
       sessionDetailTransportProvider(
         session.id,
-      ).select((state) => (state?.showPauseIcon, state?.isLoading)),
+      ).select((state) => (state?.showPauseIcon, state?.isPlaybackLoading)),
     );
     return _PlaybackControlPanel(
       session: session,

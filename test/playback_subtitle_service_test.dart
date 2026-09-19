@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
 import 'package:doujin_audio/core/media/subtitle_parser.dart';
 import 'package:doujin_audio/features/player/application/playback_subtitle_service.dart';
+import 'package:doujin_audio/features/player/presentation/playback_position_ui_gate.dart';
 
 void main() {
   setUp(() {
@@ -229,6 +230,106 @@ void main() {
     expect(service.hasCustomSubtitle(audioPath), isFalse);
     expect(service.getCustomSubtitlePath(audioPath), isNull);
     expect(service.trackSync(audioPath), isNull);
+  });
+
+  test('persistent cueAt and textAt hold subtitle text across gaps between cues', () async {
+    const cues = [
+      SubtitleCue(
+        start: Duration(seconds: 2),
+        end: Duration(seconds: 5),
+        text: 'First line',
+      ),
+      SubtitleCue(
+        start: Duration(seconds: 15),
+        end: Duration(seconds: 20),
+        text: 'Second line',
+      ),
+    ];
+    final track = SubtitleTrack(sourcePath: 'gap.vtt', cues: cues);
+    final service = PlaybackSubtitleService(
+      trackResolver: (_) => null,
+      subtitleLoader: (_, _) async => track,
+    );
+    await service.load('gap.mp3');
+
+    // Before first cue
+    expect(service.textAt('gap.mp3', const Duration(seconds: 1)), isNull);
+    expect(service.textAt('gap.mp3', const Duration(seconds: 1), persistent: true), isNull);
+    expect(track.cueAt(const Duration(seconds: 1)), isNull);
+    expect(track.cueAt(const Duration(seconds: 1), persistent: true), isNull);
+
+    // During first cue
+    expect(track.cueAt(const Duration(seconds: 3))?.text, 'First line');
+    expect(track.cueAt(const Duration(seconds: 3), persistent: true)?.text, 'First line');
+
+    // In the gap between cue 1 and cue 2 (at 10s)
+    // Non-persistent returns null
+    expect(service.textAt('gap.mp3', const Duration(seconds: 10)), isNull);
+    expect(track.cueAt(const Duration(seconds: 10)), isNull);
+    // Persistent holds the first line
+    expect(service.textAt('gap.mp3', const Duration(seconds: 10), persistent: true), 'First line');
+    expect(track.cueAt(const Duration(seconds: 10), persistent: true)?.text, 'First line');
+
+    // During second cue (at 16s)
+    expect(track.cueAt(const Duration(seconds: 16))?.text, 'Second line');
+    expect(track.cueAt(const Duration(seconds: 16), persistent: true)?.text, 'Second line');
+
+    // After second cue (at 25s)
+    // Non-persistent returns null
+    expect(track.cueAt(const Duration(seconds: 25)), isNull);
+    // Persistent holds the second line until track ends
+    expect(track.cueAt(const Duration(seconds: 25), persistent: true)?.text, 'Second line');
+
+    // SubtitleTextCache tests
+    final cache = SubtitleTextCache();
+    expect(
+      cache.resolve(
+        trackPath: 'audio.mp3',
+        position: const Duration(seconds: 1),
+        track: track,
+        persistent: true,
+      ),
+      isNull,
+    );
+    expect(
+      cache.resolve(
+        trackPath: 'audio.mp3',
+        position: const Duration(seconds: 3),
+        track: track,
+        persistent: true,
+      ),
+      'First line',
+    );
+    // In the gap (at 10s), text persists
+    expect(
+      cache.resolve(
+        trackPath: 'audio.mp3',
+        position: const Duration(seconds: 10),
+        track: track,
+        persistent: true,
+      ),
+      'First line',
+    );
+    // Reaching cue 2 (at 16s), updates to second line
+    expect(
+      cache.resolve(
+        trackPath: 'audio.mp3',
+        position: const Duration(seconds: 16),
+        track: track,
+        persistent: true,
+      ),
+      'Second line',
+    );
+    // After cue 2 (at 25s), persists second line
+    expect(
+      cache.resolve(
+        trackPath: 'audio.mp3',
+        position: const Duration(seconds: 25),
+        track: track,
+        persistent: true,
+      ),
+      'Second line',
+    );
   });
 }
 

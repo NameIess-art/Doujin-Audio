@@ -120,8 +120,10 @@ class _ProgressSliderAndTimecodesState
   void didUpdateWidget(covariant _ProgressSliderAndTimecodes oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.session != widget.session) {
+      final sessionChanged = oldWidget.session.id != widget.session.id ||
+          oldWidget.session.currentTrackPath != widget.session.currentTrackPath;
       _positionGate.updateSession(widget.session);
-      _publishProgressValue(force: true);
+      _publishProgressValue(force: sessionChanged);
     } else if (oldWidget.timeSegmentLabels != widget.timeSegmentLabels ||
         oldWidget.selectedSegmentId != widget.selectedSegmentId) {
       _clearTooltip();
@@ -151,6 +153,7 @@ class _ProgressSliderAndTimecodesState
   }
 
   void _handlePositionTick() {
+    if (_isDragging) return;
     _publishProgressValue();
   }
 
@@ -249,6 +252,10 @@ class _ProgressSliderAndTimecodesState
     double maxMillis,
     List<TimeSegmentLabel> labels,
   ) {
+    if (labels.isEmpty) {
+      _clearTooltip();
+      return;
+    }
     final box = context.findRenderObject() as RenderBox?;
     final width = box?.size.width ?? 0;
     if (width <= 0) return;
@@ -270,37 +277,41 @@ class _ProgressSliderAndTimecodesState
     _positionGate.tickerModeEnabled = false;
     _isDragging = true;
     _dragValueMs = value;
-    _publishProgressValue(force: true);
+    _publishProgressValue();
     _showLabelsAtSliderValue(value);
   }
 
   void _handleSliderChanged(double value) {
     _isDragging = true;
     _dragValueMs = value;
-    _publishProgressValue(force: true);
+    _publishProgressValue();
     _showLabelsAtSliderValue(value);
   }
 
   void _handleSliderChangeEnd(double value) {
     AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
     final position = Duration(milliseconds: value.round());
+    widget.onManualSeek?.call(position);
+    widget.playback.seekSession(widget.session.id, position);
     _isDragging = false;
     _dragValueMs = null;
     _clearTooltip();
-    _publishProgressValue(force: true);
-    widget.onManualSeek?.call(position);
-    widget.playback.seekSession(widget.session.id, position);
+    _publishProgressValue();
     _positionGate.tickerModeEnabled = _tickerModeEnabled;
   }
 
   void _showLabelsAtSliderValue(double valueMs) {
+    final labels = _overlayLabels;
+    if (labels.isEmpty) {
+      _clearTooltip();
+      return;
+    }
     final slider = _sliderValue.value;
     final state = _tooltipStateForSliderValue(
       valueMs,
       slider.maxMillis,
-      _overlayLabels,
+      labels,
     );
-    if (state == null) return;
     _showLabelsAtPosition(state);
   }
 
@@ -314,6 +325,7 @@ class _ProgressSliderAndTimecodesState
     double maxMillis,
     List<TimeSegmentLabel> labels,
   ) {
+    if (labels.isEmpty) return null;
     final box = context.findRenderObject() as RenderBox?;
     final width = box?.size.width ?? 0;
     if (width <= 0) return null;
@@ -325,20 +337,22 @@ class _ProgressSliderAndTimecodesState
     return _tooltipStateForPosition(position, dx, width, labels);
   }
 
-  void _showLabelsAtPosition(_ProgressTooltipState state) {
+  void _showLabelsAtPosition(_ProgressTooltipState? state) {
     if (_tooltipValue.value == state) return;
     _tooltipValue.value = state;
   }
 
-  _ProgressTooltipState _tooltipStateForPosition(
+  _ProgressTooltipState? _tooltipStateForPosition(
     Duration position,
     double dx,
     double width,
     List<TimeSegmentLabel> labels,
   ) {
+    if (labels.isEmpty) return null;
     final hits = labels
         .where((label) => label.contains(position))
         .toList(growable: false);
+    if (hits.isEmpty) return null;
     return _ProgressTooltipState(
       labels: hits,
       dx: dx,

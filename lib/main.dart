@@ -325,42 +325,6 @@ Widget _createAudioPlayerApp({
   return app;
 }
 
-class _StretchOverscrollBehavior extends MaterialScrollBehavior {
-  const _StretchOverscrollBehavior();
-
-  @override
-  Widget buildScrollbar(
-    BuildContext context,
-    Widget child,
-    ScrollableDetails details,
-  ) {
-    if (axisDirectionToAxis(details.direction) != Axis.vertical) {
-      return child;
-    }
-    return DragOnlyScrollbar(
-      controller: details.controller,
-      thumbVisibility: defaultTargetPlatform == TargetPlatform.windows,
-      child: child,
-    );
-  }
-
-  @override
-  Widget buildOverscrollIndicator(
-    BuildContext context,
-    Widget child,
-    ScrollableDetails details,
-  ) {
-    if (details.direction == AxisDirection.left ||
-        details.direction == AxisDirection.right) {
-      return child;
-    }
-    return StretchingOverscrollIndicator(
-      axisDirection: details.direction,
-      child: child,
-    );
-  }
-}
-
 class MusicPlayerApp extends ConsumerStatefulWidget {
   const MusicPlayerApp({
     this.shouldShowOnboarding,
@@ -509,7 +473,7 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp> {
       theme: themeProvider.lightTheme,
       darkTheme: themeProvider.darkTheme,
       themeMode: themeProvider.themeMode,
-      scrollBehavior: const _StretchOverscrollBehavior().copyWith(
+      scrollBehavior: const AppScrollBehavior().copyWith(
         scrollbars: true,
         physics: const ClampingScrollPhysics(
           parent: AlwaysScrollableScrollPhysics(),

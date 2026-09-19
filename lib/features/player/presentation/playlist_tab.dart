@@ -36,7 +36,6 @@ import 'playlist/playlist_queue_widgets.dart';
 import 'playlist/playlist_shared_helpers.dart';
 import 'playlist/playlist_volume_timer_widgets.dart';
 import 'playlist/session_detail_page.dart';
-import 'playlist_sorting.dart';
 import 'playlist_view_models.dart';
 
 export 'playlist/playlist_audio_features.dart';
@@ -199,9 +198,13 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
   @override
   bool get wantKeepAlive => true;
 
-  bool get _isActive =>
-      widget.activeTabIndexListenable == null ||
-      widget.activeTabIndexListenable!.value == tabIndex;
+  bool get _isActive {
+    final route = ModalRoute.of(context);
+    final isRouteCurrent = route == null || route.isCurrent;
+    return isRouteCurrent &&
+        (widget.activeTabIndexListenable == null ||
+            widget.activeTabIndexListenable!.value == tabIndex);
+  }
 
   T _readOrWatch<T>(ProviderListenable<T> provider) {
     return _isActive ? ref.watch(provider) : ref.read(provider);
@@ -332,28 +335,14 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
     final paths = ref.read(audioPathCoordinatorProvider);
     final playback = ref.read(playbackFacadeProvider);
     ref.listen(playlistStructureUiProvider, (_, next) {
-      if (mounted) _reconcileSelection(next);
+      if (mounted && _isActive) _reconcileSelection(next);
     });
     final structureState = _isActive
         ? ref.watch(playlistStructureUiProvider)
         : ref.read(playlistStructureUiProvider);
-    _readOrWatch(libraryDetailRevisionProvider);
-    final playlistSortCriterion = _readOrWatch(
-      settingsStateProvider.select(
-        (state) =>
-            state.value?.playlistSortCriterion ?? PlaylistSortCriterion.name,
-      ),
-    );
-    final playlistSortAscending = _readOrWatch(
-      settingsStateProvider.select(
-        (state) => state.value?.playlistSortAscending ?? true,
-      ),
-    );
-    final playlistGroupByLibrary = _readOrWatch(
-      settingsStateProvider.select(
-        (state) => state.value?.playlistGroupByLibrary ?? false,
-      ),
-    );
+    final visibleEntries = _isActive
+        ? ref.watch(playlistSortedEntriesUiProvider)
+        : ref.read(playlistSortedEntriesUiProvider);
     final pinnedPlaylistSessionIds = _readOrWatch(
       settingsStateProvider.select(
         (state) =>
@@ -376,7 +365,6 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
     final listBottomInset = MobileOverlayInset.of(context);
     final isLandscape =
         defaultTargetPlatform == TargetPlatform.windows ||
-        defaultTargetPlatform == TargetPlatform.windows ||
         MediaQuery.orientationOf(context) == Orientation.landscape;
     final listCacheExtent = playlistListCacheExtent(
       headerHeight: headerHeight,
@@ -385,25 +373,6 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
     );
     final topPadding = headerHeight + 4.0;
     final bottomPadding = listBottomInset + 16.0;
-    final sortedSessions = sortPlaylistSessions(
-      sessions: structureState.entries
-          .map((entry) => entry.session)
-          .toList(growable: false),
-      criterion: playlistSortCriterion,
-      ascending: playlistSortAscending,
-      groupByLibrary: playlistGroupByLibrary,
-      library: library,
-      trackForSession: (session) =>
-          paths.sessionTrackForPath(session.id, session.currentTrackPath),
-      pinnedSessionIds: pinnedPlaylistSessionIds,
-    );
-    final entriesBySessionId = <String, PlaylistStructureEntry>{
-      for (final entry in structureState.entries) entry.sessionId: entry,
-    };
-    final visibleEntries = sortedSessions
-        .map((session) => entriesBySessionId[session.id])
-        .whereType<PlaylistStructureEntry>()
-        .toList(growable: false);
 
     Widget buildSessionItem(BuildContext context, int index) {
       if (index == visibleEntries.length) {

@@ -25,9 +25,9 @@ import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/async_cover_image.dart';
 import '../../../core/widgets/library_like_cards.dart';
 import '../../../core/widgets/operation_feedback.dart';
-import '../../../core/widgets/app_bottom_sheet.dart';
 import 'dlsite_metadata_review_page.dart';
 import 'work_text_viewer_page.dart';
+import 'work_detail_page.dart';
 import '../application/work_text_service.dart';
 import '../../../core/widgets/app_transitions.dart';
 
@@ -92,9 +92,12 @@ Future<void> showAudioDetailSheet(
   BuildContext context,
   AudioDetailTarget target,
 ) {
-  return AppBottomSheet.show<void>(
-    context: context,
-    builder: (_) => AudioDetailSheet(target: target),
+  return Navigator.of(context).push(
+    buildAppPageRoute<void>(
+      context: context,
+      style: AppPageTransitionStyle.sharedAxisZ,
+      child: WorkDetailPage.forLocal(target: target),
+    ),
   );
 }
 
@@ -691,10 +694,7 @@ class _AudioDetailSheetState extends ConsumerState<AudioDetailSheet> {
               ),
               const SizedBox(height: 8),
               ...[
-                _AudioDetailField.releaseDate,
                 _AudioDetailField.duration,
-                _AudioDetailField.salesCount,
-                _AudioDetailField.rating,
               ].map(
                 (field) => _AudioDetailRow(
                   label: field.label(i18n, detail),

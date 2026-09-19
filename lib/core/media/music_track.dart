@@ -147,6 +147,21 @@ class MusicTrack {
       milliseconds: (json['durationMs'] as num?)?.toInt() ?? 0,
     ),
   );
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is MusicTrack &&
+          path == other.path &&
+          duration == other.duration &&
+          displayName == other.displayName &&
+          groupKey == other.groupKey &&
+          isSingle == other.isSingle &&
+          isVideo == other.isVideo &&
+          isFavorite == other.isFavorite;
+
+  @override
+  int get hashCode => Object.hash(path, duration, displayName);
 }
 
 DateTime? _dateTimeFromJson(Object? value) {

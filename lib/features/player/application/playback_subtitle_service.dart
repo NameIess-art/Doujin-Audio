@@ -260,8 +260,12 @@ class PlaybackSubtitleService extends ChangeNotifier {
     String trackPath,
     Duration position, {
     SubtitleTrack? subtitleTrack,
+    bool persistent = false,
   }) {
-    final cue = (subtitleTrack ?? _tracks[trackPath])?.cueAt(position);
+    final cue = (subtitleTrack ?? _tracks[trackPath])?.cueAt(
+      position,
+      persistent: persistent,
+    );
     final text = cue?.text.trim();
     return text == null || text.isEmpty ? null : text;
   }

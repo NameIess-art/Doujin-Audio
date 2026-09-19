@@ -21,6 +21,7 @@ abstract interface class PlaybackCommandPort {
   PlaybackAdvanceResult? resolveAdvance(
     PlaybackSession session, {
     required bool forward,
+    bool manualAdvance = false,
   });
 
   bool hasAdjacent(PlaybackSession session, {required bool forward});

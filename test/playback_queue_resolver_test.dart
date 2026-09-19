@@ -461,4 +461,53 @@ void main() {
     expect(next?.path, 'a2');
     expect(randomCalls, 1);
   });
+
+  test('custom queue with single loop mode retains scope tracks and supports manual advance', () {
+    final scope = resolver.resolveScope(
+      currentPath: 'a1',
+      currentTrack: a1,
+      loopMode: SessionLoopMode.single,
+      sortedLibraryTrackPaths: const <String>['a1', 'a2', 'b1'],
+      tracksByGroup: tracksByGroup,
+      customQueueTracks: <MusicTrack>[a1, a2],
+      folderKeyForTrack: (track) => track.groupKey,
+    );
+
+    expect(scope.paths, const <String>['a1', 'a2']);
+    expect(
+      resolver.hasAdjacentInScope(
+        scope: scope,
+        loopMode: SessionLoopMode.single,
+      ),
+      isTrue,
+    );
+
+    final autoNext = resolver.resolveAdvance(
+      scope: scope,
+      forward: true,
+      loopMode: SessionLoopMode.single,
+      nextInt: (_) => 0,
+    );
+    expect(autoNext?.path, 'a1');
+
+    final manualNext = resolver.resolveAdvance(
+      scope: scope,
+      forward: true,
+      loopMode: SessionLoopMode.single,
+      nextInt: (_) => 0,
+      manualAdvance: true,
+    );
+    expect(manualNext?.path, 'a2');
+    expect(manualNext?.queueIndex, 1);
+
+    final manualPrev = resolver.resolveAdvance(
+      scope: scope,
+      forward: false,
+      loopMode: SessionLoopMode.single,
+      nextInt: (_) => 0,
+      manualAdvance: true,
+    );
+    expect(manualPrev?.path, 'a2');
+    expect(manualPrev?.queueIndex, 1);
+  });
 }

@@ -12,6 +12,7 @@ import 'package:doujin_audio/app/localization/app_language_provider.dart';
 import 'package:doujin_audio/app/state/app_runtime_providers.dart';
 import 'package:doujin_audio/app/presentation/app_presentation_providers.dart';
 import 'package:doujin_audio/app/theme/theme_provider.dart';
+import 'package:doujin_audio/core/widgets/drag_only_scrollbar.dart';
 import 'package:doujin_audio/core/persistence/app_database.dart';
 import 'package:doujin_audio/core/persistence/json_document_store.dart';
 import 'test_persistence_repository.dart';
@@ -260,6 +261,12 @@ Widget buildAppRuntimeTestApp({
           theme: theme.lightTheme,
           darkTheme: theme.darkTheme,
           themeMode: theme.themeMode,
+          scrollBehavior: const AppScrollBehavior().copyWith(
+            scrollbars: true,
+            physics: const ClampingScrollPhysics(
+              parent: AlwaysScrollableScrollPhysics(),
+            ),
+          ),
           home: Scaffold(
             body: Consumer(
               builder: (context, ref, _) {

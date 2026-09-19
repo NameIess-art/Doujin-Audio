@@ -83,6 +83,10 @@ final class PlaybackFacade {
       StreamController<int>.broadcast(sync: true);
   final Map<String, Set<String>> _nativeRetainedContentUrisBySession =
       <String, Set<String>>{};
+  final Map<String, Duration> _pendingNativeSeeks = <String, Duration>{};
+  final Map<String, Completer<void>> _pendingNativeSeekCompleters =
+      <String, Completer<void>>{};
+  final Set<String> _activeNativeSeeks = <String>{};
   int _nativePersistedUriReferenceRevision = 0;
   bool _nativeRetainedContentUriInventoryReady = false;
   MusicTrack? Function(String trackPath)? _persistedTrackResolver;
@@ -471,6 +475,9 @@ final class PlaybackFacade {
     if (removedSessions.isEmpty) return allSucceeded;
     for (final session in removedSessions) {
       _deferredVolumeReloadSessionIds.remove(session.id);
+      _activeNativeSeeks.remove(session.id);
+      _pendingNativeSeeks.remove(session.id);
+      _pendingNativeSeekCompleters.remove(session.id)?.complete();
     }
     await Future.wait(removedSessions.map((session) => session.shutdown()));
     _onSessionsRemoved?.call(removedSessions);
@@ -531,12 +538,43 @@ final class PlaybackFacade {
               ? Duration.zero
               : (position > maxDuration ? maxDuration : position))
         : (position < Duration.zero ? Duration.zero : position);
-    session.beginLoadingIndicatorThreshold();
     session.setOptimisticPosition(clamped);
     session.lastPersistedPositionBucket =
         clamped.inSeconds ~/ positionBucketSeconds;
-    _onSessionPositionChanged?.call(session, clamped);
-    await nativeRepository.seek(session.id, clamped);
+    if (!_sessionObserversAttached) {
+      _onSessionPositionChanged?.call(session, clamped);
+    }
+    await _dispatchNativeSeek(session.id, clamped);
+  }
+
+  Future<void> _dispatchNativeSeek(String sessionId, Duration position) async {
+    if (_activeNativeSeeks.contains(sessionId)) {
+      _pendingNativeSeeks[sessionId] = position;
+      final completer = _pendingNativeSeekCompleters.putIfAbsent(
+        sessionId,
+        () => Completer<void>(),
+      );
+      return completer.future;
+    }
+    _activeNativeSeeks.add(sessionId);
+    try {
+      await nativeRepository.seek(sessionId, position);
+    } finally {
+      _activeNativeSeeks.remove(sessionId);
+      final pending = _pendingNativeSeeks.remove(sessionId);
+      final completer = _pendingNativeSeekCompleters.remove(sessionId);
+      if (pending != null) {
+        unawaited(
+          _dispatchNativeSeek(sessionId, pending).whenComplete(() {
+            if (completer != null && !completer.isCompleted) {
+              completer.complete();
+            }
+          }),
+        );
+      } else if (completer != null && !completer.isCompleted) {
+        completer.complete();
+      }
+    }
   }
 
   Future<void> seekSessionByOffset(String sessionId, Duration offset) async {
@@ -1115,6 +1153,12 @@ final class PlaybackFacade {
     }
 
     cancelScheduledPersistence();
+    _activeNativeSeeks.clear();
+    _pendingNativeSeeks.clear();
+    for (final completer in _pendingNativeSeekCompleters.values) {
+      if (!completer.isCompleted) completer.complete();
+    }
+    _pendingNativeSeekCompleters.clear();
     final persistenceTail = _sessionPersistenceTail;
     if (persistenceTail != null) {
       await attempt(() => persistenceTail);

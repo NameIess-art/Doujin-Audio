@@ -829,6 +829,130 @@ void main() {
         );
       },
     );
+
+    test(
+      'ASMR custom queue with subdirectories maintains enabled adjacent buttons and advances across folders and loop modes',
+      () async {
+        final firstTrack = MusicTrack(
+          path: 'https://example.com/asmr/disc1/01.mp3',
+          displayName: '01',
+          groupKey: 'asmr-work-1',
+          groupTitle: 'ASMR Work',
+          groupSubtitle: 'RJ000001',
+          isSingle: false,
+          remoteMetadataKind: 'asmr.one',
+          remoteMetadata: const <String, Object?>{
+            'trackDirectoryPath': 'Disc 1',
+            'playbackUrls': <String>['https://example.com/asmr/disc1/01.mp3'],
+          },
+        );
+        final secondTrack = MusicTrack(
+          path: 'https://example.com/asmr/disc2/02.mp3',
+          displayName: '02',
+          groupKey: 'asmr-work-1',
+          groupTitle: 'ASMR Work',
+          groupSubtitle: 'RJ000001',
+          isSingle: false,
+          remoteMetadataKind: 'asmr.one',
+          remoteMetadata: const <String, Object?>{
+            'trackDirectoryPath': 'Disc 2',
+            'playbackUrls': <String>['https://example.com/asmr/disc2/02.mp3'],
+          },
+        );
+
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(nativePlaybackChannel, (call) async {
+              if (call.method == NativePlaybackMethod.prepareSession) {
+                final args = call.arguments as Map<Object?, Object?>;
+                return <String, Object?>{
+                  'ok': true,
+                  'value': <String, Object?>{
+                    'sessionId': args['sessionId'] as String,
+                    'uri': args['uri'] as String,
+                    'path': args['path'] as String,
+                    'title': args['title'] as String,
+                    'playing': false,
+                    'playWhenReady': false,
+                    'processingState': 'ready',
+                    'positionMs': 0,
+                    'bufferedPositionMs': 0,
+                    'durationMs': 0,
+                    'volume': 1.0,
+                    'queueIndex': 0,
+                  },
+                };
+              }
+              return <String, Object?>{'ok': true, 'value': null};
+            });
+
+        await runtimeGraph.playback.spawnSessionWithQueue(<MusicTrack>[
+          firstTrack,
+          secondTrack,
+        ], autoPlay: false);
+
+        final session = runtimeGraph.playback.activeSessions.single;
+        expect(session.currentTrackPath, firstTrack.path);
+
+        // 1. In default folderSequential mode, buttons are enabled despite subdirectories
+        expect(
+          runtimeGraph.playback.hasSessionAdjacentTrack(
+            session.id,
+            forward: true,
+          ),
+          isTrue,
+        );
+        expect(
+          runtimeGraph.playback.hasSessionAdjacentTrack(
+            session.id,
+            forward: false,
+          ),
+          isTrue,
+        );
+
+        // 2. hasSessionAdjacentTrack remains true even when session is loading
+        session.beginCompletionAdvance(
+          commandGeneration: session.playbackCommandGeneration,
+        );
+        expect(session.isLoading, isTrue);
+        expect(
+          runtimeGraph.playback.hasSessionAdjacentTrack(
+            session.id,
+            forward: true,
+          ),
+          isTrue,
+        );
+        session.confirmPaused();
+
+        // 3. Advancing skips across subdirectories to Disc 2
+        await runtimeGraph.playback.seekSessionToNext(session.id);
+        await runtimeGraph.playback.pendingSessionPreparation;
+        expect(session.currentTrackPath, secondTrack.path);
+
+        // 4. In single loop mode, buttons remain enabled and manual skips advance
+        await runtimeGraph.playback.setSessionLoopMode(
+          session.id,
+          SessionLoopMode.single,
+        );
+        expect(
+          runtimeGraph.playback.hasSessionAdjacentTrack(
+            session.id,
+            forward: true,
+          ),
+          isTrue,
+        );
+        expect(
+          runtimeGraph.playback.hasSessionAdjacentTrack(
+            session.id,
+            forward: false,
+          ),
+          isTrue,
+        );
+
+        await runtimeGraph.playback.seekSessionToNext(session.id);
+        await runtimeGraph.playback.pendingSessionPreparation;
+        expect(session.currentTrackPath, firstTrack.path);
+      },
+    );
   });
 
   // 鈹€鈹€ native snapshot isolation 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€

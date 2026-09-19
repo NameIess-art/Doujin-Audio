@@ -1,6 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/core/media/audio_detail.dart';
-import 'package:doujin_audio/core/media/card_info_field.dart';
 import 'package:doujin_audio/features/library/application/dlsite_metadata_query.dart';
 
 AudioDetail _detail({
@@ -55,34 +54,6 @@ void main() {
       isTrue,
     );
     expect(_detail(rjCode: '').hasNoMetadata, isFalse);
-  });
-
-  test('card info fields default to current metadata and cap at six items', () {
-    expect(CardInfoField.defaults, const <CardInfoField>[
-      CardInfoField.rjCode,
-      CardInfoField.voiceActors,
-      CardInfoField.circleName,
-      CardInfoField.tags,
-    ]);
-
-    final normalized = CardInfoField.normalize(CardInfoField.values);
-    expect(normalized, hasLength(CardInfoField.maxSelected));
-    expect(normalized, const <CardInfoField>[
-      CardInfoField.rjCode,
-      CardInfoField.voiceActors,
-      CardInfoField.circleName,
-      CardInfoField.tags,
-      CardInfoField.releaseDate,
-      CardInfoField.salesCount,
-    ]);
-  });
-
-  test('card info tag rows fill the remaining six-line card budget', () {
-    expect(CardInfoField.tagLineCountForSelection(1), 6);
-    expect(CardInfoField.tagLineCountForSelection(3), 4);
-    expect(CardInfoField.tagLineCountForSelection(4), 3);
-    expect(CardInfoField.tagLineCountForSelection(5), 2);
-    expect(CardInfoField.tagLineCountForSelection(6), 1);
   });
 
   test('DLsite query prefers an RJ code over title candidates', () {

@@ -5,6 +5,7 @@ import 'support/asmr_controller_test_fixture.dart';
 import 'package:doujin_audio/app/localization/app_language_provider.dart';
 import 'package:doujin_audio/core/immutable_collections.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
+import 'package:doujin_audio/core/widgets/swipe_reveal_card.dart';
 import 'package:doujin_audio/core/widgets/top_page_header.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_library_controller.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
@@ -19,45 +20,83 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'support/app_runtime_test_fixture.dart';
 
 void main() {
-  testWidgets('Windows metadata copies with right click only', (tester) async {
+  testWidgets(
+    'Windows metadata copies with right click only',
+    (tester) async {
+      SharedPreferences.setMockInitialValues(const <String, Object>{});
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      final copied = <String>[];
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        (call) async {
+          if (call.method == 'Clipboard.setData') {
+            copied.add((call.arguments as Map)['text'] as String);
+          }
+          return null;
+        },
+      );
+      addTearDown(
+        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          SystemChannels.platform,
+          null,
+        ),
+      );
+      await tester.pumpWidget(
+        fixture.build(
+          Builder(
+            builder: (context) => TextButton(
+              onPressed: () => showAsmrWorkDetailSheet(context, _work()),
+              child: const Text('Open detail'),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('Open detail'));
+      await tester.pumpAndSettle();
+      final text = find.text('Test circle');
+      await tester.ensureVisible(text);
+      await tester.longPress(text);
+      expect(copied, isEmpty);
+      final click = await tester.startGesture(
+        tester.getCenter(text),
+        kind: PointerDeviceKind.mouse,
+        buttons: kSecondaryMouseButton,
+      );
+      await click.up();
+      await tester.pumpAndSettle();
+      expect(copied, ['Test circle']);
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.windows),
+  );
+
+  testWidgets('WorkDetailPage renders ASMR work detail header and actions', (
+    tester,
+  ) async {
     SharedPreferences.setMockInitialValues(const <String, Object>{});
     final fixture = AppRuntimeWidgetTestFixture();
     addTearDown(fixture.dispose);
-    final copied = <String>[];
-    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
-      if (call.method == 'Clipboard.setData') copied.add((call.arguments as Map)['text'] as String);
-      return null;
-    });
-    addTearDown(() => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, null));
-    await tester.pumpWidget(fixture.build(Builder(builder: (context) => TextButton(
-      onPressed: () => showAsmrWorkDetailSheet(context, _work()),
-      child: const Text('Open detail'),
-    ))));
-    await tester.tap(find.text('Open detail'));
-    await tester.pumpAndSettle();
-    final text = find.text('Test circle');
-    await tester.ensureVisible(text);
-    await tester.longPress(text);
-    expect(copied, isEmpty);
-    final click = await tester.startGesture(tester.getCenter(text), kind: PointerDeviceKind.mouse, buttons: kSecondaryMouseButton);
-    await click.up();
-    await tester.pumpAndSettle();
-    expect(copied, ['Test circle']);
-  }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
-
-  testWidgets('WorkDetailPage renders ASMR work detail header and actions', (tester) async {
-    SharedPreferences.setMockInitialValues(const <String, Object>{});
-    final fixture = AppRuntimeWidgetTestFixture();
-    addTearDown(fixture.dispose);
-    await tester.pumpWidget(fixture.build(Builder(builder: (context) => TextButton(
-      onPressed: () => showAsmrWorkDetailSheet(context, _work()),
-      child: const Text('Open detail'),
-    ))));
+    await tester.pumpWidget(
+      fixture.build(
+        Builder(
+          builder: (context) => TextButton(
+            onPressed: () => showAsmrWorkDetailSheet(context, _work()),
+            child: const Text('Open detail'),
+          ),
+        ),
+      ),
+    );
     await tester.tap(find.text('Open detail'));
     await tester.pumpAndSettle();
 
-    expect(find.byKey(const ValueKey<String>('asmr_work_detail_download')), findsOneWidget);
-    expect(find.byKey(const ValueKey<String>('asmr_work_detail_favorite')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('asmr_work_detail_download')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('asmr_work_detail_favorite')),
+      findsOneWidget,
+    );
     expect(find.text('Test work'), findsOneWidget);
     expect(find.text('RJ000123'), findsOneWidget);
     expect(find.text('Test circle'), findsOneWidget);
@@ -158,29 +197,26 @@ void main() {
     expect(find.textContaining('/'), findsNothing);
   });
 
-  testWidgets('download page shows batch progress when multiple works are being downloaded', (
-    tester,
-  ) async {
-    SharedPreferences.setMockInitialValues(const <String, Object>{});
-    final fixture = AppRuntimeWidgetTestFixture();
-    addTearDown(fixture.dispose);
-    await fixture.languageProvider.setLanguage(AppLanguage.zh);
-    final work = _work();
+  testWidgets(
+    'download page shows batch progress when multiple works are being downloaded',
+    (tester) async {
+      SharedPreferences.setMockInitialValues(const <String, Object>{});
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      await fixture.languageProvider.setLanguage(AppLanguage.zh);
+      final work = _work();
 
-    await tester.pumpWidget(
-      fixture.build(
-        AsmrDownloadPage(
-          work: work,
-          batchIndex: 2,
-          batchTotal: 5,
+      await tester.pumpWidget(
+        fixture.build(
+          AsmrDownloadPage(work: work, batchIndex: 2, batchTotal: 5),
         ),
-      ),
-    );
-    await tester.pump();
+      );
+      await tester.pump();
 
-    expect(find.byType(AsmrDownloadPage), findsOneWidget);
-    expect(find.text('2/5'), findsOneWidget);
-  });
+      expect(find.byType(AsmrDownloadPage), findsOneWidget);
+      expect(find.text('2/5'), findsOneWidget);
+    },
+  );
 
   testWidgets(
     'detail sheet shows download and favorite buttons and allows undoing unfavorite',
@@ -277,8 +313,9 @@ void main() {
       expect(find.text('First Favorite Work'), findsOneWidget);
       expect(find.text('Second Favorite Work'), findsOneWidget);
 
-      final work2InitialTop =
-          tester.getTopLeft(find.text('Second Favorite Work')).dy;
+      final work2InitialTop = tester
+          .getTopLeft(find.text('Second Favorite Work'))
+          .dy;
 
       controller.updateFavorites(<AsmrWork>[work2]);
       await tester.pump();
@@ -291,16 +328,18 @@ void main() {
         matching: find.byType(SizeTransition),
       );
       expect(sizeTransitionFinder, findsOneWidget);
-      final sizeTransition =
-          tester.widget<SizeTransition>(sizeTransitionFinder);
+      final sizeTransition = tester.widget<SizeTransition>(
+        sizeTransitionFinder,
+      );
       expect(sizeTransition.sizeFactor.value, 1.0);
 
       await tester.pump(const Duration(milliseconds: 130));
       expect(sizeTransition.sizeFactor.value, lessThan(1.0));
       expect(sizeTransition.sizeFactor.value, greaterThan(0.0));
 
-      final work2MidTop =
-          tester.getTopLeft(find.text('Second Favorite Work')).dy;
+      final work2MidTop = tester
+          .getTopLeft(find.text('Second Favorite Work'))
+          .dy;
       expect(work2MidTop, lessThan(work2InitialTop));
 
       await tester.pumpAndSettle();
@@ -308,8 +347,9 @@ void main() {
       expect(find.text('First Favorite Work'), findsNothing);
       expect(find.text('Second Favorite Work'), findsOneWidget);
 
-      final work2FinalTop =
-          tester.getTopLeft(find.text('Second Favorite Work')).dy;
+      final work2FinalTop = tester
+          .getTopLeft(find.text('Second Favorite Work'))
+          .dy;
       expect(work2FinalTop, lessThan(work2MidTop));
     },
   );
@@ -344,6 +384,14 @@ void main() {
 
       final card = find.byKey(const ValueKey<String>('asmr-work-201'));
       expect(card, findsOneWidget);
+      expect(
+        tester
+            .widget<SwipeRevealCard>(
+              find.descendant(of: card, matching: find.byType(SwipeRevealCard)),
+            )
+            .showPressEffect,
+        isTrue,
+      );
 
       await tester.drag(card, const Offset(-180, 0));
       await tester.pumpAndSettle();
@@ -438,8 +486,8 @@ class _TestFavoritesAsmrLibraryController extends AsmrLibraryController {
   @override
   List<AsmrWork> worksFor(AsmrCategoryType category) =>
       category == AsmrCategoryType.favorites
-          ? favoriteWorks
-          : const <AsmrWork>[];
+      ? favoriteWorks
+      : const <AsmrWork>[];
 
   @override
   int totalCountFor(AsmrCategoryType category) => worksFor(category).length;

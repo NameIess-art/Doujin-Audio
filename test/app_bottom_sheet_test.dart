@@ -37,9 +37,7 @@ void main() {
             matching: find.byType(Material),
           );
           final rect = tester.getRect(material.first);
-          final expectedWidth = platform == TargetPlatform.windows
-              ? windowWidth * 0.5
-              : windowWidth;
+          final expectedWidth = windowWidth * 0.5;
           expect(rect.width, expectedWidth);
           expect(rect.center.dx, windowWidth / 2);
           expect(rect.bottom, 800);
@@ -64,4 +62,36 @@ void main() {
       );
     }
   }
+
+  testWidgets(
+    'Android portrait sheet keeps the full page width',
+    (tester) async {
+      tester.view.physicalSize = const Size(800, 960);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (context) => TextButton(
+                onPressed: () => AppBottomSheet.show<void>(
+                  context: context,
+                  builder: (_) =>
+                      const SizedBox(width: double.infinity, height: 120),
+                ),
+                child: const Text('Open portrait'),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('Open portrait'));
+      await tester.pumpAndSettle();
+
+      expect(tester.getSize(find.byType(BottomSheet)).width, 800);
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.android),
+  );
 }

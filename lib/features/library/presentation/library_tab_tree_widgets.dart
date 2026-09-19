@@ -443,9 +443,7 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
             child: Row(
               children: [
                 Icon(
-                  _expanded
-                      ? Icons.folder_open_rounded
-                      : Icons.folder_rounded,
+                  _expanded ? Icons.folder_open_rounded : Icons.folder_rounded,
                   size: 20,
                   color: cs.primary.withValues(alpha: 0.8),
                 ),
@@ -461,9 +459,7 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
                           text: folder.name,
                           terms: extractSearchTerms(widget.searchQuery),
                           style:
-                              Theme.of(
-                                context,
-                              ).textTheme.titleMedium?.copyWith(
+                              Theme.of(context).textTheme.titleMedium?.copyWith(
                                 fontWeight: FontWeight.w700,
                                 fontSize: 13,
                                 height: 1.06,
@@ -485,8 +481,7 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
                 IconButton(
-                  onPressed: () =>
-                      unawaited(_playFolder(context, playback)),
+                  onPressed: () => unawaited(_playFolder(context, playback)),
                   visualDensity: VisualDensity.compact,
                   tooltip: i18n.tr('add_to_playlist'),
                   style: IconButton.styleFrom(
@@ -601,6 +596,7 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
         shape: folderShape,
         enabled: !widget.isSelectionMode,
         closedColor: cs.surface,
+        showPressEffect: isRootFolder,
         actionLabel: i18n.tr('remove'),
         removeTooltip: i18n.tr('remove_audio_folder'),
         secondaryActionLabel: isRootFolder ? i18n.tr('download') : null,
@@ -762,6 +758,7 @@ class _TrackNodeWidget extends ConsumerWidget {
           shape: cardShape,
           enabled: !isSelectionMode,
           closedColor: cs.surface,
+          showPressEffect: true,
           actionLabel: i18n.tr('remove'),
           removeTooltip: i18n.tr('remove_audio'),
           secondaryActionLabel: i18n.tr('download'),

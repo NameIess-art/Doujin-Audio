@@ -40,6 +40,7 @@ class SwipeRevealCard extends StatefulWidget {
     this.secondaryLeadingActionTooltip,
     this.secondaryLeadingActionIcon = Icons.download_rounded,
     this.secondaryLeadingActionIconWidget,
+    this.showPressEffect = false,
   });
 
   final Widget child;
@@ -75,6 +76,7 @@ class SwipeRevealCard extends StatefulWidget {
   final String? secondaryLeadingActionTooltip;
   final IconData secondaryLeadingActionIcon;
   final Widget? secondaryLeadingActionIconWidget;
+  final bool showPressEffect;
 
   @override
   State<SwipeRevealCard> createState() => _SwipeRevealCardState();
@@ -98,11 +100,13 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
   bool _tickerModeEnabled = true;
   bool _revealedFromStart = false;
   bool _dragStartFromStart = false;
+  final ValueNotifier<bool> _pressed = ValueNotifier<bool>(false);
 
   bool get _hasSecondaryAction => widget.onSecondaryAction != null;
   bool get _hasTertiaryAction => widget.onTertiaryAction != null;
   bool get _hasLeadingAction => widget.onLeadingAction != null;
-  bool get _hasSecondaryLeadingAction => widget.onSecondaryLeadingAction != null;
+  bool get _hasSecondaryLeadingAction =>
+      widget.onSecondaryLeadingAction != null;
   int get _actionCount =>
       1 + (_hasSecondaryAction ? 1 : 0) + (_hasTertiaryAction ? 1 : 0);
   int get _leadingActionCount =>
@@ -114,10 +118,10 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
       : 72;
   double get _leadingActionWidth =>
       widget.verticalActions && _leadingActionCount > 1
-          ? 76
-          : _leadingActionCount > 1
-          ? 144
-          : 72;
+      ? 76
+      : _leadingActionCount > 1
+      ? 144
+      : 72;
   double get _activeActionWidth =>
       _revealedFromStart ? _leadingActionWidth : _actionWidth;
   bool get _isOpen => _revealedWidth > (_activeActionWidth * 0.5);
@@ -144,6 +148,12 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
     }
   }
 
+  @override
+  void dispose() {
+    _pressed.dispose();
+    super.dispose();
+  }
+
   void _resetPaneState() {
     _revealedWidth = 0;
     _dragStartRevealedWidth = 0;
@@ -155,6 +165,12 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
     _actionPaneActive = false;
     _revealedFromStart = false;
     _dragStartFromStart = false;
+    _pressed.value = false;
+  }
+
+  void _setPressed(bool pressed) {
+    if (!widget.showPressEffect || _pressed.value == pressed) return;
+    _pressed.value = pressed;
   }
 
   void _closePane({bool immediate = false}) {
@@ -386,7 +402,8 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
         ? onColor
         : onColor.withValues(alpha: 0.3);
     final primaryFg = effectiveDestructive ? baseColor : onColor;
-    final showVerticalActions = widget.verticalActions &&
+    final showVerticalActions =
+        widget.verticalActions &&
         (_revealedFromStart ? _leadingActionCount > 1 : _actionCount > 1);
     final leadingActionLabel = _hasSecondaryLeadingAction
         ? '${widget.leadingActionLabel ?? ''} / ${widget.secondaryLeadingActionLabel ?? ''}'
@@ -409,7 +426,26 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
       final content = ColoredBox(
         color: widget.closedColor ?? cs.surface,
         child: Stack(
-          children: [IgnorePointer(ignoring: _isOpen, child: widget.child)],
+          children: [
+            IgnorePointer(ignoring: _isOpen, child: widget.child),
+            if (widget.showPressEffect)
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: ValueListenableBuilder<bool>(
+                    valueListenable: _pressed,
+                    builder: (context, pressed, child) => AnimatedContainer(
+                      key: const ValueKey<String>(
+                        'swipe_reveal_press_effect',
+                      ),
+                      duration: const Duration(milliseconds: 90),
+                      color: pressed && !_isOpen
+                          ? cs.primary.withValues(alpha: 0.10)
+                          : Colors.transparent,
+                    ),
+                  ),
+                ),
+              ),
+          ],
         ),
       );
 
@@ -460,9 +496,17 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
           padding: widget.margin,
           child: GestureDetector(
             behavior: HitTestBehavior.translucent,
+            onHorizontalDragDown: widget.showPressEffect
+                ? (_) => _setPressed(true)
+                : null,
             onHorizontalDragStart: _handleHorizontalDragStart,
             onHorizontalDragUpdate: _handleHorizontalDragUpdate,
-            onHorizontalDragEnd: _handleHorizontalDragEnd,
+            onHorizontalDragEnd: widget.showPressEffect
+                ? (details) {
+                    _setPressed(false);
+                    _handleHorizontalDragEnd(details);
+                  }
+                : _handleHorizontalDragEnd,
             onSecondaryTap: () {
               setState(() {
                 final opening = !_isOpen;
@@ -472,6 +516,7 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
               });
             },
             onHorizontalDragCancel: () {
+              if (widget.showPressEffect) _setPressed(false);
               _dragAccepted = false;
               _dragRejected = false;
             },
@@ -639,8 +684,7 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                                                   if (_hasLeadingAction) ...[
                                                     _SwipeRevealActionButton(
                                                       onPressed: () {
-                                                        AppInteractionFeedback
-                                                            .trigger(
+                                                        AppInteractionFeedback.trigger(
                                                           AppInteractionFeedbackType
                                                               .confirmation,
                                                         );
@@ -658,12 +702,10 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                                                               .leadingActionTooltip ??
                                                           widget
                                                               .leadingActionLabel,
-                                                      icon:
-                                                          widget
-                                                              .leadingActionIcon,
-                                                      iconWidget:
-                                                          widget
-                                                              .leadingActionIconWidget,
+                                                      icon: widget
+                                                          .leadingActionIcon,
+                                                      iconWidget: widget
+                                                          .leadingActionIconWidget,
                                                       tonal: true,
                                                       size: buttonSize,
                                                     ),
@@ -673,8 +715,7 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                                                       SizedBox(height: gap),
                                                     _SwipeRevealActionButton(
                                                       onPressed: () {
-                                                        AppInteractionFeedback
-                                                            .trigger(
+                                                        AppInteractionFeedback.trigger(
                                                           AppInteractionFeedbackType
                                                               .confirmation,
                                                         );
@@ -692,12 +733,10 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                                                               .secondaryLeadingActionTooltip ??
                                                           widget
                                                               .secondaryLeadingActionLabel,
-                                                      icon:
-                                                          widget
-                                                              .secondaryLeadingActionIcon,
-                                                      iconWidget:
-                                                          widget
-                                                              .secondaryLeadingActionIconWidget,
+                                                      icon: widget
+                                                          .secondaryLeadingActionIcon,
+                                                      iconWidget: widget
+                                                          .secondaryLeadingActionIconWidget,
                                                       tonal: true,
                                                       size: buttonSize,
                                                     ),
@@ -724,8 +763,7 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                                                 if (_hasTertiaryAction) ...[
                                                   _SwipeRevealActionButton(
                                                     onPressed: () {
-                                                      AppInteractionFeedback
-                                                          .trigger(
+                                                      AppInteractionFeedback.trigger(
                                                         AppInteractionFeedbackType
                                                             .selection,
                                                       );
@@ -740,9 +778,8 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                                                             .tertiaryActionTooltip ??
                                                         widget
                                                             .tertiaryActionLabel,
-                                                    icon:
-                                                        widget
-                                                            .tertiaryActionIcon,
+                                                    icon: widget
+                                                        .tertiaryActionIcon,
                                                     tonal: true,
                                                     size: buttonSize,
                                                   ),
@@ -751,8 +788,7 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                                                 if (_hasSecondaryAction) ...[
                                                   _SwipeRevealActionButton(
                                                     onPressed: () {
-                                                      AppInteractionFeedback
-                                                          .trigger(
+                                                      AppInteractionFeedback.trigger(
                                                         AppInteractionFeedbackType
                                                             .selection,
                                                       );
@@ -770,12 +806,10 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                                                             .secondaryActionTooltip ??
                                                         widget
                                                             .secondaryActionLabel,
-                                                    icon:
-                                                        widget
-                                                            .secondaryActionIcon,
-                                                    iconWidget:
-                                                        widget
-                                                            .secondaryActionIconWidget,
+                                                    icon: widget
+                                                        .secondaryActionIcon,
+                                                    iconWidget: widget
+                                                        .secondaryActionIconWidget,
                                                     tonal: true,
                                                     size: buttonSize,
                                                   ),
@@ -783,8 +817,7 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                                                 ],
                                                 _SwipeRevealActionButton(
                                                   onPressed: () {
-                                                    AppInteractionFeedback
-                                                        .trigger(
+                                                    AppInteractionFeedback.trigger(
                                                       widget.destructive
                                                           ? AppInteractionFeedbackType
                                                                 .destructive
@@ -826,8 +859,7 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                                                 if (_hasLeadingAction) ...[
                                                   _SwipeRevealActionButton(
                                                     onPressed: () {
-                                                      AppInteractionFeedback
-                                                          .trigger(
+                                                      AppInteractionFeedback.trigger(
                                                         AppInteractionFeedbackType
                                                             .confirmation,
                                                       );
@@ -842,12 +874,10 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                                                             .leadingActionTooltip ??
                                                         widget
                                                             .leadingActionLabel,
-                                                    icon:
-                                                        widget
-                                                            .leadingActionIcon,
-                                                    iconWidget:
-                                                        widget
-                                                            .leadingActionIconWidget,
+                                                    icon: widget
+                                                        .leadingActionIcon,
+                                                    iconWidget: widget
+                                                        .leadingActionIconWidget,
                                                     tonal: true,
                                                     size: buttonSize,
                                                   ),
@@ -856,8 +886,7 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                                                   const SizedBox(width: 8),
                                                   _SwipeRevealActionButton(
                                                     onPressed: () {
-                                                      AppInteractionFeedback
-                                                          .trigger(
+                                                      AppInteractionFeedback.trigger(
                                                         AppInteractionFeedbackType
                                                             .confirmation,
                                                       );
@@ -871,14 +900,12 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                                                     tooltip:
                                                         widget
                                                             .secondaryLeadingActionTooltip ??
-                                                            widget
+                                                        widget
                                                             .secondaryLeadingActionLabel,
-                                                    icon:
-                                                        widget
-                                                            .secondaryLeadingActionIcon,
-                                                    iconWidget:
-                                                        widget
-                                                            .secondaryLeadingActionIconWidget,
+                                                    icon: widget
+                                                        .secondaryLeadingActionIcon,
+                                                    iconWidget: widget
+                                                        .secondaryLeadingActionIconWidget,
                                                     tonal: true,
                                                     size: buttonSize,
                                                   ),
@@ -922,8 +949,7 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                                               if (_hasTertiaryAction) ...[
                                                 _SwipeRevealActionButton(
                                                   onPressed: () {
-                                                    AppInteractionFeedback
-                                                        .trigger(
+                                                    AppInteractionFeedback.trigger(
                                                       AppInteractionFeedbackType
                                                           .selection,
                                                     );
@@ -939,8 +965,7 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                                                       widget
                                                           .tertiaryActionLabel,
                                                   icon:
-                                                      widget
-                                                          .tertiaryActionIcon,
+                                                      widget.tertiaryActionIcon,
                                                   tonal: true,
                                                   size: buttonSize,
                                                 ),
@@ -949,14 +974,12 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                                               if (_hasSecondaryAction) ...[
                                                 _SwipeRevealActionButton(
                                                   onPressed: () {
-                                                    AppInteractionFeedback
-                                                        .trigger(
+                                                    AppInteractionFeedback.trigger(
                                                       AppInteractionFeedbackType
                                                           .selection,
                                                     );
                                                     _runActionAfterPaneClose(
-                                                      widget
-                                                          .onSecondaryAction,
+                                                      widget.onSecondaryAction,
                                                     );
                                                   },
                                                   backgroundColor: secondaryBg,
@@ -977,8 +1000,7 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                                               ],
                                               _SwipeRevealActionButton(
                                                 onPressed: () {
-                                                  AppInteractionFeedback
-                                                      .trigger(
+                                                  AppInteractionFeedback.trigger(
                                                     widget.destructive
                                                         ? AppInteractionFeedbackType
                                                               .destructive

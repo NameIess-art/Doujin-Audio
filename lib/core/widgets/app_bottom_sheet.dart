@@ -25,6 +25,7 @@ class AppBottomSheet {
   }) {
     final size = MediaQuery.sizeOf(context);
     final isWindows = defaultTargetPlatform == TargetPlatform.windows;
+    final useHalfWidth = isWindows || size.width > size.height;
     final effectiveAnimationStyle =
         sheetAnimationStyle ??
         (MediaQuery.disableAnimationsOf(context)
@@ -40,7 +41,7 @@ class AppBottomSheet {
     final localizations = MaterialLocalizations.of(context);
     return navigator.push<T>(
       _AppBottomSheetRoute<T>(
-        halfWidth: isWindows,
+        halfWidth: useHalfWidth,
         capturedThemes: InheritedTheme.capture(
           from: context,
           to: navigator.context,
@@ -59,7 +60,7 @@ class AppBottomSheet {
         elevation: elevation,
         clipBehavior: clipBehavior,
         constraints: BoxConstraints(
-          minWidth: isWindows ? double.infinity : 0,
+          minWidth: useHalfWidth ? double.infinity : 0,
           maxHeight: size.height * 0.75,
         ),
         shape: const RoundedRectangleBorder(

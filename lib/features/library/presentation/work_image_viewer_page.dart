@@ -1,7 +1,10 @@
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/state/app_runtime_providers.dart';
+import '../../../core/media/cover_image_resolution.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/async_cover_image.dart';
 import '../../../core/widgets/top_page_header.dart';
@@ -48,6 +51,7 @@ class WorkImageViewerPage extends ConsumerStatefulWidget {
 }
 
 class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage> {
+  static const double _imageHeaderGap = 24;
   final GlobalKey _headerKey = GlobalKey();
   double _headerHeight = 0;
   late int _currentIndex = widget.initialIndex.clamp(
@@ -122,6 +126,38 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage> {
     }
   }
 
+  Widget _buildImage(
+    WorkImageItem image, {
+    required BoxFit fit,
+    required bool showFallbackIcon,
+  }) {
+    final imagePath = image.path.trim();
+    final isRemoteImage =
+        imagePath.startsWith('http://') || imagePath.startsWith('https://');
+    if (isRemoteImage) {
+      return RetryingNetworkImage(
+        url: imagePath,
+        fit: fit,
+        displayMode: CoverImageDisplayMode.fill,
+        useDefaultCacheWidth: false,
+        fallbackBuilder: (_) => CoverFallbackArtwork(
+          seed: imagePath,
+          showIcon: showFallbackIcon,
+          icon: Icons.broken_image_rounded,
+        ),
+      );
+    }
+    return LocalCoverImage(
+      path: imagePath,
+      seed: imagePath,
+      fit: fit,
+      displayMode: CoverImageDisplayMode.fill,
+      useDefaultCacheWidth: false,
+      showIcon: showFallbackIcon,
+      icon: Icons.broken_image_rounded,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (widget.images.isEmpty) {
@@ -132,10 +168,7 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage> {
           foregroundColor: Colors.white,
         ),
         body: const Center(
-          child: Text(
-            'No images',
-            style: TextStyle(color: Colors.white70),
-          ),
+          child: Text('No images', style: TextStyle(color: Colors.white70)),
         ),
       );
     }
@@ -154,14 +187,35 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage> {
         setState(() => _headerHeight = height);
       }
     });
-    final imageTop = _headerHeight > 0
-        ? _headerHeight
-        : MediaQuery.paddingOf(context).top + 96;
+    final imageTop =
+        (_headerHeight > 0
+            ? _headerHeight
+            : MediaQuery.paddingOf(context).top + 96) +
+        _imageHeaderGap;
 
     return Scaffold(
       backgroundColor: Colors.black,
       body: Stack(
         children: [
+          Positioned.fill(
+            key: const ValueKey<String>('work_image_blurred_backdrop'),
+            child: ClipRect(
+              child: ImageFiltered(
+                imageFilter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+                child: Transform.scale(
+                  scale: 1.12,
+                  child: _buildImage(
+                    currentImage,
+                    fit: BoxFit.cover,
+                    showFallbackIcon: false,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          Positioned.fill(
+            child: ColoredBox(color: Colors.black.withValues(alpha: 0.42)),
+          ),
           Positioned.fill(
             top: imageTop,
             child: PageView.builder(
@@ -172,30 +226,15 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage> {
               itemCount: widget.images.length,
               itemBuilder: (context, index) {
                 final img = widget.images[index];
-                final imagePath = img.path.trim();
-                final isRemoteImage = imagePath.startsWith('http://') ||
-                    imagePath.startsWith('https://');
                 return InteractiveViewer(
                   maxScale: 4.0,
-                  child: isRemoteImage
-                      ? RetryingNetworkImage(
-                          url: imagePath,
-                          fit: BoxFit.cover,
-                          useDefaultCacheWidth: false,
-                          fallbackBuilder: (_) => CoverFallbackArtwork(
-                            seed: imagePath,
-                            showIcon: true,
-                            icon: Icons.broken_image_rounded,
-                          ),
-                        )
-                      : LocalCoverImage(
-                          path: imagePath,
-                          seed: imagePath,
-                          fit: BoxFit.cover,
-                          useDefaultCacheWidth: false,
-                          showIcon: true,
-                          icon: Icons.broken_image_rounded,
-                        ),
+                  child: SizedBox.expand(
+                    child: _buildImage(
+                      img,
+                      fit: BoxFit.contain,
+                      showFallbackIcon: true,
+                    ),
+                  ),
                 );
               },
             ),
@@ -242,17 +281,18 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage> {
                                   Icon(
                                     Icons.photo_size_select_actual_outlined,
                                     size: 18,
-                                    color:
-                                        Theme.of(context).colorScheme.onSurface,
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onSurface,
                                   ),
                                 const SizedBox(width: 6),
                                 Text(
                                   ref
-                                      .watch(appLanguageProviderInstanceProvider)
+                                      .watch(
+                                        appLanguageProviderInstanceProvider,
+                                      )
                                       .tr('audio_detail_set_cover'),
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .labelMedium
+                                  style: Theme.of(context).textTheme.labelMedium
                                       ?.copyWith(
                                         fontWeight: FontWeight.w600,
                                         color: Theme.of(
@@ -296,11 +336,11 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage> {
                       child: Text(
                         '${_currentIndex + 1} / ${widget.images.length}',
                         style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                              fontWeight: FontWeight.w700,
-                              letterSpacing: 0.5,
-                              fontSize: 12.5,
-                              color: Theme.of(context).colorScheme.onSurface,
-                            ),
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.5,
+                          fontSize: 12.5,
+                          color: Theme.of(context).colorScheme.onSurface,
+                        ),
                       ),
                     ),
                     IconButton(

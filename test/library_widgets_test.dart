@@ -76,28 +76,43 @@ void main() {
     await AppRuntimeTestFixture.disposeSharedDatabase(testDatabase);
   });
 
-  testWidgets('Windows scrollbar starts below the page header', (tester) async {
-    final fixture = AppRuntimeWidgetTestFixture();
-    addTearDown(fixture.dispose);
-    await tester.pumpWidget(fixture.build(const LibraryTab()));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 200));
-    void expectTrackBelowHeader() {
-      final headerBottom = tester.getBottomLeft(find.byType(TopPageHeader)).dy;
-      final paints = find.byWidgetPredicate((widget) =>
-          widget is CustomPaint && widget.foregroundPainter is ScrollbarPainter);
-      expect(paints, findsWidgets);
-      for (final element in paints.evaluate()) {
-        final painter = (element.widget as CustomPaint).foregroundPainter! as ScrollbarPainter;
-        final top = tester.getTopLeft(find.byWidget(element.widget)).dy;
-        expect(top + painter.padding.resolve(TextDirection.ltr).top, greaterThanOrEqualTo(headerBottom));
+  testWidgets(
+    'Windows scrollbar starts below the page header',
+    (tester) async {
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      await tester.pumpWidget(fixture.build(const LibraryTab()));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+      void expectTrackBelowHeader() {
+        final headerBottom = tester
+            .getBottomLeft(find.byType(TopPageHeader))
+            .dy;
+        final paints = find.byWidgetPredicate(
+          (widget) =>
+              widget is CustomPaint &&
+              widget.foregroundPainter is ScrollbarPainter,
+        );
+        expect(paints, findsWidgets);
+        for (final element in paints.evaluate()) {
+          final painter =
+              (element.widget as CustomPaint).foregroundPainter!
+                  as ScrollbarPainter;
+          final top = tester.getTopLeft(find.byWidget(element.widget)).dy;
+          expect(
+            top + painter.padding.resolve(TextDirection.ltr).top,
+            greaterThanOrEqualTo(headerBottom),
+          );
+        }
       }
-    }
-    expectTrackBelowHeader();
 
-    await tester.pumpWidget(const SizedBox.shrink());
-    await tester.pump(const Duration(seconds: 1));
-  }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
+      expectTrackBelowHeader();
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(seconds: 1));
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.windows),
+  );
 
   testWidgets('top page header tolerates transient multiple scroll positions', (
     WidgetTester tester,
@@ -599,40 +614,41 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
   });
 
-  testWidgets('deep library folders navigate through hierarchy in WorkDetailPage', (
-    WidgetTester tester,
-  ) async {
-    final fixture = AppRuntimeWidgetTestFixture();
-    addTearDown(fixture.dispose);
-    const rootPath = '/library/deep';
-    fixture.runtimeGraph.library.addWatchedFolder(rootPath, notify: false);
-    fixture.runtimeGraph.library.addTracks(
-      <MusicTrack>[
-        testMusicTrack(
-          name: 'Deep track',
-          path: '$rootPath/Disc/Chapter/deep.mp3',
-          groupKey: rootPath,
-          groupTitle: 'Deep work',
-        ),
-      ],
-      notify: false,
-      persist: false,
-    );
-    fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 0);
+  testWidgets(
+    'deep library folders navigate through hierarchy in WorkDetailPage',
+    (WidgetTester tester) async {
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      const rootPath = '/library/deep';
+      fixture.runtimeGraph.library.addWatchedFolder(rootPath, notify: false);
+      fixture.runtimeGraph.library.addTracks(
+        <MusicTrack>[
+          testMusicTrack(
+            name: 'Deep track',
+            path: '$rootPath/Disc/Chapter/deep.mp3',
+            groupKey: rootPath,
+            groupTitle: 'Deep work',
+          ),
+        ],
+        notify: false,
+        persist: false,
+      );
+      fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 0);
 
-    await tester.pumpWidget(fixture.build(const LibraryTab()));
-    await tester.pump();
-    await pumpUntilLibraryTreeReady(tester, fixture.runtimeGraph.library);
-    await pumpUntilNotFound(tester, find.byType(LibraryLikeSkeletonCard));
-    await tester.tap(find.byType(ListTile).first);
-    await pumpUntilFound(tester, find.byType(WorkDetailPage));
-    await pumpUntilFound(tester, find.text('Disc', findRichText: true));
-    await tester.tap(find.text('Disc', findRichText: true));
-    await pumpUntilFound(tester, find.text('Chapter', findRichText: true));
-    await tester.tap(find.text('Chapter', findRichText: true));
-    await pumpUntilFound(tester, find.text('Deep track', findRichText: true));
-    expect(find.text('Deep track', findRichText: true), findsOneWidget);
-  });
+      await tester.pumpWidget(fixture.build(const LibraryTab()));
+      await tester.pump();
+      await pumpUntilLibraryTreeReady(tester, fixture.runtimeGraph.library);
+      await pumpUntilNotFound(tester, find.byType(LibraryLikeSkeletonCard));
+      await tester.tap(find.byType(ListTile).first);
+      await pumpUntilFound(tester, find.byType(WorkDetailPage));
+      await pumpUntilFound(tester, find.text('Disc', findRichText: true));
+      await tester.tap(find.text('Disc', findRichText: true));
+      await pumpUntilFound(tester, find.text('Chapter', findRichText: true));
+      await tester.tap(find.text('Chapter', findRichText: true));
+      await pumpUntilFound(tester, find.text('Deep track', findRichText: true));
+      expect(find.text('Deep track', findRichText: true), findsOneWidget);
+    },
+  );
 
   testWidgets('content URI roots lazily expose their audio rows', (
     WidgetTester tester,
@@ -1027,91 +1043,88 @@ void main() {
     );
   });
 
-  testWidgets(
-    'removing a library audio shows undo and retains other audios',
-    (WidgetTester tester) async {
-      final fixture = AppRuntimeWidgetTestFixture();
-      addTearDown(fixture.dispose);
-      final runtimeGraph = fixture.runtimeGraph;
-      const folderPath = '/library/remove-folder-audio';
-      final removedTrack = testMusicTrack(
-        name: 'Remove this track',
-        path: '$folderPath/remove.mp3',
-        groupKey: folderPath,
-        groupTitle: 'Remove folder audio',
-        isSingle: true,
-      );
-      final retainedTrack = testMusicTrack(
-        name: 'Keep this track',
-        path: '$folderPath/keep.mp3',
-        groupKey: folderPath,
-        groupTitle: 'Remove folder audio',
-        isSingle: true,
-      );
-      runtimeGraph.library.addWatchedFolder(folderPath, notify: false);
-      runtimeGraph.library.addTracks(
-        <MusicTrack>[removedTrack, retainedTrack],
-        notify: false,
-        persist: false,
-      );
-      fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 0);
+  testWidgets('removing a library audio shows undo and retains other audios', (
+    WidgetTester tester,
+  ) async {
+    final fixture = AppRuntimeWidgetTestFixture();
+    addTearDown(fixture.dispose);
+    final runtimeGraph = fixture.runtimeGraph;
+    const folderPath = '/library/remove-folder-audio';
+    final removedTrack = testMusicTrack(
+      name: 'Remove this track',
+      path: '$folderPath/remove.mp3',
+      groupKey: folderPath,
+      groupTitle: 'Remove folder audio',
+      isSingle: true,
+    );
+    final retainedTrack = testMusicTrack(
+      name: 'Keep this track',
+      path: '$folderPath/keep.mp3',
+      groupKey: folderPath,
+      groupTitle: 'Remove folder audio',
+      isSingle: true,
+    );
+    runtimeGraph.library.addWatchedFolder(folderPath, notify: false);
+    runtimeGraph.library.addTracks(
+      <MusicTrack>[removedTrack, retainedTrack],
+      notify: false,
+      persist: false,
+    );
+    fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 0);
 
-      await tester.pumpWidget(fixture.build(const LibraryTab()));
-      await tester.pump();
-      await pumpUntilLibraryTreeReady(tester, runtimeGraph.library);
-      await pumpUntilNotFound(tester, find.byType(LibraryLikeSkeletonCard));
-      await tester.pump(const Duration(milliseconds: 350));
+    await tester.pumpWidget(fixture.build(const LibraryTab()));
+    await tester.pump();
+    await pumpUntilLibraryTreeReady(tester, runtimeGraph.library);
+    await pumpUntilNotFound(tester, find.byType(LibraryLikeSkeletonCard));
+    await tester.pump(const Duration(milliseconds: 350));
 
-      final removedTrackFinder = find.text(
-        'Remove this track',
-        findRichText: true,
-      );
-      final retainedTrackFinder = find.text(
-        'Keep this track',
-        findRichText: true,
-      );
-      await pumpUntilFound(tester, removedTrackFinder);
-      final trackCard = find.ancestor(
-        of: removedTrackFinder,
-        matching: find.byType(SwipeRevealCard),
-      );
-      tester.widget<SwipeRevealCard>(trackCard.first).onRemove();
+    final removedTrackFinder = find.text(
+      'Remove this track',
+      findRichText: true,
+    );
+    final retainedTrackFinder = find.text(
+      'Keep this track',
+      findRichText: true,
+    );
+    await pumpUntilFound(tester, removedTrackFinder);
+    final trackCard = find.ancestor(
+      of: removedTrackFinder,
+      matching: find.byType(SwipeRevealCard),
+    );
+    tester.widget<SwipeRevealCard>(trackCard.first).onRemove();
 
-      var removalCompleted = false;
-      for (var i = 0; i < 200; i++) {
-        await tester.pump(const Duration(milliseconds: 50));
-        expect(
-          retainedTrackFinder,
-          findsOneWidget,
-          reason: 'The remaining track should not blank while refreshing',
-        );
-        if (removedTrackFinder.evaluate().isEmpty) {
-          removalCompleted = true;
-          break;
-        }
-        await tester.runAsync(
-          () => Future<void>.delayed(const Duration(milliseconds: 10)),
-        );
-      }
-      expect(removalCompleted, isTrue);
-
-      await pumpUntilFound(
-        tester,
-        find.textContaining(fixture.languageProvider.tr('audio_removed')),
-      );
+    var removalCompleted = false;
+    for (var i = 0; i < 200; i++) {
+      await tester.pump(const Duration(milliseconds: 50));
       expect(
-        find.textContaining(fixture.languageProvider.tr('undo')),
+        retainedTrackFinder,
         findsOneWidget,
+        reason: 'The remaining track should not blank while refreshing',
       );
-
-      await tester.tap(
-        find.textContaining(fixture.languageProvider.tr('undo')),
+      if (removedTrackFinder.evaluate().isEmpty) {
+        removalCompleted = true;
+        break;
+      }
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 10)),
       );
-      await pumpUntilFound(tester, removedTrackFinder);
+    }
+    expect(removalCompleted, isTrue);
 
-      expect(find.text('Keep this track', findRichText: true), findsOneWidget);
-    },
-  );
+    await pumpUntilFound(
+      tester,
+      find.textContaining(fixture.languageProvider.tr('audio_removed')),
+    );
+    expect(
+      find.textContaining(fixture.languageProvider.tr('undo')),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.textContaining(fixture.languageProvider.tr('undo')));
+    await pumpUntilFound(tester, removedTrackFinder);
+
+    expect(find.text('Keep this track', findRichText: true), findsOneWidget);
+  });
 
   testWidgets(
     'excluding a library audio keeps the view stable while refreshing',
@@ -2746,9 +2759,7 @@ void main() {
         fixture.build(
           Material(
             child: SingleChildScrollView(
-              child: LibraryTreeItem(
-                node: childFolder,
-              ),
+              child: LibraryTreeItem(node: childFolder),
             ),
           ),
         ),
@@ -2764,7 +2775,9 @@ void main() {
       );
       expect(childExpansionTileFinder, findsOneWidget);
 
-      final childExpansionTile = tester.widget<ExpansionTile>(childExpansionTileFinder);
+      final childExpansionTile = tester.widget<ExpansionTile>(
+        childExpansionTileFinder,
+      );
       expect(childExpansionTile.shape, isA<RoundedRectangleBorder>());
       expect(childExpansionTile.collapsedShape, isA<RoundedRectangleBorder>());
       final shape = childExpansionTile.shape as RoundedRectangleBorder;
@@ -2784,7 +2797,10 @@ void main() {
       );
       expect(childAddButtonFinder, findsOneWidget);
       final childIconButton = tester.widget<IconButton>(childAddButtonFinder);
-      expect(childIconButton.tooltip, fixture.languageProvider.tr('add_to_playlist'));
+      expect(
+        childIconButton.tooltip,
+        fixture.languageProvider.tr('add_to_playlist'),
+      );
       final iconWidget = tester.widget<Icon>(
         find.descendant(of: childAddButtonFinder, matching: find.byType(Icon)),
       );
@@ -2798,9 +2814,14 @@ void main() {
       );
       expect(childFolderSwipeCardFinder, findsOneWidget);
 
-      final swipeCard = tester.widget<SwipeRevealCard>(childFolderSwipeCardFinder);
+      final swipeCard = tester.widget<SwipeRevealCard>(
+        childFolderSwipeCardFinder,
+      );
       expect(swipeCard.actionLabel, fixture.languageProvider.tr('remove'));
-      expect(swipeCard.removeTooltip, fixture.languageProvider.tr('remove_audio_folder'));
+      expect(
+        swipeCard.removeTooltip,
+        fixture.languageProvider.tr('remove_audio_folder'),
+      );
 
       await tester.drag(discFolderFinder, const Offset(-200, 0));
       await tester.pump();
@@ -2886,7 +2907,11 @@ void main() {
 
       // Pin badge not shown initially
       expect(
-        find.byKey(ValueKey<String>('library_pinned_${PathMatcher.normalize(libraryPath)}')),
+        find.byKey(
+          ValueKey<String>(
+            'library_pinned_${PathMatcher.normalize(libraryPath)}',
+          ),
+        ),
         findsNothing,
       );
 
@@ -2901,7 +2926,11 @@ void main() {
         contains(PathMatcher.normalize(libraryPath)),
       );
       expect(
-        find.byKey(ValueKey<String>('library_pinned_${PathMatcher.normalize(libraryPath)}')),
+        find.byKey(
+          ValueKey<String>(
+            'library_pinned_${PathMatcher.normalize(libraryPath)}',
+          ),
+        ),
         findsOneWidget,
       );
       final rjPosition = tester.widget<Positioned>(
@@ -2998,9 +3027,8 @@ void main() {
           const LibraryTab(),
           overrides: [
             asmrWorkFinderOverrideProvider.overrideWithValue(
-              (rjCode) => rjCode == 'RJ123456'
-                  ? workCompleter.future
-                  : Future.value(),
+              (rjCode) =>
+                  rjCode == 'RJ123456' ? workCompleter.future : Future.value(),
             ),
           ],
         ),
@@ -3092,7 +3120,9 @@ void main() {
 
       // Pin indicator should be inside _LibraryLeadingIndicators
       final pinBadge = find.byKey(
-        ValueKey<String>('library_pinned_${PathMatcher.normalize(singleTrack.path)}'),
+        ValueKey<String>(
+          'library_pinned_${PathMatcher.normalize(singleTrack.path)}',
+        ),
       );
       expect(pinBadge, findsOneWidget);
 
@@ -3242,6 +3272,17 @@ void main() {
 
       final rootFolderFinder = find.text('Work_A', findRichText: true);
       expect(rootFolderFinder, findsOneWidget);
+      expect(
+        tester
+            .widget<SwipeRevealCard>(
+              find.ancestor(
+                of: rootFolderFinder,
+                matching: find.byType(SwipeRevealCard),
+              ),
+            )
+            .showPressEffect,
+        isTrue,
+      );
 
       // Card is not an ExpansionTile
       final expansionTileFinder = find.ancestor(
@@ -3260,4 +3301,3 @@ void main() {
     },
   );
 }
-

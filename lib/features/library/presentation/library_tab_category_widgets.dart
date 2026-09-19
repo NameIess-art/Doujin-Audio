@@ -132,8 +132,12 @@ extension _LibrarySearchPageCategoryView on _LibrarySearchPageState {
         : pinnedPaths.map(PathMatcher.normalize).toSet();
     if (normalizedPinned.isNotEmpty) {
       filtered.sort((a, b) {
-        final aPinned = normalizedPinned.contains(PathMatcher.normalize(a.path));
-        final bPinned = normalizedPinned.contains(PathMatcher.normalize(b.path));
+        final aPinned = normalizedPinned.contains(
+          PathMatcher.normalize(a.path),
+        );
+        final bPinned = normalizedPinned.contains(
+          PathMatcher.normalize(b.path),
+        );
         if (aPinned != bPinned) return aPinned ? -1 : 1;
         return 0;
       });
@@ -346,8 +350,7 @@ class LibraryCategoryTermBox extends StatefulWidget {
   final ValueChanged<String> onSearchQueryChanged;
 
   @override
-  State<LibraryCategoryTermBox> createState() =>
-      _LibraryCategoryTermBoxState();
+  State<LibraryCategoryTermBox> createState() => _LibraryCategoryTermBoxState();
 }
 
 typedef _LibraryCategoryTermBox = LibraryCategoryTermBox;
@@ -466,7 +469,9 @@ class _LibraryCategoryTermBoxState extends State<LibraryCategoryTermBox> {
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         color: cs.surfaceContainerHigh,
-        borderRadius: BorderRadius.circular(LibraryCategoryTermBox.capsuleRadius),
+        borderRadius: BorderRadius.circular(
+          LibraryCategoryTermBox.capsuleRadius,
+        ),
         border: Border.all(color: cs.outlineVariant),
       ),
       child: widget.terms.isEmpty && _localSearchQuery.isEmpty
@@ -639,7 +644,9 @@ class _LibraryCategoryTermBoxState extends State<LibraryCategoryTermBox> {
                             );
                             return GestureDetector(
                               behavior: HitTestBehavior.translucent,
-                              onSecondaryTap: defaultTargetPlatform == TargetPlatform.windows
+                              onSecondaryTap:
+                                  defaultTargetPlatform ==
+                                      TargetPlatform.windows
                                   ? () => _copyCategoryTerm(context, term)
                                   : null,
                               onLongPress:
@@ -839,6 +846,7 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
           shape: cardShape,
           enabled: !isSelectionMode,
           closedColor: cs.surface,
+          showPressEffect: true,
           actionLabel: i18n.tr('remove'),
           removeTooltip: entry.isFolder
               ? i18n.tr('remove_audio_folder')
@@ -859,10 +867,12 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
                 .read(settingsRepositoryProvider)
                 .toggleLibraryPathPinned(entry.path),
           ),
-          leadingActionLabel:
-              i18n.tr(isPinned ? 'unpin_from_top' : 'pin_to_top'),
-          leadingActionTooltip:
-              i18n.tr(isPinned ? 'unpin_from_top' : 'pin_to_top'),
+          leadingActionLabel: i18n.tr(
+            isPinned ? 'unpin_from_top' : 'pin_to_top',
+          ),
+          leadingActionTooltip: i18n.tr(
+            isPinned ? 'unpin_from_top' : 'pin_to_top',
+          ),
           leadingActionIcon: Icons.push_pin_rounded,
           leadingActionIconWidget: isPinned ? const PushPinOffIcon() : null,
           onRemove: () => _remove(context, ref),

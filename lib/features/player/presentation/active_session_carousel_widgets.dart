@@ -71,6 +71,7 @@ class _ActiveSessionCard extends ConsumerWidget {
       currentTrack,
       resolvedCoverPath,
     );
+    final showExpandedCover = showCover || embedded;
     final screenSize = MediaQuery.sizeOf(context);
     final isTinyWindow = screenSize.width < 300 || screenSize.height < 300;
 
@@ -98,7 +99,6 @@ class _ActiveSessionCard extends ConsumerWidget {
                   track: currentTrack,
                   coverPathFuture: coverPathFuture,
                   dimension: 48,
-                  circular: true,
                 ),
               ),
             ),
@@ -186,9 +186,9 @@ class _ActiveSessionCard extends ConsumerWidget {
                   currentTrack,
                   displayName,
                   i18n: i18n,
-                  showCover: showCover,
+                  showCover: showExpandedCover,
                   coverDimension: coverDimension,
-                  contentPadding: showCover
+                  contentPadding: showExpandedCover
                       ? contentPadding
                       : const EdgeInsets.fromLTRB(
                           14,
@@ -723,14 +723,12 @@ class _ActiveSessionCover extends ConsumerWidget {
     required this.track,
     required this.coverPathFuture,
     required this.dimension,
-    this.circular = false,
   });
 
   final String sessionId;
   final MusicTrack? track;
   final Future<String?> coverPathFuture;
   final double dimension;
-  final bool circular;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -750,10 +748,7 @@ class _ActiveSessionCover extends ConsumerWidget {
       dimension: dimension,
       child: Material(
         type: MaterialType.transparency,
-        shape: circular ? const CircleBorder() : null,
-        borderRadius: circular
-            ? null
-            : BorderRadius.circular(LibraryLikeCardMetrics.coverRadius),
+        shape: const CircleBorder(),
         clipBehavior: Clip.antiAlias,
         child: AsyncLocalCoverImage(
           future: coverPathFuture,

@@ -160,6 +160,7 @@ class _AsmrWorkTreeCardState extends ConsumerState<_AsmrWorkTreeCard> {
         destructive: false,
         color: asmrBlue,
         verticalActions: true,
+        showPressEffect: true,
         actionLabel: i18n.tr(
           widget.work.isFavorite
               ? 'asmr_unfavorite_action'

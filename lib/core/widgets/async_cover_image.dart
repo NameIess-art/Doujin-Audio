@@ -591,6 +591,7 @@ class RetryingNetworkImage extends ConsumerWidget {
     this.gaplessPlayback = true,
     this.retryDelay = const Duration(seconds: 2),
     this.maxRetryAttempts = 12,
+    this.displayMode,
   });
 
   final String url;
@@ -607,6 +608,7 @@ class RetryingNetworkImage extends ConsumerWidget {
   final bool gaplessPlayback;
   final Duration retryDelay;
   final int maxRetryAttempts;
+  final CoverImageDisplayMode? displayMode;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -619,7 +621,8 @@ class RetryingNetworkImage extends ConsumerWidget {
       cacheWidth: cacheWidth,
       useDefaultCacheWidth: useDefaultCacheWidth,
     );
-    final displayMode = ref.watch(coverImageDisplayModeProvider);
+    final CoverImageDisplayMode effectiveDisplayMode =
+        displayMode ?? ref.watch(coverImageDisplayModeProvider);
     return RetryingImage(
       retryKey: (trimmedUrl, effectiveCacheWidth, cacheHeight),
       imageProviderBuilder: () => ResizeImage.resizeIfNeeded(
@@ -637,7 +640,7 @@ class RetryingNetworkImage extends ConsumerWidget {
       gaplessPlayback: gaplessPlayback,
       retryDelay: retryDelay,
       maxRetryAttempts: maxRetryAttempts,
-      displayMode: displayMode,
+      displayMode: effectiveDisplayMode,
     );
   }
 }

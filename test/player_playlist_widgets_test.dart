@@ -879,6 +879,30 @@ void main() {
     (tester) async {
       final fixture = AppRuntimeWidgetTestFixture();
       addTearDown(fixture.dispose);
+      fixture.runtimeGraph.library.addTracks(
+        <MusicTrack>[
+          MusicTrack(
+            path: '/track1.mp3',
+            displayName: 'Track 1',
+            groupKey: '/work',
+            groupTitle: 'Work',
+            groupSubtitle: '/work',
+            isSingle: false,
+            manualCoverPath: '/covers/track1.jpg',
+          ),
+          MusicTrack(
+            path: '/track2.mp3',
+            displayName: 'Track 2',
+            groupKey: '/work',
+            groupTitle: 'Work',
+            groupSubtitle: '/work',
+            isSingle: false,
+            manualCoverPath: '/covers/track2.jpg',
+          ),
+        ],
+        notify: false,
+        persist: false,
+      );
       final first = PlaybackSession(
         id: 'circular_1',
         currentTrackPath: '/track1.mp3',
@@ -937,6 +961,19 @@ void main() {
         ),
         const Size.square(48),
       );
+      expect(
+        tester
+            .widgetList<Material>(
+              find.descendant(
+                of: find.byKey(
+                  const ValueKey<String>('active_session_cover_circular_1'),
+                ),
+                matching: find.byType(Material),
+              ),
+            )
+            .any((material) => material.shape is CircleBorder),
+        isTrue,
+      );
       expect(visibleSessions.last, 'circular_1');
 
       await tester.pumpWidget(
@@ -946,6 +983,19 @@ void main() {
       await tester.drag(find.byType(PageView), const Offset(-300, 0));
       await tester.pumpAndSettle();
       expect(visibleSessions.last, 'circular_2');
+      expect(
+        tester
+            .widgetList<Material>(
+              find.descendant(
+                of: find.byKey(
+                  const ValueKey<String>('active_session_cover_circular_2'),
+                ),
+                matching: find.byType(Material),
+              ),
+            )
+            .any((material) => material.shape is CircleBorder),
+        isTrue,
+      );
 
       await tester.pumpWidget(
         carousel(ActiveSessionCarouselPresentation.circularCover),

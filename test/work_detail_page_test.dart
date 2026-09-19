@@ -442,6 +442,26 @@ void main() {
       expect(find.text('1 / 2'), findsOneWidget);
       expect(find.text('01.jpg'), findsOneWidget);
       expect(find.byType(LocalCoverImage), findsWidgets);
+      final pageView = tester.widget<PageView>(find.byType(PageView));
+      expect(pageView.physics, isA<NeverScrollableScrollPhysics>());
+      expect(
+        tester.widget<LocalCoverImage>(find.byType(LocalCoverImage).first).fit,
+        BoxFit.cover,
+      );
+      expect(
+        tester.getTopLeft(find.byKey(const ValueKey<String>('work_image_viewport'))).dy,
+        greaterThanOrEqualTo(
+          tester.getBottomLeft(find.byKey(const ValueKey<String>('work_image_header'))).dy,
+        ),
+      );
+
+      await tester.drag(
+        find.byKey(const ValueKey<String>('work_image_viewport')),
+        const Offset(-300, 0),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('1 / 2'), findsOneWidget);
+      expect(find.text('01.jpg'), findsOneWidget);
 
       // Next button
       await tester.tap(nextBtn);
@@ -483,6 +503,10 @@ void main() {
 
       expect(find.byType(RetryingNetworkImage), findsOneWidget);
       expect(find.byType(LocalCoverImage), findsNothing);
+      expect(
+        tester.widget<RetryingNetworkImage>(find.byType(RetryingNetworkImage)).fit,
+        BoxFit.cover,
+      );
 
       await tester.pumpWidget(const SizedBox.shrink());
     });

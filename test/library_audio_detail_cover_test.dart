@@ -1257,6 +1257,36 @@ void main() {
   });
 
   group('metadata apply scope', () {
+    test('metadata fetch does not update the local sales count', () async {
+      final directory = await Directory.systemTemp.createTemp(
+        'library_metadata_sales_',
+      );
+      addTearDown(() async {
+        if (await directory.exists()) await directory.delete(recursive: true);
+      });
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      final detail = AudioDetail.empty(
+        AudioDetailTarget.libraryRootFolder(directory.path),
+      ).copyWith(salesCount: 321);
+
+      final result = await fixture.runtimeGraph.library.applyDlsiteMetadata(
+        detail,
+        DlsiteMetadata(
+          rjCode: 'RJ222222',
+          workTitle: 'Fetched title',
+          circleName: 'Fetched circle',
+          voiceActors: const <String>[],
+          tags: const <String>[],
+          salesCount: 1234,
+        ),
+        saveCover: false,
+        language: AppLanguage.zh,
+      );
+
+      expect(result.detail.salesCount, 321);
+    });
+
     test(
       'missingOnly fills empty fields without overwriting existing data',
       () async {
@@ -1299,7 +1329,7 @@ void main() {
         expect(result.detail.tags, const <String>['ASMR']);
         expect(result.detail.releaseDate, DateTime(2024, 5, 6));
         expect(result.detail.duration, const Duration(minutes: 30));
-        expect(result.detail.salesCount, 1234);
+        expect(result.detail.salesCount, isNull);
         expect(result.detail.rating, 4.5);
       },
     );

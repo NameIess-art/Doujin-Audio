@@ -93,7 +93,6 @@ class _DlsiteMetadataReviewPageState
   final _tagsController = TextEditingController();
   final _releaseDateController = TextEditingController();
   final _durationController = TextEditingController();
-  final _salesController = TextEditingController();
   final _ratingController = TextEditingController();
 
   DlsiteMetadata? _metadata;
@@ -122,7 +121,6 @@ class _DlsiteMetadataReviewPageState
     _tagsController.dispose();
     _releaseDateController.dispose();
     _durationController.dispose();
-    _salesController.dispose();
     _ratingController.dispose();
     super.dispose();
   }
@@ -199,7 +197,6 @@ class _DlsiteMetadataReviewPageState
     _durationController.text = metadata.duration == null
         ? ''
         : formatDurationHms(metadata.duration!);
-    _salesController.text = metadata.salesCount?.toString() ?? '';
     _ratingController.text = formatLibraryLikeRating(metadata.rating);
     setState(() {
       _candidateIndex = nextIndex;
@@ -230,9 +227,6 @@ class _DlsiteMetadataReviewPageState
       ),
       releaseDate: parseDateYmd(_releaseDateController.text.trim()),
       duration: parseDurationCompact(_durationController.text.trim()),
-      salesCount: _salesController.text.trim().isEmpty
-          ? null
-          : int.tryParse(_salesController.text.trim()),
       rating: _ratingController.text.trim().isEmpty
           ? null
           : double.tryParse(_ratingController.text.trim()),
@@ -455,10 +449,6 @@ class _DlsiteMetadataReviewPageState
                         controller: _durationController,
                         label: i18n.tr('card_info_duration'),
                         hint: 'HH:MM:SS',
-                      ),
-                      _ReviewTextField(
-                        controller: _salesController,
-                        label: i18n.tr('audio_detail_sales_count'),
                       ),
                       _ReviewTextField(
                         controller: _ratingController,

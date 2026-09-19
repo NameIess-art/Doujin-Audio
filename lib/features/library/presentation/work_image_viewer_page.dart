@@ -48,6 +48,8 @@ class WorkImageViewerPage extends ConsumerStatefulWidget {
 }
 
 class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage> {
+  final GlobalKey _headerKey = GlobalKey();
+  double _headerHeight = 0;
   late int _currentIndex = widget.initialIndex.clamp(
     0,
     widget.images.isEmpty ? 0 : widget.images.length - 1,
@@ -142,26 +144,43 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage> {
     final hasPrevious = _currentIndex > 0;
     final hasNext = _currentIndex < widget.images.length - 1;
 
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final box = _headerKey.currentContext?.findRenderObject() as RenderBox?;
+      if (box == null) return;
+      final height = box.size.height;
+      if (height > 0 &&
+          (_headerHeight == 0 || (height - _headerHeight).abs() > 0.5)) {
+        setState(() => _headerHeight = height);
+      }
+    });
+    final imageTop = _headerHeight > 0
+        ? _headerHeight
+        : MediaQuery.paddingOf(context).top + 96;
+
     return Scaffold(
       backgroundColor: Colors.black,
       body: Stack(
         children: [
-          PageView.builder(
-            controller: _pageController,
-            onPageChanged: _onPageChanged,
-            itemCount: widget.images.length,
-            itemBuilder: (context, index) {
-              final img = widget.images[index];
-              final imagePath = img.path.trim();
-              final isRemoteImage = imagePath.startsWith('http://') ||
-                  imagePath.startsWith('https://');
-              return InteractiveViewer(
-                maxScale: 4.0,
-                child: Center(
+          Positioned.fill(
+            top: imageTop,
+            child: PageView.builder(
+              key: const ValueKey<String>('work_image_viewport'),
+              controller: _pageController,
+              physics: const NeverScrollableScrollPhysics(),
+              onPageChanged: _onPageChanged,
+              itemCount: widget.images.length,
+              itemBuilder: (context, index) {
+                final img = widget.images[index];
+                final imagePath = img.path.trim();
+                final isRemoteImage = imagePath.startsWith('http://') ||
+                    imagePath.startsWith('https://');
+                return InteractiveViewer(
+                  maxScale: 4.0,
                   child: isRemoteImage
                       ? RetryingNetworkImage(
                           url: imagePath,
-                          fit: BoxFit.contain,
+                          fit: BoxFit.cover,
                           useDefaultCacheWidth: false,
                           fallbackBuilder: (_) => CoverFallbackArtwork(
                             seed: imagePath,
@@ -172,17 +191,18 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage> {
                       : LocalCoverImage(
                           path: imagePath,
                           seed: imagePath,
-                          fit: BoxFit.contain,
+                          fit: BoxFit.cover,
                           useDefaultCacheWidth: false,
                           showIcon: true,
                           icon: Icons.broken_image_rounded,
                         ),
-                ),
-              );
-            },
+                );
+              },
+            ),
           ),
           // Floating Top Page Header
           Positioned(
+            key: _headerKey,
             top: 0,
             left: 0,
             right: 0,

@@ -530,9 +530,6 @@ final class LibraryMetadataCoordinator {
       duration: missingOnly && detail.duration != null
           ? detail.duration
           : metadata.duration,
-      salesCount: missingOnly && detail.salesCount != null
-          ? detail.salesCount
-          : metadata.salesCount,
       rating: missingOnly && detail.rating != null
           ? detail.rating
           : metadata.rating,

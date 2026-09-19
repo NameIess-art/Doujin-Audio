@@ -428,14 +428,9 @@ void main() {
       find.text(languageProvider.tr('audio_detail_release_date')),
       findsOneWidget,
     );
-    await tester.dragUntilVisible(
-      find.text(languageProvider.tr('audio_detail_sales_count')),
-      find.byType(ListView),
-      const Offset(0, -200),
-    );
     expect(
       find.text(languageProvider.tr('audio_detail_sales_count')),
-      findsOneWidget,
+      findsNothing,
     );
     final visibleTextFieldValues = tester
         .widgetList<TextField>(find.byType(TextField))
@@ -446,7 +441,7 @@ void main() {
     expect(visibleTextFieldValues, contains('Circle'));
     expect(visibleTextFieldValues, contains('2024-05-06'));
     expect(visibleTextFieldValues, contains('01:02:03'));
-    expect(visibleTextFieldValues, contains('1234'));
+    expect(visibleTextFieldValues, isNot(contains('1234')));
 
     await tester.dragUntilVisible(
       find.text(languageProvider.tr('audio_detail_rating')),

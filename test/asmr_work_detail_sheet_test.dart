@@ -150,11 +150,19 @@ void main() {
     final tag = find.byKey(const ValueKey<String>('work_detail_tag_#Tag A'));
     expect(tag, findsOneWidget);
     expect(tester.getSize(voiceActor).height, tester.getSize(tag).height);
+    for (final key in <String>[
+      'work_detail_voice_actor_left_edge_fade',
+      'work_detail_voice_actor_right_edge_fade',
+      'work_detail_tag_left_edge_fade',
+      'work_detail_tag_right_edge_fade',
+    ]) {
+      final fade = find.byKey(ValueKey<String>(key));
+      expect(fade, findsOneWidget);
+      expect(tester.widget<IgnorePointer>(fade).ignoring, isTrue);
+    }
     final tagEdgeFade = find.byKey(
-      const ValueKey<String>('work_detail_tag_edge_fade'),
+      const ValueKey<String>('work_detail_tag_right_edge_fade'),
     );
-    expect(tagEdgeFade, findsOneWidget);
-    expect(tester.widget<IgnorePointer>(tagEdgeFade).ignoring, isTrue);
     expect(
       tester.getRect(tagEdgeFade).right,
       MediaQuery.sizeOf(tester.element(tagEdgeFade)).width,

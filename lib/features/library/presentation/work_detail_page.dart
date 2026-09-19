@@ -985,22 +985,10 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
                         ),
                         const SizedBox(width: 8),
                         Expanded(
-                          child: SingleChildScrollView(
-                            scrollDirection: Axis.horizontal,
-                            child: Row(
-                              children: displayVoiceActors
-                                  .map(
-                                    (va) => Padding(
-                                      padding: const EdgeInsets.only(right: 8),
-                                      child: _buildVoiceActorCapsule(
-                                        context,
-                                        cs,
-                                        va,
-                                      ),
-                                    ),
-                                  )
-                                  .toList(growable: false),
-                            ),
+                          child: _buildVoiceActorScroller(
+                            context,
+                            cs,
+                            displayVoiceActors,
                           ),
                         ),
                       ],
@@ -1368,20 +1356,63 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
     ColorScheme cs,
     List<String> tags,
   ) {
+    return _buildMetadataScroller(
+      context,
+      cs,
+      keyPrefix: 'tag',
+      children: tags
+          .map(
+            (tag) => Padding(
+              padding: const EdgeInsets.only(right: 6),
+              child: _buildTagCapsule(context, cs, tag),
+            ),
+          )
+          .toList(growable: false),
+    );
+  }
+
+  Widget _buildVoiceActorScroller(
+    BuildContext context,
+    ColorScheme cs,
+    List<String> voiceActors,
+  ) {
+    return _buildMetadataScroller(
+      context,
+      cs,
+      keyPrefix: 'voice_actor',
+      children: voiceActors
+          .map(
+            (voiceActor) => Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: _buildVoiceActorCapsule(context, cs, voiceActor),
+            ),
+          )
+          .toList(growable: false),
+    );
+  }
+
+  Widget _buildMetadataScroller(
+    BuildContext context,
+    ColorScheme cs, {
+    required String keyPrefix,
+    required List<Widget> children,
+  }) {
     return Stack(
       clipBehavior: Clip.none,
       children: [
         SingleChildScrollView(
           scrollDirection: Axis.horizontal,
-          child: Row(
-            children: tags
-                .map(
-                  (tag) => Padding(
-                    padding: const EdgeInsets.only(right: 6),
-                    child: _buildTagCapsule(context, cs, tag),
-                  ),
-                )
-                .toList(growable: false),
+          child: Row(children: children),
+        ),
+        Positioned(
+          top: 0,
+          left: 0,
+          bottom: 0,
+          width: 32,
+          child: _buildMetadataEdgeFade(
+            cs,
+            key: ValueKey<String>('work_detail_${keyPrefix}_left_edge_fade'),
+            left: true,
           ),
         ),
         Positioned(
@@ -1389,33 +1420,51 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
           right: -16,
           bottom: 0,
           width: 48,
-          child: IgnorePointer(
-            key: const ValueKey<String>('work_detail_tag_edge_fade'),
-            child: ShaderMask(
-              blendMode: BlendMode.dstIn,
-              shaderCallback: (bounds) => const LinearGradient(
-                colors: [Colors.transparent, Colors.black],
-                stops: [0, 1],
-              ).createShader(bounds),
-              child: ClipRect(
-                child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 6, sigmaY: 1.5),
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
+          child: _buildMetadataEdgeFade(
+            cs,
+            key: ValueKey<String>('work_detail_${keyPrefix}_right_edge_fade'),
+            left: false,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMetadataEdgeFade(
+    ColorScheme cs, {
+    required Key key,
+    required bool left,
+  }) {
+    return IgnorePointer(
+      key: key,
+      child: ShaderMask(
+        blendMode: BlendMode.dstIn,
+        shaderCallback: (bounds) => LinearGradient(
+          colors: left
+              ? const [Colors.black, Colors.transparent]
+              : const [Colors.transparent, Colors.black],
+        ).createShader(bounds),
+        child: ClipRect(
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 6, sigmaY: 1.5),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: left
+                      ? [
+                          cs.surface.withValues(alpha: 0.86),
+                          cs.surface.withValues(alpha: 0),
+                        ]
+                      : [
                           cs.surface.withValues(alpha: 0),
                           cs.surface.withValues(alpha: 0.86),
                         ],
-                      ),
-                    ),
-                  ),
                 ),
               ),
             ),
           ),
         ),
-      ],
+      ),
     );
   }
 

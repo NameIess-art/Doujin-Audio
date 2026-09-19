@@ -407,6 +407,7 @@ void main() {
       ),
     );
     expect(session.effectivePlaying, isTrue);
+    expect(session.isPlaybackLoading, isFalse);
 
     session.applyNativeSnapshot(
       NativePlaybackSnapshot(

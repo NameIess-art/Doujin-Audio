@@ -339,8 +339,8 @@ class _RootPageRouteObserver extends NavigatorObserver {
   bool _disposed = false;
 
   PageRoute<dynamic>? get topRoute => _routes.lastOrNull;
-  PageRoute<dynamic>? get routeBelowTop =>
-      _routes.length < 2 ? null : _routes[_routes.length - 2];
+  bool containsRouteNamed(String name) =>
+      _routes.any((route) => route.settings.name == name);
 
   void _sync() {
     if (_syncScheduled || _disposed) return;
@@ -469,7 +469,7 @@ class _RoutedPlaybackDockState extends ConsumerState<_RoutedPlaybackDock> {
         defaultTargetPlatform != TargetPlatform.windows &&
         MediaQuery.orientationOf(context) == Orientation.portrait &&
         size.width < 980;
-    if (widget.obscured || !_visible || !supported || sessions.isEmpty) {
+    if (!_visible || !supported || sessions.isEmpty) {
       return const SizedBox.shrink();
     }
     final duration = MediaQuery.disableAnimationsOf(context)
@@ -477,8 +477,8 @@ class _RoutedPlaybackDockState extends ConsumerState<_RoutedPlaybackDock> {
         : _duration;
     final i18n = ref.read(appLanguageProviderInstanceProvider);
 
-    return IgnorePointer(
-      ignoring: !widget.active,
+    final dock = IgnorePointer(
+      ignoring: !widget.active || widget.obscured,
       child: SafeArea(
         top: false,
         minimum: const EdgeInsets.only(bottom: 6),
@@ -538,6 +538,14 @@ class _RoutedPlaybackDockState extends ConsumerState<_RoutedPlaybackDock> {
           ),
         ),
       ),
+    );
+    return Visibility(
+      key: const ValueKey<String>('routed_playback_dock_visibility'),
+      visible: !widget.obscured,
+      maintainState: true,
+      maintainAnimation: true,
+      maintainSize: true,
+      child: dock,
     );
   }
 }
@@ -732,20 +740,21 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp> {
             builder: (context, revision, navigatorChild) {
               final isWorkDetailRoute =
                   _routeObserver.topRoute?.settings.name == workDetailRouteName;
-              final isPlaybackDetailAboveWorkDetail =
-                  _routeObserver.topRoute is SessionDetailRoute &&
-                  _routeObserver.routeBelowTop?.settings.name ==
-                      workDetailRouteName;
+              final hasWorkDetailRoute = _routeObserver.containsRouteNamed(
+                workDetailRouteName,
+              );
+              final isRouteAboveWorkDetail =
+                  hasWorkDetailRoute && !isWorkDetailRoute;
               final supportsRoutedDock =
                   defaultTargetPlatform != TargetPlatform.windows &&
                   mediaQuery.orientation == Orientation.portrait &&
                   mediaQuery.size.width < 980;
               final routeDockActive =
-                  (isWorkDetailRoute || isPlaybackDetailAboveWorkDetail) &&
+                  hasWorkDetailRoute &&
                   supportsRoutedDock &&
                   hasOverlaySessions;
               final reserveWorkDetailDockInset =
-                  (isWorkDetailRoute || isPlaybackDetailAboveWorkDetail) &&
+                  hasWorkDetailRoute &&
                   supportsRoutedDock &&
                   hasOverlaySessions;
               final routeDockInset = reserveWorkDetailDockInset
@@ -768,7 +777,7 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp> {
                       bottom: 0,
                       child: _RoutedPlaybackDock(
                         active: routeDockActive,
-                        obscured: isPlaybackDetailAboveWorkDetail,
+                        obscured: isRouteAboveWorkDetail,
                         navigatorKey: _navigatorKey,
                         currentRoute: _routeObserver.topRoute,
                       ),

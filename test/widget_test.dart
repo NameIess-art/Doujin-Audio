@@ -388,9 +388,33 @@ void main() {
     }
 
     final collapsedCoverCenter = tester.getCenter(playbackCover);
+    expect(
+      find.byKey(
+        const ValueKey<String>(
+          'active_session_ink_orientation_session_collapsed',
+        ),
+      ),
+      findsOneWidget,
+    );
     await tester.tap(playbackCard);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 140));
+    expect(
+      find.byKey(
+        const ValueKey<String>(
+          'active_session_ink_orientation_session_collapsed',
+        ),
+      ),
+      findsNothing,
+    );
+    expect(
+      find.byKey(
+        const ValueKey<String>(
+          'active_session_ink_orientation_session_expanded',
+        ),
+      ),
+      findsOneWidget,
+    );
     final transitioningCoverCenter = tester.getCenter(playbackCover);
     expect(transitioningCoverCenter.dx, lessThan(collapsedCoverCenter.dx));
     expect(
@@ -506,6 +530,9 @@ void main() {
     final routeDock = find.byKey(
       const ValueKey<String>('routed_playback_dock'),
     );
+    final routeDockVisibility = find.byKey(
+      const ValueKey<String>('routed_playback_dock_visibility'),
+    );
     final routeWidth = find.byKey(
       const ValueKey<String>('routed_playback_dock_width'),
     );
@@ -574,7 +601,9 @@ void main() {
       reservedDetailInset,
     );
     expect(tester.getRect(detailRoute), detailRectBeforePlayback);
-    expect(routeDock, findsNothing);
+    expect(routeDock, findsOneWidget);
+    expect(tester.widget<Visibility>(routeDockVisibility).visible, isFalse);
+    expect(tester.getSize(routeWidth).width, closeTo(expandedWidth, 0.1));
 
     navigator.pop();
     await playbackDetailFuture;
@@ -584,7 +613,27 @@ void main() {
       reservedDetailInset,
     );
     expect(tester.getRect(detailRoute), detailRectBeforePlayback);
+    expect(tester.widget<Visibility>(routeDockVisibility).visible, isTrue);
     expect(routeDock, findsOneWidget);
+    expect(tester.getSize(routeWidth).width, closeTo(expandedWidth, 0.1));
+
+    final coveringRouteFuture = navigator.push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => const Scaffold(
+          key: ValueKey<String>('test_covering_route'),
+          body: SizedBox.expand(),
+        ),
+      ),
+    );
+    await tester.pump();
+    expect(tester.widget<Visibility>(routeDockVisibility).visible, isFalse);
+    expect(routeDock, findsOneWidget);
+    expect(tester.getSize(routeWidth).width, closeTo(expandedWidth, 0.1));
+
+    navigator.pop();
+    await coveringRouteFuture;
+    await tester.pump();
+    expect(tester.widget<Visibility>(routeDockVisibility).visible, isTrue);
     expect(tester.getSize(routeWidth).width, closeTo(expandedWidth, 0.1));
 
     navigator.pop();

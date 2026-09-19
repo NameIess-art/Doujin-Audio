@@ -263,28 +263,26 @@ class PlaybackSession {
       _isPlaybackStarting = false;
     }
     _playbackError = snapshot.error;
+    final nativeProcessingState = _nativeProcessingState(
+      snapshot.processingState,
+    );
     final pendingIntent = _pendingPlayingIntent;
     final confirmsPendingIntent = pendingIntent == null
         ? false
         : pendingIntent
         ? snapshot.playWhenReady
         : !snapshot.playWhenReady;
-    if (pendingIntent == true && snapshot.playWhenReady) {
-      _isPlaybackStarting = false;
-      _loadingIndicatorTimer?.cancel();
-      _loadingIndicatorTimer = null;
-      _suppressTransientLoading = false;
-    }
     if (snapshot.error != null || confirmsPendingIntent) {
       _pendingPlayingIntent = null;
       _isPlaybackStarting = false;
+    }
+    if (snapshot.error != null ||
+        nativeProcessingState == ProcessingState.ready ||
+        (confirmsPendingIntent && pendingIntent == false)) {
       _loadingIndicatorTimer?.cancel();
       _loadingIndicatorTimer = null;
       _suppressTransientLoading = false;
     }
-    final nativeProcessingState = _nativeProcessingState(
-      snapshot.processingState,
-    );
     var effectivePlaying = snapshot.playWhenReady;
     var effectiveProcessingState = nativeProcessingState;
     final nextState = PlayerState(effectivePlaying, effectiveProcessingState);

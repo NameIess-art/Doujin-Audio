@@ -735,7 +735,7 @@ void main() {
     ]);
   });
 
-  test('previous and next suppress transient playback loading', () async {
+  test('track changes suppress transient playback loading', () async {
     final library = _createLibraryFacade();
     final playback = PlaybackFacade.create(
       databaseRepository:
@@ -773,6 +773,19 @@ void main() {
       )
       ..registerSession(session);
 
+    session.state = const PlayerState(true, ProcessingState.ready);
+    await playback.switchSessionTrack(session.id, '/tracks/direct.mp3');
+
+    expect(session.isPlaybackLoading, isFalse);
+
+    session.cancelPlaybackStart(session.loadGeneration);
+    session.setOptimisticState(processingState: ProcessingState.ready);
+    await playback.switchSessionQueueTrack(session.id, 0);
+
+    expect(session.isPlaybackLoading, isFalse);
+
+    session.cancelPlaybackStart(session.loadGeneration);
+    session.setOptimisticState(processingState: ProcessingState.ready);
     await playback.seekSessionToNext(session.id);
 
     expect(session.isPlaybackLoading, isFalse);

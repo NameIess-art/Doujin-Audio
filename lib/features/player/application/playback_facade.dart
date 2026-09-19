@@ -640,6 +640,7 @@ final class PlaybackFacade {
   Future<void> switchSessionTrack(String sessionId, String newPath) async {
     final session = _service.sessions[sessionId];
     if (session == null) return;
+    session.beginLoadingIndicatorThreshold();
     await _commandPort?.prepareSession(
       session,
       nextPath: newPath,
@@ -658,6 +659,7 @@ final class PlaybackFacade {
         : session.customQueueTracks;
     if (tracks == null || tracks.isEmpty) return;
     final index = queueIndex.clamp(0, tracks.length - 1);
+    session.beginLoadingIndicatorThreshold();
     await _commandPort?.prepareSession(
       session,
       nextPath: tracks[index].path,

@@ -114,6 +114,11 @@ class _ActiveSessionCard extends ConsumerWidget {
     Widget buildCardBody(bool useBlur) => Material(
       color: Colors.transparent,
       child: InkWell(
+        key: embedded
+            ? ValueKey<String>(
+                'active_session_ink_${session.id}_${dockCollapsed ? 'collapsed' : 'expanded'}',
+              )
+            : null,
         excludeFromSemantics: true,
         customBorder: embedded ? const StadiumBorder() : null,
         borderRadius: embedded ? null : BorderRadius.circular(cardRadius),

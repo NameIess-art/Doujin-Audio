@@ -32,6 +32,13 @@ part 'active_session_carousel_widgets.dart';
 
 const double kActiveSessionCarouselCapsuleHeight = 56;
 
+enum ActiveSessionCarouselPresentation {
+  card,
+  compact,
+  embedded,
+  circularCover,
+}
+
 Future<String?> _sessionCoverFutureForTrack(
   LibraryFacade library,
   MusicTrack? track,
@@ -48,14 +55,16 @@ class ActiveSessionCarousel extends ConsumerStatefulWidget {
     this.sessions,
     this.i18n,
     this.onOpenSession,
-    this.compactForFab = false,
+    this.onVisibleSessionChanged,
+    this.presentation = ActiveSessionCarouselPresentation.card,
     this.viewportFraction,
   });
 
   final List<PlaybackSessionSnapshot>? sessions;
   final AppLanguageProvider? i18n;
   final ValueChanged<String>? onOpenSession;
-  final bool compactForFab;
+  final ValueChanged<String>? onVisibleSessionChanged;
+  final ActiveSessionCarouselPresentation presentation;
   final double? viewportFraction;
 
   @override
@@ -69,7 +78,9 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
   late PageController _pageController;
   late final ValueListenable<String?> _carouselSnapListenable;
   final ValueNotifier<double> _pageNotifier = ValueNotifier<double>(0);
+  List<PlaybackSessionSnapshot> _currentSessions = const [];
   String? _lastCarouselSnapSessionId;
+  String? _lastVisibleSessionId;
   bool _loopSeedScheduled = false;
 
   @override
@@ -114,6 +125,23 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
     }
     if ((nextPage - current).abs() < 0.001) return;
     _pageNotifier.value = nextPage;
+    _notifyVisibleSessionChanged();
+  }
+
+  void _notifyVisibleSessionChanged() {
+    final sessions = _currentSessions;
+    if (sessions.isEmpty) return;
+    final index = _sessionIndexForPage(
+      _pageNotifier.value.round(),
+      sessions.length,
+    );
+    final sessionId = sessions[index].id;
+    if (_lastVisibleSessionId == sessionId) return;
+    _lastVisibleSessionId = sessionId;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _lastVisibleSessionId != sessionId) return;
+      widget.onVisibleSessionChanged?.call(sessionId);
+    });
   }
 
   void _handleCarouselSnap() {
@@ -230,8 +258,12 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
       );
     }
     if (sessions.isEmpty) {
+      _currentSessions = const [];
+      _lastVisibleSessionId = null;
       return const SizedBox.shrink();
     }
+    _currentSessions = sessions;
+    _notifyVisibleSessionChanged();
 
     final snapSessionId = _carouselSnapListenable.value;
     if (snapSessionId != null && snapSessionId != _lastCarouselSnapSessionId) {
@@ -249,12 +281,20 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
     }
 
     _ensureLoopPageSeed(sessions.length);
+    final requestsCircularCover =
+        widget.presentation == ActiveSessionCarouselPresentation.circularCover;
+    final compact =
+        widget.presentation == ActiveSessionCarouselPresentation.compact;
+    final embedded =
+        widget.presentation == ActiveSessionCarouselPresentation.embedded;
 
     return SizedBox(
       height: kActiveSessionCarouselCapsuleHeight,
       child: LayoutBuilder(
         builder: (context, constraints) {
           final totalWidth = constraints.maxWidth;
+          final circularCover =
+              requestsCircularCover || (embedded && totalWidth < 160);
           final cardRightInset =
               ((totalWidth * (1.0 - viewportFraction) / 2) + 2.0).clamp(
                 0.0,
@@ -267,7 +307,9 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
             children: [
               Listener(
                 onPointerSignal: (signal) {
-                  if (signal is PointerScrollEvent && sessions.length > 1) {
+                  if (!circularCover &&
+                      signal is PointerScrollEvent &&
+                      sessions.length > 1) {
                     final currentPage = _pageNotifier.value.round();
                     final delta = signal.scrollDelta.dy > 0
                         ? 1
@@ -291,7 +333,7 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
                       PointerDeviceKind.trackpad,
                     },
                   ),
-                  physics: sessions.length == 1
+                  physics: sessions.length == 1 || circularCover
                       ? const NeverScrollableScrollPhysics()
                       : const BouncingScrollPhysics(),
                   itemCount: sessions.length == 1 ? 1 : null,
@@ -311,6 +353,7 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
                     return _ActiveSessionPageTransform(
                       pageListenable: _pageNotifier,
                       index: index,
+                      enabled: !circularCover,
                       child: RepaintBoundary(
                         child: _ActiveSessionCard(
                           session: session,
@@ -320,7 +363,9 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
                             library,
                             track,
                           ),
-                          compact: widget.compactForFab,
+                          compact: compact,
+                          embedded: embedded,
+                          circularCover: circularCover,
                           onOpen: () => _openSessionDetail(context, session),
                         ),
                       ),
@@ -328,7 +373,7 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
                   },
                 ),
               ),
-              if (sessions.length > 1 && !widget.compactForFab)
+              if (sessions.length > 1 && !compact && !circularCover)
                 Positioned(
                   right: indicatorRight,
                   bottom: indicatorBottom,
@@ -345,14 +390,16 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              for (var index = 0;
-                                  index < sessions.length;
-                                  index++)
+                              for (
+                                var index = 0;
+                                index < sessions.length;
+                                index++
+                              )
                                 AnimatedContainer(
                                   duration:
                                       MediaQuery.disableAnimationsOf(context)
-                                          ? Duration.zero
-                                          : const Duration(milliseconds: 150),
+                                      ? Duration.zero
+                                      : const Duration(milliseconds: 150),
                                   margin: const EdgeInsets.symmetric(
                                     horizontal: 2,
                                   ),
@@ -362,9 +409,9 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
                                     color: index == activePage
                                         ? Theme.of(context).colorScheme.primary
                                         : Theme.of(context)
-                                            .colorScheme
-                                            .onSurfaceVariant
-                                            .withValues(alpha: 0.55),
+                                              .colorScheme
+                                              .onSurfaceVariant
+                                              .withValues(alpha: 0.55),
                                     borderRadius: BorderRadius.circular(3),
                                   ),
                                 ),
@@ -388,11 +435,13 @@ class _ActiveSessionPageTransform extends StatelessWidget {
     required this.pageListenable,
     required this.index,
     required this.child,
+    this.enabled = true,
   });
 
   final ValueListenable<double> pageListenable;
   final int index;
   final Widget child;
+  final bool enabled;
 
   @override
   Widget build(BuildContext context) {
@@ -400,6 +449,7 @@ class _ActiveSessionPageTransform extends StatelessWidget {
       animation: pageListenable,
       child: child,
       builder: (context, child) {
+        if (!enabled) return child!;
         final pageDelta = index - pageListenable.value;
         final selectedness = (1 - pageDelta.abs()).clamp(0.0, 1.0);
         final scale = lerpDouble(0.972, 1.0, selectedness) ?? 1.0;

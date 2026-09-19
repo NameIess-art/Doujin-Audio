@@ -283,125 +283,145 @@ void main() {
     );
   });
 
-  testWidgets(
-    'capsule dock aligns playback card with the menu and exposes full width',
-    (tester) async {
-      tester.view.devicePixelRatio = 3;
-      tester.view.physicalSize = const Size(1080, 2400);
-      addTearDown(() {
-        tester.view.resetDevicePixelRatio();
-        tester.view.resetPhysicalSize();
-      });
+  testWidgets('capsule dock toggles between page icons and embedded playback', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 3;
+    tester.view.physicalSize = const Size(1080, 2400);
+    addTearDown(() {
+      tester.view.resetDevicePixelRatio();
+      tester.view.resetPhysicalSize();
+    });
 
-      await _pumpAppShell(tester);
+    await _pumpAppShell(tester);
 
-      final destinationInkResponse = tester.widget<InkResponse>(
-        find.byKey(const ValueKey<String>('main_destination_ink_nav_settings')),
-      );
-      expect(destinationInkResponse.highlightColor, Colors.transparent);
-      expect(destinationInkResponse.splashColor, Colors.transparent);
-      final bottomCapsule = tester.widget<FractionallySizedBox>(
-        find.byKey(const ValueKey<String>('mobile_bottom_capsule_panel')),
-      );
-      expect(bottomCapsule.widthFactor, 0.96);
-      final fadeMaskFinder = find.byKey(
-        const ValueKey<String>('mobile_bottom_capsule_fade_mask'),
-      );
-      final fadeMask = tester.widget<AppEdgeFadeMask>(fadeMaskFinder);
-      expect(fadeMask.direction, AppEdgeFadeDirection.towardBottom);
-      final fadeMaskDecoration = tester.widget<DecoratedBox>(
-        find.descendant(
-          of: fadeMaskFinder,
-          matching: find.byType(DecoratedBox),
-        ),
-      );
-      final fadeGradient =
-          (fadeMaskDecoration.decoration as BoxDecoration).gradient!
-              as LinearGradient;
-      final maskTheme = Theme.of(tester.element(fadeMaskFinder));
-      expect(fadeGradient.stops, const <double>[0.0, 0.18, 0.42, 0.65, 1.0]);
-      expect(fadeGradient.colors.first.a, 0);
-      expect(
-        fadeGradient.colors.last.a,
-        maskTheme.brightness == Brightness.dark ? 0.86 : 0.82,
-      );
-      expect(
-        tester.getSize(fadeMaskFinder).height,
-        94 + MediaQuery.paddingOf(tester.element(fadeMaskFinder)).bottom,
-      );
-      expect(
-        tester
-            .widget<IgnorePointer>(
-              find.descendant(
-                of: fadeMaskFinder,
-                matching: find.byType(IgnorePointer),
-              ),
-            )
-            .ignoring,
-        isTrue,
-      );
-      final playbackCarouselPageView = tester.widget<PageView>(
-        find.descendant(
-          of: find.byType(ActiveSessionCarousel),
-          matching: find.byType(PageView),
-        ),
-      );
-      final playbackCard = find.byKey(
-        const ValueKey<String>('active_session_card_orientation_session'),
-      );
-      final menuPanel = find.byKey(
-        const ValueKey<String>('mobile_bottom_capsule_panel'),
-      );
-      final expectedMenuWidth = (360.0 - AppSpacing.sm * 2).clamp(0.0, 430.0);
-      final expectedCardWidth = expectedMenuWidth * 0.96;
-      final expectedViewportFraction = ((expectedCardWidth + 4) / 360.0).clamp(
-        0.1,
-        1.0,
-      );
-      expect(
-        playbackCarouselPageView.controller!.viewportFraction,
-        closeTo(expectedViewportFraction, 0.001),
-      );
-      expect(
-        tester.getSize(playbackCard).width,
-        closeTo(expectedCardWidth, 0.1),
-      );
-      expect(
-        tester.getSize(menuPanel).width,
-        closeTo(expectedMenuWidth * 0.96, 0.1),
-      );
-      expect(tester.getTopLeft(find.byType(PageView)).dx, 0);
-      expect(
-        tester.getTopRight(find.byType(PageView)).dx,
-        closeTo(
-          tester.view.physicalSize.width / tester.view.devicePixelRatio,
-          0.1,
-        ),
-      );
-    },
-  );
+    final destinationInkResponse = tester.widget<InkResponse>(
+      find.byKey(const ValueKey<String>('main_destination_ink_nav_settings')),
+    );
+    expect(destinationInkResponse.highlightColor, Colors.transparent);
+    expect(destinationInkResponse.splashColor, Colors.transparent);
+    final bottomCapsule = tester.widget<FractionallySizedBox>(
+      find.byKey(const ValueKey<String>('mobile_bottom_capsule_panel')),
+    );
+    expect(bottomCapsule.widthFactor, 0.96);
+    final fadeMaskFinder = find.byKey(
+      const ValueKey<String>('mobile_bottom_capsule_fade_mask'),
+    );
+    final fadeMask = tester.widget<AppEdgeFadeMask>(fadeMaskFinder);
+    expect(fadeMask.direction, AppEdgeFadeDirection.towardBottom);
+    final fadeMaskDecoration = tester.widget<DecoratedBox>(
+      find.descendant(of: fadeMaskFinder, matching: find.byType(DecoratedBox)),
+    );
+    final fadeGradient =
+        (fadeMaskDecoration.decoration as BoxDecoration).gradient!
+            as LinearGradient;
+    final maskTheme = Theme.of(tester.element(fadeMaskFinder));
+    expect(fadeGradient.stops, const <double>[0.0, 0.18, 0.42, 0.65, 1.0]);
+    expect(fadeGradient.colors.first.a, 0);
+    expect(
+      fadeGradient.colors.last.a,
+      maskTheme.brightness == Brightness.dark ? 0.86 : 0.82,
+    );
+    expect(
+      tester.getSize(fadeMaskFinder).height,
+      76 + MediaQuery.paddingOf(tester.element(fadeMaskFinder)).bottom,
+    );
+    expect(
+      tester
+          .widget<IgnorePointer>(
+            find.descendant(
+              of: fadeMaskFinder,
+              matching: find.byType(IgnorePointer),
+            ),
+          )
+          .ignoring,
+      isTrue,
+    );
+    final playbackCard = find.byKey(
+      const ValueKey<String>('active_session_card_orientation_session'),
+    );
+    final menuPanel = find.byKey(
+      const ValueKey<String>('mobile_bottom_capsule_panel'),
+    );
+    final navigation = find.byKey(
+      const ValueKey<String>('mobile_dock_navigation'),
+    );
+    final playback = find.byKey(const ValueKey<String>('mobile_dock_playback'));
+    expect(
+      tester
+          .widget<ActiveSessionCarousel>(find.byType(ActiveSessionCarousel))
+          .presentation,
+      ActiveSessionCarouselPresentation.circularCover,
+    );
+    expect(tester.getSize(playbackCard), const Size.square(48));
+    expect(tester.getSize(navigation).width, greaterThan(200));
+    expect(tester.getSize(playback).width, 48);
+    expect(
+      find.descendant(of: menuPanel, matching: find.byType(Text)),
+      findsNothing,
+    );
+    for (final icon in tester.widgetList<Icon>(
+      find.descendant(of: navigation, matching: find.byType(Icon)),
+    )) {
+      expect(icon.size, 28);
+    }
 
-  testWidgets(
-    'capsule dock reduces bottom fade mask height when playback card is hidden',
-    (tester) async {
-      tester.view.devicePixelRatio = 3;
-      tester.view.physicalSize = const Size(1080, 2400);
-      addTearDown(() {
-        tester.view.resetDevicePixelRatio();
-        tester.view.resetPhysicalSize();
-      });
+    await tester.tap(playbackCard);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 350));
+    expect(tester.getSize(navigation).width, closeTo(48, 0.1));
+    expect(tester.getSize(playback).width, greaterThan(200));
+    expect(
+      tester
+          .widget<ActiveSessionCarousel>(find.byType(ActiveSessionCarousel))
+          .presentation,
+      ActiveSessionCarouselPresentation.embedded,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('main_destination_music_library')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('main_destination_nav_settings')),
+      findsNothing,
+    );
 
-      await _pumpAppShell(tester, includePlaybackSession: false);
+    await tester.tap(
+      find.byKey(const ValueKey<String>('main_destination_ink_music_library')),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 350));
+    expect(tester.getSize(navigation).width, greaterThan(200));
+    expect(tester.getSize(playback).width, closeTo(48, 0.1));
+  });
 
-      final fadeMaskFinder = find.byKey(
-        const ValueKey<String>('mobile_bottom_capsule_fade_mask'),
-      );
-      expect(
-        tester.getSize(fadeMaskFinder).height,
-        54 + MediaQuery.paddingOf(tester.element(fadeMaskFinder)).bottom,
-      );
-    },
-  );
+  testWidgets('capsule dock keeps a fixed height without playback', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 3;
+    tester.view.physicalSize = const Size(1080, 2400);
+    addTearDown(() {
+      tester.view.resetDevicePixelRatio();
+      tester.view.resetPhysicalSize();
+    });
+
+    await _pumpAppShell(tester, includePlaybackSession: false);
+
+    final fadeMaskFinder = find.byKey(
+      const ValueKey<String>('mobile_bottom_capsule_fade_mask'),
+    );
+    expect(
+      tester.getSize(fadeMaskFinder).height,
+      76 + MediaQuery.paddingOf(tester.element(fadeMaskFinder)).bottom,
+    );
+    expect(find.byType(ActiveSessionCarousel), findsNothing);
+    expect(
+      tester
+          .getSize(find.byKey(const ValueKey<String>('mobile_dock_navigation')))
+          .height,
+      kActiveSessionCarouselCapsuleHeight,
+    );
+  });
 
   testWidgets('production app shell allows tooltips to become visible', (
     tester,
@@ -1207,7 +1227,10 @@ void main() {
       swipeCard.closedColor,
       Theme.of(tester.element(workTitle)).colorScheme.surface,
     );
-    expect(swipeCard.secondaryActionLabel, harness.languageProvider.tr('download'));
+    expect(
+      swipeCard.secondaryActionLabel,
+      harness.languageProvider.tr('download'),
+    );
     expect(swipeCard.secondaryActionIcon, Icons.download_rounded);
     expect(
       swipeCard.actionLabel,
@@ -2223,7 +2246,7 @@ void main() {
     semantics.dispose();
   });
 
-  testWidgets('bottom dock blur remains active during UI interaction', (
+  testWidgets('bottom dock keeps one blur surface during UI interaction', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(1080, 2400);
@@ -2242,7 +2265,7 @@ void main() {
     );
     expect(
       find.byKey(const ValueKey('active_session_blur_orientation_session')),
-      findsOne,
+      findsNothing,
     );
 
     UiInteractionCoordinator.instance.beginInteraction(interactionSource);
@@ -2254,11 +2277,11 @@ void main() {
     );
     expect(
       find.byKey(const ValueKey('active_session_blur_orientation_session')),
-      findsOne,
+      findsNothing,
     );
   });
 
-  testWidgets('mobile content inset updates with playback card visibility', (
+  testWidgets('mobile content inset stays fixed with playback visibility', (
     tester,
   ) async {
     final previousPlatform = debugDefaultTargetPlatformOverride;
@@ -2301,7 +2324,7 @@ void main() {
     }
     expect(find.byType(ActiveSessionCarousel), findsOneWidget);
     final withCard = currentInset();
-    expect(withCard, greaterThan(withoutCard + 56));
+    expect(withCard, closeTo(withoutCard, 0.1));
 
     harness.playbackService.syncSlice(
       activeSessions: const <PlaybackSession>[],
@@ -3403,6 +3426,7 @@ Future<_AppShellHarness> _pumpAppShell(
       volume: playbackVolume,
       createdAt: DateTime(2026),
       state: const PlayerState(false, ProcessingState.ready),
+      isTemporary: true,
     );
     addTearDown(session.shutdown);
     playbackService.registerSession(session);

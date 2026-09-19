@@ -295,7 +295,10 @@ void main() {
       expect(UiInteractionCoordinator.instance.isInteracting, isTrue);
       drag.onVerticalDragCancel!();
       await tester.pumpAndSettle();
-      await tester.pump(UiInteractionCoordinator.instance.idleDelay + const Duration(milliseconds: 20));
+      await tester.pump(
+        UiInteractionCoordinator.instance.idleDelay +
+            const Duration(milliseconds: 20),
+      );
       expect(find.byType(SessionDetailPage), findsOneWidget);
       expect(UiInteractionCoordinator.instance.isInteracting, isFalse);
       expect(tester.takeException(), isNull);
@@ -491,60 +494,66 @@ void main() {
     expect(find.text('Cached line'), findsOneWidget);
   });
 
-  testWidgets('SessionSubtitlePanel holds subtitle text across gaps and during buffering', (tester) async {
-    final busy = ValueNotifier(false);
-    addTearDown(busy.dispose);
-    final track = SubtitleTrack(
-      sourcePath: 'asmr.vtt',
-      cues: const [
-        SubtitleCue(
-          start: Duration(seconds: 1),
-          end: Duration(seconds: 3),
-          text: 'Line 1',
-        ),
-        SubtitleCue(
-          start: Duration(seconds: 10),
-          end: Duration(seconds: 12),
-          text: 'Line 2',
-        ),
-      ],
-    );
-    final harness = await _pumpSubtitleDetail(
-      tester: tester,
-      subtitleTrack: track,
-      initialPosition: const Duration(seconds: 2),
-      preloadSubtitle: true,
-      detailBuilder: (session) =>
-          SessionSubtitlePanel(session: session, transitionActive: busy),
-    );
-    expect(find.text('Line 1'), findsOneWidget);
+  testWidgets(
+    'SessionSubtitlePanel holds subtitle text across gaps and during buffering',
+    (tester) async {
+      final busy = ValueNotifier(false);
+      addTearDown(busy.dispose);
+      final track = SubtitleTrack(
+        sourcePath: 'asmr.vtt',
+        cues: const [
+          SubtitleCue(
+            start: Duration(seconds: 1),
+            end: Duration(seconds: 3),
+            text: 'Line 1',
+          ),
+          SubtitleCue(
+            start: Duration(seconds: 10),
+            end: Duration(seconds: 12),
+            text: 'Line 2',
+          ),
+        ],
+      );
+      final harness = await _pumpSubtitleDetail(
+        tester: tester,
+        subtitleTrack: track,
+        initialPosition: const Duration(seconds: 2),
+        preloadSubtitle: true,
+        detailBuilder: (session) =>
+            SessionSubtitlePanel(session: session, transitionActive: busy),
+      );
+      expect(find.text('Line 1'), findsOneWidget);
 
-    // In the gap between 3s and 10s: Line 1 should persist
-    harness.session.setOptimisticPosition(const Duration(seconds: 5));
-    await tester.pump();
-    expect(find.text('Line 1'), findsOneWidget);
+      // In the gap between 3s and 10s: Line 1 should persist
+      harness.session.setOptimisticPosition(const Duration(seconds: 5));
+      await tester.pump();
+      expect(find.text('Line 1'), findsOneWidget);
 
-    // Audio buffering occurs (isPlaybackLoading = true) while track is loaded
-    harness.session.state = const PlayerState(true, ProcessingState.buffering);
-    harness.fixture.playbackService.syncSlice(
-      activeSessions: <PlaybackSession>[harness.session],
-      playingSessionCount: 1,
-      focusedSessionId: harness.session.id,
-      multiThreadPlaybackEnabled: false,
-      coverGeneration: harness.coverCache.generation,
-      isInitialized: true,
-    );
-    await tester.pump();
-    // Subtitle must NOT be replaced with loading
-    expect(find.byKey(const ValueKey('subtitle_loading')), findsNothing);
-    expect(find.text('Line 1'), findsOneWidget);
+      // Audio buffering occurs (isPlaybackLoading = true) while track is loaded
+      harness.session.state = const PlayerState(
+        true,
+        ProcessingState.buffering,
+      );
+      harness.fixture.playbackService.syncSlice(
+        activeSessions: <PlaybackSession>[harness.session],
+        playingSessionCount: 1,
+        focusedSessionId: harness.session.id,
+        multiThreadPlaybackEnabled: false,
+        coverGeneration: harness.coverCache.generation,
+        isInitialized: true,
+      );
+      await tester.pump();
+      // Subtitle must NOT be replaced with loading
+      expect(find.byKey(const ValueKey('subtitle_loading')), findsNothing);
+      expect(find.text('Line 1'), findsOneWidget);
 
-    // Reaching Line 2
-    harness.session.setOptimisticPosition(const Duration(seconds: 11));
-    await tester.pump(const Duration(milliseconds: 100));
-    await tester.pumpAndSettle();
-    expect(find.text('Line 2'), findsOneWidget);
-  });
+      // Reaching Line 2
+      harness.session.setOptimisticPosition(const Duration(seconds: 11));
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.pumpAndSettle();
+      expect(find.text('Line 2'), findsOneWidget);
+    },
+  );
 
   for (final disposeBeforeResult in [false, true]) {
     testWidgets(
@@ -802,72 +811,153 @@ void main() {
     },
   );
 
+  testWidgets('carousel hides indicator dots in compact presentation', (
+    tester,
+  ) async {
+    final fixture = AppRuntimeWidgetTestFixture();
+    addTearDown(fixture.dispose);
+    final session1 = PlaybackSession(
+      id: 'session_1',
+      currentTrackPath: '/track1.mp3',
+      loopMode: SessionLoopMode.folderSequential,
+      nonSingleLoopMode: SessionLoopMode.folderSequential,
+      volume: 1.0,
+      createdAt: DateTime.now(),
+      state: const PlayerState(false, ProcessingState.idle),
+    );
+    final session2 = PlaybackSession(
+      id: 'session_2',
+      currentTrackPath: '/track2.mp3',
+      loopMode: SessionLoopMode.folderSequential,
+      nonSingleLoopMode: SessionLoopMode.folderSequential,
+      volume: 1.0,
+      createdAt: DateTime.now(),
+      state: const PlayerState(false, ProcessingState.idle),
+    );
+    addTearDown(session1.shutdown);
+    addTearDown(session2.shutdown);
+    final sessions = <PlaybackSessionSnapshot>[
+      PlaybackSessionSnapshot.fromRuntime(session1),
+      PlaybackSessionSnapshot.fromRuntime(session2),
+    ];
+
+    await tester.pumpWidget(
+      fixture.build(
+        ActiveSessionCarousel(
+          sessions: sessions,
+          presentation: ActiveSessionCarouselPresentation.compact,
+          onOpenSession: (_) {},
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.descendant(
+        of: find.byType(ActiveSessionCarousel),
+        matching: find.byType(AnimatedContainer),
+      ),
+      findsNothing,
+    );
+
+    await tester.pumpWidget(
+      fixture.build(
+        ActiveSessionCarousel(sessions: sessions, onOpenSession: (_) {}),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.descendant(
+        of: find.byType(ActiveSessionCarousel),
+        matching: find.byType(AnimatedContainer),
+      ),
+      findsNWidgets(2),
+    );
+  });
+
   testWidgets(
-    'carousel hides indicator dots when compactForFab is enabled',
+    'circular cover disables paging and preserves the visible session',
     (tester) async {
       final fixture = AppRuntimeWidgetTestFixture();
       addTearDown(fixture.dispose);
-      final session1 = PlaybackSession(
-        id: 'session_1',
+      final first = PlaybackSession(
+        id: 'circular_1',
         currentTrackPath: '/track1.mp3',
         loopMode: SessionLoopMode.folderSequential,
         nonSingleLoopMode: SessionLoopMode.folderSequential,
-        volume: 1.0,
-        createdAt: DateTime.now(),
-        state: const PlayerState(false, ProcessingState.idle),
+        volume: 1,
+        createdAt: DateTime(2026),
+        state: const PlayerState(false, ProcessingState.ready),
       );
-      final session2 = PlaybackSession(
-        id: 'session_2',
+      final second = PlaybackSession(
+        id: 'circular_2',
         currentTrackPath: '/track2.mp3',
         loopMode: SessionLoopMode.folderSequential,
         nonSingleLoopMode: SessionLoopMode.folderSequential,
-        volume: 1.0,
-        createdAt: DateTime.now(),
-        state: const PlayerState(false, ProcessingState.idle),
+        volume: 1,
+        createdAt: DateTime(2026),
+        state: const PlayerState(false, ProcessingState.ready),
       );
-      addTearDown(session1.shutdown);
-      addTearDown(session2.shutdown);
-      final sessions = <PlaybackSessionSnapshot>[
-        PlaybackSessionSnapshot.fromRuntime(session1),
-        PlaybackSessionSnapshot.fromRuntime(session2),
+      addTearDown(first.shutdown);
+      addTearDown(second.shutdown);
+      final sessions = [
+        PlaybackSessionSnapshot.fromRuntime(first),
+        PlaybackSessionSnapshot.fromRuntime(second),
       ];
+      final visibleSessions = <String>[];
 
-      // With compactForFab: true, indicator dots should not be rendered
-      await tester.pumpWidget(
-        fixture.build(
-          ActiveSessionCarousel(
-            sessions: sessions,
-            compactForFab: true,
-            onOpenSession: (_) {},
+      Widget carousel(ActiveSessionCarouselPresentation presentation) {
+        return fixture.build(
+          SizedBox(
+            width:
+                presentation == ActiveSessionCarouselPresentation.circularCover
+                ? 48
+                : 320,
+            child: ActiveSessionCarousel(
+              sessions: sessions,
+              presentation: presentation,
+              viewportFraction: 1,
+              onVisibleSessionChanged: visibleSessions.add,
+              onOpenSession: (_) {},
+            ),
           ),
-        ),
+        );
+      }
+
+      await tester.pumpWidget(
+        carousel(ActiveSessionCarouselPresentation.circularCover),
       );
       await tester.pumpAndSettle();
       expect(
-        find.descendant(
-          of: find.byType(ActiveSessionCarousel),
-          matching: find.byType(AnimatedContainer),
-        ),
-        findsNothing,
+        tester.widget<PageView>(find.byType(PageView)).physics,
+        isA<NeverScrollableScrollPhysics>(),
       );
-
-      // With compactForFab: false, indicator dots should be rendered
-      await tester.pumpWidget(
-        fixture.build(
-          ActiveSessionCarousel(
-            sessions: sessions,
-            onOpenSession: (_) {},
-          ),
+      expect(
+        tester.getSize(
+          find.byKey(const ValueKey<String>('active_session_card_circular_1')),
         ),
+        const Size.square(48),
+      );
+      expect(visibleSessions.last, 'circular_1');
+
+      await tester.pumpWidget(
+        carousel(ActiveSessionCarouselPresentation.embedded),
+      );
+      await tester.pump();
+      await tester.drag(find.byType(PageView), const Offset(-300, 0));
+      await tester.pumpAndSettle();
+      expect(visibleSessions.last, 'circular_2');
+
+      await tester.pumpWidget(
+        carousel(ActiveSessionCarouselPresentation.circularCover),
       );
       await tester.pumpAndSettle();
       expect(
-        find.descendant(
-          of: find.byType(ActiveSessionCarousel),
-          matching: find.byType(AnimatedContainer),
-        ),
-        findsNWidgets(2),
+        find.byKey(const ValueKey<String>('active_session_card_circular_2')),
+        findsOneWidget,
       );
+      await tester.drag(find.byType(PageView), const Offset(300, 0));
+      await tester.pumpAndSettle();
+      expect(visibleSessions.last, 'circular_2');
     },
   );
 
@@ -2559,12 +2649,9 @@ void main() {
       findsNothing,
     );
 
-    ProviderScope.containerOf(
-      tester.element(find.byType(PlaylistTab)),
-    ).read(subtitleSettingsProvider.notifier).setGlobalEnabled(
-      queueSession.id,
-      true,
-    );
+    ProviderScope.containerOf(tester.element(find.byType(PlaylistTab)))
+        .read(subtitleSettingsProvider.notifier)
+        .setGlobalEnabled(queueSession.id, true);
     queueSession.speed = 1.25;
     playbackService.markActiveSessionsDirty();
     playbackService.syncSlice(
@@ -2627,10 +2714,9 @@ void main() {
     expect(find.text(languageProvider.tr('edit_queue_name')), findsOneWidget);
     expect(find.text(languageProvider.tr('edit_queue_color')), findsOneWidget);
     expect(find.text(languageProvider.tr('remove_queue')), findsOneWidget);
-    final queueTrackCountText = languageProvider.tr(
-      'audio_count',
-      {'count': queueSession.playbackQueue!.expandedTracks.length.toString()},
-    );
+    final queueTrackCountText = languageProvider.tr('audio_count', {
+      'count': queueSession.playbackQueue!.expandedTracks.length.toString(),
+    });
     expect(find.text(queueTrackCountText), findsOneWidget);
     expect(
       find.descendant(
@@ -2714,10 +2800,16 @@ void main() {
     final row2Y = tester.getCenter(presetColorButtons.at(5)).dy;
     expect(row2Y, greaterThan(row1Y));
     for (var i = 1; i < 5; i++) {
-      expect(tester.getCenter(presetColorButtons.at(i)).dy, closeTo(row1Y, 0.5));
+      expect(
+        tester.getCenter(presetColorButtons.at(i)).dy,
+        closeTo(row1Y, 0.5),
+      );
     }
     for (var i = 6; i < 10; i++) {
-      expect(tester.getCenter(presetColorButtons.at(i)).dy, closeTo(row2Y, 0.5));
+      expect(
+        tester.getCenter(presetColorButtons.at(i)).dy,
+        closeTo(row2Y, 0.5),
+      );
     }
     expect(find.text(languageProvider.tr('edit_queue_audio')), findsNothing);
     await tester.tap(find.byKey(const ValueKey('playback_queue_color_back')));
@@ -3174,137 +3266,136 @@ void main() {
     await tester.pumpAndSettle();
   });
 
-  testWidgets(
-    'swiping right pins item to top and swiping right again unpins',
-    (tester) async {
-      final fixture = AppRuntimeWidgetTestFixture();
-      addTearDown(fixture.dispose);
+  testWidgets('swiping right pins item to top and swiping right again unpins', (
+    tester,
+  ) async {
+    final fixture = AppRuntimeWidgetTestFixture();
+    addTearDown(fixture.dispose);
 
-      final trackA = MusicTrack(
-        path: '/library/Work A/01.mp3',
-        displayName: 'Track A',
-        groupKey: '/library/Work A',
-        groupTitle: 'Work A',
-        groupSubtitle: '/library/Work A',
-        isSingle: false,
-      );
-      final trackB = MusicTrack(
-        path: '/library/Work B/01.mp3',
-        displayName: 'Track B',
-        groupKey: '/library/Work B',
-        groupTitle: 'Work B',
-        groupSubtitle: '/library/Work B',
-        isSingle: false,
-      );
-      fixture.runtimeGraph.library.addTracks(
-        <MusicTrack>[trackA, trackB],
-        notify: false,
-        persist: false,
-      );
-      final sessionA = fixture.runtimeGraph.playback.createTrackSession(
-        trackA,
-        customQueueTracks: <MusicTrack>[trackA],
-      );
-      final sessionB = fixture.runtimeGraph.playback.createTrackSession(
-        trackB,
-        customQueueTracks: <MusicTrack>[trackB],
-      );
-      addTearDown(sessionA.shutdown);
-      addTearDown(sessionB.shutdown);
+    final trackA = MusicTrack(
+      path: '/library/Work A/01.mp3',
+      displayName: 'Track A',
+      groupKey: '/library/Work A',
+      groupTitle: 'Work A',
+      groupSubtitle: '/library/Work A',
+      isSingle: false,
+    );
+    final trackB = MusicTrack(
+      path: '/library/Work B/01.mp3',
+      displayName: 'Track B',
+      groupKey: '/library/Work B',
+      groupTitle: 'Work B',
+      groupSubtitle: '/library/Work B',
+      isSingle: false,
+    );
+    fixture.runtimeGraph.library.addTracks(
+      <MusicTrack>[trackA, trackB],
+      notify: false,
+      persist: false,
+    );
+    final sessionA = fixture.runtimeGraph.playback.createTrackSession(
+      trackA,
+      customQueueTracks: <MusicTrack>[trackA],
+    );
+    final sessionB = fixture.runtimeGraph.playback.createTrackSession(
+      trackB,
+      customQueueTracks: <MusicTrack>[trackB],
+    );
+    addTearDown(sessionA.shutdown);
+    addTearDown(sessionB.shutdown);
 
-      fixture.playbackService.syncSlice(
-        activeSessions: <PlaybackSession>[sessionA, sessionB],
-        playingSessionCount: 0,
-        focusedSessionId: sessionA.id,
-        multiThreadPlaybackEnabled: false,
-        coverGeneration: 0,
-        isInitialized: true,
-      );
+    fixture.playbackService.syncSlice(
+      activeSessions: <PlaybackSession>[sessionA, sessionB],
+      playingSessionCount: 0,
+      focusedSessionId: sessionA.id,
+      multiThreadPlaybackEnabled: false,
+      coverGeneration: 0,
+      isInitialized: true,
+    );
 
-      await tester.pumpWidget(
-        fixture.build(
-          const MobileOverlayInset(bottomInset: 132, child: PlaylistTab()),
-        ),
-      );
-      await tester.pumpAndSettle();
+    await tester.pumpWidget(
+      fixture.build(
+        const MobileOverlayInset(bottomInset: 132, child: PlaylistTab()),
+      ),
+    );
+    await tester.pumpAndSettle();
 
-      // Initially, Work A comes before Work B alphabetically.
-      expect(find.text('Work A'), findsOneWidget);
-      expect(find.text('Work B'), findsOneWidget);
-      expect(
-        find.byKey(ValueKey<String>('playlist_session_pinned_${sessionB.id}')),
-        findsNothing,
-      );
+    // Initially, Work A comes before Work B alphabetically.
+    expect(find.text('Work A'), findsOneWidget);
+    expect(find.text('Work B'), findsOneWidget);
+    expect(
+      find.byKey(ValueKey<String>('playlist_session_pinned_${sessionB.id}')),
+      findsNothing,
+    );
 
-      // Swipe right on Work B
-      await tester.drag(find.text('Work B'), const Offset(180, 0));
-      await tester.pumpAndSettle();
+    // Swipe right on Work B
+    await tester.drag(find.text('Work B'), const Offset(180, 0));
+    await tester.pumpAndSettle();
 
-      // The "置顶" button should be revealed
-      final pinButtonFinder = find.byTooltip('置顶');
-      expect(pinButtonFinder, findsOneWidget);
-      final pinIconFinder = find.descendant(
-        of: pinButtonFinder,
-        matching: find.byIcon(Icons.push_pin_rounded),
-      );
-      expect(pinIconFinder, findsOneWidget);
+    // The "置顶" button should be revealed
+    final pinButtonFinder = find.byTooltip('置顶');
+    expect(pinButtonFinder, findsOneWidget);
+    final pinIconFinder = find.descendant(
+      of: pinButtonFinder,
+      matching: find.byIcon(Icons.push_pin_rounded),
+    );
+    expect(pinIconFinder, findsOneWidget);
 
-      // Tap "置顶"
-      await tester.tap(pinButtonFinder);
-      await tester.pumpAndSettle();
+    // Tap "置顶"
+    await tester.tap(pinButtonFinder);
+    await tester.pumpAndSettle();
 
-      // Work B should now have the pinned chip
-      expect(
-        find.byKey(ValueKey<String>('playlist_session_pinned_${sessionB.id}')),
-        findsOneWidget,
-      );
+    // Work B should now have the pinned chip
+    expect(
+      find.byKey(ValueKey<String>('playlist_session_pinned_${sessionB.id}')),
+      findsOneWidget,
+    );
 
-      // Work B is now pinned to the top (its Y position is less than Work A)
-      final topB = tester.getTopLeft(find.text('Work B')).dy;
-      final topA = tester.getTopLeft(find.text('Work A')).dy;
-      expect(topB < topA, isTrue);
+    // Work B is now pinned to the top (its Y position is less than Work A)
+    final topB = tester.getTopLeft(find.text('Work B')).dy;
+    final topA = tester.getTopLeft(find.text('Work A')).dy;
+    expect(topB < topA, isTrue);
 
-      // Swipe right on Work B again
-      await tester.drag(find.text('Work B'), const Offset(180, 0));
-      await tester.pumpAndSettle();
+    // Swipe right on Work B again
+    await tester.drag(find.text('Work B'), const Offset(180, 0));
+    await tester.pumpAndSettle();
 
-      // The "取消置顶" button should be revealed
-      final unpinButtonFinder = find.byTooltip('取消置顶');
-      expect(unpinButtonFinder, findsOneWidget);
-      expect(
-        find.descendant(
-          of: unpinButtonFinder,
-          matching: find.byIcon(Icons.vertical_align_bottom_rounded),
-        ),
-        findsNothing,
-      );
-      expect(
-        find.descendant(
-          of: unpinButtonFinder,
-          matching: find.byType(CustomPaint),
-        ),
-        findsWidgets,
-      );
+    // The "取消置顶" button should be revealed
+    final unpinButtonFinder = find.byTooltip('取消置顶');
+    expect(unpinButtonFinder, findsOneWidget);
+    expect(
+      find.descendant(
+        of: unpinButtonFinder,
+        matching: find.byIcon(Icons.vertical_align_bottom_rounded),
+      ),
+      findsNothing,
+    );
+    expect(
+      find.descendant(
+        of: unpinButtonFinder,
+        matching: find.byType(CustomPaint),
+      ),
+      findsWidgets,
+    );
 
-      // Tap "取消置顶"
-      await tester.tap(unpinButtonFinder);
-      await tester.pumpAndSettle();
+    // Tap "取消置顶"
+    await tester.tap(unpinButtonFinder);
+    await tester.pumpAndSettle();
 
-      // Pinned chip is gone
-      expect(
-        find.byKey(ValueKey<String>('playlist_session_pinned_${sessionB.id}')),
-        findsNothing,
-      );
+    // Pinned chip is gone
+    expect(
+      find.byKey(ValueKey<String>('playlist_session_pinned_${sessionB.id}')),
+      findsNothing,
+    );
 
-      // Work A is back to being before Work B
-      final topBAfter = tester.getTopLeft(find.text('Work B')).dy;
-      final topAAfter = tester.getTopLeft(find.text('Work A')).dy;
-      expect(topAAfter < topBAfter, isTrue);
+    // Work A is back to being before Work B
+    final topBAfter = tester.getTopLeft(find.text('Work B')).dy;
+    final topAAfter = tester.getTopLeft(find.text('Work A')).dy;
+    expect(topAAfter < topBAfter, isTrue);
 
-      await tester.pumpWidget(const SizedBox.shrink());
-      await tester.pumpAndSettle();
-    },
-  );
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpAndSettle();
+  });
 
   testWidgets(
     'playlist item pinned indicator displays on top-left of cover or top-left above selection checkmark when no cover',
@@ -3369,9 +3460,15 @@ void main() {
       );
 
       // Pin all three sessions
-      await fixture.settingsRepository.togglePlaylistSessionPinned(sessionCover.id);
-      await fixture.settingsRepository.togglePlaylistSessionPinned(sessionNoCover.id);
-      await fixture.settingsRepository.togglePlaylistSessionPinned(sessionQueueCover.id);
+      await fixture.settingsRepository.togglePlaylistSessionPinned(
+        sessionCover.id,
+      );
+      await fixture.settingsRepository.togglePlaylistSessionPinned(
+        sessionNoCover.id,
+      );
+      await fixture.settingsRepository.togglePlaylistSessionPinned(
+        sessionQueueCover.id,
+      );
 
       await tester.pumpWidget(
         fixture.build(
@@ -3527,7 +3624,11 @@ void main() {
           groupTitle: 'Videos',
         ).copyWith(isVideo: true),
     ];
-    fixture.runtimeGraph.library.addTracks(tracks, notify: false, persist: false);
+    fixture.runtimeGraph.library.addTracks(
+      tracks,
+      notify: false,
+      persist: false,
+    );
     final session = fixture.runtimeGraph.playback.createTrackSession(tracks[0])
       ..isTemporary = true;
     void sync() => fixture.playbackService.syncSlice(
@@ -3542,14 +3643,14 @@ void main() {
     await tester.pumpWidget(fixture.build(const PlaylistTab()));
     await tester.pumpAndSettle();
     unawaited(
-      Navigator.of(tester.element(find.byType(PlaylistTab))).push(
-        buildSessionDetailRoute(sessionId: session.id),
-      ),
+      Navigator.of(
+        tester.element(find.byType(PlaylistTab)),
+      ).push(buildSessionDetailRoute(sessionId: session.id)),
     );
     await tester.pumpAndSettle();
-    bool videoReady() => tester.widget<SessionVideoViewport>(
-      find.byType(SessionVideoViewport),
-    ).videoReady;
+    bool videoReady() => tester
+        .widget<SessionVideoViewport>(find.byType(SessionVideoViewport))
+        .videoReady;
     expect(videoReady(), isFalse);
 
     session.loadedPath = tracks[0].path;
@@ -3758,27 +3859,35 @@ void main() {
       tester: tester,
       subtitleTrack: SubtitleTrack(
         sourcePath: 'automatic.srt',
-        cues: List.generate(4, (index) => SubtitleCue(
-          start: Duration(seconds: index * 2),
-          end: Duration(seconds: (index + 1) * 2),
-          text: 'Automatic cue $index',
-        )),
+        cues: List.generate(
+          4,
+          (index) => SubtitleCue(
+            start: Duration(seconds: index * 2),
+            end: Duration(seconds: (index + 1) * 2),
+            text: 'Automatic cue $index',
+          ),
+        ),
       ),
       initialPosition: Duration.zero,
     );
     for (var index = 1; index < 4; index++) {
-      harness.session.applyNativeProgress(NativePlaybackProgressUpdate(
-        sessionId: harness.session.id,
-        position: Duration(seconds: index * 2),
-        bufferedPosition: const Duration(seconds: 8),
-        nativeElapsedRealtimeMs: index * 2000,
-      ));
+      harness.session.applyNativeProgress(
+        NativePlaybackProgressUpdate(
+          sessionId: harness.session.id,
+          position: Duration(seconds: index * 2),
+          bufferedPosition: const Duration(seconds: 8),
+          nativeElapsedRealtimeMs: index * 2000,
+        ),
+      );
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 400));
       await tester.pumpAndSettle();
       final cue = find.byKey(ValueKey('subtitle_timeline_cue_$index'));
       final viewport = find.byKey(const ValueKey('subtitle_timeline_viewport'));
-      expect(tester.getCenter(cue).dy, closeTo(tester.getCenter(viewport).dy, 0.5));
+      expect(
+        tester.getCenter(cue).dy,
+        closeTo(tester.getCenter(viewport).dy, 0.5),
+      );
     }
   });
 
@@ -4046,7 +4155,6 @@ void main() {
       await tester.drag(find.byType(SessionDetailPage), const Offset(-200, 0));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 110));
-
 
       await tester.pumpAndSettle();
       expect(find.text('Track without subtitle'), findsOneWidget);
@@ -4685,10 +4793,7 @@ void main() {
         tester.widget<IconButton>(pinIconButton).tooltip,
         fixture.languageProvider.tr('pin_to_top'),
       );
-      expect(
-        tester.widget<IconButton>(pinIconButton).onPressed,
-        isNotNull,
-      );
+      expect(tester.widget<IconButton>(pinIconButton).onPressed, isNotNull);
       expect(
         tester.widget<IconButton>(playIconButton).tooltip,
         fixture.languageProvider.tr('play'),
@@ -4834,188 +4939,196 @@ void main() {
     },
   );
 
-  testWidgets('temporary playback stays above saved items without a pin action', (
-    tester,
+  testWidgets(
+    'temporary playback stays above saved items without a pin action',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(500, 1000);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPhysicalSize);
+      final fixture = AppRuntimeWidgetTestFixture(
+        coverArtworkCacheService: _RecordingPlaybackCoverCacheService(),
+      );
+      addTearDown(fixture.dispose);
+      final tracks = [
+        testMusicTrack(
+          name: 'Saved audio',
+          path: PathMatcher.normalize('/saved/01.mp3'),
+          groupKey: PathMatcher.normalize('/saved'),
+          groupTitle: 'Saved',
+        ),
+        testMusicTrack(
+          name: 'Temporary audio',
+          path: PathMatcher.normalize('/temporary/01.mp3'),
+          groupKey: PathMatcher.normalize('/temporary'),
+          groupTitle: 'Temporary',
+        ),
+      ];
+      fixture.runtimeGraph.library.addTracks(
+        tracks,
+        notify: false,
+        persist: false,
+      );
+      final saved = fixture.runtimeGraph.playback.createTrackSession(tracks[0]);
+      final temporary = fixture.runtimeGraph.playback.createTrackSession(
+        tracks[1],
+      )..isTemporary = true;
+      fixture.playbackService.syncSlice(
+        activeSessions: [saved, temporary],
+        playingSessionCount: 0,
+        focusedSessionId: temporary.id,
+        multiThreadPlaybackEnabled: false,
+        coverGeneration: 0,
+        isInitialized: true,
+      );
+      await tester.pumpWidget(fixture.build(const PlaylistTab()));
+      await tester.pumpAndSettle();
+
+      final temporaryCard = find.byKey(
+        ValueKey<String>('playlist_card_content_${temporary.id}'),
+      );
+      final savedCard = find.byKey(
+        ValueKey<String>('playlist_card_content_${saved.id}'),
+      );
+      final divider = find.byKey(
+        const ValueKey('playlist_temporary_session_divider'),
+      );
+      expect(divider, findsOneWidget);
+      expect(
+        tester.getBottomLeft(temporaryCard).dy,
+        lessThanOrEqualTo(tester.getTopLeft(divider).dy),
+      );
+      expect(
+        tester.getBottomLeft(divider).dy,
+        lessThanOrEqualTo(tester.getTopLeft(savedCard).dy),
+      );
+      final temporarySwipe = tester.widget<SwipeRevealCard>(
+        find.ancestor(
+          of: temporaryCard,
+          matching: find.byType(SwipeRevealCard),
+        ),
+      );
+      expect(temporarySwipe.onLeadingAction, isNull);
+      await tester.longPress(find.text('Temporary audio'));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('playlist_batch_selection_header')),
+        findsNothing,
+      );
+    },
+  );
+
+  testWidgets('playlist multiselect batch pin pins and unpins selected sessions', (
+    WidgetTester tester,
   ) async {
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(500, 1000);
     addTearDown(tester.view.resetDevicePixelRatio);
     addTearDown(tester.view.resetPhysicalSize);
+
     final fixture = AppRuntimeWidgetTestFixture(
       coverArtworkCacheService: _RecordingPlaybackCoverCacheService(),
     );
     addTearDown(fixture.dispose);
-    final tracks = [
-      testMusicTrack(
-        name: 'Saved audio',
-        path: PathMatcher.normalize('/saved/01.mp3'),
-        groupKey: PathMatcher.normalize('/saved'),
-        groupTitle: 'Saved',
-      ),
-      testMusicTrack(
-        name: 'Temporary audio',
-        path: PathMatcher.normalize('/temporary/01.mp3'),
-        groupKey: PathMatcher.normalize('/temporary'),
-        groupTitle: 'Temporary',
-      ),
-    ];
-    fixture.runtimeGraph.library.addTracks(tracks, notify: false, persist: false);
-    final saved = fixture.runtimeGraph.playback.createTrackSession(tracks[0]);
-    final temporary = fixture.runtimeGraph.playback.createTrackSession(tracks[1])
-      ..isTemporary = true;
+
+    final track1 = testMusicTrack(
+      name: 'Track 1',
+      path: PathMatcher.normalize('/library/work1/01.mp3'),
+      groupKey: PathMatcher.normalize('/library/work1'),
+      groupTitle: 'Work 1',
+    );
+    final track2 = testMusicTrack(
+      name: 'Track 2',
+      path: PathMatcher.normalize('/library/work2/02.mp3'),
+      groupKey: PathMatcher.normalize('/library/work2'),
+      groupTitle: 'Work 2',
+    );
+    fixture.runtimeGraph.library.addTracks(
+      <MusicTrack>[track1, track2],
+      notify: false,
+      persist: false,
+    );
+    final session1 = fixture.runtimeGraph.playback.createTrackSession(track1);
+    final session2 = fixture.runtimeGraph.playback.createTrackSession(track2);
     fixture.playbackService.syncSlice(
-      activeSessions: [saved, temporary],
+      activeSessions: <PlaybackSession>[session1, session2],
       playingSessionCount: 0,
-      focusedSessionId: temporary.id,
+      focusedSessionId: session1.id,
       multiThreadPlaybackEnabled: false,
       coverGeneration: 0,
       isInitialized: true,
     );
+
     await tester.pumpWidget(fixture.build(const PlaylistTab()));
     await tester.pumpAndSettle();
 
-    final temporaryCard = find.byKey(
-      ValueKey<String>('playlist_card_content_${temporary.id}'),
-    );
-    final savedCard = find.byKey(
-      ValueKey<String>('playlist_card_content_${saved.id}'),
-    );
-    final divider = find.byKey(
-      const ValueKey('playlist_temporary_session_divider'),
-    );
-    expect(divider, findsOneWidget);
-    expect(
-      tester.getBottomLeft(temporaryCard).dy,
-      lessThanOrEqualTo(tester.getTopLeft(divider).dy),
-    );
-    expect(
-      tester.getBottomLeft(divider).dy,
-      lessThanOrEqualTo(tester.getTopLeft(savedCard).dy),
-    );
-    final temporarySwipe = tester.widget<SwipeRevealCard>(
-      find.ancestor(of: temporaryCard, matching: find.byType(SwipeRevealCard)),
-    );
-    expect(temporarySwipe.onLeadingAction, isNull);
-    await tester.longPress(find.text('Temporary audio'));
+    final track1Title = find.text('Track 1');
+    final track2Title = find.text('Track 2');
+
+    // 1. Long press Track 1 to enter selection mode
+    await tester.longPress(track1Title);
     await tester.pumpAndSettle();
+
+    final batchHeader = find.byKey(
+      const ValueKey<String>('playlist_batch_selection_header'),
+    );
+    expect(batchHeader, findsOneWidget);
+
+    // Select Track 2 as well
+    await tester.tap(track2Title);
+    await tester.pumpAndSettle();
+
+    final batchPinButton = find.byKey(
+      const ValueKey<String>('batch_pin_button'),
+    );
+    expect(batchPinButton, findsOneWidget);
     expect(
-      find.byKey(const ValueKey('playlist_batch_selection_header')),
-      findsNothing,
+      tester.widget<IconButton>(batchPinButton).tooltip,
+      fixture.languageProvider.tr('pin_to_top'),
+    );
+
+    // Tap batch pin button -> both sessions should be pinned and selection mode exits
+    await tester.tap(batchPinButton);
+    await tester.pumpAndSettle();
+
+    expect(batchHeader, findsNothing);
+    expect(
+      fixture.settingsRepository.pinnedPlaylistSessionIds,
+      containsAll(<String>[session1.id, session2.id]),
+    );
+
+    // 2. Long press Track 1 again and select Track 2
+    await tester.longPress(track1Title);
+    await tester.pumpAndSettle();
+    expect(batchHeader, findsOneWidget);
+
+    await tester.tap(track2Title);
+    await tester.pumpAndSettle();
+
+    // Since both are pinned, tooltip should be 'unpin_from_top'
+    final batchUnpinButton = find.byKey(
+      const ValueKey<String>('batch_pin_button'),
+    );
+    expect(batchUnpinButton, findsOneWidget);
+    expect(
+      tester.widget<IconButton>(batchUnpinButton).tooltip,
+      fixture.languageProvider.tr('unpin_from_top'),
+    );
+
+    // Tap batch unpin button -> both should be unpinned and selection mode exits
+    await tester.tap(batchUnpinButton);
+    await tester.pumpAndSettle();
+
+    expect(batchHeader, findsNothing);
+    expect(
+      fixture.settingsRepository.pinnedPlaylistSessionIds,
+      isNot(contains(session1.id)),
+    );
+    expect(
+      fixture.settingsRepository.pinnedPlaylistSessionIds,
+      isNot(contains(session2.id)),
     );
   });
-
-  testWidgets(
-    'playlist multiselect batch pin pins and unpins selected sessions',
-    (WidgetTester tester) async {
-      tester.view.devicePixelRatio = 1;
-      tester.view.physicalSize = const Size(500, 1000);
-      addTearDown(tester.view.resetDevicePixelRatio);
-      addTearDown(tester.view.resetPhysicalSize);
-
-      final fixture = AppRuntimeWidgetTestFixture(
-        coverArtworkCacheService: _RecordingPlaybackCoverCacheService(),
-      );
-      addTearDown(fixture.dispose);
-
-      final track1 = testMusicTrack(
-        name: 'Track 1',
-        path: PathMatcher.normalize('/library/work1/01.mp3'),
-        groupKey: PathMatcher.normalize('/library/work1'),
-        groupTitle: 'Work 1',
-      );
-      final track2 = testMusicTrack(
-        name: 'Track 2',
-        path: PathMatcher.normalize('/library/work2/02.mp3'),
-        groupKey: PathMatcher.normalize('/library/work2'),
-        groupTitle: 'Work 2',
-      );
-      fixture.runtimeGraph.library.addTracks(
-        <MusicTrack>[track1, track2],
-        notify: false,
-        persist: false,
-      );
-      final session1 = fixture.runtimeGraph.playback.createTrackSession(track1);
-      final session2 = fixture.runtimeGraph.playback.createTrackSession(track2);
-      fixture.playbackService.syncSlice(
-        activeSessions: <PlaybackSession>[session1, session2],
-        playingSessionCount: 0,
-        focusedSessionId: session1.id,
-        multiThreadPlaybackEnabled: false,
-        coverGeneration: 0,
-        isInitialized: true,
-      );
-
-      await tester.pumpWidget(fixture.build(const PlaylistTab()));
-      await tester.pumpAndSettle();
-
-      final track1Title = find.text('Track 1');
-      final track2Title = find.text('Track 2');
-
-      // 1. Long press Track 1 to enter selection mode
-      await tester.longPress(track1Title);
-      await tester.pumpAndSettle();
-
-      final batchHeader = find.byKey(
-        const ValueKey<String>('playlist_batch_selection_header'),
-      );
-      expect(batchHeader, findsOneWidget);
-
-      // Select Track 2 as well
-      await tester.tap(track2Title);
-      await tester.pumpAndSettle();
-
-      final batchPinButton = find.byKey(
-        const ValueKey<String>('batch_pin_button'),
-      );
-      expect(batchPinButton, findsOneWidget);
-      expect(
-        tester.widget<IconButton>(batchPinButton).tooltip,
-        fixture.languageProvider.tr('pin_to_top'),
-      );
-
-      // Tap batch pin button -> both sessions should be pinned and selection mode exits
-      await tester.tap(batchPinButton);
-      await tester.pumpAndSettle();
-
-      expect(batchHeader, findsNothing);
-      expect(
-        fixture.settingsRepository.pinnedPlaylistSessionIds,
-        containsAll(<String>[session1.id, session2.id]),
-      );
-
-      // 2. Long press Track 1 again and select Track 2
-      await tester.longPress(track1Title);
-      await tester.pumpAndSettle();
-      expect(batchHeader, findsOneWidget);
-
-      await tester.tap(track2Title);
-      await tester.pumpAndSettle();
-
-      // Since both are pinned, tooltip should be 'unpin_from_top'
-      final batchUnpinButton = find.byKey(
-        const ValueKey<String>('batch_pin_button'),
-      );
-      expect(batchUnpinButton, findsOneWidget);
-      expect(
-        tester.widget<IconButton>(batchUnpinButton).tooltip,
-        fixture.languageProvider.tr('unpin_from_top'),
-      );
-
-      // Tap batch unpin button -> both should be unpinned and selection mode exits
-      await tester.tap(batchUnpinButton);
-      await tester.pumpAndSettle();
-
-      expect(batchHeader, findsNothing);
-      expect(
-        fixture.settingsRepository.pinnedPlaylistSessionIds,
-        isNot(contains(session1.id)),
-      );
-      expect(
-        fixture.settingsRepository.pinnedPlaylistSessionIds,
-        isNot(contains(session2.id)),
-      );
-    },
-  );
 
   testWidgets(
     'adding playback queue enters immediately without entrance animation',
@@ -5157,4 +5270,3 @@ void main() {
     await tester.pumpAndSettle();
   });
 }
-

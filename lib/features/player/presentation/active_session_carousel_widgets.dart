@@ -8,6 +8,8 @@ class _ActiveSessionCard extends ConsumerWidget {
     required this.coverPathFuture,
     required this.onOpen,
     this.compact = false,
+    this.embedded = false,
+    this.circularCover = false,
   });
 
   final PlaybackSessionSnapshot session;
@@ -16,6 +18,8 @@ class _ActiveSessionCard extends ConsumerWidget {
   final Future<String?> coverPathFuture;
   final VoidCallback onOpen;
   final bool compact;
+  final bool embedded;
+  final bool circularCover;
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final cs = Theme.of(context).colorScheme;
@@ -74,6 +78,35 @@ class _ActiveSessionCard extends ConsumerWidget {
       settingsStateProvider.select((s) => s.value?.uiBlurEffectEnabled ?? true),
     );
 
+    if (circularCover) {
+      return Semantics(
+        button: true,
+        value: '${position + 1} / $count',
+        child: Center(
+          child: SizedBox.square(
+            key: ValueKey<String>('active_session_card_${session.id}'),
+            dimension: 48,
+            child: Material(
+              type: MaterialType.transparency,
+              shape: const CircleBorder(),
+              clipBehavior: Clip.antiAlias,
+              child: InkWell(
+                customBorder: const CircleBorder(),
+                onTap: onOpen,
+                child: _ActiveSessionCover(
+                  sessionId: session.id,
+                  track: currentTrack,
+                  coverPathFuture: coverPathFuture,
+                  dimension: 48,
+                  circular: true,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
     Widget buildCardBody(bool useBlur) => Material(
       color: Colors.transparent,
       child: InkWell(
@@ -83,13 +116,21 @@ class _ActiveSessionCard extends ConsumerWidget {
         child: Ink(
           height: cardHeight,
           decoration: BoxDecoration(
-            color: (isDark ? cs.surfaceContainer : cs.surfaceContainerHigh)
-                .withValues(alpha: useBlur ? (isDark ? 0.72 : 0.78) : 1.0),
+            color: embedded
+                ? Colors.transparent
+                : (isDark ? cs.surfaceContainer : cs.surfaceContainerHigh)
+                      .withValues(
+                        alpha: useBlur ? (isDark ? 0.72 : 0.78) : 1.0,
+                      ),
             borderRadius: BorderRadius.circular(cardRadius),
-            border: Border.all(
-              color: cs.outlineVariant.withValues(alpha: isDark ? 0.24 : 0.42),
-            ),
-            boxShadow: isTinyWindow
+            border: embedded
+                ? null
+                : Border.all(
+                    color: cs.outlineVariant.withValues(
+                      alpha: isDark ? 0.24 : 0.42,
+                    ),
+                  ),
+            boxShadow: embedded || isTinyWindow
                 ? null
                 : [
                     BoxShadow(
@@ -160,7 +201,7 @@ class _ActiveSessionCard extends ConsumerWidget {
       ),
     );
 
-    final useBlur = blurEnabled;
+    final useBlur = blurEnabled && !embedded;
     return Semantics(
       container: true,
       value: '${position + 1} / $count',
@@ -682,12 +723,14 @@ class _ActiveSessionCover extends ConsumerWidget {
     required this.track,
     required this.coverPathFuture,
     required this.dimension,
+    this.circular = false,
   });
 
   final String sessionId;
   final MusicTrack? track;
   final Future<String?> coverPathFuture;
   final double dimension;
+  final bool circular;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -707,7 +750,10 @@ class _ActiveSessionCover extends ConsumerWidget {
       dimension: dimension,
       child: Material(
         type: MaterialType.transparency,
-        borderRadius: BorderRadius.circular(LibraryLikeCardMetrics.coverRadius),
+        shape: circular ? const CircleBorder() : null,
+        borderRadius: circular
+            ? null
+            : BorderRadius.circular(LibraryLikeCardMetrics.coverRadius),
         clipBehavior: Clip.antiAlias,
         child: AsyncLocalCoverImage(
           future: coverPathFuture,

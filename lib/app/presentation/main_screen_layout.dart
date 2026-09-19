@@ -83,9 +83,7 @@ extension _MainScreenLayout on _MainScreenState {
                       : const BoxDecoration(),
                   child: ClipRRect(
                     borderRadius: isDesktop
-                        ? (isLandscapeLayout
-                              ? BorderRadius.zero
-                              : radius)
+                        ? (isLandscapeLayout ? BorderRadius.zero : radius)
                         : BorderRadius.zero,
                     clipBehavior: isDesktop && !isLandscapeLayout
                         ? Clip.hardEdge
@@ -141,7 +139,11 @@ extension _MainScreenLayout on _MainScreenState {
     );
   }
 
-  Widget _buildBottomBar(BuildContext context) {
+  Widget _buildBottomBar(
+    BuildContext context, {
+    bool currentOnly = false,
+    VoidCallback? onCurrentTap,
+  }) {
     final (:showLocal, :showAsmr) = ref.watch(
       settingsStateProvider.select(
         (s) => (
@@ -157,23 +159,33 @@ extension _MainScreenLayout on _MainScreenState {
 
     return ValueListenableBuilder<int>(
       valueListenable: _activePageIndex,
-      builder: (context, selectedIndex, _) =>
-          _buildBottomBarContent(context, destinations, selectedIndex),
+      builder: (context, selectedIndex, _) => _buildBottomBarContent(
+        context,
+        destinations,
+        selectedIndex,
+        currentOnly: currentOnly,
+        onCurrentTap: onCurrentTap,
+      ),
     );
   }
 
   Widget _buildBottomBarContent(
     BuildContext context,
     List<_MainDestination> destinations,
-    int selectedIndex,
-  ) {
+    int selectedIndex, {
+    required bool currentOnly,
+    VoidCallback? onCurrentTap,
+  }) {
     final i18n = ProviderScope.containerOf(
       context,
       listen: false,
     ).read(appLanguageProviderInstanceProvider);
     final cs = Theme.of(context).colorScheme;
 
-    final items = destinations.asMap().entries.map((entry) {
+    final entries = destinations.asMap().entries.where(
+      (entry) => !currentOnly || entry.key == selectedIndex,
+    );
+    final items = entries.map((entry) {
       final index = entry.key;
       final item = entry.value;
       final selected = index == selectedIndex;
@@ -182,80 +194,63 @@ extension _MainScreenLayout on _MainScreenState {
           : i18n.tr(item.labelKey);
       final inactive = cs.onSurfaceVariant.withValues(alpha: 0.6);
 
-      final tokens = AppDesignTokens.of(context);
       final activeColor = cs.primary;
-      final labelText = AnimatedDefaultTextStyle(
-        duration: MediaQuery.disableAnimationsOf(context)
-            ? Duration.zero
-            : const Duration(milliseconds: 350),
-        curve: Curves.easeOutCubic,
-        style: Theme.of(context).textTheme.labelSmall!.copyWith(
-          fontSize: 10,
-          fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
-          color: selected ? activeColor : inactive,
-          letterSpacing: 0,
-        ),
-        child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
-      );
-
       return Expanded(
         child: Semantics(
           key: ValueKey<String>('main_destination_${item.labelKey}'),
           button: true,
           selected: selected,
           label: label,
-          child: Material(
-            type: MaterialType.transparency,
-            child: _BottomDestinationInkResponse(
-              inkKey: ValueKey<String>('main_destination_ink_${item.labelKey}'),
-              onTap: () => _switchPage(index),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      AnimatedContainer(
-                        duration: MediaQuery.disableAnimationsOf(context)
-                            ? Duration.zero
-                            : const Duration(milliseconds: 350),
-                        curve: Curves.easeOutCubic,
-                        width: selected ? 56 : 0,
-                        height: 26,
-                        decoration: BoxDecoration(
-                          color: selected
-                              ? activeColor.withValues(alpha: 0.11)
-                              : Colors.transparent,
-                          borderRadius: BorderRadius.circular(
-                            tokens.radiusCard,
+          child: Tooltip(
+            message: label,
+            child: Material(
+              type: MaterialType.transparency,
+              child: _BottomDestinationInkResponse(
+                inkKey: ValueKey<String>(
+                  'main_destination_ink_${item.labelKey}',
+                ),
+                onTap: currentOnly
+                    ? (onCurrentTap ?? () {})
+                    : () => _switchPage(index),
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    AnimatedContainer(
+                      duration: MediaQuery.disableAnimationsOf(context)
+                          ? Duration.zero
+                          : const Duration(milliseconds: 250),
+                      curve: Curves.easeOutCubic,
+                      width: selected ? 42 : 0,
+                      height: selected ? 42 : 0,
+                      decoration: BoxDecoration(
+                        color: selected
+                            ? activeColor.withValues(alpha: 0.11)
+                            : Colors.transparent,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    AnimatedSwitcher(
+                      duration: MediaQuery.disableAnimationsOf(context)
+                          ? Duration.zero
+                          : kAppMotionFast,
+                      switchInCurve: Curves.easeOutCubic,
+                      switchOutCurve: Curves.easeInCubic,
+                      transitionBuilder: (child, animation) =>
+                          buildAppScaleFadeTransition(
+                            context: context,
+                            animation: animation,
+                            child: child,
+                            beginScale: 0.9,
                           ),
-                        ),
+                      child: Icon(
+                        selected ? item.selectedIcon : item.icon,
+                        key: ValueKey<bool>(selected),
+                        size: 28,
+                        color: selected ? activeColor : inactive,
                       ),
-                      AnimatedSwitcher(
-                        duration: MediaQuery.disableAnimationsOf(context)
-                            ? Duration.zero
-                            : kAppMotionFast,
-                        switchInCurve: Curves.easeOutCubic,
-                        switchOutCurve: Curves.easeInCubic,
-                        transitionBuilder: (child, animation) =>
-                            buildAppScaleFadeTransition(
-                              context: context,
-                              animation: animation,
-                              child: child,
-                              beginScale: 0.9,
-                            ),
-                        child: Icon(
-                          selected ? item.selectedIcon : item.icon,
-                          key: ValueKey<bool>(selected),
-                          size: 20,
-                          color: selected ? activeColor : inactive,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 1),
-                  labelText,
-                ],
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -296,8 +291,12 @@ extension _MainScreenLayout on _MainScreenState {
     bool isCurrent = true,
   }) {
     final systemBottom = MediaQuery.paddingOf(context).bottom;
-    final maskHeight =
-        (overlaySessions.isNotEmpty ? 94.0 : 54.0) + systemBottom;
+    final maskHeight = 76.0 + systemBottom;
+    final hasPlayback = overlaySessions.isNotEmpty;
+    final playbackExpanded = hasPlayback && _isMobilePlaybackExpanded;
+    final duration = MediaQuery.disableAnimationsOf(context)
+        ? Duration.zero
+        : const Duration(milliseconds: 280);
     return Stack(
       key: key,
       fit: StackFit.expand,
@@ -320,36 +319,10 @@ extension _MainScreenLayout on _MainScreenState {
             alignment: Alignment.bottomCenter,
             child: SizedBox(
               width: double.infinity,
-              child: Column(
-                key: isCurrent ? _dockContentKey : null,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (overlaySessions.isNotEmpty)
-                    LayoutBuilder(
-                      builder: (context, constraints) {
-                        final viewportWidth = constraints.maxWidth;
-                        final menuWidth = (viewportWidth - AppSpacing.sm * 2)
-                            .clamp(0.0, 430.0)
-                            .toDouble();
-                        final cardWidth = menuWidth * 0.96;
-                        final viewportFraction = viewportWidth <= 0
-                            ? 0.90
-                            : ((cardWidth + 4) / viewportWidth).clamp(0.1, 1.0);
-                        return ActiveSessionCarousel(
-                          sessions: overlaySessions,
-                          i18n: i18n,
-                          viewportFraction: viewportFraction,
-                          onOpenSession: (sessionId) {
-                            Navigator.of(context).push(
-                              buildSessionDetailRoute(sessionId: sessionId),
-                            );
-                          },
-                        );
-                      },
-                    ),
-                  if (overlaySessions.isNotEmpty) const SizedBox(height: 6),
-                  if (!tinyMode)
-                    Padding(
+              child: tinyMode
+                  ? const SizedBox.shrink()
+                  : Padding(
+                      key: isCurrent ? _dockContentKey : null,
                       padding: const EdgeInsets.symmetric(
                         horizontal: AppSpacing.sm,
                       ),
@@ -361,17 +334,104 @@ extension _MainScreenLayout on _MainScreenState {
                           ),
                           widthFactor: 0.96,
                           child: _FloatingGlassPanel(
-                            padding: const EdgeInsets.fromLTRB(10, 5, 10, 5),
+                            padding: const EdgeInsets.all(4),
                             shadowOpacity: 0.12,
                             showTopHighlight: false,
                             tinyMode: tinyMode,
-                            child: _buildBottomBar(context),
+                            child: SizedBox(
+                              height: kActiveSessionCarouselCapsuleHeight,
+                              child: LayoutBuilder(
+                                builder: (context, constraints) {
+                                  const compactWidth = 48.0;
+                                  const gap = 4.0;
+                                  final availableWidth = constraints.maxWidth;
+                                  final navigationWidth = !hasPlayback
+                                      ? availableWidth
+                                      : playbackExpanded
+                                      ? compactWidth
+                                      : (availableWidth - compactWidth - gap)
+                                            .clamp(0.0, availableWidth);
+                                  final playbackWidth = !hasPlayback
+                                      ? 0.0
+                                      : playbackExpanded
+                                      ? (availableWidth - compactWidth - gap)
+                                            .clamp(0.0, availableWidth)
+                                      : compactWidth;
+                                  return Stack(
+                                    children: [
+                                      Align(
+                                        alignment: Alignment.centerLeft,
+                                        child: AnimatedContainer(
+                                          key: const ValueKey<String>(
+                                            'mobile_dock_navigation',
+                                          ),
+                                          duration: duration,
+                                          curve: Curves.easeOutCubic,
+                                          width: navigationWidth,
+                                          height:
+                                              kActiveSessionCarouselCapsuleHeight,
+                                          child: ClipRect(
+                                            child: AnimatedSwitcher(
+                                              duration: duration,
+                                              child: _buildBottomBar(
+                                                context,
+                                                currentOnly: playbackExpanded,
+                                                onCurrentTap:
+                                                    _showMobileDestinations,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                      if (hasPlayback)
+                                        Align(
+                                          alignment: Alignment.centerRight,
+                                          child: AnimatedContainer(
+                                            key: const ValueKey<String>(
+                                              'mobile_dock_playback',
+                                            ),
+                                            duration: duration,
+                                            curve: Curves.easeOutCubic,
+                                            width: playbackWidth,
+                                            height:
+                                                kActiveSessionCarouselCapsuleHeight,
+                                            child: ClipRect(
+                                              child: ActiveSessionCarousel(
+                                                key: const ValueKey<String>(
+                                                  'mobile_dock_carousel',
+                                                ),
+                                                sessions: overlaySessions,
+                                                i18n: i18n,
+                                                viewportFraction: 1,
+                                                presentation: playbackExpanded
+                                                    ? ActiveSessionCarouselPresentation
+                                                          .embedded
+                                                    : ActiveSessionCarouselPresentation
+                                                          .circularCover,
+                                                onOpenSession: (sessionId) {
+                                                  if (!playbackExpanded) {
+                                                    _showMobilePlayback();
+                                                    return;
+                                                  }
+                                                  Navigator.of(context).push(
+                                                    buildSessionDetailRoute(
+                                                      sessionId: sessionId,
+                                                    ),
+                                                  );
+                                                },
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                    ],
+                                  );
+                                },
+                              ),
+                            ),
                           ),
                         ),
                       ),
                     ),
-                ],
-              ),
             ),
           ),
         ),
@@ -397,10 +457,10 @@ extension _MainScreenLayout on _MainScreenState {
 
     final sidebarColor = isLandscapeLayout
         ? (isDark
-            ? (cs.surfaceContainerLowest == cs.surface
-                ? cs.surfaceContainerLow
-                : cs.surfaceContainerLowest)
-            : cs.surfaceContainerLow)
+              ? (cs.surfaceContainerLowest == cs.surface
+                    ? cs.surfaceContainerLow
+                    : cs.surfaceContainerLowest)
+              : cs.surfaceContainerLow)
         : cs.surfaceContainerLow;
 
     return AnimatedContainer(
@@ -613,7 +673,9 @@ extension _MainScreenLayout on _MainScreenState {
               child: ActiveSessionCarousel(
                 sessions: overlaySessions,
                 i18n: i18n,
-                compactForFab: _isMenuCollapsed,
+                presentation: _isMenuCollapsed
+                    ? ActiveSessionCarouselPresentation.compact
+                    : ActiveSessionCarouselPresentation.card,
                 onOpenSession: (sessionId) {
                   Navigator.of(
                     context,
@@ -626,29 +688,17 @@ extension _MainScreenLayout on _MainScreenState {
     );
   }
 
-  double _mobileContentInset({
-    required bool hasNowPlaying,
-    required bool? previousHasNowPlaying,
-  }) {
-    // The render box still has the previous frame's height while the playback
-    // card is entering or leaving, so compensate for that one transition.
+  double _mobileContentInset() {
     final contentBox =
         _dockContentKey.currentContext?.findRenderObject() as RenderBox?;
     if (contentBox != null && contentBox.hasSize) {
       final systemBottom = MediaQuery.of(context).padding.bottom;
-      var contentHeight = contentBox.size.height;
-      if (previousHasNowPlaying != null &&
-          previousHasNowPlaying != hasNowPlaying) {
-        const cardExtent = kActiveSessionCarouselCapsuleHeight + 6;
-        contentHeight += hasNowPlaying ? cardExtent : -cardExtent;
-      }
-      return (max(systemBottom, 6.0) + contentHeight).clamp(
+      return (max(systemBottom, 6.0) + contentBox.size.height).clamp(
         0.0,
         double.infinity,
       );
     }
     final systemBottom = MediaQuery.of(context).padding.bottom;
-    if (hasNowPlaying) return systemBottom + 130;
-    return systemBottom + 60;
+    return max(systemBottom, 6.0) + 64;
   }
 }

@@ -25,7 +25,6 @@ import '../../features/player/application/subtitle_overlay_controller.dart';
 import '../../core/ui/permission_action_controller.dart';
 import '../../core/ui/ui_interaction_coordinator.dart';
 import '../../core/ui/ui_operation_service.dart';
-import '../theme/app_design_tokens.dart';
 import '../theme/app_styles.dart';
 import '../../features/player/presentation/playlist_tab.dart';
 import '../../features/settings/presentation/settings_tab.dart';
@@ -52,12 +51,7 @@ bool shouldRunGlobalSubtitleOverlay({required bool appInForeground}) {
   return defaultTargetPlatform == TargetPlatform.windows || !appInForeground;
 }
 
-enum MainDestinationType {
-  library,
-  asmrOne,
-  playlist,
-  settings,
-}
+enum MainDestinationType { library, asmrOne, playlist, settings }
 
 class _MainDestination {
   const _MainDestination({
@@ -121,6 +115,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
     with WidgetsBindingObserver {
   static const double _desktopBreakpoint = 980;
   bool _isMenuCollapsed = false;
+  bool _isMobilePlaybackExpanded = false;
   late final ValueNotifier<int> _activePageIndex;
   final Object _pageSwitchInteraction = Object();
   final GlobalKey _dockContentKey = GlobalKey();
@@ -140,7 +135,6 @@ class _MainScreenState extends ConsumerState<MainScreen>
   late final NotificationFacade _notificationFacade;
 
   bool _isDataReady = false;
-  bool? _lastHasNowPlaying;
   Timer? _notificationSessionNavigationTimer;
   String? _pendingNotificationSessionId;
   DateTime? _pendingNotificationSessionStartedAt;
@@ -188,6 +182,15 @@ class _MainScreenState extends ConsumerState<MainScreen>
     ref.listenManual<bool>(
       mainOverlayUiProvider.select((state) => state.hasPlayingSession),
       (_, hasPlayingSession) => _handlePlayingSessionChanged(hasPlayingSession),
+      fireImmediately: true,
+    );
+    ref.listenManual<bool>(
+      mainOverlayUiProvider.select((state) => state.hasNowPlaying),
+      (_, hasNowPlaying) {
+        if (!hasNowPlaying && _isMobilePlaybackExpanded && mounted) {
+          setState(() => _isMobilePlaybackExpanded = false);
+        }
+      },
       fireImmediately: true,
     );
     ref.listenManual<SleepModeAutoTrigger>(
@@ -255,21 +258,21 @@ class _MainScreenState extends ConsumerState<MainScreen>
       );
       final startupPage = settings?.startupPage ?? StartupPage.library;
       final targetType = switch (startupPage) {
-        StartupPage.library => showLocal
-            ? MainDestinationType.library
-            : (showAsmr
-                ? MainDestinationType.asmrOne
-                : MainDestinationType.playlist),
-        StartupPage.asmrOne => showAsmr
-            ? MainDestinationType.asmrOne
-            : (showLocal
-                ? MainDestinationType.library
-                : MainDestinationType.playlist),
+        StartupPage.library =>
+          showLocal
+              ? MainDestinationType.library
+              : (showAsmr
+                    ? MainDestinationType.asmrOne
+                    : MainDestinationType.playlist),
+        StartupPage.asmrOne =>
+          showAsmr
+              ? MainDestinationType.asmrOne
+              : (showLocal
+                    ? MainDestinationType.library
+                    : MainDestinationType.playlist),
         StartupPage.playlist => MainDestinationType.playlist,
       };
-      final startupIndex = destinations.indexWhere(
-        (d) => d.type == targetType,
-      );
+      final startupIndex = destinations.indexWhere((d) => d.type == targetType);
       _activePageIndex.value = startupIndex >= 0 ? startupIndex : 0;
       setState(() => _isDataReady = true);
     }
@@ -332,7 +335,8 @@ class _MainScreenState extends ConsumerState<MainScreen>
       return;
     }
 
-    if (_sleepModeAutoEntryTriggeredThisRun || BedtimeCanvasPage.isCanvasActive) {
+    if (_sleepModeAutoEntryTriggeredThisRun ||
+        BedtimeCanvasPage.isCanvasActive) {
       return;
     }
 
@@ -399,6 +403,16 @@ class _MainScreenState extends ConsumerState<MainScreen>
     unawaited(
       AppPreferences.setBool('desktop_menu_collapsed', _isMenuCollapsed),
     );
+  }
+
+  void _showMobilePlayback() {
+    if (_isMobilePlaybackExpanded) return;
+    setState(() => _isMobilePlaybackExpanded = true);
+  }
+
+  void _showMobileDestinations() {
+    if (!_isMobilePlaybackExpanded) return;
+    setState(() => _isMobilePlaybackExpanded = false);
   }
 
   Future<void> _checkForUpdatesOnLaunch() async {
@@ -837,25 +851,25 @@ class _MainScreenState extends ConsumerState<MainScreen>
     final dest = destinations[index];
     return switch (dest.type) {
       MainDestinationType.library => LibraryTab(
-          key: const ValueKey<String>('audio_library_local_page'),
-          tabIndex: index,
-          activeTabIndexListenable: _activePageIndex,
-        ),
+        key: const ValueKey<String>('audio_library_local_page'),
+        tabIndex: index,
+        activeTabIndexListenable: _activePageIndex,
+      ),
       MainDestinationType.asmrOne => AsmrTab(
-          key: const ValueKey<String>('audio_library_asmr_page'),
-          tabIndex: index,
-          activeTabIndexListenable: _activePageIndex,
-        ),
+        key: const ValueKey<String>('audio_library_asmr_page'),
+        tabIndex: index,
+        activeTabIndexListenable: _activePageIndex,
+      ),
       MainDestinationType.playlist => PlaylistTab(
-          tabIndex: index,
-          onTimerTap: _openTimerFromPlaylist,
-          onOpenLibrary: _openLocalLibrary,
-          activeTabIndexListenable: _activePageIndex,
-        ),
+        tabIndex: index,
+        onTimerTap: _openTimerFromPlaylist,
+        onOpenLibrary: _openLocalLibrary,
+        activeTabIndexListenable: _activePageIndex,
+      ),
       MainDestinationType.settings => SettingsTab(
-          tabIndex: index,
-          activeTabIndexListenable: _activePageIndex,
-        ),
+        tabIndex: index,
+        activeTabIndexListenable: _activePageIndex,
+      ),
     };
   }
 
@@ -928,11 +942,6 @@ class _MainScreenState extends ConsumerState<MainScreen>
             systemStatusBarContrastEnforced: false,
             systemNavigationBarContrastEnforced: false,
           );
-    final hasNowPlaying = ref.watch(
-      mainOverlayUiProvider.select((state) => state.hasNowPlaying),
-    );
-    final previousHasNowPlaying = _lastHasNowPlaying;
-    _lastHasNowPlaying = hasNowPlaying;
     final layoutSize = _layoutViewSize();
     final width = layoutSize.width;
     final isDesktop =
@@ -940,12 +949,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
         MediaQuery.orientationOf(context) == Orientation.landscape ||
         width >= _desktopBreakpoint;
     final isTinyWindow = width < 300 || layoutSize.height < 300;
-    final mobileContentInset = isDesktop
-        ? 0.0
-        : _mobileContentInset(
-            hasNowPlaying: hasNowPlaying,
-            previousHasNowPlaying: previousHasNowPlaying,
-          );
+    final mobileContentInset = isDesktop ? 0.0 : _mobileContentInset();
 
     final content = AnnotatedRegion<SystemUiOverlayStyle>(
       value: overlayStyle,
@@ -1046,7 +1050,11 @@ class _MainScreenState extends ConsumerState<MainScreen>
                         _currentDestinations().length,
                   ),
               },
-              child: Focus(autofocus: true, skipTraversal: true, child: content),
+              child: Focus(
+                autofocus: true,
+                skipTraversal: true,
+                child: content,
+              ),
             )
           : content,
     );

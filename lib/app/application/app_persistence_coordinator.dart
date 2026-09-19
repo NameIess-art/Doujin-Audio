@@ -10,7 +10,6 @@ import '../../features/settings/application/settings_repository.dart';
 import '../../features/settings/application/settings_state.dart';
 import 'audio_ui_warmup_coordinator.dart';
 import '../../core/persistence/persisted_state_reloader.dart';
-import 'playback_command_coordinator.dart';
 import 'playback_keep_alive_coordinator.dart';
 
 /// Owns ordered startup loading and runtime state reloading.
@@ -21,7 +20,6 @@ final class AppPersistenceCoordinator implements PersistedStateReloader {
     required SettingsRepository settings,
     required TimerFacade timer,
     required NotificationFacade notifications,
-    required PlaybackCommandCoordinator playbackCommands,
     required PlaybackKeepAliveCoordinator keepAlive,
     required AudioUiWarmupCoordinator uiWarmup,
     required PlaybackSubtitleService subtitles,
@@ -30,7 +28,6 @@ final class AppPersistenceCoordinator implements PersistedStateReloader {
        _settings = settings,
        _timer = timer,
        _notifications = notifications,
-       _playbackCommands = playbackCommands,
        _keepAlive = keepAlive,
        _uiWarmup = uiWarmup,
        _subtitles = subtitles;
@@ -40,7 +37,6 @@ final class AppPersistenceCoordinator implements PersistedStateReloader {
   final SettingsRepository _settings;
   final TimerFacade _timer;
   final NotificationFacade _notifications;
-  final PlaybackCommandCoordinator _playbackCommands;
   final PlaybackKeepAliveCoordinator _keepAlive;
   final AudioUiWarmupCoordinator _uiWarmup;
   final PlaybackSubtitleService _subtitles;
@@ -91,12 +87,6 @@ final class AppPersistenceCoordinator implements PersistedStateReloader {
 
       await _playback.loadPersistedState();
       if (!isCurrent()) return;
-      if (!_settings.multiThreadPlaybackEnabled) {
-        await AppLogService.measureAsync(
-          'playback_enforce_single_thread_on_restore',
-          _playbackCommands.enforceSingleThreadPlayback,
-        );
-      }
       await AppLogService.measureAsync(
         'timer_runtime_load',
         _timer.loadRuntimeFromSystem,
@@ -136,7 +126,6 @@ final class AppPersistenceCoordinator implements PersistedStateReloader {
     _library.syncPresentationState(isInitialized: isInitialized);
     _playback.syncPresentationState(
       focusedSessionId: _notifications.focusedSessionId,
-      multiThreadPlaybackEnabled: _settings.multiThreadPlaybackEnabled,
       coverGeneration: _library.coverArtworkCacheService.generation,
       isInitialized: isInitialized,
     );

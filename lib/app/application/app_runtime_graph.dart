@@ -78,7 +78,6 @@ AppRuntimeGraph createAppRuntimeGraph({
   void syncPlaybackState() {
     playback.syncPresentationState(
       focusedSessionId: notifications.focusedSessionId,
-      multiThreadPlaybackEnabled: settings.multiThreadPlaybackEnabled,
       coverGeneration: library.coverArtworkCacheService.generation,
     );
     notifications.syncPresentationState(
@@ -181,7 +180,6 @@ AppRuntimeGraph createAppRuntimeGraph({
     settings: settings,
     timer: timer,
     notifications: notifications,
-    playbackCommands: playbackCommands,
     keepAlive: keepAlive,
     uiWarmup: warmup,
     subtitles: subtitles,

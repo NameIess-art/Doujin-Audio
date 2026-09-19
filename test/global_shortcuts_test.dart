@@ -56,7 +56,6 @@ void main() {
       resumeSession: (session) async {
         resumed.add(session.id);
       },
-      multiThreadPlaybackEnabled: () => false,
       setFocusSessionId: (_) {},
       notify: () {},
       syncKeepAlive: () {},

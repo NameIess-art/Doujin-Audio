@@ -90,7 +90,6 @@ void main() {
       resolveActionSession: () => notifications.notificationActionSession,
       resumeSession: (session) =>
           commands.startSession(session, shouldStartTriggerCountdown: false),
-      multiThreadPlaybackEnabled: () => settings.multiThreadPlaybackEnabled,
       setFocusSessionId: notifications.setFocusedSession,
       notify: () {},
       syncKeepAlive: keepAlive.sync,
@@ -113,7 +112,6 @@ void main() {
       settings: settings,
       timer: timer,
       notifications: notifications,
-      playbackCommands: commands,
       keepAlive: keepAlive,
       uiWarmup: warmup,
       subtitles: subtitles,
@@ -232,7 +230,6 @@ void main() {
         resolveActionSession: () => notifications.notificationActionSession,
         resumeSession: (session) =>
             commands.startSession(session, shouldStartTriggerCountdown: false),
-        multiThreadPlaybackEnabled: () => settings.multiThreadPlaybackEnabled,
         setFocusSessionId: notifications.setFocusedSession,
         notify: () {},
         syncKeepAlive: keepAlive.sync,
@@ -255,7 +252,6 @@ void main() {
         settings: settings,
         timer: timer,
         notifications: notifications,
-        playbackCommands: commands,
         keepAlive: keepAlive,
         uiWarmup: warmup,
         subtitles: subtitles,
@@ -276,7 +272,6 @@ void main() {
       library.syncPresentationState(isInitialized: false);
       playback.syncPresentationState(
         focusedSessionId: notifications.focusedSessionId,
-        multiThreadPlaybackEnabled: settings.multiThreadPlaybackEnabled,
         coverGeneration: library.coverArtworkCacheService.generation,
         isInitialized: false,
       );

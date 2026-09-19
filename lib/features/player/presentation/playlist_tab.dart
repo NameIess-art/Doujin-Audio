@@ -515,16 +515,9 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                 final headerState = _isActive
                     ? ref.watch(playlistHeaderUiProvider)
                     : ref.read(playlistHeaderUiProvider);
-                final multiThreadEnabled = _readOrWatch(
-                  settingsStateProvider.select(
-                    (state) => state.value?.multiThreadPlaybackEnabled ?? false,
-                  ),
-                );
-
                 if (_isSelectionMode) {
                   final count = _selectedSessionIds.length;
-                  final isPlayEnabled =
-                      count > 0 && (multiThreadEnabled || count <= 1);
+                  final isPlayEnabled = count > 0;
                   final isPauseEnabled = count > 0;
                   final isPinEnabled = count > 0;
                   final isAllPinned =

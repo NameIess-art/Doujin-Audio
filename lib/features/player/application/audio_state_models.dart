@@ -7,7 +7,6 @@ class PlaybackStateSliceData {
         const <PlaybackSessionSnapshot>[],
     this.playingSessionCount = 0,
     this.focusedSessionId,
-    this.multiThreadPlaybackEnabled = false,
     this.coverGeneration = 0,
     this.isInitialized = false,
   }) : activeSessions = immutableList(activeSessions);
@@ -15,7 +14,6 @@ class PlaybackStateSliceData {
   final List<PlaybackSessionSnapshot> activeSessions;
   final int playingSessionCount;
   final String? focusedSessionId;
-  final bool multiThreadPlaybackEnabled;
   final int coverGeneration;
   final bool isInitialized;
 
@@ -25,7 +23,6 @@ class PlaybackStateSliceData {
         listEquals(other.activeSessions, activeSessions) &&
         other.playingSessionCount == playingSessionCount &&
         other.focusedSessionId == focusedSessionId &&
-        other.multiThreadPlaybackEnabled == multiThreadPlaybackEnabled &&
         other.coverGeneration == coverGeneration &&
         other.isInitialized == isInitialized;
   }
@@ -35,7 +32,6 @@ class PlaybackStateSliceData {
     Object.hashAll(activeSessions),
     playingSessionCount,
     focusedSessionId,
-    multiThreadPlaybackEnabled,
     coverGeneration,
     isInitialized,
   );

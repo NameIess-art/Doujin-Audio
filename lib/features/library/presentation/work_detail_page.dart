@@ -18,6 +18,7 @@ import '../../../core/ui/ui_operation_service.dart';
 import '../../../core/ui/undoable_removal_service.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/async_cover_image.dart';
+import '../../../core/widgets/mobile_overlay_inset.dart';
 import '../../../core/widgets/top_page_header.dart';
 import '../../asmr/application/asmr_library_controller.dart';
 import '../../asmr/domain/asmr_models.dart';
@@ -62,17 +63,13 @@ class _WorkEntryItem {
 }
 
 class WorkDetailPage extends ConsumerStatefulWidget {
-  const WorkDetailPage.forLocal({
-    super.key,
-    required AudioDetailTarget target,
-  })  : localTarget = target,
-        asmrWork = null;
+  const WorkDetailPage.forLocal({super.key, required AudioDetailTarget target})
+    : localTarget = target,
+      asmrWork = null;
 
-  const WorkDetailPage.forAsmr({
-    super.key,
-    required AsmrWork work,
-  })  : asmrWork = work,
-        localTarget = null;
+  const WorkDetailPage.forAsmr({super.key, required AsmrWork work})
+    : asmrWork = work,
+      localTarget = null;
 
   final AudioDetailTarget? localTarget;
   final AsmrWork? asmrWork;
@@ -146,14 +143,18 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
       unawaited(() async {
         try {
           final texts = await textService.findWorkTextFiles(folderPath);
-          final currentCover = await library.coverPathFutureForFolder(folderPath);
+          final currentCover = await library.coverPathFutureForFolder(
+            folderPath,
+          );
           final candidateImages = await library.discoverCoverCandidatesInFolder(
             folderPath,
           );
           final imageItems = <WorkImageItem>[];
           for (final imgPath in candidateImages) {
             final name = p.basename(imgPath);
-            var rel = p.relative(imgPath, from: folderPath).replaceAll(r'\', '/');
+            var rel = p
+                .relative(imgPath, from: folderPath)
+                .replaceAll(r'\', '/');
             if (rel.startsWith('..')) rel = name;
             imageItems.add(
               WorkImageItem(name: name, path: imgPath, relativePath: rel),
@@ -661,10 +662,8 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
     }
     await Navigator.of(context).push<void>(
       MaterialPageRoute(
-        builder: (_) => WorkTextViewerPage(
-          files: allTexts,
-          initialIndex: initialIndex,
-        ),
+        builder: (_) =>
+            WorkTextViewerPage(files: allTexts, initialIndex: initialIndex),
       ),
     );
   }
@@ -868,7 +867,8 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
       displayCircle = detail?.circleName ?? '';
       displayVoiceActors = detail?.voiceActors ?? const [];
       displayTags = detail?.tags ?? const [];
-      coverPath = _localManualCover ??
+      coverPath =
+          _localManualCover ??
           detail?.cardCoverPath ??
           ref
               .watch(libraryFacadeProvider)
@@ -886,6 +886,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
     }
 
     final topSafeArea = MediaQuery.paddingOf(context).top;
+    final bottomOverlayInset = MobileOverlayInset.of(context);
     const coverMaxHeight = 240.0;
     const coverMinHeight = 120.0; // Collapses by half!
     const rjBarHeight = 44.0;
@@ -895,7 +896,8 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
 
     final String? trimmedCover = coverPath?.trim();
     final bool hasValidCover = trimmedCover != null && trimmedCover.isNotEmpty;
-    final bool isRemoteCover = hasValidCover &&
+    final bool isRemoteCover =
+        hasValidCover &&
         (trimmedCover.startsWith('http://') ||
             trimmedCover.startsWith('https://') ||
             widget.isAsmr);
@@ -952,6 +954,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
               accentColor: widget.isAsmr ? asmrBlue : cs.primary,
               surfaceColor: cs.surface,
               onBackPressed: () => Navigator.of(context).maybePop(),
+              onCopyMetadata: (value) => _copyText(context, value),
             ),
           ),
 
@@ -981,14 +984,10 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
                                   .map(
                                     (va) => Padding(
                                       padding: const EdgeInsets.only(right: 8),
-                                      child: Text(
+                                      child: _buildVoiceActorCapsule(
+                                        context,
+                                        cs,
                                         va,
-                                        style: Theme.of(context)
-                                            .textTheme
-                                            .bodyMedium
-                                            ?.copyWith(
-                                              fontWeight: FontWeight.w600,
-                                            ),
                                       ),
                                     ),
                                   )
@@ -1038,9 +1037,14 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
                         // 补充信息
                         Expanded(
                           child: FilledButton.tonalIcon(
-                            key: const ValueKey<String>('work_detail_fetch_info'),
+                            key: const ValueKey<String>(
+                              'work_detail_fetch_info',
+                            ),
                             onPressed: _handleLocalFetchInfo,
-                            icon: const Icon(Icons.cloud_download_rounded, size: 18),
+                            icon: const Icon(
+                              Icons.cloud_download_rounded,
+                              size: 18,
+                            ),
                             label: Text(
                               i18n.tr('audio_detail_fetch_info'),
                               maxLines: 1,
@@ -1070,7 +1074,9 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
                         // 下载
                         Expanded(
                           child: FilledButton.tonalIcon(
-                            key: const ValueKey<String>('asmr_work_detail_download'),
+                            key: const ValueKey<String>(
+                              'asmr_work_detail_download',
+                            ),
                             onPressed: _handleAsmrDownload,
                             icon: const Icon(Icons.download_rounded, size: 18),
                             label: Text(
@@ -1092,7 +1098,9 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
                                 widget.asmrWork!.isFavorite;
                             return Expanded(
                               child: FilledButton.tonalIcon(
-                                key: const ValueKey<String>('asmr_work_detail_favorite'),
+                                key: const ValueKey<String>(
+                                  'asmr_work_detail_favorite',
+                                ),
                                 onPressed: _handleAsmrToggleFavorite,
                                 style: FilledButton.styleFrom(
                                   backgroundColor: isFav
@@ -1170,9 +1178,11 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
                                   ),
                                 ),
                               ),
-                              for (var i = 0;
-                                  i < _currentPathSegments.length;
-                                  i++) ...[
+                              for (
+                                var i = 0;
+                                i < _currentPathSegments.length;
+                                i++
+                              ) ...[
                                 const Text(
                                   ' > ',
                                   style: TextStyle(color: Colors.grey),
@@ -1190,12 +1200,12 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
                                       style: TextStyle(
                                         fontWeight:
                                             i == _currentPathSegments.length - 1
-                                                ? FontWeight.bold
-                                                : FontWeight.normal,
+                                            ? FontWeight.bold
+                                            : FontWeight.normal,
                                         color:
                                             i == _currentPathSegments.length - 1
-                                                ? cs.onSurface
-                                                : cs.primary,
+                                            ? cs.onSurface
+                                            : cs.primary,
                                         fontSize: 13,
                                       ),
                                     ),
@@ -1210,8 +1220,8 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
                       Text(
                         '${currentEntries.length} 项',
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: cs.onSurfaceVariant,
-                            ),
+                          color: cs.onSurfaceVariant,
+                        ),
                       ),
                     ],
                   ),
@@ -1251,13 +1261,17 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
             SliverPadding(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               sliver: SliverList(
-                delegate: SliverChildBuilderDelegate(
-                  (context, index) {
-                    final item = currentEntries[index];
-                    return _buildFileEntryTile(context, item, cs, asmrBlue);
-                  },
-                  childCount: currentEntries.length,
-                ),
+                delegate: SliverChildBuilderDelegate((context, index) {
+                  final item = currentEntries[index];
+                  return _buildFileEntryTile(context, item, cs, asmrBlue);
+                }, childCount: currentEntries.length),
+              ),
+            ),
+          if (bottomOverlayInset > 0)
+            SliverToBoxAdapter(
+              child: SizedBox(
+                key: const ValueKey<String>('work_detail_playback_inset'),
+                height: bottomOverlayInset,
               ),
             ),
         ],
@@ -1265,15 +1279,57 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
     );
   }
 
-  void _copyTag(BuildContext context, String rawTag) {
-    final term = rawTag.startsWith('#') ? rawTag.substring(1) : rawTag;
-    Clipboard.setData(ClipboardData(text: term));
+  void _copyText(BuildContext context, String rawValue) {
+    final value = rawValue.trim();
+    if (value.isEmpty) return;
+    Clipboard.setData(ClipboardData(text: value));
     AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     showAppSnackBar(
       context,
-      i18n.tr('copied_to_clipboard', {'value': term}),
+      i18n.tr('copied_to_clipboard', {'value': value}),
       icon: Icons.content_copy_rounded,
+    );
+  }
+
+  Widget _buildVoiceActorCapsule(
+    BuildContext context,
+    ColorScheme cs,
+    String voiceActor,
+  ) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Semantics(
+      button: true,
+      label: voiceActor,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          key: ValueKey<String>('work_detail_voice_actor_$voiceActor'),
+          onTap: () => _copyText(context, voiceActor),
+          borderRadius: BorderRadius.circular(22),
+          child: Container(
+            constraints: const BoxConstraints(minHeight: 44),
+            alignment: Alignment.center,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: cs.primaryContainer.withValues(
+                alpha: isDark ? 0.34 : 0.56,
+              ),
+              borderRadius: BorderRadius.circular(22),
+              border: Border.all(
+                color: cs.primary.withValues(alpha: isDark ? 0.28 : 0.20),
+              ),
+            ),
+            child: Text(
+              voiceActor,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: cs.onPrimaryContainer,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 
@@ -1284,7 +1340,8 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        onTap: () => _copyTag(context, tag),
+        onTap: () =>
+            _copyText(context, tag.startsWith('#') ? tag.substring(1) : tag),
         borderRadius: BorderRadius.circular(14),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -1333,7 +1390,8 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
         );
 
       case _WorkEntryType.audio:
-        final durationStr = item.duration != null && item.duration! > Duration.zero
+        final durationStr =
+            item.duration != null && item.duration! > Duration.zero
             ? formatDurationCompact(item.duration!)
             : '';
         return GestureDetector(
@@ -1387,11 +1445,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
           dense: true,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
           leading: Icon(Icons.description_outlined, color: cs.onSurfaceVariant),
-          title: Text(
-            item.name,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
+          title: Text(item.name, maxLines: 1, overflow: TextOverflow.ellipsis),
           trailing: Container(
             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
             decoration: BoxDecoration(
@@ -1415,11 +1469,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
           dense: true,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
           leading: Icon(Icons.image_outlined, color: cs.onSurfaceVariant),
-          title: Text(
-            item.name,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
+          title: Text(item.name, maxLines: 1, overflow: TextOverflow.ellipsis),
           trailing: widget.isLocal
               ? IconButton(
                   key: ValueKey<String>('set_cover_${item.name}'),
@@ -1456,6 +1506,7 @@ class _WorkDetailHeaderDelegate extends SliverPersistentHeaderDelegate {
     required this.accentColor,
     required this.surfaceColor,
     required this.onBackPressed,
+    required this.onCopyMetadata,
   });
 
   final double topSafeArea;
@@ -1469,6 +1520,7 @@ class _WorkDetailHeaderDelegate extends SliverPersistentHeaderDelegate {
   final Color accentColor;
   final Color surfaceColor;
   final VoidCallback onBackPressed;
+  final ValueChanged<String> onCopyMetadata;
 
   @override
   double get maxExtent => topSafeArea + coverMaxHeight + rjBarHeight;
@@ -1487,7 +1539,9 @@ class _WorkDetailHeaderDelegate extends SliverPersistentHeaderDelegate {
         ? 0.0
         : (shrinkOffset / scrollDelta).clamp(0.0, 1.0);
 
-    final currentCoverHeight = coverMaxHeight - (shrinkOffset).clamp(0.0, coverMaxHeight - coverMinHeight);
+    final currentCoverHeight =
+        coverMaxHeight -
+        (shrinkOffset).clamp(0.0, coverMaxHeight - coverMinHeight);
 
     return Material(
       color: surfaceColor,
@@ -1561,12 +1615,35 @@ class _WorkDetailHeaderDelegate extends SliverPersistentHeaderDelegate {
               child: Row(
                 children: [
                   if (rjCode.isNotEmpty) ...[
-                    Text(
-                      rjCode,
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14,
-                        color: accentColor,
+                    Semantics(
+                      button: true,
+                      label: rjCode,
+                      child: InkWell(
+                        key: const ValueKey<String>('work_detail_rj_copy'),
+                        onTap: () => onCopyMetadata(rjCode),
+                        onSecondaryTap:
+                            defaultTargetPlatform == TargetPlatform.windows
+                            ? () => onCopyMetadata(rjCode)
+                            : null,
+                        onLongPress:
+                            defaultTargetPlatform == TargetPlatform.android
+                            ? () => onCopyMetadata(rjCode)
+                            : () {},
+                        borderRadius: BorderRadius.circular(12),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 4,
+                            vertical: 10,
+                          ),
+                          child: Text(
+                            rjCode,
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 14,
+                              color: accentColor,
+                            ),
+                          ),
+                        ),
                       ),
                     ),
                     const SizedBox(width: 8),
@@ -1586,26 +1663,36 @@ class _WorkDetailHeaderDelegate extends SliverPersistentHeaderDelegate {
                   ),
                   const SizedBox(width: 4),
                   Expanded(
-                    child: GestureDetector(
-                      onSecondaryTap:
-                          defaultTargetPlatform == TargetPlatform.windows
-                              ? () => Clipboard.setData(
-                                    ClipboardData(text: circleName),
-                                  )
-                              : null,
-                      onLongPress:
-                          defaultTargetPlatform == TargetPlatform.android
-                              ? () => Clipboard.setData(
-                                    ClipboardData(text: circleName),
-                                  )
-                              : null,
-                      child: Text(
-                        circleName.isNotEmpty ? circleName : '--',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                              fontWeight: FontWeight.w600,
-                            ),
+                    child: Semantics(
+                      button: circleName.isNotEmpty,
+                      label: circleName.isNotEmpty ? circleName : null,
+                      child: InkWell(
+                        key: const ValueKey<String>('work_detail_circle_copy'),
+                        onTap: circleName.isEmpty
+                            ? null
+                            : () => onCopyMetadata(circleName),
+                        onSecondaryTap:
+                            circleName.isEmpty ||
+                                defaultTargetPlatform != TargetPlatform.windows
+                            ? null
+                            : () => onCopyMetadata(circleName),
+                        onLongPress:
+                            circleName.isEmpty
+                            ? null
+                            : defaultTargetPlatform == TargetPlatform.android
+                            ? () => onCopyMetadata(circleName)
+                            : () {},
+                        borderRadius: BorderRadius.circular(12),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 10),
+                          child: Text(
+                            circleName.isNotEmpty ? circleName : '--',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.bodyMedium
+                                ?.copyWith(fontWeight: FontWeight.w600),
+                          ),
+                        ),
                       ),
                     ),
                   ),

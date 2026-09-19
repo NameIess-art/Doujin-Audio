@@ -967,12 +967,10 @@ final class PlaybackFacade {
       PlaybackNativeStateCoordinator(this).markSessionStateDirty();
   void syncPresentationState({
     required String? focusedSessionId,
-    required bool multiThreadPlaybackEnabled,
     required int coverGeneration,
     bool? isInitialized,
   }) => PlaybackNativeStateCoordinator(this).syncPresentationState(
     focusedSessionId: focusedSessionId,
-    multiThreadPlaybackEnabled: multiThreadPlaybackEnabled,
     coverGeneration: coverGeneration,
     isInitialized: isInitialized,
   );

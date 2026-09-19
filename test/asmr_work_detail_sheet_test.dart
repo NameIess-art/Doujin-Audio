@@ -102,6 +102,61 @@ void main() {
     expect(find.text('Test circle'), findsOneWidget);
   });
 
+  testWidgets('work metadata capsules copy their values on tap', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues(const <String, Object>{});
+    final fixture = AppRuntimeWidgetTestFixture();
+    addTearDown(fixture.dispose);
+    final copied = <String>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'Clipboard.setData') {
+          copied.add((call.arguments as Map)['text'] as String);
+        }
+        return null;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      ),
+    );
+    await tester.pumpWidget(
+      fixture.build(
+        Builder(
+          builder: (context) => TextButton(
+            onPressed: () => showAsmrWorkDetailSheet(
+              context,
+              _work(voiceActors: const <String>['Voice A']),
+            ),
+            child: const Text('Open detail'),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Open detail'));
+    await tester.pumpAndSettle();
+
+    final voiceActor = find.byKey(
+      const ValueKey<String>('work_detail_voice_actor_Voice A'),
+    );
+    expect(voiceActor, findsOneWidget);
+    expect(tester.getSize(voiceActor).height, greaterThanOrEqualTo(44));
+    await tester.tap(voiceActor);
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey<String>('work_detail_rj_copy')));
+    await tester.pump();
+    await tester.tap(
+      find.byKey(const ValueKey<String>('work_detail_circle_copy')),
+    );
+    await tester.pump();
+
+    expect(copied, const <String>['Voice A', 'RJ000123', 'Test circle']);
+  });
+
   setUp(UiInteractionCoordinator.instance.resetForTest);
   tearDown(UiInteractionCoordinator.instance.resetForTest);
 
@@ -520,7 +575,11 @@ class _TestFavoritesAsmrLibraryController extends AsmrLibraryController {
   }
 }
 
-AsmrWork _work({int id = 123, String title = 'Test work'}) => AsmrWork(
+AsmrWork _work({
+  int id = 123,
+  String title = 'Test work',
+  List<String> voiceActors = const <String>[],
+}) => AsmrWork(
   id: id,
   title: title,
   circleName: 'Test circle',
@@ -536,7 +595,7 @@ AsmrWork _work({int id = 123, String title = 'Test work'}) => AsmrWork(
   dlCount: 0,
   reviewCount: 0,
   rating: 0,
-  voiceActors: const <String>[],
+  voiceActors: voiceActors,
   tags: const <String>[],
   isFavorite: true,
 );

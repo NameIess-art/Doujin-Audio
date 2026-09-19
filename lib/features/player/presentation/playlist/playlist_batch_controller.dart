@@ -1,6 +1,5 @@
 import '../../../library/presentation/library_providers.dart';
 import '../playback_providers.dart';
-import '../../../settings/presentation/settings_providers.dart';
 import 'dart:async';
 
 import 'package:flutter/widgets.dart';
@@ -22,11 +21,6 @@ abstract final class PlaylistBatchActions {
     required Iterable<String> selectedSessionIds,
   }) async {
     if (selectedSessionIds.isEmpty) return;
-    final multiThreadEnabled =
-        ref.read(settingsStateProvider).value?.multiThreadPlaybackEnabled ??
-        false;
-    if (!multiThreadEnabled && selectedSessionIds.length > 1) return;
-
     final playback = ref.read(playbackFacadeProvider);
     unawaited(
       AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection),

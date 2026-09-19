@@ -297,8 +297,9 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
       child: LayoutBuilder(
         builder: (context, constraints) {
           final totalWidth = constraints.maxWidth;
-          final circularCover =
-              requestsCircularCover || (embedded && totalWidth < 160);
+          final circularCover = requestsCircularCover;
+          final dockCollapsed = embedded && totalWidth < 160;
+          final pagingLocked = circularCover || dockCollapsed;
           final cardRightInset =
               ((totalWidth * (1.0 - viewportFraction) / 2) + 2.0).clamp(
                 0.0,
@@ -311,7 +312,7 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
             children: [
               Listener(
                 onPointerSignal: (signal) {
-                  if (!circularCover &&
+                  if (!pagingLocked &&
                       signal is PointerScrollEvent &&
                       sessions.length > 1) {
                     final currentPage = _pageNotifier.value.round();
@@ -337,7 +338,7 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
                       PointerDeviceKind.trackpad,
                     },
                   ),
-                  physics: sessions.length == 1 || circularCover
+                  physics: sessions.length == 1 || pagingLocked
                       ? const NeverScrollableScrollPhysics()
                       : const BouncingScrollPhysics(),
                   itemCount: sessions.length == 1 ? 1 : null,
@@ -369,6 +370,7 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
                           ),
                           compact: compact,
                           embedded: embedded,
+                          dockCollapsed: dockCollapsed,
                           circularCover: circularCover,
                           onOpen: () => _openSessionDetail(context, session),
                         ),
@@ -377,7 +379,7 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
                   },
                 ),
               ),
-              if (sessions.length > 1 && !compact && !circularCover)
+              if (sessions.length > 1 && !compact && !pagingLocked)
                 Positioned(
                   right: indicatorRight,
                   bottom: indicatorBottom,

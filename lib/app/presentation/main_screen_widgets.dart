@@ -24,7 +24,6 @@ class _AmbientBackground extends StatelessWidget {
   }
 }
 
-
 class _BottomDestinationInkResponse extends StatelessWidget {
   const _BottomDestinationInkResponse({
     required this.inkKey,
@@ -65,7 +64,8 @@ class _GlobalUpdateOperationBanner extends ConsumerWidget {
 
     ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
-    final top = MediaQuery.paddingOf(context).top +
+    final top =
+        MediaQuery.paddingOf(context).top +
         AppPageHeaderMetrics.toolbarHeight +
         8;
     final hasError = operation.hasError;
@@ -138,8 +138,8 @@ class _TimerPresentation {
   int get hashCode => Object.hash(duration, remaining, active, mode);
 }
 
-class _FloatingGlassPanel extends ConsumerWidget {
-  const _FloatingGlassPanel({
+class AppDockGlassPanel extends ConsumerWidget {
+  const AppDockGlassPanel({
     super.key,
     required this.child,
     this.shadowOpacity = 0.22,

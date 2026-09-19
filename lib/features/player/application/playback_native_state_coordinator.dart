@@ -112,7 +112,6 @@ extension PlaybackNativeStateCoordinator on PlaybackFacade {
 
   void syncPresentationState({
     required String? focusedSessionId,
-    required bool multiThreadPlaybackEnabled,
     required int coverGeneration,
     bool? isInitialized,
   }) {
@@ -122,7 +121,6 @@ extension PlaybackNativeStateCoordinator on PlaybackFacade {
       activeSessions: _service.activeSessions,
       playingSessionCount: _service.playingSessionCount,
       focusedSessionId: focusedSessionId,
-      multiThreadPlaybackEnabled: multiThreadPlaybackEnabled,
       coverGeneration: coverGeneration,
       isInitialized: isInitialized ?? current.isInitialized,
     );

@@ -250,7 +250,6 @@ void main() {
     );
     playback.syncPresentationState(
       focusedSessionId: null,
-      multiThreadPlaybackEnabled: false,
       coverGeneration: 0,
       isInitialized: true,
     );

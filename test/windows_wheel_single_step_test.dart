@@ -117,7 +117,6 @@ void main() {
             activeSessions: [session],
             playingSessionCount: 0,
             focusedSessionId: session.id,
-            multiThreadPlaybackEnabled: false,
             coverGeneration: 1,
             isInitialized: true,
           );
@@ -234,7 +233,6 @@ void main() {
             activeSessions: [session],
             playingSessionCount: 0,
             focusedSessionId: session.id,
-            multiThreadPlaybackEnabled: false,
             coverGeneration: 1,
             isInitialized: true,
           );

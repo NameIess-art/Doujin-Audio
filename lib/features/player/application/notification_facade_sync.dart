@@ -1,18 +1,7 @@
 part of 'notification_facade.dart';
 
 extension NotificationFacadeSync on NotificationFacade {
-  List<PlaybackSession> get _singleThreadNotificationSessions {
-    return _notificationStateService.singleThreadNotificationSessions(
-      activeSessions,
-    );
-  }
-
-  List<PlaybackSession> get _notificationQueueSessions {
-    return _notificationStateService.notificationQueueSessions(
-      activeSessions: activeSessions,
-      multiThreadPlaybackEnabled: _multiThreadPlaybackEnabled,
-    );
-  }
+  List<PlaybackSession> get _notificationQueueSessions => activeSessions;
 
   PlaybackSession? _focusedSessionFrom(Iterable<PlaybackSession> sessions) {
     return _notificationStateService.focusedSessionFrom(sessions);
@@ -203,20 +192,13 @@ extension NotificationFacadeSync on NotificationFacade {
   }
 
   Future<void> _syncUnifiedPlaybackNotifications() async {
-    final isMultiMode = _multiThreadPlaybackEnabled;
-    final mainSession = _focusedSessionFrom(
-      isMultiMode ? activeSessions : _singleThreadNotificationSessions,
-    );
-    final sessionsToShow = isMultiMode
-        ? activeSessions
-        : (mainSession == null
-              ? const <PlaybackSession>[]
-              : <PlaybackSession>[mainSession]);
+    final mainSession = _focusedSessionFrom(activeSessions);
+    final sessionsToShow = activeSessions;
     final showUnifiedSummary = sessionsToShow.isNotEmpty;
     final summaryText = showUnifiedSummary
         ? _notificationSummaryText(sessionsToShow)
         : null;
-    final summaryLines = showUnifiedSummary && isMultiMode
+    final summaryLines = showUnifiedSummary
         ? sessionsToShow
               .map(_notificationTitleForSession)
               .toList(growable: false)
@@ -252,10 +234,9 @@ extension NotificationFacadeSync on NotificationFacade {
         })
         .toList(growable: false);
 
-    final styleVariant = isMultiMode ? 'multi_thread' : 'single_thread';
     final syncPayload = <String, dynamic>{
-      'mode': isMultiMode ? 'multi' : 'single',
-      'styleVariant': styleVariant,
+      'mode': 'multi',
+      'styleVariant': 'multi_thread',
       'mainSessionId': mainSession?.id,
       'items': payload,
       'showSummary': showUnifiedSummary,

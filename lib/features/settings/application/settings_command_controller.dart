@@ -2,7 +2,6 @@ import 'package:flutter/painting.dart';
 
 import '../../library/application/cover_image_cache_policy.dart';
 import '../../library/application/library_facade.dart';
-import '../../player/application/notification_facade.dart';
 import '../../player/application/playback_facade.dart';
 import '../../player/domain/audio_effects.dart';
 import 'settings_repository.dart';
@@ -14,19 +13,16 @@ final class SettingsCommandController {
   const SettingsCommandController({
     required SettingsRepository settings,
     required PlaybackFacade playback,
-    required NotificationFacade notifications,
     LibraryFacade? library,
     Future<int> Function()? clearApplicationCacheFiles,
   }) : _settings = settings,
        _playback = playback,
-       _notifications = notifications,
        _library = library,
        _clearApplicationCacheFiles =
            clearApplicationCacheFiles ?? AppCacheService.clearAllCaches;
 
   final SettingsRepository _settings;
   final PlaybackFacade _playback;
-  final NotificationFacade _notifications;
   final LibraryFacade? _library;
   final Future<int> Function() _clearApplicationCacheFiles;
 
@@ -34,14 +30,6 @@ final class SettingsCommandController {
 
   Future<void> togglePlaylistSessionsPinned(Iterable<String> sessionIds) =>
       _settings.togglePlaylistSessionsPinned(sessionIds);
-
-  Future<bool> setMultiThreadPlaybackEnabled(bool enabled) async {
-    if (_settings.multiThreadPlaybackEnabled == enabled) return true;
-    if (!enabled && !await _playback.pauseAllSessions()) return false;
-    await _settings.setMultiThreadPlaybackEnabled(enabled);
-    await _notifications.handlePlaybackModeChanged();
-    return true;
-  }
 
   Future<void> setCoverImageResolution(CoverImageResolution resolution) async {
     if (_settings.coverImageResolution == resolution) return;

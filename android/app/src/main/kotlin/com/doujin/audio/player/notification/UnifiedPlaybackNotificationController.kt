@@ -402,7 +402,7 @@ internal object UnifiedPlaybackNotificationController {
         val notificationId = summaryNotificationId
         val nextIds = setOf(notificationId)
         val postedUnifiedNotifications = postedUnifiedNotificationIds(context)
-        val styleKey = styleVariant ?: "single_thread"
+        val styleKey = styleVariant ?: "multi_thread"
         if (
             item.artPath == forceArtworkPath ||
                 activeItemsById[item.id] != item ||

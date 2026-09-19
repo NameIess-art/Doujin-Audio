@@ -9,6 +9,7 @@ class _ActiveSessionCard extends ConsumerWidget {
     required this.onOpen,
     this.compact = false,
     this.embedded = false,
+    this.dockCollapsed = false,
     this.circularCover = false,
   });
 
@@ -19,6 +20,7 @@ class _ActiveSessionCard extends ConsumerWidget {
   final VoidCallback onOpen;
   final bool compact;
   final bool embedded;
+  final bool dockCollapsed;
   final bool circularCover;
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -26,12 +28,12 @@ class _ActiveSessionCard extends ConsumerWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     final cardHeight = embedded ? kActiveSessionCarouselDockHeight : 56.0;
-    const coverDistance = 4.0;
+    final coverDistance = embedded ? 0.0 : 4.0;
     final coverDimension = cardHeight - 2 * coverDistance;
     const coverRadius = LibraryLikeCardMetrics.coverRadius;
     final cardRadius = embedded ? cardHeight / 2 : coverRadius + coverDistance;
     final contentPadding = embedded
-        ? const EdgeInsets.fromLTRB(2, 2, 6, 2)
+        ? const EdgeInsets.only(right: 6)
         : const EdgeInsets.fromLTRB(3, 3, 6, 3);
 
     final view = ref.watch(
@@ -154,7 +156,17 @@ class _ActiveSessionCard extends ConsumerWidget {
                     ),
                   ],
           ),
-          child: compact
+          child: dockCollapsed
+              ? Align(
+                  alignment: Alignment.centerLeft,
+                  child: _ActiveSessionCover(
+                    sessionId: session.id,
+                    track: currentTrack,
+                    coverPathFuture: coverPathFuture,
+                    dimension: cardHeight,
+                  ),
+                )
+              : compact
               ? (showCover
                     ? Center(
                         child: _ActiveSessionCover(
@@ -174,7 +186,7 @@ class _ActiveSessionCard extends ConsumerWidget {
                         i18n: i18n,
                         showCover: false,
                         coverDimension: coverDimension,
-                        contentPadding: const EdgeInsets.fromLTRB(
+                        contentPadding: EdgeInsets.fromLTRB(
                           14,
                           coverDistance,
                           6,
@@ -193,7 +205,7 @@ class _ActiveSessionCard extends ConsumerWidget {
                   coverDimension: coverDimension,
                   contentPadding: showExpandedCover
                       ? contentPadding
-                      : const EdgeInsets.fromLTRB(
+                      : EdgeInsets.fromLTRB(
                           14,
                           coverDistance,
                           6,
@@ -306,6 +318,7 @@ class _ActiveSessionCard extends ConsumerWidget {
                     showPauseIcon: isPlaying,
                     isLoading: view.loading,
                     enabled: view.trackPath.isNotEmpty,
+                    showTooltip: !embedded,
                     activeColor: activeColor,
                     semanticLabel: i18n.tr(
                       view.loading
@@ -338,6 +351,7 @@ class _ActiveSessionPlayPauseButton extends StatelessWidget {
     required this.showPauseIcon,
     required this.isLoading,
     required this.enabled,
+    required this.showTooltip,
     required this.activeColor,
     required this.semanticLabel,
     required this.onPressed,
@@ -346,6 +360,7 @@ class _ActiveSessionPlayPauseButton extends StatelessWidget {
   final bool showPauseIcon;
   final bool isLoading;
   final bool enabled;
+  final bool showTooltip;
   final Color activeColor;
   final String semanticLabel;
   final VoidCallback onPressed;
@@ -353,61 +368,61 @@ class _ActiveSessionPlayPauseButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    return Semantics(
-      button: true,
-      enabled: enabled,
-      label: semanticLabel,
-      child: Tooltip(
-        message: semanticLabel,
-        child: SizedBox.square(
-          dimension: 40,
-          child: Material(
-            color: Colors.transparent,
-            child: InkResponse(
-              onTap: enabled ? onPressed : null,
-              containedInkWell: true,
-              radius: 20,
-              customBorder: const CircleBorder(),
-              child: Center(
-                child: AnimatedSwitcher(
-                  duration: MediaQuery.disableAnimationsOf(context)
-                      ? Duration.zero
-                      : AppDesignTokens.of(context).motionFast,
-                  transitionBuilder: (child, animation) {
-                    return ScaleTransition(
-                      scale: Tween<double>(begin: 0.4, end: 1.0).animate(
-                        CurvedAnimation(
-                          parent: animation,
-                          curve: Curves.easeOutBack,
-                        ),
+    final button = SizedBox.square(
+      dimension: 40,
+      child: Material(
+        color: Colors.transparent,
+        child: InkResponse(
+          onTap: enabled ? onPressed : null,
+          containedInkWell: true,
+          radius: 20,
+          customBorder: const CircleBorder(),
+          child: Center(
+            child: AnimatedSwitcher(
+              duration: MediaQuery.disableAnimationsOf(context)
+                  ? Duration.zero
+                  : AppDesignTokens.of(context).motionFast,
+              transitionBuilder: (child, animation) {
+                return ScaleTransition(
+                  scale: Tween<double>(begin: 0.4, end: 1.0).animate(
+                    CurvedAnimation(
+                      parent: animation,
+                      curve: Curves.easeOutBack,
+                    ),
+                  ),
+                  child: FadeTransition(opacity: animation, child: child),
+                );
+              },
+              child: isLoading
+                  ? SizedBox(
+                      key: const ValueKey('loading'),
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.2,
+                        color: activeColor,
                       ),
-                      child: FadeTransition(opacity: animation, child: child),
-                    );
-                  },
-                  child: isLoading
-                      ? SizedBox(
-                          key: const ValueKey('loading'),
-                          width: 22,
-                          height: 22,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2.2,
-                            color: activeColor,
-                          ),
-                        )
-                      : Icon(
-                          showPauseIcon
-                              ? Icons.pause_rounded
-                              : Icons.play_arrow_rounded,
-                          key: ValueKey(showPauseIcon),
-                          size: 30,
-                          color: showPauseIcon ? activeColor : cs.onSurface,
-                        ),
-                ),
-              ),
+                    )
+                  : Icon(
+                      showPauseIcon
+                          ? Icons.pause_rounded
+                          : Icons.play_arrow_rounded,
+                      key: ValueKey(showPauseIcon),
+                      size: 30,
+                      color: showPauseIcon ? activeColor : cs.onSurface,
+                    ),
             ),
           ),
         ),
       ),
+    );
+    return Semantics(
+      button: true,
+      enabled: enabled,
+      label: semanticLabel,
+      child: showTooltip
+          ? Tooltip(message: semanticLabel, child: button)
+          : button,
     );
   }
 }

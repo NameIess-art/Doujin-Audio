@@ -333,7 +333,7 @@ extension _MainScreenLayout on _MainScreenState {
                             'mobile_bottom_capsule_panel',
                           ),
                           widthFactor: 0.96,
-                          child: _FloatingGlassPanel(
+                          child: AppDockGlassPanel(
                             key: const ValueKey<String>(
                               'mobile_bottom_capsule_surface',
                             ),
@@ -412,11 +412,9 @@ extension _MainScreenLayout on _MainScreenState {
                                                 sessions: overlaySessions,
                                                 i18n: i18n,
                                                 viewportFraction: 1,
-                                                presentation: playbackExpanded
-                                                    ? ActiveSessionCarouselPresentation
-                                                          .embedded
-                                                    : ActiveSessionCarouselPresentation
-                                                          .circularCover,
+                                                presentation:
+                                                    ActiveSessionCarouselPresentation
+                                                        .embedded,
                                                 onOpenSession: (sessionId) {
                                                   if (!playbackExpanded) {
                                                     _showMobilePlayback();

@@ -367,7 +367,6 @@ extension PlaybackQueuePathCoordinator on PlaybackFacade {
       activeSessions: _service.activeSessions,
       playingSessionCount: _service.playingSessionCount,
       focusedSessionId: current.focusedSessionId,
-      multiThreadPlaybackEnabled: current.multiThreadPlaybackEnabled,
       coverGeneration: current.coverGeneration,
       isInitialized: current.isInitialized,
     );

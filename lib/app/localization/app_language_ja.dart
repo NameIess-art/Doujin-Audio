@@ -468,7 +468,6 @@ const Map<String, String> appLanguageJa = {
   'seek_to_subtitle': 'この字幕へ移動',
   'blur_player_background': '再生画面の背景ぼかし',
   'ui_blur_effect': '画面のガラス効果',
-  'multi_thread_playback': '複数音声を同時再生',
   'allow_video_playback': '動画の再生を許可',
   'notification_bar': '再生通知コントロール',
   'section_detail_info': '詳細情報',

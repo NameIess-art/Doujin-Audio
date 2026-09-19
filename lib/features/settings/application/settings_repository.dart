@@ -18,7 +18,6 @@ class SettingsRepository {
   String converterFormat = 'mp3';
   String converterBitrate = '320k';
   String? converterOutputDirectoryPath;
-  bool multiThreadPlaybackEnabled = false;
   bool notificationsEnabled = true;
   bool autoCheckUpdates = false;
   ContentLanguagePreference dlsiteMetadataLanguage =
@@ -78,8 +77,6 @@ class SettingsRepository {
       ),
     );
     if (playback != null) {
-      multiThreadPlaybackEnabled =
-          playback['multiThreadPlaybackEnabled'] as bool? ?? false;
       notificationsEnabled = playback['notificationsEnabled'] as bool? ?? true;
       startupPage = StartupPage.values.firstWhere(
         (value) => value.name == playback['startupPage'],
@@ -225,7 +222,6 @@ class SettingsRepository {
 
   Future<void> persist() {
     return AppPreferences.writeJson(_playbackSettingsKey, <String, Object?>{
-      'multiThreadPlaybackEnabled': multiThreadPlaybackEnabled,
       'notificationsEnabled': notificationsEnabled,
       'startupPage': startupPage.name,
       'portraitLockEnabled': portraitLockEnabled,
@@ -474,11 +470,6 @@ class SettingsRepository {
   Future<void> unpinPlaylistSession(String sessionId) =>
       unpinPlaylistSessions([sessionId]);
 
-  Future<void> setMultiThreadPlaybackEnabled(bool enabled) => _setValue(
-    unchanged: multiThreadPlaybackEnabled == enabled,
-    update: () => multiThreadPlaybackEnabled = enabled,
-  );
-
   Future<void> setAutoCheckUpdates(bool enabled) => _setValue(
     unchanged: autoCheckUpdates == enabled,
     update: () => autoCheckUpdates = enabled,
@@ -678,7 +669,6 @@ class SettingsRepository {
     converterFormat = 'mp3';
     converterBitrate = '320k';
     converterOutputDirectoryPath = null;
-    multiThreadPlaybackEnabled = false;
     notificationsEnabled = true;
     autoCheckUpdates = false;
     dlsiteMetadataLanguage = ContentLanguagePreference.followPage;
@@ -742,7 +732,6 @@ class SettingsRepository {
         converterFormat: converterFormat,
         converterBitrate: converterBitrate,
         converterOutputDirectoryPath: converterOutputDirectoryPath,
-        multiThreadPlaybackEnabled: multiThreadPlaybackEnabled,
         notificationsEnabled: notificationsEnabled,
         autoCheckUpdates: autoCheckUpdates,
         dlsiteMetadataLanguage: dlsiteMetadataLanguage,

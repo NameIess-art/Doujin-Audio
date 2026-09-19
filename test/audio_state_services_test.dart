@@ -64,7 +64,6 @@ void main() {
       await preferences.setString(
         'playback_settings_v1',
         json.encode(<String, Object?>{
-          'multiThreadPlaybackEnabled': true,
           'notificationsEnabled': false,
           'startupPage': StartupPage.asmrOne.name,
           'autoCheckUpdates': true,
@@ -111,7 +110,6 @@ void main() {
       await repository.loadPersistedState();
 
       expect(repository.slice.state.isInitialized, isTrue);
-      expect(repository.multiThreadPlaybackEnabled, isTrue);
       expect(repository.notificationsEnabled, isFalse);
       expect(repository.coverImageResolution, CoverImageResolution.ultraHigh);
       expect(repository.coverImageDisplayMode, CoverImageDisplayMode.tile);
@@ -162,7 +160,6 @@ void main() {
       repository
         ..converterFormat = 'flac'
         ..converterBitrate = '192k'
-        ..multiThreadPlaybackEnabled = true
         ..notificationsEnabled = false
         ..startupPage = StartupPage.asmrOne
         ..autoCheckUpdates = true
@@ -187,11 +184,6 @@ void main() {
         isA<SettingsState>()
             .having((state) => state.converterFormat, 'format', 'flac')
             .having((state) => state.converterBitrate, 'bitrate', '192k')
-            .having(
-              (state) => state.multiThreadPlaybackEnabled,
-              'multi-thread',
-              isTrue,
-            )
             .having(
               (state) => state.notificationsEnabled,
               'notifications',
@@ -798,7 +790,7 @@ void main() {
       expect(service.activeSessions.map((session) => session.id), ['s1', 's2']);
     });
 
-    test('syncSlice publishes focused session and mode flags', () {
+    test('syncSlice publishes focused session state', () {
       final service = PlaybackSessionService();
       addTearDown(service.dispose);
 
@@ -817,7 +809,6 @@ void main() {
         activeSessions: [session],
         playingSessionCount: 1,
         focusedSessionId: 'focus',
-        multiThreadPlaybackEnabled: true,
         coverGeneration: 2,
         isInitialized: true,
       );
@@ -832,11 +823,6 @@ void main() {
             )
             .having((state) => state.playingSessionCount, 'count', 1)
             .having((state) => state.focusedSessionId, 'focus', 'focus')
-            .having(
-              (state) => state.multiThreadPlaybackEnabled,
-              'multi-thread',
-              isTrue,
-            )
             .having((state) => state.coverGeneration, 'cover gen', 2),
       );
     });

@@ -32,20 +32,6 @@ extension PlaybackCommandTransport on PlaybackCommandCoordinator {
     unawaited(_nativePlaybackRepository.undismissNotifications());
     _notificationFacade.setFocusedSession(session.id);
     session.beginTransportCommand(commandId: generation, playing: true);
-    final exclusivelyPausedSessions = !_multiThreadPlaybackEnabled
-        ? _sessions.values
-              .where(
-                (candidate) =>
-                    candidate.id != session.id && candidate.effectivePlaying,
-              )
-              .toList(growable: false)
-        : const <PlaybackSession>[];
-    for (final pausedSession in exclusivelyPausedSessions) {
-      pausedSession.beginTransportCommand(
-        commandId: generation,
-        playing: false,
-      );
-    }
     _notifyPlaybackChanged();
 
     unawaited(
@@ -63,7 +49,6 @@ extension PlaybackCommandTransport on PlaybackCommandCoordinator {
       final playResult = await _nativePlaybackRepository.play(
         session.id,
         transportCommandId: generation,
-        exclusive: !_multiThreadPlaybackEnabled,
       );
       if (!_isSessionCommandCurrent(session, token)) {
         return false;
@@ -86,9 +71,6 @@ extension PlaybackCommandTransport on PlaybackCommandCoordinator {
           );
         }
         session.failTransportCommand(generation);
-        for (final pausedSession in exclusivelyPausedSessions) {
-          pausedSession.failTransportCommand(generation);
-        }
         _notifyPlaybackChanged();
         return false;
       } else {
@@ -113,9 +95,6 @@ extension PlaybackCommandTransport on PlaybackCommandCoordinator {
       }
       if (_isSessionCommandCurrent(session, token)) {
         session.failTransportCommand(generation);
-        for (final pausedSession in exclusivelyPausedSessions) {
-          pausedSession.failTransportCommand(generation);
-        }
         _notifyPlaybackChanged();
       }
       AppLogService.error(
@@ -175,41 +154,6 @@ extension PlaybackCommandTransport on PlaybackCommandCoordinator {
       );
       return false;
     }
-  }
-
-  Future<void> _enforceSingleThreadPlayback({
-    String? preferredSessionId,
-  }) async {
-    final keepSessionId =
-        (preferredSessionId != null &&
-            _sessions.containsKey(preferredSessionId))
-        ? preferredSessionId
-        : _preferredSingleSessionId;
-    if (keepSessionId == null) return;
-
-    final sessionsToPause = _sessions.values
-        .where(
-          (session) => session.id != keepSessionId && session.state.playing,
-        )
-        .toList(growable: false);
-    _notificationFacade.setFocusedSession(keepSessionId);
-    if (sessionsToPause.isEmpty) {
-      _syncNotificationState();
-      return;
-    }
-
-    for (final session in sessionsToPause) {
-      session.setOptimisticState(playing: false);
-    }
-    _syncNotificationState();
-    _notifyPlaybackChanged();
-    await Future.wait(
-      sessionsToPause.map(
-        (session) => _nativePlaybackRepository.pause(session.id),
-      ),
-    );
-    _notificationFacade.setFocusedSession(keepSessionId);
-    _syncNotificationState();
   }
 
   String? get _preferredSingleSessionId {

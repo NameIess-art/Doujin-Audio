@@ -67,51 +67,6 @@ List<Widget> _buildSettingsPlaybackSection({
         ),
         Consumer(
           builder: (context, ref, _) {
-            final multiThreadEnabled = ref.watch(
-              settingsStateProvider.select(
-                (s) => s.value?.multiThreadPlaybackEnabled ?? false,
-              ),
-            );
-            return SwitchListTile(
-              value: multiThreadEnabled,
-              onChanged: (value) async {
-                final updated = await settingsController
-                    .setMultiThreadPlaybackEnabled(value);
-                if (!context.mounted) return;
-                if (!updated) {
-                  showAppSnackBar(
-                    context,
-                    i18n.tr('operation_failed_retry'),
-                    tone: AppFeedbackTone.destructive,
-                    icon: Icons.error_outline_rounded,
-                  );
-                  return;
-                }
-                if (!value) {
-                  final activeSessions =
-                      ref.read(playbackStateProvider).value?.activeSessions ??
-                      ref.read(playbackFacadeProvider).state.activeSessions;
-                  final activeSessionIds = activeSessions.map(
-                    (session) => session.id,
-                  );
-                  ref
-                      .read(subtitleSettingsProvider.notifier)
-                      .turnOffAllSubtitles(activeSessionIds);
-                }
-              },
-              title: _settingsTitle(i18n.tr('multi_thread_playback')),
-              secondary: _settingsIcon(
-                Icons.multitrack_audio_rounded,
-                cs.onSurface,
-              ),
-              shape: const RoundedRectangleBorder(
-                borderRadius: AppRadius.borderCard,
-              ),
-            );
-          },
-        ),
-        Consumer(
-          builder: (context, ref, _) {
             final trigger = ref.watch(
               settingsStateProvider.select(
                 (state) =>

@@ -196,7 +196,6 @@ List<PlaybackSession> _seedRuntime(
     activeSessions: fixture.playbackService.activeSessions,
     playingSessionCount: 1,
     focusedSessionId: sessions.first.id,
-    multiThreadPlaybackEnabled: true,
     coverGeneration: 0,
     isInitialized: true,
   );

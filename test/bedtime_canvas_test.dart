@@ -226,7 +226,6 @@ void main() {
           activeSessions: <PlaybackSession>[session1, session2, session3],
           playingSessionCount: 2,
           focusedSessionId: session2.id,
-          multiThreadPlaybackEnabled: true,
           coverGeneration: 0,
           isInitialized: true,
         );
@@ -248,7 +247,6 @@ void main() {
           activeSessions: <PlaybackSession>[session1, session2, session3],
           playingSessionCount: 0,
           focusedSessionId: session2.id,
-          multiThreadPlaybackEnabled: true,
           coverGeneration: 0,
           isInitialized: true,
         );
@@ -293,7 +291,6 @@ void main() {
         activeSessions: <PlaybackSession>[sessionA, sessionB],
         playingSessionCount: 2,
         focusedSessionId: sessionA.id,
-        multiThreadPlaybackEnabled: true,
         coverGeneration: 0,
         isInitialized: true,
       );
@@ -331,7 +328,6 @@ void main() {
         activeSessions: <PlaybackSession>[session],
         playingSessionCount: 1,
         focusedSessionId: session.id,
-        multiThreadPlaybackEnabled: false,
         coverGeneration: 0,
         isInitialized: true,
       );
@@ -509,7 +505,6 @@ void main() {
           activeSessions: <PlaybackSession>[session],
           playingSessionCount: 1,
           focusedSessionId: session.id,
-          multiThreadPlaybackEnabled: false,
           coverGeneration: 0,
           isInitialized: true,
         );
@@ -623,7 +618,6 @@ void main() {
           activeSessions: <PlaybackSession>[session],
           playingSessionCount: 1,
           focusedSessionId: session.id,
-          multiThreadPlaybackEnabled: false,
           coverGeneration: 0,
           isInitialized: true,
         );
@@ -666,7 +660,6 @@ void main() {
         activeSessions: <PlaybackSession>[session],
         playingSessionCount: 1,
         focusedSessionId: session.id,
-        multiThreadPlaybackEnabled: false,
         coverGeneration: 0,
         isInitialized: true,
       );
@@ -684,7 +677,6 @@ void main() {
         activeSessions: <PlaybackSession>[session],
         playingSessionCount: 0,
         focusedSessionId: session.id,
-        multiThreadPlaybackEnabled: false,
         coverGeneration: 0,
         isInitialized: true,
       );
@@ -750,7 +742,6 @@ void main() {
           activeSessions: <PlaybackSession>[session],
           playingSessionCount: 1,
           focusedSessionId: session.id,
-          multiThreadPlaybackEnabled: false,
           coverGeneration: 0,
           isInitialized: true,
         );

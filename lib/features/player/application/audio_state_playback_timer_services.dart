@@ -118,7 +118,6 @@ class PlaybackSessionService {
     required List<PlaybackSession> activeSessions,
     required int playingSessionCount,
     required String? focusedSessionId,
-    required bool multiThreadPlaybackEnabled,
     required int coverGeneration,
     required bool isInitialized,
   }) {
@@ -129,7 +128,6 @@ class PlaybackSessionService {
             .toList(growable: false),
         playingSessionCount: playingSessionCount,
         focusedSessionId: focusedSessionId,
-        multiThreadPlaybackEnabled: multiThreadPlaybackEnabled,
         coverGeneration: coverGeneration,
         isInitialized: isInitialized,
       ),

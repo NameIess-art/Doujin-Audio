@@ -18,11 +18,7 @@ enum TransientAudioFocusLossBehavior { duck, pause }
 
 enum InterruptionResumeBehavior { stayPaused, resume }
 
-enum SleepModeAutoTrigger {
-  manual,
-  afterPlayback5min,
-  afterCountdown5min,
-}
+enum SleepModeAutoTrigger { manual, afterPlayback5min, afterCountdown5min }
 
 enum LibrarySortCriterion {
   name,
@@ -47,7 +43,6 @@ class SettingsState {
     this.converterFormat = 'mp3',
     this.converterBitrate = '320k',
     this.converterOutputDirectoryPath,
-    this.multiThreadPlaybackEnabled = false,
     this.notificationsEnabled = true,
     this.autoCheckUpdates = false,
     this.dlsiteMetadataLanguage = ContentLanguagePreference.followPage,
@@ -100,7 +95,6 @@ class SettingsState {
   final String converterFormat;
   final String converterBitrate;
   final String? converterOutputDirectoryPath;
-  final bool multiThreadPlaybackEnabled;
   final bool notificationsEnabled;
   final bool autoCheckUpdates;
   final ContentLanguagePreference dlsiteMetadataLanguage;
@@ -149,24 +143,17 @@ class SettingsState {
         other.converterFormat == converterFormat &&
         other.converterBitrate == converterBitrate &&
         other.converterOutputDirectoryPath == converterOutputDirectoryPath &&
-        other.multiThreadPlaybackEnabled == multiThreadPlaybackEnabled &&
         other.notificationsEnabled == notificationsEnabled &&
         other.autoCheckUpdates == autoCheckUpdates &&
         other.dlsiteMetadataLanguage == dlsiteMetadataLanguage &&
         other.librarySortCriterion == librarySortCriterion &&
         other.librarySortAscending == librarySortAscending &&
         other.libraryGroupByLibrary == libraryGroupByLibrary &&
-        listEquals(
-          other.pinnedLibraryPaths,
-          pinnedLibraryPaths,
-        ) &&
+        listEquals(other.pinnedLibraryPaths, pinnedLibraryPaths) &&
         other.playlistSortCriterion == playlistSortCriterion &&
         other.playlistSortAscending == playlistSortAscending &&
         other.playlistGroupByLibrary == playlistGroupByLibrary &&
-        listEquals(
-          other.pinnedPlaylistSessionIds,
-          pinnedPlaylistSessionIds,
-        ) &&
+        listEquals(other.pinnedPlaylistSessionIds, pinnedPlaylistSessionIds) &&
         listEquals(other.customEqPresets, customEqPresets) &&
         other.maxCacheBytes == maxCacheBytes &&
         other.asmrPlaybackCacheEnabled == asmrPlaybackCacheEnabled &&
@@ -208,7 +195,6 @@ class SettingsState {
     converterFormat,
     converterBitrate,
     converterOutputDirectoryPath,
-    multiThreadPlaybackEnabled,
     notificationsEnabled,
     autoCheckUpdates,
     dlsiteMetadataLanguage,

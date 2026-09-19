@@ -43,7 +43,6 @@ final class NotificationRuntimeBinding implements RuntimeBinding {
         session,
         shouldStartTriggerCountdown: false,
       ),
-      multiThreadPlaybackEnabled: () => settings.multiThreadPlaybackEnabled,
       setFocusSessionId: notifications.setFocusedSession,
       notify: syncPlaybackState,
       syncKeepAlive: keepAlive.sync,

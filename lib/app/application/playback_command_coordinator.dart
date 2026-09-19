@@ -85,8 +85,6 @@ final class PlaybackCommandCoordinator
       _playbackFacade.commandRunner;
   bool _isRegisteredSession(PlaybackSession session) =>
       _playbackFacade.isRegisteredSession(session);
-  bool get _multiThreadPlaybackEnabled =>
-      _settingsRepository.multiThreadPlaybackEnabled;
   List<String> get _sortedLibraryTrackPaths =>
       _libraryFacade.sortedLibraryTrackPaths;
   Map<String, List<MusicTrack>> get _tracksByGroup =>
@@ -204,9 +202,6 @@ final class PlaybackCommandCoordinator
   Future<bool> pauseSession(PlaybackSession session) =>
       _pauseSessionPlayback(session);
 
-  Future<void> enforceSingleThreadPlayback({String? preferredSessionId}) =>
-      _enforceSingleThreadPlayback(preferredSessionId: preferredSessionId);
-
   String? get preferredSingleSessionId => _preferredSingleSessionId;
 
   Future<void> handleSessionCompleted(String sessionId) =>
@@ -234,11 +229,7 @@ final class PlaybackCommandCoordinator
     PlaybackSession session, {
     required bool forward,
     bool manualAdvance = false,
-  }) => _nextPathFor(
-    session,
-    forward: forward,
-    manualAdvance: manualAdvance,
-  );
+  }) => _nextPathFor(session, forward: forward, manualAdvance: manualAdvance);
 
   @override
   bool hasAdjacent(PlaybackSession session, {required bool forward}) =>

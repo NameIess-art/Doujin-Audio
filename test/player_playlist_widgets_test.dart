@@ -178,7 +178,6 @@ _pumpSubtitleDetail({
     activeSessions: <PlaybackSession>[session],
     playingSessionCount: 0,
     focusedSessionId: session.id,
-    multiThreadPlaybackEnabled: false,
     coverGeneration: coverCache.generation,
     isInitialized: true,
   );
@@ -538,7 +537,6 @@ void main() {
         activeSessions: <PlaybackSession>[harness.session],
         playingSessionCount: 1,
         focusedSessionId: harness.session.id,
-        multiThreadPlaybackEnabled: false,
         coverGeneration: harness.coverCache.generation,
         isInitialized: true,
       );
@@ -785,7 +783,6 @@ void main() {
         activeSessions: <PlaybackSession>[session],
         playingSessionCount: 0,
         focusedSessionId: session.id,
-        multiThreadPlaybackEnabled: false,
         coverGeneration: 0,
         isInitialized: true,
       );
@@ -1212,7 +1209,6 @@ void main() {
       activeSessions: [active, empty],
       playingSessionCount: 0,
       focusedSessionId: null,
-      multiThreadPlaybackEnabled: false,
       coverGeneration: 0,
       isInitialized: true,
     );
@@ -1275,7 +1271,6 @@ void main() {
         activeSessions: sessions,
         playingSessionCount: 0,
         focusedSessionId: 'current-session',
-        multiThreadPlaybackEnabled: false,
         coverGeneration: 0,
         isInitialized: true,
       );
@@ -1357,7 +1352,6 @@ void main() {
         activeSessions: sessions,
         playingSessionCount: 0,
         focusedSessionId: sessions.first.id,
-        multiThreadPlaybackEnabled: false,
         coverGeneration: 0,
         isInitialized: true,
       );
@@ -1548,7 +1542,6 @@ void main() {
       activeSessions: const <PlaybackSession>[],
       playingSessionCount: 0,
       focusedSessionId: null,
-      multiThreadPlaybackEnabled: false,
       coverGeneration: 0,
       isInitialized: true,
     );
@@ -1734,7 +1727,6 @@ void main() {
       activeSessions: <PlaybackSession>[session],
       playingSessionCount: 0,
       focusedSessionId: session.id,
-      multiThreadPlaybackEnabled: false,
       coverGeneration: 0,
       isInitialized: true,
     );
@@ -1970,7 +1962,6 @@ void main() {
         activeSessions: <PlaybackSession>[session],
         playingSessionCount: 0,
         focusedSessionId: session.id,
-        multiThreadPlaybackEnabled: false,
         coverGeneration: 0,
         isInitialized: true,
       );
@@ -2189,7 +2180,6 @@ void main() {
       activeSessions: [workSession, singleSession],
       playingSessionCount: 0,
       focusedSessionId: workSession.id,
-      multiThreadPlaybackEnabled: false,
       coverGeneration: 0,
       isInitialized: true,
     );
@@ -2269,7 +2259,6 @@ void main() {
       activeSessions: [workSession, singleSession],
       playingSessionCount: 0,
       focusedSessionId: workSession.id,
-      multiThreadPlaybackEnabled: false,
       coverGeneration: 0,
       isInitialized: true,
     );
@@ -2325,7 +2314,6 @@ void main() {
       activeSessions: const [],
       playingSessionCount: 0,
       focusedSessionId: null,
-      multiThreadPlaybackEnabled: false,
       coverGeneration: 0,
       isInitialized: true,
     );
@@ -2521,7 +2509,6 @@ void main() {
       activeSessions: <PlaybackSession>[queueSession],
       playingSessionCount: 0,
       focusedSessionId: queueSession.id,
-      multiThreadPlaybackEnabled: false,
       coverGeneration: 0,
       isInitialized: true,
     );
@@ -2625,7 +2612,6 @@ void main() {
       activeSessions: <PlaybackSession>[queueSession],
       playingSessionCount: 0,
       focusedSessionId: queueSession.id,
-      multiThreadPlaybackEnabled: false,
       coverGeneration: 0,
       isInitialized: true,
     );
@@ -2666,7 +2652,6 @@ void main() {
       activeSessions: <PlaybackSession>[queueSession],
       playingSessionCount: 1,
       focusedSessionId: queueSession.id,
-      multiThreadPlaybackEnabled: false,
       coverGeneration: 0,
       isInitialized: true,
     );
@@ -2720,7 +2705,6 @@ void main() {
       activeSessions: <PlaybackSession>[queueSession],
       playingSessionCount: 1,
       focusedSessionId: queueSession.id,
-      multiThreadPlaybackEnabled: false,
       coverGeneration: 0,
       isInitialized: true,
     );
@@ -2944,7 +2928,6 @@ void main() {
       activeSessions: <PlaybackSession>[sourceSession, queueSession],
       playingSessionCount: 0,
       focusedSessionId: sourceSession.id,
-      multiThreadPlaybackEnabled: false,
       coverGeneration: 0,
       isInitialized: true,
     );
@@ -3060,7 +3043,6 @@ void main() {
         ],
         playingSessionCount: 0,
         focusedSessionId: sourceSession1.id,
-        multiThreadPlaybackEnabled: false,
         coverGeneration: 0,
         isInitialized: true,
       );
@@ -3133,7 +3115,6 @@ void main() {
       activeSessions: <PlaybackSession>[session],
       playingSessionCount: 0,
       focusedSessionId: session.id,
-      multiThreadPlaybackEnabled: false,
       coverGeneration: 0,
       isInitialized: true,
     );
@@ -3237,7 +3218,6 @@ void main() {
       activeSessions: <PlaybackSession>[session],
       playingSessionCount: 0,
       focusedSessionId: session.id,
-      multiThreadPlaybackEnabled: false,
       coverGeneration: 0,
       isInitialized: true,
     );
@@ -3370,7 +3350,6 @@ void main() {
       activeSessions: <PlaybackSession>[sessionA, sessionB],
       playingSessionCount: 0,
       focusedSessionId: sessionA.id,
-      multiThreadPlaybackEnabled: false,
       coverGeneration: 0,
       isInitialized: true,
     );
@@ -3516,7 +3495,6 @@ void main() {
         ],
         playingSessionCount: 0,
         focusedSessionId: sessionCover.id,
-        multiThreadPlaybackEnabled: false,
         coverGeneration: 0,
         isInitialized: true,
       );
@@ -3652,7 +3630,6 @@ void main() {
       activeSessions: <PlaybackSession>[trackSession, queueSession],
       playingSessionCount: 2,
       focusedSessionId: trackSession.id,
-      multiThreadPlaybackEnabled: false,
       coverGeneration: 0,
       isInitialized: true,
     );
@@ -3697,7 +3674,6 @@ void main() {
       activeSessions: [session],
       playingSessionCount: 0,
       focusedSessionId: session.id,
-      multiThreadPlaybackEnabled: false,
       coverGeneration: 0,
       isInitialized: true,
     );
@@ -3790,7 +3766,6 @@ void main() {
         activeSessions: <PlaybackSession>[queueSession],
         playingSessionCount: 0,
         focusedSessionId: queueSession.id,
-        multiThreadPlaybackEnabled: false,
         coverGeneration: 0,
         isInitialized: true,
       );
@@ -4057,7 +4032,6 @@ void main() {
       activeSessions: <PlaybackSession>[result.session],
       playingSessionCount: 1,
       focusedSessionId: result.session.id,
-      multiThreadPlaybackEnabled: false,
       coverGeneration: 0,
       isInitialized: true,
     );
@@ -4091,7 +4065,6 @@ void main() {
       activeSessions: <PlaybackSession>[result.session],
       playingSessionCount: 0,
       focusedSessionId: result.session.id,
-      multiThreadPlaybackEnabled: false,
       coverGeneration: 0,
       isInitialized: true,
     );
@@ -4161,7 +4134,6 @@ void main() {
         activeSessions: sessions,
         playingSessionCount: 0,
         focusedSessionId: sessions.first.id,
-        multiThreadPlaybackEnabled: false,
         coverGeneration: 0,
         isInitialized: true,
       );
@@ -4282,7 +4254,6 @@ void main() {
             activeSessions: <PlaybackSession>[result.session],
             playingSessionCount: playing ? 1 : 0,
             focusedSessionId: result.session.id,
-            multiThreadPlaybackEnabled: false,
             coverGeneration: 0,
             isInitialized: true,
           );
@@ -4570,10 +4541,6 @@ void main() {
 
       final fixture = AppRuntimeWidgetTestFixture(
         coverArtworkCacheService: _RecordingPlaybackCoverCacheService(),
-        configureSettingsRepository: (settings) {
-          settings.multiThreadPlaybackEnabled = true;
-          settings.syncSlice(isInitialized: true);
-        },
       );
       addTearDown(fixture.dispose);
       final nativeCalls = <MethodCall>[];
@@ -4646,7 +4613,6 @@ void main() {
         activeSessions: <PlaybackSession>[trackSession, queueSession],
         playingSessionCount: 1,
         focusedSessionId: queueSession.id,
-        multiThreadPlaybackEnabled: true,
         coverGeneration: 0,
         isInitialized: true,
       );
@@ -4991,7 +4957,6 @@ void main() {
         activeSessions: <PlaybackSession>[trackSession],
         playingSessionCount: trackSession.effectivePlaying ? 1 : 0,
         focusedSessionId: trackSession.id,
-        multiThreadPlaybackEnabled: true,
         coverGeneration: 0,
         isInitialized: true,
       );
@@ -5039,7 +5004,6 @@ void main() {
         activeSessions: [saved, temporary],
         playingSessionCount: 0,
         focusedSessionId: temporary.id,
-        multiThreadPlaybackEnabled: false,
         coverGeneration: 0,
         isInitialized: true,
       );
@@ -5116,7 +5080,6 @@ void main() {
       activeSessions: <PlaybackSession>[session1, session2],
       playingSessionCount: 0,
       focusedSessionId: session1.id,
-      multiThreadPlaybackEnabled: false,
       coverGeneration: 0,
       isInitialized: true,
     );
@@ -5230,7 +5193,6 @@ void main() {
         activeSessions: <PlaybackSession>[trackSession],
         playingSessionCount: 0,
         focusedSessionId: trackSession.id,
-        multiThreadPlaybackEnabled: true,
         coverGeneration: 0,
         isInitialized: true,
       );
@@ -5302,7 +5264,6 @@ void main() {
       activeSessions: <PlaybackSession>[queueSession],
       playingSessionCount: 0,
       focusedSessionId: queueSession.id,
-      multiThreadPlaybackEnabled: false,
       coverGeneration: 0,
       isInitialized: true,
     );

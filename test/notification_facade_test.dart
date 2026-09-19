@@ -156,7 +156,6 @@ void main() {
           sessionId == null || sessionId == session.id ? session : null,
       resolveActionSession: () => session,
       resumeSession: (_) async {},
-      multiThreadPlaybackEnabled: () => false,
       setFocusSessionId: (sessionId) => focusedSessionId = sessionId ?? '',
       notify: () {},
       syncKeepAlive: () {},
@@ -199,7 +198,6 @@ void main() {
       resolveSession: ([sessionId]) => session,
       resolveActionSession: () => session,
       resumeSession: (_) async {},
-      multiThreadPlaybackEnabled: () => false,
       setFocusSessionId: (_) {},
       notify: () {},
       syncKeepAlive: () {},
@@ -220,51 +218,6 @@ void main() {
     expect(native.pausedSessionIds, <String>[session.id]);
   });
 
-  test(
-    'NotificationFacade resets platform state after playback mode changes',
-    () async {
-      final library = _createLibraryFacade();
-      final playback = PlaybackFacade.create(
-        databaseRepository:
-            library.databaseRepository as PlaybackPersistenceRepository,
-      );
-      final stateService = NotificationCoordinatorService();
-      final facade = NotificationFacade.create(
-        service: PlaybackNotificationService(),
-        stateService: stateService,
-      );
-      var clearCount = 0;
-      var keepAliveSyncCount = 0;
-      String? focusedSessionId = 'stale';
-      addTearDown(() async {
-        await facade.dispose();
-        await playback.dispose();
-        await library.dispose();
-      });
-      facade.attachActions(
-        playback: playback,
-        resolveSession: ([sessionId]) => null,
-        resolveActionSession: () => null,
-        resumeSession: (_) async {},
-        multiThreadPlaybackEnabled: () => false,
-        setFocusSessionId: (sessionId) => focusedSessionId = sessionId,
-        notify: () {},
-        syncKeepAlive: () => keepAliveSyncCount++,
-        hasPlaybackToKeepAlive: () => false,
-        clearUnifiedNotifications: () async => clearCount++,
-        preferredSessionId: () => null,
-        notifyNotificationChanged: () {},
-      );
-      stateService.unifiedNotificationSyncKey = 'stale';
-
-      await facade.handlePlaybackModeChanged();
-
-      expect(stateService.unifiedNotificationSyncKey, isNull);
-      expect(focusedSessionId, isNull);
-      expect(clearCount, 1);
-      expect(keepAliveSyncCount, 1);
-    },
-  );
 }
 
 _NotificationFixture _createNotificationFixture(
@@ -299,7 +252,6 @@ _NotificationFixture _createNotificationFixture(
     resolveSession: ([sessionId]) => session,
     resolveActionSession: () => session,
     resumeSession: (_) async {},
-    multiThreadPlaybackEnabled: () => false,
     setFocusSessionId: (_) {},
     notify: () {},
     syncKeepAlive: () {},

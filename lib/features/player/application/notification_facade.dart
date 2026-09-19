@@ -78,7 +78,6 @@ final class NotificationFacade {
   PlaybackSession? Function() _resolveActionSession = _noopActionSession;
   Future<void> Function(PlaybackSession session) _resumeSession =
       _noopResumeSession;
-  bool Function() _multiThreadPlaybackEnabledResolver = _alwaysFalse;
   void Function(String? sessionId) _setFocusSessionId = _ignoreSessionId;
   void Function() _notify = _noop;
   void Function() _syncKeepAlive = _noop;
@@ -99,7 +98,6 @@ final class NotificationFacade {
       _playback?.sessions ?? const <String, PlaybackSession>{};
   List<PlaybackSession> get activeSessions =>
       _playback?.activeSessions ?? const <PlaybackSession>[];
-  bool get _multiThreadPlaybackEnabled => _multiThreadPlaybackEnabledResolver();
   bool get _hasPlaybackToKeepAlive => _hasPlaybackToKeepAliveResolver();
   bool get _notificationsEnabled => _notificationsEnabledResolver();
 
@@ -308,15 +306,6 @@ final class NotificationFacade {
     _notifyNotificationChanged();
   }
 
-  Future<void> handlePlaybackModeChanged() async {
-    _stateService.unifiedNotificationSyncKey = null;
-    _setFocusSessionId(null);
-    await _clearUnifiedNotifications();
-    _syncKeepAlive();
-    _syncNotificationState();
-    _notifyNotificationChanged();
-  }
-
   void attachRuntime({
     required Future<void> Function() undismissNotifications,
     required void Function() onNotificationsRestored,
@@ -330,7 +319,6 @@ final class NotificationFacade {
     required NotificationSessionResolver resolveSession,
     required PlaybackSession? Function() resolveActionSession,
     required Future<void> Function(PlaybackSession session) resumeSession,
-    required bool Function() multiThreadPlaybackEnabled,
     required void Function(String? sessionId) setFocusSessionId,
     required void Function() notify,
     required void Function() syncKeepAlive,
@@ -343,7 +331,6 @@ final class NotificationFacade {
     _resolveSession = resolveSession;
     _resolveActionSession = resolveActionSession;
     _resumeSession = resumeSession;
-    _multiThreadPlaybackEnabledResolver = multiThreadPlaybackEnabled;
     _setFocusSessionId = setFocusSessionId;
     _notify = notify;
     _syncKeepAlive = syncKeepAlive;
@@ -373,7 +360,6 @@ final class NotificationFacade {
     _resolveSession = _noopSessionResolver;
     _resolveActionSession = _noopActionSession;
     _resumeSession = _noopResumeSession;
-    _multiThreadPlaybackEnabledResolver = _alwaysFalse;
     _setFocusSessionId = _ignoreSessionId;
     _notify = _noop;
     _syncKeepAlive = _noop;
@@ -544,9 +530,7 @@ final class NotificationFacade {
   }
 
   void _focusExplicitSession(PlaybackSession session) {
-    if (!_multiThreadPlaybackEnabled) {
-      _setFocusSessionId(session.id);
-    }
+    _setFocusSessionId(session.id);
   }
 
   Future<void> restoreAfterSystemClear() async {

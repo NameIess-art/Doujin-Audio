@@ -533,7 +533,7 @@ void main() {
       expect(session.effectivePlaying, isTrue);
     });
 
-    test('single-thread playback uses one exclusive native play', () async {
+    test('playback starts without pausing another active session', () async {
       Map<Object?, Object?>? playArguments;
       var pauseCalls = 0;
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
@@ -613,9 +613,9 @@ void main() {
       expect(secondSession.playbackRequested, isTrue);
       await toggle;
 
-      expect(firstSession.effectivePlaying, isFalse);
+      expect(firstSession.effectivePlaying, isTrue);
       expect(pauseCalls, 0);
-      expect(playArguments?['exclusive'], isTrue);
+      expect(playArguments?['exclusive'], isFalse);
       expect(playArguments?['transportCommandId'], isPositive);
     });
 

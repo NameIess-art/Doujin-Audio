@@ -19,30 +19,6 @@ class NotificationCoordinatorService {
   final AudioStateSlice<NotificationState> slice =
       AudioStateSlice<NotificationState>(const NotificationState());
 
-  List<PlaybackSession> singleThreadNotificationSessions(
-    List<PlaybackSession> activeSessions,
-  ) {
-    return activeSessions
-        .where(
-          (session) =>
-              session.state.playing ||
-              session.isPlaybackStarting ||
-              session.state.processingState == ProcessingState.idle ||
-              session.state.processingState == ProcessingState.ready ||
-              session.state.processingState == ProcessingState.completed,
-        )
-        .toList(growable: false);
-  }
-
-  List<PlaybackSession> notificationQueueSessions({
-    required List<PlaybackSession> activeSessions,
-    required bool multiThreadPlaybackEnabled,
-  }) {
-    return multiThreadPlaybackEnabled
-        ? activeSessions
-        : singleThreadNotificationSessions(activeSessions);
-  }
-
   PlaybackSession? focusedSessionFrom(Iterable<PlaybackSession> sessions) {
     final focusedId = notificationFocusSessionId;
     if (focusedId != null) {

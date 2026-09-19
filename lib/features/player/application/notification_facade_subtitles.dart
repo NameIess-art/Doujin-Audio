@@ -47,8 +47,7 @@ extension NotificationFacadeSubtitles on NotificationFacade {
     return _notificationSubtitleTexts[session.id];
   }
 
-  bool get _shouldUseUnifiedPlaybackNotifications =>
-      _multiThreadPlaybackEnabled;
+  bool get _shouldUseUnifiedPlaybackNotifications => true;
 
   Duration get _notificationRefreshInterval =>
       _shouldUseUnifiedPlaybackNotifications

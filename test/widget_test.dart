@@ -340,6 +340,9 @@ void main() {
     final playbackCard = find.byKey(
       const ValueKey<String>('active_session_card_orientation_session'),
     );
+    final playbackCover = find.byKey(
+      const ValueKey<String>('active_session_cover_orientation_session'),
+    );
     final menuPanel = find.byKey(
       const ValueKey<String>('mobile_bottom_capsule_panel'),
     );
@@ -354,7 +357,7 @@ void main() {
       tester
           .widget<ActiveSessionCarousel>(find.byType(ActiveSessionCarousel))
           .presentation,
-      ActiveSessionCarouselPresentation.circularCover,
+      ActiveSessionCarouselPresentation.embedded,
     );
     expect(tester.getSize(playbackCard), const Size.square(48));
     expect(tester.getSize(menuSurface).height, 48);
@@ -377,9 +380,17 @@ void main() {
       expect(icon.size, 28);
     }
 
+    final collapsedCoverCenter = tester.getCenter(playbackCover);
     await tester.tap(playbackCard);
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 350));
+    await tester.pump(const Duration(milliseconds: 140));
+    final transitioningCoverCenter = tester.getCenter(playbackCover);
+    expect(transitioningCoverCenter.dx, lessThan(collapsedCoverCenter.dx));
+    expect(
+      transitioningCoverCenter.dx,
+      greaterThan(tester.getRect(menuSurface).left + 72),
+    );
+    await tester.pump(const Duration(milliseconds: 210));
     expect(tester.getSize(navigation).width, closeTo(48, 0.1));
     expect(tester.getSize(playback).width, greaterThan(200));
     expect(tester.getRect(playbackCard).top, tester.getRect(menuSurface).top);
@@ -433,6 +444,82 @@ void main() {
     expect(tester.getSize(navigation).width, greaterThan(200));
     expect(tester.getSize(playback).width, closeTo(48, 0.1));
   });
+
+  testWidgets(
+    'detail routes show a full playback dock without a navigation icon',
+    (tester) async {
+      tester.view.devicePixelRatio = 3;
+      tester.view.physicalSize = const Size(1080, 2400);
+      addTearDown(() {
+        tester.view.resetDevicePixelRatio();
+        tester.view.resetPhysicalSize();
+      });
+
+      await _pumpAppShell(tester);
+      double detailBottomInset = 0;
+      final navigator = Navigator.of(tester.element(find.byType(MainScreen)));
+      final routeFuture = navigator.push<void>(
+        MaterialPageRoute<void>(
+          builder: (context) {
+            detailBottomInset = MobileOverlayInset.of(context);
+            return const Scaffold(
+              key: ValueKey<String>('test_detail_route'),
+              body: SizedBox.expand(),
+            );
+          },
+        ),
+      );
+
+      await tester.pump();
+      await tester.pump();
+      final routeDock = find.byKey(
+        const ValueKey<String>('routed_playback_dock'),
+      );
+      final routeWidth = find.byKey(
+        const ValueKey<String>('routed_playback_dock_width'),
+      );
+      final routeCover = find.descendant(
+        of: routeDock,
+        matching: find.byKey(
+          const ValueKey<String>('active_session_cover_orientation_session'),
+        ),
+      );
+      expect(routeDock, findsOneWidget);
+      expect(tester.getSize(routeWidth).width, 48);
+      expect(detailBottomInset, greaterThan(48));
+      expect(
+        find.descendant(
+          of: routeDock,
+          matching: find.byKey(
+            const ValueKey<String>('main_destination_music_library'),
+          ),
+        ),
+        findsNothing,
+      );
+      final collapsedCenter = tester.getCenter(routeCover);
+
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 140));
+      final enteringWidth = tester.getSize(routeWidth).width;
+      expect(enteringWidth, greaterThan(48));
+      expect(tester.getCenter(routeCover).dx, lessThan(collapsedCenter.dx));
+
+      await tester.pump(const Duration(milliseconds: 210));
+      final expandedWidth = tester.getSize(routeWidth).width;
+      expect(expandedWidth, greaterThan(200));
+
+      navigator.pop();
+      await tester.pump();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 140));
+      expect(tester.getSize(routeWidth).width, lessThan(expandedWidth));
+      expect(tester.getSize(routeWidth).width, greaterThan(48));
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(routeDock, findsNothing);
+      await routeFuture;
+      await tester.pump(const Duration(milliseconds: 200));
+    },
+  );
 
   testWidgets('capsule dock keeps a fixed height without playback', (
     tester,
@@ -1993,7 +2080,6 @@ void main() {
       activeSessions: [session],
       playingSessionCount: 0,
       focusedSessionId: session.id,
-      multiThreadPlaybackEnabled: false,
       coverGeneration: 0,
       isInitialized: true,
     );
@@ -2087,7 +2173,6 @@ void main() {
       activeSessions: [session],
       playingSessionCount: 1,
       focusedSessionId: session.id,
-      multiThreadPlaybackEnabled: false,
       coverGeneration: 0,
       isInitialized: true,
     );
@@ -2112,7 +2197,6 @@ void main() {
       activeSessions: [session],
       playingSessionCount: 0,
       focusedSessionId: session.id,
-      multiThreadPlaybackEnabled: false,
       coverGeneration: 0,
       isInitialized: true,
     );
@@ -2133,7 +2217,6 @@ void main() {
       activeSessions: [session],
       playingSessionCount: 1,
       focusedSessionId: session.id,
-      multiThreadPlaybackEnabled: false,
       coverGeneration: 0,
       isInitialized: true,
     );
@@ -2226,7 +2309,6 @@ void main() {
         activeSessions: [firstSession, secondSession],
         playingSessionCount: 0,
         focusedSessionId: firstSession.id,
-        multiThreadPlaybackEnabled: true,
         coverGeneration: 0,
         isInitialized: true,
       );
@@ -2349,7 +2431,6 @@ void main() {
       activeSessions: <PlaybackSession>[session],
       playingSessionCount: 0,
       focusedSessionId: session.id,
-      multiThreadPlaybackEnabled: false,
       coverGeneration: 0,
       isInitialized: true,
     );
@@ -2369,7 +2450,6 @@ void main() {
       activeSessions: const <PlaybackSession>[],
       playingSessionCount: 0,
       focusedSessionId: null,
-      multiThreadPlaybackEnabled: false,
       coverGeneration: 0,
       isInitialized: true,
     );
@@ -2831,7 +2911,6 @@ void main() {
       activeSessions: <PlaybackSession>[session],
       playingSessionCount: 0,
       focusedSessionId: session.id,
-      multiThreadPlaybackEnabled: false,
       coverGeneration: 0,
       isInitialized: true,
     );
@@ -3473,7 +3552,6 @@ Future<_AppShellHarness> _pumpAppShell(
       activeSessions: [session],
       playingSessionCount: 0,
       focusedSessionId: session.id,
-      multiThreadPlaybackEnabled: false,
       coverGeneration: 0,
       isInitialized: true,
     );

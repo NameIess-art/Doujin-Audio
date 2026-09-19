@@ -36,7 +36,6 @@ void main() {
       final controller = SettingsCommandController(
         settings: settings,
         playback: playback,
-        notifications: notifications,
       );
       final session =
           PlaybackSession(
@@ -104,7 +103,6 @@ void main() {
       final controller = SettingsCommandController(
         settings: settings,
         playback: playback,
-        notifications: notifications,
       );
       addTearDown(settings.dispose);
       addTearDown(playback.dispose);
@@ -150,7 +148,6 @@ void main() {
       final controller = SettingsCommandController(
         settings: settings,
         playback: playback,
-        notifications: notifications,
       );
       final session = _sessionUsingPreset('session-1', preset);
       playback.registerSession(session);
@@ -166,32 +163,6 @@ void main() {
     },
   );
 
-  test('multi-thread setting is unchanged when pause all fails', () async {
-    SharedPreferences.setMockInitialValues(const <String, Object>{});
-    final settings = SettingsRepository()..syncSlice(isInitialized: true);
-    await settings.setMultiThreadPlaybackEnabled(true);
-    final playback = PlaybackFacade.create(
-      databaseRepository: TestPersistenceRepository(),
-      nativeRepository: _FailingPauseAllRepository(),
-    );
-    final notifications = NotificationFacade.create(
-      service: PlaybackNotificationService(),
-    );
-    final controller = SettingsCommandController(
-      settings: settings,
-      playback: playback,
-      notifications: notifications,
-    );
-    addTearDown(settings.dispose);
-    addTearDown(playback.dispose);
-    addTearDown(notifications.dispose);
-
-    final updated = await controller.setMultiThreadPlaybackEnabled(false);
-
-    expect(updated, isFalse);
-    expect(settings.multiThreadPlaybackEnabled, isTrue);
-  });
-
   test('mixing strategy disables native audio focus requests', () async {
     SharedPreferences.setMockInitialValues(const <String, Object>{});
     final settings = SettingsRepository()..syncSlice(isInitialized: true);
@@ -206,7 +177,6 @@ void main() {
     final controller = SettingsCommandController(
       settings: settings,
       playback: playback,
-      notifications: notifications,
     );
     addTearDown(settings.dispose);
     addTearDown(playback.dispose);
@@ -231,7 +201,6 @@ void main() {
     final controller = SettingsCommandController(
       settings: settings,
       playback: playback,
-      notifications: notifications,
       clearApplicationCacheFiles: () async {
         clears++;
         return 17;
@@ -244,16 +213,6 @@ void main() {
     expect(await controller.clearApplicationCache(), 17);
     expect(clears, 1);
   });
-}
-
-final class _FailingPauseAllRepository extends NativePlaybackRepository {
-  @override
-  Future<NativeResult<void>> pauseAll() async {
-    return const NativeFailure<void>('pause all failed');
-  }
-
-  @override
-  Future<void> dispose() async {}
 }
 
 final class _CapturingPlaybackBehaviorRepository

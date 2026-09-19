@@ -358,7 +358,6 @@ void main() {
       PlaybackStateSliceData(
         activeSessions: [snapshot(paused), snapshot(playing)],
         playingSessionCount: 1,
-        multiThreadPlaybackEnabled: true,
       ),
     );
 

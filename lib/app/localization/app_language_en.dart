@@ -507,7 +507,6 @@ const Map<String, String> appLanguageEn = {
   'seek_to_subtitle': 'Seek to this subtitle',
   'blur_player_background': 'Blur player background',
   'ui_blur_effect': 'Glass effect',
-  'multi_thread_playback': 'Play multiple tracks',
   'allow_video_playback': 'Allow video playback',
   'notification_bar': 'Playback notification controls',
   'section_detail_info': 'Details',

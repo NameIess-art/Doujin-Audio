@@ -466,7 +466,6 @@ const Map<String, String> appLanguageZh = {
   'seek_to_subtitle': '跳转到此字幕',
   'blur_player_background': '播放页模糊背景',
   'ui_blur_effect': '界面毛玻璃',
-  'multi_thread_playback': '多线程播放',
   'allow_video_playback': '允许播放视频',
   'notification_bar': '播放通知控制',
   'section_detail_info': '详细信息',

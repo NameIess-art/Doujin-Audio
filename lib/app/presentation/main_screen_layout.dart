@@ -334,16 +334,18 @@ extension _MainScreenLayout on _MainScreenState {
                           ),
                           widthFactor: 0.96,
                           child: _FloatingGlassPanel(
-                            padding: const EdgeInsets.all(4),
+                            key: const ValueKey<String>(
+                              'mobile_bottom_capsule_surface',
+                            ),
                             shadowOpacity: 0.12,
                             showTopHighlight: false,
                             tinyMode: tinyMode,
                             child: SizedBox(
-                              height: kActiveSessionCarouselCapsuleHeight,
+                              height: kActiveSessionCarouselDockHeight,
                               child: LayoutBuilder(
                                 builder: (context, constraints) {
                                   const compactWidth = 48.0;
-                                  const gap = 4.0;
+                                  const gap = 0.0;
                                   final availableWidth = constraints.maxWidth;
                                   final navigationWidth = !hasPlayback
                                       ? availableWidth
@@ -369,7 +371,7 @@ extension _MainScreenLayout on _MainScreenState {
                                           curve: Curves.easeOutCubic,
                                           width: navigationWidth,
                                           height:
-                                              kActiveSessionCarouselCapsuleHeight,
+                                              kActiveSessionCarouselDockHeight,
                                           child: ClipRect(
                                             child: AnimatedSwitcher(
                                               duration: duration,
@@ -394,8 +396,15 @@ extension _MainScreenLayout on _MainScreenState {
                                             curve: Curves.easeOutCubic,
                                             width: playbackWidth,
                                             height:
-                                                kActiveSessionCarouselCapsuleHeight,
-                                            child: ClipRect(
+                                                kActiveSessionCarouselDockHeight,
+                                            child: ClipRRect(
+                                              key: const ValueKey<String>(
+                                                'mobile_dock_playback_viewport',
+                                              ),
+                                              borderRadius: BorderRadius.circular(
+                                                kActiveSessionCarouselDockHeight /
+                                                    2,
+                                              ),
                                               child: ActiveSessionCarousel(
                                                 key: const ValueKey<String>(
                                                   'mobile_dock_carousel',

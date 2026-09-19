@@ -983,6 +983,18 @@ void main() {
       await tester.drag(find.byType(PageView), const Offset(-300, 0));
       await tester.pumpAndSettle();
       expect(visibleSessions.last, 'circular_2');
+      final embeddedCard = find.byKey(
+        const ValueKey<String>('active_session_card_circular_2'),
+      );
+      expect(tester.getSize(embeddedCard).height, 48);
+      expect(
+        tester
+            .widgetList<InkWell>(
+              find.descendant(of: embeddedCard, matching: find.byType(InkWell)),
+            )
+            .any((inkWell) => inkWell.customBorder is StadiumBorder),
+        isTrue,
+      );
       expect(
         tester
             .widgetList<Material>(

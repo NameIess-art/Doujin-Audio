@@ -343,6 +343,9 @@ void main() {
     final menuPanel = find.byKey(
       const ValueKey<String>('mobile_bottom_capsule_panel'),
     );
+    final menuSurface = find.byKey(
+      const ValueKey<String>('mobile_bottom_capsule_surface'),
+    );
     final navigation = find.byKey(
       const ValueKey<String>('mobile_dock_navigation'),
     );
@@ -354,6 +357,14 @@ void main() {
       ActiveSessionCarouselPresentation.circularCover,
     );
     expect(tester.getSize(playbackCard), const Size.square(48));
+    expect(tester.getSize(menuSurface).height, 48);
+    expect(
+      tester.getCenter(playbackCard),
+      Offset(
+        tester.getRect(menuSurface).right - 24,
+        tester.getRect(menuSurface).center.dy,
+      ),
+    );
     expect(tester.getSize(navigation).width, greaterThan(200));
     expect(tester.getSize(playback).width, 48);
     expect(
@@ -371,6 +382,34 @@ void main() {
     await tester.pump(const Duration(milliseconds: 350));
     expect(tester.getSize(navigation).width, closeTo(48, 0.1));
     expect(tester.getSize(playback).width, greaterThan(200));
+    expect(tester.getRect(playbackCard).top, tester.getRect(menuSurface).top);
+    expect(
+      tester.getRect(playbackCard).bottom,
+      tester.getRect(menuSurface).bottom,
+    );
+    expect(
+      tester.getRect(playbackCard).right,
+      tester.getRect(menuSurface).right,
+    );
+    expect(
+      tester
+          .widget<ClipRRect>(
+            find.byKey(const ValueKey<String>('mobile_dock_playback_viewport')),
+          )
+          .borderRadius,
+      BorderRadius.circular(kActiveSessionCarouselDockHeight / 2),
+    );
+    expect(
+      tester.getCenter(
+        find.byKey(
+          const ValueKey<String>('main_destination_ink_music_library'),
+        ),
+      ),
+      Offset(
+        tester.getRect(menuSurface).left + 24,
+        tester.getRect(menuSurface).center.dy,
+      ),
+    );
     expect(
       tester
           .widget<ActiveSessionCarousel>(find.byType(ActiveSessionCarousel))
@@ -419,7 +458,7 @@ void main() {
       tester
           .getSize(find.byKey(const ValueKey<String>('mobile_dock_navigation')))
           .height,
-      kActiveSessionCarouselCapsuleHeight,
+      kActiveSessionCarouselDockHeight,
     );
   });
 
@@ -2023,8 +2062,8 @@ void main() {
               matching: find.byType(Material),
             ),
           )
-          .borderRadius,
-      BorderRadius.circular(LibraryLikeCardMetrics.coverRadius),
+          .shape,
+      isA<CircleBorder>(),
     );
 
     expect(

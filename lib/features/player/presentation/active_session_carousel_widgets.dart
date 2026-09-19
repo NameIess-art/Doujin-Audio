@@ -25,12 +25,14 @@ class _ActiveSessionCard extends ConsumerWidget {
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    const cardHeight = 56.0;
+    final cardHeight = embedded ? kActiveSessionCarouselDockHeight : 56.0;
     const coverDistance = 4.0;
-    const coverDimension = cardHeight - 2 * coverDistance;
+    final coverDimension = cardHeight - 2 * coverDistance;
     const coverRadius = LibraryLikeCardMetrics.coverRadius;
-    const cardRadius = coverRadius + coverDistance;
-    const contentPadding = EdgeInsets.fromLTRB(3, 3, 6, 3);
+    final cardRadius = embedded ? cardHeight / 2 : coverRadius + coverDistance;
+    final contentPadding = embedded
+        ? const EdgeInsets.fromLTRB(2, 2, 6, 2)
+        : const EdgeInsets.fromLTRB(3, 3, 6, 3);
 
     final view = ref.watch(
       playbackStateProvider.select((value) {
@@ -111,7 +113,8 @@ class _ActiveSessionCard extends ConsumerWidget {
       color: Colors.transparent,
       child: InkWell(
         excludeFromSemantics: true,
-        borderRadius: BorderRadius.circular(cardRadius),
+        customBorder: embedded ? const StadiumBorder() : null,
+        borderRadius: embedded ? null : BorderRadius.circular(cardRadius),
         onTap: onOpen,
         child: Ink(
           height: cardHeight,

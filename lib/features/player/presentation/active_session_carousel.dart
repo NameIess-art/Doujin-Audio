@@ -31,6 +31,7 @@ import 'playback_error_text.dart';
 part 'active_session_carousel_widgets.dart';
 
 const double kActiveSessionCarouselCapsuleHeight = 56;
+const double kActiveSessionCarouselDockHeight = 48;
 
 enum ActiveSessionCarouselPresentation {
   card,
@@ -287,9 +288,12 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
         widget.presentation == ActiveSessionCarouselPresentation.compact;
     final embedded =
         widget.presentation == ActiveSessionCarouselPresentation.embedded;
+    final dockPresentation = requestsCircularCover || embedded;
 
     return SizedBox(
-      height: kActiveSessionCarouselCapsuleHeight,
+      height: dockPresentation
+          ? kActiveSessionCarouselDockHeight
+          : kActiveSessionCarouselCapsuleHeight,
       child: LayoutBuilder(
         builder: (context, constraints) {
           final totalWidth = constraints.maxWidth;
@@ -353,7 +357,7 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
                     return _ActiveSessionPageTransform(
                       pageListenable: _pageNotifier,
                       index: index,
-                      enabled: !circularCover,
+                      enabled: !circularCover && !embedded,
                       child: RepaintBoundary(
                         child: _ActiveSessionCard(
                           session: session,

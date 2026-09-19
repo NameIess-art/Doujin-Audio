@@ -140,8 +140,8 @@ class _TimerPresentation {
 
 class _FloatingGlassPanel extends ConsumerWidget {
   const _FloatingGlassPanel({
+    super.key,
     required this.child,
-    this.padding = EdgeInsets.zero,
     this.shadowOpacity = 0.22,
     this.showTopHighlight = true,
     this.tinyMode = false,
@@ -149,7 +149,6 @@ class _FloatingGlassPanel extends ConsumerWidget {
 
   final Widget child;
   final double radius = 100;
-  final EdgeInsetsGeometry padding;
   final double shadowOpacity;
   final bool showTopHighlight;
   final bool tinyMode;
@@ -210,7 +209,7 @@ class _FloatingGlassPanel extends ConsumerWidget {
                 ),
               ),
             ),
-          Padding(padding: padding, child: child),
+          child,
         ],
       ),
     );

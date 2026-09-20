@@ -654,6 +654,43 @@ final class LibraryMutationCoordinator {
     );
   }
 
+  Future<String> renameWorkEntryToName({
+    required String libraryRootPath,
+    required String entryPath,
+    required String targetName,
+    required bool isMedia,
+  }) async {
+    final rootPath = PathMatcher.normalize(libraryRootPath);
+    final oldPath = PathMatcher.normalize(entryPath);
+    if (PathMatcher.equalsNormalized(rootPath, oldPath) ||
+        !PathMatcher.isWithinOrEqual(oldPath, rootPath)) {
+      throw const LibraryMutationRenameException('invalidTarget');
+    }
+    final safeName = PathDisplay.safeFileName(targetName.trim());
+    if (safeName.isEmpty) {
+      throw const LibraryMutationRenameException('invalidTitle');
+    }
+    final renamedPath = await entryEditorService.renameEntry(
+      oldPath,
+      safeName,
+      isDirectory: false,
+    );
+    if (renamedPath == null) {
+      throw const LibraryMutationRenameException('renameFailed');
+    }
+    final newPath = PathMatcher.normalize(renamedPath);
+    if (PathMatcher.equalsNormalized(oldPath, newPath)) return newPath;
+
+    if (isMedia) {
+      await _retargetSingleTrack(oldPath, newPath, safeName);
+    } else {
+      _coverArtwork().invalidateFolder(rootPath);
+      snapshotCacheService.markStructureChanged();
+      _syncStateSlice();
+    }
+    return newPath;
+  }
+
   Future<void> _retargetLibraryFolder(
     String oldFolderPath,
     String newFolderPath,

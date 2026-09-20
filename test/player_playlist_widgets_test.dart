@@ -370,6 +370,7 @@ void main() {
         } else {
           expect(commands, [(harness.session.id, tracks[1].path, 1)]);
         }
+        await tester.pump(PlaybackSession.loadingIndicatorThreshold);
         await tester.pumpAndSettle();
         expect(tester.takeException(), isNull);
       },

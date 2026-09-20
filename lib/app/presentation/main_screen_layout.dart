@@ -359,6 +359,7 @@ extension _MainScreenLayout on _MainScreenState {
                                       ? (availableWidth - compactWidth - gap)
                                             .clamp(0.0, availableWidth)
                                       : compactWidth;
+                                  _reportMobilePlaybackCoverRect();
                                   return Stack(
                                     children: [
                                       Align(
@@ -388,44 +389,54 @@ extension _MainScreenLayout on _MainScreenState {
                                       if (hasPlayback)
                                         Align(
                                           alignment: Alignment.centerRight,
-                                          child: AnimatedContainer(
+                                          child: SizedBox(
                                             key: const ValueKey<String>(
                                               'mobile_dock_playback',
                                             ),
-                                            duration: duration,
-                                            curve: Curves.easeOutCubic,
-                                            width: playbackWidth,
-                                            height:
-                                                kActiveSessionCarouselDockHeight,
-                                            child: ClipRRect(
-                                              key: const ValueKey<String>(
-                                                'mobile_dock_playback_viewport',
-                                              ),
-                                              borderRadius: BorderRadius.circular(
-                                                kActiveSessionCarouselDockHeight /
-                                                    2,
-                                              ),
-                                              child: ActiveSessionCarousel(
-                                                key: const ValueKey<String>(
-                                                  'mobile_dock_carousel',
-                                                ),
-                                                sessions: overlaySessions,
-                                                i18n: i18n,
-                                                viewportFraction: 1,
-                                                presentation:
-                                                    ActiveSessionCarouselPresentation
-                                                        .embedded,
-                                                onOpenSession: (sessionId) {
-                                                  if (!playbackExpanded) {
-                                                    _showMobilePlayback();
-                                                    return;
-                                                  }
-                                                  Navigator.of(context).push(
-                                                    buildSessionDetailRoute(
-                                                      sessionId: sessionId,
+                                            child: AnimatedContainer(
+                                              duration: duration,
+                                              curve: Curves.easeOutCubic,
+                                              onEnd:
+                                                  _reportMobilePlaybackCoverRect,
+                                              width: playbackWidth,
+                                              height:
+                                                  kActiveSessionCarouselDockHeight,
+                                              child: SizedBox.expand(
+                                                key: _mobilePlaybackGeometryKey,
+                                                child: ClipRRect(
+                                                  key: const ValueKey<String>(
+                                                    'mobile_dock_playback_viewport',
+                                                  ),
+                                                  borderRadius:
+                                                      BorderRadius.circular(
+                                                        kActiveSessionCarouselDockHeight /
+                                                            2,
+                                                      ),
+                                                  child: ActiveSessionCarousel(
+                                                    key: const ValueKey<String>(
+                                                      'mobile_dock_carousel',
                                                     ),
-                                                  );
-                                                },
+                                                    sessions: overlaySessions,
+                                                    i18n: i18n,
+                                                    viewportFraction: 1,
+                                                    presentation:
+                                                        ActiveSessionCarouselPresentation
+                                                            .embedded,
+                                                    onOpenSession: (sessionId) {
+                                                      if (!playbackExpanded) {
+                                                        _showMobilePlayback();
+                                                        return;
+                                                      }
+                                                      Navigator.of(
+                                                        context,
+                                                      ).push(
+                                                        buildSessionDetailRoute(
+                                                          sessionId: sessionId,
+                                                        ),
+                                                      );
+                                                    },
+                                                  ),
+                                                ),
                                               ),
                                             ),
                                           ),

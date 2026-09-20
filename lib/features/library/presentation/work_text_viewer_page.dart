@@ -97,9 +97,7 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
           });
           return;
         }
-        final controller = PdfController(
-          document: PdfDocument.openData(bytes),
-        );
+        final controller = PdfController(document: PdfDocument.openData(bytes));
         setState(() {
           _loading = false;
           _pdfController = controller;
@@ -182,13 +180,11 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
   }
 
   void _onSwitchFile(int newIndex) {
-    if (newIndex < 0 ||
-        newIndex >= widget.files.length ||
-        newIndex == _currentIndex) {
-      return;
-    }
+    if (widget.files.length < 2) return;
+    final wrappedIndex = newIndex % widget.files.length;
+    if (wrappedIndex == _currentIndex) return;
     setState(() {
-      _currentIndex = newIndex;
+      _currentIndex = wrappedIndex;
     });
     if (_scrollController.hasClients) {
       _scrollController.jumpTo(0);
@@ -222,31 +218,31 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
                 bottomPadding,
               ),
             ),
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: TopPageHeader(
-              key: const ValueKey<String>('work_text_header'),
-              icon: file?.isPdf == true
-                  ? Icons.picture_as_pdf_rounded
-                  : (file?.isMarkdown == true
-                      ? Icons.article_rounded
-                      : Icons.description_rounded),
-              title: file?.displayName ?? i18n.tr('script_text_viewer_title'),
-              leading: IconButton(
-                icon: const Icon(Icons.arrow_back_rounded),
-                tooltip: MaterialLocalizations.of(context).backButtonTooltip,
-                onPressed: () => Navigator.of(context).pop(),
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: TopPageHeader(
+                key: const ValueKey<String>('work_text_header'),
+                icon: file?.isPdf == true
+                    ? Icons.picture_as_pdf_rounded
+                    : (file?.isMarkdown == true
+                          ? Icons.article_rounded
+                          : Icons.description_rounded),
+                title: file?.displayName ?? i18n.tr('script_text_viewer_title'),
+                leading: IconButton(
+                  icon: const Icon(Icons.arrow_back_rounded),
+                  tooltip: MaterialLocalizations.of(context).backButtonTooltip,
+                  onPressed: () => Navigator.of(context).pop(),
+                ),
               ),
             ),
-          ),
-          if (hasMultipleFiles)
-            Positioned(
-              right: 16,
-              bottom: bottomPadding + 20,
-              child: _buildBottomRightSwitcher(context, theme, cs, i18n),
-            ),
+            if (hasMultipleFiles)
+              Positioned(
+                right: 16,
+                bottom: bottomPadding + 20,
+                child: _buildBottomRightSwitcher(context, theme, cs, i18n),
+              ),
           ],
         ),
       ),
@@ -261,9 +257,7 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
     double bottomPadding,
   ) {
     if (_loading) {
-      return const Center(
-        child: CircularProgressIndicator.adaptive(),
-      );
+      return const Center(child: CircularProgressIndicator.adaptive());
     }
 
     if (_errorMessage != null) {
@@ -306,7 +300,13 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
     }
 
     if (file.isPdf) {
-      return _buildPdfContent(context, theme, cs, contentTopInset, bottomPadding);
+      return _buildPdfContent(
+        context,
+        theme,
+        cs,
+        contentTopInset,
+        bottomPadding,
+      );
     }
 
     if (_content.isEmpty) {
@@ -330,7 +330,13 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
       );
     }
 
-    return _buildTextContent(context, theme, cs, contentTopInset, bottomPadding);
+    return _buildTextContent(
+      context,
+      theme,
+      cs,
+      contentTopInset,
+      bottomPadding,
+    );
   }
 
   Widget _buildPdfContent(
@@ -532,9 +538,6 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
     ColorScheme cs,
     AppLanguageProvider i18n,
   ) {
-    final canPrev = _currentIndex > 0;
-    final canNext = _currentIndex < widget.files.length - 1;
-
     return HeaderFloatingSurface(
       padding: const EdgeInsets.symmetric(horizontal: 4),
       child: Row(
@@ -546,7 +549,7 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
             constraints: const BoxConstraints.tightFor(width: 32, height: 32),
             icon: const Icon(Icons.chevron_left_rounded),
             tooltip: i18n.tr('prev_text_file'),
-            onPressed: canPrev ? () => _onSwitchFile(_currentIndex - 1) : null,
+            onPressed: () => _onSwitchFile(_currentIndex - 1),
           ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 6),
@@ -566,7 +569,7 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
             constraints: const BoxConstraints.tightFor(width: 32, height: 32),
             icon: const Icon(Icons.chevron_right_rounded),
             tooltip: i18n.tr('next_text_file'),
-            onPressed: canNext ? () => _onSwitchFile(_currentIndex + 1) : null,
+            onPressed: () => _onSwitchFile(_currentIndex + 1),
           ),
         ],
       ),

@@ -676,6 +676,63 @@ void main() {
     );
   });
 
+  testWidgets('work detail dock starts from the main dock cover position', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 3;
+    tester.view.physicalSize = const Size(1080, 2400);
+    addTearDown(() {
+      tester.view.resetDevicePixelRatio();
+      tester.view.resetPhysicalSize();
+    });
+
+    await _pumpAppShell(tester);
+    final mainCover = find.byKey(
+      const ValueKey<String>('active_session_cover_orientation_session'),
+    );
+    await tester.tap(mainCover);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 350));
+    await tester.pump();
+    final mainCoverCenter = tester.getCenter(mainCover);
+    final geometry = tester
+        .widget<MainScreen>(find.byType(MainScreen))
+        .playbackDockGeometry!;
+    expect(geometry.mainCoverRect?.center.dx, closeTo(mainCoverCenter.dx, 0.5));
+
+    final navigator = Navigator.of(tester.element(find.byType(MainScreen)));
+    final routeFuture = navigator.push<void>(
+      buildAppPageRoute<void>(
+        context: navigator.context,
+        style: AppPageTransitionStyle.sharedAxisZ,
+        settings: const RouteSettings(name: workDetailRouteName),
+        child: const Scaffold(body: SizedBox.expand()),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    final routeDock = find.byKey(
+      const ValueKey<String>('routed_playback_dock'),
+    );
+    final routeCover = find.descendant(
+      of: routeDock,
+      matching: find.byKey(
+        const ValueKey<String>('active_session_cover_orientation_session'),
+      ),
+    );
+    expect(routeCover, findsOneWidget);
+    expect(tester.getCenter(routeCover).dx, closeTo(mainCoverCenter.dx, 0.5));
+
+    navigator.pop();
+    await routeFuture;
+    await tester.pump(const Duration(milliseconds: 350));
+    await tester.pump(const Duration(milliseconds: 200));
+    await tester.pump(const Duration(milliseconds: 200));
+    UiInteractionCoordinator.instance.finishInteractionsForTest();
+    await tester.pump();
+  });
+
   testWidgets('production app shell allows tooltips to become visible', (
     tester,
   ) async {
@@ -1570,11 +1627,43 @@ void main() {
     await tester.pump();
   });
 
-  testWidgets('ASMR track tree builds descendants only after expansion', (
+  testWidgets('ASMR work detail builds descendants after entering a folder', (
     tester,
   ) async {
+    final nestedTrack = AsmrTrackFile(
+      hash: 'nested-track',
+      title: 'Nested track',
+      type: 'audio',
+      streamUrl: 'https://example.com/nested.mp3',
+      downloadUrl: 'https://example.com/nested.mp3',
+      lowQualityUrl: null,
+      duration: const Duration(minutes: 1),
+      size: 1024,
+      children: const <AsmrTrackFile>[],
+      workId: 1,
+      workTitle: 'Loaded work',
+      sourceId: 'RJ000001',
+      relativePath: 'Disc 1/Nested track.mp3',
+    );
     final controller = _QueuedEmptyAsmrLibraryController(
       services: createTestAsmrServices(),
+      trackTree: <AsmrTrackFile>[
+        AsmrTrackFile(
+          hash: 'disc-1',
+          title: 'Disc 1',
+          type: 'folder',
+          streamUrl: null,
+          downloadUrl: null,
+          lowQualityUrl: null,
+          duration: Duration.zero,
+          size: 0,
+          children: <AsmrTrackFile>[nestedTrack],
+          workId: 1,
+          workTitle: 'Loaded work',
+          sourceId: 'RJ000001',
+          relativePath: 'Disc 1',
+        ),
+      ],
     );
     addTearDown(controller.dispose);
     final harness = AppRuntimeWidgetTestFixture();
@@ -1592,7 +1681,12 @@ void main() {
     await tester.pump();
 
     await tester.tap(find.text('Loaded work', findRichText: true));
-    await tester.pumpAndSettle();
+    for (var i = 0; i < 30 && find.text('Disc 1').evaluate().isEmpty; i++) {
+      await tester.pump(const Duration(milliseconds: 50));
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 10)),
+      );
+    }
 
     expect(find.text('Disc 1'), findsOneWidget);
     expect(find.text('Nested track'), findsNothing);
@@ -1600,23 +1694,6 @@ void main() {
     await tester.tap(find.text('Disc 1'));
     await tester.pumpAndSettle();
     expect(find.text('Nested track'), findsOneWidget);
-
-    await tester.tap(find.text('Disc 1'));
-    await tester.pump();
-    expect(find.text('Nested track'), findsOneWidget);
-    final collapsingReveal = tester.widget<AnimatedTreeReveal>(
-      find
-          .ancestor(
-            of: find.text('Nested track'),
-            matching: find.byType(AnimatedTreeReveal),
-          )
-          .first,
-    );
-    expect(collapsingReveal.visible, isFalse);
-    await tester.pump(kAppMotionStandard ~/ 2);
-    expect(find.text('Nested track'), findsOneWidget);
-    await tester.pumpAndSettle();
-    expect(find.text('Nested track'), findsNothing);
   });
 
   testWidgets('large ASMR track trees only build visible rows', (
@@ -1660,7 +1737,20 @@ void main() {
     await tester.pump();
     await tester.pump();
     await tester.tap(find.text('Loaded work', findRichText: true));
-    await tester.pumpAndSettle();
+    for (
+      var i = 0;
+      i < 30 &&
+          find
+              .textContaining('Large ASMR track', findRichText: true)
+              .evaluate()
+              .isEmpty;
+      i++
+    ) {
+      await tester.pump(const Duration(milliseconds: 50));
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 10)),
+      );
+    }
 
     final builtRows = find.textContaining(
       'Large ASMR track',
@@ -1672,15 +1762,15 @@ void main() {
       findsNothing,
     );
 
-    final collectedCategory = find.byKey(
-      const ValueKey(AsmrCategoryType.collected),
-    );
     await tester.scrollUntilVisible(
       find.text('Large ASMR track 1999', findRichText: true),
       600,
       scrollable: find
-          .descendant(of: collectedCategory, matching: find.byType(Scrollable))
-          .last,
+          .descendant(
+            of: find.byType(WorkDetailPage),
+            matching: find.byType(Scrollable),
+          )
+          .first,
       maxScrolls: 400,
     );
     expect(
@@ -2539,7 +2629,7 @@ void main() {
     final harness = await _pumpAppShell(tester, includePlaybackSession: false);
 
     double currentInset() => tester
-        .widget<MobileOverlayInset>(find.byType(MobileOverlayInset))
+        .widget<MobileOverlayInset>(find.byType(MobileOverlayInset).first)
         .bottomInset;
 
     final withoutCard = currentInset();

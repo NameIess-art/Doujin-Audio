@@ -101,8 +101,27 @@ List<_MainDestination> _resolveMainDestinations({
   ];
 }
 
+class PlaybackDockGeometryController extends ChangeNotifier {
+  Rect? get mainCoverRect => _mainCoverRect;
+  double? get mainDockRight => _mainDockRight;
+  Rect? _mainCoverRect;
+  double? _mainDockRight;
+
+  void updateMainGeometry({
+    required Rect coverRect,
+    required double dockRight,
+  }) {
+    if (_mainCoverRect == coverRect && _mainDockRight == dockRight) return;
+    _mainCoverRect = coverRect;
+    _mainDockRight = dockRight;
+    notifyListeners();
+  }
+}
+
 class MainScreen extends ConsumerStatefulWidget {
-  const MainScreen({super.key});
+  const MainScreen({super.key, this.playbackDockGeometry});
+
+  final PlaybackDockGeometryController? playbackDockGeometry;
 
   @visibleForTesting
   static Duration sleepModeAutoTriggerDelay = const Duration(minutes: 5);
@@ -119,7 +138,28 @@ class _MainScreenState extends ConsumerState<MainScreen>
   late final ValueNotifier<int> _activePageIndex;
   final Object _pageSwitchInteraction = Object();
   final GlobalKey _dockContentKey = GlobalKey();
+  final GlobalKey _mobilePlaybackGeometryKey = GlobalKey();
   int _pageSwitchCoordinatorGeneration = 0;
+
+  void _reportMobilePlaybackCoverRect() {
+    final geometry = widget.playbackDockGeometry;
+    if (geometry == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final box =
+          _mobilePlaybackGeometryKey.currentContext?.findRenderObject()
+              as RenderBox?;
+      if (box == null || !box.hasSize) return;
+      const inset = 4.0;
+      final origin = box.localToGlobal(Offset.zero);
+      geometry.updateMainGeometry(
+        coverRect:
+            origin + const Offset(inset, inset) &
+            Size.square(box.size.height - inset * 2),
+        dockRight: origin.dx + box.size.width,
+      );
+    });
+  }
 
   bool _notificationPermissionCheckDone = false;
   bool _notificationPermissionCheckQueued = false;

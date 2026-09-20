@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -14,10 +13,10 @@ import '../../../core/media/audio_detail.dart';
 import '../../../core/media/music_track.dart';
 import '../../../core/media/natural_sort.dart';
 import '../../../core/media/path_display.dart';
-import '../../../core/media/time_text_formatters.dart';
 import '../../../core/ui/ui_operation_service.dart';
 import '../../../core/ui/undoable_removal_service.dart';
 import '../../../core/widgets/app_feedback.dart';
+import '../../../core/widgets/app_dialog.dart';
 import '../../../core/widgets/async_cover_image.dart';
 import '../../../core/widgets/mobile_overlay_inset.dart';
 import '../../../core/widgets/top_page_header.dart';
@@ -44,7 +43,7 @@ const EdgeInsets _workMetadataCapsulePadding = EdgeInsets.symmetric(
 
 enum _WorkEntryType { folder, audio, text, image }
 
-enum _WorkEntryAction { play, add, remove }
+enum _WorkEntryAction { open, play, add, remove, rename, setCover }
 
 class _WorkEntryItem {
   const _WorkEntryItem({
@@ -519,6 +518,17 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     try {
       switch (action) {
+        case _WorkEntryAction.open:
+          switch (item.type) {
+            case _WorkEntryType.folder:
+              _enterFolder(item.name);
+            case _WorkEntryType.text:
+              await _openTextFile(item);
+            case _WorkEntryType.image:
+              await _openImageFile(item);
+            case _WorkEntryType.audio:
+              await _handleEntryAction(item, _WorkEntryAction.play);
+          }
         case _WorkEntryAction.play:
           final request = ++_playRequest;
           final played = await _playAudioItem(item);
@@ -580,6 +590,10 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
               failureMessage: i18n.tr('removal_failed'),
             );
           }
+        case _WorkEntryAction.rename:
+          await _renameLocalEntry(item);
+        case _WorkEntryAction.setCover:
+          await _setLocalImageAsCover(item.fullPathOrUrl);
       }
     } catch (_) {
       if (mounted) {
@@ -592,23 +606,119 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
     }
   }
 
-  List<PopupMenuEntry<_WorkEntryAction>> _entryMenuItems() {
+  Future<void> _renameLocalEntry(_WorkEntryItem item) async {
+    if (!widget.isLocal || item.fullPathOrUrl.isEmpty) return;
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
+    var name = PathDisplay.fileName(item.fullPathOrUrl, withoutExtension: true);
+    final targetName = await showAppDialog<String>(
+      context: context,
+      builder: (dialogContext) => AppDialog(
+        title: i18n.tr('audio_detail_rename_file'),
+        icon: Icons.drive_file_rename_outline_rounded,
+        content: TextFormField(
+          initialValue: name,
+          autofocus: true,
+          textInputAction: TextInputAction.done,
+          onChanged: (value) => name = value,
+          onFieldSubmitted: (value) => Navigator.of(dialogContext).pop(value),
+        ),
+        actions: AppDialogActions(
+          children: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: Text(i18n.tr('cancel')),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(name),
+              child: Text(
+                MaterialLocalizations.of(dialogContext).saveButtonLabel,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (targetName == null || !mounted) return;
+    try {
+      final oldPath = item.fullPathOrUrl;
+      final renamedPath = await ref
+          .read(libraryFacadeProvider)
+          .renameWorkEntryToName(
+            libraryRootPath: widget.localTarget!.targetPath,
+            entryPath: oldPath,
+            targetName: targetName,
+            isMedia: item.type == _WorkEntryType.audio,
+          );
+      if (_localManualCover == oldPath) {
+        await ref
+            .read(libraryFacadeProvider)
+            .setFolderManualCover(widget.localTarget!.targetPath, renamedPath);
+      }
+      if (!mounted) return;
+      await _loadLocalData();
+    } catch (_) {
+      if (!mounted) return;
+      showAppSnackBar(
+        context,
+        i18n.tr('audio_detail_rename_failed'),
+        tone: AppFeedbackTone.warning,
+      );
+    }
+  }
+
+  List<PopupMenuEntry<_WorkEntryAction>> _entryMenuItems(_WorkEntryItem item) {
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     final color = Theme.of(context).colorScheme.primary;
-    return [
-      for (final (action, icon, label) in [
-        (_WorkEntryAction.play, Icons.play_arrow_rounded, 'play'),
-        (
+    final actions = switch (item.type) {
+      _WorkEntryType.folder => const [
+        (_WorkEntryAction.open, Icons.folder_open_rounded, 'open'),
+      ],
+      _WorkEntryType.audio => [
+        const (_WorkEntryAction.play, Icons.play_arrow_rounded, 'play'),
+        const (
           _WorkEntryAction.add,
           Icons.playlist_add_rounded,
           'detail_add_to_queue',
         ),
-        (
+        if (widget.isLocal)
+          const (
+            _WorkEntryAction.rename,
+            Icons.drive_file_rename_outline_rounded,
+            'audio_detail_rename_file',
+          ),
+        const (
           _WorkEntryAction.remove,
           Icons.remove_circle_outline_rounded,
           'remove',
         ),
-      ])
+      ],
+      _WorkEntryType.text => [
+        const (_WorkEntryAction.open, Icons.open_in_new_rounded, 'open'),
+        if (widget.isLocal)
+          const (
+            _WorkEntryAction.rename,
+            Icons.drive_file_rename_outline_rounded,
+            'audio_detail_rename_file',
+          ),
+      ],
+      _WorkEntryType.image => [
+        const (_WorkEntryAction.open, Icons.open_in_new_rounded, 'open'),
+        if (widget.isLocal) ...const [
+          (
+            _WorkEntryAction.rename,
+            Icons.drive_file_rename_outline_rounded,
+            'audio_detail_rename_file',
+          ),
+          (
+            _WorkEntryAction.setCover,
+            Icons.photo_size_select_actual_outlined,
+            'audio_detail_set_cover',
+          ),
+        ],
+      ],
+    };
+    return [
+      for (final (action, icon, label) in actions)
         PopupMenuItem(
           value: action,
           height: 40,
@@ -635,7 +745,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
         overlay.globalToLocal(position) & Size.zero,
         overlay.size,
       ),
-      items: _entryMenuItems(),
+      items: _entryMenuItems(item),
     );
     if (mounted && action != null) await _handleEntryAction(item, action);
   }
@@ -1397,73 +1507,23 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
     required String keyPrefix,
     required List<Widget> children,
   }) {
-    return Stack(
-      clipBehavior: Clip.none,
-      children: [
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Row(children: children),
-        ),
-        Positioned(
-          top: 0,
-          left: 0,
-          bottom: 0,
-          width: 32,
-          child: _buildMetadataEdgeFade(
-            cs,
-            key: ValueKey<String>('work_detail_${keyPrefix}_left_edge_fade'),
-            left: true,
-          ),
-        ),
-        Positioned(
-          top: 0,
-          right: -16,
-          bottom: 0,
-          width: 48,
-          child: _buildMetadataEdgeFade(
-            cs,
-            key: ValueKey<String>('work_detail_${keyPrefix}_right_edge_fade'),
-            left: false,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildMetadataEdgeFade(
-    ColorScheme cs, {
-    required Key key,
-    required bool left,
-  }) {
-    return IgnorePointer(
-      key: key,
-      child: ShaderMask(
-        blendMode: BlendMode.dstIn,
-        shaderCallback: (bounds) => LinearGradient(
-          colors: left
-              ? const [Colors.black, Colors.transparent]
-              : const [Colors.transparent, Colors.black],
-        ).createShader(bounds),
-        child: ClipRect(
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 6, sigmaY: 1.5),
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: left
-                      ? [
-                          cs.surface.withValues(alpha: 0.86),
-                          cs.surface.withValues(alpha: 0),
-                        ]
-                      : [
-                          cs.surface.withValues(alpha: 0),
-                          cs.surface.withValues(alpha: 0.86),
-                        ],
-                ),
-              ),
-            ),
-          ),
-        ),
+    return ShaderMask(
+      key: ValueKey<String>('work_detail_${keyPrefix}_edge_fade'),
+      blendMode: BlendMode.dstIn,
+      shaderCallback: (bounds) => const LinearGradient(
+        colors: [
+          Colors.transparent,
+          Colors.black,
+          Colors.black,
+          Colors.transparent,
+        ],
+        stops: [0, 0.06, 0.94, 1],
+      ).createShader(bounds),
+      child: SingleChildScrollView(
+        key: ValueKey<String>('work_detail_${keyPrefix}_scroller'),
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        child: Row(children: children),
       ),
     );
   }
@@ -1476,31 +1536,36 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
   ) {
     switch (item.type) {
       case _WorkEntryType.folder:
-        return ListTile(
-          dense: true,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-          leading: const Icon(Icons.folder_rounded, color: Color(0xFFFFA000)),
-          title: Text(
-            item.name,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontWeight: FontWeight.w600),
-          ),
-          trailing: const Icon(Icons.chevron_right_rounded, size: 20),
-          onTap: () => _enterFolder(item.name),
-        );
-
-      case _WorkEntryType.audio:
-        final durationStr =
-            item.duration != null && item.duration! > Duration.zero
-            ? formatDurationCompact(item.duration!)
-            : '';
         return GestureDetector(
           onSecondaryTapDown: defaultTargetPlatform == TargetPlatform.windows
               ? (details) => _showEntryContextMenu(item, details.globalPosition)
               : null,
           child: ListTile(
             dense: true,
+            contentPadding: const EdgeInsets.only(left: 16),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+            leading: const Icon(Icons.folder_rounded, color: Color(0xFFFFA000)),
+            title: Text(
+              item.name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+            trailing: _buildEntryMoreButton(item),
+            onTap: () => _enterFolder(item.name),
+          ),
+        );
+
+      case _WorkEntryType.audio:
+        return GestureDetector(
+          onSecondaryTapDown: defaultTargetPlatform == TargetPlatform.windows
+              ? (details) => _showEntryContextMenu(item, details.globalPosition)
+              : null,
+          child: ListTile(
+            dense: true,
+            contentPadding: const EdgeInsets.only(left: 16),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(8),
             ),
@@ -1515,78 +1580,75 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (durationStr.isNotEmpty)
-                  Text(
-                    durationStr,
-                    style: Theme.of(
-                      context,
-                    ).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
-                  ),
-                const SizedBox(width: 4),
-                PopupMenuButton<_WorkEntryAction>(
-                  key: ValueKey('work_entry_more_${item.relativePath}'),
-                  icon: const Icon(Icons.more_vert_rounded, size: 22),
-                  tooltip: ref
-                      .read(appLanguageProviderInstanceProvider)
-                      .tr('more_actions'),
-                  itemBuilder: (_) => _entryMenuItems(),
-                  onSelected: (action) => _handleEntryAction(item, action),
-                ),
-              ],
-            ),
+            trailing: _buildEntryMoreButton(item),
             onTap: () => _handleEntryAction(item, _WorkEntryAction.play),
           ),
         );
 
       case _WorkEntryType.text:
-        return ListTile(
-          dense: true,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-          leading: Icon(Icons.description_outlined, color: cs.onSurfaceVariant),
-          title: Text(item.name, maxLines: 1, overflow: TextOverflow.ellipsis),
-          trailing: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-            decoration: BoxDecoration(
-              color: cs.surfaceContainerHighest,
-              borderRadius: BorderRadius.circular(4),
+        return GestureDetector(
+          onSecondaryTapDown: defaultTargetPlatform == TargetPlatform.windows
+              ? (details) => _showEntryContextMenu(item, details.globalPosition)
+              : null,
+          child: ListTile(
+            dense: true,
+            contentPadding: const EdgeInsets.only(left: 16),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
             ),
-            child: Text(
-              p.extension(item.name).toUpperCase().replaceAll('.', ''),
-              style: TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.bold,
-                color: cs.onSurfaceVariant,
-              ),
+            leading: Icon(
+              Icons.description_outlined,
+              color: cs.onSurfaceVariant,
             ),
+            title: Text(
+              item.name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            trailing: _buildEntryMoreButton(item),
+            onTap: () => _openTextFile(item),
           ),
-          onTap: () => _openTextFile(item),
         );
 
       case _WorkEntryType.image:
-        return ListTile(
-          dense: true,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-          leading: Icon(Icons.image_outlined, color: cs.onSurfaceVariant),
-          title: Text(item.name, maxLines: 1, overflow: TextOverflow.ellipsis),
-          trailing: widget.isLocal
-              ? IconButton(
-                  key: ValueKey<String>('set_cover_${item.name}'),
-                  icon: const Icon(
-                    Icons.photo_size_select_actual_outlined,
-                    size: 20,
-                  ),
-                  tooltip: ref
-                      .watch(appLanguageProviderInstanceProvider)
-                      .tr('audio_detail_set_cover'),
-                  onPressed: () => _setLocalImageAsCover(item.fullPathOrUrl),
-                )
+        return GestureDetector(
+          onSecondaryTapDown: defaultTargetPlatform == TargetPlatform.windows
+              ? (details) => _showEntryContextMenu(item, details.globalPosition)
               : null,
-          onTap: () => _openImageFile(item),
+          child: ListTile(
+            dense: true,
+            contentPadding: const EdgeInsets.only(left: 16),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+            leading: Icon(Icons.image_outlined, color: cs.onSurfaceVariant),
+            title: Text(
+              item.name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            trailing: _buildEntryMoreButton(item),
+            onTap: () => _openImageFile(item),
+          ),
         );
     }
+  }
+
+  Widget _buildEntryMoreButton(_WorkEntryItem item) {
+    return SizedBox.square(
+      dimension: 44,
+      child: PopupMenuButton<_WorkEntryAction>(
+        key: ValueKey<String>('work_entry_more_${item.relativePath}'),
+        padding: EdgeInsets.zero,
+        iconSize: 22,
+        icon: const Icon(Icons.more_vert_rounded),
+        tooltip: ref
+            .read(appLanguageProviderInstanceProvider)
+            .tr('more_actions'),
+        itemBuilder: (_) => _entryMenuItems(item),
+        onSelected: (action) => _handleEntryAction(item, action),
+      ),
+    );
   }
 }
 
@@ -1777,8 +1839,7 @@ class _WorkDetailHeaderDelegate extends SliverPersistentHeaderDelegate {
                                 defaultTargetPlatform != TargetPlatform.windows
                             ? null
                             : () => onCopyMetadata(circleName),
-                        onLongPress:
-                            circleName.isEmpty
+                        onLongPress: circleName.isEmpty
                             ? null
                             : defaultTargetPlatform == TargetPlatform.android
                             ? () => onCopyMetadata(circleName)

@@ -151,22 +151,28 @@ void main() {
     expect(tag, findsOneWidget);
     expect(tester.getSize(voiceActor).height, tester.getSize(tag).height);
     for (final key in <String>[
-      'work_detail_voice_actor_left_edge_fade',
-      'work_detail_voice_actor_right_edge_fade',
-      'work_detail_tag_left_edge_fade',
-      'work_detail_tag_right_edge_fade',
+      'work_detail_voice_actor_edge_fade',
+      'work_detail_tag_edge_fade',
     ]) {
       final fade = find.byKey(ValueKey<String>(key));
       expect(fade, findsOneWidget);
-      expect(tester.widget<IgnorePointer>(fade).ignoring, isTrue);
+      final mask = tester.widget<ShaderMask>(fade);
+      expect(mask.blendMode, BlendMode.dstIn);
+      final shader = mask.shaderCallback(const Rect.fromLTWH(0, 0, 320, 28));
+      expect(shader, isA<Shader>());
     }
-    final tagEdgeFade = find.byKey(
-      const ValueKey<String>('work_detail_tag_right_edge_fade'),
-    );
-    expect(
-      tester.getRect(tagEdgeFade).right,
-      MediaQuery.sizeOf(tester.element(tagEdgeFade)).width,
-    );
+    for (final key in <String>[
+      'work_detail_voice_actor_edge_fade',
+      'work_detail_tag_edge_fade',
+    ]) {
+      expect(
+        find.descendant(
+          of: find.byKey(ValueKey<String>(key)),
+          matching: find.byType(BackdropFilter),
+        ),
+        findsNothing,
+      );
+    }
     await tester.tap(voiceActor);
     await tester.pump();
     await tester.tap(find.byKey(const ValueKey<String>('work_detail_rj_copy')));

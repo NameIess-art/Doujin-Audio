@@ -49,10 +49,20 @@ class LibraryEntryEditorService {
   Future<String?> renameAudioDetailTarget(
     AudioDetailTarget target,
     String safeName,
-  ) async {
-    final oldPath = PathMatcher.normalize(target.targetPath);
+  ) => renameEntry(
+    target.targetPath,
+    safeName,
+    isDirectory: target.isLibraryRootFolder,
+  );
+
+  Future<String?> renameEntry(
+    String entryPath,
+    String safeName, {
+    required bool isDirectory,
+  }) async {
+    final oldPath = PathMatcher.normalize(entryPath);
     if (PathMatcher.isContentUri(oldPath)) {
-      final name = target.isLibraryRootFolder
+      final name = isDirectory
           ? safeName
           : '$safeName${_contentFileExtension(oldPath)}';
       final currentName = PathMatcher.lastContentPathSegment(oldPath);
@@ -68,14 +78,14 @@ class LibraryEntryEditorService {
       return renamedPath == null || renamedPath.isEmpty ? null : renamedPath;
     }
 
-    final newPath = target.isLibraryRootFolder
+    final newPath = isDirectory
         ? path.join(path.dirname(oldPath), safeName)
         : path.join(
             path.dirname(oldPath),
             '$safeName${path.extension(oldPath)}',
           );
     if (PathMatcher.equalsNormalized(oldPath, newPath)) return newPath;
-    if (target.isLibraryRootFolder) {
+    if (isDirectory) {
       await Directory(oldPath).rename(newPath);
     } else {
       await File(oldPath).rename(newPath);

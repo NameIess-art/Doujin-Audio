@@ -445,15 +445,18 @@ void main() {
     expect(view()?.showPauseIcon, isFalse);
 
     detailSession.beginPreparation(showLoading: true, autoPlay: false);
-    expect(view()?.isLoading, isFalse);
+    expect(view()?.isLoading, isTrue);
+    expect(view()?.isPlaybackLoading, isFalse);
     expect(view()?.showPauseIcon, isFalse);
 
     detailSession.beginPreparation(showLoading: false, autoPlay: true);
     expect(view()?.isLoading, isTrue);
+    expect(view()?.isPlaybackLoading, isTrue);
     expect(view()?.showPauseIcon, isTrue);
 
     detailSession.beginTransportCommand(commandId: 1, playing: false);
-    expect(view()?.isLoading, isFalse);
+    expect(view()?.isLoading, isTrue);
+    expect(view()?.isPlaybackLoading, isFalse);
     expect(view()?.showPauseIcon, isFalse);
 
     detailSession.finishPreparation(
@@ -556,7 +559,12 @@ void main() {
         PlaybackStateSliceData(activeSessions: [snapshot(detailSession)]),
         'detail',
       );
-      expect(delayedState?.isLoading, isTrue);
+      final delayedCardState = playlistSessionCardStatesFromPlaybackState(
+        PlaybackStateSliceData(activeSessions: [snapshot(detailSession)]),
+      )['detail'];
+      expect(delayedState?.isLoading, isFalse);
+      expect(delayedState?.isPlaybackLoading, isTrue);
+      expect(delayedCardState?.isLoading, isTrue);
 
       detailSession
         ..beginTransportCommand(commandId: 2, playing: false)

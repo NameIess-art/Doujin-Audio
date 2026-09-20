@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -9,6 +11,7 @@ import 'package:doujin_audio/core/media/audio_detail.dart';
 import 'package:doujin_audio/core/media/cover_image_resolution.dart';
 import 'package:doujin_audio/core/media/dlsite_metadata.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
+import 'package:doujin_audio/core/platform/file_cache_platform_gateway.dart';
 import 'package:doujin_audio/core/widgets/async_cover_image.dart';
 import 'package:doujin_audio/core/widgets/top_page_header.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_metadata_service.dart';
@@ -16,6 +19,7 @@ import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
 import 'package:doujin_audio/features/library/presentation/dlsite_metadata_review_page.dart';
 import 'package:doujin_audio/features/library/presentation/work_detail_page.dart';
 import 'package:doujin_audio/features/library/presentation/work_image_viewer_page.dart';
+import 'package:doujin_audio/features/library/application/work_text_service.dart';
 import 'support/app_runtime_test_fixture.dart';
 import 'support/test_playback_commands.dart';
 
@@ -35,6 +39,19 @@ class _WorkDetailAsmrMetadataService extends AsmrMetadataService {
   }
 }
 
+class _WorkDetailFileGateway extends Fake implements FileCachePlatformGateway {
+  _WorkDetailFileGateway(this.textFile);
+
+  final File textFile;
+
+  @override
+  Future<List<Map<String, String>>> discoverWorkTexts(String folderPath) async {
+    return [
+      {'name': 'notes.txt', 'relativePath': 'notes.txt', 'path': textFile.path},
+    ];
+  }
+}
+
 void main() {
   AppRuntimeTestFixture.initialize();
   late Database testDatabase;
@@ -48,6 +65,95 @@ void main() {
   });
 
   group('WorkDetailPage', () {
+    testWidgets('local text and image entries use contextual more menus', (
+      tester,
+    ) async {
+      SharedPreferences.setMockInitialValues(const <String, Object>{});
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      final root = (await tester.runAsync<Directory>(
+        () => Directory.systemTemp.createTemp('work_actions_'),
+      ))!;
+      addTearDown(() async {
+        PaintingBinding.instance.imageCache
+          ..clear()
+          ..clearLiveImages();
+        try {
+          if (await root.exists()) await root.delete(recursive: true);
+        } on FileSystemException {
+          // A failed assertion can leave the image decoder alive briefly.
+        }
+      });
+      final textFile = File('${root.path}${Platform.pathSeparator}notes.txt');
+      final imageFile = File('${root.path}${Platform.pathSeparator}cover.jpg');
+      await tester.runAsync(() async {
+        await textFile.writeAsString('notes');
+        await imageFile.writeAsBytes(const <int>[0xFF, 0xD8, 0xFF, 0xD9]);
+      });
+      fixture.library.addWatchedFolder(root.path, notify: false);
+      final target = AudioDetailTarget.libraryRootFolder(root.path);
+
+      await tester.pumpWidget(
+        fixture.build(
+          WorkDetailPage.forLocal(target: target),
+          overrides: [
+            workTextServiceProvider.overrideWithValue(
+              WorkTextService(
+                platformGateway: _WorkDetailFileGateway(textFile),
+              ),
+            ),
+          ],
+        ),
+      );
+      for (
+        var i = 0;
+        i < 40 && find.text('notes.txt').evaluate().isEmpty;
+        i++
+      ) {
+        await tester.pump(const Duration(milliseconds: 50));
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 10)),
+        );
+      }
+
+      final textMore = find.byKey(
+        const ValueKey<String>('work_entry_more_notes.txt'),
+      );
+      final imageMore = find.byKey(
+        const ValueKey<String>('work_entry_more_cover.jpg'),
+      );
+      expect(textMore, findsOneWidget);
+      expect(imageMore, findsOneWidget);
+
+      await tester.tap(imageMore);
+      await tester.pump(const Duration(milliseconds: 250));
+      expect(
+        find.text(fixture.languageProvider.tr('audio_detail_rename_file')),
+        findsOneWidget,
+      );
+      expect(
+        find.text(fixture.languageProvider.tr('audio_detail_set_cover')),
+        findsOneWidget,
+      );
+      await tester.tapAt(Offset.zero);
+      await tester.pump(const Duration(milliseconds: 500));
+
+      await tester.tap(textMore);
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(
+        find.text(fixture.languageProvider.tr('audio_detail_set_cover')),
+        findsNothing,
+      );
+      expect(
+        find.text(fixture.languageProvider.tr('audio_detail_rename_file')),
+        findsOneWidget,
+      );
+      await tester.pumpWidget(const SizedBox.shrink());
+      PaintingBinding.instance.imageCache
+        ..clear()
+        ..clearLiveImages();
+    });
+
     testWidgets(
       'audio and video menus add one item without starting playback and remove with undo',
       (tester) async {
@@ -113,12 +219,17 @@ void main() {
         }
         expect(find.text('Audio entry'), findsOneWidget);
         expect(find.byIcon(Icons.videocam_outlined), findsOneWidget);
+        expect(find.byIcon(Icons.more_vert_rounded), findsNWidgets(2));
         final more = find.byKey(
           ValueKey('work_entry_more_${tracks.first.path}'),
         );
         await tester.tap(more);
         await tester.pumpAndSettle();
         expect(find.text(fixture.languageProvider.tr('play')), findsOneWidget);
+        expect(
+          find.text(fixture.languageProvider.tr('audio_detail_rename_file')),
+          findsOneWidget,
+        );
         await tester.tap(
           find.text(fixture.languageProvider.tr('detail_add_to_queue')),
         );
@@ -520,13 +631,21 @@ void main() {
           find.byKey(const ValueKey<String>('work_image_blurred_backdrop')),
           findsOneWidget,
         );
+        final fullscreenPlaceholder = find.byKey(
+          const ValueKey<String>('work_image_fullscreen_placeholder'),
+        );
+        expect(fullscreenPlaceholder, findsOneWidget);
+        expect(
+          tester.getRect(fullscreenPlaceholder),
+          Offset.zero & tester.view.physicalSize / tester.view.devicePixelRatio,
+        );
         expect(find.byType(ImageFiltered), findsOneWidget);
         final pageView = tester.widget<PageView>(find.byType(PageView));
         expect(pageView.physics, isA<NeverScrollableScrollPhysics>());
-        final foregroundImages = tester.widgetList<LocalCoverImage>(
+        final foregroundImages = tester.widgetList<RetryingFileImage>(
           find.descendant(
             of: find.byKey(const ValueKey<String>('work_image_viewport')),
-            matching: find.byType(LocalCoverImage),
+            matching: find.byType(RetryingFileImage),
           ),
         );
         expect(foregroundImages, isNotEmpty);
@@ -571,6 +690,14 @@ void main() {
 
         expect(find.text('2 / 2'), findsOneWidget);
         expect(find.text('02.jpg'), findsOneWidget);
+
+        // Next wraps to the first image and previous wraps back to the last.
+        await tester.tap(nextBtn);
+        await tester.pumpAndSettle();
+        expect(find.text('1 / 2'), findsOneWidget);
+        await tester.tap(prevBtn);
+        await tester.pumpAndSettle();
+        expect(find.text('2 / 2'), findsOneWidget);
 
         // Set as cover button
         final setCoverBtn = find.byKey(

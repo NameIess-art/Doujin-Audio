@@ -353,10 +353,14 @@ final class LibraryFacade implements LibraryCatalog {
 
   Future<bool> exportTimeSegmentLabels(String trackKey) async {
     final track = _service.library
-        .where((t) => !t.isRemoteAsmr && PathMatcher.normalize(t.path) == trackKey)
+        .where(
+          (t) => !t.isRemoteAsmr && PathMatcher.normalize(t.path) == trackKey,
+        )
         .firstOrNull;
     if (track == null) return true;
-    return detailCacheService.exportTimeSegments(audioDetailTargetForTrack(track));
+    return detailCacheService.exportTimeSegments(
+      audioDetailTargetForTrack(track),
+    );
   }
 
   Future<void> deleteAudioDetail(AudioDetailTarget target) =>
@@ -392,7 +396,9 @@ final class LibraryFacade implements LibraryCatalog {
 
   Future<void> backfillMissingLibraryDurations({
     Future<Duration?> Function(String path)? durationReader,
-  }) => _metadataCoordinator.backfillMissingDurations(durationReader: durationReader);
+  }) => _metadataCoordinator.backfillMissingDurations(
+    durationReader: durationReader,
+  );
 
   Future<Duration?> calculateMissingLibraryDuration(
     String targetPath, {
@@ -465,43 +471,61 @@ final class LibraryFacade implements LibraryCatalog {
   String? resolvedPlaybackCoverPathForTrack(
     MusicTrack? track, {
     String? trackPath,
-  }) => _metadataCoordinator.resolvedPlaybackCoverForTrack(track, trackPath: trackPath);
+  }) => _metadataCoordinator.resolvedPlaybackCoverForTrack(
+    track,
+    trackPath: trackPath,
+  );
 
-  String? resolvedCoverPathForRemoteCover(String url) => _metadataCoordinator.resolvedRemoteCover(url);
+  String? resolvedCoverPathForRemoteCover(String url) =>
+      _metadataCoordinator.resolvedRemoteCover(url);
 
-  String? resolvedCoverPathForFolder(String folderPath) => _metadataCoordinator.resolvedFolderCover(folderPath);
+  String? resolvedCoverPathForFolder(String folderPath) =>
+      _metadataCoordinator.resolvedFolderCover(folderPath);
 
   Future<String?> coverPathFutureForTrack(
     MusicTrack? track, {
     String? trackPath,
   }) => _metadataCoordinator.coverForTrack(track, trackPath: trackPath);
 
-  String? resolvedEmbeddedCoverPathForFile(String filePath) => _metadataCoordinator.resolvedEmbeddedCoverForPath(filePath);
+  String? resolvedEmbeddedCoverPathForFile(String filePath) =>
+      _metadataCoordinator.resolvedEmbeddedCoverForPath(filePath);
 
-  Future<String?> embeddedCoverPathFutureForFile(String filePath) => _metadataCoordinator.resolveEmbeddedCoverForPath(filePath);
+  Future<String?> embeddedCoverPathFutureForFile(String filePath) =>
+      _metadataCoordinator.resolveEmbeddedCoverForPath(filePath);
 
   Future<String?> playbackCoverPathFutureForTrack(
     MusicTrack? track, {
     String? trackPath,
   }) => _metadataCoordinator.playbackCoverForTrack(track, trackPath: trackPath);
 
-  Future<String?> coverPathFutureForFolder(String folderPath) => _metadataCoordinator.coverForFolder(folderPath);
+  Future<String?> coverPathFutureForFolder(String folderPath) =>
+      _metadataCoordinator.coverForFolder(folderPath);
 
-  Future<String?> coverPathFutureForRemoteCover(String url) => _metadataCoordinator.coverForRemote(url);
+  Future<String?> coverPathFutureForRemoteCover(String url) =>
+      _metadataCoordinator.coverForRemote(url);
 
   Future<List<String>> discoverCoverCandidatesInFolder(
     String folderPath, {
     String? selectedCoverPath,
-  }) => _metadataCoordinator.discoverCoverCandidates(folderPath, selectedCoverPath: selectedCoverPath);
+  }) => _metadataCoordinator.discoverCoverCandidates(
+    folderPath,
+    selectedCoverPath: selectedCoverPath,
+  );
 
   Future<String?> setFolderManualCover(
     String folderPath,
     String imagePath, {
     bool newlySaved = false,
     String? sourcePath,
-  }) => _metadataCoordinator.setFolderManualCover(folderPath, imagePath, newlySaved: newlySaved, sourcePath: sourcePath);
+  }) => _metadataCoordinator.setFolderManualCover(
+    folderPath,
+    imagePath,
+    newlySaved: newlySaved,
+    sourcePath: sourcePath,
+  );
 
-  void invalidateCoverArtwork() => _metadataCoordinator.invalidateCoverArtwork();
+  void invalidateCoverArtwork() =>
+      _metadataCoordinator.invalidateCoverArtwork();
 
   Future<DlsiteMetadataApplyResult> applyDlsiteMetadata(
     AudioDetail detail,
@@ -843,6 +867,24 @@ final class LibraryFacade implements LibraryCatalog {
         detail: result.detail,
         renamed: result.renamed,
         backupFailed: result.backupFailed,
+      );
+    } on LibraryMutationRenameException catch (error) {
+      throw AudioDetailRenameException(error.reason);
+    }
+  }
+
+  Future<String> renameWorkEntryToName({
+    required String libraryRootPath,
+    required String entryPath,
+    required String targetName,
+    required bool isMedia,
+  }) async {
+    try {
+      return await _mutationCoordinator.renameWorkEntryToName(
+        libraryRootPath: libraryRootPath,
+        entryPath: entryPath,
+        targetName: targetName,
+        isMedia: isMedia,
       );
     } on LibraryMutationRenameException catch (error) {
       throw AudioDetailRenameException(error.reason);

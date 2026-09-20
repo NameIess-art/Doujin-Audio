@@ -403,12 +403,14 @@ class _RoutedPlaybackDock extends ConsumerStatefulWidget {
     required this.obscured,
     required this.navigatorKey,
     required this.currentRoute,
+    required this.geometry,
   });
 
   final bool active;
   final bool obscured;
   final GlobalKey<NavigatorState> navigatorKey;
   final Route<dynamic>? currentRoute;
+  final PlaybackDockGeometryController geometry;
 
   @override
   ConsumerState<_RoutedPlaybackDock> createState() =>
@@ -420,16 +422,27 @@ class _RoutedPlaybackDockState extends ConsumerState<_RoutedPlaybackDock> {
   Timer? _hideTimer;
   late bool _visible = widget.active;
   bool _expanded = false;
+  final GlobalKey _dockBoundsKey = GlobalKey();
+  double? _dockRight;
 
   @override
   void initState() {
     super.initState();
+    widget.geometry.addListener(_handleGeometryChanged);
     if (widget.active) _scheduleExpansion();
+  }
+
+  void _handleGeometryChanged() {
+    if (mounted && _visible && !_expanded) setState(() {});
   }
 
   @override
   void didUpdateWidget(covariant _RoutedPlaybackDock oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.geometry != widget.geometry) {
+      oldWidget.geometry.removeListener(_handleGeometryChanged);
+      widget.geometry.addListener(_handleGeometryChanged);
+    }
     if (widget.active == oldWidget.active) return;
     _hideTimer?.cancel();
     if (widget.active) {
@@ -449,13 +462,41 @@ class _RoutedPlaybackDockState extends ConsumerState<_RoutedPlaybackDock> {
 
   void _scheduleExpansion() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted && widget.active) setState(() => _expanded = true);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && widget.active) setState(() => _expanded = true);
+      });
     });
+  }
+
+  void _reportDockBounds() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final box =
+          _dockBoundsKey.currentContext?.findRenderObject() as RenderBox?;
+      if (box == null || !box.hasSize) return;
+      final right = box.localToGlobal(Offset.zero).dx + box.size.width;
+      if (_dockRight == right) return;
+      setState(() => _dockRight = right);
+    });
+  }
+
+  double _transitionWidth(double maxWidth) {
+    final mainCover = widget.geometry.mainCoverRect;
+    final dockRight = _dockRight ?? widget.geometry.mainDockRight;
+    if (mainCover == null || dockRight == null) {
+      return kActiveSessionCarouselDockHeight;
+    }
+    const coverCenterInset = kActiveSessionCarouselDockHeight / 2;
+    return (dockRight - mainCover.center.dx + coverCenterInset).clamp(
+      kActiveSessionCarouselDockHeight,
+      maxWidth,
+    );
   }
 
   @override
   void dispose() {
     _hideTimer?.cancel();
+    widget.geometry.removeListener(_handleGeometryChanged);
     super.dispose();
   }
 
@@ -492,40 +533,47 @@ class _RoutedPlaybackDockState extends ConsumerState<_RoutedPlaybackDock> {
                 widthFactor: 0.96,
                 child: LayoutBuilder(
                   builder: (context, constraints) {
+                    _reportDockBounds();
                     return Align(
                       alignment: Alignment.centerRight,
-                      child: AnimatedContainer(
+                      child: SizedBox(
                         key: const ValueKey<String>(
                           'routed_playback_dock_width',
                         ),
-                        duration: duration,
-                        curve: Curves.easeOutCubic,
-                        width: _expanded
-                            ? constraints.maxWidth
-                            : kActiveSessionCarouselDockHeight,
-                        height: kActiveSessionCarouselDockHeight,
-                        child: AppDockGlassPanel(
-                          key: const ValueKey<String>('routed_playback_dock'),
-                          shadowOpacity: 0.12,
-                          showTopHighlight: false,
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(
-                              kActiveSessionCarouselDockHeight / 2,
-                            ),
-                            child: ActiveSessionCarousel(
-                              sessions: sessions,
-                              i18n: i18n,
-                              viewportFraction: 1,
-                              presentation:
-                                  ActiveSessionCarouselPresentation.embedded,
-                              onOpenSession: (sessionId) {
-                                if (widget.currentRoute is SessionDetailRoute) {
-                                  return;
-                                }
-                                widget.navigatorKey.currentState?.push(
-                                  buildSessionDetailRoute(sessionId: sessionId),
-                                );
-                              },
+                        child: AnimatedContainer(
+                          key: _dockBoundsKey,
+                          duration: duration,
+                          curve: Curves.easeOutCubic,
+                          width: _expanded
+                              ? constraints.maxWidth
+                              : _transitionWidth(constraints.maxWidth),
+                          height: kActiveSessionCarouselDockHeight,
+                          child: AppDockGlassPanel(
+                            key: const ValueKey<String>('routed_playback_dock'),
+                            shadowOpacity: 0.12,
+                            showTopHighlight: false,
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(
+                                kActiveSessionCarouselDockHeight / 2,
+                              ),
+                              child: ActiveSessionCarousel(
+                                sessions: sessions,
+                                i18n: i18n,
+                                viewportFraction: 1,
+                                presentation:
+                                    ActiveSessionCarouselPresentation.embedded,
+                                onOpenSession: (sessionId) {
+                                  if (widget.currentRoute
+                                      is SessionDetailRoute) {
+                                    return;
+                                  }
+                                  widget.navigatorKey.currentState?.push(
+                                    buildSessionDetailRoute(
+                                      sessionId: sessionId,
+                                    ),
+                                  );
+                                },
+                              ),
                             ),
                           ),
                         ),
@@ -574,6 +622,7 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp> {
   final _navigatorKey = GlobalKey<NavigatorState>();
   final ValueNotifier<int> _routeRevision = ValueNotifier(0);
   late final _RootPageRouteObserver _routeObserver;
+  late final PlaybackDockGeometryController _playbackDockGeometry;
   var _restoreOutcomeScheduled = false;
   var _runtimeBootstrapSettledNotified = false;
   StreamSubscription<VideoConversionResult>? _conversionSubscription;
@@ -582,6 +631,7 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp> {
   void initState() {
     super.initState();
     _routeObserver = _RootPageRouteObserver(_routeRevision);
+    _playbackDockGeometry = PlaybackDockGeometryController();
     // Register root-owned disposal even when onboarding hides the ASMR page.
     ref.read(asmrLibraryControllerProvider);
     _runtimeBootstrapController = AppBootstrapController(
@@ -605,6 +655,7 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp> {
     _runtimeBootstrapController.removeListener(_handleRuntimeBootstrapState);
     _runtimeBootstrapController.dispose();
     _routeObserver.dispose();
+    _playbackDockGeometry.dispose();
     _routeRevision.dispose();
     super.dispose();
   }
@@ -780,6 +831,7 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp> {
                         obscured: isRouteAboveWorkDetail,
                         navigatorKey: _navigatorKey,
                         currentRoute: _routeObserver.topRoute,
+                        geometry: _playbackDockGeometry,
                       ),
                     ),
                   ],
@@ -796,8 +848,12 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp> {
           controller: _runtimeBootstrapController,
           disposeController: false,
           readyBuilder: (_) => defaultTargetPlatform == TargetPlatform.windows
-              ? const MainScreen()
-              : const GlobalShortcuts(child: MainScreen()),
+              ? MainScreen(playbackDockGeometry: _playbackDockGeometry)
+              : GlobalShortcuts(
+                  child: MainScreen(
+                    playbackDockGeometry: _playbackDockGeometry,
+                  ),
+                ),
           loadingBuilder: (_) => const AppBootstrapLoadingView(),
           failureBuilder: (_, state) => AppErrorView(
             error: state.error ?? StateError('Unknown runtime startup failure'),

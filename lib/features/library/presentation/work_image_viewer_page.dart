@@ -76,7 +76,10 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage> {
   }
 
   void _goToPrevious() {
-    if (_currentIndex > 0) {
+    if (widget.images.length < 2) return;
+    if (_currentIndex == 0) {
+      _pageController.jumpToPage(widget.images.length - 1);
+    } else {
       _pageController.previousPage(
         duration: const Duration(milliseconds: 250),
         curve: Curves.easeOutCubic,
@@ -85,7 +88,10 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage> {
   }
 
   void _goToNext() {
-    if (_currentIndex < widget.images.length - 1) {
+    if (widget.images.length < 2) return;
+    if (_currentIndex == widget.images.length - 1) {
+      _pageController.jumpToPage(0);
+    } else {
       _pageController.nextPage(
         duration: const Duration(milliseconds: 250),
         curve: Curves.easeOutCubic,
@@ -130,6 +136,7 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage> {
     WorkImageItem image, {
     required BoxFit fit,
     required bool showFallbackIcon,
+    bool showFallbackArtwork = true,
   }) {
     final imagePath = image.path.trim();
     final isRemoteImage =
@@ -140,21 +147,33 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage> {
         fit: fit,
         displayMode: CoverImageDisplayMode.fill,
         useDefaultCacheWidth: false,
-        fallbackBuilder: (_) => CoverFallbackArtwork(
-          seed: imagePath,
-          showIcon: showFallbackIcon,
-          icon: Icons.broken_image_rounded,
-        ),
+        loadingBuilder: showFallbackArtwork
+            ? null
+            : (_) => const SizedBox.expand(),
+        fallbackBuilder: (_) => showFallbackArtwork
+            ? CoverFallbackArtwork(
+                seed: imagePath,
+                showIcon: showFallbackIcon,
+                icon: Icons.broken_image_rounded,
+              )
+            : const SizedBox.expand(),
       );
     }
-    return LocalCoverImage(
+    return RetryingFileImage(
       path: imagePath,
-      seed: imagePath,
       fit: fit,
       displayMode: CoverImageDisplayMode.fill,
       useDefaultCacheWidth: false,
-      showIcon: showFallbackIcon,
-      icon: Icons.broken_image_rounded,
+      loadingBuilder: showFallbackArtwork
+          ? null
+          : (_) => const SizedBox.expand(),
+      fallbackBuilder: (_) => showFallbackArtwork
+          ? CoverFallbackArtwork(
+              seed: imagePath,
+              showIcon: showFallbackIcon,
+              icon: Icons.broken_image_rounded,
+            )
+          : const SizedBox.expand(),
     );
   }
 
@@ -174,9 +193,6 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage> {
     }
 
     final currentImage = widget.images[_currentIndex];
-    final hasPrevious = _currentIndex > 0;
-    final hasNext = _currentIndex < widget.images.length - 1;
-
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final box = _headerKey.currentContext?.findRenderObject() as RenderBox?;
@@ -197,6 +213,14 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage> {
       backgroundColor: Colors.black,
       body: Stack(
         children: [
+          Positioned.fill(
+            key: const ValueKey<String>('work_image_fullscreen_placeholder'),
+            child: CoverFallbackArtwork(
+              seed: currentImage.path,
+              showIcon: true,
+              icon: Icons.broken_image_rounded,
+            ),
+          ),
           Positioned.fill(
             key: const ValueKey<String>('work_image_blurred_backdrop'),
             child: ClipRect(
@@ -233,6 +257,7 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage> {
                       img,
                       fit: BoxFit.contain,
                       showFallbackIcon: true,
+                      showFallbackArtwork: false,
                     ),
                   ),
                 );
@@ -329,7 +354,7 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage> {
                       ),
                       icon: const Icon(Icons.chevron_left_rounded),
                       tooltip: 'Previous',
-                      onPressed: hasPrevious ? _goToPrevious : null,
+                      onPressed: _goToPrevious,
                     ),
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 6),
@@ -353,7 +378,7 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage> {
                       ),
                       icon: const Icon(Icons.chevron_right_rounded),
                       tooltip: 'Next',
-                      onPressed: hasNext ? _goToNext : null,
+                      onPressed: _goToNext,
                     ),
                   ],
                 ),

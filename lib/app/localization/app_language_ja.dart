@@ -63,6 +63,7 @@ const Map<String, String> appLanguageJa = {
   'import_library': 'ライブラリを追加',
   'refresh_watched_folder': '監視フォルダを更新',
   'more_actions': 'その他の操作',
+  'open': '開く',
   'detail_add_to_queue': 'リストに追加',
   'track_added_to_playlist': 'プレイリストに追加しました',
   'track_already_in_playlist': 'この項目は既にプレイリストにあります',

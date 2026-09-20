@@ -10,6 +10,7 @@ import 'package:doujin_audio/app/state/app_runtime_providers.dart';
 import 'package:flutter/foundation.dart';
 import 'package:doujin_audio/core/platform/file_cache_platform_gateway.dart';
 import 'package:doujin_audio/core/widgets/app_edge_fade_mask.dart';
+import 'package:doujin_audio/core/widgets/page_header_inset.dart';
 import 'package:doujin_audio/core/widgets/top_page_header.dart';
 import 'package:doujin_audio/features/library/application/work_text_service.dart';
 import 'package:doujin_audio/features/library/presentation/work_text_viewer_page.dart';
@@ -73,15 +74,17 @@ void main() {
               builder: (context) => Scaffold(
                 body: ElevatedButton(
                   onPressed: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                        builder: (_) => const WorkTextViewerPage(
-                          files: [file1, file2, file3],
-                        ),
-                      ),
-                    ).then((_) {
-                      popped = true;
-                    });
+                    Navigator.of(context)
+                        .push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => const WorkTextViewerPage(
+                              files: [file1, file2, file3],
+                            ),
+                          ),
+                        )
+                        .then((_) {
+                          popped = true;
+                        });
                   },
                   child: const Text('Open'),
                 ),
@@ -100,13 +103,19 @@ void main() {
       // Bottom-right switcher displays 1/3
       expect(find.text('1/3'), findsOneWidget);
 
-      // Prev button is disabled at index 0
-      final prevBtnFinder = find.widgetWithIcon(IconButton, Icons.chevron_left_rounded);
+      // Both directions stay available and wrap at the list edges.
+      final prevBtnFinder = find.widgetWithIcon(
+        IconButton,
+        Icons.chevron_left_rounded,
+      );
       final prevBtn = tester.widget<IconButton>(prevBtnFinder);
-      expect(prevBtn.onPressed, isNull);
+      expect(prevBtn.onPressed, isNotNull);
 
       // Next button is enabled
-      final nextBtnFinder = find.widgetWithIcon(IconButton, Icons.chevron_right_rounded);
+      final nextBtnFinder = find.widgetWithIcon(
+        IconButton,
+        Icons.chevron_right_rounded,
+      );
       final nextBtn = tester.widget<IconButton>(nextBtnFinder);
       expect(nextBtn.onPressed, isNotNull);
 
@@ -119,7 +128,7 @@ void main() {
       expect(find.text('02_特典台本.txt'), findsNothing);
       expect(find.text('2/3'), findsOneWidget);
 
-      // Both prev and next are enabled at index 1
+      // Both prev and next are enabled at index 1.
       expect(tester.widget<IconButton>(prevBtnFinder).onPressed, isNotNull);
       expect(tester.widget<IconButton>(nextBtnFinder).onPressed, isNotNull);
 
@@ -130,10 +139,25 @@ void main() {
       expect(find.text('readme'), findsOneWidget);
       expect(find.text('readme.txt'), findsNothing);
       expect(find.text('3/3'), findsOneWidget);
-      expect(tester.widget<IconButton>(nextBtnFinder).onPressed, isNull);
+      expect(tester.widget<IconButton>(nextBtnFinder).onPressed, isNotNull);
+
+      // Next wraps from the last file back to the first.
+      await tester.tap(nextBtnFinder);
+      await tester.pumpAndSettle();
+      expect(find.text('01_トラック台本'), findsOneWidget);
+      expect(find.text('1/3'), findsOneWidget);
+
+      // Previous wraps from the first file to the last.
+      await tester.tap(prevBtnFinder);
+      await tester.pumpAndSettle();
+      expect(find.text('readme'), findsOneWidget);
+      expect(find.text('3/3'), findsOneWidget);
 
       // Test exit button in title bar
-      final backButton = find.widgetWithIcon(IconButton, Icons.arrow_back_rounded);
+      final backButton = find.widgetWithIcon(
+        IconButton,
+        Icons.arrow_back_rounded,
+      );
       expect(backButton, findsOneWidget);
       await tester.tap(backButton);
       await tester.pumpAndSettle();
@@ -161,11 +185,7 @@ void main() {
               WorkTextService(platformGateway: fakeGateway),
             ),
           ],
-          child: const MaterialApp(
-            home: WorkTextViewerPage(
-              files: [file1],
-            ),
-          ),
+          child: const MaterialApp(home: WorkTextViewerPage(files: [file1])),
         ),
       );
       await tester.pumpAndSettle();
@@ -176,54 +196,52 @@ void main() {
     },
   );
 
-  testWidgets(
-    'WorkTextViewerPage allows scrolling text up and down smoothly',
-    (tester) async {
-      SharedPreferences.setMockInitialValues(const <String, Object>{});
-      final language = AppLanguageProvider();
-      addTearDown(language.dispose);
-      await language.setLanguage(AppLanguage.zh);
+  testWidgets('WorkTextViewerPage allows scrolling text up and down smoothly', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues(const <String, Object>{});
+    final language = AppLanguageProvider();
+    addTearDown(language.dispose);
+    await language.setLanguage(AppLanguage.zh);
 
-      final longText = List.generate(100, (i) => 'Line $i: 台本文本测试内容').join('\n');
-      final fakeGateway = _FakeFileCacheGateway({
-        file1.path: Uint8List.fromList(utf8.encode(longText)),
-      });
+    final longText = List.generate(100, (i) => 'Line $i: 台本文本测试内容').join('\n');
+    final fakeGateway = _FakeFileCacheGateway({
+      file1.path: Uint8List.fromList(utf8.encode(longText)),
+    });
 
-      await tester.pumpWidget(
-        ProviderScope(
-          overrides: [
-            appLanguageProviderInstanceProvider.overrideWithValue(language),
-            workTextServiceProvider.overrideWithValue(
-              WorkTextService(platformGateway: fakeGateway),
-            ),
-          ],
-          child: const MaterialApp(
-            home: WorkTextViewerPage(
-              files: [file1],
-            ),
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appLanguageProviderInstanceProvider.overrideWithValue(language),
+          workTextServiceProvider.overrideWithValue(
+            WorkTextService(platformGateway: fakeGateway),
           ),
-        ),
-      );
-      await tester.pumpAndSettle();
+        ],
+        child: const MaterialApp(home: WorkTextViewerPage(files: [file1])),
+      ),
+    );
+    await tester.pumpAndSettle();
 
-      final scrollableFinder = find.byType(Scrollable);
-      expect(scrollableFinder, findsOneWidget);
-      final scrollableState = tester.state<ScrollableState>(scrollableFinder);
-      expect(scrollableState.position.pixels, 0.0);
+    final scrollableFinder = find.byType(Scrollable);
+    expect(scrollableFinder, findsOneWidget);
+    final scrollableState = tester.state<ScrollableState>(scrollableFinder);
+    expect(scrollableState.position.pixels, 0.0);
 
-      // Drag up to scroll down
-      await tester.drag(find.byType(SingleChildScrollView), const Offset(0, -300));
-      await tester.pumpAndSettle();
+    // Drag up to scroll down
+    await tester.drag(
+      find.byType(SingleChildScrollView),
+      const Offset(0, -300),
+    );
+    await tester.pumpAndSettle();
 
-      expect(scrollableState.position.pixels, greaterThan(200.0));
+    expect(scrollableState.position.pixels, greaterThan(200.0));
 
-      // Drag down to scroll back up
-      await tester.drag(find.byType(SingleChildScrollView), const Offset(0, 300));
-      await tester.pumpAndSettle();
+    // Drag down to scroll back up
+    await tester.drag(find.byType(SingleChildScrollView), const Offset(0, 300));
+    await tester.pumpAndSettle();
 
-      expect(scrollableState.position.pixels, lessThan(50.0));
-    },
-  );
+    expect(scrollableState.position.pixels, lessThan(50.0));
+  });
 
   testWidgets(
     'WorkTextViewerPage lazily appends large text documents near the scroll end',
@@ -300,11 +318,7 @@ void main() {
               WorkTextService(platformGateway: fakeGateway),
             ),
           ],
-          child: const MaterialApp(
-            home: WorkTextViewerPage(
-              files: [mdFile],
-            ),
-          ),
+          child: const MaterialApp(home: WorkTextViewerPage(files: [mdFile])),
         ),
       );
       await tester.pumpAndSettle();
@@ -400,9 +414,7 @@ void main() {
             ),
           ],
           child: const MaterialApp(
-            home: WorkTextViewerPage(
-              files: [txtFile, mdFile],
-            ),
+            home: WorkTextViewerPage(files: [txtFile, mdFile]),
           ),
         ),
       );
@@ -413,7 +425,10 @@ void main() {
       expect(find.text('1/2'), findsOneWidget);
 
       // Switch to .md file
-      final nextBtnFinder = find.widgetWithIcon(IconButton, Icons.chevron_right_rounded);
+      final nextBtnFinder = find.widgetWithIcon(
+        IconButton,
+        Icons.chevron_right_rounded,
+      );
       await tester.tap(nextBtnFinder);
       await tester.pumpAndSettle();
 
@@ -448,11 +463,7 @@ void main() {
               WorkTextService(platformGateway: fakeGateway),
             ),
           ],
-          child: const MaterialApp(
-            home: WorkTextViewerPage(
-              files: [pdfFile],
-            ),
-          ),
+          child: const MaterialApp(home: WorkTextViewerPage(files: [pdfFile])),
         ),
       );
       await tester.pumpAndSettle();
@@ -484,11 +495,7 @@ void main() {
               WorkTextService(platformGateway: fakeGateway),
             ),
           ],
-          child: const MaterialApp(
-            home: WorkTextViewerPage(
-              files: [file1],
-            ),
-          ),
+          child: const MaterialApp(home: WorkTextViewerPage(files: [file1])),
         ),
       );
       await tester.pumpAndSettle();
@@ -530,11 +537,7 @@ void main() {
                 WorkTextService(platformGateway: fakeGateway),
               ),
             ],
-            child: const MaterialApp(
-              home: WorkTextViewerPage(
-                files: [file1],
-              ),
-            ),
+            child: const MaterialApp(home: WorkTextViewerPage(files: [file1])),
           ),
         );
         await tester.pumpAndSettle();
@@ -544,10 +547,9 @@ void main() {
         expect(scrollableFinder, findsOneWidget);
 
         final scrollableContext = tester.element(scrollableFinder);
-        final mediaQuery = MediaQuery.of(scrollableContext);
 
-        // Top padding on Windows is contentTopInset (58.0 without system status bar) so scrollbar starts below title bar
-        expect(mediaQuery.padding.top, greaterThanOrEqualTo(58.0));
+        // The custom desktop scrollbar reads the shared page-header inset.
+        expect(PageHeaderInset.of(scrollableContext), greaterThanOrEqualTo(58));
       } finally {
         debugDefaultTargetPlatformOverride = null;
       }

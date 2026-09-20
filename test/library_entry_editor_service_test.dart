@@ -2,8 +2,24 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/core/media/audio_detail.dart';
+import 'package:doujin_audio/core/platform/file_cache_platform_gateway.dart';
 import 'package:doujin_audio/features/library/application/library_entry_editor_service.dart';
 import 'package:path/path.dart' as path;
+
+class _RenameDocumentGateway extends Fake implements FileCachePlatformGateway {
+  String? renamedPath;
+  String? renamedName;
+
+  @override
+  Future<Map<String, Object?>?> renameDocument({
+    required String path,
+    required String name,
+  }) async {
+    renamedPath = path;
+    renamedName = name;
+    return <String, Object?>{'path': '$path::renamed/$name'};
+  }
+}
 
 void main() {
   test('enumerates supported media recursively in natural order', () async {
@@ -57,6 +73,37 @@ void main() {
     expect(path.basename(renamed!), 'New Title.mp3');
     expect(await File(renamed).exists(), isTrue);
     expect(await source.exists(), isFalse);
+  });
+
+  test('renames a work file while preserving its original extension', () async {
+    final root = await Directory.systemTemp.createTemp('work_entry_rename_');
+    addTearDown(() => root.delete(recursive: true));
+    final source = File(path.join(root.path, 'cover.original.jpg'));
+    await source.writeAsBytes(const <int>[1]);
+
+    final renamed = await LibraryEntryEditorService(
+      isAndroid: () => false,
+    ).renameEntry(source.path, 'Front Cover', isDirectory: false);
+
+    expect(path.basename(renamed!), 'Front Cover.jpg');
+    expect(await File(renamed).exists(), isTrue);
+    expect(await source.exists(), isFalse);
+  });
+
+  test('renames a SAF work file through renameDocument', () async {
+    const source =
+        'content://com.android.externalstorage.documents/tree/'
+        'primary%3AASMR/document/primary%3AASMR%2Fcover.original.jpg';
+    final gateway = _RenameDocumentGateway();
+
+    final renamed = await LibraryEntryEditorService(
+      fileCacheGateway: gateway,
+      isAndroid: () => true,
+    ).renameEntry(source, 'Front Cover', isDirectory: false);
+
+    expect(gateway.renamedPath, source);
+    expect(gateway.renamedName, 'Front Cover.jpg');
+    expect(renamed, '$source::renamed/Front Cover.jpg');
   });
 
   test('builds restorable tracks from supported local files', () async {

@@ -372,6 +372,10 @@ class _RootPageRouteObserver extends NavigatorObserver {
     });
   }
 
+  void _syncImmediately() {
+    if (!_disposed) revision.value++;
+  }
+
   void dispose() {
     _disposed = true;
     for (final listener in _routeAnimationListeners.values) {
@@ -420,7 +424,9 @@ class _RootPageRouteObserver extends NavigatorObserver {
       final workDetailIndex = _routes.lastIndexWhere(
         (candidate) => candidate.settings.name == workDetailRouteName,
       );
-      if (workDetailIndex >= 0 && _routes.indexOf(route) > workDetailIndex) {
+      if (workDetailIndex >= 0 &&
+          _routes.indexOf(route) > workDetailIndex &&
+          route.reverseTransitionDuration > Duration.zero) {
         _departingRoutes.add(route);
       }
       _routes.remove(route);
@@ -429,7 +435,7 @@ class _RootPageRouteObserver extends NavigatorObserver {
         route.completed.then((_) {
           _departingRoutes.remove(route);
           _untrackAnimation(route);
-          _sync();
+          _syncImmediately();
         }),
       );
     }
@@ -807,26 +813,33 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp> {
         defaultTargetPlatform != TargetPlatform.windows &&
         mediaQuery.orientation == Orientation.portrait &&
         mediaQuery.size.width < 980;
-    final routeActive = _routeObserver.containsRouteNamed(workDetailRouteName);
     return Positioned(
       left: 0,
       right: 0,
       bottom: 0,
-      child: Consumer(
-        builder: (context, ref, _) => _RoutedPlaybackDock(
-          active:
-              routeActive &&
-              supportsRoutedDock &&
-              ref.watch(
-                mainOverlayUiProvider.select(
-                  (state) => state.overlaySessions.isNotEmpty,
-                ),
-              ),
-          obscured: _routeObserver.hasRouteAboveNamed(workDetailRouteName),
-          navigatorKey: _navigatorKey,
-          currentRoute: _routeObserver.topRoute,
-          geometry: _playbackDockGeometry,
-        ),
+      child: ValueListenableBuilder<int>(
+        valueListenable: _routeRevision,
+        builder: (context, _, _) {
+          final routeActive = _routeObserver.containsRouteNamed(
+            workDetailRouteName,
+          );
+          return Consumer(
+            builder: (context, ref, _) => _RoutedPlaybackDock(
+              active:
+                  routeActive &&
+                  supportsRoutedDock &&
+                  ref.watch(
+                    mainOverlayUiProvider.select(
+                      (state) => state.overlaySessions.isNotEmpty,
+                    ),
+                  ),
+              obscured: _routeObserver.hasRouteAboveNamed(workDetailRouteName),
+              navigatorKey: _navigatorKey,
+              currentRoute: _routeObserver.topRoute,
+              geometry: _playbackDockGeometry,
+            ),
+          );
+        },
       ),
     );
   }

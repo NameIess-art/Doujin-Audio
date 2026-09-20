@@ -613,7 +613,6 @@ void main() {
     navigator.pop();
     await playbackDetailFuture;
     await tester.pump();
-    await tester.pump();
     expect(
       tester.widget<MobileOverlayInset>(rootOverlayInset).bottomInset,
       reservedDetailInset,

@@ -325,7 +325,7 @@ void main() {
     );
     expect(
       tester.getSize(fadeMaskFinder).height,
-      76 + MediaQuery.paddingOf(tester.element(fadeMaskFinder)).bottom,
+      56 + MediaQuery.paddingOf(tester.element(fadeMaskFinder)).bottom,
     );
     expect(
       tester
@@ -710,7 +710,7 @@ void main() {
     );
     expect(
       tester.getSize(fadeMaskFinder).height,
-      76 + MediaQuery.paddingOf(tester.element(fadeMaskFinder)).bottom,
+      56 + MediaQuery.paddingOf(tester.element(fadeMaskFinder)).bottom,
     );
     expect(find.byType(ActiveSessionCarousel), findsNothing);
     expect(

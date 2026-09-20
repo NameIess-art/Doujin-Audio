@@ -16,6 +16,7 @@ import '../../../core/media/path_display.dart';
 import '../../../core/ui/ui_operation_service.dart';
 import '../../../core/ui/undoable_removal_service.dart';
 import '../../../core/widgets/app_feedback.dart';
+import '../../../core/widgets/app_buttons.dart';
 import '../../../core/widgets/app_dialog.dart';
 import '../../../core/widgets/async_cover_image.dart';
 import '../../../core/widgets/mobile_overlay_inset.dart';
@@ -247,6 +248,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
   List<_WorkEntryItem> _buildLocalEntries() {
     final currentRel = _currentRelativePath;
     final entries = <_WorkEntryItem>[];
+    final visibleFolderPaths = <String>{};
 
     // Find current FolderNode
     FolderNode? currentFolder = _localFolderNode;
@@ -271,6 +273,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
           final childRel = currentRel.isEmpty
               ? child.name
               : '$currentRel/${child.name}';
+          visibleFolderPaths.add(childRel);
           entries.add(
             _WorkEntryItem(
               name: child.name,
@@ -297,6 +300,39 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
           );
         }
       }
+    }
+
+    void addFileParentFolder(String fileRelativePath) {
+      final fileSegments = fileRelativePath
+          .replaceAll(r'\', '/')
+          .split('/')
+          .where((segment) => segment.trim().isNotEmpty)
+          .toList(growable: false);
+      final currentSegments = currentRel.isEmpty
+          ? const <String>[]
+          : currentRel.split('/');
+      if (fileSegments.length <= currentSegments.length + 1) return;
+      for (var index = 0; index < currentSegments.length; index++) {
+        if (fileSegments[index] != currentSegments[index]) return;
+      }
+      final childName = fileSegments[currentSegments.length];
+      final childRel = <String>[...currentSegments, childName].join('/');
+      if (!visibleFolderPaths.add(childRel)) return;
+      entries.add(
+        _WorkEntryItem(
+          name: childName,
+          relativePath: childRel,
+          type: _WorkEntryType.folder,
+          fullPathOrUrl: childRel,
+        ),
+      );
+    }
+
+    for (final text in _localTextFiles) {
+      addFileParentFolder(text.relativePath);
+    }
+    for (final image in _localImageFiles) {
+      addFileParentFolder(image.relativePath);
     }
 
     // 2. Text files in current directory level
@@ -624,15 +660,13 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
         ),
         actions: AppDialogActions(
           children: [
-            TextButton(
+            AppSecondaryButton(
               onPressed: () => Navigator.of(dialogContext).pop(),
-              child: Text(i18n.tr('cancel')),
+              label: i18n.tr('cancel'),
             ),
-            FilledButton(
+            AppPrimaryButton(
               onPressed: () => Navigator.of(dialogContext).pop(name),
-              child: Text(
-                MaterialLocalizations.of(dialogContext).saveButtonLabel,
-              ),
+              label: i18n.tr('save'),
             ),
           ],
         ),
@@ -737,10 +771,9 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
     _WorkEntryItem item,
     Offset globalPosition,
   ) async {
-    final overlayState = MobileOverlayInset.menuOverlayOf(context) ??
-        Overlay.maybeOf(context);
-    final overlayBox =
-        overlayState?.context.findRenderObject() as RenderBox?;
+    final overlayState =
+        MobileOverlayInset.menuOverlayOf(context) ?? Overlay.maybeOf(context);
+    final overlayBox = overlayState?.context.findRenderObject() as RenderBox?;
     if (overlayBox == null || !overlayBox.hasSize) return;
 
     final localPos = overlayBox.globalToLocal(globalPosition);
@@ -1665,14 +1698,15 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
   ) async {
     final buttonBox = buttonContext.findRenderObject() as RenderBox?;
     if (buttonBox == null || !buttonBox.hasSize) return;
-    final overlayState = MobileOverlayInset.menuOverlayOf(context) ??
-        Overlay.maybeOf(context);
-    final overlayBox =
-        overlayState?.context.findRenderObject() as RenderBox?;
+    final overlayState =
+        MobileOverlayInset.menuOverlayOf(context) ?? Overlay.maybeOf(context);
+    final overlayBox = overlayState?.context.findRenderObject() as RenderBox?;
     if (overlayBox == null || !overlayBox.hasSize) return;
 
-    final buttonOrigin =
-        buttonBox.localToGlobal(Offset.zero, ancestor: overlayBox);
+    final buttonOrigin = buttonBox.localToGlobal(
+      Offset.zero,
+      ancestor: overlayBox,
+    );
     final buttonRect = buttonOrigin & buttonBox.size;
     final position = RelativeRect.fromRect(
       buttonRect,
@@ -1738,14 +1772,10 @@ Future<T?> showDockAwareMenu<T>({
   required RelativeRect position,
   required List<PopupMenuEntry<T>> items,
 }) async {
-  final overlayState = MobileOverlayInset.menuOverlayOf(context) ??
-      Overlay.maybeOf(context);
+  final overlayState =
+      MobileOverlayInset.menuOverlayOf(context) ?? Overlay.maybeOf(context);
   if (overlayState == null) {
-    return showMenu<T>(
-      context: context,
-      position: position,
-      items: items,
-    );
+    return showMenu<T>(context: context, position: position, items: items);
   }
 
   final completer = Completer<T?>();
@@ -1798,8 +1828,9 @@ Future<T?> showDockAwareMenu<T>({
                                   : null,
                               child: Container(
                                 height: item.height,
-                                padding:
-                                    const EdgeInsets.symmetric(horizontal: 16),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                ),
                                 alignment: Alignment.centerLeft,
                                 child: item.child,
                               ),

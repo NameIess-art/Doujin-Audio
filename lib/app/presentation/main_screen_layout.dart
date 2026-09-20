@@ -291,7 +291,7 @@ extension _MainScreenLayout on _MainScreenState {
     bool isCurrent = true,
   }) {
     final systemBottom = MediaQuery.paddingOf(context).bottom;
-    final maskHeight = 76.0 + systemBottom;
+    final maskHeight = 56.0 + systemBottom;
     final hasPlayback = overlaySessions.isNotEmpty;
     final playbackExpanded = hasPlayback && _isMobilePlaybackExpanded;
     final duration = MediaQuery.disableAnimationsOf(context)

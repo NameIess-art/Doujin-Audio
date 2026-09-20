@@ -53,6 +53,18 @@ class _WorkDetailFileGateway extends Fake implements FileCachePlatformGateway {
   }
 }
 
+class _NestedWorkDetailFileGateway extends Fake
+    implements FileCachePlatformGateway {
+  _NestedWorkDetailFileGateway(this.entries);
+
+  final List<Map<String, String>> entries;
+
+  @override
+  Future<List<Map<String, String>>> discoverWorkTexts(String folderPath) async {
+    return entries;
+  }
+}
+
 void main() {
   AppRuntimeTestFixture.initialize();
   late Database testDatabase;
@@ -66,6 +78,94 @@ void main() {
   });
 
   group('WorkDetailPage', () {
+    testWidgets(
+      'local tree shows folders containing only text or image files',
+      (tester) async {
+        SharedPreferences.setMockInitialValues(const <String, Object>{});
+        final fixture = AppRuntimeWidgetTestFixture();
+        addTearDown(fixture.dispose);
+        final root = (await tester.runAsync<Directory>(
+          () => Directory.systemTemp.createTemp('work_non_audio_folders_'),
+        ))!;
+        addTearDown(() async {
+          PaintingBinding.instance.imageCache
+            ..clear()
+            ..clearLiveImages();
+          try {
+            if (await root.exists()) await root.delete(recursive: true);
+          } on FileSystemException {
+            // A failed assertion can leave the image decoder alive briefly.
+          }
+        });
+        final textDirectory = Directory(
+          '${root.path}${Platform.pathSeparator}Scripts',
+        );
+        final imageDirectory = Directory(
+          '${root.path}${Platform.pathSeparator}Gallery',
+        );
+        final textFile = File(
+          '${textDirectory.path}${Platform.pathSeparator}notes.txt',
+        );
+        final imageFile = File(
+          '${imageDirectory.path}${Platform.pathSeparator}cover.jpg',
+        );
+        await tester.runAsync(() async {
+          await textDirectory.create();
+          await imageDirectory.create();
+          await textFile.writeAsString('notes');
+          await imageFile.writeAsBytes(const <int>[0xFF, 0xD8, 0xFF, 0xD9]);
+        });
+        fixture.library.addWatchedFolder(root.path, notify: false);
+
+        await tester.pumpWidget(
+          fixture.build(
+            WorkDetailPage.forLocal(
+              target: AudioDetailTarget.libraryRootFolder(root.path),
+            ),
+            overrides: [
+              workTextServiceProvider.overrideWithValue(
+                WorkTextService(
+                  platformGateway: _NestedWorkDetailFileGateway([
+                    {
+                      'name': 'notes.txt',
+                      'relativePath': 'Scripts/notes.txt',
+                      'path': textFile.path,
+                    },
+                  ]),
+                ),
+              ),
+            ],
+          ),
+        );
+
+        for (
+          var i = 0;
+          i < 40 && find.text('Scripts').evaluate().isEmpty;
+          i++
+        ) {
+          await tester.pump(const Duration(milliseconds: 50));
+          await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 10)),
+          );
+        }
+
+        expect(find.text('Scripts'), findsOneWidget);
+        expect(find.text('Gallery'), findsOneWidget);
+
+        await tester.tap(find.text('Scripts'));
+        await tester.pumpAndSettle();
+        expect(find.text('notes.txt'), findsOneWidget);
+
+        await tester.tap(
+          find.text(fixture.languageProvider.tr('root_directory')),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Gallery'));
+        await tester.pumpAndSettle();
+        expect(find.text('cover.jpg'), findsOneWidget);
+      },
+    );
+
     testWidgets('local text and image entries use contextual more menus', (
       tester,
     ) async {

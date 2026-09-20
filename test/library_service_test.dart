@@ -94,6 +94,67 @@ void main() {
     },
   );
 
+  test(
+    'retargetLibraryFolder keeps a nested folder under its library root',
+    () {
+      final service = LibraryService();
+      addTearDown(service.dispose);
+      final libraryRoot = path.join('library', 'Work');
+      final oldFolder = path.join(libraryRoot, 'Old');
+      final newFolder = path.join(libraryRoot, 'New');
+      final oldTrackPath = path.join(oldFolder, '01.mp3');
+      final newTrackPath = path.join(newFolder, '01.mp3');
+      final track = MusicTrack(
+        path: oldTrackPath,
+        displayName: '01',
+        groupKey: oldFolder,
+        groupTitle: 'Old',
+        groupSubtitle: oldFolder,
+        isSingle: false,
+      );
+      service
+        ..library.add(track)
+        ..watchedFolders.add(libraryRoot)
+        ..groupOrder.add(oldFolder)
+        ..replaceLibraryEntries(<LibraryEntry>[
+          LibraryEntry.folder(
+            libraryPath: libraryRoot,
+            path: oldFolder,
+            parentPath: libraryRoot,
+            state: LibraryEntryState.active,
+            displayName: 'Old',
+          ),
+          LibraryEntry.track(
+            libraryPath: libraryRoot,
+            track: track,
+            state: LibraryEntryState.active,
+          ),
+        ])
+        ..rebuildLibraryIndexes();
+
+      final result = service.retargetLibraryFolder(
+        oldFolder,
+        newFolder,
+        'New',
+        libraryRootPath: libraryRoot,
+      );
+
+      expect(result.retargetedTracks.keys, <String>[oldTrackPath]);
+      expect(service.library.single.path, newTrackPath);
+      expect(service.library.single.groupKey, newFolder);
+      expect(service.library.single.groupTitle, 'New');
+      expect(service.watchedFolders, <String>[libraryRoot]);
+      expect(service.groupOrder, <String>[newFolder]);
+      expect(service.libraryEntriesForLibrary(oldFolder), isEmpty);
+      final entries = service.libraryEntriesForLibrary(libraryRoot);
+      expect(
+        entries.map((entry) => entry.path),
+        containsAll(<String>[newFolder, newTrackPath]),
+      );
+      expect(entries.singleWhere((entry) => entry.isFolder).displayName, 'New');
+    },
+  );
+
   test('addWatchedLibrary and removeWatchedLibrary increment structureRevision', () {
     final service = LibraryService();
     addTearDown(service.dispose);

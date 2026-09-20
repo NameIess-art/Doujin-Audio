@@ -347,10 +347,15 @@ class LibraryService {
   LibraryFolderRetargetResult retargetLibraryFolder(
     String oldFolderPath,
     String newFolderPath,
-    String folderName,
-  ) {
+    String folderName, {
+    String? libraryRootPath,
+  }) {
     final oldRoot = PathMatcher.normalize(oldFolderPath);
     final newRoot = PathMatcher.normalize(newFolderPath);
+    final oldLibraryRoot = PathMatcher.normalize(libraryRootPath ?? oldRoot);
+    final newLibraryRoot = PathMatcher.equalsNormalized(oldLibraryRoot, oldRoot)
+        ? newRoot
+        : oldLibraryRoot;
     final retargetedTracks = <String, MusicTrack>{};
     for (var i = 0; i < library.length; i++) {
       final track = library[i];
@@ -404,6 +409,8 @@ class LibraryService {
       oldRoot,
       newRoot,
       folderName,
+      oldLibraryRoot: oldLibraryRoot,
+      newLibraryRoot: newLibraryRoot,
     );
     syncGroupOrderFromLibrary();
     rebuildLibraryIndexes();
@@ -469,9 +476,11 @@ class LibraryService {
   List<LibraryEntry> _retargetLibraryEntries(
     String oldRoot,
     String newRoot,
-    String folderName,
-  ) {
-    final existingEntries = libraryEntriesByLibrary.remove(oldRoot);
+    String folderName, {
+    required String oldLibraryRoot,
+    required String newLibraryRoot,
+  }) {
+    final existingEntries = libraryEntriesByLibrary.remove(oldLibraryRoot);
     if (existingEntries == null || existingEntries.isEmpty) {
       return const <LibraryEntry>[];
     }
@@ -482,10 +491,11 @@ class LibraryService {
             oldRoot: oldRoot,
             newRoot: newRoot,
             folderName: folderName,
+            libraryPath: newLibraryRoot,
           ),
         )
         .toList(growable: false);
-    libraryEntriesByLibrary[newRoot] = <String, LibraryEntry>{
+    libraryEntriesByLibrary[newLibraryRoot] = <String, LibraryEntry>{
       for (final entry in retargetedEntries) entry.path: entry,
     };
     return retargetedEntries;
@@ -496,6 +506,7 @@ class LibraryService {
     required String oldRoot,
     required String newRoot,
     required String folderName,
+    required String libraryPath,
   }) {
     final nextPath = PathMatcher.isWithinOrEqual(entry.path, oldRoot)
         ? _replacePathPrefix(entry.path, oldRoot, newRoot)
@@ -507,18 +518,20 @@ class LibraryService {
         : entry.parentPath;
     if (entry.isFolder) {
       return LibraryEntry.folder(
-        libraryPath: newRoot,
+        libraryPath: libraryPath,
         path: nextPath,
         parentPath: nextParentPath,
         state: entry.state,
-        displayName: entry.displayName,
+        displayName: PathMatcher.equalsNormalized(entry.path, oldRoot)
+            ? folderName
+            : entry.displayName,
       );
     }
     final nextGroupKey = PathMatcher.isWithinOrEqual(entry.groupKey, oldRoot)
         ? _replacePathPrefix(entry.groupKey, oldRoot, newRoot)
         : entry.groupKey;
     return LibraryEntry(
-      libraryPath: newRoot,
+      libraryPath: libraryPath,
       path: nextPath,
       kind: entry.kind,
       state: entry.state,

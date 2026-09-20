@@ -760,14 +760,31 @@ class CoverArtworkCacheService {
     await _ensureFolderCoverSelections();
     final oldFolder = PathMatcher.normalize(oldFolderPath);
     final newFolder = PathMatcher.normalize(newFolderPath);
-    final previousCover = _folderCoverSelections.remove(oldFolder);
-    if (previousCover == null || newFolder.isEmpty) return;
-    final relativeCover = PathMatcher.relativeWithin(previousCover, oldFolder);
-    _folderCoverSelections[newFolder] = relativeCover == null
-        ? previousCover
-        : PathMatcher.join(newFolder, relativeCover);
+    if (oldFolder.isEmpty || newFolder.isEmpty) return;
+    final nextSelections = <String, String>{};
+    final changedScopes = <String>{};
+    var changed = false;
+    for (final entry in _folderCoverSelections.entries) {
+      final nextFolder = PathMatcher.isWithinOrEqual(entry.key, oldFolder)
+          ? PathMatcher.replaceWithinOrEqual(entry.key, oldFolder, newFolder)
+          : entry.key;
+      final nextCover = PathMatcher.isWithinOrEqual(entry.value, oldFolder)
+          ? PathMatcher.replaceWithinOrEqual(entry.value, oldFolder, newFolder)
+          : entry.value;
+      if (nextFolder != entry.key || nextCover != entry.value) {
+        changed = true;
+        changedScopes
+          ..add(entry.key)
+          ..add(nextFolder);
+      }
+      nextSelections[nextFolder] = nextCover;
+    }
+    if (!changed) return;
+    _folderCoverSelections
+      ..clear()
+      ..addAll(nextSelections);
     await _saveFolderCoverSelections();
-    invalidateFolders(<String>[oldFolder, newFolder]);
+    invalidateFolders(changedScopes);
   }
 
   Future<void> _saveFolderCoverSelections() async {

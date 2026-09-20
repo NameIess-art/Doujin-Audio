@@ -878,6 +878,7 @@ final class LibraryFacade implements LibraryCatalog {
     required String entryPath,
     required String targetName,
     required bool isMedia,
+    required bool isDirectory,
   }) async {
     try {
       return await _mutationCoordinator.renameWorkEntryToName(
@@ -885,6 +886,7 @@ final class LibraryFacade implements LibraryCatalog {
         entryPath: entryPath,
         targetName: targetName,
         isMedia: isMedia,
+        isDirectory: isDirectory,
       );
     } on LibraryMutationRenameException catch (error) {
       throw AudioDetailRenameException(error.reason);

@@ -90,6 +90,27 @@ void main() {
     expect(await source.exists(), isFalse);
   });
 
+  test(
+    'renames a work folder without treating its suffix as an extension',
+    () async {
+      final root = await Directory.systemTemp.createTemp('work_folder_rename_');
+      addTearDown(() => root.delete(recursive: true));
+      final source = await Directory(path.join(root.path, 'Disc.01')).create();
+      await File(
+        path.join(source.path, 'track.mp3'),
+      ).writeAsBytes(const <int>[1]);
+
+      final renamed = await LibraryEntryEditorService(
+        isAndroid: () => false,
+      ).renameEntry(source.path, 'Main Disc', isDirectory: true);
+
+      expect(path.basename(renamed!), 'Main Disc');
+      expect(await Directory(renamed).exists(), isTrue);
+      expect(await File(path.join(renamed, 'track.mp3')).exists(), isTrue);
+      expect(await source.exists(), isFalse);
+    },
+  );
+
   test('renames a SAF work file through renameDocument', () async {
     const source =
         'content://com.android.externalstorage.documents/tree/'

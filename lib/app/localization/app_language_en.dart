@@ -72,6 +72,7 @@ const Map<String, String> appLanguageEn = {
   'refresh_watched_folder': 'Refresh watched folders',
   'more_actions': 'More actions',
   'open': 'Open',
+  'rename': 'Rename',
   'detail_add_to_queue': 'Add to playlist',
   'track_added_to_playlist': 'Added to playlist',
   'track_already_in_playlist': 'This item is already in the playlist',

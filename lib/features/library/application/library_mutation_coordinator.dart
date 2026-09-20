@@ -626,7 +626,12 @@ final class LibraryMutationCoordinator {
       targetPath: newPath,
     );
     if (oldTarget.isLibraryRootFolder) {
-      await _retargetLibraryFolder(oldPath, newPath, safeName);
+      await _retargetLibraryFolder(
+        libraryRootPath: oldPath,
+        oldFolderPath: oldPath,
+        newFolderPath: newPath,
+        folderName: safeName,
+      );
     } else {
       await _retargetSingleTrack(oldPath, newPath, safeName);
     }
@@ -659,6 +664,7 @@ final class LibraryMutationCoordinator {
     required String entryPath,
     required String targetName,
     required bool isMedia,
+    required bool isDirectory,
   }) async {
     final rootPath = PathMatcher.normalize(libraryRootPath);
     final oldPath = PathMatcher.normalize(entryPath);
@@ -673,7 +679,7 @@ final class LibraryMutationCoordinator {
     final renamedPath = await entryEditorService.renameEntry(
       oldPath,
       safeName,
-      isDirectory: false,
+      isDirectory: isDirectory,
     );
     if (renamedPath == null) {
       throw const LibraryMutationRenameException('renameFailed');
@@ -681,7 +687,14 @@ final class LibraryMutationCoordinator {
     final newPath = PathMatcher.normalize(renamedPath);
     if (PathMatcher.equalsNormalized(oldPath, newPath)) return newPath;
 
-    if (isMedia) {
+    if (isDirectory) {
+      await _retargetLibraryFolder(
+        libraryRootPath: rootPath,
+        oldFolderPath: oldPath,
+        newFolderPath: newPath,
+        folderName: safeName,
+      );
+    } else if (isMedia) {
       await _retargetSingleTrack(oldPath, newPath, safeName);
     } else {
       _coverArtwork().invalidateFolder(rootPath);
@@ -691,11 +704,12 @@ final class LibraryMutationCoordinator {
     return newPath;
   }
 
-  Future<void> _retargetLibraryFolder(
-    String oldFolderPath,
-    String newFolderPath,
-    String folderName,
-  ) async {
+  Future<void> _retargetLibraryFolder({
+    required String libraryRootPath,
+    required String oldFolderPath,
+    required String newFolderPath,
+    required String folderName,
+  }) async {
     await _coverArtwork().retargetFolderCoverSelection(
       oldFolderPath,
       newFolderPath,
@@ -704,16 +718,33 @@ final class LibraryMutationCoordinator {
       oldRoot: oldFolderPath,
       newRoot: newFolderPath,
     );
+    if (!PathMatcher.equalsNormalized(libraryRootPath, oldFolderPath)) {
+      final target = AudioDetailTarget.libraryRootFolder(libraryRootPath);
+      final detail = (await detailCacheService.load(target)).detail;
+      final nextCoverPath = _retargetNullablePath(
+        detail.cardCoverPath,
+        oldFolderPath,
+        newFolderPath,
+      );
+      if (nextCoverPath != detail.cardCoverPath) {
+        final saveResult = await detailCacheService.save(
+          detail.copyWith(cardCoverPath: nextCoverPath),
+        );
+        snapshotCacheService.markDetailChanged(saveResult.detail);
+        _syncStateSlice();
+      }
+    }
     final retargetResult = _service.retargetLibraryFolder(
       oldFolderPath,
       newFolderPath,
       folderName,
+      libraryRootPath: libraryRootPath,
     );
     _coverArtwork().invalidateFolders([oldFolderPath, newFolderPath]);
     snapshotCacheService.markStructureChanged();
     _syncStateSlice();
     await databaseRepository.replaceTrackPaths(retargetResult.retargetedTracks);
-    await databaseRepository.deleteLibraryEntriesForLibrary(oldFolderPath);
+    await databaseRepository.deleteLibraryEntriesForLibrary(libraryRootPath);
     if (retargetResult.retargetedEntries.isNotEmpty) {
       await databaseRepository.upsertLibraryEntries(
         retargetResult.retargetedEntries,

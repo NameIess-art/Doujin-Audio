@@ -647,11 +647,14 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
   Future<void> _renameLocalEntry(_WorkEntryItem item) async {
     if (!widget.isLocal || item.fullPathOrUrl.isEmpty) return;
     final i18n = ref.read(appLanguageProviderInstanceProvider);
-    var name = PathDisplay.fileName(item.fullPathOrUrl, withoutExtension: true);
+    var name = PathDisplay.fileName(
+      item.fullPathOrUrl,
+      withoutExtension: item.type != _WorkEntryType.folder,
+    );
     final targetName = await showAppDialog<String>(
       context: context,
       builder: (dialogContext) => AppDialog(
-        title: i18n.tr('audio_detail_rename_file'),
+        title: i18n.tr('rename'),
         icon: Icons.drive_file_rename_outline_rounded,
         content: TextFormField(
           initialValue: name,
@@ -684,8 +687,9 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
             entryPath: oldPath,
             targetName: targetName,
             isMedia: item.type == _WorkEntryType.audio,
+            isDirectory: item.type == _WorkEntryType.folder,
           );
-      if (_localManualCover == oldPath) {
+      if (item.type != _WorkEntryType.folder && _localManualCover == oldPath) {
         await ref
             .read(libraryFacadeProvider)
             .setFolderManualCover(_localTarget!.targetPath, renamedPath);
@@ -706,8 +710,14 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     final color = Theme.of(context).colorScheme.primary;
     final actions = switch (item.type) {
-      _WorkEntryType.folder => const [
-        (_WorkEntryAction.open, Icons.folder_open_rounded, 'open'),
+      _WorkEntryType.folder => [
+        const (_WorkEntryAction.open, Icons.folder_open_rounded, 'open'),
+        if (widget.isLocal)
+          const (
+            _WorkEntryAction.rename,
+            Icons.drive_file_rename_outline_rounded,
+            'rename',
+          ),
       ],
       _WorkEntryType.audio => [
         const (_WorkEntryAction.play, Icons.play_arrow_rounded, 'play'),
@@ -720,7 +730,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
           const (
             _WorkEntryAction.rename,
             Icons.drive_file_rename_outline_rounded,
-            'audio_detail_rename_file',
+            'rename',
           ),
         const (
           _WorkEntryAction.remove,
@@ -734,7 +744,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
           const (
             _WorkEntryAction.rename,
             Icons.drive_file_rename_outline_rounded,
-            'audio_detail_rename_file',
+            'rename',
           ),
       ],
       _WorkEntryType.image => [
@@ -743,7 +753,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
           (
             _WorkEntryAction.rename,
             Icons.drive_file_rename_outline_rounded,
-            'audio_detail_rename_file',
+            'rename',
           ),
           (
             _WorkEntryAction.setCover,

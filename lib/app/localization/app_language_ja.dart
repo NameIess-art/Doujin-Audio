@@ -64,6 +64,7 @@ const Map<String, String> appLanguageJa = {
   'refresh_watched_folder': '監視フォルダを更新',
   'more_actions': 'その他の操作',
   'open': '開く',
+  'rename': '名前を変更',
   'detail_add_to_queue': 'リストに追加',
   'track_added_to_playlist': 'プレイリストに追加しました',
   'track_already_in_playlist': 'この項目は既にプレイリストにあります',

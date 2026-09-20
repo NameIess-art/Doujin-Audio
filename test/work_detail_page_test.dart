@@ -152,6 +152,23 @@ void main() {
         expect(find.text('Scripts'), findsOneWidget);
         expect(find.text('Gallery'), findsOneWidget);
 
+        final folderMore = find.byKey(
+          const ValueKey<String>('work_entry_more_Scripts'),
+        );
+        expect(folderMore, findsOneWidget);
+        await tester.tap(folderMore);
+        await tester.pump(const Duration(milliseconds: 250));
+        expect(
+          find.text(fixture.languageProvider.tr('rename')),
+          findsOneWidget,
+        );
+        expect(
+          find.text(fixture.languageProvider.tr('audio_detail_rename_file')),
+          findsNothing,
+        );
+        await tester.tapAt(Offset.zero);
+        await tester.pump(const Duration(milliseconds: 500));
+
         await tester.tap(find.text('Scripts'));
         await tester.pumpAndSettle();
         expect(find.text('notes.txt'), findsOneWidget);
@@ -228,10 +245,7 @@ void main() {
 
       await tester.tap(imageMore);
       await tester.pump(const Duration(milliseconds: 250));
-      expect(
-        find.text(fixture.languageProvider.tr('audio_detail_rename_file')),
-        findsOneWidget,
-      );
+      expect(find.text(fixture.languageProvider.tr('rename')), findsOneWidget);
       expect(
         find.text(fixture.languageProvider.tr('audio_detail_set_cover')),
         findsOneWidget,
@@ -245,10 +259,7 @@ void main() {
         find.text(fixture.languageProvider.tr('audio_detail_set_cover')),
         findsNothing,
       );
-      expect(
-        find.text(fixture.languageProvider.tr('audio_detail_rename_file')),
-        findsOneWidget,
-      );
+      expect(find.text(fixture.languageProvider.tr('rename')), findsOneWidget);
       await tester.pumpWidget(const SizedBox.shrink());
       PaintingBinding.instance.imageCache
         ..clear()
@@ -328,7 +339,7 @@ void main() {
         await tester.pumpAndSettle();
         expect(find.text(fixture.languageProvider.tr('play')), findsOneWidget);
         expect(
-          find.text(fixture.languageProvider.tr('audio_detail_rename_file')),
+          find.text(fixture.languageProvider.tr('rename')),
           findsOneWidget,
         );
         await tester.tap(
@@ -1022,9 +1033,7 @@ void main() {
         await tester.tap(textMore);
         await tester.pump(const Duration(milliseconds: 250));
 
-        final menuItem = find.text(
-          fixture.languageProvider.tr('audio_detail_rename_file'),
-        );
+        final menuItem = find.text(fixture.languageProvider.tr('rename'));
         expect(menuItem, findsOneWidget);
         final mockDock = find.byKey(
           const ValueKey<String>('mock_playback_dock'),

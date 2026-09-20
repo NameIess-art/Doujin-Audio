@@ -311,7 +311,7 @@ void main() {
   test('loading threshold delays transient playback state', () async {
     expect(
       PlaybackSession.loadingIndicatorThreshold,
-      const Duration(milliseconds: 750),
+      const Duration(milliseconds: 600),
     );
     final session = PlaybackSession(
       id: 'session_1',
@@ -324,10 +324,10 @@ void main() {
     );
     addTearDown(session.shutdown);
 
+    session.beginPreparation(showLoading: false, autoPlay: true);
     session.beginLoadingIndicatorThreshold(
       threshold: const Duration(milliseconds: 20),
     );
-    session.beginPreparation(showLoading: false, autoPlay: true);
     session.setOptimisticState(processingState: ProcessingState.buffering);
 
     expect(session.isPlaybackLoading, isFalse);
@@ -335,6 +335,75 @@ void main() {
     await session.stateStream.first;
 
     expect(session.isPlaybackLoading, isTrue);
+  });
+
+  testWidgets('preparation and repeated switches wait a full 600ms', (
+    tester,
+  ) async {
+    final session = createSession();
+    addTearDown(session.shutdown);
+    session.beginPreparation(showLoading: true, autoPlay: true);
+    expect(session.isLoading, isTrue);
+    expect(session.isPlaybackLoading, isFalse);
+    await tester.pump(const Duration(milliseconds: 599));
+    expect(session.isPlaybackLoading, isFalse);
+    await tester.pump(const Duration(milliseconds: 1));
+    expect(session.isPlaybackLoading, isTrue);
+
+    session.beginPreparation(showLoading: true, autoPlay: true);
+    expect(session.isPlaybackLoading, isFalse);
+    await tester.pump(const Duration(milliseconds: 400));
+    session.beginPreparation(showLoading: false, autoPlay: true);
+    await tester.pump(const Duration(milliseconds: 599));
+    expect(session.isPlaybackLoading, isFalse);
+    await tester.pump(const Duration(milliseconds: 1));
+    expect(session.isPlaybackLoading, isTrue);
+  });
+
+  testWidgets('brief ready snapshot does not end the loading delay', (
+    tester,
+  ) async {
+    final session = createSession();
+    addTearDown(session.shutdown);
+    final preparation = session.beginPreparation(
+      showLoading: true,
+      autoPlay: true,
+    );
+    session.beginTransportCommand(commandId: 1, playing: true);
+    void snapshot(String processingState) {
+      session.applyNativeSnapshot(
+        NativePlaybackSnapshot(
+          sessionId: session.id,
+          playing: processingState == 'ready',
+          playWhenReady: true,
+          processingState: processingState,
+          position: Duration.zero,
+          bufferedPosition: Duration.zero,
+          volume: 1,
+          boostGain: 1,
+          channelSwapEnabled: false,
+          transportCommandId: 1,
+        ),
+      );
+    }
+
+    await tester.pump(const Duration(milliseconds: 100));
+    snapshot('ready');
+    expect(session.isPlaybackLoading, isFalse);
+    snapshot('buffering');
+    expect(session.isPlaybackLoading, isFalse);
+    await tester.pump(const Duration(milliseconds: 499));
+    expect(session.isPlaybackLoading, isFalse);
+    snapshot('ready');
+    session.finishPreparation(
+      preparation.generation,
+      prepared: true,
+      autoPlay: true,
+    );
+    await tester.pump(const Duration(milliseconds: 1));
+    expect(session.isPlaybackLoading, isFalse);
+    await tester.pump(const Duration(seconds: 1));
+    expect(session.isPlaybackLoading, isFalse);
   });
 
   test('transport changes include loading threshold visibility', () {

@@ -8,7 +8,7 @@ import '../domain/playback_queue.dart';
 import 'native_playback_bridge.dart';
 
 class PlaybackSession {
-  static const loadingIndicatorThreshold = Duration(milliseconds: 750);
+  static const loadingIndicatorThreshold = Duration(milliseconds: 600);
 
   PlaybackSession({
     required this.id,
@@ -109,11 +109,11 @@ class PlaybackSession {
       _pendingPlayingIntent ?? (_isPlaybackStarting || state.playing);
   bool get isPlaybackLoading {
     final processingState = state.processingState;
-    return _isLoading ||
-        (!_suppressTransientLoading &&
-            (_isPlaybackStarting ||
-                processingState == ProcessingState.loading ||
-                processingState == ProcessingState.buffering));
+    return !_suppressTransientLoading &&
+        (_isLoading ||
+            _isPlaybackStarting ||
+            processingState == ProcessingState.loading ||
+            processingState == ProcessingState.buffering);
   }
 
   bool get hasPendingAudioEffectsSync => pendingNativeAudioEffects != null;
@@ -123,12 +123,17 @@ class PlaybackSession {
     required bool autoPlay,
   }) {
     if (isDisposed) return (generation: _loadGeneration, changed: false);
+    final wasPlaybackLoading = isPlaybackLoading;
     final changed =
         (showLoading && !_isLoading) || (autoPlay && !_isPlaybackStarting);
     _loadGeneration++;
     if (showLoading) _isLoading = true;
     if (autoPlay) _isPlaybackStarting = true;
-    return (generation: _loadGeneration, changed: changed);
+    if (showLoading || autoPlay) beginLoadingIndicatorThreshold();
+    return (
+      generation: _loadGeneration,
+      changed: changed || wasPlaybackLoading != isPlaybackLoading,
+    );
   }
 
   bool isPreparationCurrent(int generation) =>
@@ -195,6 +200,7 @@ class PlaybackSession {
       return false;
     }
     final changed = !_isLoading || !_isAdvancingAfterCompletion;
+    beginLoadingIndicatorThreshold();
     _isLoading = true;
     _isAdvancingAfterCompletion = true;
     if (markHandled) _lastHandledCompletionGeneration = commandGeneration;
@@ -277,7 +283,6 @@ class PlaybackSession {
       _isPlaybackStarting = false;
     }
     if (snapshot.error != null ||
-        nativeProcessingState == ProcessingState.ready ||
         (confirmsPendingIntent && pendingIntent == false)) {
       _loadingIndicatorTimer?.cancel();
       _loadingIndicatorTimer = null;

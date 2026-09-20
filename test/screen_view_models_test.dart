@@ -451,6 +451,9 @@ void main() {
 
     detailSession.beginPreparation(showLoading: false, autoPlay: true);
     expect(view()?.isLoading, isTrue);
+    expect(view()?.isPlaybackLoading, isFalse);
+    expect(view()?.showPauseIcon, isTrue);
+    detailSession.beginLoadingIndicatorThreshold(threshold: Duration.zero);
     expect(view()?.isPlaybackLoading, isTrue);
     expect(view()?.showPauseIcon, isTrue);
 

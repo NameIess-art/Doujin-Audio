@@ -3615,9 +3615,11 @@ void main() {
       persist: false,
     );
     final trackSession = fixture.runtimeGraph.playback.createTrackSession(track)
+      ..state = const PlayerState(true, ProcessingState.buffering)
       ..beginPreparation(showLoading: true, autoPlay: true);
     final queueSession =
         fixture.runtimeGraph.playback.createPlaybackQueue('Loading queue')
+          ..state = const PlayerState(true, ProcessingState.buffering)
           ..currentTrackPath = track.path
           ..playbackQueue = PlaybackQueueDefinition(
             name: 'Loading queue',
@@ -3648,6 +3650,16 @@ void main() {
       find.text(fixture.languageProvider.tr('playback_loading')),
       findsNothing,
     );
+    expect(find.byKey(const ValueKey('loading')), findsNothing);
+    await tester.pump(PlaybackSession.loadingIndicatorThreshold);
+    fixture.playbackService.syncSlice(
+      activeSessions: <PlaybackSession>[trackSession, queueSession],
+      playingSessionCount: 2,
+      focusedSessionId: trackSession.id,
+      coverGeneration: 0,
+      isInitialized: true,
+    );
+    await tester.pump();
     expect(find.byKey(const ValueKey('loading')), findsNWidgets(2));
 
     await tester.pumpWidget(const SizedBox.shrink());

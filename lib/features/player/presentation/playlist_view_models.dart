@@ -381,7 +381,12 @@ List<PlaybackSessionSnapshot> overlaySessionsFromPlaybackState(
             session.currentTrackPath.isNotEmpty &&
             (session.isTemporary ||
                 (session.playbackRequested &&
-                    (session.isPlaybackLoading ||
+                    (session.isLoading ||
+                        session.isPlaybackLoading ||
+                        session.state.processing ==
+                            PlaybackProcessingStatus.loading ||
+                        session.state.processing ==
+                            PlaybackProcessingStatus.buffering ||
                         session.state.processing ==
                             PlaybackProcessingStatus.ready))),
       )

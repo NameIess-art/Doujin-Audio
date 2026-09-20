@@ -18,6 +18,7 @@ import '../../../core/ui/undoable_removal_service.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/app_buttons.dart';
 import '../../../core/widgets/app_dialog.dart';
+import '../../../core/widgets/unified_popup_menu.dart';
 import '../../../core/widgets/async_cover_image.dart';
 import '../../../core/widgets/mobile_overlay_inset.dart';
 import '../../../core/widgets/top_page_header.dart';
@@ -707,77 +708,80 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
     }
   }
 
-  List<PopupMenuEntry<_WorkEntryAction>> _entryMenuItems(_WorkEntryItem item) {
+  List<UnifiedMenuEntry<_WorkEntryAction>> _entryMenuItems(
+    _WorkEntryItem item,
+  ) {
     final i18n = ref.read(appLanguageProviderInstanceProvider);
-    final color = Theme.of(context).colorScheme.primary;
-    final actions = switch (item.type) {
+    return switch (item.type) {
       _WorkEntryType.folder => [
-        const (_WorkEntryAction.open, Icons.folder_open_rounded, 'open'),
+        UnifiedMenuEntry<_WorkEntryAction>.action(
+          value: _WorkEntryAction.open,
+          icon: Icons.folder_open_rounded,
+          label: i18n.tr('open'),
+        ),
         if (widget.isLocal)
-          const (
-            _WorkEntryAction.rename,
-            Icons.drive_file_rename_outline_rounded,
-            'rename',
+          UnifiedMenuEntry<_WorkEntryAction>.action(
+            value: _WorkEntryAction.rename,
+            icon: Icons.drive_file_rename_outline_rounded,
+            label: i18n.tr('rename'),
           ),
       ],
       _WorkEntryType.audio => [
-        const (_WorkEntryAction.play, Icons.play_arrow_rounded, 'play'),
-        const (
-          _WorkEntryAction.add,
-          Icons.playlist_add_rounded,
-          'detail_add_to_queue',
+        UnifiedMenuEntry<_WorkEntryAction>.action(
+          value: _WorkEntryAction.play,
+          icon: Icons.play_arrow_rounded,
+          label: i18n.tr('play'),
+        ),
+        UnifiedMenuEntry<_WorkEntryAction>.action(
+          value: _WorkEntryAction.add,
+          icon: Icons.playlist_add_rounded,
+          label: i18n.tr('detail_add_to_queue'),
         ),
         if (widget.isLocal)
-          const (
-            _WorkEntryAction.rename,
-            Icons.drive_file_rename_outline_rounded,
-            'rename',
+          UnifiedMenuEntry<_WorkEntryAction>.action(
+            value: _WorkEntryAction.rename,
+            icon: Icons.drive_file_rename_outline_rounded,
+            label: i18n.tr('rename'),
           ),
-        const (
-          _WorkEntryAction.remove,
-          Icons.remove_circle_outline_rounded,
-          'remove',
+        UnifiedMenuEntry<_WorkEntryAction>.action(
+          value: _WorkEntryAction.remove,
+          icon: Icons.remove_circle_outline_rounded,
+          label: i18n.tr('remove'),
         ),
       ],
       _WorkEntryType.text => [
-        const (_WorkEntryAction.open, Icons.open_in_new_rounded, 'open'),
+        UnifiedMenuEntry<_WorkEntryAction>.action(
+          value: _WorkEntryAction.open,
+          icon: Icons.open_in_new_rounded,
+          label: i18n.tr('open'),
+        ),
         if (widget.isLocal)
-          const (
-            _WorkEntryAction.rename,
-            Icons.drive_file_rename_outline_rounded,
-            'rename',
+          UnifiedMenuEntry<_WorkEntryAction>.action(
+            value: _WorkEntryAction.rename,
+            icon: Icons.drive_file_rename_outline_rounded,
+            label: i18n.tr('rename'),
           ),
       ],
       _WorkEntryType.image => [
-        const (_WorkEntryAction.open, Icons.open_in_new_rounded, 'open'),
-        if (widget.isLocal) ...const [
-          (
-            _WorkEntryAction.rename,
-            Icons.drive_file_rename_outline_rounded,
-            'rename',
+        UnifiedMenuEntry<_WorkEntryAction>.action(
+          value: _WorkEntryAction.open,
+          icon: Icons.open_in_new_rounded,
+          label: i18n.tr('open'),
+        ),
+        if (widget.isLocal) ...[
+          UnifiedMenuEntry<_WorkEntryAction>.action(
+            value: _WorkEntryAction.rename,
+            icon: Icons.drive_file_rename_outline_rounded,
+            label: i18n.tr('rename'),
           ),
-          (
-            _WorkEntryAction.setCover,
-            Icons.photo_size_select_actual_outlined,
-            'audio_detail_set_cover',
+          UnifiedMenuEntry<_WorkEntryAction>.action(
+            value: _WorkEntryAction.setCover,
+            icon: Icons.photo_size_select_actual_outlined,
+            label: i18n.tr('audio_detail_set_cover'),
           ),
         ],
       ],
     };
-    return [
-      for (final (action, icon, label) in actions)
-        PopupMenuItem(
-          value: action,
-          height: 40,
-          child: Row(
-            children: [
-              Icon(icon, size: 20, color: color),
-              const SizedBox(width: 12),
-              Text(i18n.tr(label)),
-            ],
-          ),
-        ),
-    ];
   }
 
   Future<void> _showEntryContextMenu(
@@ -798,7 +802,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
     final action = await showDockAwareMenu<_WorkEntryAction>(
       context: context,
       position: position,
-      items: _entryMenuItems(item),
+      entries: _entryMenuItems(item),
     );
     if (mounted && action != null) await _handleEntryAction(item, action);
   }
@@ -1749,7 +1753,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
     final action = await showDockAwareMenu<_WorkEntryAction>(
       context: context,
       position: position,
-      items: _entryMenuItems(item),
+      entries: _entryMenuItems(item),
     );
     if (mounted && action != null) {
       await _handleEntryAction(item, action);
@@ -1768,30 +1772,19 @@ class _DockMenuLayout extends SingleChildLayoutDelegate {
 
   @override
   Offset getPositionForChild(Size size, Size childSize) {
-    double x;
-    if (position.left == size.width - position.right) {
-      x = position.left;
-      if (x + childSize.width > size.width - 8) {
-        x = size.width - 8 - childSize.width;
-      }
-    } else {
-      x = size.width - position.right - childSize.width;
-      if (x + childSize.width > size.width - 8) {
-        x = size.width - 8 - childSize.width;
-      }
+    // Right-align to button right edge.
+    double x = size.width - position.right - childSize.width;
+    if (x + childSize.width > size.width - 8) {
+      x = size.width - 8 - childSize.width;
     }
     if (x < 8) x = 8;
 
-    final buttonBottom = size.height - position.bottom;
-    final buttonTop = position.top;
-    double y = buttonBottom;
-    if (y + childSize.height > size.height - 8) {
-      y = buttonTop - childSize.height;
-    }
-    if (y < 8) y = 8;
+    // Top-align to button top (covering the button).
+    double y = position.top;
     if (y + childSize.height > size.height - 8) {
       y = size.height - 8 - childSize.height;
     }
+    if (y < 8) y = 8;
     return Offset(x, y);
   }
 
@@ -1803,83 +1796,24 @@ class _DockMenuLayout extends SingleChildLayoutDelegate {
 Future<T?> showDockAwareMenu<T>({
   required BuildContext context,
   required RelativeRect position,
-  required List<PopupMenuEntry<T>> items,
+  required List<UnifiedMenuEntry<T>> entries,
 }) async {
   final overlayState =
       MobileOverlayInset.menuOverlayOf(context) ?? Overlay.maybeOf(context);
-  if (overlayState == null) {
-    return showMenu<T>(context: context, position: position, items: items);
-  }
+  if (overlayState == null) return null;
 
   final completer = Completer<T?>();
   late OverlayEntry entry;
 
   entry = OverlayEntry(
-    builder: (overlayContext) {
-      final theme = Theme.of(context);
-      final cs = theme.colorScheme;
-      return PopScope(
-        canPop: false,
-        onPopInvokedWithResult: (didPop, _) {
-          if (!didPop && !completer.isCompleted) {
-            completer.complete(null);
-          }
-        },
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: () {
-                if (!completer.isCompleted) completer.complete(null);
-              },
-              child: const SizedBox.expand(),
-            ),
-            CustomSingleChildLayout(
-              delegate: _DockMenuLayout(position),
-              child: Material(
-                type: MaterialType.card,
-                elevation: 8,
-                borderRadius: BorderRadius.circular(8),
-                clipBehavior: Clip.antiAlias,
-                color: cs.surfaceContainerHigh,
-                child: IntrinsicWidth(
-                  stepWidth: 56.0,
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                    child: ListBody(
-                      children: [
-                        for (final item in items)
-                          if (item is PopupMenuItem<T>)
-                            InkWell(
-                              onTap: item.enabled
-                                  ? () {
-                                      if (!completer.isCompleted) {
-                                        completer.complete(item.value);
-                                      }
-                                    }
-                                  : null,
-                              child: Container(
-                                height: item.height,
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 16,
-                                ),
-                                alignment: Alignment.centerLeft,
-                                child: item.child,
-                              ),
-                            )
-                          else
-                            item,
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      );
-    },
+    builder: (_) => _DockMenuOverlay<T>(
+      position: position,
+      entries: entries,
+      themeContext: context,
+      onResult: (value) {
+        if (!completer.isCompleted) completer.complete(value);
+      },
+    ),
   );
 
   overlayState.insert(entry);
@@ -1887,6 +1821,191 @@ Future<T?> showDockAwareMenu<T>({
   entry.remove();
   entry.dispose();
   return result;
+}
+
+class _DockMenuOverlay<T> extends StatefulWidget {
+  const _DockMenuOverlay({
+    required this.position,
+    required this.entries,
+    required this.themeContext,
+    required this.onResult,
+  });
+
+  final RelativeRect position;
+  final List<UnifiedMenuEntry<T>> entries;
+  final BuildContext themeContext;
+  final ValueChanged<T?> onResult;
+
+  @override
+  State<_DockMenuOverlay<T>> createState() => _DockMenuOverlayState<T>();
+}
+
+class _DockMenuOverlayState<T> extends State<_DockMenuOverlay<T>>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  bool _dismissed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 160),
+      reverseDuration: const Duration(milliseconds: 100),
+    );
+    _controller.forward(from: 0);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> _dismiss(T? value) async {
+    if (_dismissed) return;
+    _dismissed = true;
+    try {
+      await _controller.reverse();
+    } catch (_) {}
+    widget.onResult(value);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(widget.themeContext);
+    final cs = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
+    final tokens = AppDesignTokens.of(widget.themeContext);
+    final background = isDark ? cs.surfaceBright : cs.surfaceContainerHighest;
+
+    final curved = CurvedAnimation(
+      parent: _controller,
+      curve: Curves.easeOutCubic,
+      reverseCurve: Curves.easeInCubic,
+    );
+
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _dismiss(null);
+      },
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () => _dismiss(null),
+            child: const SizedBox.expand(),
+          ),
+          CustomSingleChildLayout(
+            delegate: _DockMenuLayout(widget.position),
+            child: FadeTransition(
+              opacity: curved,
+              child: ScaleTransition(
+                alignment: Alignment.topRight,
+                scale:
+                    Tween<double>(begin: 0.96, end: 1).animate(curved),
+                child: ClipRRect(
+                  borderRadius:
+                      BorderRadius.circular(tokens.radiusSection),
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: background,
+                      borderRadius:
+                          BorderRadius.circular(tokens.radiusSection),
+                      border: Border.all(
+                        color: cs.outlineVariant.withValues(
+                          alpha: tokens.standardBorderAlpha,
+                        ),
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: cs.shadow.withValues(
+                            alpha: isDark ? 0.36 : 0.18,
+                          ),
+                          blurRadius: 30,
+                          offset: const Offset(0, 16),
+                        ),
+                      ],
+                    ),
+                    child: IntrinsicWidth(
+                      child: Padding(
+                        padding:
+                            const EdgeInsets.symmetric(vertical: 6),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            for (final e in widget.entries)
+                              if (e.divider)
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 4,
+                                  ),
+                                  child: Divider(
+                                    height: 1,
+                                    thickness: 1,
+                                    color: cs.outlineVariant
+                                        .withValues(alpha: 0.56),
+                                  ),
+                                )
+                              else
+                                Material(
+                                  color: Colors.transparent,
+                                  child: InkWell(
+                                    onTap: e.enabled && e.value != null
+                                        ? () => _dismiss(e.value)
+                                        : null,
+                                    child: SizedBox(
+                                      height: 40,
+                                      child: Padding(
+                                        padding:
+                                            const EdgeInsets.symmetric(
+                                          horizontal: 12,
+                                        ),
+                                        child: Row(
+                                          children: [
+                                            Icon(
+                                              e.icon,
+                                              size: 18,
+                                              color: cs.onSurface,
+                                            ),
+                                            const SizedBox(width: 10),
+                                            Expanded(
+                                              child: Text(
+                                                e.label,
+                                                maxLines: 1,
+                                                overflow: TextOverflow
+                                                    .ellipsis,
+                                                style: theme
+                                                    .textTheme.bodySmall
+                                                    ?.copyWith(
+                                                  color: cs.onSurface,
+                                                  fontWeight:
+                                                      FontWeight.w700,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 // ---------------------------------------------------------------------------

@@ -133,10 +133,17 @@ class _AsyncCoverImageState extends State<AsyncCoverImage> {
       final sameRequest =
           widget.requestKey != null &&
           oldWidget.requestKey == widget.requestKey;
+      final initialPath = widget.initialPath;
+      final hasInitialPath = initialPath != null && initialPath.isNotEmpty;
+      if (hasInitialPath) {
+        _resolvedPath = initialPath;
+        _isResolved = true;
+      }
       _bindFuture(
         widget.future,
         keepState:
-            sameRequest && _resolvedPath != null && _resolvedPath!.isNotEmpty,
+            hasInitialPath ||
+            (sameRequest && _resolvedPath != null && _resolvedPath!.isNotEmpty),
       );
     }
   }

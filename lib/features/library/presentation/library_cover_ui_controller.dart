@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
+
 import '../../../core/media/music_track.dart';
 import '../../../core/media/path_matcher.dart';
 import '../../../core/ui/warmup_scheduler.dart';
@@ -19,6 +21,10 @@ final class LibraryCoverUiController {
   bool _disposed = false;
 
   Future<String?> deferredFolderCover(String folderPath) {
+    final resolvedPath = _library.resolvedCoverPathForFolder(folderPath);
+    if (!_disposed && resolvedPath != null && resolvedPath.isNotEmpty) {
+      return SynchronousFuture<String?>(resolvedPath);
+    }
     final normalizedPath = PathMatcher.normalize(folderPath);
     final generation = _library.coverArtworkCacheService.generation;
     return _deferredLookup(
@@ -28,6 +34,10 @@ final class LibraryCoverUiController {
   }
 
   Future<String?> deferredTrackCover(MusicTrack track) {
+    final resolvedPath = _library.resolvedCoverPathForTrack(track);
+    if (!_disposed && resolvedPath != null && resolvedPath.isNotEmpty) {
+      return SynchronousFuture<String?>(resolvedPath);
+    }
     final coverKey =
         _library.coverArtworkCacheService.coverSearchKeyForTrack(track) ??
         track.path;
@@ -39,6 +49,10 @@ final class LibraryCoverUiController {
   }
 
   Future<String?> deferredRemoteCover(String url) {
+    final resolvedPath = _library.resolvedCoverPathForRemoteCover(url);
+    if (!_disposed && resolvedPath != null && resolvedPath.isNotEmpty) {
+      return SynchronousFuture<String?>(resolvedPath);
+    }
     final normalizedUrl = url.trim();
     final generation = _library.coverArtworkCacheService.generation;
     return _deferredLookup(

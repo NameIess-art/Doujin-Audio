@@ -314,6 +314,32 @@ void main() {
     expect(find.text('loaded:cover.image'), findsOneWidget);
   });
 
+  testWidgets('AsyncCoverImage reuses known cover when the page rebuilds', (
+    tester,
+  ) async {
+    final pending = Completer<String?>();
+    Widget buildCover(Future<String?> future, String path) => MaterialApp(
+      home: AsyncCoverImage(
+        future: future,
+        initialPath: path,
+        duration: Duration.zero,
+        imageBuilder: (_, path) => Text('loaded:$path'),
+        fallbackBuilder: (_) => const Text('fallback'),
+        loadingBuilder: (_) => const Text('loading'),
+      ),
+    );
+
+    await tester.pumpWidget(buildCover(Future.value('cover.image'), 'cover.image'));
+    await tester.pumpWidget(buildCover(pending.future, 'cover.image'));
+    expect(find.text('loaded:cover.image'), findsOneWidget);
+    expect(find.text('loading'), findsNothing);
+
+    await tester.pumpWidget(buildCover(Completer<String?>().future, 'new.image'));
+    expect(find.text('loaded:new.image'), findsOneWidget);
+    expect(find.text('loaded:cover.image'), findsNothing);
+    expect(find.text('loading'), findsNothing);
+  });
+
   testWidgets('AsyncCoverImage defers completed cover during interaction', (
     tester,
   ) async {

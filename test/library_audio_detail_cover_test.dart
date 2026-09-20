@@ -1390,6 +1390,15 @@ void main() {
         coverUi.setInteractionPaused(false);
         await future;
         expect(cache.requestedPaths, <String>[track.path]);
+
+        cache.resolvedPath = '/cover.image';
+        coverUi.setInteractionPaused(true);
+        String? immediateCover;
+        unawaited(coverUi.deferredTrackCover(track).then((path) {
+          immediateCover = path;
+        }));
+        expect(immediateCover, '/cover.image');
+        expect(cache.requestedPaths, <String>[track.path]);
       },
     );
   });
@@ -1401,6 +1410,11 @@ class _PlaybackCoverWarmupRecordingCacheService
     : super(libraryService: LibraryService());
 
   final List<String> requestedPaths = <String>[];
+  String? resolvedPath;
+
+  @override
+  String? resolvedForTrack(MusicTrack? track, {String? trackPath}) => resolvedPath;
+
 
   @override
   Future<String?> futureForTrack(MusicTrack? track, {String? trackPath}) async {

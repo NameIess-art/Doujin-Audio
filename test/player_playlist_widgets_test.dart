@@ -5299,4 +5299,12 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pumpAndSettle();
   });
+
+  test('formatSpeedValue formats 1, 2, and 3 to two decimal places', () {
+    expect(formatSpeedValue(1.0), '1.00x');
+    expect(formatSpeedValue(2.0), '2.00x');
+    expect(formatSpeedValue(3.0), '3.00x');
+    expect(formatSpeedValue(1.25), '1.25x');
+    expect(formatSpeedValue(0.75), '0.75x');
+  });
 }

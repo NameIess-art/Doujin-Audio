@@ -735,16 +735,23 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
 
   Future<void> _showEntryContextMenu(
     _WorkEntryItem item,
-    Offset position,
+    Offset globalPosition,
   ) async {
-    final overlay =
-        Overlay.of(context).context.findRenderObject()! as RenderBox;
-    final action = await showMenu<_WorkEntryAction>(
+    final overlayState = MobileOverlayInset.menuOverlayOf(context) ??
+        Overlay.maybeOf(context);
+    final overlayBox =
+        overlayState?.context.findRenderObject() as RenderBox?;
+    if (overlayBox == null || !overlayBox.hasSize) return;
+
+    final localPos = overlayBox.globalToLocal(globalPosition);
+    final position = RelativeRect.fromRect(
+      localPos & Size.zero,
+      Offset.zero & overlayBox.size,
+    );
+
+    final action = await showDockAwareMenu<_WorkEntryAction>(
       context: context,
-      position: RelativeRect.fromSize(
-        overlay.globalToLocal(position) & Size.zero,
-        overlay.size,
-      ),
+      position: position,
       items: _entryMenuItems(item),
     );
     if (mounted && action != null) await _handleEntryAction(item, action);
@@ -978,9 +985,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
 
     if (widget.isLocal) {
       final detail = _localDetail;
-      displayTitle = detail?.workTitle.trim().isNotEmpty == true
-          ? detail!.workTitle
-          : PathDisplay.folderName(widget.localTarget!.targetPath);
+      displayTitle = PathDisplay.folderName(widget.localTarget!.targetPath);
       displayRj = detail?.rjCode ?? '';
       displayCircle = detail?.circleName ?? '';
       displayVoiceActors = detail?.voiceActors ?? const [];
@@ -1637,19 +1642,187 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
   Widget _buildEntryMoreButton(_WorkEntryItem item) {
     return SizedBox.square(
       dimension: 44,
-      child: PopupMenuButton<_WorkEntryAction>(
-        key: ValueKey<String>('work_entry_more_${item.relativePath}'),
-        padding: EdgeInsets.zero,
-        iconSize: 22,
-        icon: const Icon(Icons.more_vert_rounded),
-        tooltip: ref
-            .read(appLanguageProviderInstanceProvider)
-            .tr('more_actions'),
-        itemBuilder: (_) => _entryMenuItems(item),
-        onSelected: (action) => _handleEntryAction(item, action),
+      child: Builder(
+        builder: (buttonContext) {
+          return IconButton(
+            key: ValueKey<String>('work_entry_more_${item.relativePath}'),
+            padding: EdgeInsets.zero,
+            iconSize: 22,
+            icon: const Icon(Icons.more_vert_rounded),
+            tooltip: ref
+                .read(appLanguageProviderInstanceProvider)
+                .tr('more_actions'),
+            onPressed: () => _showEntryMenuForButton(item, buttonContext),
+          );
+        },
       ),
     );
   }
+
+  Future<void> _showEntryMenuForButton(
+    _WorkEntryItem item,
+    BuildContext buttonContext,
+  ) async {
+    final buttonBox = buttonContext.findRenderObject() as RenderBox?;
+    if (buttonBox == null || !buttonBox.hasSize) return;
+    final overlayState = MobileOverlayInset.menuOverlayOf(context) ??
+        Overlay.maybeOf(context);
+    final overlayBox =
+        overlayState?.context.findRenderObject() as RenderBox?;
+    if (overlayBox == null || !overlayBox.hasSize) return;
+
+    final buttonOrigin =
+        buttonBox.localToGlobal(Offset.zero, ancestor: overlayBox);
+    final buttonRect = buttonOrigin & buttonBox.size;
+    final position = RelativeRect.fromRect(
+      buttonRect,
+      Offset.zero & overlayBox.size,
+    );
+
+    final action = await showDockAwareMenu<_WorkEntryAction>(
+      context: context,
+      position: position,
+      items: _entryMenuItems(item),
+    );
+    if (mounted && action != null) {
+      await _handleEntryAction(item, action);
+    }
+  }
+}
+
+class _DockMenuLayout extends SingleChildLayoutDelegate {
+  _DockMenuLayout(this.position);
+  final RelativeRect position;
+
+  @override
+  BoxConstraints getConstraintsForChild(BoxConstraints constraints) {
+    return BoxConstraints.loose(constraints.biggest);
+  }
+
+  @override
+  Offset getPositionForChild(Size size, Size childSize) {
+    double x;
+    if (position.left == size.width - position.right) {
+      x = position.left;
+      if (x + childSize.width > size.width - 8) {
+        x = size.width - 8 - childSize.width;
+      }
+    } else {
+      x = size.width - position.right - childSize.width;
+      if (x + childSize.width > size.width - 8) {
+        x = size.width - 8 - childSize.width;
+      }
+    }
+    if (x < 8) x = 8;
+
+    final buttonBottom = size.height - position.bottom;
+    final buttonTop = position.top;
+    double y = buttonBottom;
+    if (y + childSize.height > size.height - 8) {
+      y = buttonTop - childSize.height;
+    }
+    if (y < 8) y = 8;
+    if (y + childSize.height > size.height - 8) {
+      y = size.height - 8 - childSize.height;
+    }
+    return Offset(x, y);
+  }
+
+  @override
+  bool shouldRelayout(_DockMenuLayout oldDelegate) =>
+      position != oldDelegate.position;
+}
+
+Future<T?> showDockAwareMenu<T>({
+  required BuildContext context,
+  required RelativeRect position,
+  required List<PopupMenuEntry<T>> items,
+}) async {
+  final overlayState = MobileOverlayInset.menuOverlayOf(context) ??
+      Overlay.maybeOf(context);
+  if (overlayState == null) {
+    return showMenu<T>(
+      context: context,
+      position: position,
+      items: items,
+    );
+  }
+
+  final completer = Completer<T?>();
+  late OverlayEntry entry;
+
+  entry = OverlayEntry(
+    builder: (overlayContext) {
+      final theme = Theme.of(context);
+      final cs = theme.colorScheme;
+      return PopScope(
+        canPop: false,
+        onPopInvokedWithResult: (didPop, _) {
+          if (!didPop && !completer.isCompleted) {
+            completer.complete(null);
+          }
+        },
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () {
+                if (!completer.isCompleted) completer.complete(null);
+              },
+              child: const SizedBox.expand(),
+            ),
+            CustomSingleChildLayout(
+              delegate: _DockMenuLayout(position),
+              child: Material(
+                type: MaterialType.card,
+                elevation: 8,
+                borderRadius: BorderRadius.circular(8),
+                clipBehavior: Clip.antiAlias,
+                color: cs.surfaceContainerHigh,
+                child: IntrinsicWidth(
+                  stepWidth: 56.0,
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: ListBody(
+                      children: [
+                        for (final item in items)
+                          if (item is PopupMenuItem<T>)
+                            InkWell(
+                              onTap: item.enabled
+                                  ? () {
+                                      if (!completer.isCompleted) {
+                                        completer.complete(item.value);
+                                      }
+                                    }
+                                  : null,
+                              child: Container(
+                                height: item.height,
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 16),
+                                alignment: Alignment.centerLeft,
+                                child: item.child,
+                              ),
+                            )
+                          else
+                            item,
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    },
+  );
+
+  overlayState.insert(entry);
+  final result = await completer.future;
+  entry.remove();
+  entry.dispose();
+  return result;
 }
 
 // ---------------------------------------------------------------------------

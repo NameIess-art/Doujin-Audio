@@ -13,6 +13,7 @@ import 'package:doujin_audio/core/media/dlsite_metadata.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
 import 'package:doujin_audio/core/platform/file_cache_platform_gateway.dart';
 import 'package:doujin_audio/core/widgets/async_cover_image.dart';
+import 'package:doujin_audio/core/widgets/mobile_overlay_inset.dart';
 import 'package:doujin_audio/core/widgets/top_page_header.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_metadata_service.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
@@ -328,8 +329,9 @@ void main() {
           findsOneWidget,
         );
 
-        // Title at bottom of cover
-        expect(find.text('Test Local Work Title'), findsOneWidget);
+        // Title at bottom of cover shows folder name instead of metadata title
+        expect(find.text('RJ123456 - Test Work'), findsOneWidget);
+        expect(find.text('Test Local Work Title'), findsNothing);
 
         // Pinned RJ | Circle row
         expect(find.text('RJ123456'), findsOneWidget);
@@ -745,5 +747,99 @@ void main() {
 
       await tester.pumpWidget(const SizedBox.shrink());
     });
+
+    testWidgets(
+      'WorkDetailPage more menu renders in overlay above playback dock',
+      (tester) async {
+        SharedPreferences.setMockInitialValues(const <String, Object>{});
+        final fixture = AppRuntimeWidgetTestFixture();
+        addTearDown(fixture.dispose);
+        final root = (await tester.runAsync<Directory>(
+          () => Directory.systemTemp.createTemp('work_dock_menu_'),
+        ))!;
+        addTearDown(() async {
+          try {
+            if (await root.exists()) await root.delete(recursive: true);
+          } on FileSystemException {
+            // A failed assertion can leave the directory locked briefly.
+          }
+        });
+        final textFile = File('${root.path}${Platform.pathSeparator}notes.txt');
+        await tester.runAsync(() async {
+          await textFile.writeAsString('notes');
+        });
+        fixture.library.addWatchedFolder(root.path, notify: false);
+        final target = AudioDetailTarget.libraryRootFolder(root.path);
+
+        final menuOverlayKey = GlobalKey<OverlayState>();
+        await tester.pumpWidget(
+          fixture.build(
+            MobileOverlayInset(
+              bottomInset: 80,
+              menuOverlayKey: menuOverlayKey,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  WorkDetailPage.forLocal(target: target),
+                  const Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    height: 64,
+                    child: SizedBox(
+                      key: ValueKey<String>('mock_playback_dock'),
+                    ),
+                  ),
+                  Overlay(key: menuOverlayKey),
+                ],
+              ),
+            ),
+            overrides: [
+              workTextServiceProvider.overrideWithValue(
+                WorkTextService(
+                  platformGateway: _WorkDetailFileGateway(textFile),
+                ),
+              ),
+            ],
+          ),
+        );
+        for (
+          var i = 0;
+          i < 40 && find.text('notes.txt').evaluate().isEmpty;
+          i++
+        ) {
+          await tester.pump(const Duration(milliseconds: 50));
+          await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 10)),
+          );
+        }
+
+        final textMore = find.byKey(
+          const ValueKey<String>('work_entry_more_notes.txt'),
+        );
+        expect(textMore, findsOneWidget);
+        await tester.tap(textMore);
+        await tester.pump(const Duration(milliseconds: 250));
+
+        final menuItem = find.text(
+          fixture.languageProvider.tr('audio_detail_rename_file'),
+        );
+        expect(menuItem, findsOneWidget);
+        final mockDock = find.byKey(
+          const ValueKey<String>('mock_playback_dock'),
+        );
+        expect(mockDock, findsOneWidget);
+
+        final paintOrder = tester.allWidgets.toList(growable: false);
+        expect(
+          paintOrder.indexOf(tester.widget(mockDock)),
+          lessThan(paintOrder.indexOf(tester.widget(menuItem))),
+        );
+
+        await tester.tapAt(Offset.zero);
+        await tester.pump(const Duration(milliseconds: 500));
+        expect(menuItem, findsNothing);
+      },
+    );
   });
 }

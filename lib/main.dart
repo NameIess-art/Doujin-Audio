@@ -335,12 +335,33 @@ class _RootPageRouteObserver extends NavigatorObserver {
 
   final ValueNotifier<int> revision;
   final List<PageRoute<dynamic>> _routes = <PageRoute<dynamic>>[];
+  final Map<PageRoute<dynamic>, (Animation<double>, AnimationStatusListener)>
+  _routeAnimationListeners = {};
+  final Set<PageRoute<dynamic>> _departingRoutes = {};
   bool _syncScheduled = false;
   bool _disposed = false;
 
   PageRoute<dynamic>? get topRoute => _routes.lastOrNull;
+  List<PageRoute<dynamic>> get routes => List.unmodifiable(_routes);
+
+  PageRoute<dynamic>? lastRouteNamed(String name) {
+    for (var index = _routes.length - 1; index >= 0; index--) {
+      final route = _routes[index];
+      if (route.settings.name == name) return route;
+    }
+    return null;
+  }
+
   bool containsRouteNamed(String name) =>
       _routes.any((route) => route.settings.name == name);
+
+  bool hasRouteAboveNamed(String name) {
+    final routeIndex = _routes.lastIndexWhere(
+      (route) => route.settings.name == name,
+    );
+    if (routeIndex < 0) return false;
+    return routeIndex < _routes.length - 1 || _departingRoutes.isNotEmpty;
+  }
 
   void _sync() {
     if (_syncScheduled || _disposed) return;
@@ -353,12 +374,42 @@ class _RootPageRouteObserver extends NavigatorObserver {
 
   void dispose() {
     _disposed = true;
+    for (final listener in _routeAnimationListeners.values) {
+      listener.$1.removeStatusListener(listener.$2);
+    }
+    _routeAnimationListeners.clear();
+    _departingRoutes.clear();
+  }
+
+  void _trackAnimation(PageRoute<dynamic> route) {
+    final animation = route.animation;
+    if (animation == null || _routeAnimationListeners.containsKey(route)) {
+      return;
+    }
+    void listener(AnimationStatus status) {
+      if (status == AnimationStatus.completed ||
+          status == AnimationStatus.dismissed) {
+        if (status == AnimationStatus.dismissed) {
+          _departingRoutes.remove(route);
+        }
+        _sync();
+      }
+    }
+
+    _routeAnimationListeners[route] = (animation, listener);
+    animation.addStatusListener(listener);
+  }
+
+  void _untrackAnimation(PageRoute<dynamic> route) {
+    final listener = _routeAnimationListeners.remove(route);
+    listener?.$1.removeStatusListener(listener.$2);
   }
 
   @override
   void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
     if (route case final PageRoute<dynamic> pageRoute) {
       _routes.add(pageRoute);
+      _trackAnimation(pageRoute);
       _sync();
     }
   }
@@ -366,8 +417,21 @@ class _RootPageRouteObserver extends NavigatorObserver {
   @override
   void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
     if (route is PageRoute<dynamic>) {
+      final workDetailIndex = _routes.lastIndexWhere(
+        (candidate) => candidate.settings.name == workDetailRouteName,
+      );
+      if (workDetailIndex >= 0 && _routes.indexOf(route) > workDetailIndex) {
+        _departingRoutes.add(route);
+      }
       _routes.remove(route);
       _sync();
+      unawaited(
+        route.completed.then((_) {
+          _departingRoutes.remove(route);
+          _untrackAnimation(route);
+          _sync();
+        }),
+      );
     }
   }
 
@@ -375,6 +439,8 @@ class _RootPageRouteObserver extends NavigatorObserver {
   void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) {
     if (route is PageRoute<dynamic>) {
       _routes.remove(route);
+      _departingRoutes.remove(route);
+      _untrackAnimation(route);
       _sync();
     }
   }
@@ -382,16 +448,19 @@ class _RootPageRouteObserver extends NavigatorObserver {
   @override
   void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) {
     if (oldRoute is PageRoute<dynamic>) {
+      _untrackAnimation(oldRoute);
       final index = _routes.indexOf(oldRoute);
       if (index >= 0) {
         if (newRoute is PageRoute<dynamic>) {
           _routes[index] = newRoute;
+          _trackAnimation(newRoute);
         } else {
           _routes.removeAt(index);
         }
       }
     } else if (newRoute is PageRoute<dynamic>) {
       _routes.add(newRoute);
+      _trackAnimation(newRoute);
     }
     _sync();
   }
@@ -462,9 +531,7 @@ class _RoutedPlaybackDockState extends ConsumerState<_RoutedPlaybackDock> {
 
   void _scheduleExpansion() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && widget.active) setState(() => _expanded = true);
-      });
+      if (mounted && widget.active) setState(() => _expanded = true);
     });
   }
 
@@ -519,7 +586,7 @@ class _RoutedPlaybackDockState extends ConsumerState<_RoutedPlaybackDock> {
     final i18n = ref.read(appLanguageProviderInstanceProvider);
 
     final dock = IgnorePointer(
-      ignoring: !widget.active || widget.obscured,
+      ignoring: !widget.active,
       child: SafeArea(
         top: false,
         minimum: const EdgeInsets.only(bottom: 6),
@@ -620,9 +687,13 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp> {
   late final AppBootstrapController _runtimeBootstrapController;
   late final bool _shouldShowOnboarding;
   final _navigatorKey = GlobalKey<NavigatorState>();
+  final _menuOverlayKey = GlobalKey<OverlayState>();
   final ValueNotifier<int> _routeRevision = ValueNotifier(0);
   late final _RootPageRouteObserver _routeObserver;
   late final PlaybackDockGeometryController _playbackDockGeometry;
+  OverlayEntry? _routedPlaybackDockEntry;
+  PageRoute<dynamic>? _routedPlaybackDockRoute;
+  bool _routedPlaybackDockSyncScheduled = false;
   var _restoreOutcomeScheduled = false;
   var _runtimeBootstrapSettledNotified = false;
   StreamSubscription<VideoConversionResult>? _conversionSubscription;
@@ -651,6 +722,8 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp> {
 
   @override
   void dispose() {
+    _routedPlaybackDockEntry?.remove();
+    _routedPlaybackDockEntry?.dispose();
     _conversionSubscription?.cancel();
     _runtimeBootstrapController.removeListener(_handleRuntimeBootstrapState);
     _runtimeBootstrapController.dispose();
@@ -658,6 +731,104 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp> {
     _playbackDockGeometry.dispose();
     _routeRevision.dispose();
     super.dispose();
+  }
+
+  void _scheduleRoutedPlaybackDockSync() {
+    _routedPlaybackDockEntry?.markNeedsBuild();
+    if (_routedPlaybackDockSyncScheduled) return;
+    _routedPlaybackDockSyncScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _routedPlaybackDockSyncScheduled = false;
+      if (mounted) _syncRoutedPlaybackDock();
+    });
+  }
+
+  void _syncRoutedPlaybackDock() {
+    final workDetailRoute = _routeObserver.lastRouteNamed(workDetailRouteName);
+    if (workDetailRoute == null) {
+      final departingRoute = _routedPlaybackDockRoute;
+      _routedPlaybackDockEntry?.markNeedsBuild();
+      if (departingRoute != null) {
+        unawaited(
+          departingRoute.completed.then((_) {
+            if (!mounted ||
+                _routedPlaybackDockRoute != departingRoute ||
+                _routeObserver.containsRouteNamed(workDetailRouteName)) {
+              return;
+            }
+            _removeRoutedPlaybackDock();
+            setState(() {});
+          }),
+        );
+      }
+      return;
+    }
+    if (_routedPlaybackDockRoute == workDetailRoute &&
+        _routedPlaybackDockEntry != null) {
+      final overlay = _navigatorKey.currentState?.overlay;
+      final entry = _routedPlaybackDockEntry!;
+      if (overlay != null && entry.mounted) {
+        final orderedEntries = <OverlayEntry>[];
+        for (final route in _routeObserver.routes) {
+          orderedEntries.addAll(route.overlayEntries);
+          if (identical(route, workDetailRoute)) orderedEntries.add(entry);
+        }
+        overlay.rearrange(orderedEntries);
+      }
+      return;
+    }
+
+    _removeRoutedPlaybackDock();
+    final overlay = _navigatorKey.currentState?.overlay;
+    if (overlay == null || workDetailRoute.overlayEntries.isEmpty) {
+      _scheduleRoutedPlaybackDockSync();
+      return;
+    }
+    final entry = OverlayEntry(
+      maintainState: true,
+      builder: _buildRoutedPlaybackDockOverlay,
+    );
+    _routedPlaybackDockRoute = workDetailRoute;
+    _routedPlaybackDockEntry = entry;
+    overlay.insert(entry, above: workDetailRoute.overlayEntries.last);
+  }
+
+  void _removeRoutedPlaybackDock() {
+    final entry = _routedPlaybackDockEntry;
+    _routedPlaybackDockEntry = null;
+    _routedPlaybackDockRoute = null;
+    entry?.remove();
+    entry?.dispose();
+  }
+
+  Widget _buildRoutedPlaybackDockOverlay(BuildContext context) {
+    final mediaQuery = MediaQuery.of(context);
+    final supportsRoutedDock =
+        defaultTargetPlatform != TargetPlatform.windows &&
+        mediaQuery.orientation == Orientation.portrait &&
+        mediaQuery.size.width < 980;
+    final routeActive = _routeObserver.containsRouteNamed(workDetailRouteName);
+    return Positioned(
+      left: 0,
+      right: 0,
+      bottom: 0,
+      child: Consumer(
+        builder: (context, ref, _) => _RoutedPlaybackDock(
+          active:
+              routeActive &&
+              supportsRoutedDock &&
+              ref.watch(
+                mainOverlayUiProvider.select(
+                  (state) => state.overlaySessions.isNotEmpty,
+                ),
+              ),
+          obscured: _routeObserver.hasRouteAboveNamed(workDetailRouteName),
+          navigatorKey: _navigatorKey,
+          currentRoute: _routeObserver.topRoute,
+          geometry: _playbackDockGeometry,
+        ),
+      ),
+    );
   }
 
   void _handleConversionCompletion(VideoConversionResult result) {
@@ -789,25 +960,15 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp> {
             valueListenable: _routeRevision,
             child: navigatorChild,
             builder: (context, revision, navigatorChild) {
+              _scheduleRoutedPlaybackDockSync();
               final isWorkDetailRoute =
                   _routeObserver.topRoute?.settings.name == workDetailRouteName;
-              final hasWorkDetailRoute = _routeObserver.containsRouteNamed(
-                workDetailRouteName,
-              );
-              final isRouteAboveWorkDetail =
-                  hasWorkDetailRoute && !isWorkDetailRoute;
               final supportsRoutedDock =
                   defaultTargetPlatform != TargetPlatform.windows &&
                   mediaQuery.orientation == Orientation.portrait &&
                   mediaQuery.size.width < 980;
-              final routeDockActive =
-                  hasWorkDetailRoute &&
-                  supportsRoutedDock &&
-                  hasOverlaySessions;
               final reserveWorkDetailDockInset =
-                  hasWorkDetailRoute &&
-                  supportsRoutedDock &&
-                  hasOverlaySessions;
+                  isWorkDetailRoute && supportsRoutedDock && hasOverlaySessions;
               final routeDockInset = reserveWorkDetailDockInset
                   ? kActiveSessionCarouselDockHeight +
                         12 +
@@ -815,6 +976,7 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp> {
                   : 0.0;
               return MobileOverlayInset(
                 bottomInset: routeDockInset,
+                menuOverlayKey: _menuOverlayKey,
                 child: Stack(
                   fit: StackFit.expand,
                   children: [
@@ -822,18 +984,7 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp> {
                       color: Theme.of(context).colorScheme.surface,
                       child: navigatorChild!,
                     ),
-                    Positioned(
-                      left: 0,
-                      right: 0,
-                      bottom: 0,
-                      child: _RoutedPlaybackDock(
-                        active: routeDockActive,
-                        obscured: isRouteAboveWorkDetail,
-                        navigatorKey: _navigatorKey,
-                        currentRoute: _routeObserver.topRoute,
-                        geometry: _playbackDockGeometry,
-                      ),
-                    ),
+                    Overlay(key: _menuOverlayKey),
                   ],
                 ),
               );

@@ -316,9 +316,6 @@ List<IconData> sessionFeatureBadgeIcons({
 String formatSpeedValue(double value) {
   final clamped = value.clamp(0.25, 4.0).toDouble();
   final rounded = (clamped * 100).round() / 100.0;
-  if ((rounded - rounded.truncateToDouble()).abs() < 0.001) {
-    return '${rounded.toInt()}x';
-  }
   return '${rounded.toStringAsFixed(2)}x';
 }
 

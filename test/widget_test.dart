@@ -532,6 +532,7 @@ void main() {
     );
     final routeDockVisibility = find.byKey(
       const ValueKey<String>('routed_playback_dock_visibility'),
+      skipOffstage: false,
     );
     final routeWidth = find.byKey(
       const ValueKey<String>('routed_playback_dock_width'),
@@ -596,43 +597,88 @@ void main() {
     );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 110));
-    expect(
-      tester.widget<MobileOverlayInset>(rootOverlayInset).bottomInset,
-      reservedDetailInset,
-    );
+    expect(tester.widget<MobileOverlayInset>(rootOverlayInset).bottomInset, 0);
     expect(tester.getRect(detailRoute), detailRectBeforePlayback);
     expect(routeDock, findsOneWidget);
     expect(tester.widget<Visibility>(routeDockVisibility).visible, isFalse);
     expect(tester.getSize(routeWidth).width, closeTo(expandedWidth, 0.1));
+    final playbackDetail = find.byType(SessionDetailPage);
+    expect(playbackDetail, findsOneWidget);
+    final playbackDetailPaintOrder = tester.allWidgets.toList(growable: false);
+    expect(
+      playbackDetailPaintOrder.indexOf(tester.widget(routeDock)),
+      lessThan(playbackDetailPaintOrder.indexOf(tester.widget(playbackDetail))),
+    );
 
     navigator.pop();
     await playbackDetailFuture;
     await tester.pump();
+    await tester.pump();
     expect(
       tester.widget<MobileOverlayInset>(rootOverlayInset).bottomInset,
       reservedDetailInset,
     );
     expect(tester.getRect(detailRoute), detailRectBeforePlayback);
-    expect(tester.widget<Visibility>(routeDockVisibility).visible, isTrue);
     expect(routeDock, findsOneWidget);
+    expect(tester.widget<Visibility>(routeDockVisibility).visible, isTrue);
     expect(tester.getSize(routeWidth).width, closeTo(expandedWidth, 0.1));
 
     final coveringRouteFuture = navigator.push<void>(
-      MaterialPageRoute<void>(
-        builder: (_) => const Scaffold(
+      PageRouteBuilder<void>(
+        pageBuilder: (_, _, _) => const Scaffold(
           key: ValueKey<String>('test_covering_route'),
           body: SizedBox.expand(),
         ),
+        transitionsBuilder: (_, animation, _, child) =>
+            FadeTransition(opacity: animation, child: child),
       ),
     );
-    await tester.pump();
+    await tester.pumpAndSettle();
+    expect(tester.widget<MobileOverlayInset>(rootOverlayInset).bottomInset, 0);
+    expect(routeDock, findsNothing);
+    final mountedRouteDock = find.byKey(
+      const ValueKey<String>('routed_playback_dock'),
+      skipOffstage: false,
+    );
+    expect(mountedRouteDock, findsOneWidget);
     expect(tester.widget<Visibility>(routeDockVisibility).visible, isFalse);
-    expect(routeDock, findsOneWidget);
-    expect(tester.getSize(routeWidth).width, closeTo(expandedWidth, 0.1));
+    final settledCoveringRoute = find.byKey(
+      const ValueKey<String>('test_covering_route'),
+    );
+    final settledWidgetPaintOrder = tester.allWidgets.toList(growable: false);
+    expect(
+      settledWidgetPaintOrder.indexOf(tester.widget(mountedRouteDock)),
+      lessThan(
+        settledWidgetPaintOrder.indexOf(tester.widget(settledCoveringRoute)),
+      ),
+    );
 
     navigator.pop();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    final coveringRoute = find.byKey(
+      const ValueKey<String>('test_covering_route'),
+    );
+    expect(coveringRoute, findsOneWidget);
+    expect(tester.widget<Visibility>(routeDockVisibility).visible, isFalse);
+    final widgetPaintOrder = tester.allWidgets.toList(growable: false);
+    expect(
+      widgetPaintOrder.indexOf(tester.widget(routeDock)),
+      lessThan(widgetPaintOrder.indexOf(tester.widget(coveringRoute))),
+    );
+    expect(tester.getSize(routeWidth).width, closeTo(expandedWidth, 0.1));
+    await tester.pump(const Duration(milliseconds: 250));
     await coveringRouteFuture;
     await tester.pump();
+    await tester.pump();
+    expect(
+      tester.widget<MobileOverlayInset>(rootOverlayInset).bottomInset,
+      reservedDetailInset,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('test_covering_route')),
+      findsNothing,
+    );
     expect(tester.widget<Visibility>(routeDockVisibility).visible, isTrue);
     expect(tester.getSize(routeWidth).width, closeTo(expandedWidth, 0.1));
 

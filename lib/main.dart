@@ -591,7 +591,7 @@ class _RoutedPlaybackDockState extends ConsumerState<_RoutedPlaybackDock> {
         : _duration;
     final i18n = ref.read(appLanguageProviderInstanceProvider);
 
-    final dock = IgnorePointer(
+    return IgnorePointer(
       key: const ValueKey<String>('routed_playback_dock_interaction'),
       ignoring: !widget.active || widget.covered,
       child: SafeArea(
@@ -661,11 +661,6 @@ class _RoutedPlaybackDockState extends ConsumerState<_RoutedPlaybackDock> {
         ),
       ),
     );
-    return Opacity(
-      key: const ValueKey<String>('routed_playback_dock_opacity'),
-      opacity: widget.covered ? 0 : 1,
-      child: dock,
-    );
   }
 }
 
@@ -706,6 +701,8 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp> {
   void initState() {
     super.initState();
     _routeObserver = _RootPageRouteObserver(_routeRevision);
+    // Keep the dock below newly pushed routes before their first frame.
+    _routeRevision.addListener(_syncRoutedPlaybackDock);
     _playbackDockGeometry = PlaybackDockGeometryController();
     // Register root-owned disposal even when onboarding hides the ASMR page.
     ref.read(asmrLibraryControllerProvider);
@@ -733,6 +730,7 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp> {
     _runtimeBootstrapController.dispose();
     _routeObserver.dispose();
     _playbackDockGeometry.dispose();
+    _routeRevision.removeListener(_syncRoutedPlaybackDock);
     _routeRevision.dispose();
     super.dispose();
   }
@@ -974,7 +972,6 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp> {
             valueListenable: _routeRevision,
             child: navigatorChild,
             builder: (context, revision, navigatorChild) {
-              _scheduleRoutedPlaybackDockSync();
               final isWorkDetailRoute =
                   _routeObserver.topRoute?.settings.name == workDetailRouteName;
               final supportsRoutedDock =

@@ -321,6 +321,7 @@ const Map<String, String> appLanguageJa = {
   'audio_detail_rating': '評価',
   'audio_detail_empty': '未入力',
   'audio_detail_edit_title': '{name}を編集',
+  'audio_detail_edit_info': '情報を編集',
   'audio_detail_multi_hint': '複数項目は中国語の読点「，」で区切ってください',
   'audio_detail_backup_failed': 'データベースに保存しましたが、ローカルバックアップに失敗しました。',
   'audio_detail_cover_portability_skipped':

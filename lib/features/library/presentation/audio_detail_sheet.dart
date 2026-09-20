@@ -26,6 +26,7 @@ import '../../../core/widgets/async_cover_image.dart';
 import '../../../core/widgets/library_like_cards.dart';
 import '../../../core/widgets/operation_feedback.dart';
 import 'dlsite_metadata_review_page.dart';
+import 'folder_cover_selector.dart';
 import 'work_text_viewer_page.dart';
 import 'work_detail_page.dart';
 import '../application/work_text_service.dart';
@@ -635,7 +636,7 @@ class _AudioDetailSheetState extends ConsumerState<AudioDetailSheet> {
               )
             else if (detail != null) ...[
               if (_target.isLibraryRootFolder) ...[
-                _FolderCoverSelector(
+                FolderCoverSelector(
                   key: ValueKey('${_target.targetPath}:$coverGeneration'),
                   folderPath: _target.targetPath,
                   initialCoverPath: libraryFacade.resolvedCoverPathForFolder(

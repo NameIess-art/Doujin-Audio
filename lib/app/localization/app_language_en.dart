@@ -348,6 +348,7 @@ const Map<String, String> appLanguageEn = {
   'audio_detail_rating': 'Rating',
   'audio_detail_empty': 'Not filled',
   'audio_detail_edit_title': 'Edit {name}',
+  'audio_detail_edit_info': 'Edit information',
   'audio_detail_multi_hint':
       'Separate multiple items with the Chinese comma "，"',
   'audio_detail_backup_failed':

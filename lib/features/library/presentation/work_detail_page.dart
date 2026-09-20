@@ -91,6 +91,7 @@ class WorkDetailPage extends ConsumerStatefulWidget {
 
 class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
   // Local state
+  AudioDetailTarget? _localTarget;
   AudioDetail? _localDetail;
   FolderNode? _localFolderNode;
   List<WorkTextFile> _localTextFiles = const [];
@@ -117,6 +118,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
   @override
   void initState() {
     super.initState();
+    _localTarget = widget.localTarget;
     if (widget.isLocal) {
       _loadLocalData();
     } else {
@@ -125,7 +127,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
   }
 
   Future<void> _loadLocalData() async {
-    final target = widget.localTarget!;
+    final target = _localTarget!;
     final folderPath = target.targetPath;
     final library = ref.read(libraryFacadeProvider);
     final textService = ref.read(workTextServiceProvider);
@@ -505,7 +507,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
 
   // Set local image as cover
   Future<void> _setLocalImageAsCover(String imagePath) async {
-    final folderPath = widget.localTarget!.targetPath;
+    final folderPath = _localTarget!.targetPath;
     final library = ref.read(libraryFacadeProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     try {
@@ -678,7 +680,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
       final renamedPath = await ref
           .read(libraryFacadeProvider)
           .renameWorkEntryToName(
-            libraryRootPath: widget.localTarget!.targetPath,
+            libraryRootPath: _localTarget!.targetPath,
             entryPath: oldPath,
             targetName: targetName,
             isMedia: item.type == _WorkEntryType.audio,
@@ -686,7 +688,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
       if (_localManualCover == oldPath) {
         await ref
             .read(libraryFacadeProvider)
-            .setFolderManualCover(widget.localTarget!.targetPath, renamedPath);
+            .setFolderManualCover(_localTarget!.targetPath, renamedPath);
       }
       if (!mounted) return;
       await _loadLocalData();
@@ -793,7 +795,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
   Future<void> _refreshLocalTree() async {
     final tree = await ref
         .read(libraryFacadeProvider)
-        .loadLibraryFolderTree(widget.localTarget!.targetPath);
+        .loadLibraryFolderTree(_localTarget!.targetPath);
     if (mounted) setState(() => _localFolderNode = tree);
   }
 
@@ -914,11 +916,29 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
     }
   }
 
+  Future<void> _handleLocalEdit() async {
+    final detail = _localDetail;
+    if (detail == null) return;
+    final result = await Navigator.of(context).push<DlsiteMetadataReviewResult>(
+      MaterialPageRoute(
+        builder: (_) => DlsiteMetadataReviewPage.edit(detail: detail),
+      ),
+    );
+    final savedDetail = result?.detail;
+    if (!mounted || savedDetail == null) return;
+    setState(() {
+      _localTarget = savedDetail.target;
+      _localDetail = savedDetail;
+      _currentPathSegments.clear();
+    });
+    await _loadLocalData();
+  }
+
   Future<void> _handleLocalDownload() async {
     await downloadAudioTargetFromAsmr(
       context: context,
       ref: ref,
-      target: widget.localTarget!,
+      target: _localTarget!,
     );
   }
 
@@ -1018,7 +1038,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
 
     if (widget.isLocal) {
       final detail = _localDetail;
-      displayTitle = PathDisplay.folderName(widget.localTarget!.targetPath);
+      displayTitle = PathDisplay.folderName(_localTarget!.targetPath);
       displayRj = detail?.rjCode ?? '';
       displayCircle = detail?.circleName ?? '';
       displayVoiceActors = detail?.voiceActors ?? const [];
@@ -1028,7 +1048,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
           detail?.cardCoverPath ??
           ref
               .watch(libraryFacadeProvider)
-              .resolvedCoverPathForFolder(widget.localTarget!.targetPath);
+              .resolvedCoverPathForFolder(_localTarget!.targetPath);
     } else {
       final work = widget.asmrWork!;
       displayTitle = work.title;
@@ -1110,6 +1130,8 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
               accentColor: widget.isAsmr ? asmrBlue : cs.primary,
               surfaceColor: cs.surface,
               onBackPressed: () => Navigator.of(context).maybePop(),
+              onEditPressed: widget.isLocal ? _handleLocalEdit : null,
+              editLabel: i18n.tr('edit'),
               onCopyMetadata: (value) => _copyText(context, value),
             ),
           ),
@@ -1873,6 +1895,8 @@ class _WorkDetailHeaderDelegate extends SliverPersistentHeaderDelegate {
     required this.accentColor,
     required this.surfaceColor,
     required this.onBackPressed,
+    required this.onEditPressed,
+    required this.editLabel,
     required this.onCopyMetadata,
   });
 
@@ -1887,6 +1911,8 @@ class _WorkDetailHeaderDelegate extends SliverPersistentHeaderDelegate {
   final Color accentColor;
   final Color surfaceColor;
   final VoidCallback onBackPressed;
+  final VoidCallback? onEditPressed;
+  final String editLabel;
   final ValueChanged<String> onCopyMetadata;
 
   @override
@@ -2080,6 +2106,20 @@ class _WorkDetailHeaderDelegate extends SliverPersistentHeaderDelegate {
               ),
             ),
           ),
+          if (onEditPressed != null)
+            Positioned(
+              top: topSafeArea + 6,
+              right: 16,
+              child: HeaderFloatingButton(
+                size: 46,
+                child: IconButton(
+                  key: const ValueKey<String>('work_detail_edit'),
+                  onPressed: onEditPressed,
+                  tooltip: editLabel,
+                  icon: const Icon(Icons.edit_rounded),
+                ),
+              ),
+            ),
         ],
       ),
     );
@@ -2092,6 +2132,8 @@ class _WorkDetailHeaderDelegate extends SliverPersistentHeaderDelegate {
         oldDelegate.circleName != circleName ||
         oldDelegate.coverWidget != coverWidget ||
         oldDelegate.accentColor != accentColor ||
-        oldDelegate.surfaceColor != surfaceColor;
+        oldDelegate.surfaceColor != surfaceColor ||
+        oldDelegate.onEditPressed != onEditPressed ||
+        oldDelegate.editLabel != editLabel;
   }
 }

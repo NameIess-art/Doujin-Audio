@@ -428,6 +428,25 @@ void main() {
           find.byKey(const ValueKey<String>('work_detail_back_button')),
           findsOneWidget,
         );
+        final editButton = find.byKey(
+          const ValueKey<String>('work_detail_edit'),
+        );
+        expect(editButton, findsOneWidget);
+        expect(
+          find.descendant(
+            of: editButton,
+            matching: find.text(fixture.languageProvider.tr('edit')),
+          ),
+          findsNothing,
+        );
+        expect(tester.widget<IconButton>(editButton).tooltip, isNotEmpty);
+        expect(
+          find.ancestor(
+            of: editButton,
+            matching: find.byType(HeaderFloatingButton),
+          ),
+          findsOneWidget,
+        );
 
         // Title at bottom of cover shows folder name instead of metadata title
         expect(find.text('RJ123456 - Test Work'), findsOneWidget);
@@ -457,6 +476,84 @@ void main() {
           find.byKey(const ValueKey<String>('work_detail_pin')),
           findsNothing,
         );
+
+        await tester.tap(editButton);
+        await tester.pumpAndSettle();
+
+        expect(find.byType(DlsiteMetadataReviewPage), findsOneWidget);
+        expect(
+          find.text(fixture.languageProvider.tr('audio_detail_edit_info')),
+          findsOneWidget,
+        );
+        expect(
+          find.text(fixture.languageProvider.tr('dlsite_save_cover')),
+          findsNothing,
+        );
+        expect(
+          find.descendant(
+            of: find.byKey(const ValueKey<String>('dlsite_review_confirm')),
+            matching: find.text(fixture.languageProvider.tr('save')),
+          ),
+          findsOneWidget,
+        );
+
+        final fieldKeys = <String>[
+          'audio_detail_folder_name',
+          'audio_detail_work_title',
+          'audio_detail_rj_code',
+          'audio_detail_circle_name',
+          'audio_detail_voice_actors',
+          'audio_detail_tags',
+          'audio_detail_release_date',
+          'card_info_duration',
+          'audio_detail_rating',
+        ];
+        final editList = find.descendant(
+          of: find.byType(DlsiteMetadataReviewPage),
+          matching: find.byType(ListView),
+        );
+        for (final fieldKey in fieldKeys) {
+          final field = find.byKey(ValueKey<String>('metadata_edit_$fieldKey'));
+          for (var i = 0; i < 20 && field.evaluate().isEmpty; i++) {
+            await tester.drag(editList, const Offset(0, -200));
+            await tester.pump();
+          }
+          final textField = tester.widget<TextField>(
+            find.descendant(of: field, matching: find.byType(TextField)),
+          );
+          expect(
+            textField.decoration?.labelText,
+            fixture.languageProvider.tr(fieldKey),
+          );
+          if (fieldKey == 'audio_detail_work_title') {
+            await tester.enterText(
+              find.descendant(of: field, matching: find.byType(TextField)),
+              'Edited local work title',
+            );
+            tester.testTextInput.hide();
+            await tester.pump();
+          }
+        }
+        await tester.tap(
+          find.byKey(const ValueKey<String>('dlsite_review_confirm')),
+        );
+        for (
+          var i = 0;
+          i < 80 && find.byType(DlsiteMetadataReviewPage).evaluate().isNotEmpty;
+          i++
+        ) {
+          await tester.pump(const Duration(milliseconds: 50));
+          await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 10)),
+          );
+        }
+        await tester.pump();
+
+        expect(find.byType(WorkDetailPage), findsOneWidget);
+        final savedDetail = await tester.runAsync(
+          () => fixture.runtimeGraph.library.loadAudioDetail(target),
+        );
+        expect(savedDetail?.detail.workTitle, 'Edited local work title');
 
         await tester.tap(
           find.byKey(const ValueKey<String>('work_detail_fetch_info')),
@@ -505,6 +602,10 @@ void main() {
       expect(find.text('ASMR Remote Work Title'), findsOneWidget);
       expect(find.text('RJ9999'), findsOneWidget);
       expect(find.text('Remote Circle'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey<String>('work_detail_edit')),
+        findsNothing,
+      );
 
       // CV & tags
       expect(find.text('Remote CV'), findsOneWidget);

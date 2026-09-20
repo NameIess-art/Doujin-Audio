@@ -77,13 +77,15 @@ class _DetailCoverCacheService extends CoverArtworkCacheService {
   _DetailCoverCacheService({
     this.candidates = const <String>['/covers/candidate.jpg'],
     this.embeddedCoverPath,
+    this.currentCoverPath,
   }) : super(libraryService: LibraryService());
 
   final List<String> candidates;
   final String? embeddedCoverPath;
+  final String? currentCoverPath;
 
   @override
-  Future<String?> futureForFolder(String folderPath) async => null;
+  Future<String?> futureForFolder(String folderPath) async => currentCoverPath;
 
   @override
   Future<String?> resolveEmbeddedCoverForPath(String filePath) async =>
@@ -462,6 +464,99 @@ void main() {
     );
     expect(ratingField.controller?.text, '4.5');
   });
+
+  testWidgets(
+    'metadata editor shows compact cover navigation and cover state below image',
+    (WidgetTester tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(390, 1000);
+      addTearDown(() {
+        tester.view.resetDevicePixelRatio();
+        tester.view.resetPhysicalSize();
+      });
+      final fixture = AppRuntimeWidgetTestFixture(
+        coverArtworkCacheService: _DetailCoverCacheService(
+          candidates: const <String>[
+            '/covers/current.jpg',
+            '/covers/alternate.jpg',
+          ],
+          currentCoverPath: '/covers/current.jpg',
+        ),
+      );
+      addTearDown(fixture.dispose);
+      const target = AudioDetailTarget(
+        targetType: AudioDetailTargetType.libraryRootFolder,
+        targetPath: '/library/EditableWork',
+      );
+
+      await tester.pumpWidget(
+        fixture.build(
+          DlsiteMetadataReviewPage.edit(detail: AudioDetail.empty(target)),
+        ),
+      );
+
+      final capsule = find.byKey(
+        const ValueKey<String>('audio_detail_cover_navigation_capsule'),
+      );
+      for (var i = 0; i < 40 && capsule.evaluate().isEmpty; i++) {
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 10)),
+        );
+        await tester.pump(const Duration(milliseconds: 20));
+      }
+
+      expect(capsule, findsOneWidget);
+      expect(
+        find.byKey(const ValueKey<String>('audio_detail_cover_prev_button')),
+        findsOneWidget,
+      );
+      final nextButton = find.byKey(
+        const ValueKey<String>('audio_detail_cover_next_button'),
+      );
+      expect(nextButton, findsOneWidget);
+      expect(find.text('1/2'), findsOneWidget);
+      expect(
+        find.text(fixture.languageProvider.tr('audio_detail_current_cover')),
+        findsOneWidget,
+      );
+      expect(
+        find.text(
+          fixture.languageProvider.tr('audio_detail_cover_swipe_hint'),
+        ),
+        findsNothing,
+      );
+      final actionCapsule = find.byKey(
+        const ValueKey<String>('audio_detail_cover_action_capsule'),
+      );
+      expect(actionCapsule, findsOneWidget);
+      expect(
+        find.ancestor(
+          of: actionCapsule,
+          matching: find.byKey(
+            const ValueKey<String>('audio_detail_cover_content'),
+          ),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        tester.getCenter(actionCapsule).dx,
+        lessThan(tester.getCenter(capsule).dx),
+      );
+      expect(
+        tester.getCenter(actionCapsule).dy,
+        closeTo(tester.getCenter(capsule).dy, 1),
+      );
+
+      await tester.tap(nextButton);
+      await tester.pump(const Duration(milliseconds: 300));
+
+      expect(find.text('2/2'), findsOneWidget);
+      expect(
+        find.text(fixture.languageProvider.tr('audio_detail_set_cover')),
+        findsOneWidget,
+      );
+    },
+  );
 
   test(
     'preferred title metadata fills missing ASMR fields from DLsite',

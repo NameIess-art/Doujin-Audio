@@ -98,6 +98,7 @@ class _DetailCoverCacheService extends CoverArtworkCacheService {
   Future<List<String>> discoverCoverCandidatesInFolder(
     String folderPath, {
     String? selectedCoverPath,
+    bool includeVideoFrames = true,
   }) async => candidates;
 }
 

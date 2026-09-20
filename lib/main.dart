@@ -475,14 +475,14 @@ class _RootPageRouteObserver extends NavigatorObserver {
 class _RoutedPlaybackDock extends ConsumerStatefulWidget {
   const _RoutedPlaybackDock({
     required this.active,
-    required this.obscured,
+    required this.covered,
     required this.navigatorKey,
     required this.currentRoute,
     required this.geometry,
   });
 
   final bool active;
-  final bool obscured;
+  final bool covered;
   final GlobalKey<NavigatorState> navigatorKey;
   final Route<dynamic>? currentRoute;
   final PlaybackDockGeometryController geometry;
@@ -592,7 +592,8 @@ class _RoutedPlaybackDockState extends ConsumerState<_RoutedPlaybackDock> {
     final i18n = ref.read(appLanguageProviderInstanceProvider);
 
     final dock = IgnorePointer(
-      ignoring: !widget.active,
+      key: const ValueKey<String>('routed_playback_dock_interaction'),
+      ignoring: !widget.active || widget.covered,
       child: SafeArea(
         top: false,
         minimum: const EdgeInsets.only(bottom: 6),
@@ -660,12 +661,9 @@ class _RoutedPlaybackDockState extends ConsumerState<_RoutedPlaybackDock> {
         ),
       ),
     );
-    return Visibility(
-      key: const ValueKey<String>('routed_playback_dock_visibility'),
-      visible: !widget.obscured,
-      maintainState: true,
-      maintainAnimation: true,
-      maintainSize: true,
+    return Opacity(
+      key: const ValueKey<String>('routed_playback_dock_opacity'),
+      opacity: widget.covered ? 0 : 1,
       child: dock,
     );
   }
@@ -823,6 +821,9 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp> {
           final routeActive = _routeObserver.containsRouteNamed(
             workDetailRouteName,
           );
+          final routeAboveWorkDetail = _routeObserver.hasRouteAboveNamed(
+            workDetailRouteName,
+          );
           return Consumer(
             builder: (context, ref, _) => _RoutedPlaybackDock(
               active:
@@ -833,7 +834,7 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp> {
                       (state) => state.overlaySessions.isNotEmpty,
                     ),
                   ),
-              obscured: _routeObserver.hasRouteAboveNamed(workDetailRouteName),
+              covered: routeAboveWorkDetail,
               navigatorKey: _navigatorKey,
               currentRoute: _routeObserver.topRoute,
               geometry: _playbackDockGeometry,

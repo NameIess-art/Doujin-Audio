@@ -458,6 +458,18 @@ void main() {
           ),
           findsOneWidget,
         );
+        final backFloatingButton = find.ancestor(
+          of: find.byKey(const ValueKey<String>('work_detail_back_button')),
+          matching: find.byType(HeaderFloatingButton),
+        );
+        final editFloatingButton = find.ancestor(
+          of: editButton,
+          matching: find.byType(HeaderFloatingButton),
+        );
+        expect(
+          tester.getSize(editFloatingButton),
+          tester.getSize(backFloatingButton),
+        );
 
         // Title at bottom of cover shows folder name instead of metadata title
         expect(find.text('RJ123456 - Test Work'), findsOneWidget);

@@ -1517,6 +1517,13 @@ void main() {
           '/cache/video.image',
         ],
       );
+      expect(
+        await cache.discoverCoverCandidatesInFolder(
+          directory.path,
+          includeVideoFrames: false,
+        ),
+        <String>[firstImage, secondImage, '/cache/audio.image'],
+      );
     },
   );
 

@@ -80,10 +80,7 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage> {
     if (_currentIndex == 0) {
       _pageController.jumpToPage(widget.images.length - 1);
     } else {
-      _pageController.previousPage(
-        duration: const Duration(milliseconds: 250),
-        curve: Curves.easeOutCubic,
-      );
+      _pageController.jumpToPage(_currentIndex - 1);
     }
   }
 
@@ -92,10 +89,7 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage> {
     if (_currentIndex == widget.images.length - 1) {
       _pageController.jumpToPage(0);
     } else {
-      _pageController.nextPage(
-        duration: const Duration(milliseconds: 250),
-        curve: Curves.easeOutCubic,
-      );
+      _pageController.jumpToPage(_currentIndex + 1);
     }
   }
 

@@ -514,8 +514,10 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
           final enterOffset =
               (1 - enterProgress) * MediaQuery.sizeOf(context).height;
           final revealProgress = (dismissProgress * 3).clamp(0.0, 1.0);
-          final backdropProgress = (enterProgress * pow(1 - revealProgress, 2))
-              .clamp(0.0, 1.0);
+          final backdropProgress = pow(
+            1 - revealProgress,
+            2,
+          ).clamp(0.0, 1.0).toDouble();
           return Stack(
             fit: StackFit.expand,
             children: [
@@ -652,6 +654,7 @@ class _SessionDetailBackdrop extends StatelessWidget {
       fit: StackFit.expand,
       children: [
         DecoratedBox(
+          key: const ValueKey<String>('session_detail_backdrop_surface'),
           decoration: BoxDecoration(
             color: cs.surface.withValues(alpha: progress.clamp(0.0, 1.0)),
           ),

@@ -158,6 +158,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
           );
           final candidateImages = await library.discoverCoverCandidatesInFolder(
             folderPath,
+            includeVideoFrames: false,
           );
           final imageItems = <WorkImageItem>[];
           for (final imgPath in candidateImages) {
@@ -2121,7 +2122,6 @@ class _WorkDetailHeaderDelegate extends SliverPersistentHeaderDelegate {
               top: topSafeArea + 6,
               right: 16,
               child: HeaderFloatingButton(
-                size: 46,
                 child: IconButton(
                   key: const ValueKey<String>('work_detail_edit'),
                   onPressed: onEditPressed,

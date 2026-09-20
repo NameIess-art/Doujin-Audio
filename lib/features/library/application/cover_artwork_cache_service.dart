@@ -627,10 +627,14 @@ class CoverArtworkCacheService {
   Future<List<String>> discoverCoverCandidatesInFolder(
     String folderPath, {
     String? selectedCoverPath,
+    bool includeVideoFrames = true,
   }) async {
     final normalizedFolder = PathMatcher.normalize(folderPath);
     if (normalizedFolder.isEmpty) return const <String>[];
-    final candidates = await _resolveFolderCoverCandidates(normalizedFolder);
+    final candidates = await _resolveFolderCoverCandidates(
+      normalizedFolder,
+      includeVideoFrames: includeVideoFrames,
+    );
     final selectedCover = selectedCoverPath?.trim();
     if (selectedCover == null || selectedCover.isEmpty) return candidates;
     return _candidatesWithSelectedCover(selectedCover, candidates);
@@ -2055,7 +2059,10 @@ class CoverArtworkCacheService {
   String _folderStoreKey(String normalizedFolderPath) =>
       'folder:$normalizedFolderPath';
 
-  Future<List<String>> _resolveFolderCoverCandidates(String folderPath) async {
+  Future<List<String>> _resolveFolderCoverCandidates(
+    String folderPath, {
+    bool includeVideoFrames = true,
+  }) async {
     final candidates = <String>[];
     final seenPaths = <String>{};
     final seenContentKeys = <String>{};
@@ -2096,7 +2103,9 @@ class CoverArtworkCacheService {
       final resolved = await Future.wait(
         batch.map(
           (track) => _isVideoTrack(track)
-              ? _resolveVideoFramePathForTrack(track)
+              ? includeVideoFrames
+                    ? _resolveVideoFramePathForTrack(track)
+                    : Future<String?>.value()
               : _resolvePlatformCoverPathForTrack(
                   track,
                   includeGroupCoverFallback: false,

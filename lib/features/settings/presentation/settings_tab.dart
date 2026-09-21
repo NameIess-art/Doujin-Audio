@@ -199,7 +199,8 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
         child: Stack(
           children: [
             Positioned.fill(
-              child: ListView(
+              child: AppPageContentTransition(
+                child: ListView(
                 controller: _scrollController,
                 padding: EdgeInsets.fromLTRB(
                   16,
@@ -230,6 +231,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                     ),
                   ),
                 ],
+              ),
               ),
             ),
             Positioned(
@@ -596,6 +598,10 @@ class _SettingsCategoryPageState extends ConsumerState<_SettingsCategoryPage> {
             topInset: contentTopInset,
             child: Stack(
               children: [
+                AppPageContentTransition(
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
                 Positioned.fill(
                   child: ListView(
                     controller: _scrollController,
@@ -641,6 +647,9 @@ class _SettingsCategoryPageState extends ConsumerState<_SettingsCategoryPage> {
                       ),
                     ),
                   ),
+                    ],
+                  ),
+                ),
                 Positioned(
                   top: 0,
                   left: 0,

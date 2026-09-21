@@ -17,6 +17,7 @@ import '../../../core/widgets/async_cover_image.dart';
 import '../../../core/widgets/library_like_cards.dart';
 import '../../../core/widgets/operation_feedback.dart';
 import '../../../core/widgets/page_header_inset.dart';
+import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/top_page_header.dart';
 import '../application/audio_detail_repository.dart';
 import 'folder_cover_selector.dart';
@@ -494,7 +495,7 @@ class _DlsiteMetadataReviewPageState
         child: Stack(
           children: [
             Positioned.fill(
-              child: _loading
+              child: AppPageContentTransition(child: _loading
                   ? SingleChildScrollView(
                       padding: EdgeInsets.fromLTRB(
                         20,
@@ -664,14 +665,14 @@ class _DlsiteMetadataReviewPageState
                           label: i18n.tr('audio_detail_rating'),
                         ),
                       ],
-                    ),
+                    )),
             ),
             if (_metadata != null && widget.allowSkip)
               Positioned(
                 left: 16,
                 right: 16,
                 bottom: 16 + MediaQuery.paddingOf(context).bottom,
-                child: Row(
+                child: AppPageContentTransition(child: Row(
                   children: [
                     if (widget.onBatchNavigate != null) ...[
                       HeaderFloatingSurface(
@@ -746,20 +747,20 @@ class _DlsiteMetadataReviewPageState
                       ),
                     ),
                   ],
-                ),
+                )),
               ),
             if (_metadata != null && !widget.allowSkip)
               Positioned(
                 right: 16,
                 bottom: 16 + MediaQuery.paddingOf(context).bottom,
-                child: SizedBox(
+                child: AppPageContentTransition(child: SizedBox(
                   width: 112,
                   child: _ReviewConfirmButton(
                     saving: _saving,
                     onTap: _apply,
                     label: i18n.tr(widget.editing ? 'save' : 'confirm'),
                   ),
-                ),
+                )),
               ),
             Positioned(
               top: 0,

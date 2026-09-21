@@ -369,7 +369,7 @@ extension _TimerTabBody on _TimerTabState {
             topInset: timerTopInset,
             child: Stack(
               children: [
-              ListView(
+              AppPageContentTransition(child: ListView(
                 padding: EdgeInsets.fromLTRB(
                   16,
                   widget.showHeader ? 82 + topPadding : 6,
@@ -550,7 +550,7 @@ extension _TimerTabBody on _TimerTabState {
                       ),
                     ),
                 ],
-              ),
+              )),
               if (widget.showHeader && !showCompactOnly)
                 Positioned(
                   top: 0,

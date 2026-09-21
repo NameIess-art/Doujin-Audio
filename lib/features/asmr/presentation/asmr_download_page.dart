@@ -363,6 +363,10 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
         topInset: listTopPadding,
         child: Stack(
           children: [
+            AppPageContentTransition(
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
             Positioned.fill(
               child: _loading
                   ? SingleChildScrollView(
@@ -480,6 +484,9 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
                   ),
                 ),
               ),
+                ],
+              ),
+            ),
             Positioned(
               top: 0,
               left: 0,
@@ -590,7 +597,9 @@ class AsmrDownloadTaskPage extends ConsumerWidget {
         topInset: headerHeight + 16,
         child: Stack(
           children: [
-            if (taskIds.isEmpty)
+            AppPageContentTransition(
+              child: taskIds.isEmpty
+                  ?
               Center(
                 child: Text(
                   i18n.tr('asmr_download_no_tasks'),
@@ -599,7 +608,7 @@ class AsmrDownloadTaskPage extends ConsumerWidget {
                   ),
                 ),
               )
-            else
+                  :
               ListView.builder(
                 padding: EdgeInsets.fromLTRB(
                   16,
@@ -613,6 +622,7 @@ class AsmrDownloadTaskPage extends ConsumerWidget {
                   return _TaskCard(workId: taskIds[index]);
                 },
               ),
+            ),
             Positioned(
               top: 0,
               left: 0,

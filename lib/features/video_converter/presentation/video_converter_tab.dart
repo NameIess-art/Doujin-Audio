@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../../core/widgets/app_transitions.dart';
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/theme/app_styles.dart';
 import '../../settings/application/settings_repository.dart';
@@ -109,6 +111,10 @@ class _VideoConverterTabState extends ConsumerState<VideoConverterTab> {
         topInset: topInset,
         child: Stack(
           children: [
+          AppPageContentTransition(
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
             ListView(
               padding: EdgeInsets.fromLTRB(
                 16,
@@ -262,7 +268,7 @@ class _VideoConverterTabState extends ConsumerState<VideoConverterTab> {
                           child: Text(
                             i18n.tr('current_params', {
                               'value':
-                                  '${selectedFormat.toUpperCase()} · ${selectedFormat == 'wav' || selectedFormat == 'flac' ? i18n.tr('format_auto_encode') : selectedBitrate}',
+                                  '${selectedFormat.toUpperCase()} 路 ${selectedFormat == 'wav' || selectedFormat == 'flac' ? i18n.tr('format_auto_encode') : selectedBitrate}',
                             }),
                             style: Theme.of(context).textTheme.bodyMedium,
                           ),
@@ -358,6 +364,9 @@ class _VideoConverterTabState extends ConsumerState<VideoConverterTab> {
                       textStyle: const TextStyle(fontWeight: FontWeight.bold),
                     ),
                   ),
+          ),
+              ],
+            ),
           ),
           Positioned(
             top: 0,

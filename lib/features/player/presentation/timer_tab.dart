@@ -1,3 +1,4 @@
+import '../../../core/widgets/app_transitions.dart';
 import 'playback_providers.dart';
 import 'dart:async';
 import 'package:flutter/foundation.dart';

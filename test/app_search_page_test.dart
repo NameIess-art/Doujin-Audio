@@ -2,9 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/core/widgets/app_edge_fade_mask.dart';
 import 'package:doujin_audio/core/widgets/app_search_page.dart';
+import 'package:doujin_audio/core/widgets/app_transitions.dart';
 
 void main() {
-  testWidgets('search route uses a fade transition without scaling', (tester) async {
+  testWidgets('search route uses a fade transition without scaling', (
+    tester,
+  ) async {
     late BuildContext routeContext;
     await tester.pumpWidget(
       MaterialApp(
@@ -25,11 +28,24 @@ void main() {
       routeContext,
       const AlwaysStoppedAnimation<double>(0.5),
       const AlwaysStoppedAnimation<double>(0),
-      const SizedBox.expand(),
+      const AppPageContentTransition(child: SizedBox.expand()),
     );
 
-    expect(transition, isA<FadeTransition>());
-    expect((transition as FadeTransition).child, isNot(isA<ScaleTransition>()));
+    await tester.pumpWidget(MaterialApp(home: transition));
+    expect(
+      find.descendant(
+        of: find.byType(AppPageContentTransition),
+        matching: find.byType(FadeTransition),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byType(AppPageContentTransition),
+        matching: find.byType(ScaleTransition),
+      ),
+      findsNothing,
+    );
   });
 
   testWidgets(
@@ -324,8 +340,7 @@ void main() {
         const ValueKey<String>('search_result_item_19'),
       );
       expect(lastItemFinder, findsOneWidget);
-      final lastItemBottom =
-          tester.getBottomLeft(lastItemFinder).dy;
+      final lastItemBottom = tester.getBottomLeft(lastItemFinder).dy;
       expect(lastItemBottom, lessThanOrEqualTo(480));
     },
   );

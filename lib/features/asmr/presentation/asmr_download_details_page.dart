@@ -41,7 +41,9 @@ class _AsmrDownloadDetailsPageState
       return Scaffold(
         body: Stack(
           children: [
-            Center(child: Text(i18n.tr('asmr_download_task_not_found'))),
+            AppPageContentTransition(
+              child: Center(child: Text(i18n.tr('asmr_download_task_not_found'))),
+            ),
             Positioned(
               top: 0,
               left: 0,
@@ -86,7 +88,8 @@ class _AsmrDownloadDetailsPageState
         child: Stack(
           children: [
             Positioned.fill(
-              child: CustomScrollView(
+              child: AppPageContentTransition(
+                child: CustomScrollView(
                 physics: const ClampingScrollPhysics(),
                 slivers: [
                   if (tracks.isEmpty)
@@ -121,6 +124,7 @@ class _AsmrDownloadDetailsPageState
                       ),
                     ),
                 ],
+              ),
               ),
             ),
             Positioned(

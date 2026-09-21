@@ -1025,7 +1025,7 @@ class _PlaybackQueueAudioEditPageState
         child: Stack(
           children: [
             Positioned.fill(
-            child: LayoutBuilder(
+            child: AppPageContentTransition(child: LayoutBuilder(
               builder: (context, constraints) {
                 final isLandscape =
                     defaultTargetPlatform == TargetPlatform.windows ||
@@ -1289,7 +1289,7 @@ class _PlaybackQueueAudioEditPageState
                   );
                 }
               },
-            ),
+            )),
           ),
           Positioned(
             top: 0,

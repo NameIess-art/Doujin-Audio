@@ -104,6 +104,7 @@ extension _MainScreenLayout on _MainScreenState {
 
     return AppFadeThroughIndexedStack.lazy(
       key: const ValueKey<String>('main_page_stack'),
+      separateHeader: true,
       indexListenable: _activePageIndex,
       itemCount: destinations.length,
       itemBuilder: pageShell,

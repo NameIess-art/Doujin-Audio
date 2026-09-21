@@ -230,7 +230,8 @@ class PrivacySummaryPage extends ConsumerWidget {
         topInset: topInset,
         child: Stack(
           children: [
-            ListView(
+            AppPageContentTransition(
+              child: ListView(
               padding: EdgeInsets.fromLTRB(
                 16,
                 topInset,
@@ -254,6 +255,7 @@ class PrivacySummaryPage extends ConsumerWidget {
                   body: i18n.tr('privacy_summary_diagnostics_body'),
                 ),
               ],
+            ),
             ),
             Positioned(
               top: 0,

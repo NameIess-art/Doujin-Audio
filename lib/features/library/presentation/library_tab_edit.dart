@@ -132,7 +132,7 @@ class LibraryManagementPage extends ConsumerWidget {
         topInset: headerTopInset,
         child: Stack(
           children: [
-          if (visibleLibraries.isEmpty)
+          AppPageContentTransition(child: visibleLibraries.isEmpty ?
             Center(
               child: Text(
                 i18n.tr('library_manage_empty'),
@@ -142,7 +142,7 @@ class LibraryManagementPage extends ConsumerWidget {
                 ),
               ),
             )
-          else
+          :
             ListView.builder(
               padding: EdgeInsets.fromLTRB(
                 16,
@@ -207,7 +207,7 @@ class LibraryManagementPage extends ConsumerWidget {
                   ),
                 );
               },
-            ),
+            )),
           Positioned(
             top: 0,
             left: 0,
@@ -465,7 +465,7 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage>
         topInset: headerTopInset,
         child: Stack(
           children: [
-          ListView.builder(
+          AppPageContentTransition(child: ListView.builder(
             padding: EdgeInsets.fromLTRB(
               16,
               MediaQuery.paddingOf(context).top + 98,
@@ -539,7 +539,7 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage>
                 initiallyExpanded: _searchQuery.isNotEmpty,
               );
             },
-          ),
+          )),
           Positioned(
             top: 0,
             left: 0,

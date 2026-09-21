@@ -21,6 +21,7 @@ import '../../../core/widgets/app_dialog.dart';
 import '../../../core/widgets/unified_popup_menu.dart';
 import '../../../core/widgets/async_cover_image.dart';
 import '../../../core/widgets/mobile_overlay_inset.dart';
+import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/top_page_header.dart';
 import '../../asmr/application/asmr_library_controller.dart';
 import '../../asmr/domain/asmr_models.dart';
@@ -1128,7 +1129,9 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
 
     return Scaffold(
       backgroundColor: cs.surface,
-      body: CustomScrollView(
+      body: Stack(
+        children: [
+          AppPageContentTransition(child: CustomScrollView(
         slivers: [
           // 1. Collapsible Sticky Header
           SliverPersistentHeader(
@@ -1144,9 +1147,6 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
               coverWidget: coverWidget,
               accentColor: widget.isAsmr ? asmrBlue : cs.primary,
               surfaceColor: cs.surface,
-              onBackPressed: () => Navigator.of(context).maybePop(),
-              onEditPressed: widget.isLocal ? _handleLocalEdit : null,
-              editLabel: i18n.tr('edit'),
               onCopyMetadata: (value) => _copyText(context, value),
             ),
           ),
@@ -1442,6 +1442,34 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
                 key: const ValueKey<String>('work_detail_playback_inset'),
                 height: bottomOverlayInset,
               ),
+            ),
+        ],
+      )),
+          // Floating Back Button (top-left)
+          Positioned(
+            top: topSafeArea + 6,
+            left: 16,
+            child: AppPageHeaderTransition(child: HeaderFloatingButton(
+              child: IconButton(
+                key: const ValueKey<String>('work_detail_back_button'),
+                icon: const Icon(Icons.arrow_back_rounded),
+                onPressed: () => Navigator.of(context).maybePop(),
+                tooltip: MaterialLocalizations.of(context).backButtonTooltip,
+              ),
+            )),
+          ),
+          if (widget.isLocal)
+            Positioned(
+              top: topSafeArea + 6,
+              right: 16,
+              child: AppPageHeaderTransition(child: HeaderFloatingButton(
+                child: IconButton(
+                  key: const ValueKey<String>('work_detail_edit'),
+                  onPressed: _handleLocalEdit,
+                  tooltip: i18n.tr('edit'),
+                  icon: const Icon(Icons.edit_rounded),
+                ),
+              )),
             ),
         ],
       ),
@@ -2024,9 +2052,6 @@ class _WorkDetailHeaderDelegate extends SliverPersistentHeaderDelegate {
     required this.coverWidget,
     required this.accentColor,
     required this.surfaceColor,
-    required this.onBackPressed,
-    required this.onEditPressed,
-    required this.editLabel,
     required this.onCopyMetadata,
   });
 
@@ -2040,9 +2065,6 @@ class _WorkDetailHeaderDelegate extends SliverPersistentHeaderDelegate {
   final Widget coverWidget;
   final Color accentColor;
   final Color surfaceColor;
-  final VoidCallback onBackPressed;
-  final VoidCallback? onEditPressed;
-  final String editLabel;
   final ValueChanged<String> onCopyMetadata;
 
   @override
@@ -2222,33 +2244,6 @@ class _WorkDetailHeaderDelegate extends SliverPersistentHeaderDelegate {
               ),
             ),
           ),
-
-          // Floating Back Button (top-left)
-          Positioned(
-            top: topSafeArea + 6,
-            left: 16,
-            child: HeaderFloatingButton(
-              child: IconButton(
-                key: const ValueKey<String>('work_detail_back_button'),
-                icon: const Icon(Icons.arrow_back_rounded),
-                onPressed: onBackPressed,
-                tooltip: MaterialLocalizations.of(context).backButtonTooltip,
-              ),
-            ),
-          ),
-          if (onEditPressed != null)
-            Positioned(
-              top: topSafeArea + 6,
-              right: 16,
-              child: HeaderFloatingButton(
-                child: IconButton(
-                  key: const ValueKey<String>('work_detail_edit'),
-                  onPressed: onEditPressed,
-                  tooltip: editLabel,
-                  icon: const Icon(Icons.edit_rounded),
-                ),
-              ),
-            ),
         ],
       ),
     );
@@ -2261,8 +2256,6 @@ class _WorkDetailHeaderDelegate extends SliverPersistentHeaderDelegate {
         oldDelegate.circleName != circleName ||
         oldDelegate.coverWidget != coverWidget ||
         oldDelegate.accentColor != accentColor ||
-        oldDelegate.surfaceColor != surfaceColor ||
-        oldDelegate.onEditPressed != onEditPressed ||
-        oldDelegate.editLabel != editLabel;
+        oldDelegate.surfaceColor != surfaceColor;
   }
 }

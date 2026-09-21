@@ -7,6 +7,7 @@ import '../../../app/localization/app_language_provider.dart';
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/theme/app_styles.dart';
 import '../../../core/widgets/page_header_inset.dart';
+import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/top_page_header.dart';
 import '../application/work_text_service.dart';
 
@@ -210,13 +211,13 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
         child: Stack(
           children: [
             Positioned.fill(
-              child: _buildContent(
+              child: AppPageContentTransition(child: _buildContent(
                 context,
                 theme,
                 cs,
                 contentTopInset,
                 bottomPadding,
-              ),
+              )),
             ),
             Positioned(
               top: 0,
@@ -241,7 +242,7 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
               Positioned(
                 right: 16,
                 bottom: bottomPadding + 20,
-                child: _buildBottomRightSwitcher(context, theme, cs, i18n),
+                child: AppPageContentTransition(child: _buildBottomRightSwitcher(context, theme, cs, i18n)),
               ),
           ],
         ),

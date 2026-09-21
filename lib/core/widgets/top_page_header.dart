@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../app/theme/app_design_tokens.dart';
 import '../../app/theme/app_styles.dart';
 import 'app_edge_fade_mask.dart';
+import 'app_transitions.dart';
 import 'marquee_text.dart';
 
 class AppPageAppBar extends StatelessWidget implements PreferredSizeWidget {
@@ -548,9 +549,11 @@ class _TopPageHeaderState extends ConsumerState<TopPageHeader> {
         },
       ),
     );
-    return _AppHeaderGlassSurface(
-      floating: widget.floating,
-      child: headerContent,
+    return AppPageHeaderTransition(
+      child: _AppHeaderGlassSurface(
+        floating: widget.floating,
+        child: headerContent,
+      ),
     );
   }
 }

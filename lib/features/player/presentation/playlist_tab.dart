@@ -465,7 +465,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
         child: Stack(
           clipBehavior: Clip.none,
           children: [
-            PlaceholderContentTransition(
+            AppPageContentTransition(child: PlaceholderContentTransition(
               showPlaceholder:
                   !_initialPlaceholderDismissed ||
                   !structureState.isInitialized,
@@ -505,7 +505,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                     ),
                 ],
               ),
-            ),
+            )),
           Positioned(
             top: 0,
             left: 0,

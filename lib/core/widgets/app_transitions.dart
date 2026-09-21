@@ -8,6 +8,92 @@ const kAppMotionFast = Duration(milliseconds: 180);
 const kAppMotionStandard = Duration(milliseconds: 220);
 const kAppMotionSlow = Duration(milliseconds: 300);
 
+typedef _PageTransitionBuilder = Widget Function(BuildContext, Widget);
+
+// Animation ownership stays with the route/tab; regions only choose which
+// transition to display, without moving header state out of its page.
+class _AppPageMotionScope extends InheritedWidget {
+  const _AppPageMotionScope({
+    required this.contentBuilder,
+    required this.headerBuilder,
+    required super.child,
+  });
+
+  final _PageTransitionBuilder contentBuilder;
+  final _PageTransitionBuilder headerBuilder;
+
+  @override
+  bool updateShouldNotify(_AppPageMotionScope oldWidget) => true;
+}
+
+class AppPageContentTransition extends StatelessWidget {
+  const AppPageContentTransition({super.key, required this.child});
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final motion = context
+        .dependOnInheritedWidgetOfExactType<_AppPageMotionScope>();
+    if (motion == null) return child;
+    return motion.contentBuilder(context, child);
+  }
+}
+
+class AppPageHeaderTransition extends StatelessWidget {
+  const AppPageHeaderTransition({super.key, required this.child});
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final motion = context
+        .dependOnInheritedWidgetOfExactType<_AppPageMotionScope>();
+    if (motion == null) return child;
+    return motion.headerBuilder(context, child);
+  }
+}
+
+Widget _buildSeparatedPageTransition({
+  required BuildContext context,
+  required Animation<double> animation,
+  required Animation<double> secondaryAnimation,
+  required Widget child,
+  required AppPageTransitionStyle style,
+}) {
+  final regions = _AppPageMotionScope(
+    contentBuilder: (context, child) => buildAppPageTransition(
+      context: context,
+      animation: animation,
+      secondaryAnimation: secondaryAnimation,
+      child: child,
+      style: style,
+    ),
+    headerBuilder: (context, child) {
+      if (MediaQuery.disableAnimationsOf(context)) return child;
+      return AnimatedBuilder(
+        animation: Listenable.merge([animation, secondaryAnimation]),
+        child: child,
+        builder: (context, child) {
+          final incoming = Curves.easeOutCubic.transform(
+            (animation.value / 0.6).clamp(0.0, 1.0),
+          );
+          final outgoing = Curves.easeOutCubic.transform(
+            (secondaryAnimation.value / 0.6).clamp(0.0, 1.0),
+          );
+          return Opacity(opacity: incoming * (1 - outgoing), child: child);
+        },
+      );
+    },
+    child: child,
+  );
+  // Fade the stationary page surface too, so it cannot cover the outgoing
+  // header before the incoming header starts appearing.
+  if (MediaQuery.disableAnimationsOf(context)) return regions;
+  return FadeTransition(
+    opacity: animation.drive(CurveTween(curve: const Interval(0, 0.2))),
+    child: regions,
+  );
+}
+
 class AppHeaderTransition extends StatelessWidget {
   const AppHeaderTransition({super.key, required this.child});
 
@@ -485,6 +571,7 @@ class AppFadeThroughIndexedStack extends StatefulWidget {
     required this.indexListenable,
     required this.children,
     this.style = AppIndexedStackTransitionStyle.directional,
+    this.separateHeader = false,
     this.duration = const Duration(milliseconds: 350),
     this.onTransitionCompleted,
   }) : itemCount = children.length,
@@ -497,6 +584,7 @@ class AppFadeThroughIndexedStack extends StatefulWidget {
     required this.itemCount,
     required IndexedWidgetBuilder this.itemBuilder,
     this.style = AppIndexedStackTransitionStyle.directional,
+    this.separateHeader = false,
     this.duration = const Duration(milliseconds: 350),
     this.onTransitionCompleted,
     bool? preloadUnvisited,
@@ -510,6 +598,7 @@ class AppFadeThroughIndexedStack extends StatefulWidget {
   final IndexedWidgetBuilder? itemBuilder;
   final bool preloadUnvisited;
   final AppIndexedStackTransitionStyle style;
+  final bool separateHeader;
   final Duration duration;
   final ValueChanged<int>? onTransitionCompleted;
 
@@ -760,9 +849,32 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
             : outgoing
             ? (1 - progress * (1 - _outgoingOpacityFloor)).clamp(0.0, 1.0)
             : 1.0;
-        return FractionalTranslation(
-          translation: translation,
-          child: Opacity(opacity: opacity, child: child),
+        if (!widget.separateHeader) {
+          return FractionalTranslation(
+            translation: translation,
+            child: Opacity(opacity: opacity, child: child),
+          );
+        }
+        return Opacity(
+          opacity: incoming ? (rawProgress / 0.2).clamp(0.0, 1.0) : 1,
+          child: _AppPageMotionScope(
+            contentBuilder: (context, content) => FractionalTranslation(
+              translation: translation,
+              child: Opacity(opacity: opacity, child: content),
+            ),
+            headerBuilder: (context, header) {
+              final headerProgress = Curves.easeOutCubic.transform(
+                (rawProgress / 0.6).clamp(0.0, 1.0),
+              );
+              final headerOpacity = !outgoing && !incoming
+                  ? 1.0
+                  : outgoing
+                  ? 1 - headerProgress
+                  : headerProgress;
+              return Opacity(opacity: headerOpacity, child: header);
+            },
+            child: child!,
+          ),
         );
       },
     );
@@ -808,7 +920,7 @@ class CenterScalePageTransitionsBuilder extends PageTransitionsBuilder {
     Animation<double> secondaryAnimation,
     Widget child,
   ) {
-    return buildAppPageTransition(
+    return _buildSeparatedPageTransition(
       context: context,
       animation: animation,
       secondaryAnimation: secondaryAnimation,
@@ -833,7 +945,7 @@ PageRouteBuilder<T> buildAppPageRoute<T>({
     reverseTransitionDuration: reducedMotion ? Duration.zero : reverseDuration,
     pageBuilder: (context, animation, secondaryAnimation) => child,
     transitionsBuilder: (context, animation, secondaryAnimation, routedChild) {
-      return buildAppPageTransition(
+      return _buildSeparatedPageTransition(
         context: context,
         animation: animation,
         secondaryAnimation: secondaryAnimation,

@@ -7,6 +7,7 @@ import '../../../app/state/app_runtime_providers.dart';
 import '../../../core/media/cover_image_resolution.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/async_cover_image.dart';
+import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/top_page_header.dart';
 
 @immutable
@@ -180,9 +181,9 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage> {
           backgroundColor: Colors.black,
           foregroundColor: Colors.white,
         ),
-        body: const Center(
+        body: const AppPageContentTransition(child: Center(
           child: Text('No images', style: TextStyle(color: Colors.white70)),
-        ),
+        )),
       );
     }
 
@@ -209,15 +210,15 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage> {
         children: [
           Positioned.fill(
             key: const ValueKey<String>('work_image_fullscreen_placeholder'),
-            child: CoverFallbackArtwork(
+            child: AppPageContentTransition(child: CoverFallbackArtwork(
               seed: currentImage.path,
               showIcon: true,
               icon: Icons.broken_image_rounded,
-            ),
+            )),
           ),
           Positioned.fill(
             key: const ValueKey<String>('work_image_blurred_backdrop'),
-            child: ClipRect(
+            child: AppPageContentTransition(child: ClipRect(
               child: ImageFiltered(
                 imageFilter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
                 child: Transform.scale(
@@ -229,14 +230,14 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage> {
                   ),
                 ),
               ),
-            ),
+            )),
           ),
           Positioned.fill(
-            child: ColoredBox(color: Colors.black.withValues(alpha: 0.42)),
+            child: AppPageContentTransition(child: ColoredBox(color: Colors.black.withValues(alpha: 0.42))),
           ),
           Positioned.fill(
             top: imageTop,
-            child: PageView.builder(
+            child: AppPageContentTransition(child: PageView.builder(
               key: const ValueKey<String>('work_image_viewport'),
               controller: _pageController,
               physics: const NeverScrollableScrollPhysics(),
@@ -256,7 +257,7 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage> {
                   ),
                 );
               },
-            ),
+            )),
           ),
           // Floating Top Page Header
           Positioned(
@@ -333,7 +334,7 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage> {
             Positioned(
               right: 16,
               bottom: MediaQuery.paddingOf(context).bottom + 20,
-              child: HeaderFloatingSurface(
+              child: AppPageContentTransition(child: HeaderFloatingSurface(
                 padding: const EdgeInsets.symmetric(horizontal: 4),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
@@ -376,7 +377,7 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage> {
                     ),
                   ],
                 ),
-              ),
+              )),
             ),
         ],
       ),

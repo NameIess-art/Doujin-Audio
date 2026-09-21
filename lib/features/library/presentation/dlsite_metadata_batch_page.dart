@@ -187,7 +187,7 @@ class _DlsiteMetadataBatchPageState
         child: Stack(
           children: [
           Positioned.fill(
-            child: _loading
+            child: AppPageContentTransition(child: _loading
                 ? OperationSkeletonList(
                     itemCount: 5,
                     padding: EdgeInsets.fromLTRB(
@@ -216,14 +216,14 @@ class _DlsiteMetadataBatchPageState
                       }
                     },
                     onPickSpecific: _pickSpecific,
-                  ),
+                  )),
           ),
           if (!_loading && _error == null)
             Positioned(
               left: 16,
               right: 16,
               bottom: 16 + MediaQuery.paddingOf(context).bottom,
-              child: FilledButton.icon(
+              child: AppPageContentTransition(child: FilledButton.icon(
                 onPressed: _run,
                 icon: const Icon(Icons.play_arrow_rounded),
                 label: Text(i18n.tr('batch_metadata_start')),
@@ -234,7 +234,7 @@ class _DlsiteMetadataBatchPageState
                     fontSize: 15,
                   ),
                 ),
-              ),
+              )),
             ),
           Positioned(
             top: 0,
@@ -440,7 +440,7 @@ class _DlsiteMetadataWorkPickerPageState
         child: Stack(
           children: [
           Positioned.fill(
-            child: ListView.builder(
+            child: AppPageContentTransition(child: ListView.builder(
               padding: EdgeInsets.only(
                 top: _headerContentTopInset(context),
                 bottom: 78 + MediaQuery.paddingOf(context).bottom,
@@ -465,7 +465,7 @@ class _DlsiteMetadataWorkPickerPageState
                       : null,
                 );
               },
-            ),
+            )),
           ),
           Positioned(
             top: 0,
@@ -540,7 +540,7 @@ class _DlsiteMetadataWorkPickerPageState
           Positioned(
             right: 16,
             bottom: 16 + MediaQuery.paddingOf(context).bottom,
-            child: HeaderFloatingSurface(
+            child: AppPageContentTransition(child: HeaderFloatingSurface(
               key: const ValueKey<String>('batch_metadata_picker_done'),
               height: 46,
               radius: 23,
@@ -585,7 +585,7 @@ class _DlsiteMetadataWorkPickerPageState
                   ),
                 ),
               ),
-            ),
+            )),
           ),
         ],
       ),
@@ -679,7 +679,7 @@ class _DlsiteMetadataBatchResultsPageState
         child: Stack(
           children: [
           Positioned.fill(
-            child: AnimatedBuilder(
+            child: AppPageContentTransition(child: AnimatedBuilder(
               animation: widget.session,
               builder: (context, _) {
                 final items = widget.session.items;
@@ -837,7 +837,7 @@ class _DlsiteMetadataBatchResultsPageState
                   },
                 );
               },
-            ),
+            )),
           ),
           Positioned(
             top: 0,
@@ -853,7 +853,7 @@ class _DlsiteMetadataBatchResultsPageState
           Positioned(
             right: 16,
             bottom: 16 + MediaQuery.paddingOf(context).bottom,
-            child: AnimatedBuilder(
+            child: AppPageContentTransition(child: AnimatedBuilder(
               animation: widget.session,
               builder: (context, _) => HeaderFloatingSurface(
                 key: const ValueKey<String>('batch_metadata_results_done'),
@@ -905,7 +905,7 @@ class _DlsiteMetadataBatchResultsPageState
                   ),
                 ),
               ),
-            ),
+            )),
           ),
         ],
       ),

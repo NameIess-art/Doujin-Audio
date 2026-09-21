@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
@@ -18,6 +20,105 @@ class _StateProbeState extends State<_StateProbe> {
 }
 
 void main() {
+  Widget regions(String name) => Scaffold(
+    body: Column(
+      children: [
+        AppPageHeaderTransition(
+          child: SizedBox(
+            key: ValueKey('$name-header'),
+            width: 100,
+            height: 38,
+          ),
+        ),
+        Expanded(
+          child: AppPageContentTransition(
+            child: SizedBox.expand(key: ValueKey('$name-body')),
+          ),
+        ),
+      ],
+    ),
+  );
+
+  testWidgets('route header stays fixed while content scales on push and pop', (
+    tester,
+  ) async {
+    final navigatorKey = GlobalKey<NavigatorState>();
+    await tester.pumpWidget(
+      MaterialApp(navigatorKey: navigatorKey, home: regions('home')),
+    );
+    final navigator = navigatorKey.currentState!;
+    final expectedHeader = tester.getRect(
+      find.byKey(const ValueKey('home-header')),
+    );
+    unawaited(
+      navigator.push(
+        buildAppPageRoute<void>(
+          context: navigator.context,
+          style: AppPageTransitionStyle.sharedAxisZ,
+          child: regions('detail'),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 75));
+    final header = find.byKey(const ValueKey('detail-header'));
+    final body = find.byKey(const ValueKey('detail-body'));
+    expect(tester.getRect(header), expectedHeader);
+    final enteringBody = tester.getRect(body);
+    await tester.pumpAndSettle();
+    expect(enteringBody.width, lessThan(tester.getRect(body).width));
+    navigator.pop();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 60));
+    expect(tester.getRect(header), expectedHeader);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('home-header')), findsOneWidget);
+  });
+
+  testWidgets('tab headers stay fixed while content slides independently', (
+    tester,
+  ) async {
+    final index = ValueNotifier(0);
+    addTearDown(index.dispose);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AppFadeThroughIndexedStack(
+          indexListenable: index,
+          separateHeader: true,
+          children: [regions('first'), regions('second')],
+        ),
+      ),
+    );
+    final expectedHeader = tester.getRect(
+      find.byKey(const ValueKey('first-header')),
+    );
+    index.value = 1;
+    await tester.pump();
+    final incomingPage = find.ancestor(
+      of: find.byKey(const ValueKey('second-header')),
+      matching: find.byType(Scaffold),
+    );
+    expect(
+      tester.widgetList<Opacity>(find.ancestor(
+        of: incomingPage,
+        matching: find.byType(Opacity),
+      )).any((opacity) => opacity.opacity == 0),
+      isTrue,
+      reason: 'The incoming page surface must not obscure the old header immediately.',
+    );
+    await tester.pump(const Duration(milliseconds: 70));
+    expect(
+      tester.getRect(find.byKey(const ValueKey('second-header'))),
+      expectedHeader,
+    );
+    expect(
+      tester.getRect(find.byKey(const ValueKey('second-body'))).left,
+      greaterThan(0),
+    );
+    await tester.pumpAndSettle();
+    expect(tester.getRect(find.byKey(const ValueKey('second-body'))).left, 0);
+  });
+
   testWidgets('none style switches immediately without motion transitions', (
     tester,
   ) async {

@@ -1198,7 +1198,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
           child: Stack(
             clipBehavior: Clip.none,
             children: [
-              PlaceholderContentTransition(
+              AppPageContentTransition(child: PlaceholderContentTransition(
                 showPlaceholder: !listStateIsInitialized || showLibrarySkeleton,
                 placeholder: _LibraryLoadingSkeleton(
                   bottomInset: listBottomPadding,
@@ -1239,7 +1239,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                           itemBuilder: buildTopLevelLibraryItem,
                         ),
                       ),
-              ),
+              )),
 
             // Scan progress card
             if (listStateIsScanning && !listStateIsBackgroundScanning)
@@ -1247,14 +1247,14 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                 top: headerContentHeight + 10,
                 left: 12,
                 right: 12,
-                child: Consumer(
+                child: AppPageContentTransition(child: Consumer(
                   builder: (context, ref, _) {
                     final scanState = _isActive
                         ? ref.watch(libraryScanUiProvider)
                         : ref.read(libraryScanUiProvider);
                     return _buildScanProgressCard(i18n, scanState);
                   },
-                ),
+                )),
               ),
 
             // Header — frosted glass overlay on top of the scrolling list

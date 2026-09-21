@@ -793,7 +793,8 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
         Positioned.fill(
           child: ColoredBox(color: Theme.of(context).colorScheme.surface),
         ),
-        RepaintBoundary(
+        AppPageContentTransition(
+          child: RepaintBoundary(
           child: PlaceholderContentTransition(
             showPlaceholder: !globalInitialized,
             placeholder: ListView(
@@ -840,6 +841,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
               ),
             ),
           ),
+        ),
         ),
         Positioned(
           top: 0,

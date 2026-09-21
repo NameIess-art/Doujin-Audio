@@ -4,6 +4,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/widgets/app_transitions.dart';
+
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/theme/app_design_tokens.dart';
 import '../../../app/theme/app_styles.dart';
@@ -100,7 +102,8 @@ class AboutPage extends ConsumerWidget {
         child: Stack(
           children: [
           Positioned.fill(
-            child: ListView(
+            child: AppPageContentTransition(
+              child: ListView(
               padding: EdgeInsets.fromLTRB(
                 tokens.pageHorizontalPadding,
                 headerHeight + AppPageHeaderMetrics.firstContentSpacing,
@@ -178,6 +181,7 @@ class AboutPage extends ConsumerWidget {
                   ],
                 ),
               ],
+            ),
             ),
           ),
           Positioned(

@@ -82,7 +82,7 @@ class AppSearchPageScaffold<T> extends StatelessWidget {
             bottom: MediaQuery.viewInsetsOf(context).bottom,
             child: PageHeaderInset(
               topInset: controlsTopInset(context),
-              child: body,
+              child: AppPageContentTransition(child: body),
             ),
           ),
           Positioned(
@@ -101,7 +101,7 @@ class AppSearchPageScaffold<T> extends StatelessWidget {
               top: 0,
               left: 0,
               right: 0,
-              child: controlsOverlay!,
+              child: AppPageHeaderTransition(child: controlsOverlay!),
             )
           else
             Positioned(
@@ -109,7 +109,7 @@ class AppSearchPageScaffold<T> extends StatelessWidget {
               top: MediaQuery.paddingOf(context).top + 6,
               left: 16,
               right: 16,
-              child: Column(
+              child: AppPageHeaderTransition(child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Row(
@@ -259,7 +259,7 @@ class AppSearchPageScaffold<T> extends StatelessWidget {
                     ),
                   ),
                 ],
-              ),
+              )),
             ),
         ],
       ),

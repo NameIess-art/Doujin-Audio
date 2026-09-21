@@ -1,3 +1,4 @@
+import '../../../../core/widgets/app_transitions.dart';
 import '../../../library/presentation/library_providers.dart';
 import '../playback_providers.dart';
 import '../../../settings/presentation/settings_providers.dart';
@@ -627,7 +628,7 @@ class _SessionVideoFullscreenPageState
           autofocus: true,
           child: Scaffold(
             backgroundColor: Colors.black,
-            body: MouseRegion(
+            body: AppPageContentTransition(child: MouseRegion(
               onHover: (_) => _showControls(),
               child: LayoutBuilder(
                 builder: (context, constraints) {
@@ -695,7 +696,7 @@ class _SessionVideoFullscreenPageState
                   );
                 },
               ),
-            ),
+            )),
           ),
         ),
       ),

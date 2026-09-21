@@ -112,76 +112,76 @@ class _AsmrWorkTreeCardState extends ConsumerState<_AsmrWorkTreeCard> {
       elevation: 0,
       shadowColor: Colors.transparent,
       surfaceTintColor: Colors.transparent,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(minHeight: _rootTileHeight),
-        child: Padding(
-          padding: const EdgeInsets.all(AppSpacing.xs),
-          child: SearchHighlightScope(
-            query: widget.searchQuery,
-            child: LibraryLikeMetadataWorkCardContent(
-              title: widget.work.title,
-              metadata: _workMetadata(widget.work),
-              circleLabel: i18n.tr('asmr_circle_label'),
-              tagsLabel: i18n.tr('asmr_tags_label'),
-              releaseDateLabel: i18n.tr('card_info_release_date'),
-              ratingLabel: i18n.tr('card_info_rating'),
-              listSeparator: '\u3001',
-              coverBuilder: (coverWidth) => _AsmrWorkCover(
-                url: _asmrWorkListCoverUrl(widget.work),
-                width: coverWidth,
-                duration: widget.work.duration,
-                isActive: widget.isActive,
-                isSelected: widget.isSelected,
-                rjCode: widget.work.rjCode,
+      // The tap surface sits inside the card so its ink highlight and ripple
+      // paint above the swipe card's closed background.
+      child: InkWell(
+        canRequestFocus: widget.isSelectionMode,
+        onLongPress: widget.onLongPress,
+        onTap: widget.isSelectionMode
+            ? widget.onToggleSelect
+            : () => unawaited(showAsmrWorkDetailSheet(context, widget.work)),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: _rootTileHeight),
+          child: Padding(
+            padding: const EdgeInsets.all(AppSpacing.xs),
+            child: SearchHighlightScope(
+              query: widget.searchQuery,
+              child: LibraryLikeMetadataWorkCardContent(
+                title: widget.work.title,
+                metadata: _workMetadata(widget.work),
+                circleLabel: i18n.tr('asmr_circle_label'),
+                tagsLabel: i18n.tr('asmr_tags_label'),
+                releaseDateLabel: i18n.tr('card_info_release_date'),
+                ratingLabel: i18n.tr('card_info_rating'),
+                listSeparator: '\u3001',
+                coverBuilder: (coverWidth) => _AsmrWorkCover(
+                  url: _asmrWorkListCoverUrl(widget.work),
+                  width: coverWidth,
+                  duration: widget.work.duration,
+                  isActive: widget.isActive,
+                  isSelected: widget.isSelected,
+                  rjCode: widget.work.rjCode,
+                ),
+                onPlay: () => unawaited(_playWork(context)),
+                playTooltip: i18n.tr('asmr_add_to_playlist'),
+                accentColor: asmrBlue,
+                enableMarquee: false,
+                enableTitleMarquee: false,
+                playLoading: playBusy,
               ),
-              onPlay: () => unawaited(_playWork(context)),
-              playTooltip: i18n.tr('asmr_add_to_playlist'),
-              accentColor: asmrBlue,
-              enableMarquee: false,
-              enableTitleMarquee: false,
-              playLoading: playBusy,
             ),
           ),
         ),
       ),
     );
 
-    return InkWell(
-      canRequestFocus: widget.isSelectionMode,
-      onLongPress: widget.onLongPress,
-      onTap: widget.isSelectionMode
-          ? widget.onToggleSelect
-          : () => unawaited(showAsmrWorkDetailSheet(context, widget.work)),
-      borderRadius: cardShape.borderRadius as BorderRadius?,
-      child: SwipeRevealCard(
-        shape: cardShape,
-        enabled: !widget.isSelectionMode,
-        closedColor: cs.surface,
-        destructive: false,
-        color: asmrBlue,
-        verticalActions: true,
-        showPressEffect: true,
-        actionLabel: i18n.tr(
-          widget.work.isFavorite
-              ? 'asmr_unfavorite_action'
-              : 'asmr_favorite_action',
-        ),
-        removeTooltip: i18n.tr(
-          widget.work.isFavorite
-              ? 'asmr_unfavorite_action'
-              : 'asmr_favorite_action',
-        ),
-        primaryActionIcon: widget.work.isFavorite
-            ? Icons.favorite_rounded
-            : Icons.favorite_border_rounded,
-        onRemove: () => unawaited(_toggleFavorite(context)),
-        secondaryActionLabel: i18n.tr('download'),
-        secondaryActionTooltip: i18n.tr('download'),
-        secondaryActionIcon: Icons.download_rounded,
-        onSecondaryAction: () =>
-            unawaited(_downloadAsmrWorks(context, [widget.work])),
-        child: cardContent,
+    return SwipeRevealCard(
+      shape: cardShape,
+      enabled: !widget.isSelectionMode,
+      closedColor: cs.surface,
+      destructive: false,
+      color: asmrBlue,
+      verticalActions: true,
+      actionLabel: i18n.tr(
+        widget.work.isFavorite
+            ? 'asmr_unfavorite_action'
+            : 'asmr_favorite_action',
       ),
+      removeTooltip: i18n.tr(
+        widget.work.isFavorite
+            ? 'asmr_unfavorite_action'
+            : 'asmr_favorite_action',
+      ),
+      primaryActionIcon: widget.work.isFavorite
+          ? Icons.favorite_rounded
+          : Icons.favorite_border_rounded,
+      onRemove: () => unawaited(_toggleFavorite(context)),
+      secondaryActionLabel: i18n.tr('download'),
+      secondaryActionTooltip: i18n.tr('download'),
+      secondaryActionIcon: Icons.download_rounded,
+      onSecondaryAction: () =>
+          unawaited(_downloadAsmrWorks(context, [widget.work])),
+      child: cardContent,
     );
   }
 }

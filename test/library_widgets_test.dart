@@ -3272,16 +3272,21 @@ void main() {
 
       final rootFolderFinder = find.text('Work_A', findRichText: true);
       expect(rootFolderFinder, findsOneWidget);
+      final swipeCard = find.ancestor(
+        of: rootFolderFinder,
+        matching: find.byType(SwipeRevealCard),
+      );
+      expect(swipeCard, findsOneWidget);
+      // The card tap surface must live inside the swipe card surface. An
+      // InkWell outside of it paints its highlight and ripple below the opaque
+      // closed background, so presses looked different from playlist rows.
       expect(
-        tester
-            .widget<SwipeRevealCard>(
-              find.ancestor(
-                of: rootFolderFinder,
-                matching: find.byType(SwipeRevealCard),
-              ),
-            )
-            .showPressEffect,
-        isTrue,
+        find.ancestor(of: swipeCard, matching: find.byType(InkWell)),
+        findsNothing,
+      );
+      expect(
+        find.descendant(of: swipeCard, matching: find.byType(InkWell)),
+        findsWidgets,
       );
 
       // Card is not an ExpansionTile

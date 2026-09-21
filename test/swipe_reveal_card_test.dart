@@ -8,51 +8,6 @@ import 'package:doujin_audio/app/theme/theme_provider.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('opt-in press effect highlights on down and clears on up', (
-    tester,
-  ) async {
-    final scheme = ColorScheme.fromSeed(seedColor: Colors.teal);
-    await tester.pumpWidget(
-      MaterialApp(
-        theme: ThemeData(colorScheme: scheme),
-        home: Scaffold(
-          body: Center(
-            child: SizedBox(
-              width: 260,
-              height: 96,
-              child: SwipeRevealCard(
-                showPressEffect: true,
-                shape: const RoundedRectangleBorder(),
-                actionLabel: 'Remove',
-                removeTooltip: 'Remove',
-                onRemove: () {},
-                child: const SizedBox.expand(child: Text('Press target')),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-
-    final effect = find.byKey(
-      const ValueKey<String>('swipe_reveal_press_effect'),
-    );
-    Color? effectColor() =>
-        (tester.widget<AnimatedContainer>(effect).decoration as BoxDecoration?)
-            ?.color;
-
-    expect(effectColor(), Colors.transparent);
-    final gesture = await tester.startGesture(
-      tester.getCenter(find.text('Press target')),
-    );
-    await tester.pump();
-    expect(effectColor(), scheme.primary.withValues(alpha: 0.10));
-
-    await gesture.up();
-    await tester.pump();
-    expect(effectColor(), Colors.transparent);
-  });
-
   testWidgets(
     'Windows context menu reuses all actions without triggering tap',
     (tester) async {

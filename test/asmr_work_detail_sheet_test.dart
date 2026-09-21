@@ -467,13 +467,21 @@ void main() {
 
       final card = find.byKey(const ValueKey<String>('asmr-work-201'));
       expect(card, findsOneWidget);
+      final swipeCard = find.descendant(
+        of: card,
+        matching: find.byType(SwipeRevealCard),
+      );
+      expect(swipeCard, findsOneWidget);
+      // The card tap surface must live inside the swipe card surface. An
+      // InkWell outside of it paints its highlight and ripple below the opaque
+      // closed background, so presses looked different from playlist rows.
       expect(
-        tester
-            .widget<SwipeRevealCard>(
-              find.descendant(of: card, matching: find.byType(SwipeRevealCard)),
-            )
-            .showPressEffect,
-        isTrue,
+        find.ancestor(of: swipeCard, matching: find.byType(InkWell)),
+        findsNothing,
+      );
+      expect(
+        find.descendant(of: swipeCard, matching: find.byType(InkWell)),
+        findsWidgets,
       );
 
       await tester.drag(card, const Offset(-180, 0));

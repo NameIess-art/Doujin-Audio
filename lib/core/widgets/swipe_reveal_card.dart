@@ -4,6 +4,12 @@ import 'package:flutter/services.dart';
 
 import 'app_feedback.dart';
 
+/// Card shell whose action pane is revealed by a horizontal swipe.
+///
+/// The closed background is opaque, so a tappable child must host its own ink
+/// surface (a `Card`/`Material`) inside this shell. An `InkWell` wrapped around
+/// the shell paints its highlight and ripple below the closed background, which
+/// makes presses invisible.
 class SwipeRevealCard extends StatefulWidget {
   const SwipeRevealCard({
     super.key,
@@ -40,7 +46,6 @@ class SwipeRevealCard extends StatefulWidget {
     this.secondaryLeadingActionTooltip,
     this.secondaryLeadingActionIcon = Icons.download_rounded,
     this.secondaryLeadingActionIconWidget,
-    this.showPressEffect = false,
   });
 
   final Widget child;
@@ -76,7 +81,6 @@ class SwipeRevealCard extends StatefulWidget {
   final String? secondaryLeadingActionTooltip;
   final IconData secondaryLeadingActionIcon;
   final Widget? secondaryLeadingActionIconWidget;
-  final bool showPressEffect;
 
   @override
   State<SwipeRevealCard> createState() => _SwipeRevealCardState();
@@ -100,7 +104,6 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
   bool _tickerModeEnabled = true;
   bool _revealedFromStart = false;
   bool _dragStartFromStart = false;
-  final ValueNotifier<bool> _pressed = ValueNotifier<bool>(false);
 
   bool get _hasSecondaryAction => widget.onSecondaryAction != null;
   bool get _hasTertiaryAction => widget.onTertiaryAction != null;
@@ -148,12 +151,6 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
     }
   }
 
-  @override
-  void dispose() {
-    _pressed.dispose();
-    super.dispose();
-  }
-
   void _resetPaneState() {
     _revealedWidth = 0;
     _dragStartRevealedWidth = 0;
@@ -165,12 +162,6 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
     _actionPaneActive = false;
     _revealedFromStart = false;
     _dragStartFromStart = false;
-    _pressed.value = false;
-  }
-
-  void _setPressed(bool pressed) {
-    if (!widget.showPressEffect || _pressed.value == pressed) return;
-    _pressed.value = pressed;
   }
 
   void _closePane({bool immediate = false}) {
@@ -425,28 +416,7 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
     Widget buildClosedContent(BuildContext context) {
       final content = ColoredBox(
         color: widget.closedColor ?? cs.surface,
-        child: Stack(
-          children: [
-            IgnorePointer(ignoring: _isOpen, child: widget.child),
-            if (widget.showPressEffect)
-              Positioned.fill(
-                child: IgnorePointer(
-                  child: ValueListenableBuilder<bool>(
-                    valueListenable: _pressed,
-                    builder: (context, pressed, child) => AnimatedContainer(
-                      key: const ValueKey<String>(
-                        'swipe_reveal_press_effect',
-                      ),
-                      duration: const Duration(milliseconds: 90),
-                      color: pressed && !_isOpen
-                          ? cs.primary.withValues(alpha: 0.10)
-                          : Colors.transparent,
-                    ),
-                  ),
-                ),
-              ),
-          ],
-        ),
+        child: IgnorePointer(ignoring: _isOpen, child: widget.child),
       );
 
       if (widget.shape case final RoundedRectangleBorder roundedShape) {
@@ -496,17 +466,9 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
           padding: widget.margin,
           child: GestureDetector(
             behavior: HitTestBehavior.translucent,
-            onHorizontalDragDown: widget.showPressEffect
-                ? (_) => _setPressed(true)
-                : null,
             onHorizontalDragStart: _handleHorizontalDragStart,
             onHorizontalDragUpdate: _handleHorizontalDragUpdate,
-            onHorizontalDragEnd: widget.showPressEffect
-                ? (details) {
-                    _setPressed(false);
-                    _handleHorizontalDragEnd(details);
-                  }
-                : _handleHorizontalDragEnd,
+            onHorizontalDragEnd: _handleHorizontalDragEnd,
             onSecondaryTap: () {
               setState(() {
                 final opening = !_isOpen;
@@ -516,7 +478,6 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
               });
             },
             onHorizontalDragCancel: () {
-              if (widget.showPressEffect) _setPressed(false);
               _dragAccepted = false;
               _dragRejected = false;
             },

@@ -839,58 +839,58 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
     }
 
     Widget buildEntryCard(bool useFeaturedCard) {
-      return GestureDetector(
-        onLongPress: onLongPress,
-        onTap: isSelectionMode ? onToggleSelect : null,
-        child: SwipeRevealCard(
+      return SwipeRevealCard(
+        shape: cardShape,
+        enabled: !isSelectionMode,
+        closedColor: cs.surface,
+        actionLabel: i18n.tr('remove'),
+        removeTooltip: entry.isFolder
+            ? i18n.tr('remove_audio_folder')
+            : i18n.tr('remove_audio'),
+        secondaryActionLabel: i18n.tr('download'),
+        secondaryActionTooltip: i18n.tr('download'),
+        secondaryActionIcon: Icons.download_rounded,
+        verticalActions: useFeaturedCard,
+        onSecondaryAction: () => unawaited(
+          downloadAudioTargetFromAsmr(
+            context: context,
+            ref: ref,
+            target: entry.target,
+          ),
+        ),
+        onLeadingAction: () => unawaited(
+          ref
+              .read(settingsRepositoryProvider)
+              .toggleLibraryPathPinned(entry.path),
+        ),
+        leadingActionLabel: i18n.tr(isPinned ? 'unpin_from_top' : 'pin_to_top'),
+        leadingActionTooltip: i18n.tr(
+          isPinned ? 'unpin_from_top' : 'pin_to_top',
+        ),
+        leadingActionIcon: Icons.push_pin_rounded,
+        leadingActionIconWidget: isPinned ? const PushPinOffIcon() : null,
+        onRemove: () => _remove(context, ref),
+        child: Card(
+          margin: EdgeInsets.zero,
+          clipBehavior: Clip.antiAlias,
           shape: cardShape,
-          enabled: !isSelectionMode,
-          closedColor: cs.surface,
-          showPressEffect: true,
-          actionLabel: i18n.tr('remove'),
-          removeTooltip: entry.isFolder
-              ? i18n.tr('remove_audio_folder')
-              : i18n.tr('remove_audio'),
-          secondaryActionLabel: i18n.tr('download'),
-          secondaryActionTooltip: i18n.tr('download'),
-          secondaryActionIcon: Icons.download_rounded,
-          verticalActions: useFeaturedCard,
-          onSecondaryAction: () => unawaited(
-            downloadAudioTargetFromAsmr(
-              context: context,
-              ref: ref,
-              target: entry.target,
-            ),
-          ),
-          onLeadingAction: () => unawaited(
-            ref
-                .read(settingsRepositoryProvider)
-                .toggleLibraryPathPinned(entry.path),
-          ),
-          leadingActionLabel: i18n.tr(
-            isPinned ? 'unpin_from_top' : 'pin_to_top',
-          ),
-          leadingActionTooltip: i18n.tr(
-            isPinned ? 'unpin_from_top' : 'pin_to_top',
-          ),
-          leadingActionIcon: Icons.push_pin_rounded,
-          leadingActionIconWidget: isPinned ? const PushPinOffIcon() : null,
-          onRemove: () => _remove(context, ref),
-          child: Card(
-            margin: EdgeInsets.zero,
-            clipBehavior: Clip.antiAlias,
-            shape: cardShape,
-            color: isSelected
-                ? cs.primaryContainer.withValues(alpha: 0.25)
-                : (isAlreadyPlaying && useFeaturedCard
-                      ? Color.alphaBlend(
-                          cs.primaryContainer.withValues(alpha: 0.40),
-                          cs.surface,
-                        )
-                      : Colors.transparent),
-            elevation: 0,
-            shadowColor: Colors.transparent,
-            surfaceTintColor: Colors.transparent,
+          color: isSelected
+              ? cs.primaryContainer.withValues(alpha: 0.25)
+              : (isAlreadyPlaying && useFeaturedCard
+                    ? Color.alphaBlend(
+                        cs.primaryContainer.withValues(alpha: 0.40),
+                        cs.surface,
+                      )
+                    : Colors.transparent),
+          elevation: 0,
+          shadowColor: Colors.transparent,
+          surfaceTintColor: Colors.transparent,
+          // The tap surface sits inside the card so its ink highlight and
+          // ripple paint above the swipe card's closed background.
+          child: InkWell(
+            canRequestFocus: isSelectionMode,
+            onLongPress: onLongPress,
+            onTap: isSelectionMode ? onToggleSelect : null,
             child: _buildEntryContent(
               context,
               library,

@@ -574,66 +574,74 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
             elevation: 0,
             shadowColor: Colors.transparent,
             surfaceTintColor: Colors.transparent,
-            child: content,
+            // The tap surface sits inside the card so its ink highlight and
+            // ripple paint above the swipe card's closed background.
+            child: InkWell(
+              canRequestFocus: widget.isSelectionMode,
+              onLongPress: widget.onLongPress,
+              onTap: widget.isSelectionMode
+                  ? widget.onToggleSelect
+                  : () => unawaited(
+                      showAudioDetailSheet(
+                        context,
+                        AudioDetailTarget.libraryRootFolder(folder.path),
+                      ),
+                    ),
+              child: content,
+            ),
           )
         : content;
 
-    final result = InkWell(
-      canRequestFocus: widget.isSelectionMode,
-      onLongPress: widget.onLongPress,
-      onTap: widget.isSelectionMode
-          ? widget.onToggleSelect
-          : (isRootFolder
-                ? () => unawaited(
-                    showAudioDetailSheet(
-                      context,
-                      AudioDetailTarget.libraryRootFolder(folder.path),
-                    ),
-                  )
-                : null),
-      borderRadius: folderShape.borderRadius as BorderRadius?,
-      child: SwipeRevealCard(
-        shape: folderShape,
-        enabled: !widget.isSelectionMode,
-        closedColor: cs.surface,
-        showPressEffect: isRootFolder,
-        actionLabel: i18n.tr('remove'),
-        removeTooltip: i18n.tr('remove_audio_folder'),
-        secondaryActionLabel: isRootFolder ? i18n.tr('download') : null,
-        secondaryActionTooltip: isRootFolder ? i18n.tr('download') : null,
-        secondaryActionIcon: Icons.download_rounded,
-        verticalActions: isRootFolder,
-        onSecondaryAction: isRootFolder
-            ? () => unawaited(
-                downloadAudioTargetFromAsmr(
-                  context: context,
-                  ref: ref,
-                  target: AudioDetailTarget.libraryRootFolder(
-                    widget.folder.path,
-                  ),
-                ),
-              )
-            : null,
-        onLeadingAction: isRootFolder
-            ? () => unawaited(
-                ref
-                    .read(settingsRepositoryProvider)
-                    .toggleLibraryPathPinned(widget.folder.path),
-              )
-            : null,
-        leadingActionLabel: isRootFolder
-            ? i18n.tr(isPinned ? 'unpin_from_top' : 'pin_to_top')
-            : null,
-        leadingActionTooltip: isRootFolder
-            ? i18n.tr(isPinned ? 'unpin_from_top' : 'pin_to_top')
-            : null,
-        leadingActionIcon: Icons.push_pin_rounded,
-        leadingActionIconWidget: isPinned ? const PushPinOffIcon() : null,
-        onRemove: () => _removeFolder(context),
-        onWillReveal: _expansionController.collapse,
-        child: cardContent,
-      ),
+    final swipeCard = SwipeRevealCard(
+      shape: folderShape,
+      enabled: !widget.isSelectionMode,
+      closedColor: cs.surface,
+      actionLabel: i18n.tr('remove'),
+      removeTooltip: i18n.tr('remove_audio_folder'),
+      secondaryActionLabel: isRootFolder ? i18n.tr('download') : null,
+      secondaryActionTooltip: isRootFolder ? i18n.tr('download') : null,
+      secondaryActionIcon: Icons.download_rounded,
+      verticalActions: isRootFolder,
+      onSecondaryAction: isRootFolder
+          ? () => unawaited(
+              downloadAudioTargetFromAsmr(
+                context: context,
+                ref: ref,
+                target: AudioDetailTarget.libraryRootFolder(widget.folder.path),
+              ),
+            )
+          : null,
+      onLeadingAction: isRootFolder
+          ? () => unawaited(
+              ref
+                  .read(settingsRepositoryProvider)
+                  .toggleLibraryPathPinned(widget.folder.path),
+            )
+          : null,
+      leadingActionLabel: isRootFolder
+          ? i18n.tr(isPinned ? 'unpin_from_top' : 'pin_to_top')
+          : null,
+      leadingActionTooltip: isRootFolder
+          ? i18n.tr(isPinned ? 'unpin_from_top' : 'pin_to_top')
+          : null,
+      leadingActionIcon: Icons.push_pin_rounded,
+      leadingActionIconWidget: isPinned ? const PushPinOffIcon() : null,
+      onRemove: () => _removeFolder(context),
+      onWillReveal: _expansionController.collapse,
+      child: cardContent,
     );
+
+    // Child folder rows paint their press ink from the expansion tile material,
+    // so they only need the wrapper that keeps long press and selection taps.
+    final result = isRootFolder
+        ? swipeCard
+        : InkWell(
+            canRequestFocus: widget.isSelectionMode,
+            onLongPress: widget.onLongPress,
+            onTap: widget.isSelectionMode ? widget.onToggleSelect : null,
+            borderRadius: folderShape.borderRadius as BorderRadius?,
+            child: swipeCard,
+          );
 
     return UndoableRemovalTransition(hidden: isHidden, child: result);
   }
@@ -742,65 +750,63 @@ class _TrackNodeWidget extends ConsumerWidget {
     }
 
     Widget buildSingleTrackCard(bool useFeaturedCard) {
-      return InkWell(
-        canRequestFocus: isSelectionMode,
-        onLongPress: onLongPress,
-        onTap: isSelectionMode
-            ? onToggleSelect
-            : () => unawaited(
-                showAudioDetailSheet(
-                  context,
-                  AudioDetailTarget.singleAudioFile(track.path),
-                ),
-              ),
-        borderRadius: cardShape.borderRadius as BorderRadius?,
-        child: SwipeRevealCard(
+      return SwipeRevealCard(
+        shape: cardShape,
+        enabled: !isSelectionMode,
+        closedColor: cs.surface,
+        actionLabel: i18n.tr('remove'),
+        removeTooltip: i18n.tr('remove_audio'),
+        secondaryActionLabel: i18n.tr('download'),
+        secondaryActionTooltip: i18n.tr('download'),
+        secondaryActionIcon: Icons.download_rounded,
+        verticalActions: useFeaturedCard,
+        onSecondaryAction: () => unawaited(
+          downloadAudioTargetFromAsmr(
+            context: context,
+            ref: ref,
+            target: AudioDetailTarget.singleAudioFile(track.path),
+          ),
+        ),
+        onLeadingAction: () => unawaited(
+          ref
+              .read(settingsRepositoryProvider)
+              .toggleLibraryPathPinned(track.path),
+        ),
+        leadingActionLabel: i18n.tr(isPinned ? 'unpin_from_top' : 'pin_to_top'),
+        leadingActionTooltip: i18n.tr(
+          isPinned ? 'unpin_from_top' : 'pin_to_top',
+        ),
+        leadingActionIcon: Icons.push_pin_rounded,
+        leadingActionIconWidget: isPinned ? const PushPinOffIcon() : null,
+        onRemove: () => _removeTrack(context, ref, track),
+        child: Card(
+          margin: EdgeInsets.zero,
+          clipBehavior: Clip.antiAlias,
           shape: cardShape,
-          enabled: !isSelectionMode,
-          closedColor: cs.surface,
-          showPressEffect: true,
-          actionLabel: i18n.tr('remove'),
-          removeTooltip: i18n.tr('remove_audio'),
-          secondaryActionLabel: i18n.tr('download'),
-          secondaryActionTooltip: i18n.tr('download'),
-          secondaryActionIcon: Icons.download_rounded,
-          verticalActions: useFeaturedCard,
-          onSecondaryAction: () => unawaited(
-            downloadAudioTargetFromAsmr(
-              context: context,
-              ref: ref,
-              target: AudioDetailTarget.singleAudioFile(track.path),
-            ),
-          ),
-          onLeadingAction: () => unawaited(
-            ref
-                .read(settingsRepositoryProvider)
-                .toggleLibraryPathPinned(track.path),
-          ),
-          leadingActionLabel: i18n.tr(
-            isPinned ? 'unpin_from_top' : 'pin_to_top',
-          ),
-          leadingActionTooltip: i18n.tr(
-            isPinned ? 'unpin_from_top' : 'pin_to_top',
-          ),
-          leadingActionIcon: Icons.push_pin_rounded,
-          leadingActionIconWidget: isPinned ? const PushPinOffIcon() : null,
-          onRemove: () => _removeTrack(context, ref, track),
-          child: Card(
-            margin: EdgeInsets.zero,
-            clipBehavior: Clip.antiAlias,
-            shape: cardShape,
-            color: isSelected
-                ? cs.primaryContainer.withValues(alpha: 0.25)
-                : (isAlreadyPlaying && !track.isVideo && useFeaturedCard)
-                ? Color.alphaBlend(
-                    cs.primaryContainer.withValues(alpha: 0.40),
-                    cs.surface,
-                  )
-                : Colors.transparent,
-            elevation: 0,
-            shadowColor: Colors.transparent,
-            surfaceTintColor: Colors.transparent,
+          color: isSelected
+              ? cs.primaryContainer.withValues(alpha: 0.25)
+              : (isAlreadyPlaying && !track.isVideo && useFeaturedCard)
+              ? Color.alphaBlend(
+                  cs.primaryContainer.withValues(alpha: 0.40),
+                  cs.surface,
+                )
+              : Colors.transparent,
+          elevation: 0,
+          shadowColor: Colors.transparent,
+          surfaceTintColor: Colors.transparent,
+          // The tap surface sits inside the card so its ink highlight and
+          // ripple paint above the swipe card's closed background.
+          child: InkWell(
+            canRequestFocus: isSelectionMode,
+            onLongPress: onLongPress,
+            onTap: isSelectionMode
+                ? onToggleSelect
+                : () => unawaited(
+                    showAudioDetailSheet(
+                      context,
+                      AudioDetailTarget.singleAudioFile(track.path),
+                    ),
+                  ),
             child: useFeaturedCard
                 ? ListTile(
                     contentPadding: LibraryLikeCardMetrics.rootTilePadding,

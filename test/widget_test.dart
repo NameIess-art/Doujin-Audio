@@ -2176,6 +2176,23 @@ void main() {
 
     final navigationRail = find.byType(NavigationRail);
     expect(navigationRail, findsOneWidget);
+    final expandedRail = tester.widget<NavigationRail>(navigationRail);
+    expect(expandedRail.extended, isTrue);
+    expect(expandedRail.minWidth, 63);
+    expect(expandedRail.minExtendedWidth, 243);
+    final animatedShell = find.ancestor(
+      of: navigationRail,
+      matching: find.byType(AnimatedContainer),
+    );
+    expect(animatedShell, findsOneWidget);
+    expect(
+      tester.widget<AnimatedContainer>(animatedShell).duration,
+      kThemeAnimationDuration,
+    );
+    expect(
+      tester.widget<AnimatedContainer>(animatedShell).curve,
+      Curves.easeInOut,
+    );
     expect(
       tester
           .widgetList<Theme>(
@@ -2208,6 +2225,27 @@ void main() {
     );
     expect(expandedMenuButton, findsOneWidget);
     expect(tester.getSize(expandedMenuButton), isNot(Size.zero));
+    final expandedWidth = tester.getSize(navigationRail).width;
+
+    await tester.tap(expandedMenuButton);
+    await tester.pump();
+    final collapsedRail = tester.widget<NavigationRail>(navigationRail);
+    expect(collapsedRail.extended, isFalse);
+    expect(
+      collapsedRail.destinations
+          .map((destination) => destination.label)
+          .whereType<Text>()
+          .every((label) => (label.data ?? '').isNotEmpty),
+      isTrue,
+    );
+    await tester.pump(const Duration(milliseconds: 100));
+    final animatingWidth = tester.getSize(navigationRail).width;
+    expect(
+      animatingWidth,
+      inExclusiveRange(collapsedRail.minWidth!, expandedWidth),
+    );
+    await tester.pumpAndSettle();
+    expect(tester.getSize(navigationRail).width, collapsedRail.minWidth);
     expect(find.byType(ActiveSessionCarousel), findsNothing);
     debugDefaultTargetPlatformOverride = null;
     expect(tester.takeException(), isNull);

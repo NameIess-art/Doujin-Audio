@@ -473,6 +473,11 @@ extension _MainScreenLayout on _MainScreenState {
     final double containerWidth = _isMenuCollapsed
         ? collapsedWidth
         : expandedWidth;
+    final horizontalPadding = isLandscapeLayout ? 16.0 : 20.0;
+    final horizontalBorder = isLandscapeLayout ? 1.0 : 2.0;
+    final railMinWidth = collapsedWidth - horizontalPadding - horizontalBorder;
+    final railMinExtendedWidth =
+        expandedWidth - horizontalPadding - horizontalBorder;
 
     final sidebarColor = isLandscapeLayout
         ? (isDark
@@ -484,8 +489,8 @@ extension _MainScreenLayout on _MainScreenState {
 
     return AnimatedContainer(
       key: ValueKey<bool>(isLandscapeLayout),
-      duration: const Duration(milliseconds: 250),
-      curve: Curves.easeOutCubic,
+      duration: kThemeAnimationDuration,
+      curve: Curves.easeInOut,
       width: containerWidth,
       margin: isLandscapeLayout
           ? EdgeInsets.zero
@@ -566,8 +571,8 @@ extension _MainScreenLayout on _MainScreenState {
                           : 0,
                       onDestinationSelected: _switchPage,
                       extended: !_isMenuCollapsed,
-                      minWidth: 64,
-                      minExtendedWidth: isLandscapeLayout ? 212 : 236,
+                      minWidth: railMinWidth,
+                      minExtendedWidth: railMinExtendedWidth,
                       useIndicator: true,
                       groupAlignment: -1.0,
                       leading: isLandscapeLayout
@@ -666,7 +671,7 @@ extension _MainScreenLayout on _MainScreenState {
                             color: cs.primary,
                           ),
                           label: Text(
-                            _isMenuCollapsed ? '' : label,
+                            label,
                             style: isSelected
                                 ? TextStyle(
                                     color: cs.primary,

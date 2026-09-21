@@ -2251,6 +2251,82 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('landscape playback dock is a sidebar capsule on detail routes', (
+    tester,
+  ) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1400, 800);
+    addTearDown(() {
+      debugDefaultTargetPlatformOverride = null;
+      tester.view.resetDevicePixelRatio();
+      tester.view.resetPhysicalSize();
+    });
+    await _pumpAppShell(tester);
+
+    final mainCard = find.byKey(
+      const ValueKey<String>('active_session_card_orientation_session'),
+    );
+    expect(tester.getSize(mainCard).height, kActiveSessionCarouselDockHeight);
+    expect(
+      tester
+          .widget<ActiveSessionCarousel>(find.byType(ActiveSessionCarousel))
+          .presentation,
+      ActiveSessionCarouselPresentation.embedded,
+    );
+
+    await tester.tap(find.byIcon(Icons.menu_open_rounded));
+    await tester.pumpAndSettle();
+    expect(tester.getSize(mainCard), const Size.square(48));
+    expect(
+      tester.getSize(
+        find.byKey(
+          const ValueKey<String>('active_session_cover_orientation_session'),
+        ),
+      ),
+      const Size.square(40),
+    );
+
+    await tester.tap(find.byIcon(Icons.menu_rounded));
+    await tester.pumpAndSettle();
+    final mainDockRect = tester.getRect(mainCard);
+    final navigator = Navigator.of(tester.element(find.byType(MainScreen)));
+    final routeFuture = navigator.push<void>(
+      buildAppPageRoute<void>(
+        context: navigator.context,
+        settings: const RouteSettings(name: workDetailRouteName),
+        child: const Scaffold(body: SizedBox.expand()),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+    final routeDock = find.byKey(
+      const ValueKey<String>('routed_playback_dock'),
+    );
+    expect(routeDock, findsOneWidget);
+    await tester.pump(const Duration(milliseconds: 350));
+    final detailDockRect = tester.getRect(routeDock);
+    expect(detailDockRect.left, closeTo(mainDockRect.left, 1));
+    expect(detailDockRect.top, closeTo(mainDockRect.top, 1));
+    expect(detailDockRect.size, mainDockRect.size);
+
+    navigator.pop();
+    await tester.pump();
+    final exitingSlide = tester.widget<AnimatedSlide>(
+      find.ancestor(of: routeDock, matching: find.byType(AnimatedSlide)),
+    );
+    expect(exitingSlide.offset.dx, lessThan(0));
+    final exitStart = tester.getRect(routeDock).left;
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(tester.getRect(routeDock).left, lessThan(exitStart));
+    await routeFuture;
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(routeDock, findsNothing);
+    UiInteractionCoordinator.instance.finishInteractionsForTest();
+    await tester.pump(const Duration(milliseconds: 200));
+    debugDefaultTargetPlatformOverride = null;
+  });
+
   testWidgets('app shell keeps the active page after orientation changes', (
     tester,
   ) async {

@@ -12,6 +12,18 @@ import 'shimmer_loading.dart';
 
 const _libraryLikeInfoLineHeight = 16.0;
 
+const double kResponsiveLibraryCardMinWidth = 420;
+const double kResponsiveLibraryCardSpacing = 8;
+
+int responsiveLibraryCardColumnCount(double availableWidth) {
+  if (!availableWidth.isFinite || availableWidth <= 0) return 1;
+  final count =
+      ((availableWidth + kResponsiveLibraryCardSpacing) /
+              (kResponsiveLibraryCardMinWidth + kResponsiveLibraryCardSpacing))
+          .floor();
+  return count < 1 ? 1 : count;
+}
+
 class LibraryLikeCardMetrics {
   const LibraryLikeCardMetrics._();
 

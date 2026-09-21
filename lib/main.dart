@@ -579,10 +579,11 @@ class _RoutedPlaybackDockState extends ConsumerState<_RoutedPlaybackDock> {
       mainOverlayUiProvider.select((state) => state.overlaySessions),
     );
     final size = MediaQuery.sizeOf(context);
-    final supported =
-        defaultTargetPlatform != TargetPlatform.windows &&
-        MediaQuery.orientationOf(context) == Orientation.portrait &&
-        size.width < 980;
+    final isLandscapeDock =
+        defaultTargetPlatform == TargetPlatform.windows ||
+        MediaQuery.orientationOf(context) == Orientation.landscape ||
+        size.width >= 980;
+    final supported = size.width >= 300 && size.height >= 300;
     if (!_visible || !supported || sessions.isEmpty) {
       return const SizedBox.shrink();
     }
@@ -590,6 +591,70 @@ class _RoutedPlaybackDockState extends ConsumerState<_RoutedPlaybackDock> {
         ? Duration.zero
         : _duration;
     final i18n = ref.read(appLanguageProviderInstanceProvider);
+
+    Widget dockContent() => AppDockGlassPanel(
+      key: const ValueKey<String>('routed_playback_dock'),
+      shadowOpacity: 0.12,
+      showTopHighlight: false,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(
+          kActiveSessionCarouselDockHeight / 2,
+        ),
+        child: ActiveSessionCarousel(
+          sessions: sessions,
+          i18n: i18n,
+          viewportFraction: 1,
+          presentation: ActiveSessionCarouselPresentation.embedded,
+          onOpenSession: (sessionId) {
+            if (widget.currentRoute is SessionDetailRoute) return;
+            widget.navigatorKey.currentState?.push(
+              buildSessionDetailRoute(sessionId: sessionId),
+            );
+          },
+        ),
+      ),
+    );
+
+    if (isLandscapeDock) {
+      final mainRect = widget.geometry.mainDockRect;
+      final fallbackWidth = (size.width - 16).clamp(0.0, 244.0);
+      final dockRect =
+          mainRect ??
+          Rect.fromLTWH(
+            8,
+            size.height - kActiveSessionCarouselDockHeight - 8,
+            fallbackWidth,
+            kActiveSessionCarouselDockHeight,
+          );
+      return SizedBox(
+        width: size.width,
+        height: size.height,
+        child: IgnorePointer(
+          key: const ValueKey<String>('routed_playback_dock_interaction'),
+          ignoring: !widget.active || widget.covered,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              Positioned(
+                left: dockRect.left,
+                top: dockRect.top,
+                width: dockRect.width,
+                height: dockRect.height,
+                child: AnimatedSlide(
+                  duration: duration,
+                  curve: Curves.easeOutCubic,
+                  offset: _expanded ? Offset.zero : const Offset(-1.1, 0),
+                  child: SizedBox.expand(
+                    key: const ValueKey<String>('routed_playback_dock_width'),
+                    child: dockContent(),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
 
     return IgnorePointer(
       key: const ValueKey<String>('routed_playback_dock_interaction'),
@@ -622,34 +687,7 @@ class _RoutedPlaybackDockState extends ConsumerState<_RoutedPlaybackDock> {
                               ? constraints.maxWidth
                               : _transitionWidth(constraints.maxWidth),
                           height: kActiveSessionCarouselDockHeight,
-                          child: AppDockGlassPanel(
-                            key: const ValueKey<String>('routed_playback_dock'),
-                            shadowOpacity: 0.12,
-                            showTopHighlight: false,
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(
-                                kActiveSessionCarouselDockHeight / 2,
-                              ),
-                              child: ActiveSessionCarousel(
-                                sessions: sessions,
-                                i18n: i18n,
-                                viewportFraction: 1,
-                                presentation:
-                                    ActiveSessionCarouselPresentation.embedded,
-                                onOpenSession: (sessionId) {
-                                  if (widget.currentRoute
-                                      is SessionDetailRoute) {
-                                    return;
-                                  }
-                                  widget.navigatorKey.currentState?.push(
-                                    buildSessionDetailRoute(
-                                      sessionId: sessionId,
-                                    ),
-                                  );
-                                },
-                              ),
-                            ),
-                          ),
+                          child: dockContent(),
                         ),
                       ),
                     );
@@ -806,9 +844,7 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp> {
   Widget _buildRoutedPlaybackDockOverlay(BuildContext context) {
     final mediaQuery = MediaQuery.of(context);
     final supportsRoutedDock =
-        defaultTargetPlatform != TargetPlatform.windows &&
-        mediaQuery.orientation == Orientation.portrait &&
-        mediaQuery.size.width < 980;
+        mediaQuery.size.width >= 300 && mediaQuery.size.height >= 300;
     return Positioned(
       left: 0,
       right: 0,

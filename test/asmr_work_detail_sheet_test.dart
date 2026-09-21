@@ -364,6 +364,49 @@ void main() {
     },
   );
 
+  testWidgets('wide ASMR category lays cards out from left to right', (
+    WidgetTester tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1200, 800);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
+    SharedPreferences.setMockInitialValues(const <String, Object>{});
+    final fixture = AppRuntimeWidgetTestFixture();
+    addTearDown(fixture.dispose);
+    await fixture.languageProvider.setLanguage(AppLanguage.zh);
+    final controller = _TestFavoritesAsmrLibraryController(
+      createTestAsmrServices(),
+      <AsmrWork>[
+        _work(id: 91, title: 'First wide ASMR work'),
+        _work(id: 92, title: 'Second wide ASMR work'),
+      ],
+    );
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(
+      fixture.build(
+        const AsmrTab(),
+        overrides: [
+          asmrLibraryControllerProvider.overrideWithValue(controller),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('收藏'));
+    await tester.pumpAndSettle();
+
+    final first = find.byKey(const ValueKey<String>('asmr-work-91'));
+    final second = find.byKey(const ValueKey<String>('asmr-work-92'));
+    expect(first, findsOneWidget);
+    expect(second, findsOneWidget);
+    expect(
+      tester.getTopLeft(first).dy,
+      closeTo(tester.getTopLeft(second).dy, 1),
+    );
+    expect(tester.getTopLeft(first).dx, lessThan(tester.getTopLeft(second).dx));
+  });
+
   testWidgets(
     'unfavoriting a work in favorites category animates card collapse and shifts items below upward',
     (WidgetTester tester) async {

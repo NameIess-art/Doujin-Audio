@@ -510,6 +510,63 @@ void main() {
     runtimeGraph.library.finishScan(refreshGeneration);
   });
 
+  testWidgets('wide library lays cards out from left to right', (
+    WidgetTester tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1200, 800);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
+    final fixture = AppRuntimeWidgetTestFixture();
+    addTearDown(fixture.dispose);
+    final runtimeGraph = fixture.runtimeGraph;
+    runtimeGraph.library.addWatchedFolder('/library', notify: false);
+    runtimeGraph.library.addTracks(
+      [
+        testMusicTrack(
+          name: 'First wide work',
+          path: '/library/first/track.mp3',
+          groupKey: '/library/first/track.mp3',
+          groupTitle: 'First wide work',
+          isSingle: true,
+        ),
+        testMusicTrack(
+          name: 'Second wide work',
+          path: '/library/second/track.mp3',
+          groupKey: '/library/second/track.mp3',
+          groupTitle: 'Second wide work',
+          isSingle: true,
+        ),
+      ],
+      notify: false,
+      persist: false,
+    );
+    fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 0);
+
+    await tester.pumpWidget(fixture.build(const LibraryTab()));
+    await pumpUntilFound(
+      tester,
+      find.text('First wide work', findRichText: true),
+    );
+    await tester.pumpAndSettle();
+
+    final first = find.byKey(
+      const ValueKey<String>('/library/first/track.mp3'),
+    );
+    final second = find.byKey(
+      const ValueKey<String>('/library/second/track.mp3'),
+    );
+    expect(first, findsOneWidget);
+    expect(second, findsOneWidget);
+    expect(
+      tester.getTopLeft(first).dy,
+      closeTo(tester.getTopLeft(second).dy, 1),
+    );
+    expect(tester.getTopLeft(first).dx, lessThan(tester.getTopLeft(second).dx));
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(seconds: 10));
+  });
+
   testWidgets('library cover lookups wait until scrolling becomes idle', (
     WidgetTester tester,
   ) async {

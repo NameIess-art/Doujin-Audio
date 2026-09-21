@@ -103,17 +103,15 @@ List<_MainDestination> _resolveMainDestinations({
 
 class PlaybackDockGeometryController extends ChangeNotifier {
   Rect? get mainCoverRect => _mainCoverRect;
-  double? get mainDockRight => _mainDockRight;
+  Rect? get mainDockRect => _mainDockRect;
+  double? get mainDockRight => _mainDockRect?.right;
   Rect? _mainCoverRect;
-  double? _mainDockRight;
+  Rect? _mainDockRect;
 
-  void updateMainGeometry({
-    required Rect coverRect,
-    required double dockRight,
-  }) {
-    if (_mainCoverRect == coverRect && _mainDockRight == dockRight) return;
+  void updateMainGeometry({required Rect coverRect, required Rect dockRect}) {
+    if (_mainCoverRect == coverRect && _mainDockRect == dockRect) return;
     _mainCoverRect = coverRect;
-    _mainDockRight = dockRight;
+    _mainDockRect = dockRect;
     notifyListeners();
   }
 }
@@ -139,6 +137,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
   final Object _pageSwitchInteraction = Object();
   final GlobalKey _dockContentKey = GlobalKey();
   final GlobalKey _mobilePlaybackGeometryKey = GlobalKey();
+  final GlobalKey _desktopPlaybackGeometryKey = GlobalKey();
   int _pageSwitchCoordinatorGeneration = 0;
 
   void _reportMobilePlaybackCoverRect() {
@@ -156,7 +155,27 @@ class _MainScreenState extends ConsumerState<MainScreen>
         coverRect:
             origin + const Offset(inset, inset) &
             Size.square(box.size.height - inset * 2),
-        dockRight: origin.dx + box.size.width,
+        dockRect: origin & box.size,
+      );
+    });
+  }
+
+  void _reportDesktopPlaybackRect() {
+    final geometry = widget.playbackDockGeometry;
+    if (geometry == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final box =
+          _desktopPlaybackGeometryKey.currentContext?.findRenderObject()
+              as RenderBox?;
+      if (box == null || !box.hasSize) return;
+      const inset = 4.0;
+      final origin = box.localToGlobal(Offset.zero);
+      geometry.updateMainGeometry(
+        coverRect:
+            origin + const Offset(inset, inset) &
+            Size.square(box.size.height - inset * 2),
+        dockRect: origin & box.size,
       );
     });
   }

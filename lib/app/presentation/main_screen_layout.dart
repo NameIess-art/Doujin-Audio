@@ -694,16 +694,45 @@ extension _MainScreenLayout on _MainScreenState {
           if (overlaySessions.isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(top: AppSpacing.sm),
-              child: ActiveSessionCarousel(
-                sessions: overlaySessions,
-                i18n: i18n,
-                presentation: _isMenuCollapsed
-                    ? ActiveSessionCarouselPresentation.compact
-                    : ActiveSessionCarouselPresentation.card,
-                onOpenSession: (sessionId) {
-                  Navigator.of(
-                    context,
-                  ).push(buildSessionDetailRoute(sessionId: sessionId));
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  _reportDesktopPlaybackRect();
+                  return Align(
+                    alignment: _isMenuCollapsed
+                        ? Alignment.center
+                        : Alignment.centerLeft,
+                    child: AnimatedContainer(
+                      key: _desktopPlaybackGeometryKey,
+                      duration: kThemeAnimationDuration,
+                      curve: Curves.easeInOut,
+                      onEnd: _reportDesktopPlaybackRect,
+                      width: _isMenuCollapsed
+                          ? kActiveSessionCarouselDockHeight
+                          : constraints.maxWidth,
+                      height: kActiveSessionCarouselDockHeight,
+                      child: AppDockGlassPanel(
+                        shadowOpacity: 0.12,
+                        showTopHighlight: false,
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(
+                            kActiveSessionCarouselDockHeight / 2,
+                          ),
+                          child: ActiveSessionCarousel(
+                            sessions: overlaySessions,
+                            i18n: i18n,
+                            viewportFraction: 1,
+                            presentation:
+                                ActiveSessionCarouselPresentation.embedded,
+                            onOpenSession: (sessionId) {
+                              Navigator.of(context).push(
+                                buildSessionDetailRoute(sessionId: sessionId),
+                              );
+                            },
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
                 },
               ),
             ),

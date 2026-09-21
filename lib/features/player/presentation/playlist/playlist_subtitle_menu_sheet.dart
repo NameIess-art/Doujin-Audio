@@ -15,12 +15,14 @@ import '../playback_providers.dart';
 Future<void> showSubtitleMenuBottomSheet({
   required BuildContext context,
   required PlaybackSessionSnapshot session,
+  required bool canImportSubtitle,
   required VoidCallback? onToggleGlobalSubtitle,
 }) {
   return AppBottomSheet.show<void>(
     context: context,
     builder: (sheetContext) => SubtitleMenuSheet(
       session: session,
+      canImportSubtitle: canImportSubtitle,
       onToggleGlobalSubtitle: onToggleGlobalSubtitle,
     ),
   );
@@ -30,10 +32,12 @@ class SubtitleMenuSheet extends ConsumerStatefulWidget {
   const SubtitleMenuSheet({
     super.key,
     required this.session,
+    this.canImportSubtitle = true,
     this.onToggleGlobalSubtitle,
   });
 
   final PlaybackSessionSnapshot session;
+  final bool canImportSubtitle;
   final VoidCallback? onToggleGlobalSubtitle;
 
   @override
@@ -160,6 +164,7 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
         final hasSubtitle =
             trackPath.isNotEmpty &&
             (activeTrack != null || subtitles.hasKnownSubtitle(trackPath));
+        final importEnabled = widget.canImportSubtitle && !_importing;
         final isOffsetZero = activeOffset == Duration.zero;
 
         return SafeArea(
@@ -316,6 +321,8 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         ListTile(
+                          key: const ValueKey('subtitle_import_tile'),
+                          enabled: importEnabled,
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(16),
                           ),
@@ -330,12 +337,17 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
                                 )
                               : Icon(
                                   Icons.upload_file_rounded,
-                                  color: cs.primary,
+                                  color: importEnabled
+                                      ? cs.primary
+                                      : cs.onSurface.withValues(alpha: 0.38),
                                 ),
                           title: Text(
                             i18n.tr('import_subtitle'),
                             style: theme.textTheme.bodyLarge?.copyWith(
                               fontWeight: FontWeight.w600,
+                              color: importEnabled
+                                  ? null
+                                  : cs.onSurface.withValues(alpha: 0.38),
                             ),
                           ),
                           subtitle: Text(
@@ -347,14 +359,19 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: theme.textTheme.bodySmall?.copyWith(
-                              color: cs.onSurfaceVariant,
+                              color: importEnabled
+                                  ? cs.onSurfaceVariant
+                                  : cs.onSurface.withValues(alpha: 0.38),
                             ),
                           ),
-                          trailing: const Icon(
+                          trailing: Icon(
                             Icons.chevron_right_rounded,
                             size: 20,
+                            color: importEnabled
+                                ? null
+                                : cs.onSurface.withValues(alpha: 0.38),
                           ),
-                          onTap: _importing
+                          onTap: !importEnabled
                               ? null
                               : () => _pickSubtitleFile(context, subtitles),
                         ),

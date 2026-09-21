@@ -3063,6 +3063,11 @@ void main() {
       find.text(fixture.languageProvider.tr('subtitle_global_display')),
       findsOneWidget,
     );
+    final importTile = tester.widget<ListTile>(
+      find.byKey(const ValueKey('subtitle_import_tile')),
+    );
+    expect(importTile.enabled, isFalse);
+    expect(importTile.onTap, isNull);
     subtitleLoad.complete(null);
     await tester.pump();
     expect(subtitleService.trackSync(track.path), isNull);
@@ -3679,6 +3684,20 @@ void main() {
       ).push(buildSessionDetailRoute(sessionId: session.id)),
     );
     await tester.pumpAndSettle();
+    final subtitleMenuButton = find.byKey(
+      const ValueKey('session_subtitle_menu_button'),
+    );
+    expect(
+      tester
+          .widget<IconButton>(
+            find.descendant(
+              of: subtitleMenuButton,
+              matching: find.byType(IconButton),
+            ),
+          )
+          .onPressed,
+      isNull,
+    );
     bool videoReady() => tester
         .widget<SessionVideoViewport>(find.byType(SessionVideoViewport))
         .videoReady;

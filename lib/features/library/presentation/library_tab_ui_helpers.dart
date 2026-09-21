@@ -324,7 +324,6 @@ Future<void> downloadAudioTargetFromAsmr({
   await Navigator.of(context).push<void>(
     buildAppPageRoute<void>(
       context: context,
-      style: AppPageTransitionStyle.sharedAxisZ,
       child: AsmrDownloadPage(
         initialRjCode: effectiveRjCode,
         customDestinationRoot: destination.destinationRoot,
@@ -333,4 +332,3 @@ Future<void> downloadAudioTargetFromAsmr({
     ),
   );
 }
-

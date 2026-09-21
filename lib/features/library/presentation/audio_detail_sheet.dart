@@ -96,7 +96,6 @@ Future<void> showAudioDetailSheet(
   return Navigator.of(context).push(
     buildAppPageRoute<void>(
       context: context,
-      style: AppPageTransitionStyle.sharedAxisZ,
       settings: const RouteSettings(name: workDetailRouteName),
       child: WorkDetailPage.forLocal(target: target),
     ),
@@ -503,7 +502,6 @@ class _AudioDetailSheetState extends ConsumerState<AudioDetailSheet> {
     final result = await Navigator.of(context).push<DlsiteMetadataReviewResult>(
       buildAppPageRoute(
         context: context,
-        style: AppPageTransitionStyle.sharedAxisZ,
         child: DlsiteMetadataReviewPage(
           detail: detail,
           rjCode: query.rjCode,

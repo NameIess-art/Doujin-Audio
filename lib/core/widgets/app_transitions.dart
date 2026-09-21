@@ -52,42 +52,51 @@ class AppPageHeaderTransition extends StatelessWidget {
   }
 }
 
+Widget _buildPageContentSlideTransition({
+  required BuildContext context,
+  required Animation<double> animation,
+  required Widget child,
+}) {
+  if (MediaQuery.disableAnimationsOf(context)) return child;
+  return SlideTransition(
+    position: animation.drive(
+      Tween<Offset>(
+        begin: const Offset(1, 0),
+        end: Offset.zero,
+      ).chain(CurveTween(curve: Curves.easeOutCubic)),
+    ),
+    child: child,
+  );
+}
+
 Widget _buildSeparatedPageTransition({
   required BuildContext context,
   required Animation<double> animation,
   required Animation<double> secondaryAnimation,
   required Widget child,
-  required AppPageTransitionStyle style,
 }) {
+  if (MediaQuery.disableAnimationsOf(context)) return child;
   final regions = _AppPageMotionScope(
-    contentBuilder: (context, child) => buildAppPageTransition(
+    contentBuilder: (context, child) => _buildPageContentSlideTransition(
       context: context,
       animation: animation,
-      secondaryAnimation: secondaryAnimation,
       child: child,
-      style: style,
     ),
-    headerBuilder: (context, child) {
-      if (MediaQuery.disableAnimationsOf(context)) return child;
-      return AnimatedBuilder(
-        animation: Listenable.merge([animation, secondaryAnimation]),
-        child: child,
-        builder: (context, child) {
-          final incoming = Curves.easeOutCubic.transform(
-            (animation.value / 0.6).clamp(0.0, 1.0),
-          );
-          final outgoing = Curves.easeOutCubic.transform(
-            (secondaryAnimation.value / 0.6).clamp(0.0, 1.0),
-          );
-          return Opacity(opacity: incoming * (1 - outgoing), child: child);
-        },
-      );
-    },
+    headerBuilder: (context, child) => AnimatedBuilder(
+      animation: Listenable.merge([animation, secondaryAnimation]),
+      child: child,
+      builder: (context, child) {
+        final incoming = Curves.easeOutCubic.transform(
+          (animation.value / 0.6).clamp(0.0, 1.0),
+        );
+        final outgoing = Curves.easeOutCubic.transform(
+          (secondaryAnimation.value / 0.6).clamp(0.0, 1.0),
+        );
+        return Opacity(opacity: incoming * (1 - outgoing), child: child);
+      },
+    ),
     child: child,
   );
-  // Fade the stationary page surface too, so it cannot cover the outgoing
-  // header before the incoming header starts appearing.
-  if (MediaQuery.disableAnimationsOf(context)) return regions;
   return FadeTransition(
     opacity: animation.drive(CurveTween(curve: const Interval(0, 0.2))),
     child: regions,
@@ -183,8 +192,6 @@ class AppHeaderActionTransition extends StatelessWidget {
 extension AppHeaderTransitionWidget on Widget {
   Widget withAppHeaderTransition() => AppHeaderTransition(child: this);
 }
-
-enum AppPageTransitionStyle { fade, fadeThrough, sharedAxisX, sharedAxisZ }
 
 enum AppIndexedStackTransitionStyle { none, directional, crossFade }
 
@@ -505,64 +512,6 @@ Widget buildAppFadeTransition({
     reverseCurve: reverseCurve,
   );
   return FadeTransition(opacity: curved, child: child);
-}
-
-Widget _buildSharedAxisTransition({
-  required BuildContext context,
-  required Animation<double> animation,
-  required Animation<double> secondaryAnimation,
-  required Widget child,
-  required AppPageTransitionStyle style,
-}) {
-  if (MediaQuery.disableAnimationsOf(context)) return child;
-  return AnimatedBuilder(
-    animation: Listenable.merge([animation, secondaryAnimation]),
-    child: child,
-    builder: (context, child) {
-      final primary = Curves.easeOutCubic.transform(animation.value);
-      final secondary = Curves.easeInCubic.transform(secondaryAnimation.value);
-      final isDepth = style == AppPageTransitionStyle.sharedAxisZ;
-      final opacity = (primary * (1 - secondary * 0.08)).clamp(0.0, 1.0);
-      final scale = isDepth
-          ? (0.94 + 0.06 * primary) * (1 - secondary * 0.02)
-          : 1.0;
-      final dx = isDepth ? 0.0 : 24 * (1 - primary) - 8 * secondary;
-      return Opacity(
-        opacity: opacity,
-        child: Transform(
-          alignment: Alignment.center,
-          transform: Matrix4.identity()
-            ..translateByDouble(dx, 0.0, 0.0, 1.0)
-            ..scaleByDouble(scale, scale, 1.0, 1.0),
-          child: child,
-        ),
-      );
-    },
-  );
-}
-
-Widget buildAppPageTransition({
-  required BuildContext context,
-  required Animation<double> animation,
-  required Animation<double> secondaryAnimation,
-  required Widget child,
-  required AppPageTransitionStyle style,
-}) {
-  if (style == AppPageTransitionStyle.fade ||
-      style == AppPageTransitionStyle.fadeThrough) {
-    return buildAppFadeTransition(
-      context: context,
-      animation: animation,
-      child: child,
-    );
-  }
-  return _buildSharedAxisTransition(
-    context: context,
-    animation: animation,
-    secondaryAnimation: secondaryAnimation,
-    child: child,
-    style: style,
-  );
 }
 
 class AppFadeThroughIndexedStack extends StatefulWidget {
@@ -909,8 +858,8 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
   }
 }
 
-class CenterScalePageTransitionsBuilder extends PageTransitionsBuilder {
-  const CenterScalePageTransitionsBuilder();
+class AppPageTransitionsBuilder extends PageTransitionsBuilder {
+  const AppPageTransitionsBuilder();
 
   @override
   Widget buildTransitions<T>(
@@ -925,7 +874,6 @@ class CenterScalePageTransitionsBuilder extends PageTransitionsBuilder {
       animation: animation,
       secondaryAnimation: secondaryAnimation,
       child: child,
-      style: AppPageTransitionStyle.sharedAxisZ,
     );
   }
 }
@@ -934,7 +882,6 @@ PageRouteBuilder<T> buildAppPageRoute<T>({
   required BuildContext context,
   required Widget child,
   RouteSettings? settings,
-  AppPageTransitionStyle style = AppPageTransitionStyle.sharedAxisX,
   Duration duration = kAppMotionSlow,
   Duration reverseDuration = kAppMotionFast,
 }) {
@@ -950,7 +897,6 @@ PageRouteBuilder<T> buildAppPageRoute<T>({
         animation: animation,
         secondaryAnimation: secondaryAnimation,
         child: routedChild,
-        style: style,
       );
     },
   );

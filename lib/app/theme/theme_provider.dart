@@ -675,8 +675,12 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
       textTheme: textTheme,
       pageTransitionsTheme: const PageTransitionsTheme(
         builders: {
-          TargetPlatform.android: CenterScalePageTransitionsBuilder(),
-          TargetPlatform.iOS: CenterScalePageTransitionsBuilder(),
+          TargetPlatform.android: AppPageTransitionsBuilder(),
+          TargetPlatform.fuchsia: AppPageTransitionsBuilder(),
+          TargetPlatform.iOS: AppPageTransitionsBuilder(),
+          TargetPlatform.linux: AppPageTransitionsBuilder(),
+          TargetPlatform.macOS: AppPageTransitionsBuilder(),
+          TargetPlatform.windows: AppPageTransitionsBuilder(),
         },
       ),
       hoverColor: scheme.primary.withValues(alpha: 0.08),

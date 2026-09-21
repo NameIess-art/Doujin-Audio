@@ -39,7 +39,7 @@ void main() {
     ),
   );
 
-  testWidgets('route header stays fixed while content scales on push and pop', (
+  testWidgets('route keeps header fixed while content slides horizontally', (
     tester,
   ) async {
     final navigatorKey = GlobalKey<NavigatorState>();
@@ -54,7 +54,6 @@ void main() {
       navigator.push(
         buildAppPageRoute<void>(
           context: navigator.context,
-          style: AppPageTransitionStyle.sharedAxisZ,
           child: regions('detail'),
         ),
       ),
@@ -63,15 +62,25 @@ void main() {
     await tester.pump(const Duration(milliseconds: 75));
     final header = find.byKey(const ValueKey('detail-header'));
     final body = find.byKey(const ValueKey('detail-body'));
-    expect(tester.getRect(header), expectedHeader);
+    final enteringHeader = tester.getRect(header);
     final enteringBody = tester.getRect(body);
     await tester.pumpAndSettle();
-    expect(enteringBody.width, lessThan(tester.getRect(body).width));
+    final settledHeader = tester.getRect(header);
+    final settledBody = tester.getRect(body);
+    final bodyPushOffset = enteringBody.left - settledBody.left;
+    expect(enteringHeader, settledHeader);
+    expect(bodyPushOffset, greaterThan(0));
     navigator.pop();
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 60));
-    expect(tester.getRect(header), expectedHeader);
+    final bodyPopOffset = tester.getRect(body).left - settledBody.left;
+    expect(tester.getRect(header), settledHeader);
+    expect(bodyPopOffset, greaterThan(0));
     await tester.pumpAndSettle();
+    expect(
+      tester.getRect(find.byKey(const ValueKey('home-header'))),
+      expectedHeader,
+    );
     expect(find.byKey(const ValueKey('home-header')), findsOneWidget);
   });
 
@@ -388,83 +397,6 @@ void main() {
     index.value = 0;
     await tester.pump();
     expect(TickerMode.valuesOf(tester.element(hidden)).enabled, isTrue);
-  });
-
-  testWidgets('shared-axis styles use horizontal and depth transforms', (
-    tester,
-  ) async {
-    Future<Matrix4> matrixFor(AppPageTransitionStyle style) async {
-      final key = UniqueKey();
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Builder(
-            builder: (context) => buildAppPageTransition(
-              context: context,
-              animation: const AlwaysStoppedAnimation<double>(0.5),
-              secondaryAnimation: const AlwaysStoppedAnimation<double>(0),
-              style: style,
-              child: SizedBox(key: key),
-            ),
-          ),
-        ),
-      );
-      return tester
-          .widget<Transform>(
-            find.ancestor(
-              of: find.byKey(key),
-              matching: find.byType(Transform),
-            ),
-          )
-          .transform;
-    }
-
-    final horizontal = await matrixFor(AppPageTransitionStyle.sharedAxisX);
-    expect(horizontal.storage[12], greaterThan(0));
-    expect(horizontal.storage[0], 1);
-
-    final depth = await matrixFor(AppPageTransitionStyle.sharedAxisZ);
-    expect(depth.storage[12], 0);
-    expect(depth.storage[0], inExclusiveRange(0.94, 1));
-  });
-
-  testWidgets('fade style uses pure opacity without transform or scaling', (
-    tester,
-  ) async {
-    final key = UniqueKey();
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Builder(
-          builder: (context) => buildAppPageTransition(
-            context: context,
-            animation: const AlwaysStoppedAnimation<double>(0.5),
-            secondaryAnimation: const AlwaysStoppedAnimation<double>(0),
-            style: AppPageTransitionStyle.fade,
-            child: SizedBox(key: key),
-          ),
-        ),
-      ),
-    );
-    expect(
-      find.ancestor(
-        of: find.byKey(key),
-        matching: find.byType(FadeTransition),
-      ),
-      findsWidgets,
-    );
-    expect(
-      find.ancestor(
-        of: find.byKey(key),
-        matching: find.byType(Transform),
-      ),
-      findsNothing,
-    );
-    expect(
-      find.ancestor(
-        of: find.byKey(key),
-        matching: find.byType(ScaleTransition),
-      ),
-      findsNothing,
-    );
   });
 
   testWidgets('reduced motion makes routes, expansion and tabs immediate', (

@@ -109,7 +109,9 @@ void main() {
                 body: Center(
                   child: ElevatedButton(
                     onPressed: () {
-                      Navigator.of(context).push(BedtimeCanvasPage.route());
+                      Navigator.of(
+                        context,
+                      ).push(BedtimeCanvasPage.route(context));
                     },
                     child: const Text('Open Bedtime Canvas'),
                   ),
@@ -123,7 +125,7 @@ void main() {
 
       expect(powerService.keepScreenOnCalls, isEmpty);
 
-      // Open BedtimeCanvasPage (PageRouteBuilder duration is 350ms)
+      // Open BedtimeCanvasPage.
       await tester.tap(find.text('Open Bedtime Canvas'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 400));
@@ -365,7 +367,9 @@ void main() {
               builder: (context) => Scaffold(
                 body: ElevatedButton(
                   onPressed: () {
-                    Navigator.of(context).push(BedtimeCanvasPage.route());
+                    Navigator.of(
+                      context,
+                    ).push(BedtimeCanvasPage.route(context));
                   },
                   child: const Text('Open'),
                 ),

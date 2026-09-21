@@ -10,6 +10,7 @@ import '../../../app/state/app_runtime_providers.dart';
 import '../../../core/media/time_text_formatters.dart';
 import '../../../core/platform/power_platform_gateway.dart';
 import '../../../core/platform/video_display_platform_gateway.dart';
+import '../../../core/widgets/app_transitions.dart';
 import '../application/playback_session.dart';
 
 class BedtimeCanvasPage extends ConsumerStatefulWidget {
@@ -19,11 +20,10 @@ class BedtimeCanvasPage extends ConsumerStatefulWidget {
   static Duration idleDimDelay = const Duration(seconds: 15);
   static Duration screenTimeoutDelay = const Duration(minutes: 2);
 
-  static Route<void> route() {
-    return PageRouteBuilder<void>(
-      pageBuilder: (context, animation, secondaryAnimation) =>
-          FadeTransition(opacity: animation, child: const BedtimeCanvasPage()),
-      transitionDuration: const Duration(milliseconds: 350),
+  static Route<void> route(BuildContext context) {
+    return buildAppPageRoute<void>(
+      context: context,
+      child: const BedtimeCanvasPage(),
     );
   }
 

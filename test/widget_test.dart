@@ -511,7 +511,6 @@ void main() {
     final routeFuture = navigator.push<void>(
       buildAppPageRoute<void>(
         context: navigator.context,
-        style: AppPageTransitionStyle.sharedAxisZ,
         settings: const RouteSettings(name: workDetailRouteName),
         child: Builder(
           builder: (context) {
@@ -786,7 +785,6 @@ void main() {
     final routeFuture = navigator.push<void>(
       buildAppPageRoute<void>(
         context: navigator.context,
-        style: AppPageTransitionStyle.sharedAxisZ,
         settings: const RouteSettings(name: workDetailRouteName),
         child: const Scaffold(body: SizedBox.expand()),
       ),
@@ -1770,6 +1768,7 @@ void main() {
       );
     }
 
+    await tester.pumpAndSettle();
     expect(find.text('Disc 1'), findsOneWidget);
     expect(find.text('Nested track'), findsNothing);
 
@@ -1834,6 +1833,7 @@ void main() {
       );
     }
 
+    await tester.pumpAndSettle();
     final builtRows = find.textContaining(
       'Large ASMR track',
       findRichText: true,

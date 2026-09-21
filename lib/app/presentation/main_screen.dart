@@ -406,7 +406,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
     if (!conditionMet) return;
     _sleepModeAutoEntryTriggeredThisRun = true;
     if (BedtimeCanvasPage.isCanvasActive) return;
-    Navigator.of(context).push(BedtimeCanvasPage.route());
+    Navigator.of(context).push(BedtimeCanvasPage.route(context));
   }
 
   void _queueAutoUpdateCheckIfReady() {

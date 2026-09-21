@@ -13,7 +13,6 @@ PageRouteBuilder<T> buildAppSearchPageRoute<T>({
 }) {
   return buildAppPageRoute<T>(
     context: context,
-    style: AppPageTransitionStyle.fade,
     child: child,
   );
 }

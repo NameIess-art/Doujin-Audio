@@ -5,9 +5,7 @@ import 'package:doujin_audio/core/widgets/app_search_page.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
 
 void main() {
-  testWidgets('search route uses a fade transition without scaling', (
-    tester,
-  ) async {
+  testWidgets('search route slides in from the right', (tester) async {
     late BuildContext routeContext;
     await tester.pumpWidget(
       MaterialApp(
@@ -31,21 +29,12 @@ void main() {
       const AppPageContentTransition(child: SizedBox.expand()),
     );
 
-    await tester.pumpWidget(MaterialApp(home: transition));
-    expect(
-      find.descendant(
-        of: find.byType(AppPageContentTransition),
-        matching: find.byType(FadeTransition),
-      ),
-      findsOneWidget,
+    await tester.pumpWidget(
+      Directionality(textDirection: TextDirection.ltr, child: transition),
     );
-    expect(
-      find.descendant(
-        of: find.byType(AppPageContentTransition),
-        matching: find.byType(ScaleTransition),
-      ),
-      findsNothing,
-    );
+    final slide = tester.widget<SlideTransition>(find.byType(SlideTransition));
+    expect(slide.position.value.dx, greaterThan(0));
+    expect(slide.position.value.dy, 0);
   });
 
   testWidgets(

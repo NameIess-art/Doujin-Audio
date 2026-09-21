@@ -793,7 +793,6 @@ class _TaskCard extends ConsumerWidget {
           Navigator.of(context).push(
             buildAppPageRoute<void>(
               context: context,
-              style: AppPageTransitionStyle.sharedAxisZ,
               child: AsmrDownloadDetailsPage(workId: task.work.id),
             ),
           );

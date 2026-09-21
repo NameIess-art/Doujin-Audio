@@ -167,7 +167,6 @@ class _DlsiteMetadataBatchPageState
     await Navigator.of(context).push<void>(
       buildAppPageRoute(
         context: context,
-        style: AppPageTransitionStyle.sharedAxisZ,
         child: DlsiteMetadataBatchResultsPage(session: session),
       ),
     );
@@ -632,7 +631,6 @@ class _DlsiteMetadataBatchResultsPageState
       await Navigator.of(context).push<void>(
         buildAppPageRoute(
           context: context,
-          style: AppPageTransitionStyle.sharedAxisZ,
           child: DlsiteMetadataBatchReviewPage(
             session: widget.session,
             initialIndex: index,

@@ -127,7 +127,6 @@ Future<void> _downloadAsmrWorks(
     await Navigator.of(context).push<void>(
       buildAppPageRoute<void>(
         context: context,
-        style: AppPageTransitionStyle.sharedAxisZ,
         child: AsmrDownloadPage(
           work: work,
           batchIndex: works.length > 1 ? i + 1 : null,

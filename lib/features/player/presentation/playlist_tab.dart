@@ -697,7 +697,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                               onPressed: () {
                                 Navigator.of(
                                   context,
-                                ).push(BedtimeCanvasPage.route());
+                                ).push(BedtimeCanvasPage.route(context));
                               },
                               icon: const Icon(Icons.bedtime_outlined),
                               tooltip: i18n.tr('sleep_mode'),

@@ -8,6 +8,8 @@ import 'package:doujin_audio/app/localization/app_language_provider.dart';
 import 'package:doujin_audio/core/widgets/app_dialog.dart';
 import 'support/runtime_test_models.dart';
 import 'package:doujin_audio/features/library/presentation/audio_detail_sheet.dart';
+import 'package:doujin_audio/features/library/presentation/folder_cover_selector.dart';
+import 'package:doujin_audio/core/widgets/async_cover_image.dart';
 import 'package:doujin_audio/features/library/presentation/dlsite_metadata_batch_page.dart';
 import 'package:doujin_audio/features/library/presentation/dlsite_metadata_review_page.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_download_models.dart';
@@ -78,11 +80,13 @@ class _DetailCoverCacheService extends CoverArtworkCacheService {
     this.candidates = const <String>['/covers/candidate.jpg'],
     this.embeddedCoverPath,
     this.currentCoverPath,
+    this.candidatesFuture,
   }) : super(libraryService: LibraryService());
 
   final List<String> candidates;
   final String? embeddedCoverPath;
   final String? currentCoverPath;
+  final Future<List<String>>? candidatesFuture;
 
   @override
   Future<String?> futureForFolder(String folderPath) async => currentCoverPath;
@@ -99,7 +103,7 @@ class _DetailCoverCacheService extends CoverArtworkCacheService {
     String folderPath, {
     String? selectedCoverPath,
     bool includeVideoFrames = true,
-  }) async => candidates;
+  }) async => candidatesFuture ?? candidates;
 }
 
 void _expectPrimaryFilledButton(WidgetTester tester, Finder finder) {
@@ -903,6 +907,38 @@ void main() {
       find.text(languageProvider.tr('metadata_scope_missing')),
       findsOneWidget,
     );
+  });
+
+  testWidgets('folder cover remains visible while candidates load or fail', (
+    WidgetTester tester,
+  ) async {
+    final candidates = Completer<List<String>>();
+    final fixture = AppRuntimeWidgetTestFixture(
+      coverArtworkCacheService: _DetailCoverCacheService(
+        currentCoverPath: '/covers/current.jpg',
+        candidatesFuture: candidates.future,
+      ),
+    );
+    addTearDown(fixture.dispose);
+    await tester.pumpWidget(
+      fixture.build(
+        const Center(
+          child: SizedBox(
+            width: 300,
+            child: FolderCoverSelector(folderPath: '/library/Work'),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    expect(
+      tester.widget<RetryingFileImage>(find.byType(RetryingFileImage)).path,
+      '/covers/current.jpg',
+    );
+    candidates.completeError(StateError('candidate scan failed'));
+    await tester.pump();
+    expect(find.byType(RetryingFileImage), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('audio detail cover action uses the primary button color', (

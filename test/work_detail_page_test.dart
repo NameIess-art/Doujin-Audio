@@ -434,6 +434,18 @@ void main() {
         }
         await tester.pump();
 
+        final headerCover = tester.widget<LocalCoverImage>(
+          find.byType(LocalCoverImage).first,
+        );
+        expect(
+          coverCacheWidth(
+            resolution: fixture.settings.coverImageResolution,
+            cacheWidth: headerCover.cacheWidth,
+            useDefaultCacheWidth: headerCover.useDefaultCacheWidth,
+          ),
+          coverCacheWidthForResolution(fixture.settings.coverImageResolution),
+          reason: 'The work header must reuse the library card decode size.',
+        );
         // Top-left floating back button
         expect(
           find.byKey(const ValueKey<String>('work_detail_back_button')),

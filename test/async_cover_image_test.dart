@@ -57,25 +57,6 @@ void main() {
 
   tearDown(UiInteractionCoordinator.instance.resetForTest);
 
-  test('logical thumbnail width respects DPR and resolution limit', () {
-    expect(
-      coverCacheWidthForLogicalSize(
-        logicalWidth: 112,
-        devicePixelRatio: 3,
-        resolution: CoverImageResolution.balanced,
-      ),
-      336,
-    );
-    expect(
-      coverCacheWidthForLogicalSize(
-        logicalWidth: 400,
-        devicePixelRatio: 3,
-        resolution: CoverImageResolution.memorySaver,
-      ),
-      300,
-    );
-  });
-
   test('standalone audio without stored cover hides playlist artwork', () {
     final track = MusicTrack(
       path: 'C:/media/voice.mp3',

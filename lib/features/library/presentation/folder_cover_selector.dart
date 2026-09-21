@@ -39,7 +39,6 @@ class _FolderCoverSelectorState extends ConsumerState<FolderCoverSelector> {
   String? _currentCoverPath;
   bool _loading = true;
   bool _saving = false;
-  Object? _error;
   int _currentIndex = 0;
 
   @override
@@ -67,6 +66,15 @@ class _FolderCoverSelectorState extends ConsumerState<FolderCoverSelector> {
       final currentCover = await library.coverPathFutureForFolder(
         widget.folderPath,
       );
+      if (!mounted) return;
+      if (_images.isEmpty && currentCover != null && currentCover.isNotEmpty) {
+        setState(() {
+          _images = <String>[currentCover];
+          _currentCoverPath = currentCover;
+          _pageController = PageController();
+          _loading = false;
+        });
+      }
       final images = await library.discoverCoverCandidatesInFolder(
         widget.folderPath,
         selectedCoverPath: currentCover ?? widget.initialCoverPath,
@@ -93,10 +101,9 @@ class _FolderCoverSelectorState extends ConsumerState<FolderCoverSelector> {
         _pageController = controller;
         _loading = false;
       });
-    } catch (error) {
+    } catch (_) {
       if (!mounted) return;
       setState(() {
-        _error = error;
         _loading = false;
       });
     }
@@ -327,7 +334,7 @@ class _FolderCoverSelectorState extends ConsumerState<FolderCoverSelector> {
         ),
       );
     }
-    if (_error != null || _images.isEmpty || _pageController == null) {
+    if (_images.isEmpty || _pageController == null) {
       return const SizedBox.shrink();
     }
     final coverCacheWidth = coverCacheWidthForResolution(

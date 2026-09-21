@@ -351,10 +351,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
       ),
     );
     final coverImageResolution = _readOrWatch(
-      settingsStateProvider.select(
-        (state) =>
-            state.value?.coverImageResolution ?? CoverImageResolution.balanced,
-      ),
+      coverImageResolutionProvider,
     );
     final subtitleSettings = _isActive
         ? ref.watch(subtitleSettingsProvider)

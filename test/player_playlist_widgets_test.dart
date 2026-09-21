@@ -3572,6 +3572,74 @@ void main() {
     await tester.pumpAndSettle();
   });
 
+  testWidgets('playlist card, playback card and detail share a decoded cover', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(500, 1000);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
+    final fixture = AppRuntimeWidgetTestFixture(
+      coverArtworkCacheService: _RecordingPlaybackCoverCacheService(),
+    );
+    addTearDown(fixture.dispose);
+    final track = testMusicTrack(
+      name: 'Shared cover',
+      path: '/library/track.mp3',
+      groupKey: '/library',
+      groupTitle: 'Library',
+    );
+    fixture.runtimeGraph.library.addTracks([track], notify: false, persist: false);
+    final session = fixture.runtimeGraph.playback.createTrackSession(
+      track,
+      customQueueTracks: [track],
+    );
+    addTearDown(session.shutdown);
+    fixture.playbackService.syncSlice(
+      activeSessions: [session],
+      playingSessionCount: 0,
+      focusedSessionId: session.id,
+      coverGeneration: 0,
+      isInitialized: true,
+    );
+    await tester.pumpWidget(fixture.build(const PlaylistTab()));
+    await tester.pumpAndSettle();
+    Future<Object> imageKey(AsyncLocalCoverImage cover) =>
+        resizeFileImageIfNeeded(
+          path: '/covers/shared.png',
+          cacheWidth: cover.cacheWidth,
+          cacheHeight: cover.cacheHeight,
+          useDefaultCacheWidth: cover.useDefaultCacheWidth,
+        ).obtainKey(ImageConfiguration.empty);
+    final cardKey = await imageKey(
+      tester.widget<AsyncLocalCoverImage>(find.byType(AsyncLocalCoverImage).first),
+    );
+    unawaited(
+      Navigator.of(tester.element(find.byType(PlaylistTab)))
+          .push(buildSessionDetailRoute(sessionId: session.id)),
+    );
+    await tester.pumpAndSettle();
+    final detailKey = await imageKey(
+      tester.widget<AsyncLocalCoverImage>(find.byType(AsyncLocalCoverImage).first),
+    );
+    expect(detailKey, cardKey);
+    await tester.pumpWidget(
+      fixture.build(
+        ActiveSessionCarousel(
+          sessions: [PlaybackSessionSnapshot.fromRuntime(session)],
+          onOpenSession: (_) {},
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      await imageKey(
+        tester.widget<AsyncLocalCoverImage>(find.byType(AsyncLocalCoverImage).first),
+      ),
+      cardKey,
+    );
+  });
+
   testWidgets('temporary video detail updates when only loadedPath changes', (
     tester,
   ) async {

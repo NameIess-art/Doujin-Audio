@@ -621,7 +621,9 @@ void main() {
     final repository = _MemoryTestPersistenceRepository();
     final trackPath = '${directory.path}${Platform.pathSeparator}track.flac';
     final track = _track(path: trackPath, groupKey: directory.path);
-    final library = LibraryService()..library.add(track);
+    final library = LibraryService()
+      ..watchedFolders.add(directory.path)
+      ..library.add(track);
     final gateway = _FakeFileCachePlatformGateway(
       coversByPath: <String, String>{trackPath: cover.path},
     );
@@ -629,16 +631,27 @@ void main() {
       libraryService: library,
       databaseRepository: repository,
       fileCacheGateway: gateway,
+      persistentDirectory: () async => Directory('${directory.path}/support'),
     );
+    addTearDown(first.dispose);
+    await first.initialize();
 
     await first.setFolderCoverSelection(directory.path, cover.path);
     final restored = CoverArtworkCacheService(
       libraryService: library,
       databaseRepository: repository,
       fileCacheGateway: gateway,
+      persistentDirectory: () async => Directory('${directory.path}/support'),
     );
+    addTearDown(restored.dispose);
+    await restored.initialize();
 
+    expect(restored.resolvedForFolder(directory.path), cover.path);
+    expect(restored.resolvedForTrack(track), cover.path);
+    expect(restored.resolvedForPlaybackTrack(track), cover.path);
     expect(await restored.futureForFolder(directory.path), cover.path);
+    expect(await restored.futureForTrack(track), cover.path);
+    expect(await restored.futureForPlaybackTrack(track), cover.path);
   });
 
   test(
@@ -1523,6 +1536,52 @@ void main() {
           includeVideoFrames: false,
         ),
         <String>[firstImage, secondImage, '/cache/audio.image'],
+      );
+    },
+  );
+
+  test(
+    'video cover candidates reuse durable frames after service recreation',
+    () async {
+      final directory = await Directory.systemTemp.createTemp(
+        'video_cover_reuse_',
+      );
+      addTearDown(() => directory.delete(recursive: true));
+      final support = Directory('${directory.path}/support');
+      final bridge = File('${directory.path}/frame.image');
+      await bridge.writeAsBytes(<int>[1, 2, 3]);
+      final track = _track(
+        path: '${directory.path}/work/video.mp4',
+        groupKey: '${directory.path}/work',
+        isVideo: true,
+      );
+      final library = LibraryService()..library.add(track);
+      final first = CoverArtworkCacheService(
+        libraryService: library,
+        persistentDirectory: () async => support,
+        fileCacheGateway: _FakeFileCachePlatformGateway(
+          coversByPath: const {},
+          videoFramesByPath: {track.path: bridge.path},
+        ),
+      );
+      addTearDown(first.dispose);
+      await first.initialize();
+      final covers = await first.discoverCoverCandidatesInFolder(
+        track.groupKey,
+      );
+      expect(covers, hasLength(1));
+      await bridge.delete();
+
+      final restored = CoverArtworkCacheService(
+        libraryService: library,
+        persistentDirectory: () async => support,
+        fileCacheGateway: _FakeFileCachePlatformGateway(coversByPath: const {}),
+      );
+      addTearDown(restored.dispose);
+      await restored.initialize();
+      expect(
+        await restored.discoverCoverCandidatesInFolder(track.groupKey),
+        covers,
       );
     },
   );

@@ -1121,7 +1121,6 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
         path: coverPath,
         seed: coverPath ?? displayTitle,
         fit: BoxFit.cover,
-        useDefaultCacheWidth: false,
         showIcon: true,
         icon: Icons.album_rounded,
       );

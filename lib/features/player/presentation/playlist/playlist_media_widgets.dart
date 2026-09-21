@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../app/state/app_runtime_providers.dart';
+import '../../../../app/presentation/app_presentation_providers.dart';
 import '../../../../core/media/music_track.dart';
 import '../../../../core/widgets/async_cover_image.dart';
 import '../../../../core/widgets/duration_overlay.dart';
@@ -39,21 +40,13 @@ class SessionHeroArtwork extends ConsumerWidget {
     final allowVideoPlayback = ref.watch(
       settingsStateProvider.select((s) => s.value?.allowVideoPlayback ?? true),
     );
-    final coverResolution = ref.watch(
-      settingsStateProvider.select(
-        (s) => s.value?.coverImageResolution ?? CoverImageResolution.balanced,
-      ),
-    );
+    final coverResolution = ref.watch(coverImageResolutionProvider);
     final initialCoverPath = library.resolvedPlaybackCoverPathForTrack(track);
 
     return LayoutBuilder(
       builder: (context, constraints) {
         final displayWidth = constraints.maxWidth;
-        final coverCacheWidth = coverCacheWidthForLogicalSize(
-          logicalWidth: displayWidth,
-          devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
-          resolution: coverResolution,
-        );
+        final coverCacheWidth = coverCacheWidthForResolution(coverResolution);
         final coverPoster = Stack(
           fit: StackFit.expand,
           children: [
@@ -70,6 +63,7 @@ class SessionHeroArtwork extends ConsumerWidget {
                 initialPath: initialCoverPath,
                 seed: track?.displayName ?? track?.path ?? sessionId,
                 cacheWidth: coverCacheWidth,
+                useDefaultCacheWidth: false,
                 fit: BoxFit.cover,
                 iconSize: 56,
               ),

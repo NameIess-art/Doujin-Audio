@@ -15,6 +15,7 @@ import 'scroll_activity_gate.dart';
 const Duration kCoverImageFadeDuration = kPlaceholderContentTransitionDuration;
 const double kStandardCoverAspectRatio = 4 / 3;
 
+// A stable decode size lets cards and detail pages share one ImageCache entry.
 int? coverCacheWidthForResolution(CoverImageResolution resolution) {
   switch (resolution) {
     case CoverImageResolution.memorySaver:
@@ -28,21 +29,6 @@ int? coverCacheWidthForResolution(CoverImageResolution resolution) {
     case CoverImageResolution.original:
       return null;
   }
-}
-
-int coverCacheWidthForLogicalSize({
-  required double logicalWidth,
-  required double devicePixelRatio,
-  required CoverImageResolution resolution,
-}) {
-  final requestedWidth = (logicalWidth * devicePixelRatio).ceil().clamp(
-    1,
-    1 << 20,
-  );
-  final resolutionLimit = coverCacheWidthForResolution(resolution);
-  return resolutionLimit == null
-      ? requestedWidth
-      : requestedWidth.clamp(1, resolutionLimit);
 }
 
 int? coverCacheWidth({

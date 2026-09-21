@@ -21,7 +21,6 @@ import '../../../../core/ui/ui_interaction_coordinator.dart';
 import '../../../../core/widgets/app_transitions.dart';
 import '../../../../core/widgets/async_cover_image.dart';
 import '../../../../core/widgets/marquee_text.dart';
-import '../../../settings/application/settings_state.dart';
 import '../../application/playback_session_snapshot.dart';
 import '../../application/subtitle_overlay_controller.dart';
 import 'playlist_feature_icons.dart';
@@ -761,13 +760,7 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
     final detailTheme = _detailThemeForSession(context, session, track);
     final cs = detailTheme.colorScheme;
     final requestedBackgroundCacheWidth = coverCacheWidthForResolution(
-      ref.watch(
-        settingsStateProvider.select(
-          (state) =>
-              state.value?.coverImageResolution ??
-              CoverImageResolution.balanced,
-        ),
-      ),
+      ref.watch(coverImageResolutionProvider),
     );
     final backgroundCacheWidth = isAsmrTrack
         ? min(

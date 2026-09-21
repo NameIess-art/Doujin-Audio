@@ -985,21 +985,13 @@ class _LibraryCoverThumbnailState
   @override
   Widget build(BuildContext context) {
     final coverGeneration = ref.watch(coverGenerationProvider);
-    final resolution = ref.watch(
-      settingsStateProvider.select(
-        (s) => s.value?.coverImageResolution ?? CoverImageResolution.balanced,
-      ),
-    );
+    final resolution = ref.watch(coverImageResolutionProvider);
     final libraryFacade = ref.read(libraryFacadeProvider);
     final coverUi = ref.read(libraryCoverUiControllerProvider);
     final coverPathFuture = _coverFutureFor(coverUi, coverGeneration);
     final width = widget.width;
     final height = width / kStandardCoverAspectRatio;
-    final coverCacheWidth = coverCacheWidthForLogicalSize(
-      logicalWidth: width,
-      devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
-      resolution: resolution,
-    );
+    final coverCacheWidth = coverCacheWidthForResolution(resolution);
     return SizedBox(
       width: width,
       height: height,
@@ -1082,11 +1074,7 @@ class _LibraryTrackCoverThumbnailState
   @override
   Widget build(BuildContext context) {
     final coverGeneration = ref.watch(coverGenerationProvider);
-    final resolution = ref.watch(
-      settingsStateProvider.select(
-        (s) => s.value?.coverImageResolution ?? CoverImageResolution.balanced,
-      ),
-    );
+    final resolution = ref.watch(coverImageResolutionProvider);
     final libraryFacade = ref.read(libraryFacadeProvider);
     final coverUi = ref.read(libraryCoverUiControllerProvider);
     final coverPathFuture = _coverFutureFor(coverUi, coverGeneration);
@@ -1094,11 +1082,7 @@ class _LibraryTrackCoverThumbnailState
 
     final width = widget.width;
     final height = width / kStandardCoverAspectRatio;
-    final coverCacheWidth = coverCacheWidthForLogicalSize(
-      logicalWidth: width,
-      devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
-      resolution: resolution,
-    );
+    final coverCacheWidth = coverCacheWidthForResolution(resolution);
     return Stack(
       children: [
         SizedBox(

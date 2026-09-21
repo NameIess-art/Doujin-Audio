@@ -1826,6 +1826,11 @@ class CoverArtworkCacheService {
   }
 
   Future<String?> _resolveVideoFramePathForTrack(MusicTrack track) async {
+    final logicalKey =
+        'video:${PathMatcher.normalize(track.path)}:'
+        '${track.modifiedAt?.millisecondsSinceEpoch ?? 0}:v3';
+    final storedFrame = _artworkStore.resolvedPath(logicalKey);
+    if (storedFrame != null) return storedFrame;
     try {
       final nativeFrame = await _fileCacheGateway.resolveVideoFrame(
         path: track.path,
@@ -1833,9 +1838,7 @@ class CoverArtworkCacheService {
       );
       if (nativeFrame != null && nativeFrame.isNotEmpty) {
         return await _persistBridgeCover(
-          logicalKey:
-              'video:${PathMatcher.normalize(track.path)}:'
-              '${track.modifiedAt?.millisecondsSinceEpoch ?? 0}:v3',
+          logicalKey: logicalKey,
           sourcePath: nativeFrame,
           namespace: CoverArtworkNamespace.generated,
         );

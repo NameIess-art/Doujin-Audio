@@ -28,7 +28,6 @@ import 'playlist_feature_icons.dart';
 import 'playlist_media_widgets.dart';
 import 'playlist_shared_helpers.dart';
 import 'session_detail_content.dart';
-import '../playlist_view_models.dart';
 
 PageRoute<void> buildSessionDetailRoute({required String sessionId}) {
   return SessionDetailRoute(sessionId: sessionId);
@@ -198,16 +197,14 @@ class SessionDetailPage extends ConsumerStatefulWidget {
 
 // A projection of the existing snapshot; transport changes belong to controls.
 class _DetailStructure {
-  const _DetailStructure(this.session, this.order, this.coverGeneration);
+  const _DetailStructure(this.session, this.coverGeneration);
 
   final PlaybackSessionSnapshot? session;
-  final SessionOrderState order;
   final int coverGeneration;
 
   @override
   bool operator ==(Object other) =>
       other is _DetailStructure &&
-      order == other.order &&
       coverGeneration == other.coverGeneration &&
       session?.id == other.session?.id &&
       session?.currentTrackPath == other.session?.currentTrackPath &&
@@ -219,7 +216,6 @@ class _DetailStructure {
 
   @override
   int get hashCode => Object.hash(
-    order,
     coverGeneration,
     session?.id,
     session?.currentTrackPath,
@@ -235,8 +231,6 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
     with TickerProviderStateMixin {
   late final AnimationController _dismissController;
   late final AnimationController _contentEnterController;
-  late String _currentSessionId;
-  double _horizontalDragDelta = 0;
   bool _contentEnterStarted = false;
   final ValueNotifier<bool> _transitionActive = ValueNotifier(true);
   int _dismissOperation = 0;
@@ -254,7 +248,6 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
   @override
   void initState() {
     super.initState();
-    _currentSessionId = widget.sessionId;
     _dismissController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 180),
@@ -286,38 +279,6 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
     _dismissController.dispose();
     _contentEnterController.dispose();
     super.dispose();
-  }
-
-  void _changeSessionByOffset(List<String> sessionIds, int offset) {
-    if (sessionIds.isEmpty) return;
-    final currentIndex = sessionIds.indexOf(_currentSessionId);
-    if (currentIndex < 0) return;
-    int nextIndex = currentIndex + offset;
-    if (nextIndex < 0) nextIndex = sessionIds.length - 1;
-    if (nextIndex >= sessionIds.length) nextIndex = 0;
-    if (nextIndex == currentIndex) return;
-
-    setState(() {
-      _horizontalDragDelta = 0;
-      _currentSessionId = sessionIds[nextIndex];
-    });
-  }
-
-  void _handleHorizontalDragEnd(
-    DragEndDetails details,
-    List<String> sessionIds,
-  ) {
-    final velocity = details.primaryVelocity ?? 0;
-    final shouldGoPrevious = _horizontalDragDelta > 48 || velocity > 400;
-    final shouldGoNext = _horizontalDragDelta < -48 || velocity < -400;
-    _horizontalDragDelta = 0;
-    if (shouldGoPrevious) {
-      _changeSessionByOffset(sessionIds, -1);
-      return;
-    }
-    if (shouldGoNext) {
-      _changeSessionByOffset(sessionIds, 1);
-    }
   }
 
   void _ensureContentEnterStarted() {
@@ -436,7 +397,7 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
     final operation = ++_dismissOperation;
     ref
         .read(playlistUiControllerProvider)
-        .requestCarouselSnap(_currentSessionId);
+        .requestCarouselSnap(widget.sessionId);
     _beginDismissInteraction();
     try {
       await _animateDismissToEnd(velocity: velocity);
@@ -462,9 +423,8 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
         final state = playback.state;
         return _DetailStructure(
           state.activeSessions
-              .where((session) => session.id == _currentSessionId)
+              .where((session) => session.id == widget.sessionId)
               .firstOrNull,
-          sessionOrderStateFromPlaybackState(state),
           state.coverGeneration,
         );
       }),
@@ -472,19 +432,7 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
     ref.watch(
       libraryStateProvider.select((state) => state.value?.contentRevision),
     );
-    final sessionIds = structure.order.sessionIds;
-
-    if (sessionIds.isEmpty) {
-      return const Scaffold(body: SizedBox.shrink());
-    }
-
-    if (structure.session == null && sessionIds.isNotEmpty) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        setState(() {
-          _currentSessionId = sessionIds.first;
-        });
-      });
+    if (structure.session == null) {
       return const Scaffold(body: SizedBox.shrink());
     }
 
@@ -567,7 +515,7 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
               builder: (context) {
                 final coverGen = ref.watch(coverGenerationProvider);
                 final pageSession = playback.sessionSnapshotById(
-                  _currentSessionId,
+                  widget.sessionId,
                 );
                 if (pageSession == null) {
                   return const SizedBox.shrink();
@@ -594,18 +542,6 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
                   segmentPanelExpandedNotifier: _segmentPanelExpandedNotifier,
                   onClose: () =>
                       _dismissAndPop(navigator: Navigator.of(context)),
-                  onHorizontalDragUpdate: (details) {
-                    if (_segmentPanelExpandedNotifier.value) return;
-                    _horizontalDragDelta += details.primaryDelta ?? 0;
-                  },
-                  onHorizontalDragEnd: (details) {
-                    if (_segmentPanelExpandedNotifier.value) return;
-                    _handleHorizontalDragEnd(details, sessionIds);
-                  },
-                  onHorizontalDragCancel: () {
-                    if (_segmentPanelExpandedNotifier.value) return;
-                    _horizontalDragDelta = 0;
-                  },
                   onVerticalDragUpdate: (delta) {
                     if (_closing) return;
                     if (_dismissController.isAnimating) {
@@ -685,9 +621,6 @@ class _SessionDetailScaffold extends ConsumerStatefulWidget {
   final Future<String?> coverPathFuture;
   final Animation<double> dismissAnimation;
   final VoidCallback onClose;
-  final void Function(DragUpdateDetails)? onHorizontalDragUpdate;
-  final void Function(DragEndDetails)? onHorizontalDragEnd;
-  final VoidCallback? onHorizontalDragCancel;
   final ValueChanged<double>? onVerticalDragUpdate;
   final void Function(DragEndDetails)? onVerticalDragEnd;
   final VoidCallback? onVerticalDragCancel;
@@ -698,9 +631,6 @@ class _SessionDetailScaffold extends ConsumerStatefulWidget {
     required this.session,
     required this.coverPathFuture,
     required this.onClose,
-    this.onHorizontalDragUpdate,
-    this.onHorizontalDragEnd,
-    this.onHorizontalDragCancel,
     this.onVerticalDragUpdate,
     this.onVerticalDragEnd,
     this.onVerticalDragCancel,
@@ -822,9 +752,6 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
     final library = ref.read(libraryFacadeProvider);
     final coverPathFuture = widget.coverPathFuture;
     final onClose = widget.onClose;
-    final onHorizontalDragUpdate = widget.onHorizontalDragUpdate;
-    final onHorizontalDragEnd = widget.onHorizontalDragEnd;
-    final onHorizontalDragCancel = widget.onHorizontalDragCancel;
     final onVerticalDragUpdate = widget.onVerticalDragUpdate;
     final onVerticalDragEnd = widget.onVerticalDragEnd;
     final onVerticalDragCancel = widget.onVerticalDragCancel;
@@ -860,9 +787,6 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
         color: cs.surface,
         child: GestureDetector(
           behavior: HitTestBehavior.translucent,
-          onHorizontalDragUpdate: onHorizontalDragUpdate,
-          onHorizontalDragEnd: onHorizontalDragEnd,
-          onHorizontalDragCancel: onHorizontalDragCancel,
           onVerticalDragStart: (details) {
             final detailState = _detailContentKey.currentState;
             final panelExpanded = detailState?.isSegmentPanelExpanded ?? false;
@@ -1091,7 +1015,7 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                             },
                           ),
                         ),
-                        // Content area — keep session drag gestures on artwork only
+                        // Content area
                         Expanded(
                           child: Builder(
                             builder: (context) {

@@ -1303,7 +1303,7 @@ void main() {
   );
 
   testWidgets(
-    'detail session swipe cross-fades content without fading primary controls',
+    'horizontal drag does not switch the detail session',
     (tester) async {
       tester.view.devicePixelRatio = 1;
       tester.view.physicalSize = const Size(500, 1000);
@@ -1377,116 +1377,21 @@ void main() {
       await tester.pumpAndSettle();
       subtitleLoads.clear();
 
-      void expectPrimaryControlsHaveNoFadeAncestor() {
-        final primaryIcons = find.byWidgetPredicate(
-          (widget) =>
-              widget is Icon &&
-              <IconData>{
-                Icons.skip_previous_rounded,
-                Icons.replay_5_rounded,
-                Icons.play_arrow_rounded,
-                Icons.pause_rounded,
-                Icons.forward_5_rounded,
-                Icons.skip_next_rounded,
-              }.contains(widget.icon),
-        );
-        expect(primaryIcons, findsWidgets);
-        for (final element in primaryIcons.evaluate()) {
-          var hasFadeAncestor = false;
-          element.visitAncestorElements((ancestor) {
-            if (ancestor.widget is FadeTransition) {
-              hasFadeAncestor = true;
-              return false;
-            }
-            return true;
-          });
-          expect(hasFadeAncestor, isFalse);
-        }
-      }
-
-      final playButton = find.ancestor(
-        of: find.byIcon(Icons.play_arrow_rounded),
-        matching: find.byType(IconButton),
-      );
-      expect(
-        find.descendant(
-          of: playButton,
-          matching: find.byType(AnimatedSwitcher),
-        ),
-        findsNothing,
-      );
-
       await tester.drag(find.byType(SessionDetailPage), const Offset(-120, 0));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 40));
-      expect(subtitleLoads, contains(tracks.last.path));
+      await tester.pumpAndSettle();
+
+      expect(subtitleLoads, isNot(contains(tracks.last.path)));
       expect(
         find.byKey(ValueKey<String>('progress_${sessions.first.id}')),
-        findsNothing,
+        findsOneWidget,
       );
       expect(
         find.byKey(ValueKey<String>('progress_${sessions.last.id}')),
-        findsOneWidget,
+        findsNothing,
       );
-      final outgoingForward = tester.widget<FadeTransition>(
-        find
-            .ancestor(
-              of: find.text(tracks.first.displayName),
-              matching: find.byType(FadeTransition),
-            )
-            .first,
-      );
-      final incomingForward = tester.widget<FadeTransition>(
-        find
-            .ancestor(
-              of: find.text(tracks.last.displayName),
-              matching: find.byType(FadeTransition),
-            )
-            .first,
-      );
-      expect(outgoingForward.opacity.value, inExclusiveRange(0, 1));
-      expect(incomingForward.opacity.value, inExclusiveRange(0, 1));
-      for (final track in tracks) {
-        final trackTitle = find.text(track.displayName);
-        expect(
-          find.ancestor(of: trackTitle, matching: find.byType(SlideTransition)),
-          findsNothing,
-        );
-        expect(
-          find.ancestor(of: trackTitle, matching: find.byType(ScaleTransition)),
-          findsNothing,
-        );
-      }
-      expectPrimaryControlsHaveNoFadeAncestor();
-      await tester.pumpAndSettle();
-      await tester.pump(const Duration(milliseconds: 200));
-      await tester.pumpAndSettle();
+      expect(find.text(tracks.first.displayName), findsOneWidget);
+      expect(find.text(tracks.last.displayName), findsNothing);
 
-      await tester.drag(find.byType(SessionDetailPage), const Offset(120, 0));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 40));
-      final outgoingBackward = tester.widget<FadeTransition>(
-        find
-            .ancestor(
-              of: find.text(tracks.last.displayName),
-              matching: find.byType(FadeTransition),
-            )
-            .first,
-      );
-      final incomingBackward = tester.widget<FadeTransition>(
-        find
-            .ancestor(
-              of: find.text(tracks.first.displayName),
-              matching: find.byType(FadeTransition),
-            )
-            .first,
-      );
-      expect(outgoingBackward.opacity.value, inExclusiveRange(0, 1));
-      expect(incomingBackward.opacity.value, inExclusiveRange(0, 1));
-      expectPrimaryControlsHaveNoFadeAncestor();
-      await tester.pumpAndSettle();
-      await tester.pump(const Duration(milliseconds: 200));
-      await tester.pumpAndSettle();
       if (find.byType(SessionDetailPage).evaluate().isNotEmpty) {
         Navigator.of(tester.element(find.byType(SessionDetailPage))).pop();
         await tester.pumpAndSettle();
@@ -4107,136 +4012,6 @@ void main() {
     await tester.pump(const Duration(milliseconds: 250));
     expect(tester.getSize(cover).height, greaterThan(loadingCoverHeight));
   });
-
-  testWidgets(
-    'detail cover smoothly resizes when swiping between tracks with and without subtitles',
-    (tester) async {
-      tester.view.devicePixelRatio = 1;
-      tester.view.physicalSize = const Size(500, 1000);
-      addTearDown(tester.view.resetDevicePixelRatio);
-      addTearDown(tester.view.resetPhysicalSize);
-
-      final track1 = MusicTrack(
-        path: '/library/subtitles/track1.mp3',
-        displayName: 'Track with subtitle',
-        groupKey: '/library/subtitles/work1',
-        groupTitle: 'Album 1',
-        groupSubtitle: '/library/subtitles/work1',
-        isSingle: false,
-      );
-      final track2 = MusicTrack(
-        path: '/library/subtitles/track2.mp3',
-        displayName: 'Track without subtitle',
-        groupKey: '/library/subtitles/work2',
-        groupTitle: 'Album 2',
-        groupSubtitle: '/library/subtitles/work2',
-        isSingle: false,
-      );
-      final coverCache = _RecordingPlaybackCoverCacheService();
-      final fixture = AppRuntimeWidgetTestFixture(
-        coverArtworkCacheService: coverCache,
-      );
-      addTearDown(fixture.dispose);
-      fixture.runtimeGraph.library.addTracks(
-        <MusicTrack>[track1, track2],
-        notify: false,
-        persist: false,
-      );
-      final sessions = <PlaybackSession>[
-        for (final track in <MusicTrack>[track1, track2])
-          fixture.runtimeGraph.playback.createTrackSession(track),
-      ];
-      for (final s in sessions) {
-        addTearDown(s.shutdown);
-      }
-      fixture.playbackService.syncSlice(
-        activeSessions: sessions,
-        playingSessionCount: 0,
-        focusedSessionId: sessions.first.id,
-        coverGeneration: 0,
-        isInitialized: true,
-      );
-      final subtitleTrack = SubtitleTrack(
-        sourcePath: '/library/subtitles/track1.srt',
-        cues: const <SubtitleCue>[
-          SubtitleCue(
-            start: Duration.zero,
-            end: Duration(seconds: 10),
-            text: 'Hello subtitles',
-          ),
-        ],
-      );
-      final subtitleService = PlaybackSubtitleService(
-        trackResolver: (path) => path == track1.path ? track1 : track2,
-        subtitleLoader: (path, _) async =>
-            path == track1.path ? subtitleTrack : null,
-      );
-      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(
-            nativePlaybackChannel,
-            (_) async => <String, Object?>{'ok': true, 'value': null},
-          );
-      addTearDown(() {
-        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-            .setMockMethodCallHandler(nativePlaybackChannel, null);
-      });
-
-      await tester.pumpWidget(
-        fixture.build(const PlaylistTab(), subtitleService: subtitleService),
-      );
-      await tester.pumpAndSettle();
-      unawaited(
-        Navigator.of(
-          tester.element(find.byType(PlaylistTab)),
-        ).push(buildSessionDetailRoute(sessionId: sessions.first.id)),
-      );
-      await tester.pumpAndSettle();
-      await tester.pump(const Duration(milliseconds: 200));
-      await tester.pumpAndSettle();
-      await pumpUntilFound(tester, find.text('Hello subtitles'));
-
-      final coverFinder = find.byWidgetPredicate(
-        (widget) =>
-            widget.key is ValueKey<String> &&
-            (widget.key! as ValueKey<String>).value.startsWith(
-              'session_detail_cover_',
-            ),
-      );
-      final initialCoverHeight = tester.getSize(coverFinder.first).height;
-
-      // Swipe horizontally to track without subtitles
-      await tester.drag(find.byType(SessionDetailPage), const Offset(-200, 0));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 110));
-
-      await tester.pumpAndSettle();
-      expect(find.text('Track without subtitle'), findsOneWidget);
-      final noSubtitleCoverHeight = tester.getSize(coverFinder.first).height;
-      expect(noSubtitleCoverHeight, greaterThan(initialCoverHeight));
-
-      // Swipe horizontally back to track with subtitles
-      await tester.drag(find.byType(SessionDetailPage), const Offset(200, 0));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 110));
-
-      final midReturnCoverHeight = tester.getSize(coverFinder.first).height;
-      expect(noSubtitleCoverHeight, greaterThan(midReturnCoverHeight));
-      expect(midReturnCoverHeight, greaterThan(initialCoverHeight));
-
-      await tester.pumpAndSettle();
-      expect(find.text('Track with subtitle'), findsOneWidget);
-      expect(tester.getSize(coverFinder.first).height, initialCoverHeight);
-
-      if (find.byType(SessionDetailPage).evaluate().isNotEmpty) {
-        Navigator.of(tester.element(find.byType(SessionDetailPage))).pop();
-        await tester.pumpAndSettle();
-      }
-      UiInteractionCoordinator.instance.resetForTest();
-      await tester.pumpWidget(const SizedBox.shrink());
-      await tester.pumpAndSettle();
-      await tester.pump(const Duration(seconds: 10));
-    },
-  );
 
   testWidgets(
     'timeline subtitles scroll, snap, return, and seek while paused',

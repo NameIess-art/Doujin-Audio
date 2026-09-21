@@ -508,10 +508,12 @@ final class LibraryFacade implements LibraryCatalog {
     String folderPath, {
     String? selectedCoverPath,
     bool includeVideoFrames = true,
+    bool includeEmbeddedCovers = true,
   }) => _metadataCoordinator.discoverCoverCandidates(
     folderPath,
     selectedCoverPath: selectedCoverPath,
     includeVideoFrames: includeVideoFrames,
+    includeEmbeddedCovers: includeEmbeddedCovers,
   );
 
   Future<String?> setFolderManualCover(

@@ -161,6 +161,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
           final candidateImages = await library.discoverCoverCandidatesInFolder(
             folderPath,
             includeVideoFrames: false,
+            includeEmbeddedCovers: false,
           );
           final imageItems = <WorkImageItem>[];
           for (final imgPath in candidateImages) {

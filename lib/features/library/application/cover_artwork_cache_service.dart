@@ -626,12 +626,14 @@ class CoverArtworkCacheService {
     String folderPath, {
     String? selectedCoverPath,
     bool includeVideoFrames = true,
+    bool includeEmbeddedCovers = true,
   }) async {
     final normalizedFolder = PathMatcher.normalize(folderPath);
     if (normalizedFolder.isEmpty) return const <String>[];
     final candidates = await _resolveFolderCoverCandidates(
       normalizedFolder,
       includeVideoFrames: includeVideoFrames,
+      includeEmbeddedCovers: includeEmbeddedCovers,
     );
     final selectedCover = selectedCoverPath?.trim();
     if (selectedCover == null || selectedCover.isEmpty) return candidates;
@@ -2063,6 +2065,7 @@ class CoverArtworkCacheService {
   Future<List<String>> _resolveFolderCoverCandidates(
     String folderPath, {
     bool includeVideoFrames = true,
+    bool includeEmbeddedCovers = true,
   }) async {
     final candidates = <String>[];
     final seenPaths = <String>{};
@@ -2090,6 +2093,10 @@ class CoverArtworkCacheService {
         return;
       }
       candidates.add(candidate);
+    }
+
+    if (!includeEmbeddedCovers) {
+      return List<String>.unmodifiable(candidates);
     }
 
     final tracks = _tracksInCompleteCoverScope(folderPath);

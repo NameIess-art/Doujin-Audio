@@ -1570,6 +1570,14 @@ void main() {
         ),
         <String>[firstImage, secondImage, '/cache/audio.image'],
       );
+      expect(
+        await cache.discoverCoverCandidatesInFolder(
+          directory.path,
+          includeVideoFrames: false,
+          includeEmbeddedCovers: false,
+        ),
+        <String>[firstImage, secondImage],
+      );
     },
   );
 

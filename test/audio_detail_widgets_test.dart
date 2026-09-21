@@ -103,6 +103,7 @@ class _DetailCoverCacheService extends CoverArtworkCacheService {
     String folderPath, {
     String? selectedCoverPath,
     bool includeVideoFrames = true,
+    bool includeEmbeddedCovers = true,
   }) async => candidatesFuture ?? candidates;
 }
 

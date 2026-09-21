@@ -23,6 +23,7 @@ import 'package:doujin_audio/features/player/presentation/playlist_tab.dart';
 import 'package:doujin_audio/features/player/presentation/playlist/playlist_subtitle_panel.dart';
 import 'package:doujin_audio/features/player/presentation/active_session_carousel.dart';
 import 'package:doujin_audio/features/player/presentation/session_video_viewport.dart';
+import 'package:doujin_audio/features/player/presentation/session_video_surface.dart';
 import 'package:doujin_audio/core/platform/platform_channels.dart';
 import 'package:doujin_audio/features/library/application/cover_artwork_cache_service.dart';
 import 'package:doujin_audio/features/library/application/library_service.dart';
@@ -3628,6 +3629,53 @@ void main() {
     sync();
     await tester.pumpAndSettle();
     expect(videoReady(), isTrue);
+
+    final originalPlatform = debugDefaultTargetPlatformOverride;
+    debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+    addTearDown(() => debugDefaultTargetPlatformOverride = originalPlatform);
+    await tester.tap(
+      find.byKey(const ValueKey<String>('session_video_tap_target')),
+    );
+    await tester.pump();
+    await tester.tap(find.byIcon(Icons.fullscreen_rounded));
+    await tester.pumpAndSettle();
+    expect(
+      find.byType(NativeSessionVideoSurface, skipOffstage: false),
+      findsOneWidget,
+    );
+    await tester.tap(
+      find.byKey(const ValueKey<String>('fullscreen_video_exit')),
+    );
+    await tester.pump();
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 200)),
+    );
+    await tester.pump(const Duration(milliseconds: 50));
+    // The outgoing fullscreen route still owns the only video surface.
+    expect(
+      find.byType(NativeSessionVideoSurface, skipOffstage: false),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byType(SessionVideoViewport, skipOffstage: false),
+        matching: find.byType(NativeSessionVideoSurface, skipOffstage: false),
+      ),
+      findsNothing,
+    );
+    await tester.pumpAndSettle();
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 200)),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.descendant(
+        of: find.byType(SessionVideoViewport),
+        matching: find.byType(NativeSessionVideoSurface),
+      ),
+      findsOneWidget,
+    );
+    debugDefaultTargetPlatformOverride = originalPlatform;
     await tester.runAsync(
       () => Future<void>.delayed(const Duration(milliseconds: 200)),
     );

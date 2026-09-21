@@ -241,6 +241,41 @@ void main() {
     );
   });
 
+  testWidgets('track loading during fullscreen keeps inline surface suspended', (
+    tester,
+  ) async {
+    final fullscreen = Completer<void>();
+    Future<void> openFullscreen() => fullscreen.future;
+    await tester.pumpWidget(
+      buildViewport(videoReady: true, onFullscreen: openFullscreen),
+    );
+    await tester.tap(
+      find.byKey(const ValueKey<String>('session_video_tap_target')),
+    );
+    await tester.pump();
+    await tester.tap(find.byIcon(Icons.fullscreen_rounded));
+    await tester.pump();
+
+    await tester.pumpWidget(
+      buildViewport(videoReady: false, onFullscreen: openFullscreen),
+    );
+    await tester.pumpWidget(
+      buildViewport(videoReady: true, onFullscreen: openFullscreen),
+    );
+    expect(
+      find.byKey(const ValueKey<String>('fake_video_surface')),
+      findsNothing,
+    );
+
+    fullscreen.complete();
+    await tester.pump();
+    await tester.pump();
+    expect(
+      find.byKey(const ValueKey<String>('fake_video_surface')),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('fullscreen mode uses exit icon', (tester) async {
     await tester.pumpWidget(
       buildViewport(

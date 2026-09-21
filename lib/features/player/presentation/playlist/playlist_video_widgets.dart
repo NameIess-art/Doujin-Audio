@@ -56,16 +56,17 @@ Future<void> showSessionVideoFullscreen(
     return;
   }
   try {
-    await Navigator.of(context).push<void>(
-      MaterialPageRoute<void>(
-        fullscreenDialog: true,
-        builder: (_) => SessionVideoFullscreenPage(
-          sessionId: sessionId,
-          trackPath: trackPath,
-          fullscreenLease: lease,
-        ),
+    final route = MaterialPageRoute<void>(
+      fullscreenDialog: true,
+      builder: (_) => SessionVideoFullscreenPage(
+        sessionId: sessionId,
+        trackPath: trackPath,
+        fullscreenLease: lease,
       ),
     );
+    await Navigator.of(context).push<void>(route);
+    // Keep the inline surface detached until the fullscreen surface is removed.
+    await route.completed;
   } finally {
     await playback.setSessionTemporarySpeed(sessionId, null);
     await lease.release();

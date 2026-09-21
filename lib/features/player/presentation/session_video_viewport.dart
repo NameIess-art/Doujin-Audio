@@ -175,7 +175,6 @@ class _SessionVideoViewportState extends State<SessionVideoViewport> {
   Timer? _controlsTimer;
   bool _controlsVisible = false;
   bool _cursorInside = false;
-  bool _surfaceSuspended = false;
   bool _fullscreenActionRunning = false;
 
   bool get _isControlVisible => _cursorInside || _controlsVisible;
@@ -187,7 +186,6 @@ class _SessionVideoViewportState extends State<SessionVideoViewport> {
     _controlsTimer?.cancel();
     _controlsVisible = false;
     _cursorInside = false;
-    _surfaceSuspended = false;
   }
 
   @override
@@ -210,27 +208,25 @@ class _SessionVideoViewportState extends State<SessionVideoViewport> {
 
   Future<void> _handleFullscreen() async {
     if (_fullscreenActionRunning || !widget.videoReady) return;
-    _fullscreenActionRunning = true;
     _controlsTimer?.cancel();
     setState(() {
       _controlsVisible = false;
       _cursorInside = false;
-      _surfaceSuspended = true;
+      _fullscreenActionRunning = true;
     });
     await WidgetsBinding.instance.endOfFrame;
     try {
       await widget.onFullscreen();
     } finally {
-      _fullscreenActionRunning = false;
-      if (mounted && widget.videoReady) {
-        setState(() => _surfaceSuspended = false);
+      if (mounted) {
+        setState(() => _fullscreenActionRunning = false);
       }
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final showSurface = widget.videoReady && !_surfaceSuspended;
+    final showSurface = widget.videoReady && !_fullscreenActionRunning;
     return MouseRegion(
       onEnter: widget.videoReady
           ? (_) => setState(() => _cursorInside = true)

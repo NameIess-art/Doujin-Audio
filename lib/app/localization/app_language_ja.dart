@@ -444,7 +444,7 @@ const Map<String, String> appLanguageJa = {
   'cover_image_display_mode_fill': '塗りつぶし',
   'cover_image_display_mode_stretch': '並べて表示',
   'cover_image_display_mode_tile': '画面に合わせる',
-  'prefer_embedded_audio_cover': '音声の埋め込みカバーを優先',
+  'prefer_embedded_cover': '自身のカバーを優先',
   'theme_system': 'システム',
   'theme_light': 'ライト',
   'theme_dark': 'ダーク',

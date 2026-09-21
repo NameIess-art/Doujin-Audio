@@ -17,7 +17,7 @@ final class LibraryRuntimeBinding implements RuntimeBinding {
     required NotificationFacade notifications,
     required void Function() syncLibraryState,
     required void Function() syncPlaybackState,
-    bool Function()? preferEmbeddedAudioCover,
+    bool Function()? preferEmbeddedCover,
   }) {
     final existing = _attached[library];
     if (existing != null && !existing._disposed) return existing;
@@ -36,7 +36,7 @@ final class LibraryRuntimeBinding implements RuntimeBinding {
         notifications.syncPlaybackState();
         syncPlaybackState();
       },
-      preferEmbeddedAudioCover: preferEmbeddedAudioCover,
+      preferEmbeddedCover: preferEmbeddedCover,
     );
     final binding = LibraryRuntimeBinding._(library);
     _attached[library] = binding;

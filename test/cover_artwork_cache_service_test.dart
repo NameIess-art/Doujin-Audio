@@ -1203,7 +1203,7 @@ void main() {
       final cache = CoverArtworkCacheService(
         libraryService: library,
         fileCacheGateway: gateway,
-        preferEmbeddedAudioCover: () => preferEmbedded,
+        preferEmbeddedCover: () => preferEmbedded,
       );
 
       await cache.setFolderCoverSelection(directory.path, folderCover);
@@ -1256,7 +1256,7 @@ void main() {
       final cache = CoverArtworkCacheService(
         libraryService: library,
         fileCacheGateway: gateway,
-        preferEmbeddedAudioCover: () => true,
+        preferEmbeddedCover: () => true,
       );
 
       await cache.setFolderCoverSelection(albumDir.path, albumCover);
@@ -1333,7 +1333,7 @@ void main() {
       final cache = CoverArtworkCacheService(
         libraryService: library,
         fileCacheGateway: gateway,
-        preferEmbeddedAudioCover: () => true,
+        preferEmbeddedCover: () => true,
       );
 
       await cache.setFolderCoverSelection(
@@ -1349,29 +1349,62 @@ void main() {
     },
   );
 
-  test(
-    'embedded audio preference keeps resolving video frame covers',
-    () async {
-      const videoPath = '/work/video.mp4';
-      const videoFrame = '/cache/video-frame.image';
-      final track = _track(path: videoPath, groupKey: '/work');
-      final gateway = _FakeFileCachePlatformGateway(
-        coversByPath: const <String, String>{
-          videoPath: '/cache/incorrect-audio-cover.image',
-        },
-        videoFramesByPath: const <String, String>{videoPath: videoFrame},
-      );
-      final cache = CoverArtworkCacheService(
-        libraryService: LibraryService()..library.add(track),
-        fileCacheGateway: gateway,
-        preferEmbeddedAudioCover: () => true,
-      );
+  test('own cover preference applies to video frame covers', () async {
+    final directory = await Directory.systemTemp.createTemp(
+      'cover_cache_video_preference_',
+    );
+    addTearDown(() async {
+      if (await directory.exists()) await directory.delete(recursive: true);
+    });
+    final videoPath = '${directory.path}${Platform.pathSeparator}video.mp4';
+    final folderCover = '${directory.path}${Platform.pathSeparator}cover.jpg';
+    const videoFrame = '/cache/video-frame.image';
+    await File(videoPath).writeAsBytes(<int>[1]);
+    await File(folderCover).writeAsBytes(<int>[0xff, 0xd8, 0xff, 0xd9]);
 
-      expect(await cache.futureForTrack(track), videoFrame);
-      expect(await cache.futureForPlaybackTrack(track), videoFrame);
-      expect(gateway.resolveTrackCoverPaths, isEmpty);
-    },
-  );
+    final track = _track(
+      path: videoPath,
+      groupKey: directory.path,
+      isVideo: true,
+    );
+    final library = LibraryService()
+      ..watchedFolders.add(directory.path)
+      ..library.add(track);
+    var preferEmbedded = true;
+    final gateway = _FakeFileCachePlatformGateway(
+      coversByPath: <String, String>{
+        videoPath: '/cache/audio-cover.image',
+      },
+      videoFramesByPath: <String, String>{videoPath: videoFrame},
+    );
+    final cache = CoverArtworkCacheService(
+      libraryService: library,
+      fileCacheGateway: gateway,
+      preferEmbeddedCover: () => preferEmbedded,
+    );
+
+    await cache.setFolderCoverSelection(directory.path, folderCover);
+
+    expect(await cache.futureForTrack(track), videoFrame);
+    expect(await cache.futureForPlaybackTrack(track), videoFrame);
+    expect(cache.resolvedForTrack(track), videoFrame);
+    expect(cache.resolvedForPlaybackTrack(track), videoFrame);
+    expect(gateway.resolveTrackCoverPaths, isEmpty);
+
+    preferEmbedded = false;
+    cache.invalidateAll();
+
+    expect(await cache.futureForTrack(track), folderCover);
+    expect(await cache.futureForPlaybackTrack(track), folderCover);
+    expect(cache.resolvedForTrack(track), folderCover);
+    expect(cache.resolvedForPlaybackTrack(track), folderCover);
+
+    preferEmbedded = true;
+    cache.invalidateAll();
+
+    expect(await cache.futureForTrack(track), videoFrame);
+    expect(await cache.futureForPlaybackTrack(track), videoFrame);
+  });
 
   test(
     'video frame set as folder cover is actively resolved for video and playback tracks',
@@ -1428,7 +1461,7 @@ void main() {
       final cache = CoverArtworkCacheService(
         libraryService: LibraryService()..library.add(track),
         fileCacheGateway: gateway,
-        preferEmbeddedAudioCover: () => true,
+        preferEmbeddedCover: () => true,
       );
 
       expect(await cache.futureForTrack(track), groupCover);

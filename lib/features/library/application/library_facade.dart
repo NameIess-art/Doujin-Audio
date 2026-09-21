@@ -1206,7 +1206,7 @@ final class LibraryFacade implements LibraryCatalog {
   void configureCoverArtworkRuntime({
     required bool Function(String key) isActiveCoverKey,
     required void Function() onActiveCoverChanged,
-    bool Function()? preferEmbeddedAudioCover,
+    bool Function()? preferEmbeddedCover,
   }) {
     _coverArtworkCacheService ??= CoverArtworkCacheService(
       libraryService: _service,
@@ -1214,7 +1214,7 @@ final class LibraryFacade implements LibraryCatalog {
       audioDetailCacheService: detailCacheService,
       isActiveCoverKey: isActiveCoverKey,
       onActiveCoverChanged: onActiveCoverChanged,
-      preferEmbeddedAudioCover: preferEmbeddedAudioCover,
+      preferEmbeddedCover: preferEmbeddedCover,
     );
   }
 

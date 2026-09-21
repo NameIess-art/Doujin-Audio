@@ -200,14 +200,14 @@ List<Widget> _buildSettingsAppearanceSection({
           builder: (context, ref, _) {
             final enabled = ref.watch(
               settingsStateProvider.select(
-                (state) => state.value?.preferEmbeddedAudioCover ?? true,
+                (state) => state.value?.preferEmbeddedCover ?? true,
               ),
             );
             return SwitchListTile(
-              key: const ValueKey<String>('prefer_embedded_audio_cover_switch'),
+              key: const ValueKey<String>('prefer_embedded_cover_switch'),
               value: enabled,
-              onChanged: settingsController.setPreferEmbeddedAudioCover,
-              title: _settingsTitle(i18n.tr('prefer_embedded_audio_cover')),
+              onChanged: settingsController.setPreferEmbeddedCover,
+              title: _settingsTitle(i18n.tr('prefer_embedded_cover')),
               secondary: _settingsIcon(Icons.audio_file_rounded, cs.onSurface),
               contentPadding: const EdgeInsets.symmetric(horizontal: 8),
             );

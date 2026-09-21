@@ -58,7 +58,7 @@ class CoverArtworkCacheService {
     CoverArtworkStore? artworkStore,
     bool Function(String coverSearchKey)? isActiveCoverKey,
     VoidCallback? onActiveCoverChanged,
-    bool Function()? preferEmbeddedAudioCover,
+    bool Function()? preferEmbeddedCover,
   }) : _libraryService = libraryService,
        _databaseRepository = databaseRepository,
        _audioDetailCacheService = audioDetailCacheService,
@@ -77,7 +77,7 @@ class CoverArtworkCacheService {
            ),
        _isActiveCoverKey = isActiveCoverKey,
        _onActiveCoverChanged = onActiveCoverChanged,
-       _preferEmbeddedAudioCover = preferEmbeddedAudioCover;
+       _preferEmbeddedCover = preferEmbeddedCover;
 
   final LibraryService _libraryService;
   final LibraryPersistenceRepository? _databaseRepository;
@@ -92,7 +92,7 @@ class CoverArtworkCacheService {
   final CoverArtworkStore _artworkStore;
   final bool Function(String coverSearchKey)? _isActiveCoverKey;
   final VoidCallback? _onActiveCoverChanged;
-  final bool Function()? _preferEmbeddedAudioCover;
+  final bool Function()? _preferEmbeddedCover;
 
   final Map<String, Future<String?>> _folderCoverFutures =
       <String, Future<String?>>{};
@@ -599,9 +599,7 @@ class CoverArtworkCacheService {
   }
 
   bool _preferTrackEmbeddedCover(MusicTrack? track, {String? trackPath}) {
-    return track != null &&
-        !_isVideoTrack(track, trackPath: trackPath) &&
-        (_preferEmbeddedAudioCover?.call() ?? false);
+    return track != null && (_preferEmbeddedCover?.call() ?? false);
   }
 
   bool _isVideoTrack(MusicTrack? track, {String? trackPath}) {

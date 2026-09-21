@@ -68,7 +68,7 @@ class SettingsState {
     this.portraitLockEnabled = false,
     this.coverImageResolution = CoverImageResolution.balanced,
     this.coverImageDisplayMode = CoverImageDisplayMode.fill,
-    this.preferEmbeddedAudioCover = true,
+    this.preferEmbeddedCover = true,
     this.asmrDownloadDestinationRoot,
     this.asmrDownloadConflictPolicy = AsmrDownloadConflictPolicy.overwrite,
     this.asmrDownloadRetryCount = kDefaultAsmrDownloadRetryCount,
@@ -120,7 +120,7 @@ class SettingsState {
   final bool portraitLockEnabled;
   final CoverImageResolution coverImageResolution;
   final CoverImageDisplayMode coverImageDisplayMode;
-  final bool preferEmbeddedAudioCover;
+  final bool preferEmbeddedCover;
   final String? asmrDownloadDestinationRoot;
   final AsmrDownloadConflictPolicy asmrDownloadConflictPolicy;
   final int asmrDownloadRetryCount;
@@ -168,7 +168,7 @@ class SettingsState {
         other.portraitLockEnabled == portraitLockEnabled &&
         other.coverImageResolution == coverImageResolution &&
         other.coverImageDisplayMode == coverImageDisplayMode &&
-        other.preferEmbeddedAudioCover == preferEmbeddedAudioCover &&
+        other.preferEmbeddedCover == preferEmbeddedCover &&
         other.asmrDownloadDestinationRoot == asmrDownloadDestinationRoot &&
         other.asmrDownloadConflictPolicy == asmrDownloadConflictPolicy &&
         other.asmrDownloadRetryCount == asmrDownloadRetryCount &&
@@ -220,7 +220,7 @@ class SettingsState {
     portraitLockEnabled,
     coverImageResolution,
     coverImageDisplayMode,
-    preferEmbeddedAudioCover,
+    preferEmbeddedCover,
     asmrDownloadDestinationRoot,
     asmrDownloadConflictPolicy,
     asmrDownloadRetryCount,

@@ -74,7 +74,7 @@ void main() {
           'hapticFeedbackEnabled': false,
           'coverImageResolution': CoverImageResolution.ultraHigh.name,
           'coverImageDisplayMode': CoverImageDisplayMode.tile.name,
-          'preferEmbeddedAudioCover': false,
+          'preferEmbeddedCover': false,
           'asmrDownloadDestinationRoot': '/backup/asmr',
           'asmrDownloadConflictPolicy': AsmrDownloadConflictPolicy.skip.name,
           'audioDeviceDisconnectBehavior':
@@ -113,7 +113,7 @@ void main() {
       expect(repository.notificationsEnabled, isFalse);
       expect(repository.coverImageResolution, CoverImageResolution.ultraHigh);
       expect(repository.coverImageDisplayMode, CoverImageDisplayMode.tile);
-      expect(repository.preferEmbeddedAudioCover, isFalse);
+      expect(repository.preferEmbeddedCover, isFalse);
       expect(repository.blurPlayerBackgroundEnabled, isFalse);
       expect(repository.startupPage, StartupPage.asmrOne);
       expect(repository.asmrDownloadDestinationRoot, '/backup/asmr');
@@ -282,8 +282,22 @@ void main() {
       expect(state.reduceAnimations, isFalse);
       expect(state.portraitLockEnabled, isFalse);
       expect(state.coverImageDisplayMode, CoverImageDisplayMode.fill);
-      expect(state.preferEmbeddedAudioCover, isTrue);
+      expect(state.preferEmbeddedCover, isTrue);
       expect(state.blurPlayerBackgroundEnabled, isTrue);
+    });
+
+    test('own cover preference is restored from the legacy stored key', () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{
+        'playback_settings_v1': json.encode(<String, Object?>{
+          'preferEmbeddedAudioCover': false,
+        }),
+      });
+      final repository = SettingsRepository();
+      addTearDown(repository.dispose);
+
+      await repository.loadPersistedState();
+
+      expect(repository.preferEmbeddedCover, isFalse);
     });
 
     test('audio focus strategy persists with a safe fallback', () async {

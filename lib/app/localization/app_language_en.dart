@@ -483,7 +483,7 @@ const Map<String, String> appLanguageEn = {
   'cover_image_display_mode_fill': 'Fill',
   'cover_image_display_mode_stretch': 'Tile',
   'cover_image_display_mode_tile': 'Fit',
-  'prefer_embedded_audio_cover': 'Prefer embedded audio covers',
+  'prefer_embedded_cover': 'Prefer own cover',
   'theme_system': 'System',
   'theme_light': 'Light',
   'theme_dark': 'Dark',

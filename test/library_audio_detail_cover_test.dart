@@ -396,7 +396,7 @@ void main() {
     test(
       'setFolderManualCover syncs the folder card cover to audio covers',
       () async {
-        await fixture.settings.setPreferEmbeddedAudioCover(false);
+        await fixture.settings.setPreferEmbeddedCover(false);
         runtimeGraph.library.invalidateCoverArtwork();
         final workDir = await Directory.systemTemp.createTemp('folder_manual_');
         addTearDown(() async {
@@ -587,7 +587,7 @@ void main() {
     test(
       'renamed work updates existing session and queue cover selections',
       () async {
-        await fixture.settings.setPreferEmbeddedAudioCover(false);
+        await fixture.settings.setPreferEmbeddedCover(false);
         final directory = await Directory.systemTemp.createTemp(
           'queue_work_rename_',
         );

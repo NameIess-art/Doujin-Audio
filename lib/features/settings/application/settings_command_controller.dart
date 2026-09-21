@@ -37,9 +37,9 @@ final class SettingsCommandController {
     await _settings.setCoverImageResolution(resolution);
   }
 
-  Future<void> setPreferEmbeddedAudioCover(bool enabled) async {
-    if (_settings.preferEmbeddedAudioCover == enabled) return;
-    await _settings.setPreferEmbeddedAudioCover(enabled);
+  Future<void> setPreferEmbeddedCover(bool enabled) async {
+    if (_settings.preferEmbeddedCover == enabled) return;
+    await _settings.setPreferEmbeddedCover(enabled);
     _library?.invalidateCoverArtwork();
   }
 

@@ -1211,7 +1211,7 @@ void main() {
     );
   });
 
-  testWidgets('appearance toggles embedded audio cover preference', (
+  testWidgets('appearance toggles own cover preference', (
     tester,
   ) async {
     final harness = AppRuntimeWidgetTestFixture();
@@ -1224,18 +1224,18 @@ void main() {
     await tester.pumpAndSettle();
 
     final toggle = find.byKey(
-      const ValueKey<String>('prefer_embedded_audio_cover_switch'),
+      const ValueKey<String>('prefer_embedded_cover_switch'),
     );
     await Scrollable.ensureVisible(tester.element(toggle), alignment: 0.5);
     await tester.pumpAndSettle();
-    expect(harness.settingsRepository.preferEmbeddedAudioCover, isTrue);
+    expect(harness.settingsRepository.preferEmbeddedCover, isTrue);
     final initialCoverGeneration =
         harness.runtimeGraph.library.coverArtworkCacheService.generation;
 
     await tester.tap(toggle);
     await tester.pumpAndSettle();
 
-    expect(harness.settingsRepository.preferEmbeddedAudioCover, isFalse);
+    expect(harness.settingsRepository.preferEmbeddedCover, isFalse);
     expect(
       harness.runtimeGraph.library.coverArtworkCacheService.generation,
       initialCoverGeneration + 1,

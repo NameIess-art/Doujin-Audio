@@ -44,7 +44,7 @@ class SettingsRepository {
   bool portraitLockEnabled = false;
   CoverImageResolution coverImageResolution = CoverImageResolution.balanced;
   CoverImageDisplayMode coverImageDisplayMode = CoverImageDisplayMode.fill;
-  bool preferEmbeddedAudioCover = true;
+  bool preferEmbeddedCover = true;
   String? asmrDownloadDestinationRoot;
   AsmrDownloadConflictPolicy asmrDownloadConflictPolicy =
       AsmrDownloadConflictPolicy.overwrite;
@@ -109,8 +109,11 @@ class SettingsRepository {
         (value) => value.name == playback['coverImageDisplayMode'],
         orElse: () => CoverImageDisplayMode.fill,
       );
-      preferEmbeddedAudioCover =
-          playback['preferEmbeddedAudioCover'] as bool? ?? true;
+      // Older builds stored this preference under the audio-only key.
+      preferEmbeddedCover =
+          playback['preferEmbeddedCover'] as bool? ??
+          playback['preferEmbeddedAudioCover'] as bool? ??
+          true;
       asmrDownloadDestinationRoot = _optionalString(
         playback['asmrDownloadDestinationRoot'],
       );
@@ -236,7 +239,7 @@ class SettingsRepository {
       'showAsmrOne': showAsmrOne,
       'coverImageResolution': coverImageResolution.name,
       'coverImageDisplayMode': coverImageDisplayMode.name,
-      'preferEmbeddedAudioCover': preferEmbeddedAudioCover,
+      'preferEmbeddedCover': preferEmbeddedCover,
       'asmrDownloadDestinationRoot': asmrDownloadDestinationRoot,
       'asmrDownloadConflictPolicy': asmrDownloadConflictPolicy.name,
       'asmrDownloadRetryCount': asmrDownloadRetryCount,
@@ -565,9 +568,9 @@ class SettingsRepository {
         update: () => coverImageDisplayMode = mode,
       );
 
-  Future<void> setPreferEmbeddedAudioCover(bool enabled) => _setValue(
-    unchanged: preferEmbeddedAudioCover == enabled,
-    update: () => preferEmbeddedAudioCover = enabled,
+  Future<void> setPreferEmbeddedCover(bool enabled) => _setValue(
+    unchanged: preferEmbeddedCover == enabled,
+    update: () => preferEmbeddedCover = enabled,
   );
 
   Future<void> setAsmrDownloadConflictPolicy(
@@ -695,7 +698,7 @@ class SettingsRepository {
     portraitLockEnabled = false;
     coverImageResolution = CoverImageResolution.balanced;
     coverImageDisplayMode = CoverImageDisplayMode.fill;
-    preferEmbeddedAudioCover = true;
+    preferEmbeddedCover = true;
     asmrDownloadDestinationRoot = null;
     asmrDownloadConflictPolicy = AsmrDownloadConflictPolicy.overwrite;
     asmrDownloadRetryCount = kDefaultAsmrDownloadRetryCount;
@@ -759,7 +762,7 @@ class SettingsRepository {
         portraitLockEnabled: portraitLockEnabled,
         coverImageResolution: coverImageResolution,
         coverImageDisplayMode: coverImageDisplayMode,
-        preferEmbeddedAudioCover: preferEmbeddedAudioCover,
+        preferEmbeddedCover: preferEmbeddedCover,
         asmrDownloadDestinationRoot: asmrDownloadDestinationRoot,
         asmrDownloadConflictPolicy: asmrDownloadConflictPolicy,
         asmrDownloadRetryCount: asmrDownloadRetryCount,

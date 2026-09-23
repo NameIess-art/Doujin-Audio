@@ -344,31 +344,29 @@ class SessionLoopModeButton extends ConsumerWidget {
       listen: false,
     ).read(appLanguageProviderInstanceProvider);
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 2),
-      child: IconButton(
-        key: const ValueKey('session_loop_button_anchor'),
-        constraints: const BoxConstraints.tightFor(width: 44, height: 44),
-        padding: EdgeInsets.zero,
-        tooltip: i18n.tr('loop_mode_title'),
-        style: IconButton.styleFrom(
-          shape: const CircleBorder(),
-          backgroundColor: Colors.transparent,
-          foregroundColor: sessionDetailForeground(
-            Theme.of(context).colorScheme,
-            SessionDetailForegroundLevel.muted,
-          ),
+    return IconButton(
+      key: const ValueKey('session_loop_button_anchor'),
+      constraints: const BoxConstraints.tightFor(width: 44, height: 44),
+      padding: EdgeInsets.zero,
+      tooltip: i18n.tr('loop_mode_title'),
+      style: IconButton.styleFrom(
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        shape: const CircleBorder(),
+        backgroundColor: Colors.transparent,
+        foregroundColor: sessionDetailForeground(
+          Theme.of(context).colorScheme,
+          SessionDetailForegroundLevel.muted,
         ),
-        onPressed: () {
-          AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
-          showLoopModeBottomSheet(
-            context: context,
-            session: playback.sessionSnapshotById(session.id) ?? session,
-            playback: playback,
-          );
-        },
-        icon: _buildIcon(context, loopMode),
       ),
+      onPressed: () {
+        AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
+        showLoopModeBottomSheet(
+          context: context,
+          session: playback.sessionSnapshotById(session.id) ?? session,
+          playback: playback,
+        );
+      },
+      icon: _buildIcon(context, loopMode),
     );
   }
 }

@@ -40,6 +40,8 @@ class TransportPlaybackControlPanel extends ConsumerWidget {
     this.onToggleSubtitle,
     this.onToggleGlobalSubtitle,
     this.onShowSubtitleMenu,
+    this.onShowWorkDetail,
+    this.isLandscape = false,
   });
 
   final PlaybackSessionSnapshot session;
@@ -55,6 +57,8 @@ class TransportPlaybackControlPanel extends ConsumerWidget {
   final VoidCallback? onToggleSubtitle;
   final VoidCallback? onToggleGlobalSubtitle;
   final VoidCallback? onShowSubtitleMenu;
+  final VoidCallback? onShowWorkDetail;
+  final bool isLandscape;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -81,6 +85,8 @@ class TransportPlaybackControlPanel extends ConsumerWidget {
       onToggleSubtitle: onToggleSubtitle,
       onToggleGlobalSubtitle: onToggleGlobalSubtitle,
       onShowSubtitleMenu: onShowSubtitleMenu,
+      onShowWorkDetail: onShowWorkDetail,
+      isLandscape: isLandscape,
     );
   }
 }
@@ -102,6 +108,8 @@ class _PlaybackControlPanel extends StatelessWidget {
     this.onToggleSubtitle,
     this.onToggleGlobalSubtitle,
     this.onShowSubtitleMenu,
+    this.onShowWorkDetail,
+    this.isLandscape = false,
   });
 
   final PlaybackSessionSnapshot session;
@@ -119,6 +127,8 @@ class _PlaybackControlPanel extends StatelessWidget {
   final VoidCallback? onToggleSubtitle;
   final VoidCallback? onToggleGlobalSubtitle;
   final VoidCallback? onShowSubtitleMenu;
+  final VoidCallback? onShowWorkDetail;
+  final bool isLandscape;
 
   @override
   Widget build(BuildContext context) {
@@ -131,7 +141,7 @@ class _PlaybackControlPanel extends StatelessWidget {
           showPauseIcon: showPauseIcon,
           isLoading: isLoading,
         ),
-        if (!segmentPanelExpanded)
+        if (isLandscape || !segmentPanelExpanded)
           AnimatedSwitcher(
             duration: kAppMotionSlow,
             reverseDuration: kAppMotionStandard,
@@ -155,6 +165,7 @@ class _PlaybackControlPanel extends StatelessWidget {
                 onToggleSubtitle: onToggleSubtitle,
                 onToggleGlobalSubtitle: onToggleGlobalSubtitle,
                 onShowSubtitleMenu: onShowSubtitleMenu,
+                onShowWorkDetail: onShowWorkDetail,
               ),
             ),
           ),
@@ -341,6 +352,7 @@ class _PlaybackSecondaryControls extends ConsumerStatefulWidget {
     this.onToggleSubtitle,
     this.onToggleGlobalSubtitle,
     this.onShowSubtitleMenu,
+    this.onShowWorkDetail,
   });
 
   final PlaybackSessionSnapshot session;
@@ -355,6 +367,7 @@ class _PlaybackSecondaryControls extends ConsumerStatefulWidget {
   final VoidCallback? onToggleSubtitle;
   final VoidCallback? onToggleGlobalSubtitle;
   final VoidCallback? onShowSubtitleMenu;
+  final VoidCallback? onShowWorkDetail;
 
   @override
   ConsumerState<_PlaybackSecondaryControls> createState() =>
@@ -601,52 +614,60 @@ class _PlaybackSecondaryControlsState
         key: const ValueKey('playback_buttons_row'),
         builder: (context, constraints) => WindowsHorizontalWheelScroll(
           builder: (scrollController) => SingleChildScrollView(
-          key: const ValueKey('playback_secondary_controls_horizontal_scroll'),
-          controller: scrollController,
-          scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.symmetric(horizontal: 10),
-          child: ConstrainedBox(
-            constraints: BoxConstraints(
-              minWidth: max(0.0, constraints.maxWidth - 20),
+            key: const ValueKey(
+              'playback_secondary_controls_horizontal_scroll',
             ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                SessionLoopModeButton(
-                  session: widget.session,
-                  playback: widget.playback,
-                ),
-                _SecondaryControlButton(
-                  key: const ValueKey('session_volume_button_anchor'),
-                  icon: _getIconForVolume(_currentVolume),
-                  tooltip: i18n.tr('volume'),
-                  onPressed: () {
-                    setState(() => _volumeMode = true);
-                  },
-                ),
-                _SecondaryControlButton(
-                  key: const ValueKey('session_subtitle_menu_button'),
-                  icon: Icons.subtitles_rounded,
-                  tooltip: i18n.tr('subtitles'),
-                  active: widget.subtitleEnabled && widget.hasSubtitle,
-                  onPressed: widget.onShowSubtitleMenu,
-                ),
-                _SecondaryControlButton(
-                  icon: Icons.tune_rounded,
-                  tooltip: i18n.tr('audio_features'),
-                  active: widget.segmentPanelExpanded,
-                  onPressed: widget.onToggleSegments,
-                ),
-                _SecondaryControlButton(
-                  icon: Icons.queue_music_rounded,
-                  tooltip: i18n.tr('switch_audio'),
-                  onPressed: widget.hasSiblings
-                      ? widget.onShowTrackSwitcher
-                      : null,
-                ),
-              ],
+            controller: scrollController,
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                minWidth: max(0.0, constraints.maxWidth - 8),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  SessionLoopModeButton(
+                    session: widget.session,
+                    playback: widget.playback,
+                  ),
+                  _SecondaryControlButton(
+                    key: const ValueKey('session_volume_button_anchor'),
+                    icon: _getIconForVolume(_currentVolume),
+                    tooltip: i18n.tr('volume'),
+                    onPressed: () {
+                      setState(() => _volumeMode = true);
+                    },
+                  ),
+                  _SecondaryControlButton(
+                    key: const ValueKey('session_subtitle_menu_button'),
+                    icon: Icons.subtitles_rounded,
+                    tooltip: i18n.tr('subtitles'),
+                    active: widget.subtitleEnabled && widget.hasSubtitle,
+                    onPressed: widget.onShowSubtitleMenu,
+                  ),
+                  _SecondaryControlButton(
+                    icon: Icons.tune_rounded,
+                    tooltip: i18n.tr('audio_features'),
+                    active: widget.segmentPanelExpanded,
+                    onPressed: widget.onToggleSegments,
+                  ),
+                  _SecondaryControlButton(
+                    icon: Icons.queue_music_rounded,
+                    tooltip: i18n.tr('switch_audio'),
+                    onPressed: widget.hasSiblings
+                        ? widget.onShowTrackSwitcher
+                        : null,
+                  ),
+                  _SecondaryControlButton(
+                    key: const ValueKey('session_work_detail_button'),
+                    icon: Icons.info_outline_rounded,
+                    tooltip: i18n.tr('audio_detail'),
+                    onPressed: widget.onShowWorkDetail,
+                  ),
+                ],
+              ),
             ),
-          ),
           ),
         ),
       );
@@ -764,46 +785,44 @@ class _SecondaryControlButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final enabled = onPressed != null;
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 2),
-      child: IconButton(
-        constraints: const BoxConstraints.tightFor(width: 44, height: 44),
-        padding: EdgeInsets.zero,
-        tooltip: tooltip,
-        style: IconButton.styleFrom(
-          shape: const CircleBorder(),
-          backgroundColor: active
-              ? cs.primaryContainer.withValues(alpha: 0.65)
-              : Colors.transparent,
-          foregroundColor: active
-              ? cs.onPrimaryContainer
-              : sessionDetailForeground(cs, SessionDetailForegroundLevel.muted),
-          disabledForegroundColor: cs.onSurface.withValues(alpha: 0.35),
-        ),
-        onPressed: onPressed != null
-            ? () {
-                AppInteractionFeedback.trigger(
-                  AppInteractionFeedbackType.selection,
-                );
-                onPressed!();
-              }
-            : null,
-        icon: AnimatedSwitcher(
-          duration: const Duration(milliseconds: 250),
-          transitionBuilder: (child, animation) {
-            return ScaleTransition(
-              scale: Tween<double>(begin: 0.4, end: 1.0).animate(
-                CurvedAnimation(parent: animation, curve: Curves.easeOutBack),
-              ),
-              child: FadeTransition(opacity: animation, child: child),
-            );
-          },
-          child: Icon(
-            icon,
-            key: ValueKey(icon),
-            size: 20,
-            color: enabled ? null : null,
-          ),
+    return IconButton(
+      constraints: const BoxConstraints.tightFor(width: 44, height: 44),
+      padding: EdgeInsets.zero,
+      tooltip: tooltip,
+      style: IconButton.styleFrom(
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        shape: const CircleBorder(),
+        backgroundColor: active
+            ? cs.primaryContainer.withValues(alpha: 0.65)
+            : Colors.transparent,
+        foregroundColor: active
+            ? cs.onPrimaryContainer
+            : sessionDetailForeground(cs, SessionDetailForegroundLevel.muted),
+        disabledForegroundColor: cs.onSurface.withValues(alpha: 0.35),
+      ),
+      onPressed: onPressed != null
+          ? () {
+              AppInteractionFeedback.trigger(
+                AppInteractionFeedbackType.selection,
+              );
+              onPressed!();
+            }
+          : null,
+      icon: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 250),
+        transitionBuilder: (child, animation) {
+          return ScaleTransition(
+            scale: Tween<double>(begin: 0.4, end: 1.0).animate(
+              CurvedAnimation(parent: animation, curve: Curves.easeOutBack),
+            ),
+            child: FadeTransition(opacity: animation, child: child),
+          );
+        },
+        child: Icon(
+          icon,
+          key: ValueKey(icon),
+          size: 20,
+          color: enabled ? null : null,
         ),
       ),
     );

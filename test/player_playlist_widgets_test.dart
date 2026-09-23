@@ -27,6 +27,7 @@ import 'package:doujin_audio/features/player/presentation/session_video_surface.
 import 'package:doujin_audio/core/platform/platform_channels.dart';
 import 'package:doujin_audio/features/library/application/cover_artwork_cache_service.dart';
 import 'package:doujin_audio/features/library/application/library_service.dart';
+import 'package:doujin_audio/features/library/presentation/work_detail_page.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/core/widgets/async_cover_image.dart';
 import 'package:doujin_audio/core/widgets/duration_overlay.dart';
@@ -5224,7 +5225,7 @@ void main() {
   });
 
   testWidgets(
-    'landscape session detail displays 1:1 cover aspect ratio with title inside cover at bottom',
+    'landscape session detail displays 1:1 cover aspect ratio with title in top-left of right section',
     (tester) async {
       await _pumpSubtitleDetail(
         tester: tester,
@@ -5250,19 +5251,21 @@ void main() {
         of: aspectRatioFinder,
         matching: titleFinder,
       );
-      expect(titleInsideCover, findsOneWidget);
+      expect(titleInsideCover, findsNothing);
 
       final coverRect = tester.getRect(aspectRatioFinder);
       final titleRect = tester.getRect(titleFinder);
 
-      expect(titleRect.bottom, lessThanOrEqualTo(coverRect.bottom));
-      expect(titleRect.top, greaterThan(coverRect.top));
+      // Title is in the right section (to the right of the cover)
+      expect(titleRect.left, greaterThan(coverRect.right));
+      // Title is at the top of the right section
+      expect(titleRect.top, closeTo(coverRect.top, 8.0));
       expect(coverRect.width, closeTo(coverRect.height, 0.5));
     },
   );
 
   testWidgets(
-    'landscape session detail has 1:1 ratio on Windows and tablet, 2:3 on phone',
+    'landscape session detail moves progress bar below cover and prioritizes left filling vertically',
     (tester) async {
       await _pumpSubtitleDetail(
         tester: tester,
@@ -5271,22 +5274,75 @@ void main() {
         physicalSize: const Size(2400, 1080),
       );
 
-      final rowFinder = find.descendant(
-        of: find.byType(SessionDetailContent),
-        matching: find.byWidgetPredicate(
-          (w) => w is Row && w.crossAxisAlignment == CrossAxisAlignment.stretch,
-        ),
+      final coverFinder = find.descendant(
+        of: find.byType(SessionDetailPage),
+        matching: find.byType(AspectRatio),
       );
-      expect(rowFinder, findsOneWidget);
+      final progressBarFinder = find.descendant(
+        of: find.byType(SessionDetailPage),
+        matching: find.byType(SessionProgressBar),
+      );
+      expect(coverFinder, findsOneWidget);
+      expect(progressBarFinder, findsOneWidget);
 
-      final phoneExpandedList = tester
-          .widgetList<Expanded>(
-            find.descendant(of: rowFinder, matching: find.byType(Expanded)),
-          )
-          .take(2)
-          .toList();
-      expect(phoneExpandedList[0].flex, 2);
-      expect(phoneExpandedList[1].flex, 3);
+      final coverRect = tester.getRect(coverFinder);
+      final progressRect = tester.getRect(progressBarFinder);
+
+      // Progress bar is below the cover image
+      expect(progressRect.top, greaterThanOrEqualTo(coverRect.bottom));
+      // Left edge of progress bar aligns with cover image
+      expect(progressRect.left, closeTo(coverRect.left, 1.0));
+      // Width of progress bar matches cover image
+      expect(progressRect.width, closeTo(coverRect.width, 1.0));
+
+      // Right side contains subtitle panel and transport controls, but not progress bar
+      final rightSideFinder = find.descendant(
+        of: find.byType(SessionDetailContent),
+        matching: find.byType(Expanded),
+      );
+      expect(rightSideFinder, findsWidgets);
+
+      final subtitleInRightSide = find.descendant(
+        of: rightSideFinder,
+        matching: find.byType(SessionSubtitlePanel),
+      );
+      expect(subtitleInRightSide, findsOneWidget);
+
+      final controlsInRightSide = find.descendant(
+        of: rightSideFinder,
+        matching: find.byType(TransportPlaybackControlPanel),
+      );
+      expect(controlsInRightSide, findsOneWidget);
+
+      final progressInRightSide = find.descendant(
+        of: rightSideFinder,
+        matching: find.byType(SessionProgressBar),
+      );
+      expect(progressInRightSide, findsNothing);
+    },
+  );
+
+  testWidgets(
+    'exit button size in landscape matches portrait',
+    (tester) async {
+      await _pumpSubtitleDetail(
+        tester: tester,
+        subtitleTrack: SubtitleTrack(sourcePath: 'empty.srt', cues: const []),
+        initialPosition: Duration.zero,
+      );
+
+      final portraitButton = tester.widget<IconButton>(
+        find.widgetWithIcon(IconButton, Icons.keyboard_arrow_down_rounded),
+      );
+      expect(
+        portraitButton.constraints,
+        const BoxConstraints(minWidth: 32, minHeight: 24),
+      );
+      expect(portraitButton.padding, EdgeInsets.zero);
+      final portraitIcon = tester.widget<Icon>(
+        find.byIcon(Icons.keyboard_arrow_down_rounded),
+      );
+      expect(portraitIcon.size, 22.0);
 
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pumpAndSettle();
@@ -5295,60 +5351,134 @@ void main() {
         tester: tester,
         subtitleTrack: SubtitleTrack(sourcePath: 'empty.srt', cues: const []),
         initialPosition: Duration.zero,
-        physicalSize: const Size(3000, 2400),
+        physicalSize: const Size(2400, 1080),
       );
 
-      final tabletRowFinder = find.descendant(
-        of: find.byType(SessionDetailContent),
-        matching: find.byWidgetPredicate(
-          (w) => w is Row && w.crossAxisAlignment == CrossAxisAlignment.stretch,
-        ),
+      final landscapeButton = tester.widget<IconButton>(
+        find.widgetWithIcon(IconButton, Icons.keyboard_arrow_down_rounded),
       );
-      final tabletExpandedList = tester
-          .widgetList<Expanded>(
-            find.descendant(
-              of: tabletRowFinder,
-              matching: find.byType(Expanded),
-            ),
-          )
-          .take(2)
-          .toList();
-      expect(tabletExpandedList[0].flex, 1);
-      expect(tabletExpandedList[1].flex, 1);
+      expect(
+        landscapeButton.constraints,
+        const BoxConstraints(minWidth: 32, minHeight: 24),
+      );
+      expect(landscapeButton.padding, EdgeInsets.zero);
+      final landscapeIcon = tester.widget<Icon>(
+        find.byIcon(Icons.keyboard_arrow_down_rounded),
+      );
+      expect(landscapeIcon.size, 22.0);
+    },
+  );
 
-      await tester.pumpWidget(const SizedBox.shrink());
+  testWidgets(
+    'secondary controls has 6 evenly spaced buttons and navigates to work detail',
+    (tester) async {
+      await _pumpSubtitleDetail(
+        tester: tester,
+        subtitleTrack: SubtitleTrack(sourcePath: 'empty.srt', cues: const []),
+        initialPosition: Duration.zero,
+      );
+
+      final workDetailButton = find.byKey(
+        const ValueKey('session_work_detail_button'),
+      );
+      expect(workDetailButton, findsOneWidget);
+
+      final loopButton = find.byKey(
+        const ValueKey('session_loop_button_anchor'),
+      );
+      expect(loopButton, findsOneWidget);
+
+      final capsuleFinder = find.byKey(
+        const ValueKey('playback_secondary_controls'),
+      );
+      final capsuleRect = tester.getRect(capsuleFinder);
+      final loopRect = tester.getRect(loopButton);
+      final detailRect = tester.getRect(workDetailButton);
+
+      expect(loopRect.width, 44.0);
+      expect(loopRect.height, 44.0);
+      expect(detailRect.width, 44.0);
+      expect(detailRect.height, 44.0);
+
+      expect(loopRect.center.dx, closeTo(capsuleRect.left + 26, 0.5));
+      expect(detailRect.center.dx, closeTo(capsuleRect.right - 26, 0.5));
+
+      await tester.tap(workDetailButton);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(find.byType(WorkDetailPage), findsOneWidget);
+      expect(find.byType(SessionDetailPage), findsNothing);
+
+      // Exiting from work detail page directly returns to the main page
+      final backButton = find.byKey(const ValueKey('work_detail_back_button'));
+      expect(backButton, findsOneWidget);
+      await tester.tap(backButton);
+      await tester.pumpAndSettle();
+      expect(find.byType(WorkDetailPage), findsNothing);
+      expect(find.byType(SessionDetailPage), findsNothing);
+      expect(find.byType(PlaylistTab), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'landscape session detail keeps secondary controls visible when feature menu is open',
+    (tester) async {
+      await _pumpSubtitleDetail(
+        tester: tester,
+        subtitleTrack: SubtitleTrack(sourcePath: 'empty.srt', cues: const []),
+        initialPosition: Duration.zero,
+        physicalSize: const Size(2400, 1080),
+      );
+
+      final secondaryControlsFinder = find.byKey(
+        const ValueKey('playback_secondary_controls'),
+      );
+      expect(secondaryControlsFinder, findsOneWidget);
+
+      final tuneButtonFinder = find.byIcon(Icons.tune_rounded);
+      expect(tuneButtonFinder, findsOneWidget);
+
+      // Open audio features panel
+      await tester.tap(tuneButtonFinder);
       await tester.pumpAndSettle();
 
-      debugDefaultTargetPlatformOverride = TargetPlatform.windows;
-      try {
-        await _pumpSubtitleDetail(
-          tester: tester,
-          subtitleTrack: SubtitleTrack(sourcePath: 'empty.srt', cues: const []),
-          initialPosition: Duration.zero,
-          physicalSize: const Size(2400, 1080),
-        );
+      expect(find.byKey(const ValueKey('segments_landscape')), findsOneWidget);
+      // Secondary controls capsule remains visible in landscape
+      expect(secondaryControlsFinder, findsOneWidget);
 
-        final winRowFinder = find.descendant(
-          of: find.byType(SessionDetailContent),
-          matching: find.byWidgetPredicate(
-            (w) =>
-                w is Row && w.crossAxisAlignment == CrossAxisAlignment.stretch,
-          ),
-        );
-        final winExpandedList = tester
-            .widgetList<Expanded>(
-              find.descendant(
-                of: winRowFinder,
-                matching: find.byType(Expanded),
-              ),
-            )
-            .take(2)
-            .toList();
-        expect(winExpandedList[0].flex, 1);
-        expect(winExpandedList[1].flex, 1);
-      } finally {
-        debugDefaultTargetPlatformOverride = null;
-      }
+      // Tap tune button again to collapse
+      await tester.tap(tuneButtonFinder);
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const ValueKey('segments_landscape')), findsNothing);
+      expect(secondaryControlsFinder, findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'portrait session detail hides secondary controls when feature menu is open',
+    (tester) async {
+      await _pumpSubtitleDetail(
+        tester: tester,
+        subtitleTrack: SubtitleTrack(sourcePath: 'empty.srt', cues: const []),
+        initialPosition: Duration.zero,
+      );
+
+      final secondaryControlsFinder = find.byKey(
+        const ValueKey('playback_secondary_controls'),
+      );
+      expect(secondaryControlsFinder, findsOneWidget);
+
+      final tuneButtonFinder = find.byIcon(Icons.tune_rounded);
+      expect(tuneButtonFinder, findsOneWidget);
+
+      // Open audio features panel
+      await tester.tap(tuneButtonFinder);
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const ValueKey('segments')), findsOneWidget);
+      // Secondary controls capsule is hidden in portrait
+      expect(secondaryControlsFinder, findsNothing);
     },
   );
 

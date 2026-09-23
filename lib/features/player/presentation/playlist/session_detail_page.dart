@@ -938,17 +938,11 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                         isWindows ||
                         MediaQuery.orientationOf(context) ==
                             Orientation.landscape;
-                    final topBarHeight = isWindows
-                        ? 40.0
-                        : (isLandscape ? 28.0 : 24.0);
-                    final closeIconSize = isWindows
-                        ? 28.0
-                        : (isLandscape ? 24.0 : 22.0);
+                    final topBarHeight = isWindows ? 40.0 : 24.0;
+                    final closeIconSize = isWindows ? 28.0 : 22.0;
                     final closeConstraints = isWindows
                         ? const BoxConstraints(minWidth: 40, minHeight: 40)
-                        : (isLandscape
-                            ? const BoxConstraints(minWidth: 36, minHeight: 28)
-                            : const BoxConstraints(minWidth: 32, minHeight: 24));
+                        : const BoxConstraints(minWidth: 32, minHeight: 24);
 
                     return Column(
                       children: [
@@ -985,11 +979,11 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                                       IconButton(
                                         onPressed: onClose,
                                         tooltip: i18n.tr('close'),
-                                        padding: isLandscape
+                                        padding: isWindows
                                             ? const EdgeInsets.all(8)
                                             : EdgeInsets.zero,
                                         constraints: closeConstraints,
-                                        visualDensity: isLandscape
+                                        visualDensity: isWindows
                                             ? VisualDensity.standard
                                             : VisualDensity.compact,
                                         icon: Icon(

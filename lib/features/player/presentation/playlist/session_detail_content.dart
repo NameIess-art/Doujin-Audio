@@ -25,6 +25,9 @@ import '../../application/playback_session_snapshot.dart';
 import '../../application/playback_time_segment_service.dart';
 import '../../domain/playback_queue.dart';
 import '../../domain/time_segment_label.dart';
+import '../../../asmr/domain/asmr_models.dart';
+import '../../../asmr/presentation/asmr_work_detail_sheet.dart';
+import '../../../library/presentation/audio_detail_sheet.dart';
 import 'playlist_progress_widgets.dart';
 import 'playlist_subtitle_panel.dart';
 import 'playlist_subtitle_menu_sheet.dart';
@@ -485,6 +488,26 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
     );
   }
 
+  void _openWorkDetail(BuildContext context) {
+    final session = widget.session;
+    if (session.currentTrackPath.trim().isEmpty) return;
+    final track = _paths.trackByPath(session.currentTrackPath);
+    if (track?.isRemoteAsmr == true && track?.remoteMetadata != null) {
+      unawaited(
+        showAsmrWorkDetailSheet(
+          context,
+          AsmrWork.fromJson(track!.remoteMetadata!),
+          replace: true,
+        ),
+      );
+      return;
+    }
+    final target = track != null
+        ? _paths.library.audioDetailTargetForTrack(track)
+        : _paths.library.audioDetailTargetForPath(session.currentTrackPath);
+    unawaited(showAudioDetailSheet(context, target, replace: true));
+  }
+
   @override
   Widget build(BuildContext context) {
     final visibleSegmentLabels = _segmentLabels;
@@ -523,6 +546,7 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
         paths: paths,
         hasSiblings: hasSiblings,
         segmentPanelExpanded: _segmentPanelExpanded,
+        isLandscape: widget.isLandscape,
         hasSubtitle: widget.hasSubtitle,
         subtitleEnabled: widget.subtitleEnabled,
         subtitleGlobalEnabled: widget.subtitleGlobalEnabled,
@@ -542,6 +566,9 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
             ),
           );
         },
+        onShowWorkDetail: session.currentTrackPath.isNotEmpty
+            ? () => _openWorkDetail(context)
+            : null,
       );
     }
 
@@ -550,114 +577,117 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
     );
 
     if (widget.isLandscape) {
-      final isWindows = defaultTargetPlatform == TargetPlatform.windows;
-      final isTablet = MediaQuery.sizeOf(context).shortestSide >= 600;
-      final useEqualSplit = isWindows || isTablet;
-      final leftFlex = useEqualSplit ? 1 : 2;
-      final rightFlex = useEqualSplit ? 1 : 3;
-
       return Padding(
         padding: resolvedDetailPadding,
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Expanded(
-              flex: leftFlex,
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  Center(
-                    child: AspectRatio(
-                      aspectRatio: 1.0,
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(16),
-                        child: Stack(
-                          fit: StackFit.expand,
-                          children: [
-                            widget.artworkWidget,
-                            if (track?.isVideo != true)
-                              IgnorePointer(
-                                child: Align(
-                                  alignment: Alignment.bottomCenter,
-                                  child: Container(
-                                height: 42,
-                                width: double.infinity,
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 16,
-                                ),
-                                alignment: Alignment.centerLeft,
-                                decoration: BoxDecoration(
-                                  gradient: LinearGradient(
-                                    begin: Alignment.topCenter,
-                                    end: Alignment.bottomCenter,
-                                    colors: [
-                                      Colors.black.withValues(alpha: 0.0),
-                                      Colors.black.withValues(alpha: 0.65),
-                                    ],
-                                  ),
-                                ),
-                                child: MarqueeText(
-                                  key: ValueKey('title_marquee_${session.id}'),
-                                  text: displayName,
-                                  allowAndroidMarquee: true,
-                                  pauseDuration: const Duration(seconds: 1),
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .labelLarge
-                                      ?.copyWith(
-                                        color: Colors.white.withValues(
-                                          alpha: 0.85,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            const spacing = 12.0;
+            const progressSpacing = 6.0;
+            const approxProgressBarHeight = 52.0;
+            final availableHeight = constraints.maxHeight;
+            final idealCoverHeight = max(
+              0.0,
+              availableHeight - approxProgressBarHeight - progressSpacing,
+            );
+            // Left side prioritizes filling vertical height: width equals idealCoverHeight
+            // Ensure right side has at least enough width for transport controls if possible
+            final maxLeftWidth = constraints.maxWidth > 500
+                ? max(0.0, constraints.maxWidth - 386)
+                : constraints.maxWidth * 0.5;
+            final leftWidth = min(idealCoverHeight, maxLeftWidth);
+
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                SizedBox(
+                  width: leftWidth,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Expanded(
+                        child: Center(
+                          child: AspectRatio(
+                            aspectRatio: 1.0,
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(16),
+                              child: Stack(
+                                fit: StackFit.expand,
+                                children: [
+                                  widget.artworkWidget,
+                                  if (_segmentPanelExpanded)
+                                    Positioned.fill(
+                                      child: ColoredBox(
+                                        color: cs.surface,
+                                        child: _buildSegmentPanel(
+                                          playback: playback,
+                                          session: session,
+                                          labels: visibleSegmentLabels,
+                                          key: const ValueKey(
+                                            'segments_landscape',
+                                          ),
                                         ),
-                                        fontWeight: FontWeight.w700,
                                       ),
-                                ),
+                                    ),
+                                ],
                               ),
                             ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                  if (_segmentPanelExpanded)
-                    Positioned.fill(
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(16),
-                        child: ColoredBox(
-                          color: cs.surface,
-                          child: _buildSegmentPanel(
-                            playback: playback,
-                            session: session,
-                            labels: visibleSegmentLabels,
-                            key: const ValueKey('segments_landscape'),
                           ),
                         ),
                       ),
-                    ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              flex: rightFlex,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Expanded(
-                    child: RepaintBoundary(
-                      child: SessionSubtitlePanel(
-                        transitionActive: widget.transitionActive,
-                        session: session,
-                        subtitleEnabled: widget.subtitleEnabled,
-                      ),
-                    ),
+                      const SizedBox(height: progressSpacing),
+                      RepaintBoundary(child: buildProgressBar()),
+                    ],
                   ),
-                  RepaintBoundary(child: buildProgressBar()),
-                  buildTransportControls(),
-                ],
-              ),
-            ),
-          ],
+                ),
+                const SizedBox(width: spacing),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.only(
+                          left: 4,
+                          right: 4,
+                          bottom: 8,
+                        ),
+                        child: MarqueeText(
+                          key: ValueKey(
+                            'title_marquee_${session.id}',
+                          ),
+                          text: displayName,
+                          allowAndroidMarquee: true,
+                          pauseDuration: const Duration(
+                            seconds: 1,
+                          ),
+                          style: Theme.of(context)
+                              .textTheme
+                              .titleMedium
+                              ?.copyWith(
+                                color: sessionDetailForeground(
+                                  cs,
+                                  SessionDetailForegroundLevel.strong,
+                                  darkFallback: cs.onSurface,
+                                ),
+                                fontWeight: FontWeight.w700,
+                              ),
+                        ),
+                      ),
+                      Expanded(
+                        child: RepaintBoundary(
+                          child: SessionSubtitlePanel(
+                            transitionActive: widget.transitionActive,
+                            session: session,
+                            subtitleEnabled: widget.subtitleEnabled,
+                          ),
+                        ),
+                      ),
+                      buildTransportControls(),
+                    ],
+                  ),
+                ),
+              ],
+            );
+          },
         ),
       );
     }

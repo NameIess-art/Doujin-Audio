@@ -91,15 +91,19 @@ const _multiValueSeparator = '\uFF0C';
 
 Future<void> showAudioDetailSheet(
   BuildContext context,
-  AudioDetailTarget target,
-) {
-  return Navigator.of(context).push(
-    buildAppPageRoute<void>(
-      context: context,
-      settings: const RouteSettings(name: workDetailRouteName),
-      child: WorkDetailPage.forLocal(target: target),
-    ),
+  AudioDetailTarget target, {
+  bool replace = false,
+}) {
+  final navigator = Navigator.of(context);
+  final route = buildAppPageRoute<void>(
+    context: context,
+    settings: const RouteSettings(name: workDetailRouteName),
+    child: WorkDetailPage.forLocal(target: target),
   );
+  if (replace && navigator.canPop()) {
+    return navigator.pushReplacement(route);
+  }
+  return navigator.push(route);
 }
 
 class AudioDetailSheet extends ConsumerStatefulWidget {

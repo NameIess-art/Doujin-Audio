@@ -580,7 +580,7 @@ void main() {
   );
 
   testWidgets(
-    'RetryingImage displays the first decoded frame without another loading fade',
+    'RetryingImage fades the first decoded frame in over 750ms',
     (tester) async {
       final provider = _ControlledImageProvider();
 
@@ -612,6 +612,17 @@ void main() {
       await tester.pump();
       await tester.pump();
 
+      expect(
+        find.byKey(const ValueKey<String>('decoding_placeholder')),
+        findsOneWidget,
+      );
+      await tester.pump(const Duration(milliseconds: 749));
+      expect(
+        find.byKey(const ValueKey<String>('decoding_placeholder')),
+        findsOneWidget,
+      );
+      await tester.pump(const Duration(milliseconds: 1));
+      await tester.pumpAndSettle();
       expect(
         find.byKey(const ValueKey<String>('decoding_placeholder')),
         findsNothing,

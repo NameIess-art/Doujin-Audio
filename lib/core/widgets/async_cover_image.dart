@@ -948,16 +948,19 @@ class _RetryingImageState extends State<RetryingImage> {
         frameBuilder: primary
             ? (context, child, frame, wasSynchronouslyLoaded) {
                 if (wasSynchronouslyLoaded ||
-                    frame != null ||
                     !widget.showPlaceholderWhileDecoding) {
                   return child;
                 }
                 final loadingBuilder = widget.loadingBuilder;
-                return loadingBuilder != null
-                    ? loadingBuilder(context)
-                    : CoverLoadingArtwork(
-                        placeholder: widget.fallbackBuilder(context),
-                      );
+                return PlaceholderContentTransition(
+                  showPlaceholder: frame == null,
+                  placeholder: loadingBuilder != null
+                      ? loadingBuilder(context)
+                      : CoverLoadingArtwork(
+                          placeholder: widget.fallbackBuilder(context),
+                        ),
+                  content: child,
+                );
               }
             : null,
         errorBuilder: primary

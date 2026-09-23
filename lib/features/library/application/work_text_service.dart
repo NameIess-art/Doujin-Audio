@@ -205,7 +205,9 @@ class WorkTextService {
       try {
         try {
           client.connectionTimeout = const Duration(seconds: 15);
-        } catch (_) {}
+        } catch (_) {
+          // Timeout configuration is optional for custom test clients.
+        }
         request = await client.getUrl(uri).timeout(const Duration(seconds: 15));
         final response =
             await request.close().timeout(const Duration(seconds: 15));

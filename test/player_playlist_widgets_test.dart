@@ -5261,6 +5261,97 @@ void main() {
     },
   );
 
+  testWidgets(
+    'landscape session detail has 1:1 ratio on Windows and tablet, 2:3 on phone',
+    (tester) async {
+      await _pumpSubtitleDetail(
+        tester: tester,
+        subtitleTrack: SubtitleTrack(sourcePath: 'empty.srt', cues: const []),
+        initialPosition: Duration.zero,
+        physicalSize: const Size(2400, 1080),
+      );
+
+      final rowFinder = find.descendant(
+        of: find.byType(SessionDetailContent),
+        matching: find.byWidgetPredicate(
+          (w) => w is Row && w.crossAxisAlignment == CrossAxisAlignment.stretch,
+        ),
+      );
+      expect(rowFinder, findsOneWidget);
+
+      final phoneExpandedList = tester
+          .widgetList<Expanded>(
+            find.descendant(of: rowFinder, matching: find.byType(Expanded)),
+          )
+          .take(2)
+          .toList();
+      expect(phoneExpandedList[0].flex, 2);
+      expect(phoneExpandedList[1].flex, 3);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpAndSettle();
+
+      await _pumpSubtitleDetail(
+        tester: tester,
+        subtitleTrack: SubtitleTrack(sourcePath: 'empty.srt', cues: const []),
+        initialPosition: Duration.zero,
+        physicalSize: const Size(3000, 2400),
+      );
+
+      final tabletRowFinder = find.descendant(
+        of: find.byType(SessionDetailContent),
+        matching: find.byWidgetPredicate(
+          (w) => w is Row && w.crossAxisAlignment == CrossAxisAlignment.stretch,
+        ),
+      );
+      final tabletExpandedList = tester
+          .widgetList<Expanded>(
+            find.descendant(
+              of: tabletRowFinder,
+              matching: find.byType(Expanded),
+            ),
+          )
+          .take(2)
+          .toList();
+      expect(tabletExpandedList[0].flex, 1);
+      expect(tabletExpandedList[1].flex, 1);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpAndSettle();
+
+      debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+      try {
+        await _pumpSubtitleDetail(
+          tester: tester,
+          subtitleTrack: SubtitleTrack(sourcePath: 'empty.srt', cues: const []),
+          initialPosition: Duration.zero,
+          physicalSize: const Size(2400, 1080),
+        );
+
+        final winRowFinder = find.descendant(
+          of: find.byType(SessionDetailContent),
+          matching: find.byWidgetPredicate(
+            (w) =>
+                w is Row && w.crossAxisAlignment == CrossAxisAlignment.stretch,
+          ),
+        );
+        final winExpandedList = tester
+            .widgetList<Expanded>(
+              find.descendant(
+                of: winRowFinder,
+                matching: find.byType(Expanded),
+              ),
+            )
+            .take(2)
+            .toList();
+        expect(winExpandedList[0].flex, 1);
+        expect(winExpandedList[1].flex, 1);
+      } finally {
+        debugDefaultTargetPlatformOverride = null;
+      }
+    },
+  );
+
   test('formatSpeedValue formats 1, 2, and 3 to two decimal places', () {
     expect(formatSpeedValue(1.0), '1.00x');
     expect(formatSpeedValue(2.0), '2.00x');

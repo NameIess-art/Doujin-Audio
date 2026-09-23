@@ -58,7 +58,9 @@ extension AsmrDownloadCleanup on AsmrDownloadManager {
           if (await staging.exists()) {
             filesToDelete.add(staging.path);
           }
-        } catch (_) {}
+        } catch (_) {
+          // Staging file lookup is best-effort during cleanup.
+        }
       }
       if (task.saveCover) {
         try {
@@ -69,7 +71,9 @@ extension AsmrDownloadCleanup on AsmrDownloadManager {
           if (await staging.exists()) {
             filesToDelete.add(staging.path);
           }
-        } catch (_) {}
+        } catch (_) {
+          // Cover staging file lookup is best-effort during cleanup.
+        }
       }
     }
 
@@ -90,7 +94,9 @@ extension AsmrDownloadCleanup on AsmrDownloadManager {
           location: entry.value.location,
           expectedRevision: entry.value.revision,
         );
-      } catch (_) {}
+      } catch (_) {
+        // Document deletion is best-effort during rollback.
+      }
     }
 
     // 8. Delete each target file
@@ -115,7 +121,9 @@ extension AsmrDownloadCleanup on AsmrDownloadManager {
                 await _pruneEmptyDirectory(entity);
               }
             }
-          } catch (_) {}
+          } catch (_) {
+            // Directory pruning is best-effort during cleanup.
+          }
         }
       }
     }

@@ -3,6 +3,7 @@ import 'package:doujin_audio/features/asmr/presentation/asmr_providers.dart';
 import 'package:doujin_audio/features/settings/presentation/settings_providers.dart';
 import 'support/asmr_controller_test_fixture.dart';
 import 'dart:async';
+import 'dart:ui' show PointerDeviceKind;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -1038,6 +1039,42 @@ void main() {
 
     await tester.pump(const Duration(seconds: 3));
     expect(find.text(message).evaluate().length, originalTextCount);
+  });
+
+  testWidgets('windows production app shell disables tooltips on hover', (
+    tester,
+  ) async {
+    await _pumpAppShell(tester);
+    debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+    try {
+      tester.element(find.byType(MaterialApp)).markNeedsBuild();
+      await tester.pump();
+
+      expect(find.byType(TooltipVisibility), findsWidgets);
+      final tooltipVisibility = tester.widget<TooltipVisibility>(
+        find.byType(TooltipVisibility).first,
+      );
+      expect(tooltipVisibility.visible, isFalse);
+
+      final tooltipFinder = find.byWidgetPredicate(
+        (widget) => widget is Tooltip && widget.message?.isNotEmpty == true,
+      );
+      expect(tooltipFinder, findsWidgets);
+      final target = tooltipFinder.first;
+      final message = tester.widget<Tooltip>(target).message!;
+      final originalTextCount = find.text(message).evaluate().length;
+
+      final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await gesture.addPointer(location: Offset.zero);
+      await gesture.moveTo(tester.getCenter(target));
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 1));
+
+      expect(find.text(message).evaluate().length, originalTextCount);
+      await gesture.removePointer();
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
   });
 
   testWidgets('update download progress stays visible at the top of the app', (

@@ -1070,7 +1070,7 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp> {
                 ),
               )
             : child ?? const SizedBox();
-        return MediaQuery(
+        final content = MediaQuery(
           data: effectiveMediaQuery,
           child: ValueListenableBuilder<int>(
             valueListenable: _routeRevision,
@@ -1105,6 +1105,13 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp> {
             },
           ),
         );
+        if (defaultTargetPlatform == TargetPlatform.windows) {
+          return TooltipVisibility(
+            visible: false,
+            child: content,
+          );
+        }
+        return content;
       },
       home: OnboardingRuntimeGate(
         showOnboarding: _shouldShowOnboarding,

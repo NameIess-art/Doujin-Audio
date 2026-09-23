@@ -113,7 +113,6 @@ const Map<String, String> appLanguageEn = {
   'batch_metadata_completion_saved': 'Saved {count} work data entries',
   'batch_metadata_completion_skipped': 'Skipped {count} work data entries',
   'batch_metadata_completion_failed': 'Failed {count} work data entries',
-  'library_manage_empty': 'No imported libraries yet.',
   'skip': 'Skip',
   'search': 'Search',
   'search_audio_placeholder': 'Search audio...',
@@ -810,8 +809,6 @@ const Map<String, String> appLanguageEn = {
       'Library import complete: {folderCount} root folders and {count} new audio items added.',
   'no_child_folder_found':
       'No importable child folders were found directly inside the selected folder.',
-  'edit_library': 'Edit library',
-  'edit_library_hint': 'Manage imported libraries, folders, and audio',
   'library_removed': 'Library removed.',
   'remove_library': 'Remove library',
   'remove_library_confirm':
@@ -819,7 +816,6 @@ const Map<String, String> appLanguageEn = {
   'excluded': 'Excluded',
   'restore': 'Restore',
   'exclude': 'Exclude',
-  'library_edit_empty': 'No imported libraries yet.',
   'subtitle_window_settings': 'Subtitle window',
   'subtitle_window_preview': 'Live preview',
   'subtitle_preview_sample':

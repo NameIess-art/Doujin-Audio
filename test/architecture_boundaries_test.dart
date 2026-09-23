@@ -93,13 +93,7 @@ void main() {
     expect(source, contains('bool includeLibraryFallback = true'));
   });
 
-  test('library editing and subtitles own independent presentation libraries', () {
-    final tab = File(
-      'lib/features/library/presentation/library_tab.dart',
-    ).readAsStringSync();
-    final edit = File(
-      'lib/features/library/presentation/library_tab_edit.dart',
-    ).readAsStringSync();
+  test('subtitles and library removal own independent presentation libraries', () {
     final progress = File(
       'lib/features/player/presentation/playlist/playlist_progress_widgets.dart',
     ).readAsStringSync();
@@ -109,10 +103,6 @@ void main() {
     final removal = File(
       'lib/features/library/presentation/library_removal_feedback.dart',
     ).readAsStringSync();
-    expect(tab, isNot(contains("part 'library_tab_edit.dart'")));
-    expect(edit, isNot(contains('part of')));
-    expect(edit, contains('class LibraryManagementPage'));
-    expect(edit, contains('class LibraryEditPage'));
     expect(progress, isNot(contains('class SessionSubtitlePanel')));
     expect(subtitles, contains('class SessionSubtitlePanel'));
     expect(subtitles, isNot(contains('part of')));

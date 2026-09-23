@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
@@ -61,6 +62,16 @@ class AppBootstrapHost extends StatelessWidget {
             GlobalCupertinoLocalizations.delegate,
             GlobalWidgetsLocalizations.delegate,
           ],
+          builder: (context, child) {
+            final app = child ?? const SizedBox();
+            if (defaultTargetPlatform == TargetPlatform.windows) {
+              return TooltipVisibility(
+                visible: false,
+                child: app,
+              );
+            }
+            return app;
+          },
           home: home,
         );
         return AppBootstrapGate(

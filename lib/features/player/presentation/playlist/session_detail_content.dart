@@ -550,13 +550,19 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
     );
 
     if (widget.isLandscape) {
+      final isWindows = defaultTargetPlatform == TargetPlatform.windows;
+      final isTablet = MediaQuery.sizeOf(context).shortestSide >= 600;
+      final useEqualSplit = isWindows || isTablet;
+      final leftFlex = useEqualSplit ? 1 : 2;
+      final rightFlex = useEqualSplit ? 1 : 3;
+
       return Padding(
         padding: resolvedDetailPadding,
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Expanded(
-              flex: 2,
+              flex: leftFlex,
               child: Stack(
                 fit: StackFit.expand,
                 children: [
@@ -633,7 +639,7 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
             ),
             const SizedBox(width: 12),
             Expanded(
-              flex: 3,
+              flex: rightFlex,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [

@@ -181,7 +181,9 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
             _localImageFiles = imageItems;
             _localManualCover = currentCover;
           });
-        } catch (_) {}
+        } catch (_) {
+          // Local media loading error handled by outer state.
+        }
       }());
     } catch (_) {
       if (!mounted) return;
@@ -1923,7 +1925,9 @@ class _DockMenuOverlayState<T> extends State<_DockMenuOverlay<T>>
     _dismissed = true;
     try {
       await _controller.reverse();
-    } catch (_) {}
+    } catch (_) {
+      // Animation controller may be disposed if unmounted.
+    }
     widget.onResult(value);
   }
 

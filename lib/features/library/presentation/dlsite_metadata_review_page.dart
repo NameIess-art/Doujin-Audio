@@ -775,11 +775,8 @@ class _DlsiteMetadataReviewPageState
                       : Icons.rate_review_rounded,
                   leading: const BackButton(),
                   title: reviewTitle,
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (_candidates.length > 1 && !_loading)
-                        HeaderActionPill(
+                  trailing: (_candidates.length > 1 && !_loading)
+                      ? HeaderActionPill(
                           padding: const EdgeInsets.symmetric(horizontal: 2),
                           children: [
                             IconButton(
@@ -813,9 +810,8 @@ class _DlsiteMetadataReviewPageState
                               icon: const Icon(Icons.chevron_right_rounded),
                             ),
                           ],
-                        ),
-                    ],
-                  ),
+                        )
+                      : null,
                   additionalChild: Padding(
                     padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
                     child: HeaderFloatingSurface(

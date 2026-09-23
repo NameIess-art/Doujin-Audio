@@ -10,6 +10,7 @@ import 'support/runtime_test_models.dart';
 import 'package:doujin_audio/features/library/presentation/audio_detail_sheet.dart';
 import 'package:doujin_audio/features/library/presentation/folder_cover_selector.dart';
 import 'package:doujin_audio/core/widgets/async_cover_image.dart';
+import 'package:doujin_audio/core/widgets/top_page_header.dart';
 import 'package:doujin_audio/features/library/presentation/dlsite_metadata_batch_page.dart';
 import 'package:doujin_audio/features/library/presentation/dlsite_metadata_review_page.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_download_models.dart';
@@ -1331,6 +1332,77 @@ void main() {
         findsNothing,
       );
       expect(fetchInfoBtn, findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'metadata review and edit headers align title capsule with full page width when trailing is absent',
+    (WidgetTester tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(390, 800);
+      addTearDown(() {
+        tester.view.resetDevicePixelRatio();
+        tester.view.resetPhysicalSize();
+      });
+
+      final fixture = AppRuntimeWidgetTestFixture(
+        dlsiteMetadataService: _FakeDlsiteMetadataService(),
+        asmrMetadataService: _FakeAsmrMetadataService(),
+      );
+      addTearDown(fixture.dispose);
+
+      const target = AudioDetailTarget(
+        targetType: AudioDetailTargetType.libraryRootFolder,
+        targetPath: '/library/TestWork',
+      );
+
+      // 1. Edit mode: trailing is absent, title capsule must align with target name surface on right
+      await tester.pumpWidget(
+        fixture.build(
+          DlsiteMetadataReviewPage.edit(detail: AudioDetail.empty(target)),
+        ),
+      );
+      await tester.pump();
+
+      final editTitleSurface = find.ancestor(
+        of: find.text(fixture.languageProvider.tr('audio_detail_edit_info')),
+        matching: find.byType(HeaderFloatingSurface),
+      );
+      final editTargetSurface = find.byKey(
+        const ValueKey<String>('dlsite_review_target_name'),
+      );
+      expect(editTitleSurface, findsOneWidget);
+      expect(editTargetSurface, findsOneWidget);
+      expect(
+        tester.getRect(editTitleSurface).right,
+        tester.getRect(editTargetSurface).right,
+      );
+
+      // 2. Fetch mode: without extra candidates, trailing is absent and must also align
+      await tester.pumpWidget(
+        fixture.build(
+          DlsiteMetadataReviewPage(
+            detail: AudioDetail.empty(target),
+            rjCode: 'RJ123456',
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      final fetchTitleSurface = find.ancestor(
+        of: find.text(fixture.languageProvider.tr('dlsite_review_title')),
+        matching: find.byType(HeaderFloatingSurface),
+      );
+      final fetchTargetSurface = find.byKey(
+        const ValueKey<String>('dlsite_review_target_name'),
+      );
+      expect(fetchTitleSurface, findsOneWidget);
+      expect(fetchTargetSurface, findsOneWidget);
+      expect(
+        tester.getRect(fetchTitleSurface).right,
+        tester.getRect(fetchTargetSurface).right,
+      );
     },
   );
 }

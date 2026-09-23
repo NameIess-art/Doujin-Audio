@@ -729,6 +729,107 @@ void main() {
     await tester.pump(const Duration(milliseconds: 200));
   });
 
+  testWidgets(
+    'playback menus keep the work detail dock behind playback detail',
+    (tester) async {
+      tester.view.devicePixelRatio = 3;
+      tester.view.physicalSize = const Size(1800, 2400);
+      addTearDown(() {
+        tester.view.resetDevicePixelRatio();
+        tester.view.resetPhysicalSize();
+      });
+
+      final track = MusicTrack(
+        path: '/audio/work/first.mp3',
+        displayName: 'First track',
+        groupKey: '/audio/work',
+        groupTitle: 'Work',
+        groupSubtitle: 'Work',
+        isSingle: false,
+      );
+      final sibling = MusicTrack(
+        path: '/audio/work/second.mp3',
+        displayName: 'Second track',
+        groupKey: '/audio/work',
+        groupTitle: 'Work',
+        groupSubtitle: 'Work',
+        isSingle: false,
+      );
+      final harness = await _pumpAppShell(
+        tester,
+        playbackTrack: track,
+        extraPlaybackTracks: [sibling],
+      );
+      final navigator = Navigator.of(tester.element(find.byType(MainScreen)));
+      unawaited(
+        navigator.push<void>(
+          buildAppPageRoute<void>(
+            context: navigator.context,
+            settings: const RouteSettings(name: workDetailRouteName),
+            child: const Scaffold(body: SizedBox.expand()),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      unawaited(
+        navigator.push<void>(
+          buildSessionDetailRoute(sessionId: 'orientation_session'),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final dock = find.byKey(
+        const ValueKey<String>('routed_playback_dock'),
+        skipOffstage: false,
+      );
+      final detail = find.byType(SessionDetailPage, skipOffstage: false);
+      expect(dock, findsOneWidget);
+      expect(detail, findsOneWidget);
+
+      for (final menuButton in [
+        find.byKey(const ValueKey('session_loop_button_anchor')),
+        find.byKey(const ValueKey('session_subtitle_menu_button')),
+        find.descendant(
+          of: detail,
+          matching: find.byTooltip(harness.language.tr('switch_audio')),
+        ),
+      ]) {
+        await tester.tap(menuButton);
+        await tester.pumpAndSettle();
+        expect(find.byType(BottomSheet), findsOneWidget);
+        expect(dock, findsOneWidget);
+        final opacity = find.ancestor(
+          of: dock,
+          matching: find.byType(Opacity, skipOffstage: false),
+        );
+        expect(tester.widget<Opacity>(opacity.first).opacity, 0);
+        navigator.pop();
+        await tester.pumpAndSettle();
+        expect(dock, findsOneWidget);
+        expect(tester.widget<Opacity>(opacity.first).opacity, 1);
+        final paintOrder = tester.allWidgets.toList(growable: false);
+        expect(
+          paintOrder.indexOf(tester.widget(dock)),
+          lessThan(paintOrder.indexOf(tester.widget(detail))),
+        );
+      }
+
+      navigator.pop();
+      await tester.pumpAndSettle();
+      expect(dock, findsOneWidget);
+      final opacity = find.ancestor(
+        of: dock,
+        matching: find.byType(Opacity, skipOffstage: false),
+      );
+      expect(tester.widget<Opacity>(opacity.first).opacity, 1);
+      navigator.pop();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+      UiInteractionCoordinator.instance.finishInteractionsForTest();
+      await tester.pump(const Duration(milliseconds: 200));
+    },
+  );
+
   testWidgets('capsule dock keeps a fixed height without playback', (
     tester,
   ) async {
@@ -3958,6 +4059,7 @@ Future<_AppShellHarness> _pumpAppShell(
   bool includePlaybackSession = true,
   double playbackVolume = 1,
   MusicTrack? playbackTrack,
+  List<MusicTrack> extraPlaybackTracks = const [],
   bool waitForStartup = true,
   AsmrDownloadManager? downloads,
   Future<void> Function()? runtimeInitializer,
@@ -3993,9 +4095,9 @@ Future<_AppShellHarness> _pumpAppShell(
   libraryService.syncSlice(isInitialized: true, detailRevision: 0);
   await tester.runAsync(runtimeGraph.runtime.start);
   if (includePlaybackSession) {
-    if (playbackTrack != null) {
+    if (playbackTrack != null || extraPlaybackTracks.isNotEmpty) {
       runtimeGraph.library.addTracks(
-        [playbackTrack],
+        [?playbackTrack, ...extraPlaybackTracks],
         notify: false,
         persist: false,
       );

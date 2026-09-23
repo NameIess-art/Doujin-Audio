@@ -339,11 +339,14 @@ class _RootPageRouteObserver extends NavigatorObserver {
   final Map<PageRoute<dynamic>, (Animation<double>, AnimationStatusListener)>
   _routeAnimationListeners = {};
   final Set<PageRoute<dynamic>> _departingRoutes = {};
+  // A popup makes Navigator move the work detail dock above the detail page.
+  bool _suppressDockForSessionDetail = false;
   bool _syncScheduled = false;
   bool _disposed = false;
 
   PageRoute<dynamic>? get topRoute => _routes.lastOrNull;
   List<PageRoute<dynamic>> get routes => List.unmodifiable(_routes);
+  bool get suppressDockForSessionDetail => _suppressDockForSessionDetail;
 
   PageRoute<dynamic>? lastRouteNamed(String name) {
     for (var index = _routes.length - 1; index >= 0; index--) {
@@ -416,12 +419,29 @@ class _RootPageRouteObserver extends NavigatorObserver {
       _routes.add(pageRoute);
       _trackAnimation(pageRoute);
       _sync();
+    } else if (route is PopupRoute<dynamic> &&
+        topRoute is SessionDetailRoute &&
+        containsRouteNamed(workDetailRouteName)) {
+      _suppressDockForSessionDetail = true;
+      _sync();
     }
   }
 
   @override
   void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    if (route is PopupRoute<dynamic> && _suppressDockForSessionDetail) {
+      unawaited(
+        route.completed.then((_) {
+          if (_disposed || topRoute is! SessionDetailRoute) return;
+          _suppressDockForSessionDetail = false;
+          WidgetsBinding.instance.addPostFrameCallback((_) => _syncImmediately());
+        }),
+      );
+    }
     if (route is PageRoute<dynamic>) {
+      if (route is SessionDetailRoute) {
+        _suppressDockForSessionDetail = false;
+      }
       final workDetailIndex = _routes.lastIndexWhere(
         (candidate) => candidate.settings.name == workDetailRouteName,
       );
@@ -445,6 +465,9 @@ class _RootPageRouteObserver extends NavigatorObserver {
   @override
   void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) {
     if (route is PageRoute<dynamic>) {
+      if (route is SessionDetailRoute) {
+        _suppressDockForSessionDetail = false;
+      }
       _routes.remove(route);
       _departingRoutes.remove(route);
       _untrackAnimation(route);
@@ -454,6 +477,9 @@ class _RootPageRouteObserver extends NavigatorObserver {
 
   @override
   void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) {
+    if (oldRoute is SessionDetailRoute) {
+      _suppressDockForSessionDetail = false;
+    }
     if (oldRoute is PageRoute<dynamic>) {
       _untrackAnimation(oldRoute);
       final index = _routes.indexOf(oldRoute);
@@ -793,6 +819,7 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp> {
   }
 
   void _syncRoutedPlaybackDock() {
+    if (_routeObserver.suppressDockForSessionDetail) return;
     final workDetailRoute = _routeObserver.lastRouteNamed(workDetailRouteName);
     if (workDetailRoute == null) {
       final departingRoute = _routedPlaybackDockRoute;
@@ -868,19 +895,22 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp> {
             workDetailRouteName,
           );
           return Consumer(
-            builder: (context, ref, _) => _RoutedPlaybackDock(
-              active:
-                  routeActive &&
-                  supportsRoutedDock &&
-                  ref.watch(
-                    mainOverlayUiProvider.select(
-                      (state) => state.overlaySessions.isNotEmpty,
+            builder: (context, ref, _) => Opacity(
+              opacity: _routeObserver.suppressDockForSessionDetail ? 0 : 1,
+              child: _RoutedPlaybackDock(
+                active:
+                    routeActive &&
+                    supportsRoutedDock &&
+                    ref.watch(
+                      mainOverlayUiProvider.select(
+                        (state) => state.overlaySessions.isNotEmpty,
+                      ),
                     ),
-                  ),
-              covered: routeAboveWorkDetail,
-              navigatorKey: _navigatorKey,
-              currentRoute: _routeObserver.topRoute,
-              geometry: _playbackDockGeometry,
+                covered: routeAboveWorkDetail,
+                navigatorKey: _navigatorKey,
+                currentRoute: _routeObserver.topRoute,
+                geometry: _playbackDockGeometry,
+              ),
             ),
           );
         },

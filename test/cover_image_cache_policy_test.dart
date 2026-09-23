@@ -53,11 +53,9 @@ void main() {
   });
 
   test(
-    'background compaction retains cached covers within its budget',
+    'memory pressure releases idle covers but preserves mounted images',
     () async {
-      final cache = ImageCache()
-        ..maximumSize = 500
-        ..maximumSizeBytes = 128 * 1024 * 1024;
+      final cache = ImageCache();
       final picture = ui.PictureRecorder();
       ui.Canvas(
         picture,
@@ -67,32 +65,20 @@ void main() {
         'cover',
         () =>
             OneFrameImageStreamCompleter(Future.value(ImageInfo(image: image))),
-      );
+      )!;
+      final listener = ImageStreamListener((_, _) {});
+      completer.addListener(listener);
       await Future<void>.delayed(Duration.zero);
-      expect(cache.currentSize, 1);
-
-      compactCoverImageCacheForBackground(imageCache: cache);
-
-      expect(cache.maximumSize, 120);
-      expect(cache.maximumSizeBytes, 32 * 1024 * 1024);
-      expect(cache.currentSize, 1);
+      trimCoverImageCacheOnMemoryPressure(imageCache: cache);
+      expect(cache.currentSize, 0);
+      expect(cache.liveImageCount, 1);
       expect(
         cache.putIfAbsent('cover', () => throw StateError('reloaded')),
         same(completer),
       );
+      completer.removeListener(listener);
       cache.clear();
       cache.clearLiveImages();
     },
   );
-
-  test('memory pressure trim clears image cache and live images', () {
-    final cache = ImageCache()
-      ..maximumSize = 300
-      ..maximumSizeBytes = 64 * 1024 * 1024;
-
-    trimCoverImageCacheOnMemoryPressure(imageCache: cache);
-
-    expect(cache.currentSize, 0);
-    expect(cache.currentSizeBytes, 0);
-  });
 }

@@ -59,16 +59,9 @@ void applyCoverImageCachePolicy(
   }
 }
 
-void compactCoverImageCacheForBackground({ImageCache? imageCache}) {
-  final cache = imageCache ?? PaintingBinding.instance.imageCache;
-  applyCoverImageCachePolicy(
-    CoverImageResolution.memorySaver,
-    imageCache: cache,
-  );
-}
-
 void trimCoverImageCacheOnMemoryPressure({ImageCache? imageCache}) {
   final cache = imageCache ?? PaintingBinding.instance.imageCache;
   cache.clear();
-  cache.clearLiveImages();
+  // Mounted covers still own their decoded frames; keep them discoverable so
+  // another card can share the same image after memory pressure.
 }

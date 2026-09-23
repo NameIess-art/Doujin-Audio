@@ -40,7 +40,6 @@ final class PlaybackKeepAliveCoordinator {
   void enterBackground() {
     if (AppPlatform.isAndroid) {
       _enterBackgroundWarmup();
-      compactCoverImageCacheForBackground();
     }
   }
 

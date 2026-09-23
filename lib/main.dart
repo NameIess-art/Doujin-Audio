@@ -508,7 +508,7 @@ class _RoutedPlaybackDockState extends ConsumerState<_RoutedPlaybackDock> {
   }
 
   void _handleGeometryChanged() {
-    if (mounted && _visible && !_expanded) setState(() {});
+    if (mounted && _visible) setState(() {});
   }
 
   @override
@@ -616,16 +616,26 @@ class _RoutedPlaybackDockState extends ConsumerState<_RoutedPlaybackDock> {
     );
 
     if (isLandscapeDock) {
-      final mainRect = widget.geometry.mainDockRect;
       final fallbackWidth = (size.width - 16).clamp(0.0, 244.0);
-      final dockRect =
-          mainRect ??
+      final sourceRect =
+          widget.geometry.mainDockRect ??
           Rect.fromLTWH(
             8,
             size.height - kActiveSessionCarouselDockHeight - 8,
+            kActiveSessionCarouselDockHeight,
+            kActiveSessionCarouselDockHeight,
+          );
+      final expandedRect =
+          widget.geometry.mainExpandedDockRect ??
+          Rect.fromLTWH(
+            sourceRect.left,
+            sourceRect.top,
             fallbackWidth,
             kActiveSessionCarouselDockHeight,
           );
+      final dockRect = _expanded || !widget.geometry.mainDockCollapsed
+          ? expandedRect
+          : sourceRect;
       return SizedBox(
         width: size.width,
         height: size.height,
@@ -635,19 +645,16 @@ class _RoutedPlaybackDockState extends ConsumerState<_RoutedPlaybackDock> {
           child: Stack(
             fit: StackFit.expand,
             children: [
-              Positioned(
+              AnimatedPositioned(
+                duration: duration,
+                curve: Curves.easeOutCubic,
                 left: dockRect.left,
                 top: dockRect.top,
                 width: dockRect.width,
                 height: dockRect.height,
-                child: AnimatedSlide(
-                  duration: duration,
-                  curve: Curves.easeOutCubic,
-                  offset: _expanded ? Offset.zero : const Offset(-1.1, 0),
-                  child: SizedBox.expand(
-                    key: const ValueKey<String>('routed_playback_dock_width'),
-                    child: dockContent(),
-                  ),
+                child: SizedBox.expand(
+                  key: const ValueKey<String>('routed_playback_dock_width'),
+                  child: dockContent(),
                 ),
               ),
             ],
@@ -1011,9 +1018,7 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp> {
               final isWorkDetailRoute =
                   _routeObserver.topRoute?.settings.name == workDetailRouteName;
               final supportsRoutedDock =
-                  defaultTargetPlatform != TargetPlatform.windows &&
-                  mediaQuery.orientation == Orientation.portrait &&
-                  mediaQuery.size.width < 980;
+                  mediaQuery.size.width >= 300 && mediaQuery.size.height >= 300;
               final reserveWorkDetailDockInset =
                   isWorkDetailRoute && supportsRoutedDock && hasOverlaySessions;
               final routeDockInset = reserveWorkDetailDockInset

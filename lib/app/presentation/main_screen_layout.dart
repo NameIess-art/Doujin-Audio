@@ -696,7 +696,13 @@ extension _MainScreenLayout on _MainScreenState {
               padding: const EdgeInsets.only(top: AppSpacing.sm),
               child: LayoutBuilder(
                 builder: (context, constraints) {
-                  _reportDesktopPlaybackRect();
+                  void reportPlaybackRect() => _reportDesktopPlaybackRect(
+                    dockCollapsed: _isMenuCollapsed,
+                    dockAreaWidth: constraints.maxWidth,
+                    expandedDockWidth: railMinExtendedWidth,
+                  );
+
+                  reportPlaybackRect();
                   return Align(
                     alignment: _isMenuCollapsed
                         ? Alignment.center
@@ -705,7 +711,7 @@ extension _MainScreenLayout on _MainScreenState {
                       key: _desktopPlaybackGeometryKey,
                       duration: kThemeAnimationDuration,
                       curve: Curves.easeInOut,
-                      onEnd: _reportDesktopPlaybackRect,
+                      onEnd: reportPlaybackRect,
                       width: _isMenuCollapsed
                           ? kActiveSessionCarouselDockHeight
                           : constraints.maxWidth,

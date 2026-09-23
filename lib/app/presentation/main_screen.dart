@@ -104,14 +104,31 @@ List<_MainDestination> _resolveMainDestinations({
 class PlaybackDockGeometryController extends ChangeNotifier {
   Rect? get mainCoverRect => _mainCoverRect;
   Rect? get mainDockRect => _mainDockRect;
+  Rect? get mainExpandedDockRect => _mainExpandedDockRect;
+  bool get mainDockCollapsed => _mainDockCollapsed;
   double? get mainDockRight => _mainDockRect?.right;
   Rect? _mainCoverRect;
   Rect? _mainDockRect;
+  Rect? _mainExpandedDockRect;
+  bool _mainDockCollapsed = false;
 
-  void updateMainGeometry({required Rect coverRect, required Rect dockRect}) {
-    if (_mainCoverRect == coverRect && _mainDockRect == dockRect) return;
+  void updateMainGeometry({
+    required Rect coverRect,
+    required Rect dockRect,
+    Rect? expandedDockRect,
+    bool dockCollapsed = false,
+  }) {
+    final resolvedExpandedDockRect = expandedDockRect ?? dockRect;
+    if (_mainCoverRect == coverRect &&
+        _mainDockRect == dockRect &&
+        _mainExpandedDockRect == resolvedExpandedDockRect &&
+        _mainDockCollapsed == dockCollapsed) {
+      return;
+    }
     _mainCoverRect = coverRect;
     _mainDockRect = dockRect;
+    _mainExpandedDockRect = resolvedExpandedDockRect;
+    _mainDockCollapsed = dockCollapsed;
     notifyListeners();
   }
 }
@@ -160,7 +177,11 @@ class _MainScreenState extends ConsumerState<MainScreen>
     });
   }
 
-  void _reportDesktopPlaybackRect() {
+  void _reportDesktopPlaybackRect({
+    required bool dockCollapsed,
+    required double dockAreaWidth,
+    required double expandedDockWidth,
+  }) {
     final geometry = widget.playbackDockGeometry;
     if (geometry == null) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -171,11 +192,20 @@ class _MainScreenState extends ConsumerState<MainScreen>
       if (box == null || !box.hasSize) return;
       const inset = 4.0;
       final origin = box.localToGlobal(Offset.zero);
+      final collapsedLeadingInset = dockCollapsed
+          ? (dockAreaWidth - box.size.width) / 2
+          : 0.0;
+      final expandedOrigin = dockCollapsed
+          ? origin - Offset(collapsedLeadingInset, 0)
+          : origin;
       geometry.updateMainGeometry(
         coverRect:
             origin + const Offset(inset, inset) &
             Size.square(box.size.height - inset * 2),
         dockRect: origin & box.size,
+        expandedDockRect:
+            expandedOrigin & Size(expandedDockWidth, box.size.height),
+        dockCollapsed: dockCollapsed,
       );
     });
   }

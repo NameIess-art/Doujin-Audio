@@ -2251,7 +2251,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('landscape playback dock is a sidebar capsule on detail routes', (
+  testWidgets('expanded landscape dock stays unchanged on detail routes', (
     tester,
   ) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.android;
@@ -2275,27 +2275,19 @@ void main() {
       ActiveSessionCarouselPresentation.embedded,
     );
 
-    await tester.tap(find.byIcon(Icons.menu_open_rounded));
-    await tester.pumpAndSettle();
-    expect(tester.getSize(mainCard), const Size.square(48));
-    expect(
-      tester.getSize(
-        find.byKey(
-          const ValueKey<String>('active_session_cover_orientation_session'),
-        ),
-      ),
-      const Size.square(40),
-    );
-
-    await tester.tap(find.byIcon(Icons.menu_rounded));
-    await tester.pumpAndSettle();
     final mainDockRect = tester.getRect(mainCard);
     final navigator = Navigator.of(tester.element(find.byType(MainScreen)));
+    double detailBottomInset = 0;
     final routeFuture = navigator.push<void>(
       buildAppPageRoute<void>(
         context: navigator.context,
         settings: const RouteSettings(name: workDetailRouteName),
-        child: const Scaffold(body: SizedBox.expand()),
+        child: Builder(
+          builder: (context) {
+            detailBottomInset = MobileOverlayInset.of(context);
+            return const Scaffold(body: SizedBox.expand());
+          },
+        ),
       ),
     );
     await tester.pump();
@@ -2304,21 +2296,87 @@ void main() {
       const ValueKey<String>('routed_playback_dock'),
     );
     expect(routeDock, findsOneWidget);
-    await tester.pump(const Duration(milliseconds: 350));
-    final detailDockRect = tester.getRect(routeDock);
-    expect(detailDockRect.left, closeTo(mainDockRect.left, 1));
-    expect(detailDockRect.top, closeTo(mainDockRect.top, 1));
-    expect(detailDockRect.size, mainDockRect.size);
+    final initialDetailDockRect = tester.getRect(routeDock);
+    expect(initialDetailDockRect.left, closeTo(mainDockRect.left, 1));
+    expect(initialDetailDockRect.top, closeTo(mainDockRect.top, 1));
+    expect(initialDetailDockRect.size, mainDockRect.size);
+    expect(detailBottomInset, greaterThan(kActiveSessionCarouselDockHeight));
+    await tester.pump(const Duration(milliseconds: 140));
+    expect(tester.getRect(routeDock), initialDetailDockRect);
 
     navigator.pop();
     await tester.pump();
-    final exitingSlide = tester.widget<AnimatedSlide>(
-      find.ancestor(of: routeDock, matching: find.byType(AnimatedSlide)),
-    );
-    expect(exitingSlide.offset.dx, lessThan(0));
-    final exitStart = tester.getRect(routeDock).left;
     await tester.pump(const Duration(milliseconds: 100));
-    expect(tester.getRect(routeDock).left, lessThan(exitStart));
+    expect(tester.getRect(routeDock), initialDetailDockRect);
+    await routeFuture;
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(routeDock, findsNothing);
+    UiInteractionCoordinator.instance.finishInteractionsForTest();
+    await tester.pump(const Duration(milliseconds: 200));
+    debugDefaultTargetPlatformOverride = null;
+  });
+
+  testWidgets('collapsed landscape dock expands on detail routes', (
+    tester,
+  ) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1400, 800);
+    addTearDown(() {
+      debugDefaultTargetPlatformOverride = null;
+      tester.view.resetDevicePixelRatio();
+      tester.view.resetPhysicalSize();
+    });
+    await _pumpAppShell(tester);
+    await tester.tap(find.byIcon(Icons.menu_open_rounded));
+    await tester.pumpAndSettle();
+
+    final mainCard = find.byKey(
+      const ValueKey<String>('active_session_card_orientation_session'),
+    );
+    final collapsedRect = tester.getRect(mainCard);
+    expect(collapsedRect.size, const Size.square(48));
+    final navigator = Navigator.of(tester.element(find.byType(MainScreen)));
+    double detailBottomInset = 0;
+    final routeFuture = navigator.push<void>(
+      buildAppPageRoute<void>(
+        context: navigator.context,
+        settings: const RouteSettings(name: workDetailRouteName),
+        child: Builder(
+          builder: (context) {
+            detailBottomInset = MobileOverlayInset.of(context);
+            return const Scaffold(body: SizedBox.expand());
+          },
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    final routeDock = find.byKey(
+      const ValueKey<String>('routed_playback_dock'),
+    );
+    final initialRect = tester.getRect(routeDock);
+    expect(initialRect.left, closeTo(collapsedRect.left, 1));
+    expect(initialRect.top, closeTo(collapsedRect.top, 1));
+    expect(initialRect.size, collapsedRect.size);
+    expect(detailBottomInset, greaterThan(kActiveSessionCarouselDockHeight));
+
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 140));
+    final enteringRect = tester.getRect(routeDock);
+    expect(enteringRect.width, greaterThan(collapsedRect.width));
+    await tester.pump(const Duration(milliseconds: 210));
+    final expandedRect = tester.getRect(routeDock);
+    expect(expandedRect.width, greaterThan(200));
+    expect(expandedRect.left, lessThan(collapsedRect.left));
+
+    navigator.pop();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 140));
+    final exitingRect = tester.getRect(routeDock);
+    expect(exitingRect.width, lessThan(expandedRect.width));
+    expect(exitingRect.width, greaterThan(collapsedRect.width));
     await routeFuture;
     await tester.pump(const Duration(milliseconds: 300));
     expect(routeDock, findsNothing);

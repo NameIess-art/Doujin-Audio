@@ -13,7 +13,7 @@ import 'package:doujin_audio/core/media/music_track.dart';
 import 'package:doujin_audio/features/settings/application/settings_state.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/widgets/async_cover_image.dart';
-import 'package:doujin_audio/core/widgets/app_transitions.dart';
+import 'package:doujin_audio/core/widgets/scroll_activity_gate.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 final class _ControlledImageProvider
@@ -310,15 +310,86 @@ void main() {
       ),
     );
 
-    await tester.pumpWidget(buildCover(Future.value('cover.image'), 'cover.image'));
+    await tester.pumpWidget(
+      buildCover(Future.value('cover.image'), 'cover.image'),
+    );
     await tester.pumpWidget(buildCover(pending.future, 'cover.image'));
     expect(find.text('loaded:cover.image'), findsOneWidget);
     expect(find.text('loading'), findsNothing);
 
-    await tester.pumpWidget(buildCover(Completer<String?>().future, 'new.image'));
+    await tester.pumpWidget(
+      buildCover(Completer<String?>().future, 'new.image'),
+    );
     expect(find.text('loaded:new.image'), findsOneWidget);
     expect(find.text('loaded:cover.image'), findsNothing);
     expect(find.text('loading'), findsNothing);
+  });
+
+  testWidgets('resolved cover survives refresh failure and retry exhaustion', (
+    tester,
+  ) async {
+    final refresh = Completer<String?>();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AsyncCoverImage(
+          future: refresh.future,
+          requestKey: 'cover',
+          initialPath: 'saved.image',
+          retryFutureBuilder: () async => null,
+          retryDelay: const Duration(milliseconds: 10),
+          maxRetryAttempts: 1,
+          duration: Duration.zero,
+          imageBuilder: (_, path) => Text(path),
+          fallbackBuilder: (_) => const Text('fallback'),
+        ),
+      ),
+    );
+    refresh.completeError(StateError('temporarily unavailable'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 10));
+    await tester.pump();
+    expect(find.text('saved.image'), findsOneWidget);
+    expect(find.text('fallback'), findsNothing);
+  });
+
+  testWidgets('scroll changes retain the mounted cover element', (
+    tester,
+  ) async {
+    final future = Completer<String?>().future;
+    late BuildContext coverContext;
+    Widget buildCover() => MaterialApp(
+      home: ScrollActivityGate(
+        child: Builder(
+          builder: (context) {
+            coverContext = context;
+            return AsyncCoverImage(
+              future: future,
+              initialPath: 'saved.image',
+              imageBuilder: (_, path) => Text(path),
+              fallbackBuilder: (_) => const Text('fallback'),
+            );
+          },
+        ),
+      ),
+    );
+    await tester.pumpWidget(buildCover());
+    final element = tester.element(find.text('saved.image'));
+    ScrollStartNotification(
+      metrics: FixedScrollMetrics(
+        minScrollExtent: 0,
+        maxScrollExtent: 100,
+        pixels: 0,
+        viewportDimension: 100,
+        axisDirection: AxisDirection.down,
+        devicePixelRatio: 1,
+      ),
+      context: coverContext,
+    ).dispatch(coverContext);
+    await tester.pumpWidget(buildCover());
+    expect(tester.element(find.text('saved.image')), same(element));
+    await tester.pump(const Duration(milliseconds: 200));
+    await tester.pumpWidget(buildCover());
+    expect(tester.element(find.text('saved.image')), same(element));
   });
 
   testWidgets('AsyncCoverImage defers completed cover during interaction', (
@@ -509,7 +580,7 @@ void main() {
   );
 
   testWidgets(
-    'RetryingImage keeps placeholder until first frame then fades for 750ms',
+    'RetryingImage displays the first decoded frame without another loading fade',
     (tester) async {
       final provider = _ControlledImageProvider();
 
@@ -531,14 +602,6 @@ void main() {
       );
 
       expect(
-        tester
-            .widget<PlaceholderContentTransition>(
-              find.byType(PlaceholderContentTransition),
-            )
-            .showPlaceholder,
-        isTrue,
-      );
-      expect(
         find.byKey(const ValueKey<String>('decoding_placeholder')),
         findsOneWidget,
       );
@@ -550,40 +613,10 @@ void main() {
       await tester.pump();
 
       expect(
-        tester
-            .widget<PlaceholderContentTransition>(
-              find.byType(PlaceholderContentTransition),
-            )
-            .showPlaceholder,
-        isFalse,
-      );
-      expect(
-        find.descendant(
-          of: find.byType(PlaceholderContentTransition),
-          matching: find.byType(FadeTransition),
-        ),
-        findsNWidgets(2),
-      );
-      expect(
-        find.byKey(const ValueKey<String>('decoding_placeholder')),
-        findsOneWidget,
-      );
-
-      await tester.pump(
-        kCoverImageFadeDuration - const Duration(milliseconds: 1),
-      );
-      expect(
-        find.byKey(const ValueKey<String>('decoding_placeholder')),
-        findsOneWidget,
-      );
-
-      await tester.pump(const Duration(milliseconds: 1));
-      await tester.pump(const Duration(milliseconds: 1));
-      await tester.pump();
-      expect(
         find.byKey(const ValueKey<String>('decoding_placeholder')),
         findsNothing,
       );
+      expect(find.byType(RawImage), findsOneWidget);
     },
   );
 

@@ -149,10 +149,7 @@ class _AsyncCoverImageState extends State<AsyncCoverImage> {
   }) {
     final token = ++_token;
     final preserveResolvedPath =
-        keepState &&
-        widget.retryFutureBuilder != null &&
-        _resolvedPath != null &&
-        _resolvedPath!.isNotEmpty;
+        keepState && _resolvedPath != null && _resolvedPath!.isNotEmpty;
     _retryTimer?.cancel();
     if (resetRetry) {
       _retryAttempt = 0;
@@ -214,9 +211,6 @@ class _AsyncCoverImageState extends State<AsyncCoverImage> {
       return;
     }
     if (_retryAttempt >= widget.maxRetryAttempts) {
-      if (_resolvedPath != null && _resolvedPath!.isNotEmpty) {
-        setState(() => _resolvedPath = null);
-      }
       return;
     }
     final nextAttempt = _retryAttempt + 1;
@@ -253,13 +247,7 @@ class _AsyncCoverImageState extends State<AsyncCoverImage> {
     final duration = ScrollActivityGate.isScrollingWithoutDependencyOf(context)
         ? Duration.zero
         : widget.duration;
-    if (duration == Duration.zero) {
-      return SizedBox.expand(
-        key: ValueKey('$_resolvedPath$_isResolved'),
-        child: content,
-      );
-    }
-
+    // Keep the image element mounted when scrolling changes the duration.
     return AnimatedSwitcher(
       duration: duration,
       switchInCurve: Curves.easeInOutSine,
@@ -960,19 +948,16 @@ class _RetryingImageState extends State<RetryingImage> {
         frameBuilder: primary
             ? (context, child, frame, wasSynchronouslyLoaded) {
                 if (wasSynchronouslyLoaded ||
+                    frame != null ||
                     !widget.showPlaceholderWhileDecoding) {
                   return child;
                 }
                 final loadingBuilder = widget.loadingBuilder;
-                return PlaceholderContentTransition(
-                  showPlaceholder: frame == null,
-                  placeholder: loadingBuilder != null
-                      ? loadingBuilder(context)
-                      : CoverLoadingArtwork(
-                          placeholder: widget.fallbackBuilder(context),
-                        ),
-                  content: child,
-                );
+                return loadingBuilder != null
+                    ? loadingBuilder(context)
+                    : CoverLoadingArtwork(
+                        placeholder: widget.fallbackBuilder(context),
+                      );
               }
             : null,
         errorBuilder: primary

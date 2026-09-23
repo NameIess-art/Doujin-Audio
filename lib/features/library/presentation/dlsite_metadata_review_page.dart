@@ -667,100 +667,96 @@ class _DlsiteMetadataReviewPageState
                       ],
                     )),
             ),
-            if (_metadata != null && widget.allowSkip)
+            if (_metadata != null)
               Positioned(
                 left: 16,
                 right: 16,
                 bottom: 16 + MediaQuery.paddingOf(context).bottom,
-                child: AppPageContentTransition(child: Row(
-                  children: [
-                    if (widget.onBatchNavigate != null) ...[
-                      HeaderFloatingSurface(
-                        key: const ValueKey<String>(
-                          'dlsite_review_work_navigation',
-                        ),
-                        height: 46,
-                        radius: 23,
-                        padding: const EdgeInsets.symmetric(horizontal: 2),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
+                child: AppPageContentTransition(
+                  child: widget.onBatchNavigate != null
+                      ? Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            IconButton(
-                              key: const ValueKey<String>(
-                                'dlsite_review_previous_work',
+                            SizedBox(
+                              width: 112,
+                              child: _ReviewConfirmButton(
+                                saving: _saving,
+                                onTap: _apply,
+                                label: i18n.tr(
+                                  widget.editing ? 'save' : 'confirm',
+                                ),
                               ),
-                              visualDensity: VisualDensity.compact,
-                              iconSize: 20,
-                              onPressed: !widget.canNavigatePrevious || _saving
-                                  ? null
-                                  : () => _navigateWork(-1),
-                              tooltip: i18n.tr('previous'),
-                              icon: const Icon(Icons.chevron_left_rounded),
                             ),
-                            IconButton(
+                            HeaderFloatingSurface(
                               key: const ValueKey<String>(
-                                'dlsite_review_next_work',
+                                'dlsite_review_work_navigation',
                               ),
-                              visualDensity: VisualDensity.compact,
-                              iconSize: 20,
-                              onPressed: !widget.canNavigateNext || _saving
-                                  ? null
-                                  : () => _navigateWork(1),
-                              tooltip: i18n.tr('next'),
-                              icon: const Icon(Icons.chevron_right_rounded),
+                              height: 46,
+                              radius: 23,
+                              padding: const EdgeInsets.symmetric(horizontal: 4),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  IconButton(
+                                    key: const ValueKey<String>(
+                                      'dlsite_review_previous_work',
+                                    ),
+                                    visualDensity: VisualDensity.compact,
+                                    iconSize: 20,
+                                    onPressed: !widget.canNavigatePrevious || _saving
+                                        ? null
+                                        : () => _navigateWork(-1),
+                                    tooltip: i18n.tr('previous'),
+                                    icon: const Icon(Icons.chevron_left_rounded),
+                                  ),
+                                  if (widget.batchIndex != null &&
+                                      widget.batchTotal != null)
+                                    Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 4,
+                                      ),
+                                      child: Text(
+                                        '${widget.batchIndex}/${widget.batchTotal}',
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .labelLarge
+                                            ?.copyWith(
+                                              color: cs.onSurface,
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                      ),
+                                    ),
+                                  IconButton(
+                                    key: const ValueKey<String>(
+                                      'dlsite_review_next_work',
+                                    ),
+                                    visualDensity: VisualDensity.compact,
+                                    iconSize: 20,
+                                    onPressed: !widget.canNavigateNext || _saving
+                                        ? null
+                                        : () => _navigateWork(1),
+                                    tooltip: i18n.tr('next'),
+                                    icon: const Icon(Icons.chevron_right_rounded),
+                                  ),
+                                ],
+                              ),
                             ),
                           ],
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                    ],
-                    Expanded(
-                      child: HeaderFloatingSurface(
-                        key: const ValueKey<String>('dlsite_review_skip'),
-                        height: 46,
-                        radius: 23,
-                        padding: EdgeInsets.zero,
-                        child: Material(
-                          color: Colors.transparent,
-                          child: InkWell(
-                            borderRadius: BorderRadius.circular(23),
-                            onTap: _saving ? null : _skip,
-                            child: Center(
-                              child: Text(
-                                i18n.tr('skip'),
-                                style: TextStyle(
-                                  color: cs.primary,
-                                  fontWeight: FontWeight.w700,
-                                ),
+                        )
+                      : Align(
+                          alignment: Alignment.centerRight,
+                          child: SizedBox(
+                            width: 112,
+                            child: _ReviewConfirmButton(
+                              saving: _saving,
+                              onTap: _apply,
+                              label: i18n.tr(
+                                widget.editing ? 'save' : 'confirm',
                               ),
                             ),
                           ),
                         ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _ReviewConfirmButton(
-                        saving: _saving,
-                        onTap: _apply,
-                        label: i18n.tr(widget.editing ? 'save' : 'confirm'),
-                      ),
-                    ),
-                  ],
-                )),
-              ),
-            if (_metadata != null && !widget.allowSkip)
-              Positioned(
-                right: 16,
-                bottom: 16 + MediaQuery.paddingOf(context).bottom,
-                child: AppPageContentTransition(child: SizedBox(
-                  width: 112,
-                  child: _ReviewConfirmButton(
-                    saving: _saving,
-                    onTap: _apply,
-                    label: i18n.tr(widget.editing ? 'save' : 'confirm'),
-                  ),
-                )),
+                ),
               ),
             Positioned(
               top: 0,

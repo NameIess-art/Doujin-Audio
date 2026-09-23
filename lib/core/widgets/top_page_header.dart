@@ -1,6 +1,8 @@
 import '../../app/presentation/app_presentation_providers.dart';
+import 'dart:math' as math;
 import 'dart:ui' as dart_ui;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -149,6 +151,7 @@ class TopPageHeader extends ConsumerStatefulWidget {
 }
 
 class _TopPageHeaderState extends ConsumerState<TopPageHeader> {
+  static double _stableTopPadding = 0;
   static const double _titleSwipeDistance = 32;
   static const double _titleSwipeVelocity = 250;
   final ValueNotifier<double> _floatingReveal = ValueNotifier<double>(0);
@@ -270,9 +273,18 @@ class _TopPageHeaderState extends ConsumerState<TopPageHeader> {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final topPadding = widget.useSafeAreaTop
-        ? MediaQuery.paddingOf(context).top
-        : 0.0;
+    final isLandscape =
+        defaultTargetPlatform == TargetPlatform.windows ||
+        MediaQuery.orientationOf(context) == Orientation.landscape;
+    final rawTop = MediaQuery.paddingOf(context).top;
+    if (!isLandscape && rawTop > _stableTopPadding) {
+      _stableTopPadding = rawTop;
+    }
+    final resolvedTop =
+        !isLandscape && _stableTopPadding > 0
+            ? math.max(rawTop, _stableTopPadding)
+            : rawTop;
+    final topPadding = widget.useSafeAreaTop ? resolvedTop : 0.0;
     final resolvedTitle = widget.title;
 
     Widget buildHeaderContent(double collapseT) {

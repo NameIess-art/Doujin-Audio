@@ -148,6 +148,7 @@ class MainScreen extends ConsumerStatefulWidget {
 class _MainScreenState extends ConsumerState<MainScreen>
     with WidgetsBindingObserver {
   static const double _desktopBreakpoint = 980;
+  double _stablePortraitTopPadding = 0;
   bool _isMenuCollapsed = false;
   bool _isMobilePlaybackExpanded = false;
   late final ValueNotifier<int> _activePageIndex;
@@ -1033,16 +1034,41 @@ class _MainScreenState extends ConsumerState<MainScreen>
           );
     final layoutSize = _layoutViewSize();
     final width = layoutSize.width;
+    final mediaQuery = MediaQuery.of(context);
+    final rawTop = mediaQuery.padding.top;
     final isDesktop =
         defaultTargetPlatform == TargetPlatform.windows ||
-        MediaQuery.orientationOf(context) == Orientation.landscape ||
+        mediaQuery.orientation == Orientation.landscape ||
         width >= _desktopBreakpoint;
     final isTinyWindow = width < 300 || layoutSize.height < 300;
     final mobileContentInset = isDesktop ? 0.0 : _mobileContentInset();
 
-    final content = AnnotatedRegion<SystemUiOverlayStyle>(
-      value: overlayStyle,
-      child: Scaffold(
+    if (!isDesktop && rawTop > _stablePortraitTopPadding) {
+      _stablePortraitTopPadding = rawTop;
+    }
+
+    final effectiveTop = !isDesktop && _stablePortraitTopPadding > 0
+        ? max(rawTop, _stablePortraitTopPadding)
+        : rawTop;
+    final effectivePadding = effectiveTop != rawTop
+        ? mediaQuery.padding.copyWith(top: effectiveTop)
+        : mediaQuery.padding;
+    final effectiveViewPadding =
+        !isDesktop && _stablePortraitTopPadding > 0
+            ? mediaQuery.viewPadding.copyWith(
+                top: max(mediaQuery.viewPadding.top, _stablePortraitTopPadding),
+              )
+            : mediaQuery.viewPadding;
+    final effectiveMediaQuery = mediaQuery.copyWith(
+      padding: effectivePadding,
+      viewPadding: effectiveViewPadding,
+    );
+
+    final content = MediaQuery(
+      data: effectiveMediaQuery,
+      child: AnnotatedRegion<SystemUiOverlayStyle>(
+        value: overlayStyle,
+        child: Scaffold(
         extendBody: !isDesktop,
         resizeToAvoidBottomInset: false,
         backgroundColor: Theme.of(context).colorScheme.surface,
@@ -1110,6 +1136,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
           ],
         ),
       ),
+    ),
     );
     return MediaQuery.removeViewInsets(
       key: const ValueKey<String>('main_screen_keyboard_inset_boundary'),

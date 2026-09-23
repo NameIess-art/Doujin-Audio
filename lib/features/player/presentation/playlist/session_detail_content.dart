@@ -1,7 +1,6 @@
 import '../playback_providers.dart';
 import 'dart:async';
 import 'dart:math';
-import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
@@ -9,7 +8,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as path;
 
 import '../../../../app/application/audio_path_coordinator.dart';
-import '../../../../app/presentation/app_presentation_providers.dart';
 import '../../../../app/state/app_runtime_providers.dart';
 import '../../../../core/media/music_track.dart';
 import '../../../../core/media/natural_sort.dart';
@@ -22,7 +20,6 @@ import '../../../../core/widgets/app_bottom_sheet.dart';
 import '../../../../core/widgets/app_feedback.dart';
 import '../../../../core/widgets/app_transitions.dart';
 import '../../../../core/widgets/marquee_text.dart';
-import '../../../../core/widgets/scroll_activity_gate.dart';
 import '../../application/playback_facade.dart';
 import '../../application/playback_session_snapshot.dart';
 import '../../application/playback_time_segment_service.dart';
@@ -492,28 +489,15 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
   Widget build(BuildContext context) {
     final visibleSegmentLabels = _segmentLabels;
     final cs = Theme.of(context).colorScheme;
-    final blurEnabled = ref.watch(uiBlurEnabledProvider);
     final session = widget.session;
     final playback = _playback;
     final paths = _paths;
-    final timeSegments = _timeSegments;
 
     final track = paths.trackByPath(session.currentTrackPath);
     final displayName =
         track?.displayName ??
         path.basenameWithoutExtension(session.currentTrackPath);
-    final i18n = ProviderScope.containerOf(
-      context,
-      listen: false,
-    ).read(appLanguageProviderInstanceProvider);
-    final rootFolderName = paths.rootFolderName(session.currentTrackPath);
-    final folderName = rootFolderName.isNotEmpty
-        ? rootFolderName
-        : (track != null && !track.isSingle && track.groupTitle.isNotEmpty)
-        ? track.groupTitle
-        : track?.isRemoteAsmr == true
-        ? i18n.tr('asmr_online_playback')
-        : i18n.tr('imported_files');
+
     final hasSiblings = session.isPlaybackQueue
         ? session.playbackQueue!.entries.any((entry) => entry.tracks.isNotEmpty)
         : paths.hasOtherTracksInSameWork(session.currentTrackPath);
@@ -566,227 +550,232 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
     final resolvedDetailPadding = widget.detailPadding.resolve(
       Directionality.of(context),
     );
-    final contentColumn = Padding(
-      padding: !widget.isLandscape && _segmentPanelExpanded
-          ? EdgeInsets.fromLTRB(
-              16,
-              resolvedDetailPadding.top,
-              16,
-              resolvedDetailPadding.bottom,
-            )
-          : resolvedDetailPadding,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          AnimatedSwitcher(
-            duration: kAppMotionSlow,
-            reverseDuration: kAppMotionStandard,
-            transitionBuilder: (child, animation) => buildAppFadeTransition(
-              context: context,
-              animation: animation,
-              child: child,
-            ),
-            child: KeyedSubtree(
-              key: ValueKey('info_${session.id}'),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+
+    if (widget.isLandscape) {
+      return Padding(
+        padding: resolvedDetailPadding,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Expanded(
+              flex: 2,
+              child: Stack(
+                fit: StackFit.expand,
                 children: [
-                  MarqueeText(
-                    text: folderName,
-                    allowAndroidMarquee: true,
-                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                      color: sessionDetailForeground(
-                        cs,
-                        SessionDetailForegroundLevel.medium,
-                        darkFallback: cs.onSurface.withValues(alpha: 0.8),
-                      ),
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  SizedBox(
-                    height: 48,
-                    child: MarqueeText(
-                      text: displayName,
-                      pauseDuration: const Duration(seconds: 1),
-                      allowAndroidMarquee: true,
-                      style: Theme.of(context).textTheme.headlineMedium
-                          ?.copyWith(
-                            color: sessionDetailForeground(
-                              cs,
-                              SessionDetailForegroundLevel.strong,
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Expanded(
+                        child: Center(
+                          child: AspectRatio(
+                            aspectRatio: 4 / 3,
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(16),
+                              child: widget.artworkWidget,
                             ),
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: -0.5,
-                            height: 1.1,
                           ),
-                    ),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        height: 36,
+                        child: Center(
+                          child: MarqueeText(
+                            key: ValueKey('title_marquee_${session.id}'),
+                            text: displayName,
+                            pauseDuration: const Duration(seconds: 1),
+                            allowAndroidMarquee: true,
+                            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                              color: sessionDetailForeground(
+                                cs,
+                                SessionDetailForegroundLevel.strong,
+                              ),
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
+                  if (_segmentPanelExpanded)
+                    Positioned.fill(
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(16),
+                        child: ColoredBox(
+                          color: cs.surface,
+                          child: _buildSegmentPanel(
+                            playback: playback,
+                            session: session,
+                            labels: visibleSegmentLabels,
+                            key: const ValueKey('segments_landscape'),
+                          ),
+                        ),
+                      ),
+                    ),
                 ],
               ),
             ),
-          ),
-          if (!_segmentPanelExpanded || widget.isLandscape)
-            RepaintBoundary(
-              child: SessionSubtitlePanel(
-                transitionActive: widget.transitionActive,
-                session: session,
-                subtitleEnabled: widget.subtitleEnabled,
-              ),
-            ),
-          RepaintBoundary(child: buildProgressBar()),
-          buildTransportControls(),
-          if (!widget.isLandscape)
-            AnimatedSwitcher(
-              duration: const Duration(milliseconds: 280),
-              switchInCurve: Curves.easeOutCubic,
-              switchOutCurve: Curves.easeInCubic,
-              transitionBuilder: (child, animation) {
-                return SlideTransition(
-                  position: Tween<Offset>(
-                    begin: const Offset(0.0, 0.2),
-                    end: Offset.zero,
-                  ).animate(animation),
-                  child: FadeTransition(opacity: animation, child: child),
-                );
-              },
-              child: _segmentPanelExpanded
-                  ? _buildSegmentPanel(
-                      playback: playback,
-                      session: session,
-                      labels: visibleSegmentLabels,
-                      key: const ValueKey('segments'),
-                    )
-                  : const SizedBox.shrink(key: ValueKey('segments_closed')),
-            ),
-        ],
-      ),
-    );
-
-    if (widget.isLandscape) {
-      return Row(
-        children: [
-          Expanded(
-            child: Stack(
-              children: [
-                widget.artworkWidget,
-                Positioned.fill(
-                  child: AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 280),
-                    switchInCurve: Curves.easeOutCubic,
-                    switchOutCurve: Curves.easeInCubic,
-                    transitionBuilder: (child, animation) {
-                      return SlideTransition(
-                        position: Tween<Offset>(
-                          begin: const Offset(0.0, 0.2),
-                          end: Offset.zero,
-                        ).animate(animation),
-                        child: FadeTransition(opacity: animation, child: child),
-                      );
-                    },
-                    child: _segmentPanelExpanded
-                        ? SizedBox.expand(
-                            key: const ValueKey('segments_landscape_container'),
-                            child: ClipRRect(
-                              borderRadius: const BorderRadius.only(
-                                topLeft: Radius.circular(16),
-                                topRight: Radius.circular(16),
-                                bottomRight: Radius.circular(16),
-                              ),
-                              child: Builder(
-                                builder: (context) {
-                                  final panelBody = Container(
-                                    color: blurEnabled
-                                        ? cs.surface.withValues(alpha: 0.85)
-                                        : cs.surface,
-                                    child: SafeArea(
-                                      child: Padding(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 16,
-                                          vertical: 16,
-                                        ),
-                                        child: TimeSegmentPanel(
-                                          key: const ValueKey(
-                                            'segments_landscape',
-                                          ),
-                                          session: session,
-                                          playback: playback,
-                                          labels: visibleSegmentLabels,
-                                          selectedId: _selectedSegmentId,
-                                          showEditor: _segmentEditorVisible,
-                                          loading: _segmentLoading,
-                                          nameController: _segmentNameController,
-                                          draftStart: _draftStart,
-                                          draftEnd: _draftEnd,
-                                          draftColorValue: _draftColorValue,
-                                          loopSegmentId: timeSegments
-                                              .loopLabelIdForSession(
-                                                session.id,
-                                                trackKey: _segmentTrackKey,
-                                              ),
-                                          onSelect: _selectSegment,
-                                          onAdd: _startNewSegment,
-                                          onSetStart: _setDraftStartToCurrent,
-                                          onSetEnd: _setDraftEndToCurrent,
-                                          onEditStart: () =>
-                                              _editDraftTime(isStart: true),
-                                          onEditEnd: () =>
-                                              _editDraftTime(isStart: false),
-                                          onDelete: _deleteSelectedSegment,
-                                          onToggleLoop:
-                                              _toggleSelectedSegmentLoop,
-                                          onClose: collapseSegmentPanel,
-                                        ),
-                                      ),
-                                    ),
-                                  );
-                                  return blurEnabled
-                                      ? BackdropFilter(
-                                          filter: ImageFilter.blur(
-                                            sigmaX: 16,
-                                            sigmaY: 16,
-                                          ),
-                                          child: panelBody,
-                                        )
-                                      : panelBody;
-                                },
-                              ),
-                            ),
-                          )
-                        : const SizedBox.shrink(
-                            key: ValueKey('segments_landscape_closed'),
-                          ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Expanded(
-            child: LayoutBuilder(
-              builder: (context, scrollConstraints) {
-                return ScrollActivityGate(
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.symmetric(vertical: 24),
-                    child: ConstrainedBox(
-                      constraints: BoxConstraints(
-                        minHeight: max(0.0, scrollConstraints.maxHeight - 48),
+            const SizedBox(width: 12),
+            Expanded(
+              flex: 3,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Expanded(
+                    child: RepaintBoundary(
+                      child: SessionSubtitlePanel(
+                        transitionActive: widget.transitionActive,
+                        session: session,
+                        subtitleEnabled: widget.subtitleEnabled,
                       ),
-                      child: Center(child: contentColumn),
                     ),
                   ),
-                );
-              },
+                  RepaintBoundary(child: buildProgressBar()),
+                  buildTransportControls(),
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       );
     }
 
-    return Column(
-      children: [
-        if (!_segmentPanelExpanded) Expanded(child: widget.artworkWidget),
-        contentColumn,
-      ],
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final coverHeight = _segmentPanelExpanded
+            ? 42.0
+            : (constraints.maxWidth * 3 / 4);
+
+        return Padding(
+          padding: EdgeInsets.only(
+            top: resolvedDetailPadding.top,
+            bottom: resolvedDetailPadding.bottom,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 280),
+                curve: Curves.easeInOutCubic,
+                height: coverHeight,
+                width: double.infinity,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(16),
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      if (!_segmentPanelExpanded) widget.artworkWidget,
+                      Align(
+                        alignment: Alignment.bottomCenter,
+                        child: Container(
+                          height: 42,
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          alignment: Alignment.centerLeft,
+                          decoration: BoxDecoration(
+                            gradient: _segmentPanelExpanded
+                                ? null
+                                : LinearGradient(
+                                    begin: Alignment.topCenter,
+                                    end: Alignment.bottomCenter,
+                                    colors: [
+                                      Colors.black.withValues(alpha: 0.0),
+                                      Colors.black.withValues(alpha: 0.65),
+                                    ],
+                                  ),
+                            color: _segmentPanelExpanded
+                                ? cs.surfaceContainerHighest.withValues(alpha: 0.95)
+                                : null,
+                          ),
+                          child: MarqueeText(
+                            key: ValueKey('title_marquee_${session.id}'),
+                            text: displayName,
+                            allowAndroidMarquee: true,
+                            pauseDuration: const Duration(seconds: 1),
+                            style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                              color: _segmentPanelExpanded
+                                  ? sessionDetailForeground(
+                                      cs,
+                                      SessionDetailForegroundLevel.medium,
+                                      darkFallback: cs.onSurface.withValues(alpha: 0.8),
+                                    )
+                                  : Colors.white.withValues(alpha: 0.85),
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              Expanded(
+                child: Padding(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: resolvedDetailPadding.left,
+                  ),
+                  child: RepaintBoundary(
+                    child: SessionSubtitlePanel(
+                      transitionActive: widget.transitionActive,
+                      session: session,
+                      subtitleEnabled: widget.subtitleEnabled,
+                    ),
+                  ),
+                ),
+              ),
+              Padding(
+                padding: EdgeInsets.symmetric(
+                  horizontal: resolvedDetailPadding.left,
+                ),
+                child: RepaintBoundary(child: buildProgressBar()),
+              ),
+              Padding(
+                padding: EdgeInsets.symmetric(
+                  horizontal: resolvedDetailPadding.left,
+                ),
+                child: buildTransportControls(),
+              ),
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 280),
+                switchInCurve: Curves.easeOutCubic,
+                switchOutCurve: Curves.easeInCubic,
+                transitionBuilder: (child, animation) {
+                  return SizeTransition(
+                    sizeFactor: animation,
+                    axisAlignment: -1.0,
+                    child: SlideTransition(
+                      position: Tween<Offset>(
+                        begin: const Offset(0.0, 0.2),
+                        end: Offset.zero,
+                      ).animate(animation),
+                      child: FadeTransition(opacity: animation, child: child),
+                    ),
+                  );
+                },
+                child: _segmentPanelExpanded
+                    ? Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: ConstrainedBox(
+                          constraints: BoxConstraints(
+                            maxHeight: max(
+                              220.0,
+                              constraints.maxHeight - coverHeight - 44.0 - 92.0 - 50.0,
+                            ),
+                          ),
+                          child: _buildSegmentPanel(
+                            playback: playback,
+                            session: session,
+                            labels: visibleSegmentLabels,
+                            key: const ValueKey('segments'),
+                          ),
+                        ),
+                      )
+                    : const SizedBox.shrink(key: ValueKey('segments_closed')),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 

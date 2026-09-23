@@ -174,12 +174,15 @@ class _AsyncCoverImageState extends State<AsyncCoverImage> {
             commit: () {
               if (!mounted || token != _token) return;
               final hasResolvedPath = path != null && path.isNotEmpty;
-              setState(() {
-                if (hasResolvedPath || !preserveResolvedPath) {
-                  _resolvedPath = path;
-                }
-                _isResolved = true;
-              });
+              final nextPath = hasResolvedPath || !preserveResolvedPath
+                  ? path
+                  : _resolvedPath;
+              if (!_isResolved || _resolvedPath != nextPath) {
+                setState(() {
+                  _resolvedPath = nextPath;
+                  _isResolved = true;
+                });
+              }
               if (path == null || path.isEmpty) {
                 _scheduleRetry(token);
               } else {
@@ -195,10 +198,12 @@ class _AsyncCoverImageState extends State<AsyncCoverImage> {
             priority: 20,
             commit: () {
               if (!mounted || token != _token) return;
-              setState(() {
-                if (!preserveResolvedPath) _resolvedPath = null;
-                _isResolved = true;
-              });
+              if (!_isResolved || (!preserveResolvedPath && _resolvedPath != null)) {
+                setState(() {
+                  if (!preserveResolvedPath) _resolvedPath = null;
+                  _isResolved = true;
+                });
+              }
               _scheduleRetry(token);
             },
           );

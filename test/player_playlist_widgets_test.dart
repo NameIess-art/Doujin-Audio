@@ -4067,7 +4067,7 @@ void main() {
     },
   );
 
-  testWidgets('detail loading subtitle fades while the cover resizes', (
+  testWidgets('detail loading subtitle fades while the cover remains fixed at 4:3', (
     tester,
   ) async {
     final subtitleTrack = SubtitleTrack(
@@ -4084,6 +4084,7 @@ void main() {
       const ValueKey('session_detail_cover_subtitle-session'),
     );
     final initialCoverHeight = tester.getSize(cover).height;
+    expect(initialCoverHeight, 270.0);
 
     result.session.beginPreparation(showLoading: true, autoPlay: true);
     result.fixture.playbackService.markActiveSessionsDirty();
@@ -4108,11 +4109,11 @@ void main() {
     expect(fadeIn.opacity.value, greaterThan(0));
     expect(fadeIn.opacity.value, lessThan(1));
     final midCoverHeight = tester.getSize(cover).height;
+    expect(midCoverHeight, 270.0);
 
     await tester.pump(const Duration(milliseconds: 220));
     final loadingCoverHeight = tester.getSize(cover).height;
-    expect(initialCoverHeight, greaterThan(midCoverHeight));
-    expect(midCoverHeight, greaterThan(loadingCoverHeight));
+    expect(loadingCoverHeight, 270.0);
 
     result.session.finishPreparation(
       result.session.loadGeneration,
@@ -4145,7 +4146,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 250));
     expect(find.text(loadingText), findsNothing);
     await tester.pump(const Duration(milliseconds: 250));
-    expect(tester.getSize(cover).height, greaterThan(loadingCoverHeight));
+    expect(tester.getSize(cover).height, 270.0);
   });
 
   testWidgets(
@@ -4207,10 +4208,10 @@ void main() {
         find.ancestor(of: cue, matching: find.byType(Opacity)).first,
       );
 
-      expect(tester.getSize(viewport).height, 96);
-      expect(opacityFor(cue0).opacity, 0.45);
+      expect(tester.getSize(viewport).height, 271.0);
+      expect(opacityFor(cue0).opacity, 0.30);
       expect(opacityFor(cue1).opacity, 1);
-      expect(opacityFor(cue2).opacity, 0.45);
+      expect(opacityFor(cue2).opacity, 0.30);
       expect(
         tester.getCenter(cue1).dy,
         closeTo(tester.getCenter(viewport).dy, 0.1),
@@ -4259,7 +4260,7 @@ void main() {
       expect(opacityFor(cue2).opacity, 1);
       expect(
         tester.getCenter(cue2).dy,
-        closeTo(tester.getCenter(viewport).dy, 0.5),
+        closeTo(tester.getCenter(viewport).dy, 1.0),
       );
       expect(
         find.byKey(const ValueKey<String>('subtitle_timeline_seek_button')),

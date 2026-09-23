@@ -291,7 +291,7 @@ void main() {
     },
   );
 
-  testWidgets('metadata review batch mode shows progress and skip action', (
+  testWidgets('metadata review batch mode shows navigation with count and confirm action', (
     WidgetTester tester,
   ) async {
     tester.view.devicePixelRatio = 1;
@@ -361,7 +361,6 @@ void main() {
       ),
       findsOneWidget,
     );
-    expect(find.text(languageProvider.tr('skip')), findsOneWidget);
     expect(
       find.byKey(const ValueKey<String>('dlsite_review_header')),
       findsOneWidget,
@@ -369,14 +368,10 @@ void main() {
     final confirm = find.byKey(const ValueKey<String>('dlsite_review_confirm'));
     expect(confirm, findsOneWidget);
     final skip = find.byKey(const ValueKey<String>('dlsite_review_skip'));
-    expect(skip, findsOneWidget);
+    expect(skip, findsNothing);
     expect(
       find.descendant(of: find.byType(ListView), matching: confirm),
       findsNothing,
-    );
-    expect(
-      tester.getSize(skip).width,
-      closeTo(tester.getSize(confirm).width, 0.001),
     );
     final previousWork = tester.widget<IconButton>(
       find.byKey(const ValueKey<String>('dlsite_review_previous_work')),
@@ -396,10 +391,17 @@ void main() {
       ),
       findsNothing,
     );
-    expect(tester.getTopLeft(workNavigation).dy, tester.getTopLeft(skip).dy);
     expect(
-      tester.getCenter(workNavigation).dx,
-      lessThan(tester.getCenter(skip).dx),
+      find.descendant(of: workNavigation, matching: find.text('2/3')),
+      findsOneWidget,
+    );
+    expect(
+      tester.getTopLeft(confirm).dy,
+      closeTo(tester.getTopLeft(workNavigation).dy, 0.001),
+    );
+    expect(
+      tester.getCenter(confirm).dx,
+      lessThan(tester.getCenter(workNavigation).dx),
     );
     final targetName = tester.widget<Text>(
       find.descendant(

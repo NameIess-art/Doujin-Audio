@@ -5,6 +5,7 @@ import 'features/asmr/presentation/asmr_providers.dart';
 import 'features/settings/presentation/settings_providers.dart';
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:audio_session/audio_session.dart';
 import 'package:media_kit/media_kit.dart';
@@ -740,6 +741,7 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp> {
   bool _routedPlaybackDockSyncScheduled = false;
   var _restoreOutcomeScheduled = false;
   var _runtimeBootstrapSettledNotified = false;
+  double _stablePortraitTopPadding = 0;
   StreamSubscription<VideoConversionResult>? _conversionSubscription;
 
   @override
@@ -994,6 +996,37 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp> {
       ),
       builder: (context, child) {
         final mediaQuery = MediaQuery.of(context);
+        final rawTop = mediaQuery.padding.top;
+        final isLandscape =
+            defaultTargetPlatform == TargetPlatform.windows ||
+            mediaQuery.orientation == Orientation.landscape;
+
+        if (!isLandscape && rawTop > _stablePortraitTopPadding) {
+          _stablePortraitTopPadding = rawTop;
+        }
+
+        final effectiveTop = !isLandscape && _stablePortraitTopPadding > 0
+            ? math.max(rawTop, _stablePortraitTopPadding)
+            : rawTop;
+        final effectivePadding = effectiveTop != rawTop
+            ? mediaQuery.padding.copyWith(top: effectiveTop)
+            : mediaQuery.padding;
+        final effectiveViewPadding =
+            !isLandscape && _stablePortraitTopPadding > 0
+                ? mediaQuery.viewPadding.copyWith(
+                    top: math.max(
+                      mediaQuery.viewPadding.top,
+                      _stablePortraitTopPadding,
+                    ),
+                  )
+                : mediaQuery.viewPadding;
+
+        final effectiveMediaQuery = mediaQuery.copyWith(
+          padding: effectivePadding,
+          viewPadding: effectiveViewPadding,
+          disableAnimations: reduceAnimations || mediaQuery.disableAnimations,
+        );
+
         final navigatorChild = defaultTargetPlatform == TargetPlatform.windows
             ? ListenableBuilder(
                 listenable: _runtimeBootstrapController,
@@ -1008,9 +1041,7 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp> {
               )
             : child ?? const SizedBox();
         return MediaQuery(
-          data: mediaQuery.copyWith(
-            disableAnimations: reduceAnimations || mediaQuery.disableAnimations,
-          ),
+          data: effectiveMediaQuery,
           child: ValueListenableBuilder<int>(
             valueListenable: _routeRevision,
             child: navigatorChild,

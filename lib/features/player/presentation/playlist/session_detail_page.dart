@@ -9,6 +9,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/physics.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../app/presentation/app_presentation_providers.dart';
@@ -77,9 +78,13 @@ class SessionDetailRoute extends PageRoute<void> {
     Animation<double> animation,
     Animation<double> secondaryAnimation,
   ) {
-    return SessionDetailPage(
-      sessionId: sessionId,
-      revealBehindNotifier: _revealBehindNotifier,
+    return MediaQuery.removePadding(
+      context: context,
+      removeTop: true,
+      child: SessionDetailPage(
+        sessionId: sessionId,
+        revealBehindNotifier: _revealBehindNotifier,
+      ),
     );
   }
 
@@ -247,6 +252,16 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
   @override
   void initState() {
     super.initState();
+    _systemUiRestored = false;
+    if (defaultTargetPlatform == TargetPlatform.android ||
+        defaultTargetPlatform == TargetPlatform.iOS) {
+      unawaited(
+        SystemChrome.setEnabledSystemUIMode(
+          SystemUiMode.manual,
+          overlays: const [SystemUiOverlay.bottom],
+        ),
+      );
+    }
     _dismissController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 180),
@@ -265,8 +280,22 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
         _closing;
   }
 
+  bool _systemUiRestored = false;
+
+  void _restoreSystemUiMode() {
+    if (_systemUiRestored) return;
+    _systemUiRestored = true;
+    if (defaultTargetPlatform == TargetPlatform.android ||
+        defaultTargetPlatform == TargetPlatform.iOS) {
+      unawaited(
+        SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge),
+      );
+    }
+  }
+
   @override
   void dispose() {
+    _restoreSystemUiMode();
     _dismissOperation++;
     UiInteractionCoordinator.instance.cancelInteraction(
       _dismissInteractionSource,
@@ -393,6 +422,7 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
   }) async {
     if (_closing) return;
     _closing = true;
+    _restoreSystemUiMode();
     final operation = ++_dismissOperation;
     ref
         .read(playlistUiControllerProvider)
@@ -445,9 +475,15 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
       _dismissController,
     ]);
 
-    return Material(
-      color: Colors.transparent,
-      child: AnimatedBuilder(
+    return PopScope(
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) {
+          _restoreSystemUiMode();
+        }
+      },
+      child: Material(
+        color: Colors.transparent,
+        child: AnimatedBuilder(
         animation: animatedListenable,
         builder: (context, child) {
           final rawEnterProgress = min(
@@ -571,6 +607,7 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
           ),
         ),
       ),
+    ),
     );
   }
 }
@@ -896,8 +933,27 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                 ),
               // Content
               SafeArea(
+                top: false,
                 child: LayoutBuilder(
                   builder: (context, constraints) {
+                    final isWindows =
+                        defaultTargetPlatform == TargetPlatform.windows;
+                    final isLandscape =
+                        isWindows ||
+                        MediaQuery.orientationOf(context) ==
+                            Orientation.landscape;
+                    final topBarHeight = isWindows
+                        ? 40.0
+                        : (isLandscape ? 28.0 : 24.0);
+                    final closeIconSize = isWindows
+                        ? 28.0
+                        : (isLandscape ? 24.0 : 22.0);
+                    final closeConstraints = isWindows
+                        ? const BoxConstraints(minWidth: 40, minHeight: 40)
+                        : (isLandscape
+                            ? const BoxConstraints(minWidth: 36, minHeight: 28)
+                            : const BoxConstraints(minWidth: 32, minHeight: 24));
+
                     return Column(
                       children: [
                         // Top Bar — outside drag GestureDetector so taps work
@@ -933,17 +989,24 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                                       IconButton(
                                         onPressed: onClose,
                                         tooltip: i18n.tr('close'),
+                                        padding: isLandscape
+                                            ? const EdgeInsets.all(8)
+                                            : EdgeInsets.zero,
+                                        constraints: closeConstraints,
+                                        visualDensity: isLandscape
+                                            ? VisualDensity.standard
+                                            : VisualDensity.compact,
                                         icon: Icon(
                                           Icons.keyboard_arrow_down_rounded,
                                           color: sessionDetailForeground(
                                             cs,
                                             SessionDetailForegroundLevel.muted,
                                           ),
-                                          size: 32,
+                                          size: closeIconSize,
                                         ),
                                       ),
-                                      const Expanded(
-                                        child: SizedBox(height: 48),
+                                      Expanded(
+                                        child: SizedBox(height: topBarHeight),
                                       ),
                                       if (hasSubtitle &&
                                           settings.$1 &&
@@ -954,9 +1017,9 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                                             cs,
                                             SessionDetailForegroundLevel.muted,
                                           ),
-                                          size: 20,
+                                          size: isLandscape ? 20 : 18,
                                         ),
-                                        const SizedBox(width: 8),
+                                        SizedBox(width: isLandscape ? 8 : 6),
                                       ],
                                       Consumer(
                                         builder: (context, ref, child) {
@@ -992,11 +1055,13 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                                                   SessionDetailForegroundLevel
                                                       .muted,
                                                 ),
-                                                iconSize: 20,
-                                                spacing: 8,
+                                                iconSize: isLandscape ? 20 : 18,
+                                                spacing: isLandscape ? 8 : 6,
                                                 alignment: WrapAlignment.end,
                                               ),
-                                              const SizedBox(width: 8),
+                                              SizedBox(
+                                                width: isLandscape ? 8 : 6,
+                                              ),
                                             ],
                                           );
                                         },
@@ -1012,11 +1077,7 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                         Expanded(
                           child: Builder(
                             builder: (context) {
-                              final isLandscape =
-                                  defaultTargetPlatform ==
-                                      TargetPlatform.windows ||
-                                  MediaQuery.orientationOf(context) ==
-                                  Orientation.landscape;
+
                               Widget artworkWidget = AnimatedSwitcher(
                                 duration: kAppMotionSlow,
                                 reverseDuration: kAppMotionStandard,
@@ -1047,28 +1108,13 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                                 ),
                               );
 
-                              if (isLandscape) {
-                                artworkWidget = Center(
-                                  child: AspectRatio(
-                                    aspectRatio: 1.0,
-                                    child: artworkWidget,
-                                  ),
-                                );
-                              }
-
-                              final artwork = Padding(
-                                padding: EdgeInsets.symmetric(
-                                  horizontal: isLandscape ? 48.0 : 32.0,
-                                  vertical: isLandscape ? 32.0 : 0.0,
-                                ),
-                                child: artworkWidget,
-                              );
+                              final artwork = artworkWidget;
 
                               final detailPadding = EdgeInsets.fromLTRB(
-                                isLandscape ? 12 : 28,
-                                isLandscape ? 0 : 12,
-                                isLandscape ? 64 : 28,
-                                isLandscape ? 32 : 8,
+                                isLandscape ? 8 : 28,
+                                0,
+                                isLandscape ? 8 : 28,
+                                isLandscape ? 8 : 8,
                               );
                               final subtitles = ref.read(
                                 playbackSubtitleServiceProvider,

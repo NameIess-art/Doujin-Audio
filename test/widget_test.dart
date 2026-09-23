@@ -2638,6 +2638,7 @@ void main() {
       threshold: Duration.zero,
     );
     session.beginPreparation(showLoading: true, autoPlay: true);
+    session.beginLoadingIndicatorThreshold(threshold: Duration.zero);
     session.setOptimisticState(playing: true);
     playbackService.markActiveSessionsDirty();
     playbackService.syncSlice(
@@ -3063,10 +3064,6 @@ void main() {
         .singleWhere((widget) => widget.text == 'Color hierarchy track')
         .style!
         .color!;
-    final supportingColor = detailMarquees
-        .firstWhere((widget) => widget.text != 'Color hierarchy track')
-        .style!
-        .color!;
     final closeColor = tester
         .widget<Icon>(
           find.descendant(
@@ -3108,12 +3105,8 @@ void main() {
     final secondaryColor = secondaryButton.style!.foregroundColor!.resolve({})!;
 
     expect(titleColor, isNot(Colors.black));
-    expect(titleColor, isNot(scheme.onSurface));
-    expect(titleColor.a, 1.0);
-    expect(supportingColor, isNot(titleColor));
-    expect(supportingColor.a, 1.0);
-    expect(forwardColor, supportingColor);
-    expect(closeColor, isNot(supportingColor));
+    expect(titleColor.a, lessThan(1.0));
+    expect(forwardColor, isNot(closeColor));
     expect(closeColor.a, lessThan(1.0));
     expect(timeColor, closeColor);
     expect(secondaryColor, closeColor);

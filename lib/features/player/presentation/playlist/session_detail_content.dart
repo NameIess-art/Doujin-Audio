@@ -532,18 +532,16 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
             : expandSegmentPanel,
         onToggleSubtitle: widget.onToggleSubtitle,
         onToggleGlobalSubtitle: widget.onToggleGlobalSubtitle,
-        onShowSubtitleMenu: track?.isVideo == true
-            ? null
-            : () {
-                unawaited(
-                  showSubtitleMenuBottomSheet(
-                    context: context,
-                    session: session,
-                    canImportSubtitle: track?.isRemoteAsmr != true,
-                    onToggleGlobalSubtitle: widget.onToggleGlobalSubtitle,
-                  ),
-                );
-              },
+        onShowSubtitleMenu: () {
+          unawaited(
+            showSubtitleMenuBottomSheet(
+              context: context,
+              session: session,
+              canImportSubtitle: track?.isRemoteAsmr != true,
+              onToggleGlobalSubtitle: widget.onToggleGlobalSubtitle,
+            ),
+          );
+        },
       );
     }
 

@@ -52,54 +52,42 @@ class AppPageHeaderTransition extends StatelessWidget {
   }
 }
 
-Widget _buildPageContentSlideTransition({
-  required BuildContext context,
-  required Animation<double> animation,
-  required Widget child,
-}) {
-  if (MediaQuery.disableAnimationsOf(context)) return child;
-  return SlideTransition(
-    position: animation.drive(
-      Tween<Offset>(
-        begin: const Offset(1, 0),
-        end: Offset.zero,
-      ).chain(CurveTween(curve: Curves.easeOutCubic)),
-    ),
-    child: child,
-  );
-}
-
-Widget _buildSeparatedPageTransition({
+Widget _buildCoveringPageTransition({
   required BuildContext context,
   required Animation<double> animation,
   required Animation<double> secondaryAnimation,
   required Widget child,
 }) {
   if (MediaQuery.disableAnimationsOf(context)) return child;
-  final regions = _AppPageMotionScope(
-    contentBuilder: (context, child) => _buildPageContentSlideTransition(
-      context: context,
-      animation: animation,
-      child: child,
+  return ClipRect(
+    child: FadeTransition(
+      opacity: animation.drive(CurveTween(curve: Curves.easeInOutCubic)),
+      child: _AppPageMotionScope(
+        contentBuilder: (context, content) => SlideTransition(
+          position: animation.drive(
+            Tween<Offset>(
+              begin: const Offset(1, 0),
+              end: Offset.zero,
+            ).chain(CurveTween(curve: Curves.easeInOutCubic)),
+          ),
+          child: content,
+        ),
+        headerBuilder: (context, header) => AnimatedBuilder(
+          animation: Listenable.merge([animation, secondaryAnimation]),
+          child: header,
+          builder: (context, header) {
+            final incoming = Curves.easeOutCubic.transform(
+              (animation.value / 0.6).clamp(0.0, 1.0),
+            );
+            final outgoing = Curves.easeOutCubic.transform(
+              (secondaryAnimation.value / 0.6).clamp(0.0, 1.0),
+            );
+            return Opacity(opacity: incoming * (1 - outgoing), child: header);
+          },
+        ),
+        child: child,
+      ),
     ),
-    headerBuilder: (context, child) => AnimatedBuilder(
-      animation: Listenable.merge([animation, secondaryAnimation]),
-      child: child,
-      builder: (context, child) {
-        final incoming = Curves.easeOutCubic.transform(
-          (animation.value / 0.6).clamp(0.0, 1.0),
-        );
-        final outgoing = Curves.easeOutCubic.transform(
-          (secondaryAnimation.value / 0.6).clamp(0.0, 1.0),
-        );
-        return Opacity(opacity: incoming * (1 - outgoing), child: child);
-      },
-    ),
-    child: child,
-  );
-  return FadeTransition(
-    opacity: animation.drive(CurveTween(curve: const Interval(0, 0.2))),
-    child: regions,
   );
 }
 
@@ -869,7 +857,7 @@ class AppPageTransitionsBuilder extends PageTransitionsBuilder {
     Animation<double> secondaryAnimation,
     Widget child,
   ) {
-    return _buildSeparatedPageTransition(
+    return _buildCoveringPageTransition(
       context: context,
       animation: animation,
       secondaryAnimation: secondaryAnimation,
@@ -892,7 +880,7 @@ PageRouteBuilder<T> buildAppPageRoute<T>({
     reverseTransitionDuration: reducedMotion ? Duration.zero : reverseDuration,
     pageBuilder: (context, animation, secondaryAnimation) => child,
     transitionsBuilder: (context, animation, secondaryAnimation, routedChild) {
-      return _buildSeparatedPageTransition(
+      return _buildCoveringPageTransition(
         context: context,
         animation: animation,
         secondaryAnimation: secondaryAnimation,

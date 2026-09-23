@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'support/test_playback_commands.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
 import 'support/test_persistence_repository.dart';
 import 'package:doujin_audio/features/player/application/playback_facade.dart';
@@ -23,7 +24,7 @@ void main() {
   );
 
   test(
-    'direct playback reuses one temporary session and excludes it from persistence',
+    'direct playback reuses one temporary session and persists its latest track',
     () async {
       final repository = _RecordingRepository();
       final facade = PlaybackFacade.create(databaseRepository: repository);
@@ -56,7 +57,9 @@ void main() {
       expect(first.currentTrackPath, track('b').path);
       expect(first.isTemporary, isTrue);
       await facade.savePersistedState();
-      expect(repository.saved, isEmpty);
+      expect(repository.saved.single.id, first.id);
+      expect(repository.saved.single.trackPath, track('b').path);
+      expect(repository.saved.single.isTemporary, isTrue);
       first.lastKnownPosition = const Duration(seconds: 12);
       await facade.addTrackToPlaylist(track('b'));
       expect(first.isTemporary, isTrue);
@@ -65,7 +68,11 @@ void main() {
       await facade.addTrackToPlaylist(track('b'));
       expect(facade.sessions, hasLength(2));
       await facade.savePersistedState();
-      expect(repository.saved.single.id, isNot(first.id));
+      expect(repository.saved, hasLength(2));
+      expect(
+        repository.saved.singleWhere((item) => item.isTemporary).id,
+        first.id,
+      );
       await facade.playDirect([track('other-work')]);
       expect(
         facade.sessions.values.where((s) => s.isTemporary).single,
@@ -100,6 +107,94 @@ void main() {
       );
     },
   );
+
+  test('restart restores the last direct playback entry paused', () async {
+    SharedPreferences.setMockInitialValues(const <String, Object>{});
+    final repository = _RecordingRepository();
+    final original = PlaybackFacade.create(databaseRepository: repository);
+    addTearDown(original.dispose);
+    original.attachPlaybackCommands(
+      prepareSession:
+          (
+            session, {
+            required nextPath,
+            autoPlay = true,
+            forceStartAtZero = false,
+            showLoading = true,
+            targetQueueIndex,
+          }) async {
+            session.currentTrackPath = nextPath;
+            return true;
+          },
+      pauseSession: (_) async {},
+      startSession: (_, {required shouldStartTriggerCountdown}) async => true,
+      resolveAdvance: (_, {required forward}) => null,
+      hasAdjacent: (_, {required forward}) => false,
+    );
+    await original.playDirect([track('a'), track('b')], startIndex: 1);
+    await original.savePersistedState();
+    final savedId = repository.saved.single.id;
+
+    final restarted = PlaybackFacade.create(databaseRepository: repository);
+    addTearDown(restarted.dispose);
+    restarted.attachPersistenceRuntime(
+      trackByPath: (_) => null,
+      recordPlaybackProgress: () => true,
+      restoreRuntime: (_, {required focusedSessionId}) async {},
+      updatePlaybackHistory:
+          ({
+            required trackPath,
+            required position,
+            required now,
+            required updatePlayedAt,
+          }) => null,
+      onFocusChanged: (_) {},
+    );
+    await restarted.loadPersistedState();
+
+    final restored = restarted.activeSessions.single;
+    expect(restored.id, savedId);
+    expect(restored.currentTrackPath, track('b').path);
+    expect(restored.isTemporary, isTrue);
+    expect(restored.state.playing, isFalse);
+    expect(restored.customQueueTracks?.map((item) => item.path), [
+      track('a').path,
+      track('b').path,
+    ]);
+  });
+
+  test('restart retains an ordinary playing entry without autoplay', () async {
+    SharedPreferences.setMockInitialValues(const <String, Object>{});
+    final repository = _RecordingRepository();
+    final original = PlaybackFacade.create(databaseRepository: repository);
+    addTearDown(original.dispose);
+    final playing = original.createTrackSession(track('ordinary'));
+    playing.state = const PlayerState(true, ProcessingState.ready);
+    await original.savePersistedState();
+    expect(repository.saved.single.retainInNowPlaying, isTrue);
+
+    final restarted = PlaybackFacade.create(databaseRepository: repository);
+    addTearDown(restarted.dispose);
+    restarted.attachPersistenceRuntime(
+      trackByPath: (_) => track('ordinary'),
+      recordPlaybackProgress: () => true,
+      restoreRuntime: (_, {required focusedSessionId}) async {},
+      updatePlaybackHistory:
+          ({
+            required trackPath,
+            required position,
+            required now,
+            required updatePlayedAt,
+          }) => null,
+      onFocusChanged: (_) {},
+    );
+    await restarted.loadPersistedState();
+
+    final restored = restarted.activeSessions.single;
+    expect(restored.id, playing.id);
+    expect(restored.retainInNowPlaying, isTrue);
+    expect(restored.playbackRequested, isFalse);
+  });
 
   test('direct playback keeps an added playlist item independent', () async {
     final facade = PlaybackFacade.create(
@@ -261,6 +356,9 @@ void main() {
 
 class _RecordingRepository extends TestPersistenceRepository {
   List<PersistedPlaybackSession> saved = [];
+
+  @override
+  Future<List<PersistedPlaybackSession>> loadAllSessions() async => saved;
 
   @override
   Future<void> saveAllSessions(List<PersistedPlaybackSession> sessions) async {

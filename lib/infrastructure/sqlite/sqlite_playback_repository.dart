@@ -53,6 +53,8 @@ PlaybackSessionRecord _sessionToRecord(PersistedPlaybackSession session) =>
     PlaybackSessionRecord(
       id: session.id,
       trackPath: session.trackPath,
+      isTemporary: session.isTemporary,
+      retainInNowPlaying: session.retainInNowPlaying,
       loopModeIndex: session.loopModeIndex,
       volume: session.volume,
       speed: session.speed,
@@ -73,6 +75,8 @@ PersistedPlaybackSession _sessionFromRecord(PlaybackSessionRecord record) =>
     PersistedPlaybackSession(
       id: record.id,
       trackPath: record.trackPath,
+      isTemporary: record.isTemporary,
+      retainInNowPlaying: record.retainInNowPlaying,
       loopModeIndex: record.loopModeIndex,
       volume: record.volume,
       speed: record.speed,

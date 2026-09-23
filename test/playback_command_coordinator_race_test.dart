@@ -390,7 +390,7 @@ void main() {
       await prepareStarted.future;
       final session = runtimeGraph.playback.activeSessions.single;
       expect(session.playbackRequested, isTrue);
-      expect(session.isPlaybackLoading, isTrue);
+      expect(session.isLoading, isTrue);
 
       await runtimeGraph.playback.toggleSessionPlayPause(session.id);
       expect(session.playbackRequested, isFalse);

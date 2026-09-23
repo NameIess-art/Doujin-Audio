@@ -380,6 +380,7 @@ List<PlaybackSessionSnapshot> overlaySessionsFromPlaybackState(
         (session) =>
             session.currentTrackPath.isNotEmpty &&
             (session.isTemporary ||
+                session.retainInNowPlaying ||
                 (session.playbackRequested &&
                     (session.isLoading ||
                         session.isPlaybackLoading ||

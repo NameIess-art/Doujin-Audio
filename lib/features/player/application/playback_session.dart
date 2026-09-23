@@ -29,6 +29,7 @@ class PlaybackSession {
 
   final String id;
   bool isTemporary;
+  bool retainInNowPlaying = false;
   final DateTime createdAt;
   DateTime? lastPlayedAt;
   final List<StreamSubscription<dynamic>> subscriptions = [];
@@ -289,6 +290,7 @@ class PlaybackSession {
       _suppressTransientLoading = false;
     }
     var effectivePlaying = snapshot.playWhenReady;
+    if (effectivePlaying) retainInNowPlaying = false;
     var effectiveProcessingState = nativeProcessingState;
     final nextState = PlayerState(effectivePlaying, effectiveProcessingState);
     if (state != nextState) {

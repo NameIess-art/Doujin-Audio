@@ -655,6 +655,49 @@ void main() {
     expect(session.state.playing, isFalse);
   });
 
+  test('restored now-playing entry follows live playback again', () {
+    final session = PlaybackSession(
+      id: 'restored',
+      currentTrackPath: '/audio/one.mp3',
+      loopMode: SessionLoopMode.folderSequential,
+      nonSingleLoopMode: SessionLoopMode.folderSequential,
+      volume: 1,
+      createdAt: DateTime(2026),
+      state: const PlayerState(false, ProcessingState.idle),
+    )..retainInNowPlaying = true;
+    addTearDown(session.shutdown);
+
+    session.applyNativeSnapshot(
+      NativePlaybackSnapshot(
+        sessionId: 'restored',
+        playing: false,
+        playWhenReady: false,
+        processingState: 'ready',
+        position: Duration.zero,
+        bufferedPosition: Duration.zero,
+        volume: 1,
+        boostGain: 1,
+        channelSwapEnabled: false,
+      ),
+    );
+    expect(session.retainInNowPlaying, isTrue);
+
+    session.applyNativeSnapshot(
+      NativePlaybackSnapshot(
+        sessionId: 'restored',
+        playing: true,
+        playWhenReady: true,
+        processingState: 'ready',
+        position: Duration.zero,
+        bufferedPosition: Duration.zero,
+        volume: 1,
+        boostGain: 1,
+        channelSwapEnabled: false,
+      ),
+    );
+    expect(session.retainInNowPlaying, isFalse);
+  });
+
   test('playback errors are stored and cleared by authoritative snapshots', () {
     final session = PlaybackSession(
       id: 'session_1',

@@ -19,6 +19,8 @@ Future<void> _onCreate(Database db, int version) async {
       CREATE TABLE sessions (
         id TEXT PRIMARY KEY,
         track_path TEXT NOT NULL,
+        is_temporary INTEGER NOT NULL DEFAULT 0,
+        retain_in_now_playing INTEGER NOT NULL DEFAULT 0,
         loop_mode INTEGER NOT NULL,
         created_at_ms INTEGER,
         updated_at_ms INTEGER,
@@ -56,6 +58,20 @@ Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
   }
   if (oldVersion < 6 && newVersion >= 6) {
     await _migrateAudioDetailsToV6(db);
+  }
+  if (oldVersion < 7 && newVersion >= 7) {
+    await _addColumnIfMissing(
+      db,
+      'sessions',
+      'is_temporary',
+      'INTEGER NOT NULL DEFAULT 0',
+    );
+    await _addColumnIfMissing(
+      db,
+      'sessions',
+      'retain_in_now_playing',
+      'INTEGER NOT NULL DEFAULT 0',
+    );
   }
   await _createTrackDetailTables(db);
   await _createTrackIndexes(db);

@@ -56,11 +56,12 @@ extension PlaybackSessionPersistenceCoordinator on PlaybackFacade {
       final session = PlaybackSession(
         id: item.id,
         currentTrackPath: track?.path ?? '',
+        isTemporary: item.isTemporary,
         loopMode: loopMode,
         nonSingleLoopMode: loopMode == SessionLoopMode.single
             ? (item.playbackQueue != null
-                ? SessionLoopMode.crossSequential
-                : SessionLoopMode.folderSequential)
+                  ? SessionLoopMode.crossSequential
+                  : SessionLoopMode.folderSequential)
             : loopMode,
         volume: item.volume.clamp(0.0, PlaybackFacade.maxSessionVolume),
         createdAt: item.createdAtMs == null
@@ -76,6 +77,7 @@ extension PlaybackSessionPersistenceCoordinator on PlaybackFacade {
       );
       session
         ..lastKnownPosition = restoredPosition
+        ..retainInNowPlaying = item.retainInNowPlaying
         ..setOptimisticDuration(Duration(milliseconds: item.durationMs))
         ..lastPersistedPositionBucket =
             restoredPosition.inSeconds ~/ positionBucketSeconds
@@ -159,6 +161,9 @@ extension PlaybackSessionPersistenceCoordinator on PlaybackFacade {
     return PersistedPlaybackSession(
       id: session.id,
       trackPath: session.currentTrackPath,
+      isTemporary: session.isTemporary,
+      retainInNowPlaying:
+          session.retainInNowPlaying || session.playbackRequested,
       loopModeIndex: session.loopMode.index,
       volume: session.volume,
       speed: session.speed,
@@ -207,7 +212,6 @@ extension PlaybackSessionPersistenceCoordinator on PlaybackFacade {
     final ordered = _service.sessionOrder
         .map((id) => _service.sessions[id])
         .whereType<PlaybackSession>()
-        .where((session) => !session.isTemporary)
         .toList(growable: false);
     final tracksToUpdate = <MusicTrack>[];
     final now = DateTime.now();
@@ -240,7 +244,7 @@ extension PlaybackSessionPersistenceCoordinator on PlaybackFacade {
     final orderedIds = _service.sessionOrder;
     for (final sessionId in sessionIds) {
       final session = _service.sessions[sessionId];
-      if (session == null || session.isTemporary) continue;
+      if (session == null) continue;
       final sortOrder = orderedIds.indexOf(sessionId);
       await databaseRepository.upsertSessionPlaybackState(
         _persistedSessionSnapshot(
@@ -258,11 +262,7 @@ extension PlaybackSessionPersistenceCoordinator on PlaybackFacade {
 
   Future<void> saveSessionOrder() async {
     if (!_persistenceEnabled) return;
-    await databaseRepository.updateSessionOrder(
-      _service.sessionOrder
-          .where((id) => _service.sessions[id]?.isTemporary == false)
-          .toList(growable: false),
-    );
+    await databaseRepository.updateSessionOrder(_service.sessionOrder);
     await AppPreferences.remove('session_order_v1');
   }
 
@@ -286,7 +286,7 @@ extension PlaybackSessionPersistenceCoordinator on PlaybackFacade {
   }) {
     if (!_persistenceEnabled ||
         _service.saveSessionStateTimer != null ||
-        _service.sessions[sessionId]?.isTemporary != false) {
+        !_service.sessions.containsKey(sessionId)) {
       return;
     }
     _pendingPlaybackStateSessionIds.add(sessionId);

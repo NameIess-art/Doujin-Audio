@@ -363,6 +363,14 @@ void main() {
 
     expect(singlePlaybackOverlay.map((session) => session.id), ['playing']);
     expect(multiPlaybackOverlay.map((session) => session.id), ['playing']);
+
+    paused.retainInNowPlaying = true;
+    expect(
+      overlaySessionsFromPlaybackState(
+        PlaybackStateSliceData(activeSessions: [snapshot(paused)]),
+      ).map((session) => session.id),
+      ['paused'],
+    );
   });
 
   test(

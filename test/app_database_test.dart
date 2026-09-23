@@ -31,8 +31,8 @@ void main() {
 
   tearDown(() => db.close());
 
-  test('schema starts from version 6', () {
-    expect(AppDatabase.schemaVersion, 6);
+  test('schema starts from version 7', () {
+    expect(AppDatabase.schemaVersion, 7);
   });
 
   test('version 3 migration adds audio detail duration', () async {
@@ -142,22 +142,52 @@ void main() {
     );
   });
 
-  test('upgrade ensures all required tables and indexes exist from older versions', () async {
-    await db.execute('DROP TABLE IF EXISTS library_entries');
-    await db.execute('DROP TABLE IF EXISTS playback_queues');
-    await db.execute('DROP TABLE IF EXISTS time_segment_labels');
+  test('version 7 migration preserves existing sessions', () async {
+    await db.execute('DROP TABLE sessions');
+    await db.execute('''
+      CREATE TABLE sessions (
+        id TEXT PRIMARY KEY,
+        track_path TEXT NOT NULL,
+        loop_mode INTEGER NOT NULL,
+        created_at_ms INTEGER,
+        updated_at_ms INTEGER,
+        last_played_at_ms INTEGER,
+        sort_order INTEGER NOT NULL DEFAULT 0
+      )
+    ''');
+    await db.insert('sessions', <String, Object?>{
+      'id': 'existing',
+      'track_path': '/tracks/existing.mp3',
+      'loop_mode': 0,
+    });
 
-    await AppDatabase.upgradeSchemaForTest(db, 1, 6);
+    await AppDatabase.upgradeSchemaForTest(db, 6, 7);
 
-    final tables = await db.rawQuery(
-      "SELECT name FROM sqlite_master WHERE type = 'table'",
-    );
-    final tableNames = tables.map((row) => row['name'] as String).toSet();
-    expect(tableNames, contains('library_entries'));
-    expect(tableNames, contains('playback_queues'));
-    expect(tableNames, contains('time_segment_labels'));
-    expect(tableNames, contains('track_scan_info'));
+    final loaded = (await repository.loadAllSessions()).single;
+    expect(loaded.id, 'existing');
+    expect(loaded.isTemporary, isFalse);
+    expect(loaded.retainInNowPlaying, isFalse);
   });
+
+  test(
+    'upgrade ensures all required tables and indexes exist from older versions',
+    () async {
+      await db.execute('DROP TABLE IF EXISTS library_entries');
+      await db.execute('DROP TABLE IF EXISTS playback_queues');
+      await db.execute('DROP TABLE IF EXISTS time_segment_labels');
+
+      await AppDatabase.upgradeSchemaForTest(db, 1, 7);
+
+      final tables = await db.rawQuery(
+        "SELECT name FROM sqlite_master WHERE type = 'table'",
+      );
+      final tableNames = tables.map((row) => row['name'] as String).toSet();
+      expect(tableNames, contains('library_entries'));
+      expect(tableNames, contains('playback_queues'));
+      expect(tableNames, contains('time_segment_labels'));
+      expect(tableNames, contains('track_scan_info'));
+    },
+  );
 
   test(
     'ASMR work list and outbox roll back together on write failure',
@@ -805,6 +835,30 @@ void main() {
       expect(detail?.toJson(), track.toJson());
     },
   );
+
+  test('sessions preserve direct playback identity', () async {
+    await repository.saveAllSessions(<PersistedPlaybackSession>[
+      PersistedPlaybackSession(
+        id: 'direct',
+        trackPath: '/tracks/direct.mp3',
+        isTemporary: true,
+        retainInNowPlaying: true,
+        loopModeIndex: 0,
+        volume: 1,
+        positionMs: 12000,
+        durationMs: 30000,
+        customQueueTracks: null,
+        channelSwapEnabled: false,
+        sortOrder: 0,
+      ),
+    ]);
+
+    final restored = (await repository.loadAllSessions()).single;
+    expect(restored.id, 'direct');
+    expect(restored.isTemporary, isTrue);
+    expect(restored.retainInNowPlaying, isTrue);
+    expect(restored.positionMs, 12000);
+  });
 
   test('sessions persist custom queue tracks', () async {
     final queueTrack = MusicTrack(

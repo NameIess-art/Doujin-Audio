@@ -441,6 +441,8 @@ Map<String, dynamic> _sessionCoreRow(
 ) => {
   'id': session.id,
   'track_path': session.trackPath,
+  'is_temporary': session.isTemporary ? 1 : 0,
+  'retain_in_now_playing': session.retainInNowPlaying ? 1 : 0,
   'loop_mode': session.loopModeIndex,
   'created_at_ms': session.createdAtMs,
   'updated_at_ms': session.updatedAtMs,
@@ -608,6 +610,8 @@ PlaybackSessionRecord _sessionFromRow(
 }) => PlaybackSessionRecord(
   id: row['id'] as String,
   trackPath: row['track_path'] as String,
+  isTemporary: (row['is_temporary'] as int? ?? 0) == 1,
+  retainInNowPlaying: (row['retain_in_now_playing'] as int? ?? 0) == 1,
   loopModeIndex: row['loop_mode'] as int,
   volume: (row['volume'] as num?)?.toDouble() ?? 1.0,
   speed: (row['speed'] as num?)?.toDouble() ?? 1.0,

@@ -471,7 +471,9 @@ extension PlaybackQueuePathCoordinator on PlaybackFacade {
       nextPath: track.path,
       targetQueueIndex: index,
     );
-    return revision == _directPlayRevision && (prepared ?? true);
+    final current = revision == _directPlayRevision && (prepared ?? true);
+    if (current) scheduleSessionStatePersistence();
+    return current;
   }
 
   Future<bool> addTrackToPlaylist(MusicTrack track) async {

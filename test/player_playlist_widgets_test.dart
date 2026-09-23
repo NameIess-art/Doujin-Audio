@@ -3696,7 +3696,7 @@ void main() {
             ),
           )
           .onPressed,
-      isNull,
+      isNotNull,
     );
     bool videoReady() => tester
         .widget<SessionVideoViewport>(find.byType(SessionVideoViewport))

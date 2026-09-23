@@ -39,9 +39,7 @@ void main() {
     ),
   );
 
-  testWidgets('route keeps header fixed while content slides horizontally', (
-    tester,
-  ) async {
+  testWidgets('route content covers while headers change in place', (tester) async {
     final navigatorKey = GlobalKey<NavigatorState>();
     await tester.pumpWidget(
       MaterialApp(navigatorKey: navigatorKey, home: regions('home')),
@@ -64,12 +62,24 @@ void main() {
     final body = find.byKey(const ValueKey('detail-body'));
     final enteringHeader = tester.getRect(header);
     final enteringBody = tester.getRect(body);
+    expect(
+      tester
+          .widgetList<Opacity>(
+            find.ancestor(of: header, matching: find.byType(Opacity)),
+          )
+          .any((opacity) => opacity.opacity > 0 && opacity.opacity < 1),
+      isTrue,
+    );
     await tester.pumpAndSettle();
     final settledHeader = tester.getRect(header);
     final settledBody = tester.getRect(body);
     final bodyPushOffset = enteringBody.left - settledBody.left;
     expect(enteringHeader, settledHeader);
     expect(bodyPushOffset, greaterThan(0));
+    expect(
+      find.byKey(const ValueKey('home-header'), skipOffstage: false),
+      findsOneWidget,
+    );
     navigator.pop();
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 60));

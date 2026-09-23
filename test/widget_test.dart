@@ -127,6 +127,14 @@ void main() {
       ),
       findsOneWidget,
     );
+    expect(
+      tester
+          .widget<AppFadeThroughIndexedStack>(
+            find.byKey(const ValueKey<String>('main_page_stack')),
+          )
+          .separateHeader,
+      isTrue,
+    );
     expect(find.byKey(const ValueKey<String>('main_page_fade_1')), findsOne);
     expect(
       find.byKey(const ValueKey<String>('main_page_fade_0')),
@@ -613,6 +621,16 @@ void main() {
     await tester.pump();
     final playbackDetail = find.byType(SessionDetailPage, skipOffstage: false);
     expect(playbackDetail, findsOneWidget);
+    final backdrop = find.byKey(
+      const ValueKey<String>('session_detail_backdrop_surface'),
+      skipOffstage: false,
+    );
+    expect(
+      tester.getRect(backdrop).top,
+      greaterThanOrEqualTo(
+        MediaQuery.sizeOf(tester.element(playbackDetail)).height,
+      ),
+    );
     final firstFramePaintOrder = find
         .byWidgetPredicate((_) => true, skipOffstage: false)
         .evaluate()
@@ -629,6 +647,7 @@ void main() {
     );
     expect((backdropSurface.decoration as BoxDecoration).color?.a, 1);
     await tester.pump(const Duration(milliseconds: 110));
+    expect(tester.getRect(backdrop).top, greaterThan(0));
     expect(tester.widget<MobileOverlayInset>(rootOverlayInset).bottomInset, 0);
     expect(tester.getRect(detailRoute), detailRectBeforePlayback);
     expect(routeDock, findsOneWidget);
@@ -650,6 +669,8 @@ void main() {
     );
     expect(tester.getRect(detailRoute), detailRectBeforePlayback);
     expect(routeDock, findsOneWidget);
+    expect(tester.widget<IgnorePointer>(routeDockInteraction).ignoring, isTrue);
+    await tester.pump(const Duration(milliseconds: 250));
     expect(
       tester.widget<IgnorePointer>(routeDockInteraction).ignoring,
       isFalse,
@@ -829,6 +850,85 @@ void main() {
       await tester.pump(const Duration(milliseconds: 200));
     },
   );
+
+  testWidgets('system back slides playback detail over its previous page', (
+    tester,
+  ) async {
+    final platformCalls = <MethodCall>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(SystemChannels.platform, (call) async {
+          platformCalls.add(call);
+          return null;
+        });
+    addTearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(SystemChannels.platform, null);
+    });
+    tester.view.devicePixelRatio = 3;
+    tester.view.physicalSize = const Size(1080, 2400);
+    addTearDown(() {
+      tester.view.resetDevicePixelRatio();
+      tester.view.resetPhysicalSize();
+    });
+
+    await _pumpAppShell(tester);
+    final navigator = Navigator.of(tester.element(find.byType(MainScreen)));
+    unawaited(
+      navigator.push<void>(
+        buildAppPageRoute<void>(
+          context: navigator.context,
+          settings: const RouteSettings(name: workDetailRouteName),
+          child: const Scaffold(
+            key: ValueKey<String>('under_playback_detail'),
+            body: SizedBox.expand(),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    unawaited(
+      navigator.push<void>(
+        buildSessionDetailRoute(sessionId: 'orientation_session'),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    platformCalls.clear();
+    navigator.pop();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 60));
+    final backdrop = find.byKey(
+      const ValueKey<String>('session_detail_backdrop_surface'),
+      skipOffstage: false,
+    );
+    expect(backdrop, findsOneWidget);
+    expect(tester.getRect(backdrop).top, greaterThan(0));
+    expect(tester.getRect(backdrop).top, lessThan(800));
+    expect(
+      find.byKey(const ValueKey<String>('under_playback_detail')),
+      findsOneWidget,
+    );
+    expect(
+      platformCalls.where(
+        (call) => call.method == 'SystemChrome.setEnabledSystemUIMode',
+      ),
+      isEmpty,
+    );
+
+    await tester.pumpAndSettle();
+    expect(find.byType(SessionDetailPage), findsNothing);
+    expect(
+      platformCalls.where(
+        (call) => call.method == 'SystemChrome.setEnabledSystemUIMode',
+      ),
+      isNotEmpty,
+    );
+    navigator.pop();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 350));
+    UiInteractionCoordinator.instance.finishInteractionsForTest();
+    await tester.pump(const Duration(milliseconds: 200));
+  });
 
   testWidgets('capsule dock keeps a fixed height without playback', (
     tester,

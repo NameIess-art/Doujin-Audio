@@ -42,6 +42,9 @@ class SessionDetailRoute extends PageRoute<void> {
   final ValueNotifier<bool> _revealBehindNotifier = ValueNotifier<bool>(false);
 
   void _handleRevealBehindChanged() {
+    controller?.reverseDuration = _revealBehindNotifier.value
+        ? Duration.zero
+        : reverseTransitionDuration;
     if (overlayEntries.isNotEmpty) {
       overlayEntries.first.opaque = opaque;
     }
@@ -67,7 +70,7 @@ class SessionDetailRoute extends PageRoute<void> {
   Duration get transitionDuration => const Duration(milliseconds: 220);
 
   @override
-  Duration get reverseTransitionDuration => Duration.zero;
+  Duration get reverseTransitionDuration => const Duration(milliseconds: 220);
 
   @override
   bool canTransitionFrom(TransitionRoute<dynamic> previousRoute) => false;
@@ -287,9 +290,7 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
     _systemUiRestored = true;
     if (defaultTargetPlatform == TargetPlatform.android ||
         defaultTargetPlatform == TargetPlatform.iOS) {
-      unawaited(
-        SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge),
-      );
+      unawaited(SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge));
     }
   }
 
@@ -422,7 +423,6 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
   }) async {
     if (_closing) return;
     _closing = true;
-    _restoreSystemUiMode();
     final operation = ++_dismissOperation;
     ref
         .read(playlistUiControllerProvider)
@@ -475,15 +475,9 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
       _dismissController,
     ]);
 
-    return PopScope(
-      onPopInvokedWithResult: (didPop, result) {
-        if (didPop) {
-          _restoreSystemUiMode();
-        }
-      },
-      child: Material(
-        color: Colors.transparent,
-        child: AnimatedBuilder(
+    return Material(
+      color: Colors.transparent,
+      child: AnimatedBuilder(
         animation: animatedListenable,
         builder: (context, child) {
           final rawEnterProgress = min(
@@ -511,8 +505,11 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
                 ),
               ),
               Positioned.fill(
-                child: IgnorePointer(
-                  child: _SessionDetailBackdrop(progress: backdropProgress),
+                child: Transform.translate(
+                  offset: Offset(0, enterOffset),
+                  child: IgnorePointer(
+                    child: _SessionDetailBackdrop(progress: backdropProgress),
+                  ),
                 ),
               ),
               Align(
@@ -607,7 +604,6 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
           ),
         ),
       ),
-    ),
     );
   }
 }

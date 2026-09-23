@@ -831,6 +831,7 @@ class _TimelineSubtitleViewState extends State<_TimelineSubtitleView> {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final baseTextStyle =
         Theme.of(context).textTheme.bodyMedium ?? const TextStyle();
     final focusedTextStyle = baseTextStyle.copyWith(
@@ -924,9 +925,13 @@ class _TimelineSubtitleViewState extends State<_TimelineSubtitleView> {
                   children: [
                     NotificationListener<ScrollNotification>(
                       onNotification: _handleScrollNotification,
-                      child: ListView.builder(
-                        key: const ValueKey('subtitle_timeline_list'),
-                        controller: _scrollController,
+                      child: ScrollConfiguration(
+                        behavior: ScrollConfiguration.of(
+                          context,
+                        ).copyWith(scrollbars: false),
+                        child: ListView.builder(
+                          key: const ValueKey('subtitle_timeline_list'),
+                          controller: _scrollController,
                         padding: EdgeInsets.only(
                           top: _leadingPadding,
                           bottom: _trailingPadding,
@@ -978,13 +983,14 @@ class _TimelineSubtitleViewState extends State<_TimelineSubtitleView> {
                         },
                       ),
                     ),
+                  ),
                     if (_isBrowsing &&
                         widget.cues.isNotEmpty &&
                         _focusedIndex >= 0 &&
                         _focusedIndex < widget.cues.length)
                       Positioned(
-                        left: 16,
-                        right: 8,
+                        left: 12,
+                        right: 6,
                         top: max(0.0, (_viewportHeight - 44) / 2),
                         height: 44,
                         child: Row(
@@ -1000,36 +1006,88 @@ class _TimelineSubtitleViewState extends State<_TimelineSubtitleView> {
                             ),
                             const SizedBox(width: 8),
                             IgnorePointer(
-                              child: Text(
-                                formatDurationCompact(
-                                  widget.cues[_focusedIndex].start,
+                              child: Container(
+                                height: 24,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
                                 ),
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .labelSmall
-                                    ?.copyWith(
-                                      color: cs.primary,
-                                      fontWeight: FontWeight.w700,
-                                      fontFeatures: const [
-                                        FontFeature.tabularFigures(),
-                                      ],
+                                alignment: Alignment.center,
+                                decoration: BoxDecoration(
+                                  color: isDark
+                                      ? cs.surfaceContainerHighest.withValues(
+                                          alpha: 0.85,
+                                        )
+                                      : cs.surfaceContainerHighest.withValues(
+                                          alpha: 0.90,
+                                        ),
+                                  borderRadius: BorderRadius.circular(999),
+                                  border: Border.all(
+                                    color: cs.primary.withValues(alpha: 0.35),
+                                  ),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withValues(
+                                        alpha: isDark ? 0.3 : 0.08,
+                                      ),
+                                      blurRadius: 4,
+                                      offset: const Offset(0, 1),
                                     ),
+                                  ],
+                                ),
+                                child: Text(
+                                  formatDurationCompact(
+                                    widget.cues[_focusedIndex].start,
+                                  ),
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .labelSmall
+                                      ?.copyWith(
+                                        color: cs.primary,
+                                        fontWeight: FontWeight.w700,
+                                        fontSize: 11,
+                                        fontFeatures: const [
+                                          FontFeature.tabularFigures(),
+                                        ],
+                                      ),
+                                ),
                               ),
                             ),
-                            const SizedBox(width: 4),
-                            SizedBox(
-                              width: 44,
-                              height: 44,
-                              child: IconButton(
-                                key: const ValueKey(
-                                  'subtitle_timeline_seek_button',
-                                ),
-                                tooltip: i18n.tr('seek_to_subtitle'),
-                                onPressed: _seekToFocusedSubtitle,
-                                icon: Icon(
-                                  Icons.play_arrow_rounded,
-                                  color: cs.primary,
-                                  size: 26,
+                            const SizedBox(width: 6),
+                            Container(
+                              width: 38,
+                              height: 38,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: cs.primary,
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: cs.primary.withValues(alpha: 0.40),
+                                    blurRadius: 8,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                  BoxShadow(
+                                    color: Colors.black.withValues(alpha: 0.14),
+                                    blurRadius: 4,
+                                    offset: const Offset(0, 1),
+                                  ),
+                                ],
+                              ),
+                              child: Material(
+                                type: MaterialType.transparency,
+                                shape: const CircleBorder(),
+                                clipBehavior: Clip.antiAlias,
+                                child: IconButton(
+                                  key: const ValueKey(
+                                    'subtitle_timeline_seek_button',
+                                  ),
+                                  padding: EdgeInsets.zero,
+                                  tooltip: i18n.tr('seek_to_subtitle'),
+                                  onPressed: _seekToFocusedSubtitle,
+                                  icon: Icon(
+                                    Icons.play_arrow_rounded,
+                                    color: cs.onPrimary,
+                                    size: 24,
+                                  ),
                                 ),
                               ),
                             ),

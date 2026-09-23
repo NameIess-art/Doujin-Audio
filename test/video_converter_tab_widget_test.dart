@@ -15,17 +15,24 @@ void main() {
     await tester.pumpWidget(fixture.build(const VideoConverterTab()));
     await tester.pumpAndSettle();
 
-    final start = find.widgetWithText(
-      FilledButton,
-      fixture.languageProvider.tr('start_conversion'),
+    final start = find.byKey(
+      const ValueKey<String>('video_converter_start_button'),
     );
     expect(start, findsOneWidget);
+    expect(
+      find.text(fixture.languageProvider.tr('start_conversion')),
+      findsOneWidget,
+    );
     final pageScaffold = find
         .ancestor(of: start, matching: find.byType(Scaffold))
         .first;
     expect(
       tester.getRect(start).bottom,
       closeTo(tester.getSize(pageScaffold).height - 16, 0.1),
+    );
+    expect(
+      tester.getRect(start).right,
+      closeTo(tester.getSize(pageScaffold).width - 16, 0.1),
     );
     final list = tester.widget<ListView>(
       find.descendant(of: pageScaffold, matching: find.byType(ListView)),

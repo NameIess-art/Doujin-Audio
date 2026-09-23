@@ -221,8 +221,8 @@ extension _MainScreenLayout on _MainScreenState {
                           ? Duration.zero
                           : const Duration(milliseconds: 250),
                       curve: Curves.easeOutCubic,
-                      width: selected ? 42 : 0,
-                      height: selected ? 42 : 0,
+                      width: selected ? 44 : 0,
+                      height: selected ? 44 : 0,
                       decoration: BoxDecoration(
                         color: selected
                             ? activeColor.withValues(alpha: 0.11)
@@ -292,7 +292,11 @@ extension _MainScreenLayout on _MainScreenState {
     bool isCurrent = true,
   }) {
     final systemBottom = MediaQuery.paddingOf(context).bottom;
-    final maskHeight = 56.0 + systemBottom;
+    final maskHeight =
+        kActiveSessionCarouselDockHeight +
+        kMobileDockBottomMargin +
+        2.0 +
+        systemBottom;
     final hasPlayback = overlaySessions.isNotEmpty;
     final playbackExpanded = hasPlayback && _isMobilePlaybackExpanded;
     final duration = MediaQuery.disableAnimationsOf(context)
@@ -315,7 +319,7 @@ extension _MainScreenLayout on _MainScreenState {
           ),
         SafeArea(
           top: false,
-          minimum: const EdgeInsets.only(bottom: 6),
+          minimum: const EdgeInsets.only(bottom: kMobileDockBottomMargin),
           child: Align(
             alignment: Alignment.bottomCenter,
             child: SizedBox(
@@ -345,7 +349,8 @@ extension _MainScreenLayout on _MainScreenState {
                               height: kActiveSessionCarouselDockHeight,
                               child: LayoutBuilder(
                                 builder: (context, constraints) {
-                                  const compactWidth = 48.0;
+                                  const compactWidth =
+                                      kActiveSessionCarouselDockHeight;
                                   const gap = 0.0;
                                   final availableWidth = constraints.maxWidth;
                                   final navigationWidth = !hasPlayback
@@ -752,12 +757,12 @@ extension _MainScreenLayout on _MainScreenState {
         _dockContentKey.currentContext?.findRenderObject() as RenderBox?;
     if (contentBox != null && contentBox.hasSize) {
       final systemBottom = MediaQuery.of(context).padding.bottom;
-      return (max(systemBottom, 6.0) + contentBox.size.height).clamp(
+      return (max(systemBottom, kMobileDockBottomMargin) + contentBox.size.height).clamp(
         0.0,
         double.infinity,
       );
     }
     final systemBottom = MediaQuery.of(context).padding.bottom;
-    return max(systemBottom, 6.0) + 64;
+    return max(systemBottom, kMobileDockBottomMargin) + 72;
   }
 }

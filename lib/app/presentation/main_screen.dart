@@ -88,8 +88,8 @@ List<_MainDestination> _resolveMainDestinations({
       ),
     const _MainDestination(
       type: MainDestinationType.playlist,
-      icon: Icons.playlist_play_outlined,
-      selectedIcon: Icons.playlist_play_rounded,
+      icon: Icons.featured_play_list_outlined,
+      selectedIcon: Icons.featured_play_list_rounded,
       labelKey: 'nav_sessions',
     ),
     const _MainDestination(

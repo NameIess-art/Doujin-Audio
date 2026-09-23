@@ -107,7 +107,6 @@ const Map<String, String> appLanguageEn = {
   'batch_metadata_status_excluded': 'Excluded',
   'batch_metadata_action_exclude': 'Exclude',
   'batch_metadata_action_restore': 'Restore',
-  'batch_metadata_progress': '{current} / {total}',
   'batch_metadata_load_failed':
       'Unable to load the local library. Please try again.',
   'batch_metadata_completion_title': 'Batch completion finished',
@@ -363,7 +362,7 @@ const Map<String, String> appLanguageEn = {
   'audio_detail_load_failed': 'Load failed. Please try again.',
   'audio_detail_duration_calculation_failed':
       'Unable to calculate duration. Please try again.',
-  'audio_detail_fetch_info': 'Fetch info',
+  'audio_detail_fetch_info': 'Fetch data',
   'audio_detail_fetch_scope_title': 'Choose fetch range',
   'audio_detail_fetch_scope_hint':
       'ASMR.ONE is checked first, then DLsite is used as a fallback. Choose which fields to write.',

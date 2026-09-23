@@ -933,7 +933,7 @@ void main() {
           SizedBox(
             width:
                 presentation == ActiveSessionCarouselPresentation.circularCover
-                ? 48
+                ? kActiveSessionCarouselDockHeight
                 : 320,
             child: ActiveSessionCarousel(
               sessions: sessions,
@@ -958,7 +958,7 @@ void main() {
         tester.getSize(
           find.byKey(const ValueKey<String>('active_session_card_circular_1')),
         ),
-        const Size.square(48),
+        const Size.square(56),
       );
       expect(
         tester
@@ -985,12 +985,12 @@ void main() {
       final embeddedCard = find.byKey(
         const ValueKey<String>('active_session_card_circular_2'),
       );
-      expect(tester.getSize(embeddedCard).height, 48);
+      expect(tester.getSize(embeddedCard).height, 56);
       expect(
         tester.getSize(
           find.byKey(const ValueKey<String>('active_session_cover_circular_2')),
         ),
-        const Size.square(40),
+        const Size.square(48),
       );
       expect(
         tester
@@ -5222,6 +5222,44 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pumpAndSettle();
   });
+
+  testWidgets(
+    'landscape session detail displays 1:1 cover aspect ratio with title inside cover at bottom',
+    (tester) async {
+      await _pumpSubtitleDetail(
+        tester: tester,
+        subtitleTrack: SubtitleTrack(sourcePath: 'empty.srt', cues: const []),
+        initialPosition: Duration.zero,
+        physicalSize: const Size(2400, 1080),
+      );
+
+      final aspectRatioFinder = find.descendant(
+        of: find.byType(SessionDetailPage),
+        matching: find.byType(AspectRatio),
+      );
+      expect(aspectRatioFinder, findsOneWidget);
+      final aspectRatioWidget = tester.widget<AspectRatio>(aspectRatioFinder);
+      expect(aspectRatioWidget.aspectRatio, 1.0);
+
+      final titleFinder = find.byKey(
+        const ValueKey('title_marquee_subtitle-session'),
+      );
+      expect(titleFinder, findsOneWidget);
+
+      final titleInsideCover = find.descendant(
+        of: aspectRatioFinder,
+        matching: titleFinder,
+      );
+      expect(titleInsideCover, findsOneWidget);
+
+      final coverRect = tester.getRect(aspectRatioFinder);
+      final titleRect = tester.getRect(titleFinder);
+
+      expect(titleRect.bottom, lessThanOrEqualTo(coverRect.bottom));
+      expect(titleRect.top, greaterThan(coverRect.top));
+      expect(coverRect.width, closeTo(coverRect.height, 0.5));
+    },
+  );
 
   test('formatSpeedValue formats 1, 2, and 3 to two decimal places', () {
     expect(formatSpeedValue(1.0), '1.00x');

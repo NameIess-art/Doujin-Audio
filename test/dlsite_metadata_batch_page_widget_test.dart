@@ -419,14 +419,19 @@ void main() {
       tester.widget<ListView>(find.byType(ListView)).padding,
       const EdgeInsets.fromLTRB(16, 58, 16, 88),
     );
-    final start = find.widgetWithText(
-      FilledButton,
-      languageProvider.tr('batch_metadata_start'),
-    );
+    final start = find.byKey(const ValueKey<String>('batch_metadata_start'));
     expect(start, findsOneWidget);
+    expect(
+      find.text(languageProvider.tr('batch_metadata_start')),
+      findsOneWidget,
+    );
     expect(
       tester.getRect(start).bottom,
       closeTo(tester.getSize(find.byType(Scaffold)).height - 16, 0.1),
+    );
+    expect(
+      tester.getRect(start).right,
+      closeTo(tester.getSize(find.byType(Scaffold)).width - 16, 0.1),
     );
   });
 

@@ -179,8 +179,9 @@ class _DlsiteMetadataBatchPageState
       listen: false,
     ).read(appLanguageProviderInstanceProvider);
     final topInset = _headerContentTopInset(context);
+    final cs = Theme.of(context).colorScheme;
     return Scaffold(
-      backgroundColor: Theme.of(context).colorScheme.surface,
+      backgroundColor: cs.surface,
       body: PageHeaderInset(
         topInset: topInset,
         child: Stack(
@@ -219,21 +220,45 @@ class _DlsiteMetadataBatchPageState
           ),
           if (!_loading && _error == null)
             Positioned(
-              left: 16,
               right: 16,
               bottom: 16 + MediaQuery.paddingOf(context).bottom,
-              child: AppPageContentTransition(child: FilledButton.icon(
-                onPressed: _run,
-                icon: const Icon(Icons.play_arrow_rounded),
-                label: Text(i18n.tr('batch_metadata_start')),
-                style: FilledButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  textStyle: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 15,
+              child: AppPageContentTransition(
+                child: HeaderFloatingSurface(
+                  key: const ValueKey<String>('batch_metadata_start'),
+                  height: 46,
+                  radius: 23,
+                  padding: EdgeInsets.zero,
+                  child: Material(
+                    color: cs.primary,
+                    borderRadius: BorderRadius.circular(23),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(23),
+                      onTap: _run,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 18),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.play_arrow_rounded,
+                              size: 18,
+                              color: cs.onPrimary,
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              i18n.tr('batch_metadata_start'),
+                              style: TextStyle(
+                                color: cs.onPrimary,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
                   ),
                 ),
-              )),
+              ),
             ),
           Positioned(
             top: 0,
@@ -1021,9 +1046,7 @@ class _DlsiteMetadataBatchReviewPageState
   Widget build(BuildContext context) {
     final item = _currentItem;
     return DlsiteMetadataReviewPage(
-      key: ValueKey<String>(
-        AudioLibraryCategorySnapshot.targetKey(item.entry.target),
-      ),
+      key: const ValueKey<String>('dlsite_metadata_batch_review_page'),
       detail: item.entry.detail,
       batchIndex: _currentIndex + 1,
       batchTotal: widget.session.items.length,

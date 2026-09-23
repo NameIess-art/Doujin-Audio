@@ -99,7 +99,6 @@ const Map<String, String> appLanguageJa = {
   'batch_metadata_status_excluded': '除外',
   'batch_metadata_action_exclude': '除外',
   'batch_metadata_action_restore': '復元',
-  'batch_metadata_progress': '{current} / {total}',
   'batch_metadata_load_failed': 'ローカルライブラリを読み込めませんでした。もう一度お試しください。',
   'batch_metadata_completion_title': '一括補完が完了しました',
   'batch_metadata_completion_saved': '{count} 件の作品データを保存しました',
@@ -332,7 +331,7 @@ const Map<String, String> appLanguageJa = {
   'audio_detail_save_failed': '保存に失敗しました。もう一度お試しください。',
   'audio_detail_load_failed': '読み込みに失敗しました。もう一度お試しください。',
   'audio_detail_duration_calculation_failed': '再生時間を計算できませんでした。もう一度お試しください。',
-  'audio_detail_fetch_info': '情報を取得',
+  'audio_detail_fetch_info': 'データを取得',
   'audio_detail_fetch_scope_title': '取得範囲を選択',
   'audio_detail_fetch_scope_hint':
       'ASMR.ONE を優先して作品情報を取得し、失敗した場合は DLsite を使用します。書き込む範囲を選択してください。',

@@ -695,7 +695,7 @@ class _RoutedPlaybackDockState extends ConsumerState<_RoutedPlaybackDock> {
       ignoring: !widget.active || widget.covered,
       child: SafeArea(
         top: false,
-        minimum: const EdgeInsets.only(bottom: 6),
+        minimum: const EdgeInsets.only(bottom: kMobileDockBottomMargin),
         child: Align(
           alignment: Alignment.bottomCenter,
           child: Padding(
@@ -1084,7 +1084,8 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp> {
                   isWorkDetailRoute && supportsRoutedDock && hasOverlaySessions;
               final routeDockInset = reserveWorkDetailDockInset
                   ? kActiveSessionCarouselDockHeight +
-                        12 +
+                        kMobileDockBottomMargin +
+                        6 +
                         mediaQuery.padding.bottom
                   : 0.0;
               return MobileOverlayInset(

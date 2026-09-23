@@ -99,7 +99,6 @@ const Map<String, String> appLanguageZh = {
   'batch_metadata_status_excluded': '已排除',
   'batch_metadata_action_exclude': '排除',
   'batch_metadata_action_restore': '恢复',
-  'batch_metadata_progress': '{current} / {total}',
   'batch_metadata_load_failed': '无法加载本地曲库，请重试。',
   'batch_metadata_completion_title': '批量补全完成',
   'batch_metadata_completion_saved': '已保存 {count} 条作品数据',
@@ -331,7 +330,7 @@ const Map<String, String> appLanguageZh = {
   'audio_detail_save_failed': '保存失败，请重试。',
   'audio_detail_load_failed': '读取失败，请重试。',
   'audio_detail_duration_calculation_failed': '无法计算时长，请重试。',
-  'audio_detail_fetch_info': '获取信息',
+  'audio_detail_fetch_info': '获取数据',
   'audio_detail_fetch_scope_title': '选择获取范围',
   'audio_detail_fetch_scope_hint':
       '将优先通过 ASMR.ONE 获取作品信息，失败时回退到 DLsite。请选择要写入的范围。',

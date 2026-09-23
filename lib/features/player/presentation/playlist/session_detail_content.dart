@@ -562,40 +562,58 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Expanded(
-                        child: Center(
-                          child: AspectRatio(
-                            aspectRatio: 4 / 3,
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(16),
-                              child: widget.artworkWidget,
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      SizedBox(
-                        height: 36,
-                        child: Center(
-                          child: MarqueeText(
-                            key: ValueKey('title_marquee_${session.id}'),
-                            text: displayName,
-                            pauseDuration: const Duration(seconds: 1),
-                            allowAndroidMarquee: true,
-                            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                              color: sessionDetailForeground(
-                                cs,
-                                SessionDetailForegroundLevel.strong,
+                  Center(
+                    child: AspectRatio(
+                      aspectRatio: 1.0,
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(16),
+                        child: Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            widget.artworkWidget,
+                            if (track?.isVideo != true)
+                              IgnorePointer(
+                                child: Align(
+                                  alignment: Alignment.bottomCenter,
+                                  child: Container(
+                                height: 42,
+                                width: double.infinity,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                ),
+                                alignment: Alignment.centerLeft,
+                                decoration: BoxDecoration(
+                                  gradient: LinearGradient(
+                                    begin: Alignment.topCenter,
+                                    end: Alignment.bottomCenter,
+                                    colors: [
+                                      Colors.black.withValues(alpha: 0.0),
+                                      Colors.black.withValues(alpha: 0.65),
+                                    ],
+                                  ),
+                                ),
+                                child: MarqueeText(
+                                  key: ValueKey('title_marquee_${session.id}'),
+                                  text: displayName,
+                                  allowAndroidMarquee: true,
+                                  pauseDuration: const Duration(seconds: 1),
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .labelLarge
+                                      ?.copyWith(
+                                        color: Colors.white.withValues(
+                                          alpha: 0.85,
+                                        ),
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                ),
                               ),
-                              fontWeight: FontWeight.w700,
                             ),
-                          ),
+                            ),
+                          ],
                         ),
                       ),
-                    ],
+                    ),
                   ),
                   if (_segmentPanelExpanded)
                     Positioned.fill(
@@ -665,61 +683,59 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
                     fit: StackFit.expand,
                     children: [
                       if (!_segmentPanelExpanded) widget.artworkWidget,
-                      Align(
-                        alignment: Alignment.bottomCenter,
-                        child: Container(
-                          height: 42,
-                          width: double.infinity,
-                          padding: const EdgeInsets.symmetric(horizontal: 16),
-                          alignment: Alignment.centerLeft,
-                          decoration: BoxDecoration(
-                            gradient: _segmentPanelExpanded
-                                ? null
-                                : LinearGradient(
-                                    begin: Alignment.topCenter,
-                                    end: Alignment.bottomCenter,
-                                    colors: [
-                                      Colors.black.withValues(alpha: 0.0),
-                                      Colors.black.withValues(alpha: 0.65),
-                                    ],
-                                  ),
-                            color: _segmentPanelExpanded
-                                ? cs.surfaceContainerHighest.withValues(alpha: 0.95)
-                                : null,
-                          ),
-                          child: MarqueeText(
-                            key: ValueKey('title_marquee_${session.id}'),
-                            text: displayName,
-                            allowAndroidMarquee: true,
-                            pauseDuration: const Duration(seconds: 1),
-                            style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                              color: _segmentPanelExpanded
-                                  ? sessionDetailForeground(
-                                      cs,
-                                      SessionDetailForegroundLevel.medium,
-                                      darkFallback: cs.onSurface.withValues(alpha: 0.8),
-                                    )
-                                  : Colors.white.withValues(alpha: 0.85),
-                              fontWeight: FontWeight.w700,
+                      if (track?.isVideo != true)
+                        IgnorePointer(
+                          child: Align(
+                            alignment: Alignment.bottomCenter,
+                            child: Container(
+                              height: 42,
+                              width: double.infinity,
+                              padding: const EdgeInsets.symmetric(horizontal: 16),
+                              alignment: Alignment.centerLeft,
+                              decoration: BoxDecoration(
+                                gradient: _segmentPanelExpanded
+                                    ? null
+                                    : LinearGradient(
+                                        begin: Alignment.topCenter,
+                                        end: Alignment.bottomCenter,
+                                        colors: [
+                                          Colors.black.withValues(alpha: 0.0),
+                                          Colors.black.withValues(alpha: 0.65),
+                                        ],
+                                      ),
+                                color: _segmentPanelExpanded
+                                    ? cs.surfaceContainerHighest.withValues(alpha: 0.95)
+                                    : null,
+                              ),
+                              child: MarqueeText(
+                                key: ValueKey('title_marquee_${session.id}'),
+                                text: displayName,
+                                allowAndroidMarquee: true,
+                                pauseDuration: const Duration(seconds: 1),
+                                style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                                  color: _segmentPanelExpanded
+                                      ? sessionDetailForeground(
+                                          cs,
+                                          SessionDetailForegroundLevel.medium,
+                                          darkFallback: cs.onSurface.withValues(alpha: 0.8),
+                                        )
+                                      : Colors.white.withValues(alpha: 0.85),
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
                             ),
                           ),
                         ),
-                      ),
                     ],
                   ),
                 ),
               ),
               Expanded(
-                child: Padding(
-                  padding: EdgeInsets.symmetric(
-                    horizontal: resolvedDetailPadding.left,
-                  ),
-                  child: RepaintBoundary(
-                    child: SessionSubtitlePanel(
-                      transitionActive: widget.transitionActive,
-                      session: session,
-                      subtitleEnabled: widget.subtitleEnabled,
-                    ),
+                child: RepaintBoundary(
+                  child: SessionSubtitlePanel(
+                    transitionActive: widget.transitionActive,
+                    session: session,
+                    subtitleEnabled: widget.subtitleEnabled,
                   ),
                 ),
               ),
@@ -895,7 +911,7 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
                         this.context,
                         i18n.tr('switch_audio'),
                         tone: AppFeedbackTone.success,
-                        icon: Icons.playlist_play_rounded,
+                        icon: Icons.queue_music_rounded,
                       );
                     }
                   }());
@@ -1056,7 +1072,7 @@ class _QueueSheetHeader extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(2, 0, 2, 6),
       child: Row(
         children: [
-          Icon(Icons.playlist_play_rounded, size: 20, color: cs.primary),
+          Icon(Icons.queue_music_rounded, size: 20, color: cs.primary),
           const SizedBox(width: 8),
           Expanded(
             child: Text(

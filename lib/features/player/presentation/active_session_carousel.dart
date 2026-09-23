@@ -31,7 +31,8 @@ import 'playback_error_text.dart';
 part 'active_session_carousel_widgets.dart';
 
 const double kActiveSessionCarouselCapsuleHeight = 56;
-const double kActiveSessionCarouselDockHeight = 48;
+const double kActiveSessionCarouselDockHeight = 56;
+const double kMobileDockBottomMargin = 12;
 
 enum ActiveSessionCarouselPresentation {
   card,

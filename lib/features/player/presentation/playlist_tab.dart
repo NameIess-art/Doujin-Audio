@@ -408,7 +408,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                         context,
                         i18n.tr('queue_add_audio_first'),
                         tone: AppFeedbackTone.warning,
-                        icon: Icons.playlist_play_rounded,
+                        icon: Icons.featured_play_list_rounded,
                       )
                     : _openSessionDetail(context, session.id),
                 onEdit: () => _openQueueEditor(context, session.id),
@@ -530,7 +530,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
 
                   return TopPageHeader(
                     key: const ValueKey('playlist_batch_selection_header'),
-                    icon: Icons.playlist_play_rounded,
+                    icon: Icons.featured_play_list_rounded,
                     topCapsuleTitle: i18n.tr('multi_select'),
                     topCapsuleData: i18n.tr('selected_count', {
                       'count': count.toString(),
@@ -628,7 +628,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
 
                 return TopPageHeader(
                   key: headerKey,
-                  icon: Icons.playlist_play_rounded,
+                  icon: Icons.featured_play_list_rounded,
                   collapseController: _scrollController,
                   topCapsuleTitle: i18n.tr('playback_sessions'),
                   topCapsuleData: i18n.tr('playlist_header_stats', {

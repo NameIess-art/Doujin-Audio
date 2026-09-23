@@ -325,7 +325,7 @@ void main() {
     );
     expect(
       tester.getSize(fadeMaskFinder).height,
-      56 + MediaQuery.paddingOf(tester.element(fadeMaskFinder)).bottom,
+      70 + MediaQuery.paddingOf(tester.element(fadeMaskFinder)).bottom,
     );
     expect(
       tester
@@ -360,13 +360,13 @@ void main() {
           .presentation,
       ActiveSessionCarouselPresentation.embedded,
     );
-    expect(tester.getSize(playbackCard), const Size.square(48));
-    expect(tester.getSize(playbackCover), const Size.square(40));
-    expect(tester.getSize(menuSurface).height, 48);
+    expect(tester.getSize(playbackCard), const Size.square(56));
+    expect(tester.getSize(playbackCover), const Size.square(48));
+    expect(tester.getSize(menuSurface).height, 56);
     expect(
       tester.getCenter(playbackCard),
       Offset(
-        tester.getRect(menuSurface).right - 24,
+        tester.getRect(menuSurface).right - 28,
         tester.getRect(menuSurface).center.dy,
       ),
     );
@@ -376,7 +376,7 @@ void main() {
     expect(collapsedCoverRect.top, collapsedSurfaceRect.top + 4);
     expect(collapsedCoverRect.bottom, collapsedSurfaceRect.bottom - 4);
     expect(tester.getSize(navigation).width, greaterThan(200));
-    expect(tester.getSize(playback).width, 48);
+    expect(tester.getSize(playback).width, 56);
     expect(
       find.descendant(of: menuPanel, matching: find.byType(Text)),
       findsNothing,
@@ -422,7 +422,7 @@ void main() {
       greaterThan(tester.getRect(menuSurface).left + 72),
     );
     await tester.pump(const Duration(milliseconds: 210));
-    expect(tester.getSize(navigation).width, closeTo(48, 0.1));
+    expect(tester.getSize(navigation).width, closeTo(56, 0.1));
     expect(tester.getSize(playback).width, greaterThan(200));
     expect(tester.getRect(playbackCard).top, tester.getRect(menuSurface).top);
     expect(
@@ -448,7 +448,7 @@ void main() {
         ),
       ),
       Offset(
-        tester.getRect(menuSurface).left + 24,
+        tester.getRect(menuSurface).left + 28,
         tester.getRect(menuSurface).center.dy,
       ),
     );
@@ -473,7 +473,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 350));
     expect(tester.getSize(navigation).width, greaterThan(200));
-    expect(tester.getSize(playback).width, closeTo(48, 0.1));
+    expect(tester.getSize(playback).width, closeTo(56, 0.1));
   });
 
   testWidgets('only work detail routes show a bottom playback dock', (
@@ -555,15 +555,15 @@ void main() {
     );
     expect(routeDock, findsOneWidget);
     expect(hiddenRouteDock, findsNothing);
-    expect(tester.getSize(routeWidth).width, 48);
-    expect(detailBottomInset, greaterThan(48));
+    expect(tester.getSize(routeWidth).width, 56);
+    expect(detailBottomInset, greaterThan(56));
     final routeMediaQuery = MediaQuery.of(tester.element(routeDock));
     expect(
       tester.getRect(routeDock).bottom,
       routeMediaQuery.size.height -
-          (routeMediaQuery.padding.bottom > 6
+          (routeMediaQuery.padding.bottom > 12
               ? routeMediaQuery.padding.bottom
-              : 6),
+              : 12),
     );
     final routeCoverRect = tester.getRect(routeCover);
     final routeDockRect = tester.getRect(routeDock);
@@ -584,7 +584,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 140));
     final enteringWidth = tester.getSize(routeWidth).width;
-    expect(enteringWidth, greaterThan(48));
+    expect(enteringWidth, greaterThan(56));
     expect(tester.getCenter(routeCover).dx, lessThan(collapsedCenter.dx));
 
     await tester.pump(const Duration(milliseconds: 210));
@@ -847,7 +847,7 @@ void main() {
     );
     expect(
       tester.getSize(fadeMaskFinder).height,
-      56 + MediaQuery.paddingOf(tester.element(fadeMaskFinder)).bottom,
+      70 + MediaQuery.paddingOf(tester.element(fadeMaskFinder)).bottom,
     );
     expect(find.byType(ActiveSessionCarousel), findsNothing);
     expect(
@@ -2436,7 +2436,7 @@ void main() {
       const ValueKey<String>('active_session_card_orientation_session'),
     );
     final collapsedRect = tester.getRect(mainCard);
-    expect(collapsedRect.size, const Size.square(48));
+    expect(collapsedRect.size, const Size.square(56));
     final navigator = Navigator.of(tester.element(find.byType(MainScreen)));
     double detailBottomInset = 0;
     final routeFuture = navigator.push<void>(

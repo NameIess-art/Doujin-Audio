@@ -298,45 +298,81 @@ class _VideoConverterTabState extends ConsumerState<VideoConverterTab> {
             ],
           ),
           Positioned(
-            left: 16,
             right: 16,
             bottom: 16 + MediaQuery.paddingOf(context).bottom,
-            child: isConverting
-                ? FilledButton.icon(
-                    onPressed: isCanceling
+            child: AppPageContentTransition(
+              child: Builder(
+                builder: (context) {
+                  final cs = Theme.of(context).colorScheme;
+                  final canStart =
+                      selectedVideoPath != null && outputDirectoryPath != null;
+
+                  final Color buttonColor;
+                  final Color contentColor;
+                  final VoidCallback? onTap;
+                  final IconData iconData;
+                  final String labelText;
+
+                  if (isConverting) {
+                    buttonColor = cs.error;
+                    contentColor = cs.onError;
+                    onTap = isCanceling
                         ? null
-                        : () => unawaited(_cancelConversion()),
-                    icon: Icon(
+                        : () => unawaited(_cancelConversion());
+                    iconData = isCanceling
+                        ? Icons.hourglass_top_rounded
+                        : Icons.cancel_rounded;
+                    labelText = i18n.tr(
                       isCanceling
-                          ? Icons.hourglass_top_rounded
-                          : Icons.cancel_rounded,
-                    ),
-                    label: Text(
-                      i18n.tr(
-                        isCanceling
-                            ? 'canceling_conversion'
-                            : 'cancel_conversion',
+                          ? 'canceling_conversion'
+                          : 'cancel_conversion',
+                    );
+                  } else {
+                    buttonColor = canStart
+                        ? cs.primary
+                        : cs.onSurface.withValues(alpha: 0.12);
+                    contentColor = canStart
+                        ? cs.onPrimary
+                        : cs.onSurface.withValues(alpha: 0.38);
+                    onTap = canStart ? () => _startConversion(settings) : null;
+                    iconData = Icons.transform_rounded;
+                    labelText = i18n.tr('start_conversion');
+                  }
+
+                  return HeaderFloatingSurface(
+                    key: const ValueKey<String>('video_converter_start_button'),
+                    height: 46,
+                    radius: 23,
+                    padding: EdgeInsets.zero,
+                    child: Material(
+                      color: buttonColor,
+                      borderRadius: BorderRadius.circular(23),
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(23),
+                        onTap: onTap,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 18),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(iconData, size: 18, color: contentColor),
+                              const SizedBox(width: 6),
+                              Text(
+                                labelText,
+                                style: TextStyle(
+                                  color: contentColor,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                       ),
                     ),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: Theme.of(context).colorScheme.error,
-                      foregroundColor: Theme.of(context).colorScheme.onError,
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      textStyle: const TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                  )
-                : FilledButton.icon(
-                    onPressed:
-                        selectedVideoPath != null && outputDirectoryPath != null
-                        ? () => _startConversion(settings)
-                        : null,
-                    icon: const Icon(Icons.transform_rounded),
-                    label: Text(i18n.tr('start_conversion')),
-                    style: FilledButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      textStyle: const TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                  ),
+                  );
+                },
+              ),
+            ),
           ),
               ],
             ),

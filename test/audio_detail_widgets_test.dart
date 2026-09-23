@@ -11,6 +11,7 @@ import 'support/runtime_test_models.dart';
 import 'package:doujin_audio/features/library/presentation/audio_detail_sheet.dart';
 import 'package:doujin_audio/features/library/presentation/folder_cover_selector.dart';
 import 'package:doujin_audio/core/widgets/async_cover_image.dart';
+import 'package:doujin_audio/core/widgets/operation_feedback.dart';
 import 'package:doujin_audio/core/widgets/top_page_header.dart';
 import 'package:doujin_audio/features/library/presentation/dlsite_metadata_batch_page.dart';
 import 'package:doujin_audio/features/library/presentation/dlsite_metadata_review_page.dart';
@@ -357,9 +358,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(
-      find.text(
-        '${languageProvider.tr('dlsite_review_title')} · ${languageProvider.tr('batch_metadata_progress', {'current': 2, 'total': 3})}',
-      ),
+      find.text(languageProvider.tr('dlsite_review_title')),
       findsOneWidget,
     );
     expect(
@@ -392,17 +391,24 @@ void main() {
       ),
       findsNothing,
     );
+    expect(workNavigation, findsOneWidget);
     expect(
       find.descendant(of: workNavigation, matching: find.text('2/3')),
       findsOneWidget,
     );
     expect(
-      tester.getTopLeft(confirm).dy,
-      closeTo(tester.getTopLeft(workNavigation).dy, 0.001),
+      tester.getCenter(workNavigation).dx,
+      lessThan(tester.getCenter(find.byType(DlsiteMetadataReviewPage)).dx),
     );
     expect(
       tester.getCenter(confirm).dx,
-      lessThan(tester.getCenter(workNavigation).dx),
+      greaterThan(tester.getCenter(find.byType(DlsiteMetadataReviewPage)).dx),
+    );
+    expect(
+      (tester.getBottomLeft(workNavigation).dy -
+              tester.getBottomRight(confirm).dy)
+          .abs(),
+      lessThan(1.0),
     );
     final targetName = tester.widget<Text>(
       find.descendant(
@@ -474,6 +480,96 @@ void main() {
     );
     expect(ratingField.controller?.text, '4.5');
   });
+
+  testWidgets(
+    'metadata review batch navigation updates in place without flashing skeleton or dropping confirm action',
+    (WidgetTester tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(390, 1000);
+      addTearDown(() {
+        tester.view.resetDevicePixelRatio();
+        tester.view.resetPhysicalSize();
+      });
+
+      final fixture = AppRuntimeWidgetTestFixture();
+      final metadataWork1 = DlsiteMetadata(
+        rjCode: 'RJ111111',
+        workTitle: 'Work One Title',
+        circleName: 'Circle One',
+        voiceActors: const <String>['Voice One'],
+        tags: const <String>['Tag One'],
+      );
+      final metadataWork2 = DlsiteMetadata(
+        rjCode: 'RJ222222',
+        workTitle: 'Work Two Title',
+        circleName: 'Circle Two',
+        voiceActors: const <String>['Voice Two'],
+        tags: const <String>['Tag Two'],
+      );
+
+      Widget buildReview({
+        required int index,
+        required AudioDetailTarget target,
+        required DlsiteMetadata metadata,
+      }) {
+        return fixture.build(
+          DlsiteMetadataReviewPage(
+            key: const ValueKey<String>('dlsite_metadata_batch_review_page'),
+            detail: AudioDetail.empty(target),
+            batchIndex: index,
+            batchTotal: 2,
+            initialCandidates: <DlsiteMetadata>[metadata],
+            canNavigatePrevious: index > 1,
+            canNavigateNext: index < 2,
+            onBatchNavigate: (_) {},
+          ),
+        );
+      }
+
+      await tester.pumpWidget(
+        buildReview(
+          index: 1,
+          target: const AudioDetailTarget(
+            targetType: AudioDetailTargetType.libraryRootFolder,
+            targetPath: '/library/FolderOne',
+          ),
+          metadata: metadataWork1,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Work One Title'), findsOneWidget);
+      expect(find.byType(OperationSkeletonList), findsNothing);
+      expect(
+        find.byKey(const ValueKey<String>('dlsite_review_confirm')),
+        findsOneWidget,
+      );
+      expect(find.text('1/2'), findsOneWidget);
+
+      // Simulate switching to Work 2
+      await tester.pumpWidget(
+        buildReview(
+          index: 2,
+          target: const AudioDetailTarget(
+            targetType: AudioDetailTargetType.libraryRootFolder,
+            targetPath: '/library/FolderTwo',
+          ),
+          metadata: metadataWork2,
+        ),
+      );
+      await tester.pump();
+
+      // Immediately after the single pump (first frame of the switch):
+      expect(find.byType(OperationSkeletonList), findsNothing);
+      expect(
+        find.byKey(const ValueKey<String>('dlsite_review_confirm')),
+        findsOneWidget,
+      );
+      expect(find.text('Work Two Title'), findsOneWidget);
+      expect(find.text('2/2'), findsOneWidget);
+      expect(find.text('FolderTwo'), findsOneWidget);
+    },
+  );
 
   testWidgets(
     'metadata editor shows compact cover navigation and cover state below image',

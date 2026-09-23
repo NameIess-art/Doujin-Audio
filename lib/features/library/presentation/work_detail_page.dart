@@ -1211,6 +1211,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
                               'work_detail_fetch_info',
                             ),
                             onPressed: _handleLocalFetchInfo,
+                            style: _actionCapsuleStyle(),
                             icon: const Icon(
                               Icons.cloud_download_rounded,
                               size: 18,
@@ -1228,6 +1229,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
                           child: FilledButton.tonalIcon(
                             key: const ValueKey<String>('work_detail_download'),
                             onPressed: _handleLocalDownload,
+                            style: _actionCapsuleStyle(),
                             icon: const Icon(Icons.download_rounded, size: 18),
                             label: Text(
                               i18n.tr('download'),
@@ -1248,6 +1250,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
                               'asmr_work_detail_download',
                             ),
                             onPressed: _handleAsmrDownload,
+                            style: _actionCapsuleStyle(),
                             icon: const Icon(Icons.download_rounded, size: 18),
                             label: Text(
                               i18n.tr('download'),
@@ -1256,7 +1259,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
                             ),
                           ),
                         ),
-                        const SizedBox(width: 12),
+                        const SizedBox(width: 8),
                         // 收藏 / 取消收藏
                         Consumer(
                           builder: (context, ref, _) {
@@ -1272,7 +1275,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
                                   'asmr_work_detail_favorite',
                                 ),
                                 onPressed: _handleAsmrToggleFavorite,
-                                style: FilledButton.styleFrom(
+                                style: _actionCapsuleStyle(
                                   backgroundColor: isFav
                                       ? asmrBlue.withValues(alpha: 0.2)
                                       : null,
@@ -1530,6 +1533,24 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
           ),
         ),
       ),
+    );
+  }
+
+  ButtonStyle _actionCapsuleStyle({
+    Color? backgroundColor,
+    Color? foregroundColor,
+  }) {
+    return FilledButton.styleFrom(
+      minimumSize: const Size.fromHeight(42),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      shape: const StadiumBorder(),
+      visualDensity: VisualDensity.compact,
+      textStyle: const TextStyle(
+        fontSize: 13,
+        fontWeight: FontWeight.w700,
+      ),
+      backgroundColor: backgroundColor,
+      foregroundColor: foregroundColor,
     );
   }
 

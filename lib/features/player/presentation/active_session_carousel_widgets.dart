@@ -90,7 +90,7 @@ class _ActiveSessionCard extends ConsumerWidget {
         child: Center(
           child: SizedBox.square(
             key: ValueKey<String>('active_session_card_${session.id}'),
-            dimension: 48,
+            dimension: kActiveSessionCarouselDockHeight,
             child: Material(
               type: MaterialType.transparency,
               shape: const CircleBorder(),
@@ -102,7 +102,7 @@ class _ActiveSessionCard extends ConsumerWidget {
                   sessionId: session.id,
                   track: currentTrack,
                   coverPathFuture: coverPathFuture,
-                  dimension: 48,
+                  dimension: kActiveSessionCarouselDockHeight,
                 ),
               ),
             ),

@@ -2,6 +2,7 @@ import 'library_providers.dart';
 import '../../settings/presentation/settings_providers.dart';
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -109,6 +110,7 @@ class DlsiteMetadataReviewPage extends ConsumerStatefulWidget {
 class _DlsiteMetadataReviewPageState
     extends ConsumerState<DlsiteMetadataReviewPage> {
   final GlobalKey _headerKey = GlobalKey();
+  final ScrollController _scrollController = ScrollController();
   double _headerHeight = 0;
   final _titleController = TextEditingController();
   final _folderNameController = TextEditingController();
@@ -138,13 +140,44 @@ class _DlsiteMetadataReviewPageState
     super.initState();
     if (widget.editing) {
       _initializeEditor();
+    } else if (widget.initialCandidates != null) {
+      _initializeWithCandidates(widget.initialCandidates!);
     } else {
       unawaited(_fetch());
     }
   }
 
   @override
+  void didUpdateWidget(DlsiteMetadataReviewPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final workChanged =
+        widget.detail.target != oldWidget.detail.target ||
+        widget.detail != oldWidget.detail ||
+        widget.batchIndex != oldWidget.batchIndex ||
+        widget.rjCode != oldWidget.rjCode ||
+        widget.initialCandidates != oldWidget.initialCandidates ||
+        !listEquals(widget.searchTitles, oldWidget.searchTitles);
+
+    if (workChanged) {
+      _saving = false;
+      if (widget.editing) {
+        _initializeEditor();
+      } else if (widget.initialCandidates != null) {
+        setState(() {
+          _initializeWithCandidates(widget.initialCandidates!);
+        });
+      } else {
+        unawaited(_fetch());
+      }
+      if (_scrollController.hasClients) {
+        _scrollController.jumpTo(0);
+      }
+    }
+  }
+
+  @override
   void dispose() {
+    _scrollController.dispose();
     _titleController.dispose();
     _folderNameController.dispose();
     _rjCodeController.dispose();
@@ -155,6 +188,27 @@ class _DlsiteMetadataReviewPageState
     _durationController.dispose();
     _ratingController.dispose();
     super.dispose();
+  }
+
+  void _initializeWithCandidates(List<DlsiteMetadata> candidates) {
+    _candidates = candidates;
+    _candidateIndex = 0;
+    _error = null;
+    _editingDetail = null;
+    _saving = false;
+    if (candidates.isNotEmpty) {
+      final metadata = candidates[0];
+      _populateFields(metadata);
+      _metadata = metadata;
+      _loading = false;
+      _saveCover =
+          widget.initialSaveCover &&
+          widget.detail.target.isLibraryRootFolder &&
+          metadata.coverUrl != null;
+    } else {
+      _metadata = null;
+      _loading = false;
+    }
   }
 
   void _initializeEditor() {
@@ -466,9 +520,7 @@ class _DlsiteMetadataReviewPageState
     final cs = Theme.of(context).colorScheme;
     final reviewTitle = widget.editing
         ? i18n.tr('audio_detail_edit_info')
-        : widget.batchIndex == null || widget.batchTotal == null
-        ? i18n.tr('dlsite_review_title')
-        : '${i18n.tr('dlsite_review_title')} · ${i18n.tr('batch_metadata_progress', {'current': widget.batchIndex, 'total': widget.batchTotal})}';
+        : i18n.tr('dlsite_review_title');
     final targetName = PathDisplay.fileName(widget.detail.target.targetPath);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -482,11 +534,52 @@ class _DlsiteMetadataReviewPageState
       }
     });
 
-    final defaultHeaderHeight = MediaQuery.paddingOf(context).top + 110.0;
+    final defaultHeaderHeight = MediaQuery.paddingOf(context).top + 135.0;
     final effectiveHeaderHeight = _headerHeight > 0
         ? _headerHeight
         : defaultHeaderHeight;
     final listTopPadding = effectiveHeaderHeight + 8;
+
+    final hasBatchNavigation = widget.onBatchNavigate != null ||
+        (widget.batchIndex != null && widget.batchTotal != null);
+    final hasCandidateNavigation = _candidates.length > 1 && !_loading;
+
+    final Widget? headerTrailing = hasCandidateNavigation
+        ? HeaderActionPill(
+            padding: const EdgeInsets.symmetric(horizontal: 2),
+            children: [
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                iconSize: 20,
+                onPressed: _candidateIndex <= 0 || _saving
+                    ? null
+                    : () => _showCandidate(_candidateIndex - 1),
+                tooltip: i18n.tr('previous'),
+                icon: const Icon(Icons.chevron_left_rounded),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                child: Text(
+                  '${_candidateIndex + 1}/${_candidates.length}',
+                  style: Theme.of(context)
+                      .textTheme
+                      .labelMedium
+                      ?.copyWith(fontWeight: FontWeight.w700),
+                ),
+              ),
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                iconSize: 20,
+                onPressed: _candidateIndex >= _candidates.length - 1 ||
+                        _saving
+                    ? null
+                    : () => _showCandidate(_candidateIndex + 1),
+                tooltip: i18n.tr('next'),
+                icon: const Icon(Icons.chevron_right_rounded),
+              ),
+            ],
+          )
+        : null;
 
     return Scaffold(
       backgroundColor: Theme.of(context).colorScheme.surface,
@@ -519,6 +612,7 @@ class _DlsiteMetadataReviewPageState
                       ),
                     )
                   : ListView(
+                      controller: _scrollController,
                       padding: EdgeInsets.fromLTRB(
                         20,
                         listTopPadding,
@@ -667,95 +761,67 @@ class _DlsiteMetadataReviewPageState
                       ],
                     )),
             ),
-            if (_metadata != null)
+            if (hasBatchNavigation && !_loading)
               Positioned(
                 left: 16,
-                right: 16,
                 bottom: 16 + MediaQuery.paddingOf(context).bottom,
                 child: AppPageContentTransition(
-                  child: widget.onBatchNavigate != null
-                      ? Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            SizedBox(
-                              width: 112,
-                              child: _ReviewConfirmButton(
-                                saving: _saving,
-                                onTap: _apply,
-                                label: i18n.tr(
-                                  widget.editing ? 'save' : 'confirm',
-                                ),
-                              ),
-                            ),
-                            HeaderFloatingSurface(
-                              key: const ValueKey<String>(
-                                'dlsite_review_work_navigation',
-                              ),
-                              height: 46,
-                              radius: 23,
-                              padding: const EdgeInsets.symmetric(horizontal: 4),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  IconButton(
-                                    key: const ValueKey<String>(
-                                      'dlsite_review_previous_work',
-                                    ),
-                                    visualDensity: VisualDensity.compact,
-                                    iconSize: 20,
-                                    onPressed: !widget.canNavigatePrevious || _saving
-                                        ? null
-                                        : () => _navigateWork(-1),
-                                    tooltip: i18n.tr('previous'),
-                                    icon: const Icon(Icons.chevron_left_rounded),
-                                  ),
-                                  if (widget.batchIndex != null &&
-                                      widget.batchTotal != null)
-                                    Padding(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 4,
-                                      ),
-                                      child: Text(
-                                        '${widget.batchIndex}/${widget.batchTotal}',
-                                        style: Theme.of(context)
-                                            .textTheme
-                                            .labelLarge
-                                            ?.copyWith(
-                                              color: cs.onSurface,
-                                              fontWeight: FontWeight.w700,
-                                            ),
-                                      ),
-                                    ),
-                                  IconButton(
-                                    key: const ValueKey<String>(
-                                      'dlsite_review_next_work',
-                                    ),
-                                    visualDensity: VisualDensity.compact,
-                                    iconSize: 20,
-                                    onPressed: !widget.canNavigateNext || _saving
-                                        ? null
-                                        : () => _navigateWork(1),
-                                    tooltip: i18n.tr('next'),
-                                    icon: const Icon(Icons.chevron_right_rounded),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        )
-                      : Align(
-                          alignment: Alignment.centerRight,
-                          child: SizedBox(
-                            width: 112,
-                            child: _ReviewConfirmButton(
-                              saving: _saving,
-                              onTap: _apply,
-                              label: i18n.tr(
-                                widget.editing ? 'save' : 'confirm',
+                  child: HeaderFloatingSurface(
+                    key: const ValueKey<String>('dlsite_review_work_navigation'),
+                    height: 46,
+                    radius: 23,
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          key: const ValueKey<String>('dlsite_review_previous_work'),
+                          visualDensity: VisualDensity.compact,
+                          iconSize: 20,
+                          onPressed: !widget.canNavigatePrevious || _saving
+                              ? null
+                              : () => _navigateWork(-1),
+                          tooltip: i18n.tr('previous'),
+                          icon: const Icon(Icons.chevron_left_rounded),
+                        ),
+                        if (widget.batchIndex != null && widget.batchTotal != null)
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 4),
+                            child: Text(
+                              '${widget.batchIndex}/${widget.batchTotal}',
+                              style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                                color: cs.onSurface,
+                                fontWeight: FontWeight.w700,
                               ),
                             ),
                           ),
+                        IconButton(
+                          key: const ValueKey<String>('dlsite_review_next_work'),
+                          visualDensity: VisualDensity.compact,
+                          iconSize: 20,
+                          onPressed: !widget.canNavigateNext || _saving
+                              ? null
+                              : () => _navigateWork(1),
+                          tooltip: i18n.tr('next'),
+                          icon: const Icon(Icons.chevron_right_rounded),
                         ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            if (_metadata != null)
+              Positioned(
+                right: 16,
+                bottom: 16 + MediaQuery.paddingOf(context).bottom,
+                child: AppPageContentTransition(
+                  child: _ReviewConfirmButton(
+                    saving: _saving,
+                    onTap: _apply,
+                    label: i18n.tr(
+                      widget.editing ? 'save' : 'confirm',
+                    ),
+                  ),
                 ),
               ),
             Positioned(
@@ -771,43 +837,7 @@ class _DlsiteMetadataReviewPageState
                       : Icons.rate_review_rounded,
                   leading: const BackButton(),
                   title: reviewTitle,
-                  trailing: (_candidates.length > 1 && !_loading)
-                      ? HeaderActionPill(
-                          padding: const EdgeInsets.symmetric(horizontal: 2),
-                          children: [
-                            IconButton(
-                              visualDensity: VisualDensity.compact,
-                              iconSize: 20,
-                              onPressed: _candidateIndex <= 0 || _saving
-                                  ? null
-                                  : () => _showCandidate(_candidateIndex - 1),
-                              tooltip: i18n.tr('previous'),
-                              icon: const Icon(Icons.chevron_left_rounded),
-                            ),
-                            Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 4,
-                              ),
-                              child: Text(
-                                '${_candidateIndex + 1}/${_candidates.length}',
-                                style: Theme.of(context).textTheme.labelMedium
-                                    ?.copyWith(fontWeight: FontWeight.w700),
-                              ),
-                            ),
-                            IconButton(
-                              visualDensity: VisualDensity.compact,
-                              iconSize: 20,
-                              onPressed:
-                                  _candidateIndex >= _candidates.length - 1 ||
-                                      _saving
-                                  ? null
-                                  : () => _showCandidate(_candidateIndex + 1),
-                              tooltip: i18n.tr('next'),
-                              icon: const Icon(Icons.chevron_right_rounded),
-                            ),
-                          ],
-                        )
-                      : null,
+                  trailing: headerTrailing,
                   additionalChild: Padding(
                     padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
                     child: HeaderFloatingSurface(
@@ -864,7 +894,8 @@ class _ReviewConfirmButton extends StatelessWidget {
         child: InkWell(
           borderRadius: BorderRadius.circular(23),
           onTap: saving ? null : onTap,
-          child: Center(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -880,15 +911,11 @@ class _ReviewConfirmButton extends StatelessWidget {
                 else
                   Icon(Icons.check_rounded, size: 18, color: cs.onPrimary),
                 const SizedBox(width: 6),
-                Flexible(
-                  child: Text(
-                    label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: cs.onPrimary,
-                      fontWeight: FontWeight.w700,
-                    ),
+                Text(
+                  label,
+                  style: TextStyle(
+                    color: cs.onPrimary,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
               ],

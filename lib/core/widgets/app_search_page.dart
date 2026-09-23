@@ -6,6 +6,7 @@ import '../../app/theme/app_design_tokens.dart';
 import 'app_edge_fade_mask.dart';
 import 'app_transitions.dart';
 import 'page_header_inset.dart';
+import 'windows_horizontal_wheel_scroll.dart';
 
 PageRouteBuilder<T> buildAppSearchPageRoute<T>({
   required BuildContext context,
@@ -202,8 +203,10 @@ class AppSearchPageScaffold<T> extends StatelessWidget {
                     child: _SearchFloatingCapsule(
                       radius: 19,
                       blurEnabled: blurEnabled,
-                      child: ListView.separated(
+                      child: WindowsHorizontalWheelScroll(
+                        builder: (scrollController) => ListView.separated(
                         key: const ValueKey<String>('app_search_categories'),
+                        controller: scrollController,
                         padding: const EdgeInsets.symmetric(
                           horizontal: 4,
                           vertical: 3,
@@ -254,6 +257,7 @@ class AppSearchPageScaffold<T> extends StatelessWidget {
                             ),
                           );
                         },
+                        ),
                       ),
                     ),
                   ),

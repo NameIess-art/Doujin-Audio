@@ -105,6 +105,7 @@ MediaControls::~MediaControls() {
 void MediaControls::Clear() {
   controls_.IsEnabled(false);
   controls_.DisplayUpdater().ClearAll();
+  thumbnail_playing_ = false;
   UpdateThumbnailButtons();
 }
 flutter::EncodableMap MediaControls::HotkeyStatus() const {
@@ -135,6 +136,7 @@ std::optional<std::string> MediaControls::HandleMessage(UINT message, WPARAM wp)
   } else if (message == WM_COMMAND && HIWORD(wp) == THBN_CLICKED &&
       LOWORD(wp) >= kControlId && LOWORD(wp) < kControlId + 3) {
     action = LOWORD(wp) - kControlId;
+    if (action == 0 && controls_.IsEnabled()) return "taskbarToggle";
   }
   if (action < 0) return std::nullopt;
   if (!controls_.IsEnabled() ||
@@ -145,7 +147,7 @@ std::optional<std::string> MediaControls::HandleMessage(UINT message, WPARAM wp)
 void MediaControls::UpdateThumbnailButtons() {
   if (!taskbar_) return;
   const bool enabled = controls_.IsEnabled();
-  const bool playing = enabled && controls_.PlaybackStatus() == MediaPlaybackStatus::Playing;
+  const bool playing = enabled && thumbnail_playing_;
   const bool available[] = {enabled && controls_.IsPreviousEnabled(), enabled,
       enabled && controls_.IsNextEnabled()};
   const wchar_t* tips[] = {L"Previous / 上一曲", playing ? L"Pause / 暂停" : L"Play / 播放", L"Next / 下一曲"};
@@ -177,6 +179,14 @@ void MediaControls::Update(const flutter::EncodableMap& payload) {
     if (Text(*map,"id") == main_id) break;
   }
   if (!selected) { Clear(); return; }
+  thumbnail_playing_ = false;
+  for (const auto& item : *items) {
+    const auto map = std::get_if<flutter::EncodableMap>(&item);
+    if (map && Flag(*map,"playing")) {
+      thumbnail_playing_ = true;
+      break;
+    }
+  }
   controls_.IsEnabled(true);
   controls_.IsNextEnabled(Flag(*selected,"hasNext"));
   controls_.IsPreviousEnabled(Flag(*selected,"hasPrevious"));

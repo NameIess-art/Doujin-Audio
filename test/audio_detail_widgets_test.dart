@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as path;
@@ -943,6 +944,51 @@ void main() {
     await tester.pump();
     expect(find.byType(RetryingFileImage), findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Windows wheel advances folder cover candidates', (
+    WidgetTester tester,
+  ) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+    final fixture = AppRuntimeWidgetTestFixture(
+      coverArtworkCacheService: _DetailCoverCacheService(
+        currentCoverPath: '/covers/first.jpg',
+        candidates: const <String>[
+          '/covers/first.jpg',
+          '/covers/second.jpg',
+        ],
+      ),
+    );
+    addTearDown(fixture.dispose);
+    await tester.pumpWidget(
+      fixture.build(
+        const Center(
+          child: SizedBox(
+            width: 300,
+            child: FolderCoverSelector(folderPath: '/library/Work'),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    final pageView = tester.widget<PageView>(find.byType(PageView));
+    expect(pageView.childrenDelegate.estimatedChildCount, 2);
+    expect(pageView.controller!.page, 0);
+    await tester.sendEventToBinding(
+      PointerScrollEvent(
+        position: tester.getCenter(
+          find.byKey(const ValueKey('audio_detail_cover_content')),
+        ),
+        scrollDelta: const Offset(0, 120),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text('2 / 2'), findsOneWidget);
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(pageView.controller!.page, 1);
+    debugDefaultTargetPlatformOverride = null;
   });
 
   testWidgets('audio detail cover action uses the primary button color', (

@@ -575,7 +575,6 @@ const Map<String, String> appLanguageZh = {
   'diagnostics_exported': '诊断报告已导出至：{path}',
   'operation_failed_retry': '操作失败，请重试。',
   'operation_failed_diagnostics_hint': '请重试；如果持续失败，可以导出诊断报告协助排查。',
-  'section_danger_zone': '其他',
   'allow_background_run': '允许后台运行',
   'allow_background_run_subtitle': '防止息屏后后台播放被限制。',
   'allow_background_run_ready': '系统已允许本应用后台运行，息屏播放会更稳定。',
@@ -623,7 +622,6 @@ const Map<String, String> appLanguageZh = {
   'update_install_failed_next_step':
       '请稍后重试；如果仍失败，请查看更新日志，或打开 GitHub Release 页面手动安装。',
   'update_install_failed_with_detail': '请稍后重试；如果仍失败，请查看更新日志。详情：{detail}',
-  'open_update_log': '查看日志',
   'install_permission_needed': '请先允许本应用安装未知来源应用。',
   'install_permission_title': '允许安装更新',
   'install_permission_message': '为了继续下载并安装新版本，需要先允许本应用安装未知来源应用。现在前往系统设置开启吗？',
@@ -634,7 +632,6 @@ const Map<String, String> appLanguageZh = {
   'bitrate_not_used': '{format} 使用格式内置编码参数，码率设置不生效。',
   'about': '关于',
   'about_subtitle': '版本、作者与项目信息',
-  'app_desc': '支持并发会话与高保真音频播放。',
   'about_version': '版本',
   'about_source_code': '源代码',
   'about_wiki': 'wiki',
@@ -711,8 +708,6 @@ const Map<String, String> appLanguageZh = {
   'tap_select_video_file': '点击选择需要转换的视频文件',
   'output_directory': '输出目录',
   'tap_select_output_dir': '点击选择音频保存位置',
-  'current_params': '当前参数：{value}',
-  'format_auto_encode': '格式自动编码',
   'cancel_conversion': '取消转换',
   'notification_permission_title': '开启通知权限',
   'notification_permission_message':

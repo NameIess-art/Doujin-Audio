@@ -111,7 +111,6 @@ internal interface NativePlayerEventCallbacks {
     fun onPlayWhenReadyChanged(sessionId: String, playWhenReady: Boolean, reason: Int)
     fun onIsPlayingChanged(sessionId: String, isPlaying: Boolean)
     fun onPlayerError(sessionId: String, error: PlaybackException)
-    fun onAudioSessionIdChanged(sessionId: String, audioSessionId: Int)
 }
 
 internal class NativePlayerFactory(
@@ -188,10 +187,6 @@ internal class NativePlayerFactory(
 
                     override fun onPlayerError(error: PlaybackException) {
                         callbacks.onPlayerError(sessionId, error)
-                    }
-
-                    override fun onAudioSessionIdChanged(audioSessionId: Int) {
-                        callbacks.onAudioSessionIdChanged(sessionId, audioSessionId)
                     }
                 })
             }

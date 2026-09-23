@@ -13,6 +13,7 @@ Future<void> attachWindowsRuntime({
   required TimerFacade timer,
 }) async {
   var exiting = false;
+  var pausedByTaskbar = <String>{};
   await WindowsDesktopService.instance.attach((action) async {
     if (exiting) return;
     switch (action) {
@@ -33,6 +34,25 @@ Future<void> attachWindowsRuntime({
         await notifications.pausePrimarySession();
       case 'toggle':
         await notifications.togglePrimarySessionPlayPause();
+      case 'taskbarToggle':
+        final playing = playback.sessions.values
+            .where((session) => session.playbackRequested)
+            .map((session) => session.id)
+            .toSet();
+        if (playing.isNotEmpty) {
+          if (await playback.pauseAllSessions()) pausedByTaskbar = playing;
+        } else if (pausedByTaskbar.isNotEmpty) {
+          final resumeIds = pausedByTaskbar;
+          pausedByTaskbar = <String>{};
+          for (final id in resumeIds) {
+            final session = playback.sessionById(id);
+            if (session != null && !session.playbackRequested) {
+              await playback.toggleSessionPlayPause(id);
+            }
+          }
+        } else {
+          await notifications.playPrimarySession();
+        }
       case 'next':
         await notifications.skipPrimarySessionToNext();
       case 'previous':

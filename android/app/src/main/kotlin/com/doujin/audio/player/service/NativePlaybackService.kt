@@ -219,10 +219,6 @@ class NativePlaybackService : MediaSessionService() {
                 override fun onPlayerError(sessionId: String, error: PlaybackException) {
                     handlePlayerError(sessionId, error)
                 }
-
-                override fun onAudioSessionIdChanged(sessionId: String, audioSessionId: Int) {
-                    publishSessionState(sessionId)
-                }
             }
         )
     }
@@ -1391,7 +1387,6 @@ class NativePlaybackService : MediaSessionService() {
             "player_state_changed state=${playbackStateName(playbackState)}",
             sessionManager.get(sessionId)
         )
-        publishSessionState(sessionId)
         schedulePersistSessionState()
         syncForegroundState()
     }
@@ -1404,7 +1399,6 @@ class NativePlaybackService : MediaSessionService() {
             sessionManager.get(sessionId)
         )
         acquireWakeLock()
-        publishSessionState(sessionId)
         persistSessionStateNow()
         syncForegroundState()
     }
@@ -1437,7 +1431,6 @@ class NativePlaybackService : MediaSessionService() {
                 "reason=${playWhenReadyReasonName(reason)}",
             sessionManager.get(sessionId)
         )
-        publishSessionState(sessionId)
         schedulePersistSessionState()
         syncForegroundState()
     }
@@ -1448,7 +1441,6 @@ class NativePlaybackService : MediaSessionService() {
             playbackRecovery.onPlaying(sessionId)
             PlaybackTimerAlarmScheduler.onPlaybackStarted(this, sessionId)
         }
-        publishSessionState(sessionId)
         schedulePersistSessionState()
         syncForegroundState()
     }

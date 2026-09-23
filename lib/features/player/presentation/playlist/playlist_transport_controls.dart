@@ -15,6 +15,7 @@ import '../../../../core/widgets/app_buttons.dart';
 import '../../../../core/widgets/app_dialog.dart';
 import '../../../../core/widgets/app_feedback.dart';
 import '../../../../core/widgets/app_transitions.dart';
+import '../../../../core/widgets/windows_horizontal_wheel_scroll.dart';
 import '../../application/playback_facade.dart';
 import '../../application/playback_session_snapshot.dart';
 import 'playlist_loop_widgets.dart';
@@ -598,8 +599,10 @@ class _PlaybackSecondaryControlsState
     Widget buildButtonsRow() {
       return LayoutBuilder(
         key: const ValueKey('playback_buttons_row'),
-        builder: (context, constraints) => SingleChildScrollView(
+        builder: (context, constraints) => WindowsHorizontalWheelScroll(
+          builder: (scrollController) => SingleChildScrollView(
           key: const ValueKey('playback_secondary_controls_horizontal_scroll'),
+          controller: scrollController,
           scrollDirection: Axis.horizontal,
           padding: const EdgeInsets.symmetric(horizontal: 10),
           child: ConstrainedBox(
@@ -643,6 +646,7 @@ class _PlaybackSecondaryControlsState
                 ),
               ],
             ),
+          ),
           ),
         ),
       );

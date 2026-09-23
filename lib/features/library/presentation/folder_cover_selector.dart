@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -129,6 +130,20 @@ class _FolderCoverSelectorState extends ConsumerState<FolderCoverSelector> {
         curve: Curves.easeOutCubic,
       );
     }
+  }
+
+  void _handleWindowsWheel(PointerSignalEvent signal) {
+    if (defaultTargetPlatform != TargetPlatform.windows ||
+        signal is! PointerScrollEvent ||
+        signal.scrollDelta.dy == 0) {
+      return;
+    }
+    final target = _currentIndex + (signal.scrollDelta.dy > 0 ? 1 : -1);
+    if (_saving || target < 0 || target >= _images.length) return;
+    GestureBinding.instance.pointerSignalResolver.register(
+      signal,
+      (_) => _goToPage(target),
+    );
   }
 
   Widget _buildNavButton({
@@ -352,7 +367,9 @@ class _FolderCoverSelectorState extends ConsumerState<FolderCoverSelector> {
         ClipRRect(
           key: const ValueKey('audio_detail_cover_content'),
           borderRadius: BorderRadius.circular(16),
-          child: AspectRatio(
+          child: Listener(
+            onPointerSignal: _handleWindowsWheel,
+            child: AspectRatio(
             aspectRatio: kStandardCoverAspectRatio,
             child: Stack(
               fit: StackFit.expand,
@@ -462,6 +479,7 @@ class _FolderCoverSelectorState extends ConsumerState<FolderCoverSelector> {
                   ),
                 ),
               ],
+            ),
             ),
           ),
         ),

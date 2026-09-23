@@ -634,7 +634,6 @@ const Map<String, String> appLanguageEn = {
   'operation_failed_retry': 'Operation failed. Please try again.',
   'operation_failed_diagnostics_hint':
       'Try again, or export diagnostics if the problem repeats.',
-  'section_danger_zone': 'Other',
   'allow_background_run': 'Allow background run',
   'allow_background_run_subtitle': 'Prevent system restrictions in background.',
   'allow_background_run_ready':
@@ -697,7 +696,6 @@ const Map<String, String> appLanguageEn = {
       'Try again later. If it still fails, check the update log or open the GitHub Release page to install it manually.',
   'update_install_failed_with_detail':
       'Retry later. If it still fails, check the update log. Detail: {detail}',
-  'open_update_log': 'View log',
   'install_permission_needed':
       'Please allow this app to install unknown apps first.',
   'install_permission_title': 'Allow update installs',
@@ -711,7 +709,6 @@ const Map<String, String> appLanguageEn = {
       '{format} uses built-in encoding parameters. Bitrate setting is ignored.',
   'about': 'About',
   'about_subtitle': 'Version, author, and project information',
-  'app_desc': 'Supports concurrent sessions and high-fidelity audio playback.',
   'about_version': 'Version',
   'about_source_code': 'Source code',
   'about_wiki': 'Wiki',
@@ -793,8 +790,6 @@ const Map<String, String> appLanguageEn = {
   'tap_select_video_file': 'Tap to choose a video file to convert',
   'output_directory': 'Output directory',
   'tap_select_output_dir': 'Tap to choose where to save the audio',
-  'current_params': 'Current settings: {value}',
-  'format_auto_encode': 'Automatic format encoding',
   'cancel_conversion': 'Cancel conversion',
   'notification_permission_title': 'Allow notifications',
   'notification_permission_message':

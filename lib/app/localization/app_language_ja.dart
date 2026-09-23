@@ -582,7 +582,6 @@ const Map<String, String> appLanguageJa = {
   'diagnostics_exported': '診断レポートの出力先：{path}',
   'operation_failed_retry': '操作に失敗しました。もう一度お試しください。',
   'operation_failed_diagnostics_hint': 'もう一度お試しください。問題が続く場合は診断レポートを出力してください。',
-  'section_danger_zone': 'その他',
   'allow_background_run': 'バックグラウンド実行を許可',
   'allow_background_run_subtitle': 'バックグラウンド制限を防ぎます。',
   'allow_background_run_ready': 'このアプリのバックグラウンド実行は許可されています。画面オフ再生がより安定します。',
@@ -635,7 +634,6 @@ const Map<String, String> appLanguageJa = {
       '後でもう一度お試しください。まだ失敗する場合は更新ログを確認するか、GitHub Release ページから手動でインストールしてください。',
   'update_install_failed_with_detail':
       '後でもう一度お試しください。まだ失敗する場合は更新ログを確認してください。詳細: {detail}',
-  'open_update_log': 'ログを表示',
   'install_permission_needed': 'このアプリから不明なアプリをインストールする許可を有効にしてください。',
   'install_permission_title': 'アップデートのインストールを許可',
   'install_permission_message':
@@ -647,7 +645,6 @@ const Map<String, String> appLanguageJa = {
   'bitrate_not_used': '{format} は形式内蔵のエンコードを使うため、ビットレート設定は無効です。',
   'about': 'このアプリについて',
   'about_subtitle': 'バージョン、開発者、プロジェクト情報',
-  'app_desc': '並行セッションと高音質再生に対応。',
   'about_version': 'バージョン',
   'about_source_code': 'ソースコード',
   'about_wiki': 'Wiki',
@@ -725,8 +722,6 @@ const Map<String, String> appLanguageJa = {
   'tap_select_video_file': '変換する動画ファイルを選択',
   'output_directory': '出力先',
   'tap_select_output_dir': '音声の保存先を選択',
-  'current_params': '現在の設定：{value}',
-  'format_auto_encode': '形式に合わせて自動エンコード',
   'cancel_conversion': '変換をキャンセル',
   'notification_permission_title': '通知を許可',
   'notification_permission_message':

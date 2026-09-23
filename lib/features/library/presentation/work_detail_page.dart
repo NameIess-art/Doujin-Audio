@@ -23,6 +23,7 @@ import '../../../core/widgets/async_cover_image.dart';
 import '../../../core/widgets/mobile_overlay_inset.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/top_page_header.dart';
+import '../../../core/widgets/windows_horizontal_wheel_scroll.dart';
 import '../../asmr/application/asmr_library_controller.dart';
 import '../../asmr/domain/asmr_models.dart';
 import '../../asmr/presentation/asmr_download_page.dart';
@@ -1309,8 +1310,10 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
                   Row(
                     children: [
                       Expanded(
-                        child: SingleChildScrollView(
+                        child: WindowsHorizontalWheelScroll(
                           controller: _breadcrumbScrollController,
+                          builder: (scrollController) => SingleChildScrollView(
+                          controller: scrollController,
                           scrollDirection: Axis.horizontal,
                           physics: const BouncingScrollPhysics(
                             parent: AlwaysScrollableScrollPhysics(),
@@ -1383,6 +1386,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
                               ],
                             ],
                           ),
+                        ),
                         ),
                       ),
                       const SizedBox(width: 8),
@@ -1622,11 +1626,14 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
         ],
         stops: [0, 0.06, 0.94, 1],
       ).createShader(bounds),
-      child: SingleChildScrollView(
+      child: WindowsHorizontalWheelScroll(
+        builder: (scrollController) => SingleChildScrollView(
         key: ValueKey<String>('work_detail_${keyPrefix}_scroller'),
+        controller: scrollController,
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 12),
         child: Row(children: children),
+        ),
       ),
     );
   }

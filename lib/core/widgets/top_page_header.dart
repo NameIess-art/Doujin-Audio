@@ -11,6 +11,7 @@ import '../../app/theme/app_styles.dart';
 import 'app_edge_fade_mask.dart';
 import 'app_transitions.dart';
 import 'marquee_text.dart';
+import 'windows_horizontal_wheel_scroll.dart';
 
 class AppPageAppBar extends StatelessWidget implements PreferredSizeWidget {
   const AppPageAppBar({
@@ -805,7 +806,9 @@ class HeaderSegmentedCategoryBar<T> extends StatelessWidget {
       alignment: Alignment.centerLeft,
       child: HeaderFloatingSurface(
         padding: const EdgeInsets.all(3),
-        child: SingleChildScrollView(
+        child: WindowsHorizontalWheelScroll(
+          builder: (scrollController) => SingleChildScrollView(
+          controller: scrollController,
           scrollDirection: Axis.horizontal,
           physics: const BouncingScrollPhysics(),
           child: Row(
@@ -852,6 +855,7 @@ class HeaderSegmentedCategoryBar<T> extends StatelessWidget {
                   );
                 })
                 .toList(growable: false),
+          ),
           ),
         ),
       ),

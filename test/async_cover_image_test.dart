@@ -295,6 +295,34 @@ void main() {
     expect(find.text('loaded:cover.image'), findsOneWidget);
   });
 
+  testWidgets(
+    'AsyncCoverImage does not rebuild for an unchanged resolved path',
+    (tester) async {
+      final refreshed = Completer<String?>();
+      var imageBuilds = 0;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: AsyncCoverImage(
+            future: refreshed.future,
+            initialPath: 'cover.image',
+            imageBuilder: (_, path) {
+              imageBuilds++;
+              return Text(path);
+            },
+            fallbackBuilder: (_) => const Text('fallback'),
+          ),
+        ),
+      );
+      final buildsBeforeRefresh = imageBuilds;
+
+      refreshed.complete('cover.image');
+      await tester.pump();
+
+      expect(imageBuilds, buildsBeforeRefresh);
+      expect(find.text('cover.image'), findsOneWidget);
+    },
+  );
+
   testWidgets('AsyncCoverImage reuses known cover when the page rebuilds', (
     tester,
   ) async {

@@ -285,6 +285,13 @@ void main() {
     expect(startupCallCount, greaterThan(0));
     expect(gateway.recordedCalls.last, <String>{destinationA});
 
+    playback.syncPresentationState(
+      focusedSessionId: null,
+      coverGeneration: 1,
+    );
+    await Future<void>.delayed(Duration.zero);
+    expect(gateway.recordedCalls, hasLength(startupCallCount));
+
     await settings.setAsmrDownloadDestinationRoot(destinationA);
     await Future<void>.delayed(Duration.zero);
     expect(gateway.recordedCalls, hasLength(startupCallCount));
@@ -302,6 +309,44 @@ void main() {
       <String>{destinationB},
       <String>{},
     ]);
+
+    const nativeUri = 'content://provider/document/native-audio';
+    final retainedNative = gateway.calls.firstWhere(
+      (uris) => uris.contains(nativeUri),
+    );
+    playback.updateNativeSessionRetainedContentUris(
+      'native-only-session',
+      const <String>[nativeUri],
+    );
+    expect(await retainedNative.timeout(const Duration(seconds: 1)), <String>{
+      nativeUri,
+    });
+
+    const failedUri = 'content://provider/document/failed-audio';
+    gateway.failNextCall = true;
+    final failedSubmission = gateway.calls.firstWhere(
+      (uris) => uris.contains(failedUri),
+    );
+    playback.updateNativeSessionRetainedContentUris(
+      'native-only-session',
+      const <String>[failedUri],
+    );
+    expect(await failedSubmission.timeout(const Duration(seconds: 1)), <String>{
+      failedUri,
+    });
+    await Future<void>.delayed(Duration.zero);
+
+    final restoredSubmission = gateway.calls.firstWhere(
+      (uris) => uris.contains(nativeUri),
+    );
+    playback.updateNativeSessionRetainedContentUris(
+      'native-only-session',
+      const <String>[nativeUri],
+    );
+    expect(
+      await restoredSubmission.timeout(const Duration(seconds: 1)),
+      <String>{nativeUri},
+    );
   });
 }
 
@@ -343,6 +388,7 @@ final class _RecordingFileCachePlatformGateway
   final StreamController<Set<String>> _calls =
       StreamController<Set<String>>.broadcast();
   final List<Set<String>> recordedCalls = <Set<String>>[];
+  bool failNextCall = false;
 
   Stream<Set<String>> get calls => _calls.stream;
 
@@ -352,6 +398,10 @@ final class _RecordingFileCachePlatformGateway
     final uris = Set<String>.unmodifiable(retainedUris);
     recordedCalls.add(uris);
     _calls.add(uris);
+    if (failNextCall) {
+      failNextCall = false;
+      return null;
+    }
     return PersistedUriPermissionReconcileResult(
       retainedCount: uris.length,
       releasedCount: 0,

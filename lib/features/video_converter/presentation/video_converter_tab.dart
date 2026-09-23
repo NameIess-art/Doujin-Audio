@@ -251,33 +251,6 @@ class _VideoConverterTabState extends ConsumerState<VideoConverterTab> {
                   ),
                 ),
               ),
-              const SizedBox.shrink(),
-              Visibility(
-                visible: false,
-                child: Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(14),
-                    child: Row(
-                      children: [
-                        Icon(
-                          Icons.tune_rounded,
-                          color: Theme.of(context).colorScheme.primary,
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            i18n.tr('current_params', {
-                              'value':
-                                  '${selectedFormat.toUpperCase()} 路 ${selectedFormat == 'wav' || selectedFormat == 'flac' ? i18n.tr('format_auto_encode') : selectedBitrate}',
-                            }),
-                            style: Theme.of(context).textTheme.bodyMedium,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
               const SizedBox(height: 16),
               if (isConverting || progress > 0) ...[
                 const SizedBox(height: 16),

@@ -198,7 +198,8 @@ class _AsyncCoverImageState extends State<AsyncCoverImage> {
             priority: 20,
             commit: () {
               if (!mounted || token != _token) return;
-              if (!_isResolved || (!preserveResolvedPath && _resolvedPath != null)) {
+              if (!_isResolved ||
+                  (!preserveResolvedPath && _resolvedPath != null)) {
                 setState(() {
                   if (!preserveResolvedPath) _resolvedPath = null;
                   _isResolved = true;

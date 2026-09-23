@@ -46,6 +46,7 @@ final class PersistedUriPermissionCoordinator implements RuntimeBinding {
       <StreamSubscription<Object?>>[];
 
   (int, int, int, String?)? _lastSubmittedRevision;
+  Set<String>? _lastSubmittedUris;
   bool _requested = false;
   bool _running = false;
   bool _disposed = false;
@@ -117,15 +118,24 @@ final class PersistedUriPermissionCoordinator implements RuntimeBinding {
           ..._downloads.persistedContentUris,
           ?savedDownloadContentUri,
         };
+        final lastSubmittedUris = _lastSubmittedUris;
+        if (lastSubmittedUris != null &&
+            lastSubmittedUris.length == retainedUris.length &&
+            lastSubmittedUris.containsAll(retainedUris)) {
+          _lastSubmittedRevision = revision;
+          continue;
+        }
         final result = await _gateway.reconcilePersistedUriPermissions(
           retainedUris,
         );
         if (_disposed) return;
         if (result == null) {
+          _lastSubmittedUris = null;
           _scheduleRetry();
           continue;
         }
         if (result.failedUris.isNotEmpty) {
+          _lastSubmittedUris = null;
           AppLogService.warning(
             'persisted_uri_permission_reconcile_partial_failure',
             error: <String, Object?>{
@@ -138,9 +148,11 @@ final class PersistedUriPermissionCoordinator implements RuntimeBinding {
           continue;
         }
         _lastSubmittedRevision = revision;
+        _lastSubmittedUris = retainedUris;
         _retryAttempt = 0;
       }
     } catch (error, stackTrace) {
+      _lastSubmittedUris = null;
       AppLogService.warning(
         'persisted_uri_permission_reconcile_failed',
         error: error,

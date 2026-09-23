@@ -1,6 +1,7 @@
 import 'dart:math';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -10,6 +11,7 @@ import '../../../../core/widgets/app_buttons.dart';
 import '../../../../core/widgets/app_dialog.dart';
 import '../../../../core/widgets/app_feedback.dart';
 import '../../../../core/widgets/scroll_activity_gate.dart';
+import '../../../../core/widgets/windows_horizontal_wheel_scroll.dart';
 import '../../application/playback_facade.dart';
 import '../../application/playback_session_snapshot.dart';
 import '../../domain/time_segment_label.dart';
@@ -165,7 +167,21 @@ class _TimeSegmentPanelState extends State<TimeSegmentPanel> {
           Expanded(
             child: ScrollActivityGate(
               maxNotificationDepth: 1,
-              child: PageView(
+              child: Listener(
+                onPointerSignal: (signal) {
+                  if (defaultTargetPlatform != TargetPlatform.windows ||
+                      signal is! PointerScrollEvent ||
+                      signal.scrollDelta.dy == 0) {
+                    return;
+                  }
+                  final target = _pageIndex + (signal.scrollDelta.dy > 0 ? 1 : -1);
+                  if (target < 0 || target >= 5) return;
+                  GestureBinding.instance.pointerSignalResolver.register(
+                    signal,
+                    (_) => _animateToPanelPage(target),
+                  );
+                },
+                child: PageView(
                 controller: _pageController,
                 onPageChanged: _handlePageChanged,
                 children: [
@@ -193,6 +209,7 @@ class _TimeSegmentPanelState extends State<TimeSegmentPanel> {
                     playback: widget.playback,
                   ),
                 ],
+                ),
               ),
             ),
           ),
@@ -253,7 +270,9 @@ class _TimeSegmentPanelState extends State<TimeSegmentPanel> {
                           ),
                         ),
                       )
-                    : ListView.separated(
+                    : WindowsHorizontalWheelScroll(
+                        builder: (scrollController) => ListView.separated(
+                        controller: scrollController,
                         scrollDirection: Axis.horizontal,
                         itemCount: widget.labels.length,
                         separatorBuilder: (_, _) => const SizedBox(width: 8),
@@ -265,6 +284,7 @@ class _TimeSegmentPanelState extends State<TimeSegmentPanel> {
                             onTap: () => widget.onSelect(label),
                           );
                         },
+                        ),
                       ),
               ),
               const SizedBox(width: 8),

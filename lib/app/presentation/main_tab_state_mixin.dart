@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
@@ -51,7 +53,7 @@ mixin MainTabStateMixin<T extends StatefulWidget> on State<T> {
   void handleScrollToTopSignal() {
     if (!mounted) return;
     if (_scrollToTopListenable.value == tabIndex && handlesScrollToTop) {
-      jumpToTop();
+      scrollToTop();
     }
   }
 
@@ -62,10 +64,28 @@ mixin MainTabStateMixin<T extends StatefulWidget> on State<T> {
     }
   }
 
-  void jumpToTop() {
+  void scrollToTop() {
     final controller = mainScrollController;
     if (!controller.hasClients) return;
-    controller.jumpTo(0);
+    final position = controller.position;
+    final top = position.minScrollExtent;
+    if (position.pixels <= top) return;
+    if (MediaQuery.disableAnimationsOf(context)) {
+      controller.jumpTo(top);
+      return;
+    }
+
+    final animatedDistance = position.viewportDimension * 2;
+    if (position.pixels - top > animatedDistance) {
+      controller.jumpTo(top + animatedDistance);
+    }
+    unawaited(
+      controller.animateTo(
+        top,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOutCubic,
+      ),
+    );
   }
 
   /// Immediately stops any ongoing momentum/animated scroll.
@@ -85,4 +105,3 @@ mixin MainTabStateMixin<T extends StatefulWidget> on State<T> {
     }
   }
 }
-

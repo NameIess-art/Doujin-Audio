@@ -110,7 +110,12 @@ class SessionDetailRoute extends PageRoute<void> {
 }
 
 const double _kSessionDetailBackgroundBlurSigma = 32;
-const int _kAsmrSessionDetailBackgroundCacheWidth = 300;
+const int _kSessionDetailBackgroundCacheWidth = 300;
+final ImageFilter _sessionDetailBackgroundFilter = ImageFilter.blur(
+  sigmaX: _kSessionDetailBackgroundBlurSigma,
+  sigmaY: _kSessionDetailBackgroundBlurSigma,
+  tileMode: TileMode.decal,
+);
 
 ThemeData _createAsmrSessionDetailTheme(
   ThemeData base,
@@ -486,15 +491,13 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
           );
           final enterProgress = Curves.easeOutCubic.transform(rawEnterProgress);
           final dismissProgress = _dismissController.value.clamp(0.0, 1.0);
-          final dragDistance =
-              MediaQuery.sizeOf(context).height * dismissProgress;
-          final enterOffset =
-              (1 - enterProgress) * MediaQuery.sizeOf(context).height;
+          final screenHeight = MediaQuery.sizeOf(context).height;
+          final dragDistance = screenHeight * dismissProgress;
+          final enterOffset = (1 - enterProgress) * screenHeight;
           final revealProgress = (dismissProgress * 3).clamp(0.0, 1.0);
-          final backdropProgress = pow(
-            1 - revealProgress,
-            2,
-          ).clamp(0.0, 1.0).toDouble();
+          final backdropOpacity = 1 - revealProgress;
+          final backdropProgress = backdropOpacity * backdropOpacity;
+          final showBackdrop = dismissProgress > 0.01 && backdropProgress > 0;
           return Stack(
             fit: StackFit.expand,
             children: [
@@ -508,7 +511,15 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
                 child: Transform.translate(
                   offset: Offset(0, enterOffset),
                   child: IgnorePointer(
-                    child: _SessionDetailBackdrop(progress: backdropProgress),
+                    child: Opacity(
+                      key: const ValueKey<String>(
+                        'session_detail_backdrop_paint_gate',
+                      ),
+                      opacity: showBackdrop ? 1 : 0,
+                      child: showBackdrop
+                          ? _SessionDetailBackdrop(progress: backdropProgress)
+                          : const _SessionDetailBackdrop(),
+                    ),
                   ),
                 ),
               ),
@@ -789,19 +800,8 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
     final onVerticalDragCancel = widget.onVerticalDragCancel;
 
     final track = paths.trackByPath(session.currentTrackPath);
-    final isAsmrTrack = track?.usesAsmrVisualTheme ?? false;
     final detailTheme = _detailThemeForSession(context, session, track);
     final cs = detailTheme.colorScheme;
-    final requestedBackgroundCacheWidth = coverCacheWidthForResolution(
-      ref.watch(coverImageResolutionProvider),
-    );
-    final backgroundCacheWidth = isAsmrTrack
-        ? min(
-            requestedBackgroundCacheWidth ??
-                _kAsmrSessionDetailBackgroundCacheWidth,
-            _kAsmrSessionDetailBackgroundCacheWidth,
-          )
-        : requestedBackgroundCacheWidth;
     final blurEnabled = ref.watch(
       settingsStateProvider.select(
         (state) => state.value?.blurPlayerBackgroundEnabled ?? true,
@@ -877,11 +877,7 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                               key: const ValueKey(
                                 'session_detail_background_blur',
                               ),
-                              imageFilter: ImageFilter.blur(
-                                sigmaX: _kSessionDetailBackgroundBlurSigma,
-                                sigmaY: _kSessionDetailBackgroundBlurSigma,
-                                tileMode: TileMode.decal,
-                              ),
+                              imageFilter: _sessionDetailBackgroundFilter,
                               child: AsyncCoverImage(
                                 future: coverPathFuture,
                                 requestKey: (
@@ -902,13 +898,10 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                                 imageBuilder: (context, coverPath) {
                                   return RetryingFileImage(
                                     path: coverPath,
-                                    cacheWidth: backgroundCacheWidth,
-                                    useDefaultCacheWidth:
-                                        backgroundCacheWidth != null,
+                                    cacheWidth:
+                                        _kSessionDetailBackgroundCacheWidth,
                                     fit: BoxFit.cover,
-                                    filterQuality: isAsmrTrack
-                                        ? FilterQuality.low
-                                        : FilterQuality.medium,
+                                    filterQuality: FilterQuality.low,
                                     color: cs.surface.withValues(alpha: 0.45),
                                     colorBlendMode: BlendMode.darken,
                                     fallbackBuilder: (_) =>

@@ -1,4 +1,3 @@
-import '../../../library/presentation/library_providers.dart';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
@@ -13,7 +12,6 @@ import '../../../../core/media/music_track.dart';
 import '../../../../core/widgets/app_feedback.dart';
 import '../../../../core/widgets/app_transitions.dart';
 import '../../../../core/widgets/async_cover_image.dart';
-import '../../../../core/widgets/library_like_cards.dart';
 import '../../../../core/widgets/shimmer_loading.dart';
 import '../../../../core/widgets/swipe_reveal_card.dart';
 import '../../../library/application/library_facade.dart';
@@ -165,7 +163,7 @@ class PlaylistLeadingIndicators extends StatelessWidget {
           children: [
             if (isPinned)
               Positioned(
-                top: 4,
+                top: 2,
                 left: 2,
                 child: PlaylistPinnedIndicator(
                   sessionId: sessionId,
@@ -173,7 +171,7 @@ class PlaylistLeadingIndicators extends StatelessWidget {
                 ),
               ),
             Positioned(
-              bottom: 4,
+              bottom: 2,
               left: 0,
               child: PlaylistSelectionIndicator(
                 sessionId: sessionId,
@@ -229,7 +227,7 @@ class PlaylistLoadingSkeleton extends StatelessWidget {
                     height: playlistCoverSize,
                     decoration: BoxDecoration(
                       color: cs.surfaceContainerHigh,
-                      borderRadius: AppRadius.borderCard,
+                      shape: BoxShape.circle,
                     ),
                   ),
                   const SizedBox(width: AppSpacing.xs),
@@ -468,16 +466,6 @@ class SessionListCard extends ConsumerWidget {
 
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final isAsmrOne = currentTrack?.isRemoteAsmr ?? false;
-    final detailDuration =
-        currentTrack == null || isAsmrOne || !currentTrack.isSingle
-        ? null
-        : ref.watch(
-            libraryDetailForTargetProvider(
-              ref
-                  .read(libraryFacadeProvider)
-                  .audioDetailTargetForTrack(currentTrack),
-            ).select((state) => state.value?.duration),
-          );
     final tokens = AppDesignTokens.of(context);
     final asmrBlue = tokens.asmrAccent;
     final localPlayRose = cs.primary;
@@ -526,9 +514,7 @@ class SessionListCard extends ConsumerWidget {
                   color: isSelected
                       ? cs.primaryContainer.withValues(alpha: 0.15)
                       : null,
-                  borderRadius: const BorderRadius.all(
-                    Radius.circular(LibraryLikeCardMetrics.cardRadius),
-                  ),
+                  borderRadius: playlistRowBorderRadius,
                 ),
                 child: InkWell(
                   excludeFromSemantics: true,
@@ -564,8 +550,6 @@ class SessionListCard extends ConsumerWidget {
                                 coverPath: coverPath,
                                 coverGeneration: coverGeneration,
                                 coverCacheWidth: coverCacheWidth,
-                                duration: track?.duration,
-                                detailDuration: detailDuration,
                               ),
                               Positioned(
                                 left: 4,
@@ -604,6 +588,7 @@ class SessionListCard extends ConsumerWidget {
                             onTap: isSelectionMode ? onToggleSelect : onOpen,
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisAlignment: MainAxisAlignment.center,
                               children: [
                                 Text(
                                   folderName,
@@ -627,20 +612,6 @@ class SessionListCard extends ConsumerWidget {
                                         fontSize: 14,
                                         height: 1.12,
                                       ),
-                                ),
-                                const SizedBox(height: 4),
-                                Wrap(
-                                  spacing: 10,
-                                  runSpacing: 2,
-                                  children: [
-                                    SessionMetaChip(
-                                      icon: Icons.repeat_rounded,
-                                      text: playlistLoopModeSummary(
-                                        context,
-                                        cardState.loopMode,
-                                      ),
-                                    ),
-                                  ],
                                 ),
                               ],
                             ),

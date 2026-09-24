@@ -1542,7 +1542,7 @@ void main() {
     });
     expect(skeletonCards, findsAtLeastNWidgets(1));
     final firstSkeleton = tester.widget<Container>(skeletonCards.first);
-    expect(firstSkeleton.padding, const EdgeInsets.all(8));
+    expect(firstSkeleton.padding, playlistRowPadding);
     expect(
       firstSkeleton.decoration,
       isNull,
@@ -1555,15 +1555,19 @@ void main() {
             (widget) =>
                 widget is Container &&
                 widget.constraints ==
-                    const BoxConstraints.tightFor(width: 72, height: 72),
+                    const BoxConstraints.tightFor(
+                      width: playlistCoverSize,
+                      height: playlistCoverSize,
+                    ),
           ),
         )
         .first;
-    expect(tester.getSize(firstSkeletonCover), const Size.square(72));
+    expect(tester.getSize(firstSkeletonCover), const Size.square(52));
     final skeletonTrailingCircles = find.descendant(
       of: skeletonCards.first,
       matching: find.byWidgetPredicate((widget) {
         return widget is Container &&
+            widget != tester.widget(firstSkeletonCover) &&
             widget.decoration is BoxDecoration &&
             (widget.decoration! as BoxDecoration).shape == BoxShape.circle;
       }),
@@ -2183,7 +2187,7 @@ void main() {
     expect(remaining, isEmpty);
   });
 
-  testWidgets('playlist cards keep track and single-file durations separate', (
+  testWidgets('playlist cards render circular covers without duration overlays', (
     WidgetTester tester,
   ) async {
     final fixture = AppRuntimeWidgetTestFixture();
@@ -2293,7 +2297,21 @@ void main() {
       tester.getSize(
         find.byKey(const ValueKey('playlist_cover_single-duration-session')),
       ),
-      const Size.square(72),
+      const Size.square(52),
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('playlist_cover_single-duration-session')),
+        matching: find.byType(ClipOval),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('playlist_cover_work-duration-session')),
+        matching: find.byType(ClipOval),
+      ),
+      findsOneWidget,
     );
 
     workSession.setOptimisticDuration(const Duration(minutes: 2, seconds: 5));
@@ -2302,8 +2320,9 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('02:05'), findsOneWidget);
-    expect(find.text('01:10'), findsOneWidget);
+    expect(find.byType(DurationOverlay), findsNothing);
+    expect(find.text('02:05'), findsNothing);
+    expect(find.text('01:10'), findsNothing);
 
     final workDetailTarget = AudioDetailTarget.libraryRootFolder(
       workTrack.groupKey,
@@ -2340,18 +2359,9 @@ void main() {
       runtimeGraph.library.resolvedAudioDetail(singleDetailTarget)?.duration,
       const Duration(minutes: 4, seconds: 50),
     );
-    final shownDurations = tester
-        .widgetList<DurationOverlay>(find.byType(DurationOverlay))
-        .map((overlay) => overlay.duration)
-        .toList(growable: false);
-    expect(shownDurations, contains(const Duration(minutes: 2, seconds: 5)));
-    expect(shownDurations, contains(const Duration(minutes: 4, seconds: 50)));
-    expect(
-      shownDurations,
-      isNot(contains(const Duration(minutes: 3, seconds: 40))),
-    );
-    expect(find.text('02:05'), findsOneWidget);
-    expect(find.text('04:50'), findsOneWidget);
+    expect(find.byType(DurationOverlay), findsNothing);
+    expect(find.text('02:05'), findsNothing);
+    expect(find.text('04:50'), findsNothing);
     expect(find.text('03:40'), findsNothing);
     expect(find.text('01:10'), findsNothing);
   });
@@ -2589,16 +2599,14 @@ void main() {
     expect(queueRowShape.side, BorderSide.none);
     expect(
       queueRowShape.borderRadius.resolve(TextDirection.ltr),
-      BorderRadius.circular(LibraryLikeCardMetrics.cardRadius),
+      playlistRowBorderRadius,
     );
     expect(queueCard.margin, EdgeInsets.zero);
-    final queueCoverGrid = tester.widget<ClipRRect>(
-      find.byKey(const ValueKey('playback_queue_cover_grid')),
+    final queueCoverGrid = find.byKey(
+      const ValueKey('playback_queue_cover_grid'),
     );
-    expect(
-      queueCoverGrid.borderRadius,
-      BorderRadius.circular(LibraryLikeCardMetrics.coverRadius),
-    );
+    expect(queueCoverGrid, findsOneWidget);
+    expect(tester.widget(queueCoverGrid), isA<ClipOval>());
     expect(
       queueCard.closedColor,
       Theme.of(tester.element(find.byType(PlaylistTab))).colorScheme.surface,
@@ -2627,20 +2635,11 @@ void main() {
       find.byKey(ValueKey('playback_queue_track_1_${queueSession.id}')),
       findsNothing,
     );
-    final durationOverlay = find.byKey(
-      ValueKey('playback_queue_duration_${queueSession.id}'),
-    );
-    expect(durationOverlay, findsOneWidget);
     expect(
-      find.descendant(of: durationOverlay, matching: find.text('02:35')),
-      findsOneWidget,
+      find.byKey(ValueKey('playback_queue_duration_${queueSession.id}')),
+      findsNothing,
     );
-    final coverGridRect = tester.getRect(
-      find.byKey(const ValueKey('playback_queue_cover_grid')),
-    );
-    final durationRect = tester.getRect(durationOverlay);
-    expect(durationRect.right, closeTo(coverGridRect.right - 4, 0.01));
-    expect(durationRect.bottom, closeTo(coverGridRect.bottom - 4, 0.01));
+    expect(find.text('02:35'), findsNothing);
 
     final remoteCurrentTrack = testMusicTrack(
       name: 'Remote current track name',
@@ -2697,23 +2696,11 @@ void main() {
       find.byKey(ValueKey('playback_queue_track_1_${queueSession.id}')),
       findsNothing,
     );
-    expect(
-      find.descendant(of: durationOverlay, matching: find.text('05:12')),
-      findsOneWidget,
-    );
+    expect(find.text('05:12'), findsNothing);
     expect(
       find.byKey(ValueKey('playback_queue_loop_mode_${queueSession.id}')),
-      findsOneWidget,
+      findsNothing,
     );
-    final loopText = tester.widget<Text>(
-      find.descendant(
-        of: find.byKey(ValueKey('playback_queue_loop_mode_${queueSession.id}')),
-        matching: find.byType(Text),
-      ),
-    );
-    expect(loopText.style?.fontSize, 11);
-    expect(loopText.style?.fontWeight, FontWeight.w600);
-    expect(loopText.style?.fontStyle, FontStyle.italic);
     queueSession.state = const PlayerState(true, ProcessingState.ready);
     playbackService.markSessionStateDirty();
     playbackService.syncSlice(
@@ -3317,7 +3304,7 @@ void main() {
     expect(rowShape.side, BorderSide.none);
     expect(
       rowShape.borderRadius.resolve(TextDirection.ltr),
-      BorderRadius.circular(LibraryLikeCardMetrics.cardRadius),
+      playlistRowBorderRadius,
     );
     expect(
       swipeCard.closedColor,
@@ -3343,9 +3330,9 @@ void main() {
       (visualCard.shape as RoundedRectangleBorder).borderRadius.resolve(
         TextDirection.ltr,
       ),
-      BorderRadius.circular(LibraryLikeCardMetrics.cardRadius),
+      playlistRowBorderRadius,
     );
-    expect(cardContent.padding, const EdgeInsets.all(8));
+    expect(cardContent.padding, playlistRowPadding);
     final cardContentRow = cardContent.child! as Row;
     expect(
       cardContentRow.children.whereType<SizedBox>().any(
@@ -4005,8 +3992,8 @@ void main() {
       final firstCell = find.byKey(
         const ValueKey('playback_queue_cover_cell_0'),
       );
-      expect(tester.getSize(grid), const Size.square(72));
-      expect(tester.getSize(firstCell), const Size.square(72));
+      expect(tester.getSize(grid), const Size.square(52));
+      expect(tester.getSize(firstCell), const Size.square(52));
 
       unawaited(
         Navigator.of(
@@ -4363,7 +4350,7 @@ void main() {
         find.ancestor(of: cue, matching: find.byType(Opacity)).first,
       );
 
-      expect(tester.getSize(viewport).height, 271.0);
+      expect(tester.getSize(viewport).height, 288.0);
       expect(opacityFor(cue0).opacity, 0.30);
       expect(opacityFor(cue1).opacity, 1);
       expect(opacityFor(cue2).opacity, 0.30);
@@ -4819,7 +4806,8 @@ void main() {
       );
       expect(
         tester.getBottomLeft(trackIndicator).dy,
-        tester.getBottomLeft(trackContent).dy - 12,
+        tester.getBottomLeft(trackContent).dy -
+            (playlistRowPadding.bottom + 4),
       );
       final indicatorContainer = tester.widget<Container>(trackIndicator);
       final indicatorDecoration =
@@ -5360,7 +5348,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('顺序 - 跨文件夹'), findsOneWidget);
+    expect(find.text('顺序 - 跨文件夹'), findsNothing);
 
     unawaited(
       Navigator.of(
@@ -5633,6 +5621,91 @@ void main() {
       expect(find.byKey(const ValueKey('segments')), findsOneWidget);
       // Secondary controls capsule is hidden in portrait
       expect(secondaryControlsFinder, findsNothing);
+    },
+  );
+
+  testWidgets(
+    'playlist item row height is compact with semicircular left border and swipe-right underlayer is semicircular',
+    (tester) async {
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      final track = MusicTrack(
+        path: '/library/Work/01.mp3',
+        displayName: 'Track Title Line 1\nTrack Title Line 2',
+        groupKey: '/library/Work',
+        groupTitle: 'Work Folder Line',
+        groupSubtitle: '/library/Work',
+        isSingle: false,
+      );
+      fixture.runtimeGraph.library.addTracks(
+        <MusicTrack>[track],
+        notify: false,
+        persist: false,
+      );
+      final session = fixture.runtimeGraph.playback.createTrackSession(
+        track,
+        customQueueTracks: <MusicTrack>[track],
+      );
+      addTearDown(session.shutdown);
+
+      fixture.playbackService.syncSlice(
+        activeSessions: <PlaybackSession>[session],
+        playingSessionCount: 0,
+        focusedSessionId: session.id,
+        coverGeneration: 0,
+        isInitialized: true,
+      );
+
+      await tester.pumpWidget(
+        fixture.build(
+          const MobileOverlayInset(bottomInset: 132, child: PlaylistTab()),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final swipeCardFinder = find.byType(SwipeRevealCard);
+      expect(swipeCardFinder, findsOneWidget);
+      final swipeCard = tester.widget<SwipeRevealCard>(swipeCardFinder);
+
+      // Verify row height is compact (64)
+      final cardSize = tester.getSize(swipeCardFinder);
+      expect(cardSize.height, 64.0);
+
+      // Verify left border is semicircular (radius = 32)
+      final rowShape = swipeCard.shape as RoundedRectangleBorder;
+      final borderRadius = rowShape.borderRadius.resolve(TextDirection.ltr);
+      expect(borderRadius.topLeft, const Radius.circular(32));
+      expect(borderRadius.bottomLeft, const Radius.circular(32));
+      expect(
+        borderRadius.topRight,
+        const Radius.circular(LibraryLikeCardMetrics.cardRadius),
+      );
+      expect(
+        borderRadius.bottomRight,
+        const Radius.circular(LibraryLikeCardMetrics.cardRadius),
+      );
+
+      // Swipe right to reveal leading action (pin)
+      await tester.drag(swipeCardFinder, const Offset(180, 0));
+      await tester.pump();
+
+      // Find the revealed underlayer DecoratedBox
+      final underlayerBoxes = tester.widgetList<DecoratedBox>(
+        find.descendant(
+          of: swipeCardFinder,
+          matching: find.byType(DecoratedBox),
+        ),
+      );
+      final revealedUnderlayer = underlayerBoxes.firstWhere(
+        (box) => box.decoration is ShapeDecoration,
+      );
+      final shapeDeco = revealedUnderlayer.decoration as ShapeDecoration;
+      final revealShape = shapeDeco.shape as RoundedRectangleBorder;
+      final revealBorderRadius = revealShape.borderRadius.resolve(
+        TextDirection.ltr,
+      );
+      expect(revealBorderRadius.topLeft, const Radius.circular(32));
+      expect(revealBorderRadius.bottomLeft, const Radius.circular(32));
     },
   );
 

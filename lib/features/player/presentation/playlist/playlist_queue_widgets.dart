@@ -23,8 +23,6 @@ import '../../../../core/widgets/app_edge_fade_mask.dart';
 import '../../../../core/widgets/app_feedback.dart';
 import '../../../../core/widgets/app_transitions.dart';
 import '../../../../core/widgets/async_cover_image.dart';
-import '../../../../core/widgets/duration_overlay.dart';
-import '../../../../core/widgets/library_like_cards.dart';
 import '../../../../core/widgets/page_header_inset.dart';
 import '../../../../core/widgets/swipe_reveal_card.dart';
 import '../../../../core/widgets/top_page_header.dart';
@@ -33,7 +31,6 @@ import '../../application/playback_facade.dart';
 import '../../application/playback_session_snapshot.dart';
 import 'playlist_feature_icons.dart';
 import 'playlist_list_view.dart';
-import 'playlist_media_widgets.dart';
 import 'playlist_shared_helpers.dart';
 
 Future<void> _stagePlaybackQueueEntryRemoval(
@@ -164,22 +161,6 @@ class PlaybackQueueCard extends ConsumerWidget {
         : currentTrack?.displayName ??
               path.basenameWithoutExtension(cardState.trackPath);
     final isAsmrOne = currentTrack?.isRemoteAsmr ?? false;
-    final trackDuration = currentTrack?.duration;
-    final hasKnownDuration =
-        trackDuration != null && trackDuration > Duration.zero;
-    final detailDuration =
-        currentTrack == null ||
-            isAsmrOne ||
-            !currentTrack.isSingle ||
-            hasKnownDuration
-        ? null
-        : ref.watch(
-            libraryDetailForTargetProvider(
-              ref
-                  .read(libraryFacadeProvider)
-                  .audioDetailTargetForTrack(currentTrack),
-            ).select((state) => state.value?.duration),
-          );
     final tokens = AppDesignTokens.of(context);
     final asmrBlue = tokens.asmrAccent;
     final featureIconColor = cardState.queueColorValue != null
@@ -219,9 +200,7 @@ class PlaybackQueueCard extends ConsumerWidget {
               color: isSelected
                   ? cs.primaryContainer.withValues(alpha: 0.15)
                   : null,
-              borderRadius: const BorderRadius.all(
-                Radius.circular(LibraryLikeCardMetrics.cardRadius),
-              ),
+              borderRadius: playlistRowBorderRadius,
             ),
             child: InkWell(
               excludeFromSemantics: true,
@@ -274,45 +253,6 @@ class PlaybackQueueCard extends ConsumerWidget {
                                 color: activeColor,
                               ),
                             ),
-                          Positioned(
-                            right: 4,
-                            bottom: 4,
-                            child: StreamBuilder<Duration?>(
-                              key: ValueKey<String>(
-                                'playback_queue_duration_builder_${session.id}_${currentTrack?.path}',
-                              ),
-                              stream: session.durationStream,
-                              initialData: (PathMatcher.equalsNormalized(
-                                        session.currentTrackPath,
-                                        currentTrack?.path ?? '',
-                                      )
-                                      ? session.duration
-                                      : null) ??
-                                  currentTrack?.duration,
-                              builder: (context, snapshot) {
-                                final isCurrent = PathMatcher.equalsNormalized(
-                                  session.currentTrackPath,
-                                  currentTrack?.path ?? '',
-                                );
-                                final streamDuration = isCurrent
-                                    ? (snapshot.data ?? session.duration)
-                                    : null;
-                                final duration = detailDuration ??
-                                    streamDuration ??
-                                    currentTrack?.duration;
-                                if (duration == null ||
-                                    duration <= Duration.zero) {
-                                  return const SizedBox.shrink();
-                                }
-                                return DurationOverlay(
-                                  key: ValueKey<String>(
-                                    'playback_queue_duration_${session.id}',
-                                  ),
-                                  duration: duration,
-                                );
-                              },
-                            ),
-                          ),
                         ],
                       ),
                       const SizedBox(width: AppSpacing.xs),
@@ -333,6 +273,7 @@ class PlaybackQueueCard extends ConsumerWidget {
                         onTap: isSelectionMode ? onToggleSelect : onOpen,
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             Text(
                               queue.name,
@@ -362,23 +303,6 @@ class PlaybackQueueCard extends ConsumerWidget {
                                     fontSize: 14,
                                     height: 1.12,
                                   ),
-                            ),
-                            const SizedBox(height: 4),
-                            Wrap(
-                              spacing: 10,
-                              runSpacing: 2,
-                              children: [
-                                SessionMetaChip(
-                                  key: ValueKey<String>(
-                                    'playback_queue_loop_mode_${session.id}',
-                                  ),
-                                  icon: Icons.repeat_rounded,
-                                  text: playlistLoopModeSummary(
-                                    context,
-                                    cardState.loopMode,
-                                  ),
-                                ),
-                              ],
                             ),
                           ],
                         ),
@@ -525,9 +449,8 @@ class _QueueCoverGrid extends StatelessWidget {
         ],
       );
     }
-    return ClipRRect(
+    return ClipOval(
       key: const ValueKey('playback_queue_cover_grid'),
-      borderRadius: BorderRadius.circular(LibraryLikeCardMetrics.coverRadius),
       child: SizedBox.square(dimension: playlistCoverSize, child: content),
     );
   }
@@ -1394,7 +1317,7 @@ class _QueueAudioEditCard extends ConsumerWidget {
     required this.title,
     required this.subtitle,
     required this.trailing,
-    this.rowHeight = playlistRowHeight,
+    this.rowHeight = 88.0,
     this.color,
   });
 
@@ -1436,19 +1359,16 @@ class _QueueAudioEditCard extends ConsumerWidget {
           children: [
             Expanded(
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(
+                padding: EdgeInsets.fromLTRB(
                   AppSpacing.xs,
-                  AppSpacing.xs,
+                  playlistRowPadding.top,
                   0,
-                  AppSpacing.xs,
+                  playlistRowPadding.bottom,
                 ),
                 child: Row(
                   children: [
                     if (showCover) ...[
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(
-                          LibraryLikeCardMetrics.coverRadius,
-                        ),
+                      ClipOval(
                         child: SizedBox.square(
                           dimension: playlistCoverSize,
                           child: track == null
@@ -1477,7 +1397,7 @@ class _QueueAudioEditCard extends ConsumerWidget {
                         children: [
                           Text(
                             subtitle,
-                            maxLines: 2,
+                            maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: Theme.of(context).textTheme.bodySmall
                                 ?.copyWith(

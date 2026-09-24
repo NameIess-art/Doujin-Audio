@@ -1845,9 +1845,9 @@ void main() {
           )
           .first,
     );
-    expect(rjPosition.right, 4);
+    expect(rjPosition.left, 4);
     expect(rjPosition.top, 4);
-    expect(rjPosition.left, isNull);
+    expect(rjPosition.right, isNull);
     final swipeCard = tester.widget<SwipeRevealCard>(
       find.ancestor(of: workTitle, matching: find.byType(SwipeRevealCard)),
     );

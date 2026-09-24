@@ -2404,9 +2404,9 @@ void main() {
             )
             .first,
       );
-      expect(rjPosition.right, 4);
+      expect(rjPosition.left, 4);
       expect(rjPosition.top, 4);
-      expect(rjPosition.left, isNull);
+      expect(rjPosition.right, isNull);
       final pinPosition = tester.widget<Positioned>(
         find
             .ancestor(
@@ -2419,9 +2419,9 @@ void main() {
             )
             .first,
       );
-      expect(pinPosition.left, 4);
+      expect(pinPosition.right, 4);
       expect(pinPosition.top, 4);
-      expect(pinPosition.right, isNull);
+      expect(pinPosition.left, isNull);
 
       // Swipe card now shows unpin
       final updatedSwipeCard = tester.widget<SwipeRevealCard>(swipeCardFinder);

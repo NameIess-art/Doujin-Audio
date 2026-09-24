@@ -59,7 +59,7 @@ class SessionFeatureBadgeStack extends StatelessWidget {
     required this.color,
     required this.child,
     this.width = 56,
-    this.height = 64,
+    this.height = playlistCoverSize,
   });
 
   final List<IconData> featureIcons;

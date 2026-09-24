@@ -1,5 +1,4 @@
 import '../../../library/presentation/library_providers.dart';
-import '../playback_providers.dart';
 import '../../../settings/presentation/settings_providers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -8,8 +7,6 @@ import '../../../../app/state/app_runtime_providers.dart';
 import '../../../../app/presentation/app_presentation_providers.dart';
 import '../../../../core/media/music_track.dart';
 import '../../../../core/widgets/async_cover_image.dart';
-import '../../../../core/widgets/duration_overlay.dart';
-import '../../../../core/widgets/library_like_cards.dart';
 import '../../../library/application/library_facade.dart';
 import '../../../settings/application/settings_state.dart';
 import '../../application/playback_session_snapshot.dart';
@@ -152,8 +149,6 @@ class SessionCoverThumbnail extends ConsumerStatefulWidget {
     required this.coverPath,
     required this.coverGeneration,
     required this.coverCacheWidth,
-    this.duration,
-    this.detailDuration,
   });
 
   final String sessionId;
@@ -161,8 +156,6 @@ class SessionCoverThumbnail extends ConsumerStatefulWidget {
   final String? coverPath;
   final int coverGeneration;
   final int? coverCacheWidth;
-  final Duration? duration;
-  final Duration? detailDuration;
 
   @override
   ConsumerState<SessionCoverThumbnail> createState() =>
@@ -189,9 +182,6 @@ class _SessionCoverThumbnailState
 
   @override
   Widget build(BuildContext context) {
-    final session = ref
-        .read(playbackFacadeProvider)
-        .sessionSnapshotById(widget.sessionId);
     final library = ref.read(libraryFacadeProvider);
     final cover = AsyncLocalCoverImage(
       future: _futureFor(library),
@@ -206,80 +196,12 @@ class _SessionCoverThumbnailState
       compact: true,
       iconSize: 26,
     );
-    return Stack(
-      children: [
-        SizedBox(
-          key: ValueKey<String>('playlist_cover_${widget.sessionId}'),
-          width: playlistCoverSize,
-          height: playlistCoverSize,
-          child: Material(
-            type: MaterialType.transparency,
-            borderRadius: BorderRadius.circular(
-              LibraryLikeCardMetrics.coverRadius,
-            ),
-            clipBehavior: Clip.antiAlias,
-            child: cover,
-          ),
-        ),
-        Positioned(
-          right: 4,
-          bottom: 4,
-          child: StreamBuilder<Duration?>(
-            stream: session?.durationStream,
-            initialData: session?.duration ?? widget.duration,
-            builder: (context, snapshot) {
-              final duration = widget.detailDuration ?? snapshot.data;
-              if (duration == null || duration <= Duration.zero) {
-                return const SizedBox.shrink();
-              }
-              return DurationOverlay(duration: duration);
-            },
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class SessionMetaChip extends StatelessWidget {
-  const SessionMetaChip({
-    super.key,
-    required this.icon,
-    required this.text,
-  });
-
-  final IconData icon;
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final fg = cs.onSurfaceVariant.withValues(alpha: 0.65);
-    return Padding(
-      padding: EdgeInsets.zero,
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            icon,
-            size: 11,
-            color: fg,
-          ),
-          const SizedBox(width: 5),
-          Flexible(
-            child: Text(
-              text,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                fontWeight: FontWeight.w600,
-                fontStyle: FontStyle.italic,
-                color: fg,
-                fontSize: 11,
-              ),
-            ),
-          ),
-        ],
+    return SizedBox(
+      key: ValueKey<String>('playlist_cover_${widget.sessionId}'),
+      width: playlistCoverSize,
+      height: playlistCoverSize,
+      child: ClipOval(
+        child: cover,
       ),
     );
   }

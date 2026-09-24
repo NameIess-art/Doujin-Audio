@@ -11,7 +11,6 @@ import '../../../../app/state/app_runtime_providers.dart';
 import '../../../../app/state/subtitle_settings_provider.dart';
 import '../../application/playback_facade.dart';
 import '../../domain/audio_effects.dart';
-import '../../domain/playback_mode.dart';
 import '../../../../app/theme/app_styles.dart';
 import '../../../../core/media/music_track.dart';
 import '../../../../core/media/natural_sort.dart';
@@ -22,13 +21,21 @@ import '../../../../core/widgets/library_like_cards.dart';
 
 const double sessionVolumeDisplayMaximum = 1.5;
 const int sessionVolumeDisplayMaximumPercent = 150;
-const double playlistCoverSize = 72;
-const double playlistRowHeight = 88;
-const EdgeInsets playlistRowPadding = EdgeInsets.all(AppSpacing.xs);
+const double playlistCoverSize = 52;
+const double playlistRowHeight = 64;
+const double playlistRowRadius = playlistRowHeight / 2;
+const EdgeInsets playlistRowPadding = EdgeInsets.symmetric(
+  horizontal: AppSpacing.xs,
+  vertical: 6,
+);
+const BorderRadius playlistRowBorderRadius = BorderRadius.only(
+  topLeft: Radius.circular(playlistRowRadius),
+  bottomLeft: Radius.circular(playlistRowRadius),
+  topRight: Radius.circular(LibraryLikeCardMetrics.cardRadius),
+  bottomRight: Radius.circular(LibraryLikeCardMetrics.cardRadius),
+);
 const RoundedRectangleBorder playlistRowShape = RoundedRectangleBorder(
-  borderRadius: BorderRadius.all(
-    Radius.circular(LibraryLikeCardMetrics.cardRadius),
-  ),
+  borderRadius: playlistRowBorderRadius,
 );
 
 LinearGradient playlistActiveHighlightGradient(
@@ -232,23 +239,6 @@ MusicTrack? resolveSessionSwitcherSelectedTrack({
   return null;
 }
 
-String playlistLoopModeSummary(BuildContext context, SessionLoopMode mode) {
-  final i18n = ProviderScope.containerOf(
-    context,
-    listen: false,
-  ).read(appLanguageProviderInstanceProvider);
-  if (mode == SessionLoopMode.single) return i18n.tr('single_loop');
-  final scope = mode.isCrossFolder
-      ? i18n.tr('cross_folder')
-      : i18n.tr('current_folder');
-  final order = mode.isShuffle
-      ? i18n.tr('random_order')
-      : i18n.tr('sequential_order');
-  if (mode.isOneShot) {
-    return '$order (${i18n.tr('pause_after_playback')}) - $scope';
-  }
-  return '$order - $scope';
-}
 
 bool sameSessionSwitcherTrack(MusicTrack left, MusicTrack right) {
   if (identical(left, right) ||

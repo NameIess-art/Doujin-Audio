@@ -45,19 +45,22 @@ final class AudioPathCoordinator implements PlaybackTrackResolver {
   @override
   MusicTrack? sessionTrackForPath(String sessionId, String trackPath) {
     final session = _playback.sessionById(sessionId);
-    if (session == null) {
-      return _library.trackByPath(_playback.resolveRetargetedPath(trackPath));
-    }
     final resolvedPath = _playback.resolveRetargetedPath(trackPath);
-    for (final track in session.customQueueTracks ?? const <MusicTrack>[]) {
-      if (PathMatcher.equalsNormalized(track.path, trackPath) ||
-          PathMatcher.equalsNormalized(
-            _playback.resolveRetargetedPath(track.path),
-            resolvedPath,
-          )) {
-        return track;
+    if (session == null) {
+      return _library.trackByPath(resolvedPath);
+    }
+    var sessionTrack = session.trackForPath(
+      trackPath,
+      resolvedPath: resolvedPath,
+    );
+    if (sessionTrack == null) {
+      final originalPath = _playback.originalPathForRetargeted(trackPath) ??
+          _playback.originalPathForRetargeted(resolvedPath);
+      if (originalPath != null) {
+        sessionTrack = session.trackForPath(originalPath);
       }
     }
+    if (sessionTrack != null) return sessionTrack;
     return _library.trackByPath(resolvedPath);
   }
 
@@ -66,20 +69,19 @@ final class AudioPathCoordinator implements PlaybackTrackResolver {
     if (track == null) return const <MusicTrack>[];
     final libraryTracks = _library.tracksInGroup(track.groupKey, limit: limit);
     if (libraryTracks.isNotEmpty) return libraryTracks;
+    final resolvedPath = _playback.resolveRetargetedPath(trackPath);
+    final originalPath = _playback.originalPathForRetargeted(trackPath) ??
+        _playback.originalPathForRetargeted(resolvedPath);
     for (final session in _playback.sessions.values) {
+      final sessionTrack = session.trackForPath(
+            trackPath,
+            resolvedPath: resolvedPath,
+          ) ??
+          (originalPath != null ? session.trackForPath(originalPath) : null) ??
+          session.trackForPath(track.path);
+      if (sessionTrack == null) continue;
       final queue = session.customQueueTracks;
-      if (queue == null ||
-          !queue.any(
-            (candidate) =>
-                PathMatcher.equalsNormalized(candidate.path, trackPath) ||
-                PathMatcher.equalsNormalized(candidate.path, track.path) ||
-                PathMatcher.equalsNormalized(
-                  _playback.resolveRetargetedPath(candidate.path),
-                  _playback.resolveRetargetedPath(trackPath),
-                ),
-          )) {
-        continue;
-      }
+      if (queue == null) continue;
       final matches = queue.where(
         (candidate) => candidate.groupKey == track.groupKey,
       );

@@ -1276,6 +1276,43 @@ void main() {
     expect(container.read(isTrackActiveProvider('/tracks/active.mp3')), isTrue);
     expect(container.read(isTrackActiveProvider('/tracks/other.mp3')), isFalse);
 
+    final activeChanges = <bool>[];
+    final activeSubscription = container.listen(
+      isTrackActiveProvider('/tracks/active.mp3'),
+      (_, next) => activeChanges.add(next),
+    );
+    await container.read(playbackStateProvider.future);
+    await tester.pump();
+    active.state = const PlayerState(true, ProcessingState.ready);
+    fixture.playbackService.syncSlice(
+      activeSessions: [active, empty],
+      playingSessionCount: 1,
+      focusedSessionId: active.id,
+      coverGeneration: 0,
+      isInitialized: true,
+    );
+    await tester.pumpAndSettle();
+    expect(container.read(isTrackActiveProvider('/tracks/active.mp3')), isTrue);
+    expect(activeChanges, isEmpty);
+
+    active.currentTrackPath = '/tracks/other.mp3';
+    fixture.playbackService.syncSlice(
+      activeSessions: [active, empty],
+      playingSessionCount: 1,
+      focusedSessionId: active.id,
+      coverGeneration: 0,
+      isInitialized: true,
+    );
+    await tester.pumpAndSettle();
+    expect(
+      container.read(activeTrackPathsProvider).paths,
+      contains('/tracks/other.mp3'),
+    );
+    expect(container.read(isTrackActiveProvider('/tracks/active.mp3')), isFalse);
+    expect(activeChanges, [false]);
+    expect(container.read(isTrackActiveProvider('/tracks/other.mp3')), isTrue);
+
+    activeSubscription.close();
     container.dispose();
     await active.shutdown();
     await empty.shutdown();

@@ -937,10 +937,11 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
                     final current = _playback.sessionSnapshotById(session.id);
                     if (current == null ||
                         current.playbackQueue != session.playbackQueue ||
-                        !listEquals(
-                          current.customQueueTracks,
-                          session.customQueueTracks,
-                        )) {
+                        (current.queueVersion != session.queueVersion &&
+                            !listEquals(
+                              current.customQueueTracks,
+                              session.customQueueTracks,
+                            ))) {
                       return;
                     }
                     if (session.isPlaybackQueue) {

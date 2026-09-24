@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import '../../../core/media/music_track.dart';
+import '../../../core/media/path_matcher.dart';
 import '../../../core/immutable_collections.dart';
 import '../domain/audio_effects.dart';
 import '../domain/playback_mode.dart';
@@ -20,12 +21,13 @@ class PlaybackSession {
     required this.state,
     this.lastPlayedAt,
     List<MusicTrack>? customQueueTracks,
-    this.playbackQueue,
+    PlaybackQueueDefinition? playbackQueue,
     this.currentQueueIndex = 0,
     this.isTemporary = false,
   }) : _customQueueTracks = customQueueTracks == null
            ? null
-           : immutableList(customQueueTracks);
+           : immutableList(customQueueTracks),
+       _playbackQueue = playbackQueue;
 
   final String id;
   bool isTemporary;
@@ -43,13 +45,63 @@ class PlaybackSession {
       StreamController<Duration>.broadcast();
   Timer? _loadingIndicatorTimer;
   bool _suppressTransientLoading = false;
+  int _queueVersion = 0;
+  int get queueVersion => _queueVersion;
+
+  Map<String, MusicTrack>? _trackPathMap;
+
   List<MusicTrack>? _customQueueTracks;
   List<MusicTrack>? get customQueueTracks => _customQueueTracks;
   set customQueueTracks(List<MusicTrack>? tracks) {
     _customQueueTracks = tracks == null ? null : immutableList(tracks);
+    _queueVersion++;
+    _trackPathMap = null;
+    nativePlaybackQueueCacheKey = null;
+    nativePlaybackQueueCache = null;
   }
 
-  PlaybackQueueDefinition? playbackQueue;
+  PlaybackQueueDefinition? _playbackQueue;
+  PlaybackQueueDefinition? get playbackQueue => _playbackQueue;
+  set playbackQueue(PlaybackQueueDefinition? queue) {
+    if (_playbackQueue == queue) return;
+    _playbackQueue = queue;
+    _queueVersion++;
+    _trackPathMap = null;
+    nativePlaybackQueueCacheKey = null;
+    nativePlaybackQueueCache = null;
+  }
+
+  Map<String, MusicTrack> get _trackMap {
+    final existing = _trackPathMap;
+    if (existing != null) return existing;
+    final map = <String, MusicTrack>{};
+    for (final track in _customQueueTracks ?? const <MusicTrack>[]) {
+      map[PathMatcher.normalize(track.path)] = track;
+    }
+    final queue = _playbackQueue;
+    if (queue != null) {
+      for (final entry in queue.entries) {
+        for (final track in entry.tracks) {
+          map.putIfAbsent(PathMatcher.normalize(track.path), () => track);
+        }
+      }
+    }
+    return _trackPathMap = map;
+  }
+
+  MusicTrack? trackForPath(String trackPath, {String? resolvedPath}) {
+    if (trackPath.isEmpty) return null;
+    final map = _trackMap;
+    final normalized = PathMatcher.normalize(trackPath);
+    final direct = map[normalized];
+    if (direct != null) return direct;
+    if (resolvedPath != null && resolvedPath.isNotEmpty && resolvedPath != trackPath) {
+      final resolvedNormalized = PathMatcher.normalize(resolvedPath);
+      final resolved = map[resolvedNormalized];
+      if (resolved != null) return resolved;
+    }
+    return null;
+  }
   int currentQueueIndex;
   bool get isPlaybackQueue => playbackQueue != null;
   String currentTrackPath;

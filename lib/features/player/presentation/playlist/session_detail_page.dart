@@ -222,9 +222,13 @@ class _DetailStructure {
       session?.currentTrackPath == other.session?.currentTrackPath &&
       session?.loadedPath == other.session?.loadedPath &&
       session?.currentQueueIndex == other.session?.currentQueueIndex &&
+      session?.queueVersion == other.session?.queueVersion &&
       session?.playbackQueue == other.session?.playbackQueue &&
       session?.positionStream == other.session?.positionStream &&
-      listEquals(session?.customQueueTracks, other.session?.customQueueTracks);
+      (identical(session?.customQueueTracks, other.session?.customQueueTracks) ||
+          ((session?.queueVersion ?? 0) != 0 &&
+              session?.queueVersion == other.session?.queueVersion) ||
+          listEquals(session?.customQueueTracks, other.session?.customQueueTracks));
 
   @override
   int get hashCode => Object.hash(
@@ -233,9 +237,9 @@ class _DetailStructure {
     session?.currentTrackPath,
     session?.loadedPath,
     session?.currentQueueIndex,
-    session?.playbackQueue,
+    session?.queueVersion,
+    session?.playbackQueue?.contentSignature ?? session?.playbackQueue,
     session?.positionStream,
-    Object.hashAll(session?.customQueueTracks ?? const []),
   );
 }
 

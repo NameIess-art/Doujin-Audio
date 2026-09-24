@@ -240,6 +240,7 @@ class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
                 try {
                   await player.remove(0);
                   current.queue.removeAt(0);
+                  current.invalidateRetainedUris();
                   current.mediaUris.removeAt(0);
                   current.index--;
                 } finally {
@@ -590,7 +591,18 @@ class _WindowsPlaybackSession {
   Player? player;
   VideoController? videoController;
   final subscriptions = <StreamSubscription<dynamic>>[];
-  List<Map<String, Object?>> queue = [];
+  List<Map<String, Object?>> _queue = [];
+  List<String>? _cachedRetainedUris;
+
+  List<Map<String, Object?>> get queue => _queue;
+  set queue(List<Map<String, Object?>> items) {
+    _queue = items;
+    _cachedRetainedUris = null;
+  }
+
+  void invalidateRetainedUris() {
+    _cachedRetainedUris = null;
+  }
   List<String> mediaUris = [];
   int index = 0;
   Duration position = Duration.zero;
@@ -644,7 +656,8 @@ class _WindowsPlaybackSession {
       eqCapabilities: windowsEqCapabilities,
       error: error,
       queueIndex: index,
-      retainedUris: queue.map((i) => i['uri'] as String).toList(),
+      retainedUris: _cachedRetainedUris ??=
+          queue.map((i) => i['uri'] as String).toList(growable: false),
       hasRetainedUrisPayload: true,
       transportCommandId: commandId,
     );

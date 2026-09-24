@@ -517,25 +517,16 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
     );
     final cacheKey = Object.hash(
       session.loopMode,
-      Object.hashAll(
-        paths.map((trackPath) {
-          final track = _trackForAnyPath(trackPath);
-          final candidateUris = _candidatePlaybackUrisForTrack(track);
-          return Object.hash(
-            trackPath,
-            track?.displayName,
-            track?.groupTitle,
-            Object.hashAll(candidateUris ?? const <Uri>[]),
-          );
-        }),
-      ),
+      session.queueVersion,
+      currentPath,
+      paths.length,
     );
     final cached = session.nativePlaybackQueueCache;
     if (session.nativePlaybackQueueCacheKey == cacheKey && cached != null) {
       return cached;
     }
     final queue = List<Map<String, Object?>>.unmodifiable(
-      paths.map(_nativePlaybackQueueItemForPath),
+      paths.map((path) => _nativePlaybackQueueItemForSession(session, path)),
     );
     session.nativePlaybackQueueCacheKey = cacheKey;
     session.nativePlaybackQueueCache = queue;
@@ -619,9 +610,16 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
         true;
   }
 
-  Map<String, Object?> _nativePlaybackQueueItemForPath(String trackPath) {
+  Map<String, Object?> _nativePlaybackQueueItemForSession(
+    PlaybackSession session,
+    String trackPath,
+  ) {
     final resolvedTrackPath = _playbackFacade.resolveRetargetedPath(trackPath);
-    final track = _trackForAnyPath(resolvedTrackPath);
+    final track = session.trackForPath(
+          trackPath,
+          resolvedPath: resolvedTrackPath,
+        ) ??
+        _trackForAnyPath(resolvedTrackPath);
     final subtitle = track?.groupTitle;
     final coverPath = resolvedPlaybackCoverPathForTrack(track);
     final artUri = coverPath == null
@@ -667,17 +665,19 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
   }
 
   MusicTrack? _sessionTrackForPath(PlaybackSession session, String trackPath) {
-    final normalizedPath = PathMatcher.normalize(trackPath);
     final resolvedPath = _playbackFacade.resolveRetargetedPath(trackPath);
-    for (final track in session.customQueueTracks ?? const <MusicTrack>[]) {
-      if (PathMatcher.equalsNormalized(track.path, normalizedPath) ||
-          PathMatcher.equalsNormalized(
-            _playbackFacade.resolveRetargetedPath(track.path),
-            resolvedPath,
-          )) {
-        return track;
+    var sessionTrack = session.trackForPath(
+      trackPath,
+      resolvedPath: resolvedPath,
+    );
+    if (sessionTrack == null) {
+      final originalPath = _playbackFacade.originalPathForRetargeted(trackPath) ??
+          _playbackFacade.originalPathForRetargeted(resolvedPath);
+      if (originalPath != null) {
+        sessionTrack = session.trackForPath(originalPath);
       }
     }
+    if (sessionTrack != null) return sessionTrack;
     return _audioPathCoordinator.trackByPath(
       resolvedPath,
       includeLibraryFallback: false,

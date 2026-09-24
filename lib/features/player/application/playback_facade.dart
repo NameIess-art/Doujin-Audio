@@ -1142,6 +1142,8 @@ final class PlaybackFacade {
       ).rememberRetargetedPath(oldPath, newPath);
   String resolveRetargetedPath(String value) =>
       PlaybackQueuePathCoordinator(this).resolveRetargetedPath(value);
+  String? originalPathForRetargeted(String value) =>
+      PlaybackQueuePathCoordinator(this).originalPathForRetargeted(value);
   void clearRetargetedPaths() =>
       PlaybackQueuePathCoordinator(this).clearRetargetedPaths();
   Future<void> retargetPath(String oldPath, String newPath) =>

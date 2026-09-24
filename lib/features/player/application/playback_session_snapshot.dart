@@ -54,6 +54,7 @@ class PlaybackSessionSnapshot {
     required this.isPlaybackLoading,
     required this.playbackError,
     required this.currentQueueIndex,
+    this.queueVersion = 0,
     required this.playbackQueue,
     required List<MusicTrack>? customQueueTracks,
     required this.positionStream,
@@ -94,6 +95,7 @@ class PlaybackSessionSnapshot {
       isPlaybackLoading: session.isPlaybackLoading,
       playbackError: session.playbackError,
       currentQueueIndex: session.currentQueueIndex,
+      queueVersion: session.queueVersion,
       playbackQueue: session.playbackQueue,
       customQueueTracks: session.customQueueTracks,
       positionStream: session.positionStream,
@@ -103,6 +105,7 @@ class PlaybackSessionSnapshot {
   }
 
   final String id;
+  final int queueVersion;
   final bool isTemporary;
   final bool retainInNowPlaying;
   final DateTime createdAt;
@@ -161,8 +164,11 @@ class PlaybackSessionSnapshot {
         other.isPlaybackLoading == isPlaybackLoading &&
         other.playbackError == playbackError &&
         other.currentQueueIndex == currentQueueIndex &&
+        other.queueVersion == queueVersion &&
         other.playbackQueue == playbackQueue &&
-        listEquals(other.customQueueTracks, customQueueTracks);
+        (identical(other.customQueueTracks, customQueueTracks) ||
+            (queueVersion != 0 && other.queueVersion == queueVersion) ||
+            listEquals(other.customQueueTracks, customQueueTracks));
   }
 
   @override
@@ -191,7 +197,8 @@ class PlaybackSessionSnapshot {
     isPlaybackLoading,
     playbackError,
     currentQueueIndex,
-    playbackQueue,
-    Object.hashAll(customQueueTracks ?? const <MusicTrack>[]),
+    playbackQueue?.contentSignature ?? playbackQueue,
+    queueVersion,
+    customQueueTracks?.length,
   ]);
 }

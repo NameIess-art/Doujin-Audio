@@ -113,8 +113,7 @@ class PlaybackQueueCard extends ConsumerWidget {
     );
     final coverTracks = queue.entries
         .where((entry) => entry.tracks.isNotEmpty)
-        .map((entry) => entry.tracks.first)
-        .toList(growable: false);
+        .map((entry) => entry.tracks.first);
     for (final track in coverTracks.take(4)) {
       unawaited(library.playbackCoverPathFutureForTrack(track));
     }
@@ -137,20 +136,36 @@ class PlaybackQueueCard extends ConsumerWidget {
     final resolvedCurrentPath = playback.resolveRetargetedPath(
       cardState.trackPath,
     );
-    final matchedCurrentIndex = tracks.indexWhere(
-      (track) =>
-          PathMatcher.equalsNormalized(track.path, cardState.trackPath) ||
-          PathMatcher.equalsNormalized(
-            playback.resolveRetargetedPath(track.path),
-            resolvedCurrentPath,
-          ),
-    );
-    final currentIndex = matchedCurrentIndex >= 0
-        ? matchedCurrentIndex
-        : session.currentQueueIndex >= 0 &&
-              session.currentQueueIndex < tracks.length
-        ? session.currentQueueIndex
-        : -1;
+    final originalCurrentPath = playback.originalPathForRetargeted(
+          cardState.trackPath,
+        ) ??
+        playback.originalPathForRetargeted(resolvedCurrentPath);
+    int currentIndex = -1;
+    final hintIndex = session.currentQueueIndex;
+    if (hintIndex >= 0 && hintIndex < tracks.length) {
+      final hintTrack = tracks[hintIndex];
+      if (PathMatcher.equalsNormalized(hintTrack.path, cardState.trackPath) ||
+          PathMatcher.equalsNormalized(hintTrack.path, resolvedCurrentPath) ||
+          (originalCurrentPath != null &&
+              PathMatcher.equalsNormalized(
+                hintTrack.path,
+                originalCurrentPath,
+              ))) {
+        currentIndex = hintIndex;
+      }
+    }
+    if (currentIndex < 0) {
+      final matchedCurrentIndex = tracks.indexWhere(
+        (track) =>
+            PathMatcher.equalsNormalized(track.path, cardState.trackPath) ||
+            PathMatcher.equalsNormalized(track.path, resolvedCurrentPath) ||
+            (originalCurrentPath != null &&
+                PathMatcher.equalsNormalized(track.path, originalCurrentPath)),
+      );
+      currentIndex = matchedCurrentIndex >= 0
+          ? matchedCurrentIndex
+          : (hintIndex >= 0 && hintIndex < tracks.length ? hintIndex : -1);
+    }
     final currentTrack = currentIndex >= 0
         ? tracks[currentIndex]
         : ref

@@ -233,6 +233,36 @@ extension PlaybackQueuePathCoordinator on PlaybackFacade {
     }
   }
 
+  String? originalPathForRetargeted(String value) {
+    if (value.isEmpty || _retargetedPathAliases.isEmpty) return null;
+    var current = PathMatcher.normalize(value);
+    final seen = <String>{current};
+    var matchedAny = false;
+    while (true) {
+      String? bestMatch;
+      String? nextValue;
+      for (final entry in _retargetedPathAliases.entries) {
+        if (!PathMatcher.isWithinOrEqual(current, entry.value)) continue;
+        if (bestMatch == null || entry.value.length > bestMatch.length) {
+          bestMatch = entry.value;
+          nextValue = entry.key;
+        }
+      }
+      if (bestMatch == null || nextValue == null) {
+        return matchedAny ? current : null;
+      }
+      matchedAny = true;
+      final resolved = PathMatcher.normalize(
+        PathMatcher.replaceWithinOrEqual(current, bestMatch, nextValue),
+      );
+      if (PathMatcher.equalsNormalized(resolved, current) ||
+          !seen.add(resolved)) {
+        return resolved;
+      }
+      current = resolved;
+    }
+  }
+
   void clearRetargetedPaths() => _retargetedPathAliases.clear();
 
   Future<void> retargetPath(String oldPath, String newPath) async {

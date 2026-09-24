@@ -264,13 +264,12 @@ final playlistSortedEntriesUiProvider =
 final playlistSessionCardStateProvider = Provider.autoDispose
     .family<PlaylistSessionCardState?, String>((ref, sessionId) {
       ref.watch(playbackStateProvider);
-      final playbackState = ref.watch(playbackFacadeProvider).state;
-      for (final session in playbackState.activeSessions) {
-        if (session.id == sessionId) {
-          return playlistSessionCardStateFromSession(session);
-        }
-      }
-      return null;
+      final session = ref.read(playbackFacadeProvider).sessionSnapshotById(
+        sessionId,
+      );
+      return session == null
+          ? null
+          : playlistSessionCardStateFromSession(session);
     });
 
 final coverGenerationProvider = Provider<int>((ref) {
@@ -317,11 +316,7 @@ final isTrackActiveProvider = Provider.autoDispose.family<bool, String>((
   ref,
   trackPath,
 ) {
-  ref.watch(playbackStateProvider);
-  final playbackState = ref.watch(playbackFacadeProvider).state;
-  return playbackState.activeSessions.any(
-    (session) => session.currentTrackPath == trackPath,
-  );
+  return ref.watch(activeTrackPathsProvider).contains(trackPath);
 });
 
 final mainOverlayUiProvider = Provider<MainOverlayUiState>((ref) {

@@ -241,13 +241,11 @@ extension PlaybackNativeStateCoordinator on PlaybackFacade {
     PlaybackSession session,
     String resolvedPath,
   ) {
-    for (final track in session.customQueueTracks ?? const <MusicTrack>[]) {
-      if (PathMatcher.equalsNormalized(
-        resolveRetargetedPath(track.path),
-        resolvedPath,
-      )) {
-        return track;
-      }
+    final track = session.trackForPath(resolvedPath);
+    if (track != null) return track;
+    final originalPath = originalPathForRetargeted(resolvedPath);
+    if (originalPath != null) {
+      return session.trackForPath(originalPath);
     }
     return null;
   }

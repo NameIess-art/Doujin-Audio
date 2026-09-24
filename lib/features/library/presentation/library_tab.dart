@@ -989,9 +989,9 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     );
     final pinnedLibraryPaths = _readOrWatch(
       settingsStateProvider.select(
-        (state) => state.value?.pinnedLibraryPaths.toSet() ?? const <String>{},
+        (state) => state.value?.pinnedLibraryPaths ?? const <String>[],
       ),
-    );
+    ).toSet();
     final libraryRefreshOperationBusy = _readOrWatch(
       uiOperationForScopeProvider(
         UiOperationScope.libraryRefresh,

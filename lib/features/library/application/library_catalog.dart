@@ -63,6 +63,7 @@ abstract interface class LibraryCatalogWriter {
     List<MusicTrack> tracks, {
     bool notify = true,
     bool persist = true,
+    bool mergeExistingState = true,
   });
   void removeTracksByPath(Iterable<String> trackPaths);
   void removeTracksDeletedFromFolder(

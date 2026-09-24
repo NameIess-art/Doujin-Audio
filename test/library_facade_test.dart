@@ -731,6 +731,8 @@ void main() {
       expect(runtimeGraph.library.scanFoundCount, 0);
 
       runtimeGraph.library.cancelScan();
+      expect(runtimeGraph.library.tryBeginScan(source: '/music/second'), 0);
+      runtimeGraph.library.finishScan(first);
       final second = runtimeGraph.library.tryBeginScan(source: '/music/second');
       expect(second, greaterThan(first));
       runtimeGraph.library.finishScan(first);

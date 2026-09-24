@@ -342,9 +342,50 @@ void main() {
       expect(catalog.stagedBatchDepth, 0);
       expect(catalog.stagedBatchBeginCount, 1);
       expect(catalog.stagedBatchFinishCount, 1);
+      expect(catalog.stagedWaitedForPersistence, isTrue);
       expect(catalog.rollbackBatchDepth, 0);
       expect(catalog.rollbackBatchBeginCount, 1);
       expect(catalog.rollbackBatchEndCount, 1);
+    },
+  );
+
+  test(
+    'cancelled refresh restores an existing track changed by a chunk',
+    () async {
+      final existing = _musicTrack('C:/music/existing.mp3');
+      final catalog = _RefreshCatalog(
+        watchedFolders: <String>['C:/music'],
+        initialTracks: <MusicTrack>[existing],
+        cancelAfterTrackChunk: 2,
+      );
+      final outcome = await LibraryScannerService(
+        dataSource: _ChunkedRefreshDataSource(
+          catalog: catalog,
+          chunks: <FolderScanChunk>[
+            FolderScanChunk(
+              tracks: <ScannedTrack>[
+                ScannedTrack(
+                  path: existing.path,
+                  displayName: 'changed',
+                  groupKey: 'C:/music',
+                  groupTitle: 'music',
+                  groupSubtitle: 'C:/music',
+                  isSingle: false,
+                  isVideo: false,
+                ),
+              ],
+              paths: <String>{PathMatcher.normalize(existing.path)},
+            ),
+            FolderScanChunk(
+              tracks: <ScannedTrack>[_scannedTrack('C:/music/new.mp3')],
+              paths: <String>{PathMatcher.normalize('C:/music/new.mp3')},
+            ),
+          ],
+        ),
+      ).refreshWatchedFolders(provider: catalog, labels: labels);
+
+      expect(outcome.code, LibraryScanOutcomeCode.cancelled);
+      expect(catalog.library, <MusicTrack>[existing]);
     },
   );
 }
@@ -512,6 +553,7 @@ class _RefreshCatalog implements LibraryCatalog {
   var stagedBatchDepth = 0;
   var stagedBatchBeginCount = 0;
   var stagedBatchFinishCount = 0;
+  var stagedWaitedForPersistence = false;
   var rollbackBatchDepth = 0;
   var rollbackBatchBeginCount = 0;
   var rollbackBatchEndCount = 0;
@@ -577,6 +619,7 @@ class _RefreshCatalog implements LibraryCatalog {
   }) async {
     stagedBatchDepth--;
     stagedBatchFinishCount++;
+    stagedWaitedForPersistence = waitForPersistence;
   }
 
   @override
@@ -655,6 +698,21 @@ class _RefreshCatalog implements LibraryCatalog {
   }) async {
     rollbackBatchDepth--;
     rollbackBatchEndCount++;
+  }
+
+  @override
+  void addOrReplaceTracks(
+    List<MusicTrack> tracks, {
+    bool notify = true,
+    bool persist = true,
+    bool mergeExistingState = true,
+  }) {
+    for (final track in tracks) {
+      library.removeWhere(
+        (existing) => PathMatcher.equalsNormalized(existing.path, track.path),
+      );
+      library.add(track);
+    }
   }
 
   @override

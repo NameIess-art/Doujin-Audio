@@ -5,6 +5,43 @@ import 'package:doujin_audio/features/library/domain/library_entry.dart';
 import 'package:path/path.dart' as path;
 
 void main() {
+  test('scan rollback replaces all fields of an existing track', () async {
+    final service = LibraryService();
+    addTearDown(service.dispose);
+    final original = MusicTrack(
+      path: '/music/01.mp3',
+      displayName: 'original',
+      groupKey: '/music',
+      groupTitle: 'music',
+      groupSubtitle: '/music',
+      isSingle: false,
+    );
+    service.library.add(original);
+    service.rebuildLibraryIndexes();
+
+    service.addOrReplaceTracks(<MusicTrack>[
+      MusicTrack(
+        path: original.path,
+        displayName: 'changed',
+        groupKey: '/music',
+        groupTitle: 'music',
+        groupSubtitle: '/music',
+        isSingle: false,
+        manualCoverPath: '/music/new-cover.jpg',
+        duration: const Duration(seconds: 30),
+      ),
+    ], persist: false);
+    service.addOrReplaceTracks(
+      <MusicTrack>[original],
+      persist: false,
+      mergeExistingState: false,
+    );
+
+    expect(identical(service.library.single, original), isTrue);
+    expect(service.library.single.duration, Duration.zero);
+    expect(service.library.single.manualCoverPath, isNull);
+  });
+
   test('clearLibraryExclusions restores entry-backed tracks', () async {
     final service = LibraryService();
     addTearDown(service.dispose);

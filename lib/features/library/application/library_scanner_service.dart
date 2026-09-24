@@ -67,6 +67,7 @@ class LibraryScannerService {
   void _rollbackScanAdditions({
     required LibraryCatalog provider,
     required Set<String> existingTrackPaths,
+    Map<String, MusicTrack> overwrittenTracks = const <String, MusicTrack>{},
     required Map<String, Set<String>> existingEntryPathsByRoot,
   }) {
     provider.removeTracksByPath(
@@ -77,6 +78,13 @@ class LibraryScannerService {
           )
           .map((track) => track.path),
     );
+    if (overwrittenTracks.isNotEmpty) {
+      provider.addOrReplaceTracks(
+        overwrittenTracks.values.toList(growable: false),
+        notify: false,
+        mergeExistingState: false,
+      );
+    }
     for (final entry in existingEntryPathsByRoot.entries) {
       provider.removeLibraryEntriesByPaths(
         entry.key,
@@ -134,9 +142,12 @@ class LibraryScannerService {
         source: 'refresh',
       );
     }
-    final existingTrackPaths = provider.library
-        .map((track) => PathMatcher.normalize(track.path))
-        .toSet();
+    final initialTracksByPath = <String, MusicTrack>{
+      for (final track in provider.library)
+        PathMatcher.normalize(track.path): track,
+    };
+    final existingTrackPaths = initialTracksByPath.keys.toSet();
+    final overwrittenTracks = <String, MusicTrack>{};
     final rollbackRoots = <String>{...watchedLibraries, ...watchedFolders};
     final existingEntryPathsByRoot = <String, Set<String>>{
       for (final root in rollbackRoots)
@@ -174,6 +185,14 @@ class LibraryScannerService {
         tracks: chunk.tracks,
         folderPaths: chunk.folderPaths,
       );
+      for (final track in chunk.tracks) {
+        final key = PathMatcher.normalize(track.path);
+        final initial = initialTracksByPath[key];
+        if (initial != null &&
+            !identical(provider.trackByPath(track.path), initial)) {
+          overwrittenTracks.putIfAbsent(key, () => initial);
+        }
+      }
       chunkDuplicateCount += chunk.duplicateCount;
       chunkFailureCount += chunk.failureCount;
       chunkIndex++;
@@ -251,21 +270,28 @@ class LibraryScannerService {
               }
             }
           }
-          await provider.finishStagedLibraryRefresh();
+          await provider.finishStagedLibraryRefresh(waitForPersistence: true);
         }
       }
     } finally {
       wasCancelled = !provider.isScanGenerationActive(generation);
-      if (wasCancelled) {
-        provider.beginLibraryBatch();
-        _rollbackScanAdditions(
-          provider: provider,
-          existingTrackPaths: existingTrackPaths,
-          existingEntryPathsByRoot: existingEntryPathsByRoot,
-        );
-        await provider.endLibraryBatch();
+      try {
+        if (wasCancelled) {
+          provider.beginLibraryBatch();
+          try {
+            _rollbackScanAdditions(
+              provider: provider,
+              existingTrackPaths: existingTrackPaths,
+              overwrittenTracks: overwrittenTracks,
+              existingEntryPathsByRoot: existingEntryPathsByRoot,
+            );
+          } finally {
+            await provider.endLibraryBatch();
+          }
+        }
+      } finally {
+        provider.finishScan(generation);
       }
-      provider.finishScan(generation);
     }
     if (wasCancelled) {
       return LibraryScanOutcome(
@@ -1165,29 +1191,32 @@ class LibraryScannerService {
     } finally {
       wasCancelled = !provider.isScanGenerationActive(generation);
       completed = completed && provider.isScanGenerationActive(generation);
-      if (!completed) {
-        _rollbackScanAdditions(
-          provider: provider,
-          existingTrackPaths: existingTrackPaths,
-          existingEntryPathsByRoot: <String, Set<String>>{
-            normalizedFolderPath: existingEntryPaths,
-          },
-        );
-      } else {
-        provider.setScanProgress(
-          generation: generation,
-          stage: FolderScanStage.saving,
-        );
-        provider.addWatchedFolder(normalizedFolderPath, notify: false);
-        provider.recordLibraryEntriesForTracks(
-          normalizedFolderPath,
-          const <MusicTrack>[],
-        );
-      }
       try {
-        await provider.endLibraryBatch();
+        if (!completed) {
+          _rollbackScanAdditions(
+            provider: provider,
+            existingTrackPaths: existingTrackPaths,
+            existingEntryPathsByRoot: <String, Set<String>>{
+              normalizedFolderPath: existingEntryPaths,
+            },
+          );
+        } else {
+          provider.setScanProgress(
+            generation: generation,
+            stage: FolderScanStage.saving,
+          );
+          provider.addWatchedFolder(normalizedFolderPath, notify: false);
+          provider.recordLibraryEntriesForTracks(
+            normalizedFolderPath,
+            const <MusicTrack>[],
+          );
+        }
       } finally {
-        provider.finishScan(generation);
+        try {
+          await provider.endLibraryBatch();
+        } finally {
+          provider.finishScan(generation);
+        }
       }
       if (completed) {
         unawaited(_prefillRjDetailForFolder(provider, normalizedFolderPath));
@@ -1320,19 +1349,22 @@ class LibraryScannerService {
     } finally {
       wasCancelled = !provider.isScanGenerationActive(generation);
       completed = completed && provider.isScanGenerationActive(generation);
-      if (!completed) {
-        _rollbackScanAdditions(
-          provider: provider,
-          existingTrackPaths: existingTrackPaths,
-          existingEntryPathsByRoot: <String, Set<String>>{
-            normalizedFolderPath: existingEntryPaths,
-          },
-        );
-      }
       try {
-        await provider.endLibraryBatch();
+        if (!completed) {
+          _rollbackScanAdditions(
+            provider: provider,
+            existingTrackPaths: existingTrackPaths,
+            existingEntryPathsByRoot: <String, Set<String>>{
+              normalizedFolderPath: existingEntryPaths,
+            },
+          );
+        }
       } finally {
-        provider.finishScan(generation);
+        try {
+          await provider.endLibraryBatch();
+        } finally {
+          provider.finishScan(generation);
+        }
       }
       if (completed) {
         for (final childFolder in importTargets) {

@@ -1543,10 +1543,10 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
     Color? foregroundColor,
   }) {
     return FilledButton.styleFrom(
-      minimumSize: const Size.fromHeight(42),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      minimumSize: const Size.fromHeight(46),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       shape: const StadiumBorder(),
-      visualDensity: VisualDensity.compact,
+      visualDensity: VisualDensity.standard,
       textStyle: const TextStyle(
         fontSize: 13,
         fontWeight: FontWeight.w700,

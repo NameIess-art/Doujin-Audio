@@ -169,12 +169,22 @@ extension _LibrarySearchPageCategoryView on _LibrarySearchPageState {
     required double topPadding,
     required double bottomPadding,
     required double cacheExtent,
+    required int structureRevision,
     required int detailRevision,
     Set<String> pinnedPaths = const <String>{},
   }) {
+    if (_categorySnapshotFuture == null ||
+        _categorySnapshotStructureRevision != structureRevision ||
+        _categorySnapshotDetailRevision != detailRevision) {
+      _categorySnapshotStructureRevision = structureRevision;
+      _categorySnapshotDetailRevision = detailRevision;
+      _categorySnapshotFuture = libraryFacade.audioLibraryCategorySnapshot();
+    }
     return FutureBuilder<AudioLibraryCategorySnapshot>(
-      key: ValueKey('category_future_${_categoryType.name}_$detailRevision'),
-      future: libraryFacade.audioLibraryCategorySnapshot(),
+      key: ValueKey(
+        'category_future_${_categoryType.name}_${structureRevision}_$detailRevision',
+      ),
+      future: _categorySnapshotFuture,
       initialData: libraryFacade.categorySnapshot,
       builder: (context, snapshotState) {
         final snapshot = snapshotState.data;
@@ -194,6 +204,16 @@ extension _LibrarySearchPageCategoryView on _LibrarySearchPageState {
           snapshot,
           pinnedPaths: pinnedPaths,
         );
+        Map<String, FolderNode>? foldersByPath;
+        FolderNode? folderForEntry(AudioLibraryCategoryEntry entry) {
+          if (!entry.isFolder) return null;
+          foldersByPath ??= <String, FolderNode>{
+            for (final folder in libraryFacade.libraryCards
+                .whereType<FolderNode>())
+              PathMatcher.normalize(folder.path): folder,
+          };
+          return foldersByPath![PathMatcher.normalize(entry.path)];
+        }
         final hasTermBox = _categoryType != AudioLibraryCategoryType.all;
         final itemCount = entries.length + (hasTermBox ? 1 : 0) + 1;
 
@@ -275,7 +295,7 @@ extension _LibrarySearchPageCategoryView on _LibrarySearchPageState {
                 key: ValueKey('category_${entry.target.targetPath}'),
                 child: _AudioLibraryCategoryEntryCard(
                   entry: entry,
-                  folder: _folderForCategoryEntry(libraryFacade, entry),
+                  folder: folderForEntry(entry),
                   secondaryIcon: _categoryIcon(),
                   secondaryText: _entrySecondaryText(i18n, entry),
                   isSelectionMode: _isSelectionMode,
@@ -300,17 +320,6 @@ extension _LibrarySearchPageCategoryView on _LibrarySearchPageState {
         );
       },
     );
-  }
-
-  FolderNode? _folderForCategoryEntry(
-    LibraryFacade libraryFacade,
-    AudioLibraryCategoryEntry entry,
-  ) {
-    if (!entry.isFolder) return null;
-    for (final folder in libraryFacade.libraryCards.whereType<FolderNode>()) {
-      if (PathMatcher.equalsNormalized(folder.path, entry.path)) return folder;
-    }
-    return null;
   }
 }
 

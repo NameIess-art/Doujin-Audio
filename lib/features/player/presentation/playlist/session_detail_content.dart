@@ -87,7 +87,9 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
   bool _segmentLabelsLoaded = false;
   bool _syncingSegmentText = false;
   bool _savingSegment = false;
+  Completer<void>? _segmentSaveCompletion;
   bool _segmentSaveQueued = false;
+  bool _deletingSegment = false;
   int _segmentDraftGeneration = 0;
   final Set<(String, String)> _pendingNewSegmentNames = <(String, String)>{};
 
@@ -377,6 +379,7 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
   }
 
   Future<void> _trySaveSegmentDraft() async {
+    if (_deletingSegment) return;
     if (_savingSegment) {
       _segmentSaveQueued = true;
       return;
@@ -394,6 +397,8 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
       return;
     }
     _savingSegment = true;
+    final saveCompletion = Completer<void>();
+    _segmentSaveCompletion = saveCompletion;
     (String, String)? pendingReservation;
     try {
       final existing = _selectedSegmentId == null
@@ -450,6 +455,8 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
         _pendingNewSegmentNames.remove(pendingReservation);
       }
       _savingSegment = false;
+      _segmentSaveCompletion = null;
+      saveCompletion.complete();
       if (_segmentSaveQueued && mounted) {
         _segmentSaveQueued = false;
         unawaited(_trySaveSegmentDraft());
@@ -458,34 +465,41 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
   }
 
   Future<void> _deleteSelectedSegment() async {
+    if (_deletingSegment) return;
     final selected = _segmentLabels
         .where((label) => label.id == _selectedSegmentId)
         .firstOrNull;
     if (selected == null) return;
+    _deletingSegment = true;
     _segmentNameDebounce?.cancel();
     _segmentSaveQueued = false;
-    final backupSucceeded = await _timeSegments.deleteLabel(selected);
-    if (!mounted) return;
-    setState(() {
-      _segmentLabels = _segmentLabels
-          .where((label) => label.id != selected.id)
-          .toList(growable: false);
-      _clearSegmentDraft();
-    });
-    final i18n = ProviderScope.containerOf(
-      context,
-      listen: false,
-    ).read(appLanguageProviderInstanceProvider);
-    showAppSnackBar(
-      context,
-      backupSucceeded
-          ? i18n.tr('items_removed_count', {'count': 1})
-          : i18n.tr('audio_detail_backup_failed'),
-      tone: backupSucceeded
-          ? AppFeedbackTone.destructive
-          : AppFeedbackTone.warning,
-      icon: Icons.sell_rounded,
-    );
+    try {
+      await _segmentSaveCompletion?.future;
+      final backupSucceeded = await _timeSegments.deleteLabel(selected);
+      if (!mounted || _segmentTrackKey != selected.trackKey) return;
+      setState(() {
+        _segmentLabels = _segmentLabels
+            .where((label) => label.id != selected.id)
+            .toList(growable: false);
+        if (_selectedSegmentId == selected.id) _clearSegmentDraft();
+      });
+      final i18n = ProviderScope.containerOf(
+        context,
+        listen: false,
+      ).read(appLanguageProviderInstanceProvider);
+      showAppSnackBar(
+        context,
+        backupSucceeded
+            ? i18n.tr('items_removed_count', {'count': 1})
+            : i18n.tr('audio_detail_backup_failed'),
+        tone: backupSucceeded
+            ? AppFeedbackTone.destructive
+            : AppFeedbackTone.warning,
+        icon: Icons.sell_rounded,
+      );
+    } finally {
+      _deletingSegment = false;
+    }
   }
 
   void _openWorkDetail(BuildContext context) {

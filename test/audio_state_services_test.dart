@@ -262,6 +262,57 @@ void main() {
       );
     });
 
+    test('unrelated settings updates keep pinned list snapshots', () {
+      final repository = SettingsRepository();
+      addTearDown(repository.dispose);
+      repository
+        ..pinnedLibraryPaths = ['/music/a']
+        ..pinnedPlaylistSessionIds = ['session-a'];
+      repository.syncSlice();
+      final initial = repository.slice.state;
+
+      repository
+        ..notificationsEnabled = false
+        ..syncSlice();
+      final unrelatedUpdate = repository.slice.state;
+      expect(
+        identical(
+          unrelatedUpdate.pinnedLibraryPaths,
+          initial.pinnedLibraryPaths,
+        ),
+        isTrue,
+      );
+      expect(
+        identical(
+          unrelatedUpdate.pinnedPlaylistSessionIds,
+          initial.pinnedPlaylistSessionIds,
+        ),
+        isTrue,
+      );
+
+      repository
+        ..pinnedLibraryPaths = ['/music/b']
+        ..pinnedPlaylistSessionIds = ['session-b']
+        ..syncSlice();
+      final pinnedUpdate = repository.slice.state;
+      expect(pinnedUpdate.pinnedLibraryPaths, ['/music/b']);
+      expect(pinnedUpdate.pinnedPlaylistSessionIds, ['session-b']);
+      expect(
+        identical(
+          pinnedUpdate.pinnedLibraryPaths,
+          unrelatedUpdate.pinnedLibraryPaths,
+        ),
+        isFalse,
+      );
+      expect(
+        identical(
+          pinnedUpdate.pinnedPlaylistSessionIds,
+          unrelatedUpdate.pinnedPlaylistSessionIds,
+        ),
+        isFalse,
+      );
+    });
+
     test('new playback behavior settings preserve current defaults', () {
       final state = SettingsState();
 

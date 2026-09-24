@@ -313,7 +313,9 @@ internal class NativePlaybackSession(
         this.title = descriptor.title
         this.subtitle = descriptor.subtitle
         this.artUri = descriptor.artUri
-        this.lastPositionMs = startPositionMs
+        this.lastPositionMs = startPositionMs.coerceAtLeast(0L)
+        this.lastBufferedPositionMs = this.lastPositionMs
+        this.lastDurationMs = null
         this.volume = PlaybackVolumeMapper.normalize(volume)
         this.speed = normalizeSpeed(speed)
         this.repeatOne = repeatOne

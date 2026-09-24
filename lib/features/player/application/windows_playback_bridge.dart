@@ -173,7 +173,7 @@ class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
     session.error = null;
     session.retryAttempt = 0;
     session.retryStartedAt = null;
-    session.retainedUri = null;
+    session.hasRetainedCurrent = false;
     session.retryTimer?.cancel();
     if (!deferPlayerCreation || autoPlay || session.player != null) {
       await _open(session);
@@ -223,30 +223,25 @@ class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
     session.subscriptions.addAll([
       player.stream.playlist.listen((playlist) {
         if (session.opening || playlist.medias.isEmpty) return;
-        final uri = playlist.medias[playlist.index].uri;
-        final index = session.mediaUris.indexOf(uri);
-        if (index >= 0 && index != session.index) {
+        final index = playlist.index;
+        if (index >= 0 &&
+            index < session.queue.length &&
+            index != session.index) {
           session.index = index;
           session.position = Duration.zero;
           session.retryAttempt = 0;
           session.error = null;
-          if (session.retainedUri != null && uri != session.retainedUri) {
+          if (session.hasRetainedCurrent && index != 0) {
             unawaited(
               _change(session.id, (current) async {
-                final removed = current.retainedUri;
-                if (removed == null) return;
-                current.retainedUri = null;
-                final at = current.mediaUris.indexOf(removed);
-                if (at < 0 || at == current.index) return;
+                if (!current.hasRetainedCurrent || current.index == 0) return;
+                current.hasRetainedCurrent = false;
                 current.opening = true;
                 try {
-                  final nativeAt = player.state.playlist.medias.indexWhere(
-                    (media) => media.uri == removed,
-                  );
-                  if (nativeAt >= 0) await player.remove(nativeAt);
-                  current.queue.removeAt(at);
-                  current.mediaUris.removeAt(at);
-                  if (at < current.index) current.index--;
+                  await player.remove(0);
+                  current.queue.removeAt(0);
+                  current.mediaUris.removeAt(0);
+                  current.index--;
                 } finally {
                   current.opening = false;
                 }
@@ -472,11 +467,11 @@ class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
       );
       // A removed current track finishes playing before the new queue advances.
       if (index < 0) {
-        session.retainedUri = Media(previous['uri'] as String).uri;
+        session.hasRetainedCurrent = true;
         items.insert(0, previous);
         index = 0;
       } else {
-        session.retainedUri = null;
+        session.hasRetainedCurrent = false;
       }
       session.queue = items;
       session.index = index;
@@ -612,7 +607,7 @@ class _WindowsPlaybackSession {
     channelSwapEnabled: false,
   );
   String? error;
-  String? retainedUri;
+  bool hasRetainedCurrent = false;
   int commandId = 0, retryAttempt = 0, generation = 0;
   Timer? retryTimer;
   Duration? retryStartedAt;

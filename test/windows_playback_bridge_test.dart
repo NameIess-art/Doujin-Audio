@@ -160,6 +160,57 @@ void main() {
     },
   );
 
+  test('duplicate media URIs keep their distinct queue positions', () async {
+    final result = await bridge.prepareSession(
+      sessionId: 'one',
+      uri: Uri.parse('https://example.com/repeated.wav'),
+      title: 'first',
+      queue: [
+        {'uri': 'https://example.com/repeated.wav', 'title': 'first'},
+        {'uri': 'https://example.com/repeated.wav', 'title': 'second'},
+      ],
+    );
+    expect(result.isOk, true, reason: result.errorOrNull);
+
+    players.single.advance(1);
+    await Future<void>.delayed(Duration.zero);
+    final snapshot = (await bridge.snapshot()).valueOrNull!.sessions.single;
+
+    expect(snapshot.queueIndex, 1);
+    expect(snapshot.title, 'second');
+  });
+
+  test(
+    'retained current media is removed after advancing to an equal URI',
+    () async {
+      await bridge.prepareSession(
+        sessionId: 'one',
+        uri: Uri.parse('https://example.com/shared.wav'),
+        title: 'old',
+        path: '/old',
+      );
+      await bridge.setRepeatOne(
+        'one',
+        false,
+        queue: [
+          {
+            'uri': 'https://example.com/shared.wav',
+            'path': '/new',
+            'title': 'new',
+          },
+        ],
+      );
+
+      players.single.advance(1);
+      await Future<void>.delayed(Duration.zero);
+      final snapshot = (await bridge.snapshot()).valueOrNull!.sessions.single;
+
+      expect(snapshot.title, 'new');
+      expect(snapshot.queueIndex, 0);
+      expect(players.single.state.playlist.medias, hasLength(1));
+    },
+  );
+
   test(
     'repeat modes map to one native queue without a second player',
     () async {

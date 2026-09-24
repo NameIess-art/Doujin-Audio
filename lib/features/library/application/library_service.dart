@@ -862,17 +862,23 @@ class LibraryService {
     bool didReplaceGroup,
     bool batched,
   })
-  addOrReplaceTracks(List<MusicTrack> tracks, {required bool persist}) {
+  addOrReplaceTracks(
+    List<MusicTrack> tracks, {
+    required bool persist,
+    bool mergeExistingState = true,
+  }) {
     var didChangeGroupOrder = false;
     var didReplaceGroup = false;
     final changedTracks = <MusicTrack>[];
 
     for (final track in tracks) {
       final existing = libraryByPath[track.path];
-      final nextTrack = existing == null
+      final nextTrack = existing == null || !mergeExistingState
           ? track
           : _mergeExistingTrackState(existing, track);
-      if (existing != null && !_mergedTrackHasChanges(existing, track)) {
+      if (existing != null &&
+          mergeExistingState &&
+          !_mergedTrackHasChanges(existing, track)) {
         continue;
       }
       if (existing != null && existing.groupKey != nextTrack.groupKey) {

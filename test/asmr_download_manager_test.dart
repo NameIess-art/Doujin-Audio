@@ -1600,6 +1600,7 @@ void main() {
     await downloadedFile.writeAsBytes(const <int>[1, 2, 3]);
     final manager = _manager();
     manager.debugSetCurrentTaskForTesting(_failedTaskSnapshot(tempDir.path));
+    manager.debugRecordCreatedOutputPathForTesting(1, downloadedFile.path);
 
     try {
       await manager.deleteTask(1);
@@ -1608,6 +1609,142 @@ void main() {
       expect(await workDir.exists(), isFalse);
     } finally {
       manager.dispose();
+      if (await tempDir.exists()) await tempDir.delete(recursive: true);
+    }
+  });
+
+  test('deleting a task preserves pre-existing skipped media and metadata', () async {
+    final tempDir = await Directory.systemTemp.createTemp(
+      'asmr_download_skip_preserves_',
+    );
+    final existingFile = File(
+      '${tempDir.path}${Platform.pathSeparator}Work'
+      '${Platform.pathSeparator}Track.mp3',
+    );
+    await existingFile.create(recursive: true);
+    await existingFile.writeAsBytes(const <int>[1, 2, 3]);
+    final existingMetadata = File(
+      '${tempDir.path}${Platform.pathSeparator}Work'
+      '${Platform.pathSeparator}doujin-audio.json',
+    );
+    await existingMetadata.writeAsString('user metadata');
+    final existingCover = File(
+      '${tempDir.path}${Platform.pathSeparator}Work'
+      '${Platform.pathSeparator}cover${Platform.pathSeparator}cover.jpg',
+    );
+    await existingCover.create(recursive: true);
+    await existingCover.writeAsBytes(const <int>[4, 5, 6]);
+    final manager = _manager();
+    manager.debugSetCurrentTaskForTesting(
+      _failedTaskSnapshot(tempDir.path).copyWith(
+        coverOutputPath: existingCover.path,
+        completedFilePaths: const {'Track.mp3', 'cover/cover.cover'},
+        skippedFiles: 3,
+        completedFiles: 0,
+      ),
+    );
+
+    try {
+      await manager.deleteTask(1);
+
+      expect(manager.getTask(1), isNull);
+      expect(await existingFile.readAsBytes(), const <int>[1, 2, 3]);
+      expect(await existingMetadata.readAsString(), 'user metadata');
+      expect(await existingCover.readAsBytes(), const <int>[4, 5, 6]);
+    } finally {
+      manager.dispose();
+      if (await tempDir.exists()) await tempDir.delete(recursive: true);
+    }
+  });
+
+  test('starting the same work again does not retain old output ownership', () async {
+    final oldRoot = await Directory.systemTemp.createTemp('asmr_download_old_');
+    final newRoot = await Directory.systemTemp.createTemp('asmr_download_new_');
+    final oldFile = File(path.join(oldRoot.path, 'Work', 'Track.mp3'));
+    final newFile = File(path.join(newRoot.path, 'Work', 'Track.mp3'));
+    await oldFile.create(recursive: true);
+    await oldFile.writeAsBytes(const <int>[1, 2, 3]);
+    await newFile.create(recursive: true);
+    await newFile.writeAsBytes(const <int>[4, 5, 6]);
+    final manager = _manager();
+    manager.debugSetCurrentTaskForTesting(
+      _failedTaskSnapshot(oldRoot.path).copyWith(
+        status: AsmrDownloadTaskStatus.completed,
+      ),
+    );
+    manager.debugRecordCreatedOutputPathForTesting(1, oldFile.path);
+
+    try {
+      await manager.startDownload(
+        work: _work(),
+        selectedRoots: <AsmrTrackFile>[
+          _file(downloadUrl: 'https://example.invalid/track.mp3', size: 3),
+        ],
+        destinationRoot: newRoot.path,
+        conflictPolicy: AsmrDownloadConflictPolicy.skip,
+        saveMetadata: false,
+        saveCover: false,
+      );
+      await _waitForTaskStatus(manager, 1, AsmrDownloadTaskStatus.completed);
+      await manager.deleteTask(1);
+
+      expect(await oldFile.readAsBytes(), const <int>[1, 2, 3]);
+      expect(await newFile.readAsBytes(), const <int>[4, 5, 6]);
+    } finally {
+      manager.dispose();
+      if (await oldRoot.exists()) await oldRoot.delete(recursive: true);
+      if (await newRoot.exists()) await newRoot.delete(recursive: true);
+    }
+  });
+
+  test('restored task deletes only files it created before restart', () async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    await AppPreferences.init();
+    final tempDir = await Directory.systemTemp.createTemp(
+      'asmr_download_restored_delete_',
+    );
+    final createdFile = File(path.join(tempDir.path, 'Work', 'Owned.mp3'));
+    final skippedFile = File(path.join(tempDir.path, 'Work', 'Track.mp3'));
+    await createdFile.create(recursive: true);
+    await createdFile.writeAsBytes(const <int>[1, 2, 3]);
+    await skippedFile.writeAsBytes(const <int>[4, 5, 6]);
+    final firstManager = AsmrDownloadManager();
+    AsmrDownloadManager? restoredManager;
+
+    try {
+      firstManager.debugSetCurrentTaskForTesting(
+        _failedTaskSnapshot(tempDir.path).copyWith(
+          status: AsmrDownloadTaskStatus.paused,
+          completedFilePaths: const {'Owned.mp3', 'Track.mp3'},
+          completedFiles: 1,
+          skippedFiles: 1,
+          selectedRoots: <AsmrTrackFile>[
+            _file(
+              title: 'Owned.mp3',
+              downloadUrl: 'https://example.invalid/owned.mp3',
+            ),
+            _file(downloadUrl: 'https://example.invalid/track.mp3'),
+          ],
+        ),
+      );
+      firstManager.debugRecordCreatedOutputPathForTesting(
+        1,
+        createdFile.path,
+      );
+      await firstManager.flushPersistence();
+      await firstManager.shutdown();
+
+      restoredManager = AsmrDownloadManager();
+      await restoredManager.initialize();
+      expect(restoredManager.getTask(1)?.status, AsmrDownloadTaskStatus.paused);
+      await restoredManager.deleteTask(1);
+
+      expect(await createdFile.exists(), isFalse);
+      expect(await skippedFile.readAsBytes(), const <int>[4, 5, 6]);
+    } finally {
+      await restoredManager?.shutdown();
+      await firstManager.shutdown();
+      await AppPreferences.remove(AppPreferences.asmrDownloadTasksKey);
       if (await tempDir.exists()) await tempDir.delete(recursive: true);
     }
   });
@@ -1638,6 +1775,7 @@ void main() {
     manager.debugSetCurrentTaskForTesting(
       _failedTaskSnapshot(tempDir.path),
     );
+    manager.debugRecordCreatedOutputPathForTesting(1, downloadedTrack.path);
 
     try {
       await manager.deleteTask(1);
@@ -1676,6 +1814,7 @@ void main() {
         completedFilePaths: const {'Disc1/Track.mp3'},
       ),
     );
+    manager.debugRecordCreatedOutputPathForTesting(1, trackFile.path);
 
     try {
       await manager.deleteTask(1);

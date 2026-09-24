@@ -504,8 +504,24 @@ void main() {
           findsOneWidget,
         );
         expect(
+          tester
+              .getRect(
+                find.byKey(const ValueKey<String>('work_detail_fetch_info')),
+              )
+              .height,
+          greaterThanOrEqualTo(46),
+        );
+        expect(
           find.byKey(const ValueKey<String>('work_detail_download')),
           findsOneWidget,
+        );
+        expect(
+          tester
+              .getRect(
+                find.byKey(const ValueKey<String>('work_detail_download')),
+              )
+              .height,
+          greaterThanOrEqualTo(46),
         );
         expect(
           find.byKey(const ValueKey<String>('work_detail_pin')),
@@ -879,7 +895,7 @@ void main() {
         );
         expect(find.byType(ImageFiltered), findsOneWidget);
         final pageView = tester.widget<PageView>(find.byType(PageView));
-        expect(pageView.physics, isA<NeverScrollableScrollPhysics>());
+        expect(pageView.physics, isA<PageScrollPhysics>());
         final foregroundImages = tester.widgetList<RetryingFileImage>(
           find.descendant(
             of: find.byKey(const ValueKey<String>('work_image_viewport')),
@@ -913,15 +929,39 @@ void main() {
           ),
         );
 
+        expect(
+          tester
+              .getBottomRight(
+                find.byKey(const ValueKey<String>('work_image_viewport')),
+              )
+              .dy,
+          lessThanOrEqualTo(
+            tester.getTopRight(prevBtn).dy - 10,
+          ),
+        );
+
+        // Previous button is disabled at first image (no loop)
+        expect(tester.widget<IconButton>(prevBtn).onPressed, isNull);
+
+        // Swipe left switches to next image
         await tester.drag(
           find.byKey(const ValueKey<String>('work_image_viewport')),
-          const Offset(-300, 0),
+          const Offset(-500, 0),
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('2 / 2'), findsOneWidget);
+        expect(find.text('02.jpg'), findsOneWidget);
+
+        // Swipe right switches back to previous image
+        await tester.drag(
+          find.byKey(const ValueKey<String>('work_image_viewport')),
+          const Offset(500, 0),
         );
         await tester.pumpAndSettle();
         expect(find.text('1 / 2'), findsOneWidget);
         expect(find.text('01.jpg'), findsOneWidget);
 
-        // Next button
+        // Next button animates to next image
         await tester.tap(nextBtn);
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 300));
@@ -929,13 +969,8 @@ void main() {
         expect(find.text('2 / 2'), findsOneWidget);
         expect(find.text('02.jpg'), findsOneWidget);
 
-        // Next wraps to the first image and previous wraps back to the last.
-        await tester.tap(nextBtn);
-        await tester.pumpAndSettle();
-        expect(find.text('1 / 2'), findsOneWidget);
-        await tester.tap(prevBtn);
-        await tester.pumpAndSettle();
-        expect(find.text('2 / 2'), findsOneWidget);
+        // Next button is disabled at last image (no loop)
+        expect(tester.widget<IconButton>(nextBtn).onPressed, isNull);
 
         // Set as cover button
         final setCoverBtn = find.byKey(
@@ -949,6 +984,52 @@ void main() {
         expect(coverSelected, 'path/to/02.jpg');
       },
     );
+
+    testWidgets('double-tap toggles zoom and blocks swiping when zoomed', (tester) async {
+      SharedPreferences.setMockInitialValues(const <String, Object>{});
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+
+      final images = [
+        const WorkImageItem(
+          name: '01.jpg',
+          path: 'path/to/01.jpg',
+          relativePath: '01.jpg',
+        ),
+        const WorkImageItem(
+          name: '02.jpg',
+          path: 'path/to/02.jpg',
+          relativePath: '02.jpg',
+        ),
+      ];
+
+      await tester.pumpWidget(
+        fixture.build(
+          WorkImageViewerPage(images: images),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      final viewportFinder = find.byKey(const ValueKey<String>('work_image_viewport'));
+      expect(tester.widget<PageView>(find.byType(PageView)).physics, isA<PageScrollPhysics>());
+
+      // Double-tap to zoom
+      await tester.tap(viewportFinder);
+      await tester.pump(const Duration(milliseconds: 50));
+      await tester.tap(viewportFinder);
+      await tester.pumpAndSettle();
+
+      expect(tester.widget<PageView>(find.byType(PageView)).physics, isA<NeverScrollableScrollPhysics>());
+
+      // Double-tap to reset zoom
+      await tester.tap(viewportFinder);
+      await tester.pump(const Duration(milliseconds: 50));
+      await tester.tap(viewportFinder);
+      await tester.pumpAndSettle();
+
+      expect(tester.widget<PageView>(find.byType(PageView)).physics, isA<PageScrollPhysics>());
+    });
 
     testWidgets('loads ASMR image URLs as network images', (tester) async {
       SharedPreferences.setMockInitialValues(const <String, Object>{});

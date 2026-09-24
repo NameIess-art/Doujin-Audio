@@ -602,6 +602,101 @@ void main() {
     },
   );
 
+  test('a track switch drops a queued seek for the previous track', () async {
+    final library = _createLibraryFacade();
+    final native = _RecordingNativePlaybackRepository();
+    final playback = PlaybackFacade.create(
+      databaseRepository:
+          library.databaseRepository as PlaybackPersistenceRepository,
+      nativeRepository: native,
+    )..configurePersistence(enabled: false);
+    final session = _session('seek-then-switch');
+    playback
+      ..attachPlaybackCommands(
+        prepareSession:
+            (
+              session, {
+              required nextPath,
+              autoPlay = true,
+              forceStartAtZero = false,
+              showLoading = true,
+              targetQueueIndex,
+            }) async {
+              session.beginPreparation(
+                showLoading: showLoading,
+                autoPlay: autoPlay,
+              );
+              session.currentTrackPath = nextPath;
+              return true;
+            },
+        pauseSession: (_) async {},
+        startSession: (_, {required shouldStartTriggerCountdown}) async => true,
+        resolveAdvance: (_, {required forward}) => null,
+        hasAdjacent: (_, {required forward}) => false,
+      )
+      ..registerSession(session);
+    addTearDown(() async {
+      await playback.dispose();
+      await library.dispose();
+    });
+
+    final gate = Completer<NativeResult<NativePlaybackSnapshot>>();
+    native.seekGate = gate;
+    final firstSeek = playback.seekSession(
+      session.id,
+      const Duration(seconds: 10),
+    );
+    final queuedSeek = playback.seekSession(
+      session.id,
+      const Duration(seconds: 20),
+    );
+    await playback.switchSessionTrack(session.id, '/tracks/new.mp3');
+
+    native.seekGate = null;
+    gate.complete(const NativeSuccess<NativePlaybackSnapshot>());
+    await Future.wait([firstSeek, queuedSeek]);
+
+    expect(session.currentTrackPath, '/tracks/new.mp3');
+    expect(native.seekPositions, [const Duration(seconds: 10)]);
+  });
+
+  test(
+    'a replacement session drops a queued seek from the old session',
+    () async {
+      final library = _createLibraryFacade();
+      final native = _RecordingNativePlaybackRepository();
+      final playback = PlaybackFacade.create(
+        databaseRepository:
+            library.databaseRepository as PlaybackPersistenceRepository,
+        nativeRepository: native,
+      )..configurePersistence(enabled: false);
+      final oldSession = _session('reused-id');
+      playback.registerSession(oldSession);
+      addTearDown(() async {
+        await playback.dispose();
+        await library.dispose();
+      });
+
+      final gate = Completer<NativeResult<NativePlaybackSnapshot>>();
+      native.seekGate = gate;
+      final firstSeek = playback.seekSession(
+        oldSession.id,
+        const Duration(seconds: 10),
+      );
+      final queuedSeek = playback.seekSession(
+        oldSession.id,
+        const Duration(seconds: 20),
+      );
+      playback.registerSession(_session(oldSession.id));
+
+      native.seekGate = null;
+      gate.complete(const NativeSuccess<NativePlaybackSnapshot>());
+      await Future.wait([firstSeek, queuedSeek]);
+
+      expect(native.seekPositions, [const Duration(seconds: 10)]);
+    },
+  );
+
   test(
     'playback error retries an existing native source through transport',
     () async {

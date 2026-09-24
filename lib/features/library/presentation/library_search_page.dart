@@ -42,6 +42,9 @@ class _LibrarySearchPageState extends ConsumerState<_LibrarySearchPage> {
   AudioLibraryCategoryType? _lastCategoryFilterType;
   String? _lastCategoryFilterKey;
   List<AudioLibraryCategoryEntry> _lastCategoryFilterResult = const [];
+  Future<AudioLibraryCategorySnapshot>? _categorySnapshotFuture;
+  int? _categorySnapshotStructureRevision;
+  int? _categorySnapshotDetailRevision;
 
   String get _effectiveSearchQuery => _query;
 
@@ -625,9 +628,9 @@ class _LibrarySearchPageState extends ConsumerState<_LibrarySearchPage> {
 
     final pinnedLibraryPaths = ref.watch(
       settingsStateProvider.select(
-        (s) => s.value?.pinnedLibraryPaths.toSet() ?? const <String>{},
+        (s) => s.value?.pinnedLibraryPaths ?? const <String>[],
       ),
-    );
+    ).toSet();
 
     final Widget body;
     if (_categoryType == AudioLibraryCategoryType.all) {
@@ -645,6 +648,7 @@ class _LibrarySearchPageState extends ConsumerState<_LibrarySearchPage> {
         topPadding: topInset,
         bottomPadding: MediaQuery.paddingOf(context).bottom + 16,
         cacheExtent: 320,
+        structureRevision: structureRevision,
         detailRevision: detailRevision,
         pinnedPaths: pinnedLibraryPaths,
       );

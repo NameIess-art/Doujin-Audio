@@ -178,6 +178,11 @@ class AsmrDownloadManager {
     );
   }
 
+  @visibleForTesting
+  void debugRecordCreatedOutputPathForTesting(int workId, String outputPath) {
+    _createdOutputPaths.putIfAbsent(workId, () => <String>{}).add(outputPath);
+  }
+
   Future<void> initialize() {
     if (_disposed) return Future<void>.value();
     return _initializationFuture ??= _initializeOnce();
@@ -422,6 +427,8 @@ class AsmrDownloadManager {
           return;
         }
         _store.remove(workId);
+        _createdOutputPaths.remove(workId);
+        _createdJsonDocuments.remove(workId);
       }
       _resumingTasks.remove(workId);
 
@@ -888,10 +895,6 @@ class AsmrDownloadManager {
       _activeTasks.remove(workId);
       _resumingTasks.remove(workId);
       _store.removeLiveProgress(workId);
-      if (_store[workId]?.status == AsmrDownloadTaskStatus.completed) {
-        _createdOutputPaths.remove(workId);
-        _createdJsonDocuments.remove(workId);
-      }
       if (!_disposed) {
         AppCacheService.scheduleEnforce();
         _processQueue();

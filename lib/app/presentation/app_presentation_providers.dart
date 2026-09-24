@@ -133,10 +133,9 @@ final librarySortedTreeUiProvider = Provider<List<LibraryNode>>((ref) {
   );
   final pinnedPaths = ref.watch(
     settingsStateProvider.select(
-      (state) =>
-          state.value?.pinnedLibraryPaths.toSet() ?? const <String>{},
+      (state) => state.value?.pinnedLibraryPaths ?? const <String>[],
     ),
-  );
+  ).toSet();
   ref.watch(libraryDetailRevisionProvider);
   final libraryFacade = ref.watch(libraryFacadeProvider);
 
@@ -234,10 +233,9 @@ final playlistSortedEntriesUiProvider =
       );
       final pinnedSessionIds = ref.watch(
         settingsStateProvider.select(
-          (state) =>
-              state.value?.pinnedPlaylistSessionIds.toSet() ?? const <String>{},
+          (state) => state.value?.pinnedPlaylistSessionIds ?? const <String>[],
         ),
-      );
+      ).toSet();
       ref.watch(libraryDetailRevisionProvider);
       final library = ref.watch(libraryFacadeProvider);
       final paths = ref.watch(audioPathCoordinatorProvider);

@@ -346,10 +346,9 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
         : ref.read(playlistSortedEntriesUiProvider);
     final pinnedPlaylistSessionIds = _readOrWatch(
       settingsStateProvider.select(
-        (state) =>
-            state.value?.pinnedPlaylistSessionIds.toSet() ?? const <String>{},
+        (state) => state.value?.pinnedPlaylistSessionIds ?? const <String>[],
       ),
-    );
+    ).toSet();
     final coverImageResolution = _readOrWatch(
       coverImageResolutionProvider,
     );
@@ -754,7 +753,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
         builder: (context, ref, _) {
           final timerState = ref.watch(timerStateProvider).value ?? timer.state;
           return SafeArea(
-            child: Padding(
+            child: SingleChildScrollView(child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -881,7 +880,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                   ],
                 ],
               ),
-            ),
+            )),
           );
         },
       ),

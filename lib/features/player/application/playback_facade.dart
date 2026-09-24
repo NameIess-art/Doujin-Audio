@@ -83,7 +83,15 @@ final class PlaybackFacade {
       StreamController<int>.broadcast(sync: true);
   final Map<String, Set<String>> _nativeRetainedContentUrisBySession =
       <String, Set<String>>{};
-  final Map<String, Duration> _pendingNativeSeeks = <String, Duration>{};
+  final Map<
+    String,
+    ({PlaybackSession session, Duration position, int generation})
+  >
+  _pendingNativeSeeks =
+      <
+        String,
+        ({PlaybackSession session, Duration position, int generation})
+      >{};
   final Map<String, Completer<void>> _pendingNativeSeekCompleters =
       <String, Completer<void>>{};
   final Set<String> _activeNativeSeeks = <String>{};
@@ -542,12 +550,21 @@ final class PlaybackFacade {
     if (!_sessionObserversAttached) {
       _onSessionPositionChanged?.call(session, clamped);
     }
-    await _dispatchNativeSeek(session.id, clamped);
+    await _dispatchNativeSeek(session, clamped, session.loadGeneration);
   }
 
-  Future<void> _dispatchNativeSeek(String sessionId, Duration position) async {
+  Future<void> _dispatchNativeSeek(
+    PlaybackSession session,
+    Duration position,
+    int generation,
+  ) async {
+    final sessionId = session.id;
     if (_activeNativeSeeks.contains(sessionId)) {
-      _pendingNativeSeeks[sessionId] = position;
+      _pendingNativeSeeks[sessionId] = (
+        session: session,
+        position: position,
+        generation: generation,
+      );
       final completer = _pendingNativeSeekCompleters.putIfAbsent(
         sessionId,
         () => Completer<void>(),
@@ -561,9 +578,16 @@ final class PlaybackFacade {
       _activeNativeSeeks.remove(sessionId);
       final pending = _pendingNativeSeeks.remove(sessionId);
       final completer = _pendingNativeSeekCompleters.remove(sessionId);
-      if (pending != null) {
+      if (pending != null &&
+          identical(_service.sessions[sessionId], pending.session) &&
+          !pending.session.isDisposed &&
+          pending.session.loadGeneration == pending.generation) {
         unawaited(
-          _dispatchNativeSeek(sessionId, pending).whenComplete(() {
+          _dispatchNativeSeek(
+            pending.session,
+            pending.position,
+            pending.generation,
+          ).whenComplete(() {
             if (completer != null && !completer.isCompleted) {
               completer.complete();
             }
@@ -674,7 +698,11 @@ final class PlaybackFacade {
   Future<void> seekSessionToNext(String sessionId) async {
     final session = _service.sessions[sessionId];
     if (session == null || session.pendingNativeTrackPath != null) return;
-    final target = _commandPort?.resolveAdvance(session, forward: true);
+    final target = _commandPort?.resolveAdvance(
+      session,
+      forward: true,
+      manualAdvance: true,
+    );
     if (target == null) return;
     session.beginLoadingIndicatorThreshold();
     await _commandPort?.prepareSession(
@@ -694,7 +722,11 @@ final class PlaybackFacade {
       await seekSession(sessionId, Duration.zero);
       return;
     }
-    final target = _commandPort?.resolveAdvance(session, forward: false);
+    final target = _commandPort?.resolveAdvance(
+      session,
+      forward: false,
+      manualAdvance: true,
+    );
     if (target == null) return;
     session.beginLoadingIndicatorThreshold();
     await _commandPort?.prepareSession(
@@ -736,7 +768,6 @@ final class PlaybackFacade {
   bool hasSessionAdjacentTrack(String sessionId, {required bool forward}) {
     final session = _service.sessions[sessionId];
     return session != null &&
-        !session.isLoading &&
         (_commandPort?.hasAdjacent(session, forward: forward) ?? false);
   }
 

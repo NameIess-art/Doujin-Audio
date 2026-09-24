@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -267,6 +269,43 @@ void main() {
         await tester.pump(const Duration(seconds: 1));
       },
     );
+
+    testWidgets('late pause completion does not update a closed canvas', (
+      tester,
+    ) async {
+      final session = PlaybackSession(
+        id: 'late-pause-session',
+        currentTrackPath: '/music/track.mp3',
+        loopMode: SessionLoopMode.single,
+        nonSingleLoopMode: SessionLoopMode.single,
+        volume: 0.8,
+        createdAt: DateTime(2026),
+        state: const PlayerState(true, ProcessingState.ready),
+      );
+      fixture.playbackService.registerSession(session);
+      fixture.playbackService.syncSlice(
+        activeSessions: <PlaybackSession>[session],
+        playingSessionCount: 1,
+        focusedSessionId: session.id,
+        coverGeneration: 0,
+        isInitialized: true,
+      );
+      final pauseResult = Completer<Map<String, Object?>>();
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(nativePlaybackChannel, (call) async {
+            if (call.method == 'pauseAll') return pauseResult.future;
+            return <String, Object?>{'ok': true, 'value': null};
+          });
+
+      await tester.pumpWidget(fixture.build(const BedtimeCanvasPage()));
+      await performDoubleTap(tester, find.byType(BedtimeCanvasPage));
+      await tester.pumpWidget(const SizedBox.shrink());
+      pauseResult.complete(<String, Object?>{'ok': true, 'value': null});
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 1));
+
+      expect(tester.takeException(), isNull);
+    });
 
     testWidgets('vertical drag does not adjust volume', (tester) async {
       final sessionA = PlaybackSession(

@@ -685,6 +685,7 @@ void main() {
       await pumpUntilNotFound(tester, find.byType(LibraryLikeSkeletonCard));
       await tester.tap(find.byType(ListTile).first);
       await pumpUntilFound(tester, find.byType(WorkDetailPage));
+      await tester.pumpAndSettle();
       await pumpUntilFound(tester, find.text('Disc', findRichText: true));
       await tester.tap(find.text('Disc', findRichText: true));
       await pumpUntilFound(tester, find.text('Chapter', findRichText: true));
@@ -1012,6 +1013,7 @@ void main() {
       tester,
       find.text('search-selection', findRichText: true),
     );
+    await tester.pumpAndSettle();
 
     final searchFolder = find.byKey(
       const ValueKey<String>('search_/library/search-selection'),
@@ -2684,7 +2686,7 @@ void main() {
       );
       final card = tester.widget<Card>(cardFinder.first);
       expect(card.color, Colors.transparent);
-      expect(prepareCalls, 1);
+      expect(prepareCalls, 0);
       expect(
         PathMatcher.normalize(
           runtimeGraph.playback.activeSessions.single.currentTrackPath,

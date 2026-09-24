@@ -53,8 +53,11 @@ class WorkImageViewerPage extends ConsumerStatefulWidget {
 
 class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage> {
   static const double _imageHeaderGap = 24;
+  static const double _imageSwitcherGap = 20;
   final GlobalKey _headerKey = GlobalKey();
+  final GlobalKey _switcherKey = GlobalKey();
   double _headerHeight = 0;
+  double _switcherHeight = 0;
   late int _currentIndex = widget.initialIndex.clamp(
     0,
     widget.images.isEmpty ? 0 : widget.images.length - 1,
@@ -63,6 +66,7 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage> {
     initialPage: _currentIndex,
   );
   bool _isSettingCover = false;
+  bool _isCurrentZoomed = false;
 
   @override
   void dispose() {
@@ -71,27 +75,35 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage> {
   }
 
   void _onPageChanged(int index) {
+    if (_currentIndex == index) return;
     setState(() {
       _currentIndex = index;
+      _isCurrentZoomed = false;
     });
   }
 
   void _goToPrevious() {
-    if (widget.images.length < 2) return;
-    if (_currentIndex == 0) {
-      _pageController.jumpToPage(widget.images.length - 1);
-    } else {
-      _pageController.jumpToPage(_currentIndex - 1);
-    }
+    if (_currentIndex <= 0) return;
+    final duration = MediaQuery.disableAnimationsOf(context)
+        ? Duration.zero
+        : kAppMotionSlow;
+    _pageController.animateToPage(
+      _currentIndex - 1,
+      duration: duration,
+      curve: Curves.easeInOutCubic,
+    );
   }
 
   void _goToNext() {
-    if (widget.images.length < 2) return;
-    if (_currentIndex == widget.images.length - 1) {
-      _pageController.jumpToPage(0);
-    } else {
-      _pageController.jumpToPage(_currentIndex + 1);
-    }
+    if (_currentIndex >= widget.images.length - 1) return;
+    final duration = MediaQuery.disableAnimationsOf(context)
+        ? Duration.zero
+        : kAppMotionSlow;
+    _pageController.animateToPage(
+      _currentIndex + 1,
+      duration: duration,
+      curve: Curves.easeInOutCubic,
+    );
   }
 
   Future<void> _handleSetAsCover() async {
@@ -191,11 +203,21 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final box = _headerKey.currentContext?.findRenderObject() as RenderBox?;
-      if (box == null) return;
-      final height = box.size.height;
-      if (height > 0 &&
-          (_headerHeight == 0 || (height - _headerHeight).abs() > 0.5)) {
-        setState(() => _headerHeight = height);
+      if (box != null) {
+        final height = box.size.height;
+        if (height > 0 &&
+            (_headerHeight == 0 || (height - _headerHeight).abs() > 0.5)) {
+          setState(() => _headerHeight = height);
+        }
+      }
+      final switcherBox =
+          _switcherKey.currentContext?.findRenderObject() as RenderBox?;
+      if (switcherBox != null) {
+        final height = switcherBox.size.height;
+        if (height > 0 &&
+            (_switcherHeight == 0 || (height - _switcherHeight).abs() > 0.5)) {
+          setState(() => _switcherHeight = height);
+        }
       }
     });
     final imageTop =
@@ -203,6 +225,11 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage> {
             ? _headerHeight
             : MediaQuery.paddingOf(context).top + 96) +
         _imageHeaderGap;
+    final bottomInset = MediaQuery.paddingOf(context).bottom;
+    final switcherHeight = _switcherHeight > 0 ? _switcherHeight : 38.0;
+    final imageBottom = widget.images.length > 1
+        ? bottomInset + 20.0 + switcherHeight + _imageSwitcherGap
+        : bottomInset + 20.0;
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -223,10 +250,16 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage> {
                 imageFilter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
                 child: Transform.scale(
                   scale: 1.12,
-                  child: _buildImage(
-                    currentImage,
-                    fit: BoxFit.cover,
-                    showFallbackIcon: false,
+                  child: AnimatedSwitcher(
+                    duration: kAppMotionStandard,
+                    child: KeyedSubtree(
+                      key: ValueKey<String>(currentImage.path),
+                      child: _buildImage(
+                        currentImage,
+                        fit: BoxFit.cover,
+                        showFallbackIcon: false,
+                      ),
+                    ),
                   ),
                 ),
               ),
@@ -237,27 +270,44 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage> {
           ),
           Positioned.fill(
             top: imageTop,
-            child: AppPageContentTransition(child: PageView.builder(
-              key: const ValueKey<String>('work_image_viewport'),
-              controller: _pageController,
-              physics: const NeverScrollableScrollPhysics(),
-              onPageChanged: _onPageChanged,
-              itemCount: widget.images.length,
-              itemBuilder: (context, index) {
-                final img = widget.images[index];
-                return InteractiveViewer(
-                  maxScale: 4.0,
-                  child: SizedBox.expand(
-                    child: _buildImage(
-                      img,
-                      fit: BoxFit.contain,
-                      showFallbackIcon: true,
-                      showFallbackArtwork: false,
-                    ),
-                  ),
-                );
-              },
-            )),
+            bottom: imageBottom,
+            child: AppPageContentTransition(
+              child: ScrollConfiguration(
+                behavior: ScrollConfiguration.of(context).copyWith(
+                  dragDevices: {
+                    PointerDeviceKind.touch,
+                    PointerDeviceKind.mouse,
+                    PointerDeviceKind.trackpad,
+                    PointerDeviceKind.stylus,
+                  },
+                ),
+                child: PageView.builder(
+                  key: const ValueKey<String>('work_image_viewport'),
+                  controller: _pageController,
+                  physics: _isCurrentZoomed
+                      ? const NeverScrollableScrollPhysics()
+                      : const PageScrollPhysics(),
+                  onPageChanged: _onPageChanged,
+                  itemCount: widget.images.length,
+                  itemBuilder: (context, index) {
+                    final img = widget.images[index];
+                    return _WorkImageViewerItem(
+                      key: ValueKey<String>('image_item_${img.path}'),
+                      isActive: index == _currentIndex,
+                      onZoomChanged: (zoomed) {
+                        setState(() => _isCurrentZoomed = zoomed);
+                      },
+                      child: _buildImage(
+                        img,
+                        fit: BoxFit.contain,
+                        showFallbackIcon: true,
+                        showFallbackArtwork: false,
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
           ),
           // Floating Top Page Header
           Positioned(
@@ -332,6 +382,7 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage> {
           // Bottom-right switcher capsule
           if (widget.images.length > 1)
             Positioned(
+              key: _switcherKey,
               right: 16,
               bottom: MediaQuery.paddingOf(context).bottom + 20,
               child: AppPageContentTransition(child: HeaderFloatingSurface(
@@ -349,7 +400,7 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage> {
                       ),
                       icon: const Icon(Icons.chevron_left_rounded),
                       tooltip: 'Previous',
-                      onPressed: _goToPrevious,
+                      onPressed: _currentIndex > 0 ? _goToPrevious : null,
                     ),
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 6),
@@ -373,13 +424,97 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage> {
                       ),
                       icon: const Icon(Icons.chevron_right_rounded),
                       tooltip: 'Next',
-                      onPressed: _goToNext,
+                      onPressed: _currentIndex < widget.images.length - 1
+                          ? _goToNext
+                          : null,
                     ),
                   ],
                 ),
               )),
             ),
         ],
+      ),
+    );
+  }
+}
+
+class _WorkImageViewerItem extends StatefulWidget {
+  const _WorkImageViewerItem({
+    super.key,
+    required this.isActive,
+    required this.onZoomChanged,
+    required this.child,
+  });
+
+  final bool isActive;
+  final ValueChanged<bool> onZoomChanged;
+  final Widget child;
+
+  @override
+  State<_WorkImageViewerItem> createState() => _WorkImageViewerItemState();
+}
+
+class _WorkImageViewerItemState extends State<_WorkImageViewerItem> {
+  late final TransformationController _controller = TransformationController();
+  TapDownDetails? _doubleTapDetails;
+  bool _isZoomed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller.addListener(_onTransformationChanged);
+  }
+
+  @override
+  void didUpdateWidget(covariant _WorkImageViewerItem oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!widget.isActive && oldWidget.isActive && _isZoomed) {
+      _controller.value = Matrix4.identity();
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.removeListener(_onTransformationChanged);
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _onTransformationChanged() {
+    final scale = _controller.value.getMaxScaleOnAxis();
+    final isZoomed = (scale - 1.0).abs() > 0.05;
+    if (isZoomed != _isZoomed) {
+      setState(() => _isZoomed = isZoomed);
+      if (widget.isActive) {
+        widget.onZoomChanged(isZoomed);
+      }
+    }
+  }
+
+  void _handleDoubleTap() {
+    if (_isZoomed) {
+      _controller.value = Matrix4.identity();
+    } else {
+      final position = _doubleTapDetails?.localPosition ?? Offset.zero;
+      final x = -position.dx * 1.5;
+      final y = -position.dy * 1.5;
+      _controller.value = Matrix4.identity()
+        ..translateByDouble(x, y, 0, 1)
+        ..scaleByDouble(2.5, 2.5, 1.0, 1);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onDoubleTapDown: (details) => _doubleTapDetails = details,
+      onDoubleTap: _handleDoubleTap,
+      child: InteractiveViewer(
+        transformationController: _controller,
+        panEnabled: _isZoomed,
+        minScale: 1.0,
+        maxScale: 4.0,
+        child: SizedBox.expand(child: widget.child),
       ),
     );
   }

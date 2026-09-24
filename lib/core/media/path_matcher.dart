@@ -61,6 +61,11 @@ abstract final class PathMatcher {
       return normalize(first) == normalize(second);
     }
     if (isContentUri(first) || isContentUri(second)) {
+      if (!isContentUri(first) ||
+          !isContentUri(second) ||
+          _contentAuthority(first) != _contentAuthority(second)) {
+        return false;
+      }
       final firstDoc = _documentPath(first);
       final secondDoc = _documentPath(second);
       if (firstDoc != null && secondDoc != null) {
@@ -76,7 +81,7 @@ abstract final class PathMatcher {
     final normalized = normalize(value);
     if (isRemoteUri(normalized)) return 'remote:$normalized';
     if (isContentUri(normalized)) {
-      return 'content:${_documentPath(normalized) ?? normalized}';
+      return 'content:${_contentAuthority(normalized)}:${_documentPath(normalized) ?? normalized}';
     }
     final canonical = normalized.replaceAll('\\', '/');
     return _windowsAbsolutePath.hasMatch(normalized)
@@ -93,11 +98,11 @@ abstract final class PathMatcher {
         final parent = separator < 0
             ? documentPath
             : documentPath.substring(0, separator);
-        return 'content:$parent';
+        return 'content:${_contentAuthority(normalized)}:$parent';
       }
       final uri = Uri.tryParse(normalized);
       if (uri != null && uri.pathSegments.isNotEmpty) {
-        return 'content:${uri.replace(pathSegments: uri.pathSegments.sublist(0, uri.pathSegments.length - 1))}';
+        return 'content:${_contentAuthority(normalized)}:${uri.replace(pathSegments: uri.pathSegments.sublist(0, uri.pathSegments.length - 1))}';
       }
       return equivalenceKey(normalized);
     }
@@ -168,23 +173,7 @@ abstract final class PathMatcher {
   }
 
   static bool isWithinOrEqual(String child, String parent) {
-    final normalizedChild = normalize(child);
-    final normalizedParent = normalize(parent);
-    if (isRemoteUri(normalizedChild) || isRemoteUri(normalizedParent)) {
-      return normalizedChild == normalizedParent;
-    }
-    if (isContentUri(normalizedChild) || isContentUri(normalizedParent)) {
-      final childDoc = _documentPath(normalizedChild);
-      final parentDoc = _documentPath(normalizedParent);
-      if (childDoc != null && parentDoc != null) {
-        return childDoc == parentDoc || childDoc.startsWith('$parentDoc/');
-      }
-      return normalizedChild == normalizedParent ||
-          normalizedChild.startsWith('$normalizedParent/');
-    }
-    final context = _contextFor(normalizedChild, normalizedParent);
-    return context.equals(normalizedChild, normalizedParent) ||
-        context.isWithin(normalizedParent, normalizedChild);
+    return isWithinOrEqualNormalized(normalize(child), normalize(parent));
   }
 
   static bool isWithinOrEqualNormalized(
@@ -195,6 +184,12 @@ abstract final class PathMatcher {
       return normalizedChild == normalizedParent;
     }
     if (isContentUri(normalizedChild) || isContentUri(normalizedParent)) {
+      if (!isContentUri(normalizedChild) ||
+          !isContentUri(normalizedParent) ||
+          _contentAuthority(normalizedChild) !=
+              _contentAuthority(normalizedParent)) {
+        return false;
+      }
       final childDoc = _documentPath(normalizedChild);
       final parentDoc = _documentPath(normalizedParent);
       if (childDoc != null && parentDoc != null) {
@@ -275,6 +270,9 @@ abstract final class PathMatcher {
     }
     return path.context;
   }
+
+  static String _contentAuthority(String value) =>
+      Uri.tryParse(value)?.authority.toLowerCase() ?? '';
 
   static String? _documentPath(String value) {
     if (!isContentUri(value)) return null;

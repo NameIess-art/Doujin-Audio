@@ -254,6 +254,7 @@ class _BedtimeCanvasPageState extends ConsumerState<BedtimeCanvasPage>
   }
 
   void _showFeedback({required IconData icon}) {
+    if (!mounted) return;
     _feedbackTimer?.cancel();
     setState(() {
       _feedbackIcon = icon;

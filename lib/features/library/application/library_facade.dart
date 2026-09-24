@@ -153,6 +153,7 @@ final class LibraryFacade implements LibraryCatalog {
       );
   CoverArtworkCacheService? _coverArtworkCacheService;
   bool _disposed = false;
+  int _scanOperationGeneration = 0;
   bool _interactionPaused = false;
   void Function(List<String> removedPaths)? _trackRemovalHandler;
   void Function()? _coverChangeHandler;
@@ -723,9 +724,14 @@ final class LibraryFacade implements LibraryCatalog {
     List<MusicTrack> tracks, {
     bool notify = true,
     bool persist = true,
+    bool mergeExistingState = true,
   }) {
     if (tracks.isEmpty) return;
-    final mutation = _service.addOrReplaceTracks(tracks, persist: persist);
+    final mutation = _service.addOrReplaceTracks(
+      tracks,
+      persist: persist,
+      mergeExistingState: mergeExistingState,
+    );
     if (mutation.tracks.isEmpty) return;
     recordEntriesForTracks(mutation.tracks, persist: persist);
     if (mutation.batched) return;
@@ -1082,9 +1088,10 @@ final class LibraryFacade implements LibraryCatalog {
 
   @override
   int tryBeginScan({required String source, bool background = false}) {
-    if (_service.isScanning) return 0;
+    if (_scanOperationGeneration != 0) return 0;
     _service.scanGenerationSeed++;
     final generation = _service.scanGenerationSeed;
+    _scanOperationGeneration = generation;
     _setScanning(true, background: background);
     _service
       ..scanGeneration = generation
@@ -1105,8 +1112,9 @@ final class LibraryFacade implements LibraryCatalog {
 
   @override
   void finishScan(int generation) {
-    if (!isScanGenerationActive(generation)) return;
-    _setScanning(false);
+    if (_scanOperationGeneration != generation) return;
+    _scanOperationGeneration = 0;
+    if (_service.isScanning) _setScanning(false);
   }
 
   @override

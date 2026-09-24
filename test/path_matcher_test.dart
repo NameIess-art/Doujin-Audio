@@ -28,6 +28,22 @@ void main() {
     expect(PathMatcher.isWithinOrEqual(child, root), isTrue);
   });
 
+  test('SAF document ids remain separate across content providers', () {
+    const first = 'content://provider.one/tree/primary%3AMusic';
+    const second = 'content://provider.two/tree/primary%3AMusic';
+    const secondTrack = '$second::Album/01.mp3';
+    final index = PathMembershipIndex(const <String>{'$first::Album'});
+
+    expect(PathMatcher.equalsNormalized(first, second), isFalse);
+    expect(PathMatcher.isWithinOrEqual(secondTrack, first), isFalse);
+    expect(PathMatcher.relativeWithin(secondTrack, first), isNull);
+    expect(
+      PathMatcher.replaceWithinOrEqual(secondTrack, first, '/new'),
+      secondTrack,
+    );
+    expect(index.containsAncestorOrEqual(secondTrack), isFalse);
+  });
+
   test('SAF tree rename retargets document and synthetic child paths', () {
     const oldRoot =
         'content://com.android.externalstorage.documents/tree/primary%3AOld';

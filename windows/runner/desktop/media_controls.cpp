@@ -199,8 +199,13 @@ void MediaControls::Update(const flutter::EncodableMap& payload) {
   const auto art = Text(*selected,"artPath");
   if (!art.empty()) {
     try {
-      std::wstring uri = L"file:///" + std::wstring(winrt::to_hstring(art));
-      for (auto& c : uri) if (c == L'\\') c = L'/';
+      std::wstring uri = L"file:///";
+      for (const auto c : winrt::to_hstring(art)) {
+        if (c == L'\\') uri += L'/';
+        else if (c == L'#') uri += L"%23";
+        else if (c == L'%') uri += L"%25";
+        else uri += c;
+      }
       updater.Thumbnail(winrt::Windows::Storage::Streams::RandomAccessStreamReference::CreateFromUri(
           winrt::Windows::Foundation::Uri(uri)));
     } catch (const winrt::hresult_error&) { updater.Thumbnail(nullptr); }

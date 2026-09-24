@@ -17,6 +17,55 @@ import java.nio.ByteOrder
 
 class NativePlaybackSessionStateTest {
     @Test
+    fun `reconfiguring a deferred session discards previous media duration and buffer`() {
+        val first = NativeMediaItemDescriptor(
+            path = "/short.mp3",
+            uri = "file:///short.mp3",
+            title = "Short",
+            subtitle = null,
+            artUri = null
+        )
+        val second = first.copy(
+            path = "/long.mp3",
+            uri = "file:///long.mp3",
+            title = "Long"
+        )
+        val session = NativePlaybackSession(
+            sessionId = "deferred",
+            createPlayer = { _, _ -> error("player should stay deferred") },
+            logWarn = { _, _, _ -> },
+            elapsedRealtimeMs = { 2_000L }
+        )
+        fun configure(descriptor: NativeMediaItemDescriptor, positionMs: Long) {
+            session.configure(
+                descriptor = descriptor,
+                queue = listOf(descriptor),
+                queueStartIndex = 0,
+                startPositionMs = positionMs,
+                volume = 1f,
+                speed = 1f,
+                repeatOne = false,
+                repeatAll = false,
+                shuffleModeEnabled = false,
+                autoPlay = false,
+                deferPlayerCreation = true
+            )
+        }
+
+        configure(first, 1_000L)
+        session.lastDurationMs = 5_000L
+        session.lastBufferedPositionMs = 4_000L
+        configure(second, 0L)
+        session.seekTo(8_000L)
+
+        val snapshot = session.snapshot()
+        assertEquals("Long", snapshot["title"])
+        assertNull(snapshot["durationMs"])
+        assertEquals(8_000L, snapshot["positionMs"])
+        assertEquals(8_000L, snapshot["bufferedPositionMs"])
+    }
+
+    @Test
     fun `seeking a deferred session updates snapshots without creating a player`() {
         var playerCreationCount = 0
         val descriptor = NativeMediaItemDescriptor(

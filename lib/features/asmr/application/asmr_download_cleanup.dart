@@ -17,78 +17,15 @@ extension AsmrDownloadCleanup on AsmrDownloadManager {
     final workRootPath = task.workRootPath;
     final isSaf = PathMatcher.isContentUri(workRootPath);
 
-    final filesToDelete = <String>{};
+    final filesToDelete = <String>{
+      ...extraCreatedPaths,
+      ...?_createdOutputPaths[task.work.id],
+    };
 
-    // 1. Files explicitly recorded as completed for this task
-    for (final relativePath in task.completedFilePaths) {
-      if (relativePath.startsWith('cover/')) {
-        continue;
-      }
-      filesToDelete.add(_joinFolderPath(workRootPath, relativePath));
-    }
-
-    // 2. Cover file
-    if (task.coverOutputPath != null) {
-      filesToDelete.add(task.coverOutputPath!);
-    }
-    if (task.saveCover ||
-        task.completedFilePaths.any((p) => p.startsWith('cover/'))) {
-      for (final ext in const ['.jpg', '.png', '.webp', '.jpeg']) {
-        filesToDelete.add(_joinFolderPath(workRootPath, 'cover/cover$ext'));
-      }
-    }
-
-    // 3. Metadata document (doujin-audio.json)
-    if (task.saveMetadata) {
-      filesToDelete.add(_joinFolderPath(workRootPath, 'doujin-audio.json'));
-    }
-
-    // 4. Any actively created paths from memory (staging files, in-progress files)
-    filesToDelete.addAll(extraCreatedPaths);
-    filesToDelete.addAll(_createdOutputPaths[task.work.id] ?? const <String>{});
-
-    // 5. Staging files on local disk
-    if (!isSaf) {
-      for (final relativePath in task.completedFilePaths) {
-        try {
-          final staging = await _persistentStagingFile(
-            workRootPath,
-            relativePath,
-          );
-          if (await staging.exists()) {
-            filesToDelete.add(staging.path);
-          }
-        } catch (_) {
-          // Staging file lookup is best-effort during cleanup.
-        }
-      }
-      if (task.saveCover) {
-        try {
-          final staging = await _persistentStagingFile(
-            workRootPath,
-            'cover/cover.cover',
-          );
-          if (await staging.exists()) {
-            filesToDelete.add(staging.path);
-          }
-        } catch (_) {
-          // Cover staging file lookup is best-effort during cleanup.
-        }
-      }
-    }
-
-    // 6. If completedFilePaths was empty, fallback to planned files from selectedRoots
-    if (task.completedFilePaths.isEmpty) {
-      final planned = _collectPlannedFiles(task.selectedRoots);
-      for (final item in planned) {
-        if (!item.isCover) {
-          filesToDelete.add(_joinFolderPath(workRootPath, item.relativePath));
-        }
-      }
-    }
-
-    // 7. Created JSON documents
+    // JSON documents must be deleted with their recorded revision. A skipped
+    // file, or a document changed after download, belongs to the user.
     for (final entry in createdJsonDocs.entries) {
+      filesToDelete.remove(entry.key);
       try {
         await _jsonDocumentStore.delete(
           location: entry.value.location,
@@ -99,12 +36,13 @@ extension AsmrDownloadCleanup on AsmrDownloadManager {
       }
     }
 
-    // 8. Delete each target file
+    // Legacy tasks may lack a revision token for their JSON documents.
     for (final targetPath in filesToDelete) {
+      if (targetPath.toLowerCase().endsWith('.json')) continue;
       await _deleteOutputPath(targetPath);
     }
 
-    // 9. Prune newly-empty directories on local filesystem
+    // Prune newly-empty directories on local filesystem.
     if (!isSaf) {
       final normalizedWorkRoot = path.normalize(path.absolute(workRootPath));
       final normalizedDestRoot = path.normalize(

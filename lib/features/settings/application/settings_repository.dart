@@ -730,6 +730,7 @@ class SettingsRepository {
   }
 
   void syncSlice({bool isInitialized = false}) {
+    final previous = slice.state;
     slice.update(
       SettingsState(
         converterFormat: converterFormat,
@@ -741,13 +742,20 @@ class SettingsRepository {
         librarySortCriterion: librarySortCriterion,
         librarySortAscending: librarySortAscending,
         libraryGroupByLibrary: libraryGroupByLibrary,
-        pinnedLibraryPaths: List<String>.unmodifiable(pinnedLibraryPaths),
+        pinnedLibraryPaths:
+            listEquals(previous.pinnedLibraryPaths, pinnedLibraryPaths)
+            ? previous.pinnedLibraryPaths
+            : pinnedLibraryPaths,
         playlistSortCriterion: playlistSortCriterion,
         playlistSortAscending: playlistSortAscending,
         playlistGroupByLibrary: playlistGroupByLibrary,
-        pinnedPlaylistSessionIds: List<String>.unmodifiable(
-          pinnedPlaylistSessionIds,
-        ),
+        pinnedPlaylistSessionIds:
+            listEquals(
+              previous.pinnedPlaylistSessionIds,
+              pinnedPlaylistSessionIds,
+            )
+            ? previous.pinnedPlaylistSessionIds
+            : pinnedPlaylistSessionIds,
         customEqPresets: List<EqPreset>.unmodifiable(customEqPresets),
         maxCacheBytes: maxCacheBytes,
         asmrPlaybackCacheEnabled: asmrPlaybackCacheEnabled,

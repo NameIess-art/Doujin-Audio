@@ -2029,6 +2029,117 @@ void main() {
     },
   );
 
+  testWidgets('deleting a segment survives a pending name save', (tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(430, 900);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
+
+    final fixture = AppRuntimeWidgetTestFixture();
+    addTearDown(fixture.dispose);
+    final track = testMusicTrack(
+      name: 'Segment race track',
+      path: '/library/segments/delete-race.mp3',
+      groupKey: '/library/segments',
+      groupTitle: 'Segments',
+    );
+    final session = PlaybackSession(
+      id: 'segment-delete-race-session',
+      currentTrackPath: track.path,
+      loopMode: SessionLoopMode.single,
+      nonSingleLoopMode: SessionLoopMode.single,
+      volume: 1,
+      createdAt: DateTime(2026),
+      state: const PlayerState(false, ProcessingState.ready),
+    );
+    addTearDown(session.shutdown);
+    fixture.runtimeGraph.library.addTracks(
+      <MusicTrack>[track],
+      notify: false,
+      persist: false,
+    );
+    final trackKey = TimeSegmentLabel.trackKeyFor(track);
+    await tester.runAsync(
+      () => fixture.persistenceRepository.upsertTimeSegmentLabel(
+        TimeSegmentLabel(
+          id: 'label-to-delete',
+          trackKey: trackKey,
+          name: 'Original',
+          start: const Duration(seconds: 5),
+          end: const Duration(seconds: 10),
+          colorValue: kTimeSegmentLabelPalette.first,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        ),
+      ),
+    );
+    fixture.playbackService.registerSession(session);
+    fixture.playbackService.syncSlice(
+      activeSessions: <PlaybackSession>[session],
+      playingSessionCount: 0,
+      focusedSessionId: session.id,
+      coverGeneration: 0,
+      isInitialized: true,
+    );
+
+    await tester.pumpWidget(fixture.build(const PlaylistTab()));
+    await tester.pumpAndSettle();
+    unawaited(
+      Navigator.of(tester.element(find.byType(PlaylistTab))).push(
+        buildSessionDetailRoute(sessionId: session.id),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final i18n = fixture.languageProvider;
+    await tester.tap(find.byTooltip(i18n.tr('audio_features')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(i18n.tr('audio_detail_tags')));
+    await tester.pump(const Duration(milliseconds: 250));
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 300)),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Original'));
+    await tester.pump();
+
+    final saveStarted = Completer<void>();
+    final releaseSave = Completer<void>();
+    addTearDown(() {
+      if (!releaseSave.isCompleted) releaseSave.complete();
+    });
+    fixture.persistenceRepository.beforeTimeSegmentLabelUpsert = () {
+      saveStarted.complete();
+      return releaseSave.future;
+    };
+    await tester.enterText(find.byType(TextField), 'Renamed');
+    await tester.pump(const Duration(milliseconds: 350));
+    await saveStarted.future;
+
+    await tester.tap(find.widgetWithText(FilledButton, i18n.tr('remove')));
+    await tester.pump();
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 50)),
+    );
+    fixture.persistenceRepository.beforeTimeSegmentLabelUpsert = null;
+    releaseSave.complete();
+    await tester.pump();
+    await tester.runAsync(
+      () => fixture.library.detailCacheService.waitForPendingOperations(),
+    );
+    List<TimeSegmentLabel>? remaining;
+    for (var attempt = 0; attempt < 100; attempt++) {
+      await tester.pump();
+      remaining = await tester.runAsync(
+        () => fixture.persistenceRepository.loadTimeSegmentLabels(trackKey),
+      );
+      if (remaining!.isEmpty) break;
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 10)),
+      );
+    }
+    expect(remaining, isEmpty);
+  });
+
   testWidgets('playlist cards keep track and single-file durations separate', (
     WidgetTester tester,
   ) async {
@@ -3882,9 +3993,9 @@ void main() {
         of: secondaryControls,
         matching: find.byType(IconButton),
       );
-      expect(secondaryButtons, findsNWidgets(5));
+      expect(secondaryButtons, findsNWidgets(6));
       final buttonCenters = List<double>.generate(
-        5,
+        6,
         (index) => tester.getCenter(secondaryButtons.at(index)).dx,
       );
       final intervals = List<double>.generate(

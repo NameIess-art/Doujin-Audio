@@ -82,6 +82,22 @@ void main() {
     expect(facade.state.isBackgroundScanning, isFalse);
   });
 
+  test('cancelled scan must finish cleanup before another scan begins', () {
+    final facade = LibraryFacade.create(
+      databaseRepository: _RestoredLibraryRepository(),
+    );
+    addTearDown(facade.dispose);
+
+    final first = facade.tryBeginScan(source: '/music');
+    facade.cancelScan();
+
+    expect(facade.tryBeginScan(source: '/music'), 0);
+    facade.finishScan(first);
+    final second = facade.tryBeginScan(source: '/music');
+    expect(second, greaterThan(first));
+    facade.finishScan(second);
+  });
+
   test('detail target uses the work root inside a watched library', () async {
     const libraryRoot =
         'content://com.android.externalstorage.documents/tree/'

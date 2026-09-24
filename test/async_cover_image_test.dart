@@ -168,7 +168,6 @@ void main() {
           child: AsyncLocalCoverImage(
             future: completer.future,
             seed: 'loading-cover',
-            duration: Duration.zero,
           ),
         ),
       ),
@@ -195,7 +194,6 @@ void main() {
           child: AsyncLocalCoverImage(
             future: completer.future,
             seed: 'missing-cover',
-            duration: Duration.zero,
           ),
         ),
       ),
@@ -224,7 +222,6 @@ void main() {
           height: 90,
           child: AsyncCoverImage(
             future: completer.future,
-            duration: Duration.zero,
             imageBuilder: (_, path) => Text('loaded:$path'),
             fallbackBuilder: (_) =>
                 const CoverFallbackArtwork(seed: 'pending-cover'),
@@ -241,6 +238,54 @@ void main() {
 
     expect(find.byType(CoverFallbackArtwork), findsOneWidget);
     expect(find.byType(CircularProgressIndicator), findsNothing);
+  });
+
+  testWidgets('cover stays on its placeholder until the image frame is ready', (
+    tester,
+  ) async {
+    final path = Completer<String?>();
+    final provider = _ControlledImageProvider();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SizedBox(
+          width: 120,
+          height: 90,
+          child: AsyncCoverImage(
+            future: path.future,
+            fallbackBuilder: (_) => const ColoredBox(
+              key: ValueKey('cover_placeholder'),
+              color: Colors.pink,
+            ),
+            imageBuilder: (_, _) => RetryingImage(
+              retryKey: 'cover',
+              imageProviderBuilder: () => provider,
+              showPlaceholderWhileDecoding: false,
+              fallbackBuilder: (_) => const ColoredBox(
+                key: ValueKey('cover_placeholder'),
+                color: Colors.pink,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    expect(
+      tester.widget<AnimatedSwitcher>(find.byType(AnimatedSwitcher)).duration,
+      Duration.zero,
+    );
+
+    path.complete('cover.png');
+    await tester.pump();
+    await tester.pump();
+    expect(find.byKey(const ValueKey('cover_placeholder')), findsOneWidget);
+
+    final image = await _createTestImage();
+    addTearDown(image.dispose);
+    provider.complete(image);
+    await tester.pump();
+    await tester.pump();
+    expect(find.byKey(const ValueKey('cover_placeholder')), findsNothing);
+    expect(find.byType(RawImage), findsOneWidget);
   });
 
   testWidgets('AsyncCoverImage retries when the first path is empty', (
@@ -263,7 +308,6 @@ void main() {
             retryFutureBuilder: resolveCoverPath,
             retryDelay: const Duration(milliseconds: 10),
             maxRetryAttempts: 2,
-            duration: Duration.zero,
             imageBuilder: (_, path) => Text('loaded:$path'),
             fallbackBuilder: (_) => const Text('fallback'),
             loadingBuilder: (_) => const Text('loading'),
@@ -298,7 +342,6 @@ void main() {
           child: AsyncCoverImage(
             future: future,
             requestKey: 'https://example.com/cover.jpg',
-            duration: Duration.zero,
             imageBuilder: (_, path) => Text('loaded:$path'),
             fallbackBuilder: (_) => const Text('fallback'),
             loadingBuilder: (_) => const Text('loading'),
@@ -358,7 +401,6 @@ void main() {
       home: AsyncCoverImage(
         future: future,
         initialPath: path,
-        duration: Duration.zero,
         imageBuilder: (_, path) => Text('loaded:$path'),
         fallbackBuilder: (_) => const Text('fallback'),
         loadingBuilder: (_) => const Text('loading'),
@@ -388,7 +430,6 @@ void main() {
       home: AsyncCoverImage(
         future: pending.future,
         initialPath: 'saved.image',
-        duration: Duration.zero,
         imageBuilder: (_, path) => Text('loaded:$path'),
         fallbackBuilder: (_) => const Text('fallback'),
         loadingBuilder: (_) => const Text('loading'),
@@ -416,7 +457,6 @@ void main() {
           retryFutureBuilder: () async => null,
           retryDelay: const Duration(milliseconds: 10),
           maxRetryAttempts: 1,
-          duration: Duration.zero,
           imageBuilder: (_, path) => Text(path),
           fallbackBuilder: (_) => const Text('fallback'),
         ),
@@ -484,7 +524,6 @@ void main() {
           height: 90,
           child: AsyncCoverImage(
             future: completer.future,
-            duration: Duration.zero,
             imageBuilder: (_, path) => Text('loaded:$path'),
             fallbackBuilder: (_) => const Text('fallback'),
             loadingBuilder: (_) => const Text('loading'),
@@ -513,7 +552,6 @@ void main() {
         home: AsyncCoverImage(
           future: future,
           requestKey: requestKey,
-          duration: Duration.zero,
           imageBuilder: (_, path) => Text('loaded:$path'),
           fallbackBuilder: (_) => const Text('fallback'),
           loadingBuilder: (_) => const Text('loading'),
@@ -777,7 +815,7 @@ void main() {
     expect(find.byType(ImageFiltered), findsOneWidget);
   });
 
-  testWidgets('RetryingFileImage can override the global display mode', (
+  testWidgets('file covers swap directly on Android and Windows', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -807,5 +845,8 @@ void main() {
     expect(retryingImage.displayMode, CoverImageDisplayMode.fill);
     expect(retryingImage.deferLoadDuringInteraction, isFalse);
     expect(retryingImage.showPlaceholderWhileDecoding, isFalse);
-  }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
+  }, variant: const TargetPlatformVariant({
+    TargetPlatform.android,
+    TargetPlatform.windows,
+  }));
 }

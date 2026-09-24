@@ -1792,20 +1792,25 @@ List<WorkTextFile> collectAsmrWorkTextFiles(
           node.lowQualityUrl,
         ].any(AsmrApiService.isOfficialMediaUrl);
 
-        final url = usesOfficialMedia
-            ? AsmrApiService.mediaStreamUrlsForHash(node.hash).firstOrNull ??
-                  node.streamUrl ??
-                  node.downloadUrl ??
-                  ''
-            : (node.streamUrl ?? node.downloadUrl ?? '');
+        final urls = <String>[
+          node.downloadUrl ?? '',
+          node.streamUrl ?? '',
+          if (usesOfficialMedia)
+            ...AsmrApiService.mediaDownloadUrlsForHash(node.hash),
+          if (usesOfficialMedia)
+            ...AsmrApiService.mediaStreamUrlsForHash(node.hash),
+        ].where((url) => url.trim().isNotEmpty).toSet().toList(growable: false);
 
-        final resolvedPath = localPath ?? url;
+        final resolvedPath = localPath ?? urls.firstOrNull ?? '';
         if (resolvedPath.isNotEmpty) {
           result.add(
             WorkTextFile(
               name: node.title,
               relativePath: node.relativePath,
               path: resolvedPath,
+              fallbackUrls: localPath == null
+                  ? urls.skip(1).toList(growable: false)
+                  : const [],
             ),
           );
         }

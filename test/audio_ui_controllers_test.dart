@@ -34,6 +34,24 @@ void main() {
     expect(controller.carouselSnap.value, 'session-2');
   });
 
+  test('playlist controller repeats focus requests for the same session', () {
+    final activations = StreamController<String>.broadcast();
+    final controller = PlaylistUiController(activations.stream);
+    addTearDown(() async {
+      controller.dispose();
+      await activations.close();
+    });
+    final values = <String?>[];
+    controller.carouselSnap.addListener(
+      () => values.add(controller.carouselSnap.value),
+    );
+
+    controller.requestCarouselSnap('session-2');
+    controller.requestCarouselSnap('session-2');
+
+    expect(values, <String?>['session-2', null, 'session-2']);
+  });
+
   test('playlist controller releases its activation subscription', () async {
     final activations = StreamController<String>.broadcast();
     final controller = PlaylistUiController(activations.stream);

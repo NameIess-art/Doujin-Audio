@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:charset/charset.dart';
@@ -49,6 +50,24 @@ void main() {
 
       expect(result.encoding, WorkTextEncoding.utf8);
       expect(result.text, original);
+    });
+
+    test('decodes UTF-16 text with either byte order mark', () {
+      const original = '台本：おはようございます。';
+      final units = original.codeUnits;
+      final littleEndian = Uint8List.fromList([
+        0xFF, 0xFE,
+        for (final unit in units) ...[unit & 0xFF, unit >> 8],
+      ]);
+      final bigEndian = Uint8List.fromList([
+        0xFE, 0xFF,
+        for (final unit in units) ...[unit >> 8, unit & 0xFF],
+      ]);
+
+      expect(decodeWorkText(littleEndian).text, original);
+      expect(decodeWorkText(littleEndian).encoding, WorkTextEncoding.utf16Le);
+      expect(decodeWorkText(bigEndian).text, original);
+      expect(decodeWorkText(bigEndian).encoding, WorkTextEncoding.utf16Be);
     });
 
     test('auto-detects and decodes Shift-JIS text correctly', () {
@@ -169,6 +188,34 @@ void main() {
 
       expect(result, raw);
     });
+
+    test('remote text retries another URL and preserves its original bytes', () async {
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      addTearDown(() => server.close(force: true));
+      final requestedPaths = <String>[];
+      server.listen((request) async {
+        requestedPaths.add(request.uri.path);
+        if (request.uri.path == '/unavailable') {
+          request.response.statusCode = HttpStatus.notFound;
+        } else {
+          request.response.add(shiftJis.encode('台本：おはようございます。'));
+        }
+        await request.response.close();
+      });
+
+      final service = WorkTextService();
+      final file = WorkTextFile(
+        name: 'script.txt',
+        relativePath: 'script.txt',
+        path: 'http://127.0.0.1:${server.port}/unavailable',
+        fallbackUrls: ['http://127.0.0.1:${server.port}/script'],
+      );
+      final result = await service.readDecodedText(file);
+
+      expect(requestedPaths, ['/unavailable', '/script']);
+      expect(result.text, '台本：おはようございます。');
+      expect(result.encoding, WorkTextEncoding.shiftJis);
+    });
   });
 
   group('WorkDocType and WorkTextFile', () {
@@ -191,6 +238,20 @@ void main() {
       expect(pdfFile.docType, WorkDocType.pdf);
       expect(pdfFile.isPdf, isTrue);
       expect(pdfFile.isMarkdown, isFalse);
+
+      const remotePdf = WorkTextFile(
+        name: 'booklet.pdf',
+        relativePath: 'booklet.pdf',
+        path: 'https://api.asmr.one/api/media/download/hash',
+      );
+      expect(remotePdf.isPdf, isTrue);
+
+      const remoteMarkdown = WorkTextFile(
+        name: 'readme.md',
+        relativePath: 'readme.md',
+        path: 'https://api.asmr.one/api/media/stream/hash',
+      );
+      expect(remoteMarkdown.isMarkdown, isTrue);
 
       const mdFile = WorkTextFile(
         name: 'README.md',
@@ -378,7 +439,9 @@ void main() {
       expect(files.length, 1);
       expect(files.first.name, '台本_第1話.txt');
       expect(files.first.relativePath, 'Docs/台本_第1話.txt');
-      expect(files.first.path, contains('/api/media/stream/h_txt'));
+      expect(files.first.path, 'https://api.asmr-200.com/stream/h_txt');
+      expect(files.first.fallbackUrls, contains('https://api.asmr-300.com/api/media/download/h_txt'));
+      expect(files.first.fallbackUrls, contains('https://api.asmr-300.com/api/media/stream/h_txt'));
       expect(files.first.docType, WorkDocType.text);
     });
   });

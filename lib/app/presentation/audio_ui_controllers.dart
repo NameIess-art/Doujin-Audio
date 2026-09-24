@@ -47,6 +47,7 @@ final class PlaylistUiController {
 
   void requestCarouselSnap(String sessionId) {
     if (sessionId.isEmpty) return;
+    if (_carouselSnap.value == sessionId) _carouselSnap.value = null;
     _carouselSnap.value = sessionId;
   }
 

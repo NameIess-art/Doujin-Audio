@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:ui' as ui;
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -13,7 +12,7 @@ import '../ui/ui_interaction_coordinator.dart';
 import 'app_transitions.dart';
 import 'scroll_activity_gate.dart';
 
-const Duration kCoverImageFadeDuration = kPlaceholderContentTransitionDuration;
+const Duration kCoverImageTransitionDuration = Duration.zero;
 const double kStandardCoverAspectRatio = 4 / 3;
 
 // A stable decode size lets cards and detail pages share one ImageCache entry.
@@ -83,7 +82,7 @@ class AsyncCoverImage extends StatefulWidget {
     required this.fallbackBuilder,
     this.retryFutureBuilder,
     this.loadingBuilder,
-    this.duration = kCoverImageFadeDuration,
+    this.duration = kCoverImageTransitionDuration,
     this.retryDelay = const Duration(seconds: 2),
     this.maxRetryAttempts = 12,
   });
@@ -381,7 +380,7 @@ class AsyncLocalCoverImage extends StatelessWidget {
     this.colorBlendMode,
     this.filterQuality = FilterQuality.medium,
     this.hideIconWhileLoading = true,
-    this.duration = kCoverImageFadeDuration,
+    this.duration = kCoverImageTransitionDuration,
     this.displayMode,
   });
 
@@ -663,7 +662,7 @@ class AsyncRemoteCoverImage extends StatelessWidget {
     this.colorBlendMode,
     this.useDefaultCacheWidth = true,
     this.filterQuality = FilterQuality.medium,
-    this.duration = kCoverImageFadeDuration,
+    this.duration = kCoverImageTransitionDuration,
     this.retryDelay = const Duration(seconds: 2),
     this.maxRetryAttempts = 12,
   });
@@ -788,8 +787,7 @@ class RetryingFileImage extends ConsumerWidget {
       maxRetryAttempts: maxRetryAttempts,
       displayMode: effectiveDisplayMode,
       deferLoadDuringInteraction: false,
-      showPlaceholderWhileDecoding:
-          defaultTargetPlatform != TargetPlatform.windows,
+      showPlaceholderWhileDecoding: false,
     );
   }
 }

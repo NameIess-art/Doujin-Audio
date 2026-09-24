@@ -111,6 +111,7 @@ extension PlaybackCommandTransport on PlaybackCommandCoordinator {
     if (shouldStartTriggerCountdown) {
       _timerFacade.maybeStartTriggerCountdown();
     }
+    _playbackFacade.publishSessionActivated(session.id);
     return true;
   }
 

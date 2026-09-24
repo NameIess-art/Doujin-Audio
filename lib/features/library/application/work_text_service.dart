@@ -10,6 +10,8 @@ import '../../../core/platform/file_cache_platform_gateway.dart';
 
 enum WorkTextEncoding {
   utf8('UTF-8'),
+  utf16Le('UTF-16 LE'),
+  utf16Be('UTF-16 BE'),
   shiftJis('Shift-JIS'),
   gbk('GBK');
 
@@ -36,14 +38,18 @@ class WorkTextFile {
     required this.name,
     required this.relativePath,
     required this.path,
+    this.fallbackUrls = const [],
   });
 
   final String name;
   final String relativePath;
   final String path;
+  final List<String> fallbackUrls;
 
-  WorkDocType get docType =>
-      WorkDocType.fromPath(path.isNotEmpty ? path : name);
+  WorkDocType get docType {
+    final namedType = WorkDocType.fromPath(name);
+    return namedType != WorkDocType.text ? namedType : WorkDocType.fromPath(path);
+  }
 
   bool get isPdf => docType == WorkDocType.pdf;
   bool get isMarkdown => docType == WorkDocType.markdown;
@@ -62,10 +68,12 @@ class WorkTextFile {
       other is WorkTextFile &&
           name == other.name &&
           relativePath == other.relativePath &&
-          path == other.path;
+          path == other.path &&
+          listEquals(fallbackUrls, other.fallbackUrls);
 
   @override
-  int get hashCode => Object.hash(name, relativePath, path);
+  int get hashCode =>
+      Object.hash(name, relativePath, path, Object.hashAll(fallbackUrls));
 }
 
 ({String text, WorkTextEncoding encoding}) decodeWorkText(
@@ -88,6 +96,19 @@ class WorkTextFile {
       bytes[2] == 0xBF) {
     final text = utf8.decode(bytes.sublist(3), allowMalformed: true);
     return (text: text, encoding: WorkTextEncoding.utf8);
+  }
+
+  if (bytes.length >= 2 && bytes[0] == 0xFF && bytes[1] == 0xFE) {
+    return (
+      text: _decodeUtf16(bytes, littleEndian: true, start: 2),
+      encoding: WorkTextEncoding.utf16Le,
+    );
+  }
+  if (bytes.length >= 2 && bytes[0] == 0xFE && bytes[1] == 0xFF) {
+    return (
+      text: _decodeUtf16(bytes, littleEndian: false, start: 2),
+      encoding: WorkTextEncoding.utf16Be,
+    );
   }
 
   // 2. Try strict UTF-8
@@ -149,6 +170,10 @@ String _decodeWithEncoding(Uint8List bytes, WorkTextEncoding encoding) {
     switch (encoding) {
       case WorkTextEncoding.utf8:
         return utf8.decode(bytes, allowMalformed: true);
+      case WorkTextEncoding.utf16Le:
+        return _decodeUtf16(bytes, littleEndian: true, start: 0);
+      case WorkTextEncoding.utf16Be:
+        return _decodeUtf16(bytes, littleEndian: false, start: 0);
       case WorkTextEncoding.shiftJis:
         return shiftJis.decode(bytes);
       case WorkTextEncoding.gbk:
@@ -157,6 +182,22 @@ String _decodeWithEncoding(Uint8List bytes, WorkTextEncoding encoding) {
   } catch (_) {
     return utf8.decode(bytes, allowMalformed: true);
   }
+}
+
+String _decodeUtf16(
+  Uint8List bytes, {
+  required bool littleEndian,
+  required int start,
+}) {
+  final codeUnits = <int>[];
+  for (var i = start; i + 1 < bytes.length; i += 2) {
+    codeUnits.add(
+      littleEndian
+          ? bytes[i] | (bytes[i + 1] << 8)
+          : (bytes[i] << 8) | bytes[i + 1],
+    );
+  }
+  return String.fromCharCodes(codeUnits);
 }
 
 class WorkTextService {
@@ -198,35 +239,54 @@ class WorkTextService {
   Future<Uint8List?> readDocumentBytes(WorkTextFile file) async {
     final filePath = file.path.trim();
     if (filePath.startsWith('http://') || filePath.startsWith('https://')) {
-      final uri = Uri.tryParse(filePath);
-      if (uri == null) return null;
       final client = _httpClientFactory();
-      HttpClientRequest? request;
       try {
         try {
           client.connectionTimeout = const Duration(seconds: 15);
         } catch (_) {
           // Timeout configuration is optional for custom test clients.
         }
-        request = await client.getUrl(uri).timeout(const Duration(seconds: 15));
-        final response =
-            await request.close().timeout(const Duration(seconds: 15));
-        if (response.statusCode < 200 || response.statusCode >= 300) {
-          return null;
+        Object? lastError;
+        for (final url in <String>{filePath, ...file.fallbackUrls}) {
+          final uri = Uri.tryParse(url);
+          if (uri == null || !uri.hasScheme || uri.host.isEmpty) continue;
+          HttpClientRequest? request;
+          try {
+            request = await client
+                .getUrl(uri)
+                .timeout(const Duration(seconds: 15));
+            final response = await request.close().timeout(
+              const Duration(seconds: 15),
+            );
+            if (response.statusCode < 200 || response.statusCode >= 300) {
+              lastError = HttpException(
+                'Document request failed (${response.statusCode}).',
+                uri: uri,
+              );
+              await response.drain<void>();
+              continue;
+            }
+            final bytesBuilder = BytesBuilder(copy: false);
+            await for (final chunk in response.timeout(
+              const Duration(seconds: 30),
+            )) {
+              bytesBuilder.add(chunk);
+            }
+            return bytesBuilder.takeBytes();
+          } catch (error) {
+            request?.abort(error);
+            lastError = error;
+          }
         }
-        final bytesBuilder = BytesBuilder(copy: false);
-        await for (final chunk in response.timeout(const Duration(seconds: 30))) {
-          bytesBuilder.add(chunk);
-        }
-        return bytesBuilder.takeBytes();
+        throw lastError ??
+            HttpException('No valid document URL.', uri: Uri.parse(filePath));
       } catch (error, stackTrace) {
-        request?.abort(error);
         AppLogService.warning(
           'read_remote_document_bytes_failed',
           error: error,
           stackTrace: stackTrace,
         );
-        return null;
+        rethrow;
       } finally {
         client.close(force: true);
       }

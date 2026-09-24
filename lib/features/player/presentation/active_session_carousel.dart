@@ -161,12 +161,13 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
   void _handleCarouselSnap() {
     if (!mounted) return;
     final sessionId = _carouselSnapListenable.value;
-    if (sessionId == null || sessionId == _lastCarouselSnapSessionId) return;
+    if (sessionId == null) return;
     final sessions =
         widget.sessions ?? ref.read(mainOverlayUiProvider).overlaySessions;
     final targetIndex = sessions.indexWhere((s) => s.id == sessionId);
     if (targetIndex < 0 || !_pageController.hasClients) return;
     _lastCarouselSnapSessionId = sessionId;
+    if (_lastVisibleSessionId == sessionId) return;
     _moveToPage(
       _pageForSessionIndex(targetIndex, sessions.length),
       duration: const Duration(milliseconds: 350),

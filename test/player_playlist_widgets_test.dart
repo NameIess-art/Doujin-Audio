@@ -790,6 +790,60 @@ void main() {
     },
   );
 
+  testWidgets('landscape segment tooltip appears above the progress bar', (
+    tester,
+  ) async {
+    final fixture = AppRuntimeWidgetTestFixture();
+    addTearDown(fixture.dispose);
+    final session = PlaybackSession(
+      id: 'landscape-tooltip-session',
+      currentTrackPath: '/library/track.mp3',
+      loopMode: SessionLoopMode.single,
+      nonSingleLoopMode: SessionLoopMode.single,
+      volume: 1,
+      createdAt: DateTime(2026),
+      state: const PlayerState(false, ProcessingState.ready),
+    )..setOptimisticDuration(const Duration(minutes: 1));
+    addTearDown(session.shutdown);
+    final now = DateTime(2026);
+    final label = TimeSegmentLabel(
+      id: 'middle',
+      trackKey: '/library/track.mp3',
+      name: 'Middle section',
+      start: const Duration(seconds: 20),
+      end: const Duration(seconds: 40),
+      colorValue: 0xFF64B5F6,
+      createdAt: now,
+      updatedAt: now,
+    );
+
+    await tester.pumpWidget(
+      fixture.build(
+        Center(
+          child: SizedBox(
+            width: 500,
+            child: SessionProgressBar(
+              session: PlaybackSessionSnapshot.fromRuntime(session),
+              playback: fixture.runtimeGraph.playback,
+              paths: fixture.runtimeGraph.audioPaths,
+              timeSegmentLabels: [label],
+              isLandscape: true,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    tester.widget<Slider>(find.byType(Slider)).onChangeStart!(30000);
+    await tester.pump();
+
+    expect(find.text('Middle section'), findsOneWidget);
+    expect(
+      tester.getBottomLeft(find.text('Middle section')).dy,
+      lessThan(tester.getTopLeft(find.byType(Slider)).dy),
+    );
+  });
+
   testWidgets(
     'mounted playback card refreshes when the cover generation changes',
     (tester) async {
@@ -914,6 +968,61 @@ void main() {
       ),
       findsNWidgets(2),
     );
+  });
+
+  testWidgets('replaying a session refocuses its card after manual paging', (
+    tester,
+  ) async {
+    final fixture = AppRuntimeWidgetTestFixture();
+    addTearDown(fixture.dispose);
+    final runtimeSessions = <PlaybackSession>[
+      for (final id in ['first', 'second'])
+        PlaybackSession(
+          id: id,
+          currentTrackPath: '/$id.mp3',
+          loopMode: SessionLoopMode.folderSequential,
+          nonSingleLoopMode: SessionLoopMode.folderSequential,
+          volume: 1,
+          createdAt: DateTime(2026),
+          state: const PlayerState(false, ProcessingState.ready),
+        ),
+    ];
+    for (final session in runtimeSessions) {
+      addTearDown(session.shutdown);
+    }
+    final sessions = runtimeSessions
+        .map(PlaybackSessionSnapshot.fromRuntime)
+        .toList(growable: false);
+    final visible = <String>[];
+    await tester.pumpWidget(
+      fixture.build(
+        ActiveSessionCarousel(
+          sessions: sessions,
+          viewportFraction: 1,
+          onVisibleSessionChanged: visible.add,
+          onOpenSession: (_) {},
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final controller = ProviderScope.containerOf(
+      tester.element(find.byType(ActiveSessionCarousel)),
+    ).read(playlistUiControllerProvider);
+
+    final pageController = tester.widget<PageView>(find.byType(PageView)).controller!;
+    pageController.jumpToPage(pageController.page!.round() + 1);
+    await tester.pumpAndSettle();
+    expect(visible.last, 'second');
+    controller.requestCarouselSnap('first');
+    await tester.pumpAndSettle();
+    expect(visible.last, 'first');
+
+    pageController.jumpToPage(pageController.page!.round() + 1);
+    await tester.pumpAndSettle();
+    expect(visible.last, 'second');
+    controller.requestCarouselSnap('first');
+    await tester.pumpAndSettle();
+    expect(visible.last, 'first');
   });
 
   testWidgets(

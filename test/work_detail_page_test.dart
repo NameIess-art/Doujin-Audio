@@ -619,6 +619,10 @@ void main() {
     testWidgets('renders ASMR.ONE work detail header and actions', (
       tester,
     ) async {
+      tester.view.physicalSize = const Size(320, 700);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
       SharedPreferences.setMockInitialValues(const <String, Object>{});
       final fixture = AppRuntimeWidgetTestFixture();
       addTearDown(fixture.dispose);
@@ -641,6 +645,7 @@ void main() {
         rating: 0,
         voiceActors: const <String>['Remote CV'],
         tags: const <String>['Roleplay'],
+        hasSubtitle: true,
       );
 
       await tester.pumpWidget(
@@ -653,6 +658,10 @@ void main() {
       expect(find.text('ASMR Remote Work Title'), findsOneWidget);
       expect(find.text('RJ9999'), findsOneWidget);
       expect(find.text('Remote Circle'), findsOneWidget);
+      expect(
+        find.text(fixture.languageProvider.tr('asmr_has_subtitle')),
+        findsOneWidget,
+      );
       expect(
         find.byKey(const ValueKey<String>('work_detail_edit')),
         findsNothing,
@@ -728,6 +737,11 @@ void main() {
       await tester.tap(find.text('Go'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
+
+      expect(
+        find.text(fixture.languageProvider.tr('asmr_no_subtitle')),
+        findsOneWidget,
+      );
 
       expect(
         find.byKey(const ValueKey<String>('work_detail_back_button')),

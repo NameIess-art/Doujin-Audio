@@ -60,6 +60,31 @@ void main() {
   });
 
   group('playback queues', () {
+    test('starting an existing session focuses its playback card', () async {
+      final activations = <String>[];
+      final subscription = runtimeGraph.playback.sessionActivations.listen(
+        activations.add,
+      );
+      addTearDown(subscription.cancel);
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(nativePlaybackChannel, (call) async {
+            return <String, Object?>{'ok': true, 'value': null};
+          });
+      final track = testMusicTrack(
+        name: '01',
+        path: '/works/focus/01.mp3',
+        groupKey: '/works/focus',
+        groupTitle: 'Focus',
+      );
+      runtimeGraph.library.addTracks([track], notify: false, persist: false);
+      final session = runtimeGraph.playback.createTrackSession(track);
+
+      await runtimeGraph.playback.toggleSessionPlayPause(session.id);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(activations, contains(session.id));
+    });
+
     test('label edits export after persistence and report backup failure', () async {
       await timeSegments.dispose();
       final exportedCounts = <int>[];

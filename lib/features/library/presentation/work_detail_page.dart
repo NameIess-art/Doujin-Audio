@@ -73,6 +73,13 @@ class _WorkEntryItem {
   final WorkImageItem? imageItem;
 }
 
+bool _containsAsmrSubtitle(Iterable<AsmrTrackFile> nodes) {
+  for (final node in nodes) {
+    if (node.isSubtitle || _containsAsmrSubtitle(node.children)) return true;
+  }
+  return false;
+}
+
 class WorkDetailPage extends ConsumerStatefulWidget {
   const WorkDetailPage.forLocal({super.key, required AudioDetailTarget target})
     : localTarget = target,
@@ -452,13 +459,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
             name: node.title,
             relativePath: node.relativePath,
             type: _WorkEntryType.text,
-            fullPathOrUrl: node.streamUrl ?? '',
             asmrNode: node,
-            textFile: WorkTextFile(
-              name: node.title,
-              relativePath: node.relativePath,
-              path: node.streamUrl ?? '',
-            ),
           ),
         );
       } else if (node.isImage) {
@@ -826,12 +827,20 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
       allTexts = _localTextFiles;
     } else {
       allTexts = collectAsmrWorkTextFiles(_asmrTree ?? const []);
+      if (allTexts.isEmpty && item.asmrNode != null) {
+        allTexts = collectAsmrWorkTextFiles([item.asmrNode!]);
+      }
     }
     if (allTexts.isEmpty && item.textFile != null) {
       allTexts = [item.textFile!];
     }
     int initialIndex = 0;
-    if (item.textFile != null) {
+    if (item.asmrNode != null) {
+      final idx = allTexts.indexWhere(
+        (f) => f.relativePath == item.asmrNode!.relativePath,
+      );
+      if (idx >= 0) initialIndex = idx;
+    } else if (item.textFile != null) {
       final idx = allTexts.indexWhere(
         (f) =>
             f.path == item.textFile!.path ||
@@ -1052,6 +1061,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
     String displayTitle = '';
     String displayRj = '';
     String displayCircle = '';
+    bool? hasSubtitle;
     List<String> displayVoiceActors = const [];
     List<String> displayTags = const [];
     String? coverPath;
@@ -1074,6 +1084,8 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
       displayTitle = work.title;
       displayRj = work.rjCode;
       displayCircle = work.circleName;
+      hasSubtitle = work.hasSubtitle ||
+          (_asmrTree != null && _containsAsmrSubtitle(_asmrTree!));
       displayVoiceActors = work.voiceActors;
       displayTags = work.tags;
       coverPath = work.mainCoverUrl.isNotEmpty
@@ -1147,6 +1159,10 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
               title: displayTitle,
               rjCode: displayRj,
               circleName: displayCircle,
+              hasSubtitle: hasSubtitle,
+              subtitleLabel: hasSubtitle == null
+                  ? null
+                  : i18n.tr(hasSubtitle ? 'asmr_has_subtitle' : 'asmr_no_subtitle'),
               coverWidget: coverWidget,
               accentColor: widget.isAsmr ? asmrBlue : cs.primary,
               surfaceColor: cs.surface,
@@ -2081,6 +2097,8 @@ class _WorkDetailHeaderDelegate extends SliverPersistentHeaderDelegate {
     required this.title,
     required this.rjCode,
     required this.circleName,
+    required this.hasSubtitle,
+    required this.subtitleLabel,
     required this.coverWidget,
     required this.accentColor,
     required this.surfaceColor,
@@ -2094,6 +2112,8 @@ class _WorkDetailHeaderDelegate extends SliverPersistentHeaderDelegate {
   final String title;
   final String rjCode;
   final String circleName;
+  final bool? hasSubtitle;
+  final String? subtitleLabel;
   final Widget coverWidget;
   final Color accentColor;
   final Color surfaceColor;
@@ -2272,6 +2292,49 @@ class _WorkDetailHeaderDelegate extends SliverPersistentHeaderDelegate {
                       ),
                     ),
                   ),
+                  if (subtitleLabel != null) ...[
+                    const SizedBox(width: 8),
+                    Flexible(
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: (hasSubtitle == true
+                                  ? accentColor
+                                  : Theme.of(context).colorScheme.onSurfaceVariant)
+                              .withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 7,
+                            vertical: 4,
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                hasSubtitle == true
+                                    ? Icons.subtitles_rounded
+                                    : Icons.subtitles_off_rounded,
+                                size: 14,
+                                color: hasSubtitle == true
+                                    ? accentColor
+                                    : Theme.of(context).colorScheme.onSurfaceVariant,
+                              ),
+                              const SizedBox(width: 4),
+                              Flexible(
+                                child: Text(
+                                  subtitleLabel!,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: Theme.of(context).textTheme.labelSmall,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -2286,6 +2349,8 @@ class _WorkDetailHeaderDelegate extends SliverPersistentHeaderDelegate {
     return oldDelegate.title != title ||
         oldDelegate.rjCode != rjCode ||
         oldDelegate.circleName != circleName ||
+        oldDelegate.hasSubtitle != hasSubtitle ||
+        oldDelegate.subtitleLabel != subtitleLabel ||
         oldDelegate.coverWidget != coverWidget ||
         oldDelegate.accentColor != accentColor ||
         oldDelegate.surfaceColor != surfaceColor;

@@ -749,6 +749,49 @@ void main() {
   }
 
   testWidgets(
+    'SessionProgressBar renders compact slider height and tight timecode spacing',
+    (tester) async {
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      final session = PlaybackSession(
+        id: 'compact-progress-session',
+        currentTrackPath: '/library/track.mp3',
+        loopMode: SessionLoopMode.single,
+        nonSingleLoopMode: SessionLoopMode.single,
+        volume: 1,
+        createdAt: DateTime(2026),
+        state: const PlayerState(false, ProcessingState.ready),
+      )..setOptimisticDuration(const Duration(minutes: 1));
+      addTearDown(session.shutdown);
+
+      await tester.pumpWidget(
+        fixture.build(
+          SessionProgressBar(
+            session: PlaybackSessionSnapshot.fromRuntime(session),
+            playback: fixture.runtimeGraph.playback,
+            paths: fixture.runtimeGraph.audioPaths,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final sliderFinder = find.byType(Slider);
+      expect(sliderFinder, findsOneWidget);
+      final sliderRect = tester.getRect(sliderFinder);
+      // Slider height is compact (20px)
+      expect(sliderRect.height, lessThanOrEqualTo(24));
+
+      final timecodeFinder = find.byType(TimecodeLabel).first;
+      expect(timecodeFinder, findsOneWidget);
+      final timecodeRect = tester.getRect(timecodeFinder);
+
+      // Gap between slider bottom and timecode top is reduced (< 6px)
+      final gap = timecodeRect.top - sliderRect.bottom;
+      expect(gap, lessThanOrEqualTo(5));
+    },
+  );
+
+  testWidgets(
     'mounted playback card refreshes when the cover generation changes',
     (tester) async {
       final coverCache = _RecordingPlaybackCoverCacheService();

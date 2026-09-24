@@ -116,6 +116,7 @@ class TimecodeLabel extends StatelessWidget {
         fontWeight: FontWeight.w800,
         letterSpacing: 0.5,
         fontSize: 13,
+        height: 1.1,
         fontFeatures: const [FontFeature.tabularFigures()],
       ),
     );

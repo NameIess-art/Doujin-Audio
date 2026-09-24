@@ -17,7 +17,7 @@ import 'library_persistence_coordinator.dart';
 import 'library_service.dart';
 import 'library_snapshot_cache_service.dart';
 
-enum LibraryMutationRemovalKind {
+enum LibraryRemovalKind {
   standaloneAudioPermanent,
   standaloneFolderPermanent,
   folderAudioPermanent,
@@ -26,8 +26,8 @@ enum LibraryMutationRemovalKind {
   libraryAudioRecoverable,
 }
 
-final class LibraryMutationRenameResult {
-  const LibraryMutationRenameResult({
+class AudioDetailRenameResult {
+  const AudioDetailRenameResult({
     required this.detail,
     required this.renamed,
     this.backupFailed = false,
@@ -38,8 +38,8 @@ final class LibraryMutationRenameResult {
   final bool backupFailed;
 }
 
-final class LibraryMutationRenameException implements Exception {
-  const LibraryMutationRenameException(this.reason);
+class AudioDetailRenameException implements Exception {
+  const AudioDetailRenameException(this.reason);
 
   final String reason;
 }
@@ -146,7 +146,7 @@ final class LibraryMutationCoordinator {
     return null;
   }
 
-  Future<LibraryMutationRemovalKind?> removeTrack(String trackPath) async {
+  Future<LibraryRemovalKind?> removeTrack(String trackPath) async {
     final removedTrack = _service.trackByPath(trackPath);
     if (removedTrack == null) return null;
     final libraryPath = _watchedRootForEntity(
@@ -159,7 +159,7 @@ final class LibraryMutationCoordinator {
         return null;
       }
       excludeLibraryTrack(libraryPath, removedTrack.path);
-      return LibraryMutationRemovalKind.libraryAudioRecoverable;
+      return LibraryRemovalKind.libraryAudioRecoverable;
     }
 
     final folderPath = _watchedRootForEntity(
@@ -172,14 +172,14 @@ final class LibraryMutationCoordinator {
         return null;
       }
       excludeLibraryTrack(folderPath, removedTrack.path);
-      return LibraryMutationRemovalKind.folderAudioPermanent;
+      return LibraryRemovalKind.folderAudioPermanent;
     }
 
     final removed = await _removeTrackPermanently(removedTrack.path);
     if (!removed) return null;
     return removedTrack.isSingle
-        ? LibraryMutationRemovalKind.standaloneAudioPermanent
-        : LibraryMutationRemovalKind.folderAudioPermanent;
+        ? LibraryRemovalKind.standaloneAudioPermanent
+        : LibraryRemovalKind.folderAudioPermanent;
   }
 
   Future<bool> _removeTrackPermanently(String trackPath) async {
@@ -198,7 +198,7 @@ final class LibraryMutationCoordinator {
     return true;
   }
 
-  Future<LibraryMutationRemovalKind?> removeFolder(String folderPath) async {
+  Future<LibraryRemovalKind?> removeFolder(String folderPath) async {
     final normalizedFolderPath = PathMatcher.normalize(folderPath);
     final libraryPath = _watchedRootForEntity(
       _service.watchedLibraries,
@@ -207,13 +207,13 @@ final class LibraryMutationCoordinator {
     if (libraryPath != null) {
       if (PathMatcher.equalsNormalized(libraryPath, normalizedFolderPath)) {
         final removed = await _removeLibraryPermanently(libraryPath);
-        return removed ? LibraryMutationRemovalKind.libraryPermanent : null;
+        return removed ? LibraryRemovalKind.libraryPermanent : null;
       }
       if (_service.isLibraryPathExcluded(libraryPath, normalizedFolderPath)) {
         return null;
       }
       excludeLibraryFolder(libraryPath, normalizedFolderPath);
-      return LibraryMutationRemovalKind.libraryFolderRecoverable;
+      return LibraryRemovalKind.libraryFolderRecoverable;
     }
 
     final watchedFolderPath = _watchedRootForEntity(
@@ -232,13 +232,11 @@ final class LibraryMutationCoordinator {
         return null;
       }
       excludeLibraryFolder(watchedFolderPath, normalizedFolderPath);
-      return LibraryMutationRemovalKind.standaloneFolderPermanent;
+      return LibraryRemovalKind.standaloneFolderPermanent;
     }
 
     final removed = await _removeFolderPermanently(normalizedFolderPath);
-    return removed
-        ? LibraryMutationRemovalKind.standaloneFolderPermanent
-        : null;
+    return removed ? LibraryRemovalKind.standaloneFolderPermanent : null;
   }
 
   Future<bool> _removeFolderPermanently(String folderPath) async {
@@ -593,19 +591,19 @@ final class LibraryMutationCoordinator {
     await _endLibraryBatch(waitForPersistence: false);
   }
 
-  Future<LibraryMutationRenameResult> renameAudioDetailTargetToName(
+  Future<AudioDetailRenameResult> renameAudioDetailTargetToName(
     AudioDetail detail,
     String targetName,
   ) async {
     final name = targetName.trim();
     if (name.isEmpty) {
-      throw const LibraryMutationRenameException('missingTitle');
+      throw const AudioDetailRenameException('missingTitle');
     }
     final oldTarget = detail.target;
 
     final safeName = PathDisplay.safeFileName(name);
     if (safeName.isEmpty) {
-      throw const LibraryMutationRenameException('invalidTitle');
+      throw const AudioDetailRenameException('invalidTitle');
     }
 
     final oldPath = PathMatcher.normalize(oldTarget.targetPath);
@@ -614,11 +612,11 @@ final class LibraryMutationCoordinator {
       safeName,
     );
     if (renamedPath == null) {
-      throw const LibraryMutationRenameException('renameFailed');
+      throw const AudioDetailRenameException('renameFailed');
     }
     final newPath = PathMatcher.normalize(renamedPath);
     if (PathMatcher.equalsNormalized(oldPath, newPath)) {
-      return LibraryMutationRenameResult(detail: detail, renamed: false);
+      return AudioDetailRenameResult(detail: detail, renamed: false);
     }
 
     final newTarget = AudioDetailTarget(
@@ -652,7 +650,7 @@ final class LibraryMutationCoordinator {
     _syncStateSlice();
     final backupFailed = saveResult.documentFailed;
     await _deleteAudioDetail(oldTarget);
-    return LibraryMutationRenameResult(
+    return AudioDetailRenameResult(
       detail: saveResult.detail,
       renamed: true,
       backupFailed: backupFailed,
@@ -670,11 +668,11 @@ final class LibraryMutationCoordinator {
     final oldPath = PathMatcher.normalize(entryPath);
     if (PathMatcher.equalsNormalized(rootPath, oldPath) ||
         !PathMatcher.isWithinOrEqual(oldPath, rootPath)) {
-      throw const LibraryMutationRenameException('invalidTarget');
+      throw const AudioDetailRenameException('invalidTarget');
     }
     final safeName = PathDisplay.safeFileName(targetName.trim());
     if (safeName.isEmpty) {
-      throw const LibraryMutationRenameException('invalidTitle');
+      throw const AudioDetailRenameException('invalidTitle');
     }
     final renamedPath = await entryEditorService.renameEntry(
       oldPath,
@@ -682,7 +680,7 @@ final class LibraryMutationCoordinator {
       isDirectory: isDirectory,
     );
     if (renamedPath == null) {
-      throw const LibraryMutationRenameException('renameFailed');
+      throw const AudioDetailRenameException('renameFailed');
     }
     final newPath = PathMatcher.normalize(renamedPath);
     if (PathMatcher.equalsNormalized(oldPath, newPath)) return newPath;

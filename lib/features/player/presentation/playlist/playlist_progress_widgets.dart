@@ -455,7 +455,7 @@ class _ProgressSliderFrameState extends State<_ProgressSliderFrame> {
                 child: CompositedTransformFollower(
                   link: _layerLink,
                   showWhenUnlinked: false,
-                  offset: Offset(value.left, 44),
+                  offset: Offset(value.left, 30),
                   child: _TimeSegmentDragTooltip(labels: value.labels),
                 ),
               );
@@ -473,7 +473,7 @@ class _ProgressSliderFrameState extends State<_ProgressSliderFrame> {
               onLongPressEnd: (_) => widget.onLongPressEnd(),
               onLongPressCancel: widget.onLongPressEnd,
               child: SizedBox(
-                height: 34,
+                height: 20,
                 child: Stack(
                   clipBehavior: Clip.none,
                   children: [
@@ -509,11 +509,14 @@ class _ProgressSliderFrameState extends State<_ProgressSliderFrame> {
                 ),
               ),
             ),
-            ValueListenableBuilder<_ProgressTimecodeValue>(
-              valueListenable: widget.timecodeValue,
-              builder: (context, value, child) {
-                return _ProgressTimecodeRow(value: value);
-              },
+            Transform.translate(
+              offset: const Offset(0, -3),
+              child: ValueListenableBuilder<_ProgressTimecodeValue>(
+                valueListenable: widget.timecodeValue,
+                builder: (context, value, child) {
+                  return _ProgressTimecodeRow(value: value);
+                },
+              ),
             ),
           ],
         ),
@@ -532,13 +535,13 @@ class _ProgressSliderTheme extends StatelessWidget {
   Widget build(BuildContext context) {
     return SliderTheme(
       data: SliderTheme.of(context).copyWith(
-        trackHeight: 4.0,
+        trackHeight: 3.0,
         thumbShape: const RoundSliderThumbShape(
-          enabledThumbRadius: 7,
-          elevation: 4,
-          pressedElevation: 8,
+          enabledThumbRadius: 6,
+          elevation: 2,
+          pressedElevation: 5,
         ),
-        overlayShape: const RoundSliderOverlayShape(overlayRadius: 16),
+        overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
         activeTrackColor: primaryColor,
         inactiveTrackColor: primaryColor.withValues(alpha: 0.22),
         thumbColor: primaryColor,
@@ -648,7 +651,7 @@ class _TimeSegmentProgressPainter extends CustomPainter {
     const trackStart = horizontalPadding;
     final trackWidth = max(1.0, size.width - horizontalPadding * 2);
     final trackY = size.height / 2.0;
-    final trackRect = Rect.fromLTWH(trackStart, trackY - 4, trackWidth, 8);
+    final trackRect = Rect.fromLTWH(trackStart, trackY - 2.5, trackWidth, 5);
 
     for (final label in labels) {
       final color = Color(label.colorValue);
@@ -658,10 +661,10 @@ class _TimeSegmentProgressPainter extends CustomPainter {
       final right = trackStart + trackWidth * endRatio.clamp(0.0, 1.0);
       if (right <= left) continue;
       final selected = label.id == selectedSegmentId;
-      final segmentRect = Rect.fromLTRB(left, trackY - 5, right, trackY + 5);
+      final segmentRect = Rect.fromLTRB(left, trackY - 3, right, trackY + 3);
       final rrect = RRect.fromRectAndRadius(
         segmentRect,
-        const Radius.circular(6),
+        const Radius.circular(4),
       );
       canvas.drawRRect(
         rrect,
@@ -714,15 +717,15 @@ class _TimeSegmentProgressPainter extends CustomPainter {
     final nearby = markerXs.where((other) => (other - x).abs() < 14).length;
     markerXs.add(x);
     final layer = nearby.isOdd ? 1 : 0;
-    final top = layer == 0 ? 4.0 : 14.0;
+    final top = layer == 0 ? 0.0 : 7.0;
     final body = RRect.fromRectAndRadius(
-      Rect.fromCenter(center: Offset(x, top + 4), width: 12, height: 8),
-      const Radius.circular(3),
+      Rect.fromCenter(center: Offset(x, top + 3), width: 10, height: 6),
+      const Radius.circular(2),
     );
     canvas.drawRRect(body, Paint()..color = color);
     final pointer = Path()
-      ..moveTo(x - 4, top + 8)
-      ..lineTo(x + 4, top + 8)
+      ..moveTo(x - 3, top + 6)
+      ..lineTo(x + 3, top + 6)
       ..lineTo(x, trackRect.top - 1)
       ..close();
     canvas.drawPath(pointer, Paint()..color = color);

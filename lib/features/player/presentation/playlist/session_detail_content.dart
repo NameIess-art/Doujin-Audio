@@ -596,8 +596,8 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
         child: LayoutBuilder(
           builder: (context, constraints) {
             const spacing = 12.0;
-            const progressSpacing = 6.0;
-            const approxProgressBarHeight = 52.0;
+            const progressSpacing = 5.0;
+            const approxProgressBarHeight = 36.0;
             final availableHeight = constraints.maxHeight;
             final idealCoverHeight = max(
               0.0,

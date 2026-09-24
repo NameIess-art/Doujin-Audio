@@ -35,14 +35,11 @@ import '../domain/library_entry.dart';
 import '../domain/library_persistence_repository.dart';
 import 'library_state_models.dart';
 
-enum LibraryRemovalKind {
-  standaloneAudioPermanent,
-  standaloneFolderPermanent,
-  folderAudioPermanent,
-  libraryPermanent,
-  libraryFolderRecoverable,
-  libraryAudioRecoverable,
-}
+export 'library_mutation_coordinator.dart'
+    show
+        AudioDetailRenameException,
+        AudioDetailRenameResult,
+        LibraryRemovalKind;
 
 /// Coordinates library services while mutable state stays in [LibraryService].
 final class LibraryFacade implements LibraryCatalog {
@@ -352,17 +349,8 @@ final class LibraryFacade implements LibraryCatalog {
   Future<AudioDetailSaveResult> saveAudioDetail(AudioDetail detail) =>
       _metadataCoordinator.saveAudioDetail(detail);
 
-  Future<bool> exportTimeSegmentLabels(String trackKey) async {
-    final track = _service.library
-        .where(
-          (t) => !t.isRemoteAsmr && PathMatcher.normalize(t.path) == trackKey,
-        )
-        .firstOrNull;
-    if (track == null) return true;
-    return detailCacheService.exportTimeSegments(
-      audioDetailTargetForTrack(track),
-    );
-  }
+  Future<bool> exportTimeSegmentLabels(String trackKey) =>
+      _metadataCoordinator.exportTimeSegmentLabels(trackKey);
 
   Future<void> deleteAudioDetail(AudioDetailTarget target) =>
       _metadataCoordinator.deleteAudioDetail(target);
@@ -832,11 +820,11 @@ final class LibraryFacade implements LibraryCatalog {
   void clearLibraryExclusions(String libraryPath) =>
       _mutationCoordinator.clearLibraryExclusions(libraryPath);
 
-  Future<LibraryRemovalKind?> removeTrack(String trackPath) async =>
-      _publicRemovalKind(await _mutationCoordinator.removeTrack(trackPath));
+  Future<LibraryRemovalKind?> removeTrack(String trackPath) =>
+      _mutationCoordinator.removeTrack(trackPath);
 
-  Future<LibraryRemovalKind?> removeFolder(String folderPath) async =>
-      _publicRemovalKind(await _mutationCoordinator.removeFolder(folderPath));
+  Future<LibraryRemovalKind?> removeFolder(String folderPath) =>
+      _mutationCoordinator.removeFolder(folderPath);
 
   void excludeLibraryFolder(String libraryPath, String folderPath) =>
       _mutationCoordinator.excludeLibraryFolder(libraryPath, folderPath);
@@ -867,21 +855,7 @@ final class LibraryFacade implements LibraryCatalog {
   Future<AudioDetailRenameResult> renameAudioDetailTargetToName(
     AudioDetail detail,
     String targetName,
-  ) async {
-    try {
-      final result = await _mutationCoordinator.renameAudioDetailTargetToName(
-        detail,
-        targetName,
-      );
-      return AudioDetailRenameResult(
-        detail: result.detail,
-        renamed: result.renamed,
-        backupFailed: result.backupFailed,
-      );
-    } on LibraryMutationRenameException catch (error) {
-      throw AudioDetailRenameException(error.reason);
-    }
-  }
+  ) => _mutationCoordinator.renameAudioDetailTargetToName(detail, targetName);
 
   Future<String> renameWorkEntryToName({
     required String libraryRootPath,
@@ -889,37 +863,13 @@ final class LibraryFacade implements LibraryCatalog {
     required String targetName,
     required bool isMedia,
     required bool isDirectory,
-  }) async {
-    try {
-      return await _mutationCoordinator.renameWorkEntryToName(
-        libraryRootPath: libraryRootPath,
-        entryPath: entryPath,
-        targetName: targetName,
-        isMedia: isMedia,
-        isDirectory: isDirectory,
-      );
-    } on LibraryMutationRenameException catch (error) {
-      throw AudioDetailRenameException(error.reason);
-    }
-  }
-
-  static LibraryRemovalKind? _publicRemovalKind(
-    LibraryMutationRemovalKind? kind,
-  ) => switch (kind) {
-    null => null,
-    LibraryMutationRemovalKind.standaloneAudioPermanent =>
-      LibraryRemovalKind.standaloneAudioPermanent,
-    LibraryMutationRemovalKind.standaloneFolderPermanent =>
-      LibraryRemovalKind.standaloneFolderPermanent,
-    LibraryMutationRemovalKind.folderAudioPermanent =>
-      LibraryRemovalKind.folderAudioPermanent,
-    LibraryMutationRemovalKind.libraryPermanent =>
-      LibraryRemovalKind.libraryPermanent,
-    LibraryMutationRemovalKind.libraryFolderRecoverable =>
-      LibraryRemovalKind.libraryFolderRecoverable,
-    LibraryMutationRemovalKind.libraryAudioRecoverable =>
-      LibraryRemovalKind.libraryAudioRecoverable,
-  };
+  }) => _mutationCoordinator.renameWorkEntryToName(
+    libraryRootPath: libraryRootPath,
+    entryPath: entryPath,
+    targetName: targetName,
+    isMedia: isMedia,
+    isDirectory: isDirectory,
+  );
 
   @override
   void beginLibraryBatch() {
@@ -1350,22 +1300,4 @@ final class LibraryFacade implements LibraryCatalog {
     await _coverArtworkCacheService?.dispose();
     await _service.dispose();
   }
-}
-
-class AudioDetailRenameResult {
-  const AudioDetailRenameResult({
-    required this.detail,
-    required this.renamed,
-    this.backupFailed = false,
-  });
-
-  final AudioDetail detail;
-  final bool renamed;
-  final bool backupFailed;
-}
-
-class AudioDetailRenameException implements Exception {
-  const AudioDetailRenameException(this.reason);
-
-  final String reason;
 }

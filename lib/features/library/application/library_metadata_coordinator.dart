@@ -89,6 +89,18 @@ final class LibraryMetadataCoordinator {
     _syncState();
   }
 
+  Future<bool> exportTimeSegmentLabels(String trackKey) async {
+    final track = _service.library
+        .where(
+          (item) =>
+              !item.isRemoteAsmr &&
+              PathMatcher.normalize(item.path) == trackKey,
+        )
+        .firstOrNull;
+    if (track == null) return true;
+    return _detailCacheService.exportTimeSegments(targetForTrack(track));
+  }
+
   Future<AudioDetailSaveResult?> prefillRjCode(
     AudioDetailTarget target,
     String text,

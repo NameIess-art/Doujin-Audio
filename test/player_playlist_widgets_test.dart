@@ -2797,6 +2797,73 @@ void main() {
     expect(find.text('01:10'), findsNothing);
   });
 
+  testWidgets('queue cover lookup is reused across card rebuilds', (tester) async {
+    final coverCache = _RecordingPlaybackCoverCacheService();
+    final fixture = AppRuntimeWidgetTestFixture(
+      coverArtworkCacheService: coverCache,
+    );
+    addTearDown(fixture.dispose);
+    final track = testMusicTrack(
+      name: 'Queue track',
+      path: '/library/queue/track.mp3',
+      groupKey: '/library/queue',
+      groupTitle: 'Queue work',
+    );
+    final session = fixture.runtimeGraph.playback.createPlaybackQueue('Queue')
+      ..currentTrackPath = track.path
+      ..playbackQueue = PlaybackQueueDefinition(
+        name: 'Queue',
+        entries: [
+          PlaybackQueueEntry(
+            id: 'track',
+            kind: PlaybackQueueEntryKind.track,
+            title: track.displayName,
+            tracks: [track],
+          ),
+        ],
+      );
+    addTearDown(session.shutdown);
+    void syncCoverGeneration(int generation) =>
+        fixture.playbackService.syncSlice(
+          activeSessions: [session],
+          playingSessionCount: 0,
+          focusedSessionId: session.id,
+          coverGeneration: generation,
+          isInitialized: true,
+        );
+    Widget card() => fixture.build(
+      Center(
+        child: SizedBox(
+          width: 400,
+          child: PlaybackQueueCard(
+            session: PlaybackSessionSnapshot.fromRuntime(session),
+            library: fixture.runtimeGraph.library,
+            playback: fixture.runtimeGraph.playback,
+            coverCacheWidth: 96,
+            onOpen: () {},
+            onEdit: () {},
+          ),
+        ),
+      ),
+    );
+
+    syncCoverGeneration(0);
+    await tester.pumpWidget(card());
+    await tester.pump();
+    expect(coverCache.requestedPaths, [track.path]);
+
+    await tester.pumpWidget(card());
+    await tester.pump();
+    expect(coverCache.requestedPaths, [track.path]);
+
+    syncCoverGeneration(1);
+    await tester.pump();
+    await tester.pumpWidget(card());
+    await tester.pump();
+    expect(coverCache.requestedPaths, [track.path, track.path]);
+    await tester.pump(const Duration(milliseconds: 200));
+  });
+
   testWidgets('playlist more menu and sort button remain available', (
     WidgetTester tester,
   ) async {

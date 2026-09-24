@@ -20,7 +20,7 @@ class _StateProbeState extends State<_StateProbe> {
 }
 
 void main() {
-  testWidgets('right-side page routes enter and exit in 550ms', (tester) async {
+  testWidgets('right-side page routes enter and exit in 450ms', (tester) async {
     final navigatorKey = GlobalKey<NavigatorState>();
     await tester.pumpWidget(
       MaterialApp(
@@ -42,10 +42,10 @@ void main() {
       context: navigator.context,
       child: const Scaffold(),
     );
-    expect(appRoute.transitionDuration, const Duration(milliseconds: 550));
+    expect(appRoute.transitionDuration, const Duration(milliseconds: 450));
     expect(
       appRoute.reverseTransitionDuration,
-      const Duration(milliseconds: 550),
+      const Duration(milliseconds: 450),
     );
 
     final materialRoute = MaterialPageRoute<void>(
@@ -53,10 +53,10 @@ void main() {
     );
     unawaited(navigator.push(materialRoute));
     await tester.pump();
-    expect(materialRoute.transitionDuration, const Duration(milliseconds: 550));
+    expect(materialRoute.transitionDuration, const Duration(milliseconds: 450));
     expect(
       materialRoute.reverseTransitionDuration,
-      const Duration(milliseconds: 550),
+      const Duration(milliseconds: 450),
     );
     await tester.pumpAndSettle();
   });

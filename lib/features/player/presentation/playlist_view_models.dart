@@ -1,9 +1,12 @@
+import 'dart:collection';
+
 import 'package:flutter/foundation.dart';
 
 import '../domain/audio_effects.dart';
 import '../domain/playback_mode.dart';
 import '../application/playback_session_snapshot.dart';
 import '../application/audio_state_services.dart';
+import '../../../core/media/music_track.dart';
 
 @immutable
 class PlaylistHeaderState {
@@ -155,6 +158,72 @@ class MainOverlayUiState {
     activeSessionCount,
     isInitialized,
     startupReady,
+  );
+}
+
+/// Keeps progress-only playback updates from replacing the overlay list.
+final class PlaybackSessionOverlayList
+    extends ListBase<PlaybackSessionSnapshot> {
+  PlaybackSessionOverlayList(Iterable<PlaybackSessionSnapshot> sessions)
+    : _items = List<PlaybackSessionSnapshot>.unmodifiable(sessions);
+
+  final List<PlaybackSessionSnapshot> _items;
+
+  @override
+  int get length => _items.length;
+
+  @override
+  set length(int value) => throw UnsupportedError('read-only');
+
+  @override
+  PlaybackSessionSnapshot operator [](int index) => _items[index];
+
+  @override
+  void operator []=(int index, PlaybackSessionSnapshot value) {
+    throw UnsupportedError('read-only');
+  }
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+    if (other is! PlaybackSessionOverlayList || other.length != length) {
+      return false;
+    }
+    for (var index = 0; index < length; index++) {
+      final left = this[index];
+      final right = other[index];
+      if (left.id != right.id ||
+          left.currentTrackPath != right.currentTrackPath ||
+          left.playbackRequested != right.playbackRequested ||
+          left.isLoading != right.isLoading ||
+          left.isPlaybackLoading != right.isPlaybackLoading ||
+          left.playbackError != right.playbackError ||
+          left.currentQueueIndex != right.currentQueueIndex ||
+          left.queueVersion != right.queueVersion ||
+          left.playbackQueue != right.playbackQueue ||
+          !listEquals(left.customQueueTracks, right.customQueueTracks)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  @override
+  int get hashCode => Object.hashAll(
+    _items.map(
+      (session) => Object.hash(
+        session.id,
+        session.currentTrackPath,
+        session.playbackRequested,
+        session.isLoading,
+        session.isPlaybackLoading,
+        session.playbackError,
+        session.currentQueueIndex,
+        session.queueVersion,
+        session.playbackQueue,
+        Object.hashAll(session.customQueueTracks ?? const <MusicTrack>[]),
+      ),
+    ),
   );
 }
 
@@ -375,7 +444,8 @@ PlaylistHeaderState playlistHeaderStateFromSlices(
 List<PlaybackSessionSnapshot> overlaySessionsFromPlaybackState(
   PlaybackStateSliceData playbackState,
 ) {
-  return playbackState.activeSessions
+  return PlaybackSessionOverlayList(
+    playbackState.activeSessions
       .where(
         (session) =>
             session.currentTrackPath.isNotEmpty &&
@@ -391,7 +461,8 @@ List<PlaybackSessionSnapshot> overlaySessionsFromPlaybackState(
                         session.state.processing ==
                             PlaybackProcessingStatus.ready))),
       )
-      .toList(growable: false);
+      .toList(growable: false),
+  );
 }
 
 SessionOrderState sessionOrderStateFromPlaybackState(

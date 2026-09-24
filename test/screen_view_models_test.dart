@@ -373,6 +373,17 @@ void main() {
     );
   });
 
+  test('overlay session list ignores progress-only snapshot changes', () {
+    final value = session(id: 'overlay', path: '/tracks/overlay.mp3');
+    addTearDown(value.shutdown);
+    final first = PlaybackSessionOverlayList([snapshot(value)]);
+    value.setOptimisticPosition(const Duration(seconds: 12));
+    final progressed = PlaybackSessionOverlayList([snapshot(value)]);
+
+    expect(progressed, first);
+    expect(progressed.hashCode, first.hashCode);
+  });
+
   test(
     'overlay keeps paused direct playback but hides paused playlist items',
     () {

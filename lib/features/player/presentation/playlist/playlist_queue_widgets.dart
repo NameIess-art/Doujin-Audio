@@ -56,7 +56,7 @@ Future<void> _stagePlaybackQueueEntryRemoval(
   }
 }
 
-class PlaybackQueueCard extends ConsumerWidget {
+class PlaybackQueueCard extends ConsumerStatefulWidget {
   const PlaybackQueueCard({
     super.key,
     required this.session,
@@ -89,7 +89,30 @@ class PlaybackQueueCard extends ConsumerWidget {
   final VoidCallback? onTogglePin;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<PlaybackQueueCard> createState() => _PlaybackQueueCardState();
+}
+
+class _PlaybackQueueCardState extends ConsumerState<PlaybackQueueCard> {
+  final Map<String, Future<String?>> _coverFutures = {};
+  PlaybackQueueDefinition? _coverQueue;
+  LibraryFacade? _coverLibrary;
+  int _coverGeneration = -1;
+
+  @override
+  Widget build(BuildContext context) {
+    final session = widget.session;
+    final library = widget.library;
+    final playback = widget.playback;
+    final coverCacheWidth = widget.coverCacheWidth;
+    final onOpen = widget.onOpen;
+    final onEdit = widget.onEdit;
+    final showSubtitles = widget.showSubtitles;
+    final isSelectionMode = widget.isSelectionMode;
+    final isSelected = widget.isSelected;
+    final isPinned = widget.isPinned;
+    final onLongPress = widget.onLongPress;
+    final onToggleSelect = widget.onToggleSelect;
+    final onTogglePin = widget.onTogglePin;
     final isHidden = ref.watch(
       isUndoableRemovalHiddenProvider(playbackSessionRemovalKey(session.id)),
     );
@@ -101,6 +124,19 @@ class PlaybackQueueCard extends ConsumerWidget {
     ).read(appLanguageProviderInstanceProvider);
     final cs = Theme.of(context).colorScheme;
     final queue = session.playbackQueue!;
+    final coverGeneration = ref.watch(coverGenerationProvider);
+    if (!identical(_coverQueue, queue) ||
+        !identical(_coverLibrary, library) ||
+        _coverGeneration != coverGeneration) {
+      _coverFutures.clear();
+      _coverQueue = queue;
+      _coverLibrary = library;
+      _coverGeneration = coverGeneration;
+    }
+    Future<String?> coverFuture(MusicTrack track) => _coverFutures.putIfAbsent(
+      track.path,
+      () => library.playbackCoverPathFutureForTrack(track),
+    );
     final tracks = queue.expandedTracks;
     final activeColor = cardState.queueColorValue == null
         ? cs.primary
@@ -116,7 +152,7 @@ class PlaybackQueueCard extends ConsumerWidget {
         .where((entry) => entry.tracks.isNotEmpty)
         .map((entry) => entry.tracks.first);
     for (final track in coverTracks.take(4)) {
-      unawaited(library.playbackCoverPathFutureForTrack(track));
+      unawaited(coverFuture(track));
     }
     final coverItems = coverTracks
         .map(
@@ -133,6 +169,13 @@ class PlaybackQueueCard extends ConsumerWidget {
               item.coverPath != null,
         )
         .take(4)
+        .map(
+          (item) => (
+            track: item.track,
+            coverPath: item.coverPath,
+            future: coverFuture(item.track),
+          ),
+        )
         .toList(growable: false);
     final resolvedCurrentPath = playback.resolveRetargetedPath(
       cardState.trackPath,
@@ -427,7 +470,7 @@ class PlaybackQueueCard extends ConsumerWidget {
 class _QueueCoverGrid extends StatelessWidget {
   const _QueueCoverGrid({required this.items, required this.coverCacheWidth});
 
-  final List<({MusicTrack track, String? coverPath})> items;
+  final List<({MusicTrack track, String? coverPath, Future<String?> future})> items;
   final int? coverCacheWidth;
 
   @override
@@ -492,6 +535,7 @@ class _QueueCoverGrid extends StatelessWidget {
         track: item.track,
         coverPath: item.coverPath,
         coverCacheWidth: coverCacheWidth,
+        future: item.future,
       );
     }
     return SizedBox.expand(
@@ -501,28 +545,49 @@ class _QueueCoverGrid extends StatelessWidget {
   }
 }
 
-class _QueueTrackCover extends ConsumerWidget {
+class _QueueTrackCover extends ConsumerStatefulWidget {
   const _QueueTrackCover({
     super.key,
     required this.track,
     required this.coverPath,
     required this.coverCacheWidth,
+    this.future,
   });
 
   final MusicTrack track;
   final String? coverPath;
   final int? coverCacheWidth;
+  final Future<String?>? future;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final library = ref.watch(libraryFacadeProvider);
+  ConsumerState<_QueueTrackCover> createState() => _QueueTrackCoverState();
+}
+
+class _QueueTrackCoverState extends ConsumerState<_QueueTrackCover> {
+  Future<String?>? _future;
+  String? _trackPath;
+  int _coverGeneration = -1;
+
+  @override
+  Widget build(BuildContext context) {
+    final library = ref.read(libraryFacadeProvider);
+    final coverGeneration = ref.watch(coverGenerationProvider);
+    if (widget.future != null) {
+      _future = widget.future;
+    } else if (_future == null ||
+        _trackPath != widget.track.path ||
+        _coverGeneration != coverGeneration) {
+      _future = library.playbackCoverPathFutureForTrack(widget.track);
+    }
+    _trackPath = widget.track.path;
+    _coverGeneration = coverGeneration;
     return AsyncLocalCoverImage(
-      future: library.playbackCoverPathFutureForTrack(track),
-      requestKey: track.path,
-      initialPath: coverPath,
-      seed: track.displayName,
-      cacheWidth: coverCacheWidth,
-      useDefaultCacheWidth: coverCacheWidth != null,
+      future: _future!,
+      requestKey: widget.track.path,
+      initialPath: widget.coverPath,
+      seed: widget.track.displayName,
+      cacheWidth: widget.coverCacheWidth,
+      useDefaultCacheWidth: widget.coverCacheWidth != null,
       fit: BoxFit.cover,
       displayMode: CoverImageDisplayMode.fill,
     );

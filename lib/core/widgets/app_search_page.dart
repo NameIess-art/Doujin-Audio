@@ -11,10 +11,23 @@ import 'windows_horizontal_wheel_scroll.dart';
 PageRouteBuilder<T> buildAppSearchPageRoute<T>({
   required BuildContext context,
   required Widget child,
+  RouteSettings? settings,
+  Duration duration = kAppMotionSlow,
+  Duration reverseDuration = kAppMotionFast,
 }) {
-  return buildAppPageRoute<T>(
-    context: context,
-    child: child,
+  final reducedMotion = MediaQuery.disableAnimationsOf(context);
+  return PageRouteBuilder<T>(
+    settings: settings,
+    transitionDuration: reducedMotion ? Duration.zero : duration,
+    reverseTransitionDuration: reducedMotion ? Duration.zero : reverseDuration,
+    pageBuilder: (context, animation, secondaryAnimation) => child,
+    transitionsBuilder: (context, animation, secondaryAnimation, routedChild) {
+      return buildAppFadeTransition(
+        context: context,
+        animation: animation,
+        child: routedChild,
+      );
+    },
   );
 }
 

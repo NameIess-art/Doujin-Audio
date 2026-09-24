@@ -795,6 +795,68 @@ void main() {
     },
   );
 
+  testWidgets(
+    'LibrarySkeletonListView displays skeleton cards in multiple columns when wide',
+    (tester) async {
+      tester.view.physicalSize = const Size(1200, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Center(
+            child: SizedBox(
+              width: 500,
+              height: 1000,
+              child: LibrarySkeletonListView(
+                topInset: 0,
+                bottomInset: 0,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      final singleCards = find.byType(LibraryLikeSkeletonCard);
+      expect(singleCards, findsNWidgets(5));
+      expect(
+        tester.getTopLeft(singleCards.at(0)).dx,
+        tester.getTopLeft(singleCards.at(1)).dx,
+      );
+      expect(
+        tester.getTopLeft(singleCards.at(0)).dy,
+        lessThan(tester.getTopLeft(singleCards.at(1)).dy),
+      );
+
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Center(
+            child: SizedBox(
+              width: 1000,
+              height: 1000,
+              child: LibrarySkeletonListView(
+                topInset: 0,
+                bottomInset: 0,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      final multiCards = find.byType(LibraryLikeSkeletonCard);
+      expect(multiCards, findsNWidgets(10));
+      expect(
+        tester.getTopLeft(multiCards.at(0)).dy,
+        tester.getTopLeft(multiCards.at(1)).dy,
+      );
+      expect(
+        tester.getTopLeft(multiCards.at(0)).dx,
+        lessThan(tester.getTopLeft(multiCards.at(1)).dx),
+      );
+    },
+  );
+
   testWidgets('library-like card content keeps compact equal edge insets', (
     tester,
   ) async {

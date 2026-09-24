@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -6,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'support/runtime_test_models.dart';
 import 'package:doujin_audio/features/library/presentation/library_tab.dart';
 import 'package:doujin_audio/features/library/presentation/work_detail_page.dart';
+import 'package:doujin_audio/features/player/presentation/playlist_tab.dart';
 import 'package:doujin_audio/core/widgets/app_scroll_physics.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/core/widgets/async_cover_image.dart';
@@ -617,6 +620,116 @@ void main() {
     }
 
     expect(trackCoverLookups, greaterThan(0));
+  });
+
+  testWidgets('library card and work detail share a decoded cover', (
+    WidgetTester tester,
+  ) async {
+    tester.view.devicePixelRatio = 2;
+    tester.view.physicalSize = const Size(1000, 1800);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
+    final fixture = AppRuntimeWidgetTestFixture();
+    addTearDown(fixture.dispose);
+    final folder = (await tester.runAsync(
+      () => Directory.systemTemp.createTemp('shared_library_cover_'),
+    ))!;
+    addTearDown(() async {
+      PaintingBinding.instance.imageCache
+        ..clear()
+        ..clearLiveImages();
+      if (await folder.exists()) await folder.delete(recursive: true);
+    });
+    final trackPath = '${folder.path}${Platform.pathSeparator}track.mp3';
+    final coverPath = '${folder.path}${Platform.pathSeparator}cover.png';
+    final track = testMusicTrack(
+      name: 'Shared cover',
+      path: trackPath,
+      groupKey: folder.path,
+      groupTitle: 'Shared cover',
+    );
+    await tester.runAsync(() async {
+      await File(trackPath).writeAsBytes(const <int>[1]);
+      await File(coverPath).writeAsBytes(base64Decode(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk'
+        '+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+      ));
+      fixture.runtimeGraph.library.addWatchedFolder(folder.path, notify: false);
+      fixture.runtimeGraph.library.addTracks(
+        [track],
+        notify: false,
+        persist: false,
+      );
+      await fixture.runtimeGraph.library.setFolderManualCover(
+        folder.path,
+        coverPath,
+      );
+    });
+    fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 0);
+
+    await tester.pumpWidget(fixture.build(const LibraryTab()));
+    await tester.pump();
+    await pumpUntilLibraryTreeReady(tester, fixture.runtimeGraph.library);
+    await pumpUntilNotFound(tester, find.byType(LibraryLikeSkeletonCard));
+    final card = tester.widget<AsyncLocalCoverImage>(
+      find.byType(AsyncLocalCoverImage).first,
+    );
+    expect(card.initialPath, isNotNull);
+    final cardKey = await resizeFileImageIfNeeded(
+      path: card.initialPath!,
+      cacheWidth: card.cacheWidth,
+      cacheHeight: card.cacheHeight,
+      useDefaultCacheWidth: card.useDefaultCacheWidth,
+    ).obtainKey(ImageConfiguration.empty);
+
+    await tester.tap(find.byType(ListTile).first);
+    await pumpUntilFound(tester, find.byType(WorkDetailPage));
+    await tester.pumpAndSettle();
+    final detail = tester.widget<LocalCoverImage>(
+      find.byType(LocalCoverImage).first,
+    );
+    expect(detail.path, card.initialPath);
+    final detailKey = await resizeFileImageIfNeeded(
+      path: detail.path!,
+      cacheWidth: coverCacheWidth(
+        resolution: fixture.settings.coverImageResolution,
+        cacheWidth: detail.cacheWidth,
+        useDefaultCacheWidth: detail.useDefaultCacheWidth,
+      ),
+      cacheHeight: detail.cacheHeight,
+      useDefaultCacheWidth: false,
+    ).obtainKey(ImageConfiguration.empty);
+    expect(detailKey, cardKey);
+    Navigator.of(tester.element(find.byType(WorkDetailPage))).pop();
+    await tester.pumpAndSettle();
+
+    final session = fixture.runtimeGraph.playback.createTrackSession(
+      track,
+      customQueueTracks: [track],
+    );
+    addTearDown(session.shutdown);
+    fixture.playbackService.syncSlice(
+      activeSessions: [session],
+      playingSessionCount: 0,
+      focusedSessionId: session.id,
+      coverGeneration: 0,
+      isInitialized: true,
+    );
+    await tester.pumpWidget(fixture.build(const PlaylistTab()));
+    await tester.pumpAndSettle();
+    final playlistCard = tester.widget<AsyncLocalCoverImage>(
+      find.byType(AsyncLocalCoverImage).first,
+    );
+    expect(playlistCard.initialPath, card.initialPath);
+    final playlistKey = await resizeFileImageIfNeeded(
+      path: playlistCard.initialPath!,
+      cacheWidth: playlistCard.cacheWidth,
+      cacheHeight: playlistCard.cacheHeight,
+      useDefaultCacheWidth: playlistCard.useDefaultCacheWidth,
+    ).obtainKey(ImageConfiguration.empty);
+    expect(playlistKey, cardKey);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
   });
 
   testWidgets('library folder expansion does not collide with list storage', (

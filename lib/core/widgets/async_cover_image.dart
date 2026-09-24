@@ -31,6 +31,19 @@ int? coverCacheWidthForResolution(CoverImageResolution resolution) {
   }
 }
 
+int coverThumbnailCacheWidth({
+  required double logicalWidth,
+  required double devicePixelRatio,
+  required CoverImageResolution resolution,
+}) {
+  final displayWidth = (logicalWidth * devicePixelRatio).ceil();
+  final resolutionWidth = coverCacheWidthForResolution(resolution);
+  if (displayWidth < 1) return 1;
+  return resolutionWidth != null && displayWidth > resolutionWidth
+      ? resolutionWidth
+      : displayWidth;
+}
+
 int? coverCacheWidth({
   CoverImageResolution resolution = CoverImageResolution.balanced,
   int? cacheWidth,

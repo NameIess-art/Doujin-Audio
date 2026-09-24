@@ -321,20 +321,10 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
               onRefresh: widget.onRefresh,
               child: PlaceholderContentTransition(
                 showPlaceholder: showPlaceholder,
-                placeholder: ListView.builder(
+                placeholder: LibrarySkeletonListView(
                   key: const ValueKey('loading'),
-                  primary: false,
-                  physics: const NeverScrollableScrollPhysics(),
-                  padding: EdgeInsets.fromLTRB(
-                    LibraryLikeCardMetrics.listHorizontalPadding,
-                    widget.topInset,
-                    LibraryLikeCardMetrics.listHorizontalPadding,
-                    widget.bottomInset + 24,
-                  ),
-                  itemCount: 5,
-                  itemBuilder: (context, index) {
-                    return const LibraryLikeSkeletonCard();
-                  },
+                  topInset: widget.topInset,
+                  bottomInset: widget.bottomInset + 24,
                 ),
                 content: LayoutBuilder(
                   builder: (context, constraints) {

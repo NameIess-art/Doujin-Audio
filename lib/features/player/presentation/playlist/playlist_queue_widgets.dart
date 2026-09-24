@@ -29,6 +29,7 @@ import '../../../../core/widgets/top_page_header.dart';
 import '../../../library/application/library_facade.dart';
 import '../../application/playback_facade.dart';
 import '../../application/playback_session_snapshot.dart';
+import '../../domain/playback_queue.dart';
 import 'playlist_feature_icons.dart';
 import 'playlist_list_view.dart';
 import 'playlist_shared_helpers.dart';
@@ -1018,49 +1019,55 @@ class _PlaybackQueueAudioEditPageState
                                         entryId: entry.id,
                                       ),
                                   builder: (context, triggerRemove) {
-                                    return _QueueAudioEditCard(
-                                      track: entry.tracks.firstOrNull,
-                                      title: entry.title,
-                                      subtitle: i18n.tr('audio_count', {
-                                        'count': entry.tracks.length,
-                                      }),
-                                      trailing: Column(
-                                        mainAxisSize: MainAxisSize.min,
-                                        mainAxisAlignment:
-                                            MainAxisAlignment.center,
-                                        children: [
-                                          IconButton(
-                                            tooltip: i18n.tr('remove'),
-                                            constraints:
-                                                const BoxConstraints.tightFor(
-                                                  width: 40,
-                                                  height: 32,
-                                                ),
-                                            padding: EdgeInsets.zero,
-                                            visualDensity:
-                                                VisualDensity.compact,
-                                            icon: const Icon(
-                                              Icons
-                                                  .remove_circle_outline_rounded,
+                                  final firstTrack = entry.tracks.firstOrNull;
+                                  final workTitle =
+                                      (firstTrack?.groupTitle.trim().isNotEmpty ==
+                                              true)
+                                          ? firstTrack!.groupTitle
+                                          : entry.title;
+                                  final itemTitle =
+                                      entry.kind == PlaybackQueueEntryKind.work
+                                          ? i18n.tr('audio_count', {
+                                              'count': entry.tracks.length,
+                                            })
+                                          : entry.title;
+                                  return _QueueAudioEditCard(
+                                    track: firstTrack,
+                                    title: itemTitle,
+                                    workTitle: workTitle,
+                                    trailing: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        IconButton(
+                                          tooltip: i18n.tr('remove'),
+                                          constraints:
+                                              const BoxConstraints.tightFor(
+                                                width: 40,
+                                                height: 40,
+                                              ),
+                                          padding: EdgeInsets.zero,
+                                          visualDensity: VisualDensity.compact,
+                                          icon: const Icon(
+                                            Icons.remove_circle_outline_rounded,
+                                            size: 22,
+                                          ),
+                                          onPressed: triggerRemove,
+                                        ),
+                                        ReorderableDragStartListener(
+                                          index: index,
+                                          child: Container(
+                                            width: 40,
+                                            height: 40,
+                                            alignment: Alignment.center,
+                                            child: const Icon(
+                                              Icons.drag_handle_rounded,
                                               size: 22,
                                             ),
-                                            onPressed: triggerRemove,
                                           ),
-                                          ReorderableDragStartListener(
-                                            index: index,
-                                            child: Container(
-                                              width: 40,
-                                              height: 32,
-                                              alignment: Alignment.center,
-                                              child: const Icon(
-                                                Icons.drag_handle_rounded,
-                                                size: 22,
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    );
+                                        ),
+                                      ],
+                                    ),
+                                  );
                                   },
                                 );
                               },
@@ -1273,15 +1280,16 @@ class _QueueSourceAudioTile extends ConsumerWidget {
     final playlistAreaBackground = isDark
         ? cs.surfaceContainerLowest
         : cs.surfaceContainer;
+    final workTitle = track.groupTitle.trim().isNotEmpty
+        ? track.groupTitle
+        : track.displayName;
     return _QueueAudioEditCard(
       track: track,
       title: track.displayName,
-      subtitle: track.groupTitle,
-      rowHeight: track.isSingle ? playlistRowHeight : 88.0,
+      workTitle: workTitle,
       color: playlistAreaBackground,
-      trailing: Column(
+      trailing: Row(
         mainAxisSize: MainAxisSize.min,
-        mainAxisAlignment: MainAxisAlignment.center,
         children: [
           IconButton(
             tooltip: i18n.tr('add_audio_to_queue'),
@@ -1330,17 +1338,15 @@ class _QueueAudioEditCard extends ConsumerWidget {
   const _QueueAudioEditCard({
     required this.track,
     required this.title,
-    required this.subtitle,
+    required this.workTitle,
     required this.trailing,
-    this.rowHeight = 88.0,
     this.color,
   });
 
   final MusicTrack? track;
   final String title;
-  final String subtitle;
+  final String workTitle;
   final Widget trailing;
-  final double rowHeight;
   final Color? color;
 
   @override
@@ -1369,7 +1375,7 @@ class _QueueAudioEditCard extends ConsumerWidget {
       shape: playlistRowShape,
       clipBehavior: Clip.antiAlias,
       child: SizedBox(
-        height: rowHeight,
+        height: playlistRowHeight,
         child: Row(
           children: [
             Expanded(
@@ -1411,7 +1417,7 @@ class _QueueAudioEditCard extends ConsumerWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            subtitle,
+                            workTitle,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: Theme.of(context).textTheme.bodySmall
@@ -1441,7 +1447,10 @@ class _QueueAudioEditCard extends ConsumerWidget {
               ),
             ),
             const SizedBox(width: AppSpacing.xxs),
-            SizedBox(width: 44, height: rowHeight, child: trailing),
+            Padding(
+              padding: const EdgeInsets.only(right: AppSpacing.xs),
+              child: trailing,
+            ),
           ],
         ),
       ),

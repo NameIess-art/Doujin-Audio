@@ -1349,7 +1349,7 @@ void main() {
     },
   );
 
-  test('own cover preference applies to video frame covers', () async {
+  test('video cover follows own-cover preference for a selected folder cover', () async {
     final directory = await Directory.systemTemp.createTemp(
       'cover_cache_video_preference_',
     );
@@ -1394,6 +1394,8 @@ void main() {
     preferEmbedded = false;
     cache.invalidateAll();
 
+    expect(cache.resolvedForTrack(track), folderCover);
+    expect(cache.resolvedForPlaybackTrack(track), folderCover);
     expect(await cache.futureForTrack(track), folderCover);
     expect(await cache.futureForPlaybackTrack(track), folderCover);
     expect(cache.resolvedForTrack(track), folderCover);
@@ -1407,7 +1409,7 @@ void main() {
   });
 
   test(
-    'video frame set as folder cover is actively resolved for video and playback tracks',
+    'selected folder cover is used for video only when its frame is unavailable',
     () async {
       final directory = await Directory.systemTemp.createTemp(
         'cover_cache_video_frame_folder_',
@@ -1436,12 +1438,23 @@ void main() {
       final cache = CoverArtworkCacheService(
         libraryService: library,
         fileCacheGateway: gateway,
+        preferEmbeddedCover: () => true,
       );
 
       await cache.setFolderCoverSelection(directory.path, frameCover);
 
+      expect(await cache.futureForFolder(directory.path), frameCover);
+      expect(await cache.futureForTrack(track), '/cache/default_frame.jpg');
+      expect(cache.resolvedForTrack(track), '/cache/default_frame.jpg');
+      expect(
+        await cache.futureForPlaybackTrack(track),
+        '/cache/default_frame.jpg',
+      );
+      expect(cache.resolvedForPlaybackTrack(track), '/cache/default_frame.jpg');
+
+      gateway.videoFramesByPath.clear();
+      cache.invalidateAll();
       expect(await cache.futureForTrack(track), frameCover);
-      expect(cache.resolvedForTrack(track), frameCover);
       expect(await cache.futureForPlaybackTrack(track), frameCover);
       expect(cache.resolvedForPlaybackTrack(track), frameCover);
     },

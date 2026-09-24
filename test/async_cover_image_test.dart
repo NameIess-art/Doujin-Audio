@@ -122,6 +122,33 @@ void main() {
     expect(coverCacheWidth(), 600);
   });
 
+  test('thumbnail decode width follows displayed pixels', () {
+    expect(
+      coverThumbnailCacheWidth(
+        logicalWidth: 82,
+        devicePixelRatio: 3,
+        resolution: CoverImageResolution.balanced,
+      ),
+      246,
+    );
+    expect(
+      coverThumbnailCacheWidth(
+        logicalWidth: 500,
+        devicePixelRatio: 3,
+        resolution: CoverImageResolution.memorySaver,
+      ),
+      300,
+    );
+    expect(
+      coverThumbnailCacheWidth(
+        logicalWidth: 82,
+        devicePixelRatio: 2,
+        resolution: CoverImageResolution.original,
+      ),
+      164,
+    );
+  });
+
   test('cover cache width follows explicit resolution', () {
     expect(coverCacheWidth(resolution: CoverImageResolution.high), 900);
     expect(coverCacheWidth(resolution: CoverImageResolution.ultraHigh), 1200);
@@ -350,6 +377,29 @@ void main() {
     );
     expect(find.text('loaded:new.image'), findsOneWidget);
     expect(find.text('loaded:cover.image'), findsNothing);
+    expect(find.text('loading'), findsNothing);
+  });
+
+  testWidgets('saved cover is visible immediately after page recreation', (
+    tester,
+  ) async {
+    final pending = Completer<String?>();
+    Widget page() => MaterialApp(
+      home: AsyncCoverImage(
+        future: pending.future,
+        initialPath: 'saved.image',
+        duration: Duration.zero,
+        imageBuilder: (_, path) => Text('loaded:$path'),
+        fallbackBuilder: (_) => const Text('fallback'),
+        loadingBuilder: (_) => const Text('loading'),
+      ),
+    );
+
+    await tester.pumpWidget(page());
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpWidget(page());
+
+    expect(find.text('loaded:saved.image'), findsOneWidget);
     expect(find.text('loading'), findsNothing);
   });
 

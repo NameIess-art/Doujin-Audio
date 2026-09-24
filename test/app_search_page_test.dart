@@ -2,10 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/core/widgets/app_edge_fade_mask.dart';
 import 'package:doujin_audio/core/widgets/app_search_page.dart';
-import 'package:doujin_audio/core/widgets/app_transitions.dart';
 
 void main() {
-  testWidgets('search route slides in from the right', (tester) async {
+  testWidgets('search route fades in and out', (tester) async {
     late BuildContext routeContext;
     await tester.pumpWidget(
       MaterialApp(
@@ -26,15 +25,16 @@ void main() {
       routeContext,
       const AlwaysStoppedAnimation<double>(0.5),
       const AlwaysStoppedAnimation<double>(0),
-      const AppPageContentTransition(child: SizedBox.expand()),
+      const SizedBox.expand(),
     );
 
     await tester.pumpWidget(
       Directionality(textDirection: TextDirection.ltr, child: transition),
     );
-    final slide = tester.widget<SlideTransition>(find.byType(SlideTransition));
-    expect(slide.position.value.dx, greaterThan(0));
-    expect(slide.position.value.dy, 0);
+    final fade = tester.widget<FadeTransition>(find.byType(FadeTransition));
+    expect(fade.opacity.value, greaterThan(0));
+    expect(fade.opacity.value, lessThan(1));
+    expect(find.byType(SlideTransition), findsNothing);
   });
 
   testWidgets(

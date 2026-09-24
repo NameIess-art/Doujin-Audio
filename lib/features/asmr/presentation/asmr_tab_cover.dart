@@ -25,7 +25,11 @@ class _AsmrWorkCover extends ConsumerWidget {
     final coverResolution = isActive
         ? ref.watch(coverImageResolutionProvider)
         : ref.read(coverImageResolutionProvider);
-    final coverCacheWidth = coverCacheWidthForResolution(coverResolution);
+    final coverCacheWidth = coverThumbnailCacheWidth(
+      logicalWidth: width,
+      devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
+      resolution: coverResolution,
+    );
     final library = ref.read(libraryFacadeProvider);
     final coverUi = ref.read(libraryCoverUiControllerProvider);
     return SizedBox(
@@ -51,7 +55,7 @@ class _AsmrWorkCover extends ConsumerWidget {
                       maxRetryAttempts: 2,
                       fit: BoxFit.cover,
                       cacheWidth: coverCacheWidth,
-                      useDefaultCacheWidth: coverCacheWidth != null,
+                      useDefaultCacheWidth: false,
                       loadingBuilder: (_) => CoverLoadingArtwork(
                         placeholder: CoverFallbackArtwork(
                           seed: url,

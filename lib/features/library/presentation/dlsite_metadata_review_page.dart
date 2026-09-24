@@ -642,8 +642,16 @@ class _DlsiteMetadataReviewPageState
                             borderRadius: BorderRadius.circular(16),
                             child: AspectRatio(
                               aspectRatio: kStandardCoverAspectRatio,
-                              child: RetryingNetworkImage(
+                              child: AsyncRemoteCoverImage(
                                 url: coverUrl,
+                                future: ref
+                                    .read(libraryCoverUiControllerProvider)
+                                    .deferredRemoteCover(coverUrl),
+                                initialPath: library
+                                    .resolvedCoverPathForRemoteCover(coverUrl),
+                                retryFutureBuilder: () => ref
+                                    .read(libraryCoverUiControllerProvider)
+                                    .deferredRemoteCover(coverUrl),
                                 fit: BoxFit.cover,
                                 cacheWidth: coverCacheWidth,
                                 useDefaultCacheWidth: coverCacheWidth != null,

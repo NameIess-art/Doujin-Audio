@@ -2965,7 +2965,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
   });
 
-  testWidgets('queue edit rows stack 44px actions and provide haptics', (
+  testWidgets('queue edit rows arrange 44px actions horizontally and provide haptics', (
     WidgetTester tester,
   ) async {
     tester.view.physicalSize = const Size(1080, 2400);
@@ -3039,10 +3039,10 @@ void main() {
     );
     expect(tester.getSize(addAudio), const Size(44, 44));
     expect(tester.getSize(addWork), const Size(44, 44));
-    expect(tester.getCenter(addAudio).dx, tester.getCenter(addWork).dx);
+    expect(tester.getCenter(addAudio).dy, tester.getCenter(addWork).dy);
     expect(
-      tester.getCenter(addAudio).dy,
-      lessThan(tester.getCenter(addWork).dy),
+      tester.getCenter(addAudio).dx,
+      lessThan(tester.getCenter(addWork).dx),
     );
     final sourceCard = tester.widget<Card>(
       find.ancestor(of: addAudio, matching: find.byType(Card)).first,
@@ -3064,6 +3064,18 @@ void main() {
     );
     final removeAudio = find.byTooltip(fixture.languageProvider.tr('remove'));
     expect(removeAudio, findsOneWidget);
+    final dragHandle = find.byIcon(Icons.drag_handle_rounded);
+    expect(dragHandle, findsOneWidget);
+    expect(
+      tester.getCenter(removeAudio).dy,
+      closeTo(tester.getCenter(dragHandle).dy, 1.0),
+    );
+    expect(
+      tester.getCenter(removeAudio).dx,
+      lessThan(tester.getCenter(dragHandle).dx),
+    );
+    expect(find.text('Work'), findsWidgets);
+    expect(find.text('Track'), findsWidgets);
     await tester.tap(removeAudio);
     await tester.pump(const Duration(milliseconds: 300));
     await tester.pumpAndSettle();

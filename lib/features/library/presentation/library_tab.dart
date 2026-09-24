@@ -1532,16 +1532,9 @@ class _LibraryLoadingSkeleton extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return ListView(
-      primary: false,
-      physics: const NeverScrollableScrollPhysics(),
-      padding: EdgeInsets.fromLTRB(
-        LibraryLikeCardMetrics.listHorizontalPadding,
-        topInset,
-        LibraryLikeCardMetrics.listHorizontalPadding,
-        bottomInset,
-      ),
-      children: [for (int i = 0; i < 5; i++) const LibraryLikeSkeletonCard()],
+    return LibrarySkeletonListView(
+      topInset: topInset,
+      bottomInset: bottomInset,
     );
   }
 }

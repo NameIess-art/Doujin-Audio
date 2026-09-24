@@ -304,6 +304,63 @@ class _SkeletonInfoLine extends StatelessWidget {
   }
 }
 
+class LibrarySkeletonListView extends StatelessWidget {
+  const LibrarySkeletonListView({
+    super.key,
+    required this.topInset,
+    required this.bottomInset,
+    this.itemCount = 5,
+    this.compactCoverLayout = false,
+  });
+
+  final double topInset;
+  final double bottomInset;
+  final int itemCount;
+  final bool compactCoverLayout;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final columnCount =
+            responsiveLibraryCardColumnCount(constraints.maxWidth);
+        return ListView(
+          primary: false,
+          physics: const NeverScrollableScrollPhysics(),
+          padding: EdgeInsets.fromLTRB(
+            LibraryLikeCardMetrics.listHorizontalPadding,
+            topInset,
+            LibraryLikeCardMetrics.listHorizontalPadding,
+            bottomInset,
+          ),
+          children: [
+            for (var rowIndex = 0; rowIndex < itemCount; rowIndex++)
+              if (columnCount <= 1)
+                LibraryLikeSkeletonCard(
+                  compactCoverLayout: compactCoverLayout,
+                )
+              else
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    for (var column = 0; column < columnCount; column++) ...[
+                      if (column > 0)
+                        const SizedBox(width: kResponsiveLibraryCardSpacing),
+                      Expanded(
+                        child: LibraryLikeSkeletonCard(
+                          compactCoverLayout: compactCoverLayout,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+          ],
+        );
+      },
+    );
+  }
+}
+
 class LibraryLikeInfoLineData {
   const LibraryLikeInfoLineData(
     this.label,

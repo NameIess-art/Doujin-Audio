@@ -796,20 +796,10 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
           child: RepaintBoundary(
           child: PlaceholderContentTransition(
             showPlaceholder: !globalInitialized,
-            placeholder: ListView(
+            placeholder: LibrarySkeletonListView(
               key: const ValueKey('asmr_initial_placeholder'),
-              primary: false,
-              physics: const NeverScrollableScrollPhysics(),
-              padding: EdgeInsets.fromLTRB(
-                LibraryLikeCardMetrics.listHorizontalPadding,
-                headerContentHeight,
-                LibraryLikeCardMetrics.listHorizontalPadding,
-                bottomInset + 24,
-              ),
-              children: [
-                for (int i = 0; i < 5; i++)
-                  const LibraryLikeSkeletonCard(),
-              ],
+              topInset: headerContentHeight,
+              bottomInset: bottomInset + 24,
             ),
             content: AnimatedSwitcher(
               duration: MediaQuery.disableAnimationsOf(context)

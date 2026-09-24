@@ -551,7 +551,8 @@ class _AudioDetailSheetState extends ConsumerState<AudioDetailSheet> {
       }
     }
 
-    return SizedBox(
+    final content = SizedBox(
+      key: ValueKey<bool>(_loading),
       width: double.infinity,
       child: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(24, 0, 24, 32),
@@ -716,6 +717,16 @@ class _AudioDetailSheetState extends ConsumerState<AudioDetailSheet> {
           ],
         ),
       ),
+    );
+    return AnimatedSwitcher(
+      duration: kPlaceholderContentTransitionDuration,
+      reverseDuration: kPlaceholderContentTransitionDuration,
+      transitionBuilder: (child, animation) => buildAppFadeTransition(
+        context: context,
+        animation: animation,
+        child: child,
+      ),
+      child: content,
     );
   }
 }

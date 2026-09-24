@@ -1166,6 +1166,151 @@ void main() {
     expect(visible.last, 'first');
   });
 
+  testWidgets('carousel starts on the most recently played session', (
+    tester,
+  ) async {
+    final fixture = AppRuntimeWidgetTestFixture();
+    addTearDown(fixture.dispose);
+    final sessions = <PlaybackSession>[
+      for (final id in ['first', 'latest', 'third'])
+        PlaybackSession(
+          id: id,
+          currentTrackPath: '/$id.mp3',
+          loopMode: SessionLoopMode.single,
+          nonSingleLoopMode: SessionLoopMode.single,
+          volume: 1,
+          createdAt: DateTime(2026),
+          state: const PlayerState(true, ProcessingState.ready),
+        ),
+    ];
+    for (final session in sessions) {
+      addTearDown(session.shutdown);
+    }
+    sessions[0].lastPlayedAt = DateTime(2026);
+    sessions[1].lastPlayedAt = DateTime(2026, 1, 3);
+    sessions[2]
+      ..lastPlayedAt = DateTime(2026, 1, 4)
+      ..state = const PlayerState(false, ProcessingState.ready);
+    final visible = <String>[];
+
+    await tester.pumpWidget(
+      fixture.build(
+        ActiveSessionCarousel(
+          sessions: sessions.map(PlaybackSessionSnapshot.fromRuntime).toList(),
+          viewportFraction: 1,
+          onVisibleSessionChanged: visible.add,
+          onOpenSession: (_) {},
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(visible.last, 'latest');
+    expect(find.byKey(const ValueKey('active_session_card_latest')), findsOneWidget);
+  });
+
+  testWidgets('new playback takes focus when a second card appears', (
+    tester,
+  ) async {
+    final fixture = AppRuntimeWidgetTestFixture();
+    addTearDown(fixture.dispose);
+    final sessions = <PlaybackSession>[
+      for (final id in ['first', 'second'])
+        PlaybackSession(
+          id: id,
+          currentTrackPath: '/$id.mp3',
+          loopMode: SessionLoopMode.single,
+          nonSingleLoopMode: SessionLoopMode.single,
+          volume: 1,
+          createdAt: DateTime(2026),
+          state: const PlayerState(true, ProcessingState.ready),
+        ),
+    ];
+    for (final session in sessions) {
+      addTearDown(session.shutdown);
+    }
+    final visible = <String>[];
+    Widget carousel(List<PlaybackSession> shown) => fixture.build(
+      ActiveSessionCarousel(
+        sessions: shown.map(PlaybackSessionSnapshot.fromRuntime).toList(),
+        viewportFraction: 1,
+        onVisibleSessionChanged: visible.add,
+        onOpenSession: (_) {},
+      ),
+    );
+
+    await tester.pumpWidget(carousel([sessions.first]));
+    await tester.pumpAndSettle();
+    final controller = ProviderScope.containerOf(
+      tester.element(find.byType(ActiveSessionCarousel)),
+    ).read(playlistUiControllerProvider);
+    expect(visible.last, 'first');
+
+    controller.requestCarouselSnap('second');
+    await tester.pumpWidget(carousel(sessions));
+    await tester.pumpAndSettle();
+
+    expect(visible.last, 'second');
+  });
+
+  testWidgets('focused pause slides in the left card; other pause keeps focus', (
+    tester,
+  ) async {
+    final fixture = AppRuntimeWidgetTestFixture();
+    addTearDown(fixture.dispose);
+    final sessions = <PlaybackSession>[
+      for (final id in ['first', 'middle', 'last'])
+        PlaybackSession(
+          id: id,
+          currentTrackPath: '/$id.mp3',
+          loopMode: SessionLoopMode.single,
+          nonSingleLoopMode: SessionLoopMode.single,
+          volume: 1,
+          createdAt: DateTime(2026),
+          state: const PlayerState(true, ProcessingState.ready),
+        ),
+    ];
+    for (final session in sessions) {
+      addTearDown(session.shutdown);
+    }
+    sessions[1].lastPlayedAt = DateTime(2026, 1, 2);
+    final visible = <String>[];
+
+    Widget carousel(List<PlaybackSession> shown) => fixture.build(
+      ActiveSessionCarousel(
+        sessions: shown.map(PlaybackSessionSnapshot.fromRuntime).toList(),
+        viewportFraction: 1,
+        onVisibleSessionChanged: visible.add,
+        onOpenSession: (_) {},
+      ),
+    );
+
+    await tester.pumpWidget(carousel(sessions));
+    await tester.pumpAndSettle();
+    final pageController = tester.widget<PageView>(find.byType(PageView)).controller!;
+    final startingPage = pageController.page!;
+    expect(visible.last, 'middle');
+
+    await tester.pumpWidget(carousel([sessions[0], sessions[2]]));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(pageController.page!, lessThan(startingPage));
+    expect(pageController.page!, greaterThan(startingPage - 1));
+    expect(find.byKey(const ValueKey('active_session_card_middle')), findsWidgets);
+
+    await tester.pumpAndSettle();
+    expect(visible.last, 'first');
+    final focusedCard = find.byKey(const ValueKey('active_session_card_first'));
+    final focusedElement = tester.element(focusedCard.first);
+    final focusedPage = pageController.page!;
+
+    await tester.pumpWidget(carousel([sessions[0]]));
+    await tester.pumpAndSettle();
+    expect(pageController.page, focusedPage);
+    expect(tester.element(focusedCard.first), same(focusedElement));
+    expect(visible.last, 'first');
+  });
+
   testWidgets(
     'circular cover disables paging and preserves the visible session',
     (tester) async {
@@ -5924,7 +6069,7 @@ void main() {
 
       await tester.tap(workDetailButton);
       await tester.pump();
-      await tester.pump(const Duration(milliseconds: 450));
+      await tester.pump(const Duration(milliseconds: 600));
       await tester.pump();
       expect(find.byType(WorkDetailPage), findsOneWidget);
       expect(find.byType(SessionDetailPage), findsNothing);

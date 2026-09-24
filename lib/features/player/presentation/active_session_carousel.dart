@@ -80,16 +80,21 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
   late PageController _pageController;
   late final ValueListenable<String?> _carouselSnapListenable;
   late final ActiveVisibleSessionCardIdNotifier _visibleSessionNotifier;
-  final ValueNotifier<double> _pageNotifier = ValueNotifier<double>(0);
+  final ValueNotifier<double> _pageNotifier = ValueNotifier<double>(
+    _loopPageSeed.toDouble(),
+  );
   List<PlaybackSessionSnapshot> _currentSessions = const [];
+  List<PlaybackSessionSnapshot> _incomingSessions = const [];
+  int _pageIndexOffset = 0;
+  bool _removingFocusedSession = false;
   String? _lastCarouselSnapSessionId;
   String? _lastVisibleSessionId;
-  bool _loopSeedScheduled = false;
 
   @override
   void initState() {
     super.initState();
     _pageController = PageController(
+      initialPage: _loopPageSeed,
       viewportFraction: widget.viewportFraction ?? 0.90,
     );
     _pageController.addListener(_handlePageTick);
@@ -162,8 +167,7 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
     if (!mounted) return;
     final sessionId = _carouselSnapListenable.value;
     if (sessionId == null) return;
-    final sessions =
-        widget.sessions ?? ref.read(mainOverlayUiProvider).overlaySessions;
+    final sessions = _currentSessions;
     final targetIndex = sessions.indexWhere((s) => s.id == sessionId);
     if (targetIndex < 0 || !_pageController.hasClients) return;
     _lastCarouselSnapSessionId = sessionId;
@@ -176,8 +180,50 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
 
   int _sessionIndexForPage(int page, int length) {
     if (length <= 0) return 0;
-    final remainder = page % length;
+    final remainder = (page + _pageIndexOffset) % length;
     return remainder < 0 ? remainder + length : remainder;
+  }
+
+  void _alignPageWithSession(
+    String sessionId,
+    List<PlaybackSessionSnapshot> sessions,
+  ) {
+    final index = sessions.indexWhere((session) => session.id == sessionId);
+    if (index < 0) return;
+    _pageIndexOffset = (index - _pageNotifier.value.round()) % sessions.length;
+  }
+
+  bool _sameSessionOrder(List<PlaybackSessionSnapshot> sessions) {
+    if (sessions.length != _currentSessions.length) return false;
+    for (var index = 0; index < sessions.length; index++) {
+      if (sessions[index].id != _currentSessions[index].id) return false;
+    }
+    return true;
+  }
+
+  Future<void> _slideToLeftSession(String leftSessionId) async {
+    if (!mounted || !_pageController.hasClients) {
+      _removingFocusedSession = false;
+      return;
+    }
+    final targetPage = _pageNotifier.value.round() - 1;
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _pageController.jumpToPage(targetPage);
+    } else {
+      await _pageController.animateToPage(
+        targetPage,
+        duration: const Duration(milliseconds: 350),
+        curve: Curves.easeOutCubic,
+      );
+    }
+    if (!mounted) return;
+    setState(() {
+      _currentSessions = _incomingSessions;
+      if (_currentSessions.isNotEmpty) {
+        _alignPageWithSession(leftSessionId, _currentSessions);
+      }
+      _removingFocusedSession = false;
+    });
   }
 
   int _pageForSessionIndex(int targetIndex, int length) {
@@ -191,31 +237,6 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
       delta += length;
     }
     return currentPage + delta;
-  }
-
-  void _ensureLoopPageSeed(int length) {
-    final currentPage = _pageNotifier.value.round();
-    if (length <= 1) {
-      if (currentPage == 0 || _loopSeedScheduled) return;
-      _loopSeedScheduled = true;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _loopSeedScheduled = false;
-        if (!mounted || !_pageController.hasClients) return;
-        _pageController.jumpToPage(0);
-        _pageNotifier.value = 0;
-      });
-      return;
-    }
-    if (currentPage >= _loopPageSeed ~/ 2 || _loopSeedScheduled) return;
-    _loopSeedScheduled = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _loopSeedScheduled = false;
-      if (!mounted || !_pageController.hasClients) return;
-      final targetPage =
-          _loopPageSeed + _sessionIndexForPage(currentPage, length);
-      _pageController.jumpToPage(targetPage);
-      _pageNotifier.value = targetPage.toDouble();
-    });
   }
 
   void _moveToPage(int page, {required Duration duration}) {
@@ -286,25 +307,70 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
       }
       return const SizedBox.shrink();
     }
-    _currentSessions = sessions;
+    _incomingSessions = sessions;
+    if (_currentSessions.isEmpty) {
+      _currentSessions = sessions;
+      var latestIndex = 0;
+      for (var index = 1; index < sessions.length; index++) {
+        final candidate = sessions[index];
+        final latest = sessions[latestIndex];
+        if (candidate.playbackRequested != latest.playbackRequested) {
+          if (candidate.playbackRequested) latestIndex = index;
+          continue;
+        }
+        final playedAt = candidate.lastPlayedAt;
+        final latestPlayedAt = latest.lastPlayedAt;
+        if (playedAt != null &&
+            (latestPlayedAt == null || playedAt.isAfter(latestPlayedAt))) {
+          latestIndex = index;
+        }
+      }
+      _alignPageWithSession(sessions[latestIndex].id, sessions);
+    } else if (!_removingFocusedSession && !_sameSessionOrder(sessions)) {
+      final visibleId =
+          _currentSessions[_sessionIndexForPage(
+                _pageNotifier.value.round(),
+                _currentSessions.length,
+              )]
+              .id;
+      if (sessions.any((session) => session.id == visibleId)) {
+        _currentSessions = sessions;
+        _alignPageWithSession(visibleId, sessions);
+      } else {
+        final leftSessionId =
+            _currentSessions[_sessionIndexForPage(
+                  _pageNotifier.value.round() - 1,
+                  _currentSessions.length,
+                )]
+                .id;
+        _removingFocusedSession = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _slideToLeftSession(leftSessionId);
+        });
+      }
+    } else if (!_removingFocusedSession) {
+      _currentSessions = sessions;
+    }
+    final visibleSessions = _currentSessions;
     _notifyVisibleSessionChanged();
 
     final snapSessionId = _carouselSnapListenable.value;
     if (snapSessionId != null && snapSessionId != _lastCarouselSnapSessionId) {
-      final targetIndex = sessions.indexWhere((s) => s.id == snapSessionId);
+      final targetIndex = visibleSessions.indexWhere(
+        (s) => s.id == snapSessionId,
+      );
       if (targetIndex >= 0) {
         _lastCarouselSnapSessionId = snapSessionId;
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted || !_pageController.hasClients) return;
           _moveToPage(
-            _pageForSessionIndex(targetIndex, sessions.length),
+            _pageForSessionIndex(targetIndex, visibleSessions.length),
             duration: const Duration(milliseconds: 350),
           );
         });
       }
     }
 
-    _ensureLoopPageSeed(sessions.length);
     final requestsCircularCover =
         widget.presentation == ActiveSessionCarouselPresentation.circularCover;
     final compact =
@@ -337,7 +403,7 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
                 onPointerSignal: (signal) {
                   if (!pagingLocked &&
                       signal is PointerScrollEvent &&
-                      sessions.length > 1) {
+                      visibleSessions.length > 1) {
                     final currentPage = _pageNotifier.value.round();
                     final delta = signal.scrollDelta.dy > 0
                         ? 1
@@ -361,16 +427,15 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
                       PointerDeviceKind.trackpad,
                     },
                   ),
-                  physics: sessions.length == 1 || pagingLocked
+                  physics: visibleSessions.length == 1 || pagingLocked
                       ? const NeverScrollableScrollPhysics()
                       : const BouncingScrollPhysics(),
-                  itemCount: sessions.length == 1 ? 1 : null,
                   itemBuilder: (context, index) {
                     final sessionIndex = _sessionIndexForPage(
                       index,
-                      sessions.length,
+                      visibleSessions.length,
                     );
-                    final session = sessions[sessionIndex];
+                    final session = visibleSessions[sessionIndex];
                     final track = ref
                         .read(audioPathCoordinatorProvider)
                         .sessionTrackForPath(
@@ -386,7 +451,7 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
                         child: _ActiveSessionCard(
                           session: session,
                           position: sessionIndex,
-                          count: sessions.length,
+                          count: visibleSessions.length,
                           coverPathFuture: _sessionCoverFutureForTrack(
                             library,
                             track,
@@ -402,7 +467,7 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
                   },
                 ),
               ),
-              if (sessions.length > 1 && !compact && !pagingLocked)
+              if (visibleSessions.length > 1 && !compact && !pagingLocked)
                 Positioned(
                   right: indicatorRight,
                   bottom: indicatorBottom,
@@ -412,16 +477,17 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
                       builder: (context, page, child) {
                         final activePage = _sessionIndexForPage(
                           page.round(),
-                          sessions.length,
+                          visibleSessions.length,
                         );
                         return Semantics(
-                          label: '${activePage + 1} / ${sessions.length}',
+                          label:
+                              '${activePage + 1} / ${visibleSessions.length}',
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               for (
                                 var index = 0;
-                                index < sessions.length;
+                                index < visibleSessions.length;
                                 index++
                               )
                                 AnimatedContainer(

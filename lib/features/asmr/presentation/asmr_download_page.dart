@@ -368,20 +368,21 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
                 fit: StackFit.expand,
                 children: [
             Positioned.fill(
-              child: _loading
-                  ? SingleChildScrollView(
-                      padding: EdgeInsets.fromLTRB(
-                        16,
-                        listTopPadding,
-                        16,
-                        listBottomPadding,
-                      ),
-                      child: const OperationSkeletonList(
-                        itemCount: 6,
-                        showHeader: false,
-                      ),
-                    )
-                  : _bootstrapError != null || selection == null
+              child: PlaceholderContentTransition(
+                showPlaceholder: _loading,
+                placeholder: SingleChildScrollView(
+                  padding: EdgeInsets.fromLTRB(
+                    16,
+                    listTopPadding,
+                    16,
+                    listBottomPadding,
+                  ),
+                  child: const OperationSkeletonList(
+                    itemCount: 6,
+                    showHeader: false,
+                  ),
+                ),
+                content: _bootstrapError != null || selection == null
                   ? Padding(
                       padding: EdgeInsets.fromLTRB(
                         16,
@@ -425,6 +426,7 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
                         );
                       },
                     ),
+              ),
             ),
             if (!_loading && _selection != null && _work != null)
               Positioned(
@@ -552,13 +554,25 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
                         ),
                   additionalChild: Padding(
                     padding: const EdgeInsets.fromLTRB(16, 6, 16, 12),
-                    child: _DownloadSummaryCard(
-                      work: _work,
-                      initialRjCode: widget.initialRjCode,
-                      selectedLeafCount: selectedLeafCount,
-                      selectedTotalSizeBytes: selectedTotalSizeBytes,
-                      customDestinationRoot: widget.customDestinationRoot,
-                      customWorkFolderName: widget.customWorkFolderName,
+                    child: AnimatedSwitcher(
+                      duration: MediaQuery.disableAnimationsOf(context)
+                          ? Duration.zero
+                          : kPlaceholderContentTransitionDuration,
+                      transitionBuilder: (child, animation) =>
+                          buildAppFadeTransition(
+                            context: context,
+                            animation: animation,
+                            child: child,
+                          ),
+                      child: _DownloadSummaryCard(
+                        key: ValueKey(_work == null),
+                        work: _work,
+                        initialRjCode: widget.initialRjCode,
+                        selectedLeafCount: selectedLeafCount,
+                        selectedTotalSizeBytes: selectedTotalSizeBytes,
+                        customDestinationRoot: widget.customDestinationRoot,
+                        customWorkFolderName: widget.customWorkFolderName,
+                      ),
                     ),
                   ),
                 ),
@@ -922,6 +936,7 @@ class _TaskCard extends ConsumerWidget {
 
 class _DownloadSummaryCard extends ConsumerWidget {
   const _DownloadSummaryCard({
+    super.key,
     this.work,
     this.initialRjCode,
     required this.selectedLeafCount,

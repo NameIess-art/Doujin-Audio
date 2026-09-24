@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/theme/app_design_tokens.dart';
 import '../../../core/ui/ui_operation_service.dart';
+import '../../../core/widgets/app_transitions.dart';
 import '../../settings/application/app_cache_service.dart';
 import '../application/storage_usage_service.dart';
 
@@ -52,13 +53,24 @@ class _StorageUsageCardState extends ConsumerState<StorageUsageCard> {
       key: const ValueKey('data-support-storage-usage'),
       future: _storageUsageFuture,
       builder: (context, snapshot) {
+        final Widget card;
+        final String phase;
         if (snapshot.hasData && snapshot.data!.isAvailable) {
-          return _StorageUsageCard(snapshot: snapshot.data!);
+          card = _StorageUsageCard(snapshot: snapshot.data!);
+          phase = 'loaded';
+        } else if (snapshot.connectionState == ConnectionState.waiting) {
+          card = const _StorageUsageCard(snapshot: null);
+          phase = 'loading';
+        } else {
+          card = _StorageUsageUnavailableCard(onRetry: _reloadStorageUsage);
+          phase = 'unavailable';
         }
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const _StorageUsageCard(snapshot: null);
-        }
-        return _StorageUsageUnavailableCard(onRetry: _reloadStorageUsage);
+        return AnimatedSwitcher(
+          duration: MediaQuery.disableAnimationsOf(context)
+              ? Duration.zero
+              : kPlaceholderContentTransitionDuration,
+          child: KeyedSubtree(key: ValueKey(phase), child: card),
+        );
       },
     );
   }

@@ -204,7 +204,7 @@ class _FolderCoverSelectorState extends ConsumerState<FolderCoverSelector> {
   Widget _buildCoverReveal(Widget child) {
     return AnimatedSwitcher(
       duration: const Duration(milliseconds: 650),
-      reverseDuration: const Duration(milliseconds: 220),
+      reverseDuration: kPlaceholderContentTransitionDuration,
       switchInCurve: Curves.easeOutCubic,
       switchOutCurve: Curves.easeInCubic,
       transitionBuilder: (child, animation) => buildAppScaleFadeTransition(

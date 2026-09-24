@@ -588,8 +588,9 @@ class _DlsiteMetadataReviewPageState
         child: Stack(
           children: [
             Positioned.fill(
-              child: AppPageContentTransition(child: _loading
-                  ? SingleChildScrollView(
+              child: AppPageContentTransition(child: PlaceholderContentTransition(
+                showPlaceholder: _loading,
+                placeholder: SingleChildScrollView(
                       padding: EdgeInsets.fromLTRB(
                         20,
                         listTopPadding,
@@ -599,8 +600,8 @@ class _DlsiteMetadataReviewPageState
                       child: _MetadataReviewSkeleton(
                         showCover: widget.detail.target.isLibraryRootFolder,
                       ),
-                    )
-                  : _error != null
+                    ),
+                content: _error != null
                   ? Padding(
                       padding: EdgeInsets.fromLTRB(
                         20,
@@ -769,7 +770,8 @@ class _DlsiteMetadataReviewPageState
                           label: i18n.tr('audio_detail_rating'),
                         ),
                       ],
-                    )),
+                    ),
+              )),
             ),
             if (hasBatchNavigation && !_loading)
               Positioned(

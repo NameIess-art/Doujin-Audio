@@ -731,7 +731,7 @@ void main() {
   );
 
   testWidgets(
-    'RetryingImage fades the decoded cover in over its placeholder for 600ms',
+    'RetryingImage fades the placeholder out over 750ms',
     (tester) async {
       final provider = _ControlledImageProvider();
 
@@ -770,19 +770,21 @@ void main() {
       final transition = find.byType(PlaceholderContentTransition);
       expect(
         tester.widget<PlaceholderContentTransition>(transition).duration,
-        kCoverImageFadeDuration,
+        kPlaceholderContentTransitionDuration,
       );
+      expect(kPlaceholderContentTransitionDuration, const Duration(milliseconds: 750));
       final fades = find.descendant(
         of: transition,
         matching: find.byType(FadeTransition),
       );
-      expect(fades, findsOneWidget);
-      expect(tester.widget<FadeTransition>(fades.first).opacity.value, 0);
-      await tester.pump(const Duration(milliseconds: 300));
-      final midwayOpacity = tester
-          .widget<FadeTransition>(fades.first)
-          .opacity
-          .value;
+      expect(fades, findsNWidgets(2));
+      final placeholderFade = find.ancestor(
+        of: find.byKey(const ValueKey<String>('decoding_placeholder')),
+        matching: find.byType(FadeTransition),
+      );
+      expect(tester.widget<FadeTransition>(placeholderFade.first).opacity.value, 1);
+      await tester.pump(const Duration(milliseconds: 375));
+      final midwayOpacity = tester.widget<FadeTransition>(placeholderFade.first).opacity.value;
       expect(midwayOpacity, greaterThan(0));
       expect(midwayOpacity, lessThan(1));
       await tester.pumpWidget(
@@ -802,10 +804,10 @@ void main() {
         ),
       );
       expect(
-        tester.widget<FadeTransition>(fades.first).opacity.value,
+        tester.widget<FadeTransition>(placeholderFade.first).opacity.value,
         closeTo(midwayOpacity, 0.001),
       );
-      await tester.pump(const Duration(milliseconds: 299));
+      await tester.pump(const Duration(milliseconds: 374));
       expect(
         find.byKey(const ValueKey<String>('decoding_placeholder')),
         findsOneWidget,

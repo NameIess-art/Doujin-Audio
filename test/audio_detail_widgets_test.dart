@@ -200,6 +200,10 @@ void main() {
     await tester.pump();
     await tester.pump();
 
+    expect(skeletonCover, findsOneWidget);
+    await tester.pump(const Duration(milliseconds: 375));
+    expect(skeletonCover, findsOneWidget);
+    await tester.pump(const Duration(milliseconds: 376));
     expect(skeletonCover, findsNothing);
     final actualCover = find.ancestor(
       of: find.byType(AsyncRemoteCoverImage),
@@ -1113,6 +1117,40 @@ void main() {
     await tester.pump();
     expect(find.byType(RetryingFileImage), findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('folder cover placeholder fades out over 750ms', (
+    WidgetTester tester,
+  ) async {
+    final fixture = AppRuntimeWidgetTestFixture(
+      coverArtworkCacheService: _DetailCoverCacheService(
+        currentCoverPath: '/covers/current.jpg',
+      ),
+    );
+    addTearDown(fixture.dispose);
+    await tester.pumpWidget(
+      fixture.build(
+        const Center(
+          child: SizedBox(
+            width: 300,
+            child: FolderCoverSelector(folderPath: '/library/Work'),
+          ),
+        ),
+      ),
+    );
+    final placeholder = find.byKey(
+      const ValueKey('audio_detail_cover_placeholder'),
+    );
+    expect(placeholder, findsOneWidget);
+
+    await tester.pump();
+    expect(placeholder, findsOneWidget);
+    await tester.pump(const Duration(milliseconds: 375));
+    expect(placeholder, findsOneWidget);
+    await tester.pump(const Duration(milliseconds: 376));
+    expect(placeholder, findsNothing);
+    expect(find.byKey(const ValueKey('audio_detail_cover_content')),
+        findsOneWidget);
   });
 
   testWidgets('Windows wheel advances folder cover candidates', (

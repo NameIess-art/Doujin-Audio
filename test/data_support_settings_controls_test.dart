@@ -295,6 +295,55 @@ void main() {
     await tester.pumpAndSettle();
   });
 
+  testWidgets('storage placeholder fades out when usage data arrives', (
+    tester,
+  ) async {
+    final pending = Completer<Object?>();
+    messenger.setMockMethodCallHandler(storageChannel, (_) => pending.future);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appLanguageProviderInstanceProvider.overrideWithValue(
+            AppLanguageProvider(),
+          ),
+          dataSupportStorageUsageServiceProvider.overrideWithValue(
+            storageService(),
+          ),
+        ],
+        child: const MaterialApp(home: StorageUsageCard()),
+      ),
+    );
+    await tester.pump();
+    final loading = find.byKey(const ValueKey('data-support-storage-loading'));
+    expect(loading, findsOneWidget);
+
+    pending.complete(<String, Object?>{
+      'ok': true,
+      'value': <String, Object?>{
+        'totalBytes': 1024,
+        'availableBytes': 512,
+        'cacheBytes': 128,
+      },
+    });
+    await tester.pump();
+    await tester.pump();
+    expect(loading, findsOneWidget);
+    expect(find.byKey(const ValueKey('data-support-storage-card')), findsOneWidget);
+
+    await tester.pump(const Duration(milliseconds: 375));
+    final fadingPlaceholder = find.ancestor(
+      of: loading,
+      matching: find.byType(FadeTransition),
+    );
+    final opacity = tester.widget<FadeTransition>(fadingPlaceholder.first).opacity.value;
+    expect(opacity, greaterThan(0));
+    expect(opacity, lessThan(1));
+
+    await tester.pump(const Duration(milliseconds: 375));
+    await tester.pumpAndSettle();
+    expect(loading, findsNothing);
+  });
+
   testWidgets('storage overview exposes an unavailable retry state', (
     tester,
   ) async {

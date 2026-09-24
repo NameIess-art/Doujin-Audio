@@ -187,8 +187,9 @@ class _DlsiteMetadataBatchPageState
         child: Stack(
           children: [
           Positioned.fill(
-            child: AppPageContentTransition(child: _loading
-                ? OperationSkeletonList(
+            child: AppPageContentTransition(child: PlaceholderContentTransition(
+                showPlaceholder: _loading,
+                placeholder: OperationSkeletonList(
                     itemCount: 5,
                     padding: EdgeInsets.fromLTRB(
                       16,
@@ -196,8 +197,8 @@ class _DlsiteMetadataBatchPageState
                       16,
                       24,
                     ),
-                  )
-                : _error != null
+                  ),
+                content: _error != null
                 ? _BatchMetadataErrorView(onRetry: _load)
                 : _BatchMetadataSetupView(
                     scope: _scope,
@@ -216,7 +217,7 @@ class _DlsiteMetadataBatchPageState
                       }
                     },
                     onPickSpecific: _pickSpecific,
-                  )),
+                  ))),
           ),
           if (!_loading && _error == null)
             Positioned(

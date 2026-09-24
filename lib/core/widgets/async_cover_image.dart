@@ -14,7 +14,6 @@ import 'scroll_activity_gate.dart';
 
 // Path resolution swaps immediately; the decoded frame owns the visible fade.
 const Duration kCoverImageTransitionDuration = Duration.zero;
-const Duration kCoverImageFadeDuration = Duration(milliseconds: 600);
 const double kStandardCoverAspectRatio = 4 / 3;
 
 // A stable decode size lets cards and detail pages share one ImageCache entry.
@@ -982,8 +981,6 @@ class _RetryingImageState extends State<RetryingImage> {
                   showPlaceholder: frame == null,
                   placeholder: placeholder,
                   content: child,
-                  duration: kCoverImageFadeDuration,
-                  fadePlaceholder: false,
                 );
               }
             : null,

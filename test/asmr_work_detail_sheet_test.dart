@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_providers.dart';
@@ -6,13 +8,17 @@ import 'package:doujin_audio/app/localization/app_language_provider.dart';
 import 'package:doujin_audio/core/immutable_collections.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/widgets/swipe_reveal_card.dart';
+import 'package:doujin_audio/core/widgets/app_transitions.dart';
+import 'package:doujin_audio/core/widgets/operation_feedback.dart';
 import 'package:doujin_audio/core/widgets/top_page_header.dart';
+import 'package:doujin_audio/features/asmr/application/asmr_download_manager.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_library_controller.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_download_page.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_tab.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_work_detail_sheet.dart';
 import 'package:doujin_audio/features/library/presentation/work_detail_page.dart';
+import 'package:doujin_audio/features/library/presentation/library_providers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -301,6 +307,78 @@ void main() {
     },
   );
 
+  testWidgets('download skeletons fade out for 750ms as data arrives', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues(const <String, Object>{});
+    final fixture = AppRuntimeWidgetTestFixture();
+    addTearDown(fixture.dispose);
+    final workResult = Completer<AsmrWork?>();
+    final trackTree = Completer<List<AsmrTrackFile>>();
+    final controller = _TestFavoritesAsmrLibraryController(
+      createTestAsmrServices(),
+      const <AsmrWork>[],
+    )..pendingTrackTree = trackTree.future;
+    final downloads = AsmrDownloadManager(persistTasks: false);
+    addTearDown(controller.dispose);
+    addTearDown(downloads.dispose);
+
+    await tester.pumpWidget(
+      fixture.build(
+        const AsmrDownloadPage(initialRjCode: 'RJ000123'),
+        overrides: [
+          asmrWorkFinderOverrideProvider.overrideWithValue(
+            (_) => workResult.future,
+          ),
+          asmrLibraryControllerProvider.overrideWithValue(controller),
+          asmrDownloadManagerProvider.overrideWithValue(downloads),
+        ],
+      ),
+    );
+    await tester.pump();
+    final summarySkeleton = find.byKey(
+      const ValueKey<String>('asmr_download_summary_skeleton'),
+    );
+    expect(summarySkeleton, findsOneWidget);
+    expect(find.byType(OperationSkeletonList), findsOneWidget);
+
+    workResult.complete(_work());
+    await tester.pump();
+    await tester.pump();
+    expect(summarySkeleton, findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('asmr_download_summary')),
+      findsOneWidget,
+    );
+    await tester.pump(const Duration(milliseconds: 1));
+    await tester.pump(const Duration(milliseconds: 375));
+    expect(summarySkeleton, findsOneWidget);
+    await tester.pump(const Duration(milliseconds: 374));
+    expect(summarySkeleton, findsOneWidget);
+    await tester.pump(const Duration(milliseconds: 1));
+    expect(summarySkeleton, findsNothing);
+
+    trackTree.complete(const <AsmrTrackFile>[]);
+    await tester.pump();
+    await tester.pump();
+    expect(
+      tester.widget<PlaceholderContentTransition>(
+        find.byType(PlaceholderContentTransition),
+      ).duration,
+      kPlaceholderContentTransitionDuration,
+    );
+    expect(find.byType(OperationSkeletonList), findsOneWidget);
+    await tester.pump(const Duration(milliseconds: 1));
+    await tester.pump(const Duration(milliseconds: 375));
+    expect(find.byType(OperationSkeletonList), findsOneWidget);
+    await tester.pump(const Duration(milliseconds: 375));
+    expect(find.byType(OperationSkeletonList), findsNothing);
+    expect(
+      find.byKey(const ValueKey<String>('asmr_download_file_list')),
+      findsOneWidget,
+    );
+  });
+
   testWidgets(
     'detail sheet shows download and favorite buttons and allows undoing unfavorite',
     (WidgetTester tester) async {
@@ -562,7 +640,12 @@ class _TestFavoritesAsmrLibraryController extends AsmrLibraryController {
       );
 
   List<AsmrWork> favoriteWorks;
+  Future<List<AsmrTrackFile>>? pendingTrackTree;
   int _revision = 0;
+
+  @override
+  Future<List<AsmrTrackFile>> ensureTrackTree(AsmrWork work) =>
+      pendingTrackTree ?? super.ensureTrackTree(work);
 
   void updateFavorites(List<AsmrWork> next) {
     favoriteWorks = List.of(next);

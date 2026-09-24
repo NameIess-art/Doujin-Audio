@@ -518,6 +518,7 @@ class _QueueTrackCover extends ConsumerWidget {
     final library = ref.watch(libraryFacadeProvider);
     return AsyncLocalCoverImage(
       future: library.playbackCoverPathFutureForTrack(track),
+      requestKey: track.path,
       initialPath: coverPath,
       seed: track.displayName,
       cacheWidth: coverCacheWidth,

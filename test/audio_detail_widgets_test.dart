@@ -54,6 +54,16 @@ class _FakeDlsiteMetadataService extends DlsiteMetadataService {
   }
 }
 
+class _PendingDlsiteMetadataService extends DlsiteMetadataService {
+  final Completer<DlsiteMetadata> result = Completer<DlsiteMetadata>();
+
+  @override
+  Future<DlsiteMetadata> fetchByRjCode(
+    String rjCode, {
+    AppLanguage language = AppLanguage.ja,
+  }) => result.future;
+}
+
 class _FakeAsmrMetadataService extends AsmrMetadataService {
   @override
   Future<DlsiteMetadata> fetchByRjCode(
@@ -134,6 +144,69 @@ void main() {
 
   tearDownAll(() async {
     await AppRuntimeTestFixture.disposeSharedDatabase(testDatabase);
+  });
+
+  testWidgets('metadata review skeleton matches the cover and field layout', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(390, 1000);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
+    final metadataService = _PendingDlsiteMetadataService();
+    final fixture = AppRuntimeWidgetTestFixture(
+      dlsiteMetadataService: metadataService,
+    );
+    addTearDown(fixture.dispose);
+
+    await tester.pumpWidget(
+      fixture.build(
+        DlsiteMetadataReviewPage(
+          detail: AudioDetail.empty(
+            const AudioDetailTarget(
+              targetType: AudioDetailTargetType.libraryRootFolder,
+              targetPath: '/library/LoadingWork',
+            ),
+          ),
+          rjCode: 'RJ123456',
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final skeletonCover = find.byKey(
+      const ValueKey<String>('dlsite_review_skeleton_cover'),
+    );
+    expect(skeletonCover, findsOneWidget);
+    expect(find.byType(OperationSkeletonList), findsNothing);
+    final coverRect = tester.getRect(skeletonCover);
+    expect(coverRect.width / coverRect.height, closeTo(4 / 3, 0.01));
+    final firstField = find.byKey(
+      const ValueKey<String>('dlsite_review_skeleton_field_0'),
+    );
+    expect(tester.getRect(firstField).top, greaterThan(coverRect.bottom));
+    expect(tester.getRect(firstField).width, coverRect.width);
+
+    metadataService.result.complete(
+      DlsiteMetadata(
+        rjCode: 'RJ123456',
+        workTitle: 'Loaded Work',
+        circleName: 'Circle',
+        voiceActors: const <String>[],
+        tags: const <String>[],
+        coverUrl: 'https://example.com/cover.jpg',
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(skeletonCover, findsNothing);
+    final actualCover = find.ancestor(
+      of: find.byType(AsyncRemoteCoverImage),
+      matching: find.byType(AspectRatio),
+    ).first;
+    expect(tester.getRect(actualCover), coverRect);
+    expect(find.text('Loaded Work'), findsOneWidget);
   });
 
   testWidgets(

@@ -772,6 +772,7 @@ class _ActiveSessionCover extends ConsumerWidget {
         clipBehavior: Clip.antiAlias,
         child: AsyncLocalCoverImage(
           future: coverPathFuture,
+          requestKey: (sessionId, track?.path),
           initialPath: library.resolvedPlaybackCoverPathForTrack(track),
           retryFutureBuilder: () => _sessionCoverFutureForTrack(library, track),
           seed: track?.displayName ?? track?.path ?? sessionId,

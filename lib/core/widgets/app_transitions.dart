@@ -7,7 +7,7 @@ const kPlaceholderContentTransitionDuration = Duration(milliseconds: 750);
 const kAppMotionFast = Duration(milliseconds: 180);
 const kAppMotionStandard = Duration(milliseconds: 220);
 const kAppMotionSlow = Duration(milliseconds: 300);
-const kAppPageTransitionDuration = Duration(milliseconds: 750);
+const kAppPageTransitionDuration = Duration(milliseconds: 400);
 
 typedef _PageTransitionBuilder = Widget Function(BuildContext, Widget);
 

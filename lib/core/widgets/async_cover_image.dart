@@ -136,7 +136,10 @@ class _AsyncCoverImageState extends State<AsyncCoverImage> {
           oldWidget.requestKey == widget.requestKey;
       final initialPath = widget.initialPath;
       final hasInitialPath = initialPath != null && initialPath.isNotEmpty;
-      if (hasInitialPath) {
+      if (hasInitialPath &&
+          (!sameRequest ||
+              oldWidget.initialPath != initialPath ||
+              _resolvedPath == null)) {
         _resolvedPath = initialPath;
         _isResolved = true;
       }
@@ -967,27 +970,7 @@ class _RetryingImageState extends State<RetryingImage> {
         frameBuilder: primary
             ? (context, child, frame, wasSynchronouslyLoaded) {
                 if (wasSynchronouslyLoaded) {
-                  if (MediaQuery.disableAnimationsOf(context)) return child;
-                  final placeholder = widget.fallbackBuilder(context);
-                  return TweenAnimationBuilder<double>(
-                    tween: Tween<double>(begin: 0, end: 1),
-                    duration: kCoverImageFadeDuration,
-                    curve: Curves.easeInOutCubic,
-                    child: child,
-                    builder: (context, progress, image) {
-                      if (progress >= 1) return image!;
-                      return Stack(
-                        fit: StackFit.expand,
-                        children: [
-                          image!,
-                          Opacity(
-                            opacity: 1 - progress,
-                            child: placeholder,
-                          ),
-                        ],
-                      );
-                    },
-                  );
+                  return child;
                 }
                 final loadingBuilder = widget.loadingBuilder;
                 final placeholder = loadingBuilder != null

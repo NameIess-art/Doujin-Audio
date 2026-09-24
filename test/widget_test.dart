@@ -842,6 +842,7 @@ void main() {
     expect(routeDock, findsNothing);
     await routeFuture;
     await tester.pump(const Duration(milliseconds: 200));
+    await tester.pump(const Duration(milliseconds: 200));
   });
 
   testWidgets(

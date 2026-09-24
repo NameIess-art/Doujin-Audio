@@ -16,7 +16,7 @@ import '../../../core/ui/ui_operation_service.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/async_cover_image.dart';
 import '../../../core/widgets/library_like_cards.dart';
-import '../../../core/widgets/operation_feedback.dart';
+import '../../../core/widgets/shimmer_loading.dart';
 import '../../../core/widgets/page_header_inset.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/top_page_header.dart';
@@ -596,7 +596,9 @@ class _DlsiteMetadataReviewPageState
                         20,
                         bottomInset,
                       ),
-                      child: const OperationSkeletonList(itemCount: 7),
+                      child: _MetadataReviewSkeleton(
+                        showCover: widget.detail.target.isLibraryRootFolder,
+                      ),
                     )
                   : _error != null
                   ? Padding(
@@ -872,6 +874,66 @@ class _DlsiteMetadataReviewPageState
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _MetadataReviewSkeleton extends StatelessWidget {
+  const _MetadataReviewSkeleton({required this.showCover});
+
+  final bool showCover;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return ShimmerLoader(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (showCover) ...[
+            const AspectRatio(
+              key: ValueKey<String>('dlsite_review_skeleton_cover'),
+              aspectRatio: kStandardCoverAspectRatio,
+              child: ShimmerContainer(borderRadius: 16),
+            ),
+            const SizedBox(
+              height: 56,
+              child: Row(
+                children: [
+                  ShimmerContainer(width: 150, height: 14),
+                  Spacer(),
+                  ShimmerContainer(
+                    width: 48,
+                    height: 28,
+                    borderRadius: 14,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+          ],
+          for (var index = 0; index < 8; index++)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Container(
+                key: ValueKey<String>('dlsite_review_skeleton_field_$index'),
+                height: index == 1 ? 44 : 56,
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                alignment: Alignment.centerLeft,
+                decoration: BoxDecoration(
+                  color: cs.surfaceContainerHighest.withValues(alpha: 0.25),
+                  borderRadius: BorderRadius.circular(index == 1 ? 8 : 4),
+                  border: Border.all(color: cs.outlineVariant),
+                ),
+                child: ShimmerContainer(
+                  width: index.isEven ? 140 : 180,
+                  height: 14,
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }

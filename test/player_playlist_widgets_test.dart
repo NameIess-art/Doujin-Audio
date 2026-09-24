@@ -5924,7 +5924,8 @@ void main() {
 
       await tester.tap(workDetailButton);
       await tester.pump();
-      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pump(const Duration(milliseconds: 450));
+      await tester.pump();
       expect(find.byType(WorkDetailPage), findsOneWidget);
       expect(find.byType(SessionDetailPage), findsNothing);
 

@@ -368,6 +368,31 @@ void main() {
     expect(find.text('loaded:cover.image'), findsOneWidget);
   });
 
+  testWidgets('stale initial path does not replace resolved cover on rebuild', (
+    tester,
+  ) async {
+    final first = Completer<String?>();
+    final refreshed = Completer<String?>();
+    Widget buildCover(Future<String?> future) => MaterialApp(
+      home: AsyncCoverImage(
+        future: future,
+        requestKey: 'same-work',
+        initialPath: 'old.image',
+        imageBuilder: (_, path) => Text('loaded:$path'),
+        fallbackBuilder: (_) => const Text('fallback'),
+      ),
+    );
+
+    await tester.pumpWidget(buildCover(first.future));
+    first.complete('new.image');
+    await tester.pump();
+    expect(find.text('loaded:new.image'), findsOneWidget);
+
+    await tester.pumpWidget(buildCover(refreshed.future));
+    expect(find.text('loaded:new.image'), findsOneWidget);
+    expect(find.text('loaded:old.image'), findsNothing);
+  });
+
   testWidgets(
     'AsyncCoverImage does not rebuild for an unchanged resolved path',
     (tester) async {
@@ -657,7 +682,7 @@ void main() {
   );
 
   testWidgets(
-    'RetryingImage restores a cached cover while interaction is active',
+    'RetryingImage shows cached cover immediately after card recreation',
     (tester) async {
       final interactionSource = Object();
       final provider = _ControlledImageProvider();
@@ -695,10 +720,11 @@ void main() {
       expect(find.byType(Image), findsOneWidget);
       expect(find.text('loading'), findsNothing);
       expect(provider.loadCount, 1);
-      expect(find.text('fallback'), findsOneWidget);
-      await tester.pump(const Duration(milliseconds: 599));
-      expect(find.text('fallback'), findsOneWidget);
-      await tester.pumpAndSettle();
+      expect(find.text('fallback'), findsNothing);
+      expect(find.byType(TweenAnimationBuilder<double>), findsNothing);
+
+      await tester.pumpWidget(buildCover());
+      expect(provider.loadCount, 1);
       expect(find.text('fallback'), findsNothing);
     },
   );

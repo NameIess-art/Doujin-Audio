@@ -185,6 +185,7 @@ class _SessionCoverThumbnailState
     final library = ref.read(libraryFacadeProvider);
     final cover = AsyncLocalCoverImage(
       future: _futureFor(library),
+      requestKey: (widget.sessionId, widget.track?.path),
       initialPath: widget.coverPath,
       retryFutureBuilder: () =>
           library.playbackCoverPathFutureForTrack(widget.track),

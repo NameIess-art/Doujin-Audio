@@ -101,7 +101,7 @@ Future<void> showAudioDetailSheet(
     child: WorkDetailPage.forLocal(target: target),
   );
   if (replace && navigator.canPop()) {
-    return navigator.pushReplacement(route);
+    return navigator.pushAndRemoveUntil(route, (candidate) => candidate.isFirst);
   }
   return navigator.push(route);
 }

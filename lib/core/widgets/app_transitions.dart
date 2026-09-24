@@ -7,7 +7,7 @@ const kPlaceholderContentTransitionDuration = Duration(milliseconds: 750);
 const kAppMotionFast = Duration(milliseconds: 180);
 const kAppMotionStandard = Duration(milliseconds: 220);
 const kAppMotionSlow = Duration(milliseconds: 300);
-const kAppPageTransitionDuration = Duration(milliseconds: 400);
+const kAppPageTransitionDuration = Duration(milliseconds: 550);
 
 typedef _PageTransitionBuilder = Widget Function(BuildContext, Widget);
 
@@ -192,6 +192,7 @@ class PlaceholderContentTransition extends StatefulWidget {
     required this.content,
     this.duration = kPlaceholderContentTransitionDuration,
     this.fadeContent = true,
+    this.fadePlaceholder = true,
   });
 
   final bool showPlaceholder;
@@ -199,6 +200,7 @@ class PlaceholderContentTransition extends StatefulWidget {
   final Widget content;
   final Duration duration;
   final bool fadeContent;
+  final bool fadePlaceholder;
 
   @override
   State<PlaceholderContentTransition> createState() =>
@@ -277,10 +279,12 @@ class _PlaceholderContentTransitionState
       children: [
         if (_fadingPlaceholder)
           IgnorePointer(
-            child: FadeTransition(
-              opacity: _placeholderOpacity,
-              child: widget.placeholder,
-            ),
+            child: widget.fadePlaceholder
+                ? FadeTransition(
+                    opacity: _placeholderOpacity,
+                    child: widget.placeholder,
+                  )
+                : widget.placeholder,
           ),
         if (widget.fadeContent)
           FadeTransition(opacity: _contentOpacity, child: widget.content)

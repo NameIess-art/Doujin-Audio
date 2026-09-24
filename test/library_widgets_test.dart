@@ -14,6 +14,7 @@ import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/core/widgets/async_cover_image.dart';
 import 'package:doujin_audio/core/widgets/library_like_cards.dart';
 import 'package:doujin_audio/core/widgets/mobile_overlay_inset.dart';
+import 'package:doujin_audio/core/widgets/shimmer_loading.dart';
 import 'package:doujin_audio/core/widgets/swipe_reveal_card.dart';
 import 'package:doujin_audio/core/widgets/top_page_header.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
@@ -350,6 +351,48 @@ void main() {
 
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(milliseconds: 100));
+  });
+
+  testWidgets('library and ASMR skeleton cards omit the expand placeholder', (
+    WidgetTester tester,
+  ) async {
+    for (final compactCoverLayout in <bool>[false, true]) {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: SizedBox(
+                width: kResponsiveLibraryCardMinWidth,
+                child: LibraryLikeSkeletonCard(
+                  compactCoverLayout: compactCoverLayout,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      final card = find.byType(LibraryLikeSkeletonCard);
+      final playPlaceholder = find.descendant(
+        of: card,
+        matching: find.byWidgetPredicate(
+          (widget) =>
+              widget is ShimmerContainer &&
+              widget.width == 25 &&
+              widget.height == 25,
+        ),
+      );
+      final expandPlaceholder = find.descendant(
+        of: card,
+        matching: find.byWidgetPredicate(
+          (widget) =>
+              widget is ShimmerContainer &&
+              widget.width == 16 &&
+              widget.height == 16,
+        ),
+      );
+      expect(playPlaceholder, findsOneWidget);
+      expect(expandPlaceholder, findsNothing);
+    }
   });
 
   testWidgets('empty library card is centered in the available content area', (

@@ -983,7 +983,7 @@ class _RetryingImageState extends State<RetryingImage> {
                   placeholder: placeholder,
                   content: child,
                   duration: kCoverImageFadeDuration,
-                  fadeContent: false,
+                  fadePlaceholder: false,
                 );
               }
             : null,

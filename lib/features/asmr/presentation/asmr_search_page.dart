@@ -1,7 +1,9 @@
 part of 'asmr_tab.dart';
 
 class _AsmrSearchPage extends ConsumerStatefulWidget {
-  const _AsmrSearchPage();
+  const _AsmrSearchPage({required this.onSearchRequested});
+
+  final ValueChanged<AsmrCategoryType> onSearchRequested;
 
   @override
   ConsumerState<_AsmrSearchPage> createState() => _AsmrSearchPageState();
@@ -215,6 +217,7 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
       defaultLanguage: AsmrContentLanguage.fromAppLanguageName(language.name),
     );
     if (!mounted || requestSerial != _requestSerial) return;
+    if (query.isNotEmpty) widget.onSearchRequested(category);
     await UiOperationService.instance.run<void>(
       scope: UiOperationScope.asmrCategory(
         AsmrOperationKind.refresh,

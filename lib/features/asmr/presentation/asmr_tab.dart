@@ -723,12 +723,22 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
   }
 
   void _openSearchPage() {
-    Navigator.of(context).push(
-      buildAppSearchPageRoute<void>(
-        context: context,
-        child: const _AsmrSearchPage(),
-      ),
-    );
+    final searchedCategories = <AsmrCategoryType>{};
+    Navigator.of(context)
+        .push(
+          buildAppSearchPageRoute<void>(
+            context: context,
+            child: _AsmrSearchPage(onSearchRequested: searchedCategories.add),
+          ),
+        )
+        .whenComplete(() {
+          if (!mounted || searchedCategories.isEmpty) return;
+          final controller = ref.read(asmrLibraryControllerProvider);
+          if (controller == null) return;
+          for (final category in searchedCategories) {
+            unawaited(controller.refreshCategory(category));
+          }
+        });
   }
 
   Future<T?> _showAsmrPanel<T>({required WidgetBuilder builder}) {

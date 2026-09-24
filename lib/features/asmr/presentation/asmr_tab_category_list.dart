@@ -145,7 +145,11 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
           operationError: null,
           revision: 0,
         );
-    final works = state.works;
+    final queryMismatch =
+        widget.category != AsmrCategoryType.favorites &&
+        widget.category != AsmrCategoryType.history &&
+        normalizeSearchQuery(state.activeQuery) != normalizedSearchQuery;
+    final works = queryMismatch ? const <AsmrWork>[] : state.works;
     final isFavorites = widget.category == AsmrCategoryType.favorites;
     final reduceMotion = MediaQuery.disableAnimationsOf(context);
 
@@ -236,6 +240,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
     }
 
     final showPlaceholder =
+        (queryMismatch && state.operationError == null) ||
         (widget.isLoadPending && normalizedSearchQuery.isNotEmpty) ||
         (effectiveWorks.isEmpty &&
             (widget.isLoadPending ||

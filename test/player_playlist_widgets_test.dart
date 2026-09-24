@@ -5941,6 +5941,51 @@ void main() {
   );
 
   testWidgets(
+    'work detail opened from playback skips intermediate routes on exit',
+    (tester) async {
+      await _pumpSubtitleDetail(
+        tester: tester,
+        subtitleTrack: SubtitleTrack(sourcePath: 'empty.srt', cues: const []),
+        initialPosition: Duration.zero,
+      );
+      final navigator = Navigator.of(
+        tester.element(find.byType(SessionDetailPage)),
+      );
+      unawaited(
+        navigator.push<void>(
+          MaterialPageRoute<void>(
+            builder: (_) => const Scaffold(body: Text('Intermediate page')),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      unawaited(
+        navigator.push(buildSessionDetailRoute(sessionId: 'subtitle-session')),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(
+        find.byKey(const ValueKey('session_work_detail_button')),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 450));
+      await tester.pump();
+      expect(find.byType(WorkDetailPage), findsOneWidget);
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 200)),
+      );
+      await tester.pump();
+
+      await tester.tap(find.byKey(const ValueKey('work_detail_back_button')));
+      await tester.pumpAndSettle();
+      expect(find.byType(PlaylistTab), findsOneWidget);
+      expect(find.text('Intermediate page'), findsNothing);
+      expect(find.byType(SessionDetailPage), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
     'landscape session detail keeps secondary controls visible when feature menu is open',
     (tester) async {
       await _pumpSubtitleDetail(

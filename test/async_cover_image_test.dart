@@ -721,16 +721,17 @@ void main() {
       expect(find.text('loading'), findsNothing);
       expect(provider.loadCount, 1);
       expect(find.text('fallback'), findsNothing);
-      expect(find.byType(TweenAnimationBuilder<double>), findsNothing);
+      expect(find.byType(PlaceholderContentTransition), findsNothing);
 
       await tester.pumpWidget(buildCover());
       expect(provider.loadCount, 1);
       expect(find.text('fallback'), findsNothing);
+      expect(find.byType(PlaceholderContentTransition), findsNothing);
     },
   );
 
   testWidgets(
-    'RetryingImage fades the placeholder off the decoded frame over 600ms',
+    'RetryingImage fades the decoded cover in over its placeholder for 600ms',
     (tester) async {
       final provider = _ControlledImageProvider();
 
@@ -766,14 +767,45 @@ void main() {
         find.byKey(const ValueKey<String>('decoding_placeholder')),
         findsOneWidget,
       );
+      final transition = find.byType(PlaceholderContentTransition);
       expect(
-        find.descendant(
-          of: find.byType(PlaceholderContentTransition),
-          matching: find.byType(FadeTransition),
-        ),
-        findsOneWidget,
+        tester.widget<PlaceholderContentTransition>(transition).duration,
+        kCoverImageFadeDuration,
       );
-      await tester.pump(const Duration(milliseconds: 599));
+      final fades = find.descendant(
+        of: transition,
+        matching: find.byType(FadeTransition),
+      );
+      expect(fades, findsOneWidget);
+      expect(tester.widget<FadeTransition>(fades.first).opacity.value, 0);
+      await tester.pump(const Duration(milliseconds: 300));
+      final midwayOpacity = tester
+          .widget<FadeTransition>(fades.first)
+          .opacity
+          .value;
+      expect(midwayOpacity, greaterThan(0));
+      expect(midwayOpacity, lessThan(1));
+      await tester.pumpWidget(
+        MaterialApp(
+          home: SizedBox(
+            width: 120,
+            height: 90,
+            child: RetryingImage(
+              retryKey: 'controlled-cover',
+              imageProviderBuilder: () => provider,
+              fallbackBuilder: (_) => const ColoredBox(
+                key: ValueKey<String>('decoding_placeholder'),
+                color: Colors.pink,
+              ),
+            ),
+          ),
+        ),
+      );
+      expect(
+        tester.widget<FadeTransition>(fades.first).opacity.value,
+        closeTo(midwayOpacity, 0.001),
+      );
+      await tester.pump(const Duration(milliseconds: 299));
       expect(
         find.byKey(const ValueKey<String>('decoding_placeholder')),
         findsOneWidget,

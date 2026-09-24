@@ -30,6 +30,9 @@ class _SpeedWheelPageState extends ConsumerState<SpeedWheelPage> {
   late FixedExtentScrollController _controller;
   late int _selectedIndex;
   int? _wheelTargetIndex;
+  bool _isAdjusting = false;
+  int _adjustmentGeneration = 0;
+  int _committedGeneration = -1;
 
   List<double> get _speeds => PlaybackFacade.playbackSpeedOptions;
 
@@ -44,9 +47,13 @@ class _SpeedWheelPageState extends ConsumerState<SpeedWheelPage> {
   void didUpdateWidget(covariant SpeedWheelPage oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.session.id != widget.session.id ||
-        (oldWidget.session.speed != widget.session.speed &&
-            _wheelTargetIndex == null)) {
-      final nextIndex = _nearestSpeedIndex(widget.session.speed);
+        (oldWidget.session.speed != widget.session.speed && !_isAdjusting)) {
+      _isAdjusting = false;
+      _adjustmentGeneration++;
+      final nextIndex = _nearestSpeedIndex(
+        widget.playback.sessionById(widget.session.id)?.speed ??
+            widget.session.speed,
+      );
       if (nextIndex != _selectedIndex) {
         _selectedIndex = nextIndex;
         _wheelTargetIndex = null;
@@ -75,30 +82,44 @@ class _SpeedWheelPageState extends ConsumerState<SpeedWheelPage> {
     return bestIndex;
   }
 
-  void _setSpeedIndex(int index, {required bool persist}) {
+  void _setSpeedIndex(int index) {
     final nextIndex = index.clamp(0, _speeds.length - 1);
-    final nextSpeed = _speeds[nextIndex];
+    _isAdjusting = true;
+    _adjustmentGeneration++;
     if (_selectedIndex != nextIndex) {
       AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
       setState(() => _selectedIndex = nextIndex);
     }
-    unawaited(
-      widget.playback.setSessionSpeed(
-        widget.session.id,
-        nextSpeed,
-        persist: persist,
-      ),
-    );
+  }
+
+  Future<void> _commitSpeed() async {
+    final generation = _adjustmentGeneration;
+    final sessionId = widget.session.id;
+    final selectedSpeed = _speeds[_selectedIndex];
+    await widget.playback.setSessionSpeed(sessionId, selectedSpeed);
+    if (!mounted ||
+        widget.session.id != sessionId ||
+        generation != _adjustmentGeneration) {
+      return;
+    }
+    setState(() => _isAdjusting = false);
+  }
+
+  void _finishAdjustment() {
+    if (!_isAdjusting || _committedGeneration == _adjustmentGeneration) return;
+    _committedGeneration = _adjustmentGeneration;
+    _wheelTargetIndex = null;
+    unawaited(_commitSpeed());
   }
 
   void _resetSpeed() {
     final index = _nearestSpeedIndex(1.0);
+    _setSpeedIndex(index);
     _controller.animateToItem(
       index,
       duration: const Duration(milliseconds: 180),
       curve: Curves.easeOutCubic,
     );
-    _setSpeedIndex(index, persist: true);
   }
 
   @override
@@ -111,8 +132,10 @@ class _SpeedWheelPageState extends ConsumerState<SpeedWheelPage> {
         ) ??
         widget.session.speed;
 
-    if (_wheelTargetIndex == null) {
-      final nextIndex = _nearestSpeedIndex(speed);
+    if (!_isAdjusting) {
+      final nextIndex = _nearestSpeedIndex(
+        widget.playback.sessionById(widget.session.id)?.speed ?? speed,
+      );
       if (nextIndex != _selectedIndex) {
         _selectedIndex = nextIndex;
         _controller.dispose();
@@ -146,10 +169,14 @@ class _SpeedWheelPageState extends ConsumerState<SpeedWheelPage> {
         Expanded(
           child: Stack(
             children: [
-              NotificationListener<ScrollEndNotification>(
-                onNotification: (_) {
-                  _wheelTargetIndex = null;
-                  _setSpeedIndex(_selectedIndex, persist: true);
+              NotificationListener<ScrollNotification>(
+                onNotification: (notification) {
+                  if (notification is ScrollStartNotification) {
+                    _isAdjusting = true;
+                    _adjustmentGeneration++;
+                  } else if (notification is ScrollEndNotification) {
+                    _finishAdjustment();
+                  }
                   return false;
                 },
                 child: ListWheelScrollView.useDelegate(
@@ -161,7 +188,7 @@ class _SpeedWheelPageState extends ConsumerState<SpeedWheelPage> {
                   magnification: 1.08,
                   physics: const FixedExtentScrollPhysics(),
                   onSelectedItemChanged: (index) {
-                    _setSpeedIndex(index, persist: false);
+                    _setSpeedIndex(index);
                   },
                   childDelegate: ListWheelChildBuilderDelegate(
                     childCount: _speeds.length,
@@ -172,6 +199,8 @@ class _SpeedWheelPageState extends ConsumerState<SpeedWheelPage> {
                       return InkWell(
                         onTap: () {
                           _wheelTargetIndex = null;
+                          _isAdjusting = true;
+                          _adjustmentGeneration++;
                           AppInteractionFeedback.trigger(
                             AppInteractionFeedbackType.selection,
                           );
@@ -219,23 +248,35 @@ class _SpeedWheelPageState extends ConsumerState<SpeedWheelPage> {
                     behavior: HitTestBehavior.translucent,
                     onPointerSignal: (signal) {
                       if (signal is PointerScrollEvent) {
-                        GestureBinding.instance.pointerSignalResolver.register(signal, (event) {
-                          final scrollEvent = event as PointerScrollEvent;
-                          if (scrollEvent.scrollDelta.dy == 0) return;
-                          final delta = scrollEvent.scrollDelta.dy > 0 ? 1 : -1;
-                          final baseIndex = _wheelTargetIndex ?? _selectedIndex;
-                          final nextIndex = (baseIndex + delta).clamp(0, _speeds.length - 1);
-                          if (nextIndex != _selectedIndex || _wheelTargetIndex != nextIndex) {
-                            _wheelTargetIndex = nextIndex;
-                            AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
-                            _controller.animateToItem(
-                              nextIndex,
-                              duration: const Duration(milliseconds: 150),
-                              curve: Curves.easeOutCubic,
+                        GestureBinding.instance.pointerSignalResolver.register(
+                          signal,
+                          (event) {
+                            final scrollEvent = event as PointerScrollEvent;
+                            if (scrollEvent.scrollDelta.dy == 0) return;
+                            final delta = scrollEvent.scrollDelta.dy > 0
+                                ? 1
+                                : -1;
+                            final baseIndex =
+                                _wheelTargetIndex ?? _selectedIndex;
+                            final nextIndex = (baseIndex + delta).clamp(
+                              0,
+                              _speeds.length - 1,
                             );
-                            _setSpeedIndex(nextIndex, persist: false);
-                          }
-                        });
+                            if (nextIndex != _selectedIndex ||
+                                _wheelTargetIndex != nextIndex) {
+                              _wheelTargetIndex = nextIndex;
+                              AppInteractionFeedback.trigger(
+                                AppInteractionFeedbackType.selection,
+                              );
+                              _setSpeedIndex(nextIndex);
+                              _controller.animateToItem(
+                                nextIndex,
+                                duration: const Duration(milliseconds: 150),
+                                curve: Curves.easeOutCubic,
+                              );
+                            }
+                          },
+                        );
                       }
                     },
                   ),

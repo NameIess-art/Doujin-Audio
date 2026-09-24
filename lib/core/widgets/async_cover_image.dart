@@ -12,7 +12,9 @@ import '../ui/ui_interaction_coordinator.dart';
 import 'app_transitions.dart';
 import 'scroll_activity_gate.dart';
 
+// Path resolution swaps immediately; the decoded frame owns the visible fade.
 const Duration kCoverImageTransitionDuration = Duration.zero;
+const Duration kCoverImageFadeDuration = Duration(milliseconds: 600);
 const double kStandardCoverAspectRatio = 4 / 3;
 
 // A stable decode size lets cards and detail pages share one ImageCache entry.
@@ -787,7 +789,6 @@ class RetryingFileImage extends ConsumerWidget {
       maxRetryAttempts: maxRetryAttempts,
       displayMode: effectiveDisplayMode,
       deferLoadDuringInteraction: false,
-      showPlaceholderWhileDecoding: false,
     );
   }
 }
@@ -809,7 +810,6 @@ class RetryingImage extends StatefulWidget {
     this.maxRetryAttempts = 12,
     this.displayMode = CoverImageDisplayMode.fill,
     this.deferLoadDuringInteraction = true,
-    this.showPlaceholderWhileDecoding = true,
   });
 
   final Object retryKey;
@@ -826,7 +826,6 @@ class RetryingImage extends StatefulWidget {
   final int maxRetryAttempts;
   final CoverImageDisplayMode displayMode;
   final bool deferLoadDuringInteraction;
-  final bool showPlaceholderWhileDecoding;
 
   @override
   State<RetryingImage> createState() => _RetryingImageState();
@@ -968,7 +967,27 @@ class _RetryingImageState extends State<RetryingImage> {
         frameBuilder: primary
             ? (context, child, frame, wasSynchronouslyLoaded) {
                 if (wasSynchronouslyLoaded) {
-                  return child;
+                  if (MediaQuery.disableAnimationsOf(context)) return child;
+                  final placeholder = widget.fallbackBuilder(context);
+                  return TweenAnimationBuilder<double>(
+                    tween: Tween<double>(begin: 0, end: 1),
+                    duration: kCoverImageFadeDuration,
+                    curve: Curves.easeInOutCubic,
+                    child: child,
+                    builder: (context, progress, image) {
+                      if (progress >= 1) return image!;
+                      return Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          image!,
+                          Opacity(
+                            opacity: 1 - progress,
+                            child: placeholder,
+                          ),
+                        ],
+                      );
+                    },
+                  );
                 }
                 final loadingBuilder = widget.loadingBuilder;
                 final placeholder = loadingBuilder != null
@@ -976,13 +995,12 @@ class _RetryingImageState extends State<RetryingImage> {
                     : CoverLoadingArtwork(
                         placeholder: widget.fallbackBuilder(context),
                       );
-                if (!widget.showPlaceholderWhileDecoding) {
-                  return frame == null ? placeholder : child;
-                }
                 return PlaceholderContentTransition(
                   showPlaceholder: frame == null,
                   placeholder: placeholder,
                   content: child,
+                  duration: kCoverImageFadeDuration,
+                  fadeContent: false,
                 );
               }
             : null,

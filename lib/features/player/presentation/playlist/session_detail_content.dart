@@ -83,6 +83,13 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
   int _segmentLoadGeneration = 0;
   late final String _segmentCommitKey =
       'detail_segments_${identityHashCode(this)}';
+  late final String _siblingTaskKey =
+      'detail_siblings_${identityHashCode(this)}';
+  String? _siblingSessionId;
+  String? _siblingTrackPath;
+  int _siblingStructureRevision = -1;
+  int _siblingGeneration = 0;
+  bool _hasSiblings = false;
   VoidCallback? _pendingSegmentResult;
   bool _segmentLabelsLoaded = false;
   bool _syncingSegmentText = false;
@@ -125,9 +132,13 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
   void initState() {
     super.initState();
     widget.transitionActive?.addListener(_scheduleSegmentResult);
+    widget.transitionActive?.addListener(_scheduleSiblingQuery);
     _segmentNameController = TextEditingController();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _syncSegmentTrack();
+      if (mounted) {
+        _syncSegmentTrack();
+        _syncSiblingQuery();
+      }
     });
     _segmentNameController.addListener(_handleSegmentNameChanged);
   }
@@ -137,11 +148,15 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.transitionActive != widget.transitionActive) {
       oldWidget.transitionActive?.removeListener(_scheduleSegmentResult);
+      oldWidget.transitionActive?.removeListener(_scheduleSiblingQuery);
       widget.transitionActive?.addListener(_scheduleSegmentResult);
+      widget.transitionActive?.addListener(_scheduleSiblingQuery);
       _scheduleSegmentResult();
+      _scheduleSiblingQuery();
     }
     if (oldWidget.session.id != widget.session.id) _segmentTrackKey = null;
     _syncSegmentTrack();
+    _syncSiblingQuery();
   }
 
   @override
@@ -149,6 +164,7 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
     _segmentNameDebounce?.cancel();
     _segmentLoadGeneration++;
     widget.transitionActive?.removeListener(_scheduleSegmentResult);
+    widget.transitionActive?.removeListener(_scheduleSiblingQuery);
     UiInteractionCoordinator.instance.cancelCommit(_segmentCommitKey);
     _pendingSegmentResult = null;
     _segmentNameController.removeListener(_handleSegmentNameChanged);
@@ -229,6 +245,69 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
         final apply = _pendingSegmentResult;
         _pendingSegmentResult = null;
         apply?.call();
+      },
+    );
+  }
+
+  void _syncSiblingQuery() {
+    final session = widget.session;
+    final revision = _paths.library.structureRevision;
+    if (_siblingSessionId == session.id &&
+        _siblingTrackPath == session.currentTrackPath &&
+        _siblingStructureRevision == revision) {
+      return;
+    }
+    _siblingGeneration++;
+    _siblingSessionId = session.id;
+    _siblingTrackPath = session.currentTrackPath;
+    _siblingStructureRevision = revision;
+    _hasSiblings = session.isPlaybackQueue
+        ? session.playbackQueue!.entries.any((entry) => entry.tracks.isNotEmpty)
+        : _paths.cachedHasOtherTracksInSameWork(session.currentTrackPath) ??
+              false;
+    _scheduleSiblingQuery();
+  }
+
+  void _scheduleSiblingQuery() {
+    if (widget.session.isPlaybackQueue ||
+        widget.transitionActive?.value == true ||
+        _paths.cachedHasOtherTracksInSameWork(
+              widget.session.currentTrackPath,
+            ) !=
+            null) {
+      return;
+    }
+    final coordinator = UiInteractionCoordinator.instance;
+    final generation = _siblingGeneration;
+    final sessionId = widget.session.id;
+    final trackPath = widget.session.currentTrackPath;
+    final revision = _siblingStructureRevision;
+    final coordinatorGeneration = coordinator.generation;
+    coordinator.scheduleAfterIdle(
+      key: '${_siblingTaskKey}_$generation',
+      generation: coordinatorGeneration,
+      priority: 20,
+      group: 'session_detail_siblings',
+      task: () async {
+        await Future<void>.delayed(Duration.zero);
+        if (!mounted ||
+            generation != _siblingGeneration ||
+            sessionId != widget.session.id ||
+            trackPath != widget.session.currentTrackPath ||
+            revision != _paths.library.structureRevision ||
+            widget.transitionActive?.value == true) {
+          return;
+        }
+        final hasSiblings = _paths.hasOtherTracksInSameWork(trackPath);
+        if (mounted &&
+            generation == _siblingGeneration &&
+            sessionId == widget.session.id &&
+            trackPath == widget.session.currentTrackPath &&
+            revision == _paths.library.structureRevision &&
+            widget.transitionActive?.value != true &&
+            hasSiblings != _hasSiblings) {
+          setState(() => _hasSiblings = hasSiblings);
+        }
       },
     );
   }
@@ -537,7 +616,11 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
 
     final hasSiblings = session.isPlaybackQueue
         ? session.playbackQueue!.entries.any((entry) => entry.tracks.isNotEmpty)
-        : paths.hasOtherTracksInSameWork(session.currentTrackPath);
+        : _siblingTrackPath == session.currentTrackPath &&
+              _siblingStructureRevision == paths.library.structureRevision
+        ? _hasSiblings
+        : paths.cachedHasOtherTracksInSameWork(session.currentTrackPath) ??
+              false;
     final selectedSegmentId = _segmentPanelExpanded ? _selectedSegmentId : null;
 
     Widget buildProgressBar() {

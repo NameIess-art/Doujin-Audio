@@ -1084,7 +1084,8 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
       displayTitle = work.title;
       displayRj = work.rjCode;
       displayCircle = work.circleName;
-      hasSubtitle = work.hasSubtitle ||
+      hasSubtitle =
+          work.hasSubtitle ||
           (_asmrTree != null && _containsAsmrSubtitle(_asmrTree!));
       displayVoiceActors = work.voiceActors;
       displayTags = work.tags;
@@ -1146,355 +1147,430 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
       backgroundColor: cs.surface,
       body: Stack(
         children: [
-          AppPageContentTransition(child: CustomScrollView(
-        slivers: [
-          // 1. Collapsible Sticky Header
-          SliverPersistentHeader(
-            pinned: true,
-            delegate: _WorkDetailHeaderDelegate(
-              topSafeArea: topSafeArea,
-              coverMaxHeight: coverMaxHeight,
-              coverMinHeight: coverMinHeight,
-              rjBarHeight: rjBarHeight,
-              title: displayTitle,
-              rjCode: displayRj,
-              circleName: displayCircle,
-              hasSubtitle: hasSubtitle,
-              subtitleLabel: hasSubtitle == null
-                  ? null
-                  : i18n.tr(hasSubtitle ? 'asmr_has_subtitle' : 'asmr_no_subtitle'),
-              coverWidget: coverWidget,
-              accentColor: widget.isAsmr ? asmrBlue : cs.primary,
-              surfaceColor: cs.surface,
-              onCopyMetadata: (value) => _copyText(context, value),
-            ),
-          ),
+          AppPageContentTransition(
+            child: CustomScrollView(
+              slivers: [
+                // 1. Collapsible Sticky Header
+                SliverPersistentHeader(
+                  pinned: true,
+                  delegate: _WorkDetailHeaderDelegate(
+                    topSafeArea: topSafeArea,
+                    coverMaxHeight: coverMaxHeight,
+                    coverMinHeight: coverMinHeight,
+                    rjBarHeight: rjBarHeight,
+                    title: displayTitle,
+                    rjCode: displayRj,
+                    circleName: displayCircle,
+                    coverWidget: coverWidget,
+                    accentColor: widget.isAsmr ? asmrBlue : cs.primary,
+                    surfaceColor: cs.surface,
+                    onCopyMetadata: (value) => _copyText(context, value),
+                  ),
+                ),
 
-          // 2. Collapsible Details: Voice Actors, Tags, Action Buttons
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // Voice Actors row
-                  if (displayVoiceActors.isNotEmpty) ...[
-                    Row(
+                // 2. Collapsible Details: Voice Actors, Tags, Action Buttons
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(
-                          Icons.badge_outlined,
-                          size: 17,
-                          color: cs.onSurfaceVariant,
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: _buildVoiceActorScroller(
-                            context,
-                            cs,
-                            displayVoiceActors,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                  ],
-
-                  // Tags row
-                  if (displayTags.isNotEmpty) ...[
-                    Row(
-                      children: [
-                        Icon(
-                          Icons.local_offer_outlined,
-                          size: 17,
-                          color: cs.onSurfaceVariant,
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: _buildTagScroller(context, cs, displayTags),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                  ],
-
-                  // Action Buttons Row
-                  if (widget.isLocal) ...[
-                    Row(
-                      children: [
-                        // 补充信息
-                        Expanded(
-                          child: FilledButton.tonalIcon(
-                            key: const ValueKey<String>(
-                              'work_detail_fetch_info',
-                            ),
-                            onPressed: _handleLocalFetchInfo,
-                            style: _actionCapsuleStyle(),
-                            icon: const Icon(
-                              Icons.cloud_download_rounded,
-                              size: 18,
-                            ),
-                            label: Text(
-                              i18n.tr('audio_detail_fetch_info'),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        // 下载
-                        Expanded(
-                          child: FilledButton.tonalIcon(
-                            key: const ValueKey<String>('work_detail_download'),
-                            onPressed: _handleLocalDownload,
-                            style: _actionCapsuleStyle(),
-                            icon: const Icon(Icons.download_rounded, size: 18),
-                            label: Text(
-                              i18n.tr('download'),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ] else ...[
-                    Row(
-                      children: [
-                        // 下载
-                        Expanded(
-                          child: FilledButton.tonalIcon(
-                            key: const ValueKey<String>(
-                              'asmr_work_detail_download',
-                            ),
-                            onPressed: _handleAsmrDownload,
-                            style: _actionCapsuleStyle(),
-                            icon: const Icon(Icons.download_rounded, size: 18),
-                            label: Text(
-                              i18n.tr('download'),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        // 收藏 / 取消收藏
-                        Consumer(
-                          builder: (context, ref, _) {
-                            final controller = ref.watch(
-                              asmrLibraryControllerProvider,
-                            );
-                            final isFav =
-                                controller?.isFavorite(widget.asmrWork!.id) ??
-                                widget.asmrWork!.isFavorite;
-                            return Expanded(
-                              child: FilledButton.tonalIcon(
-                                key: const ValueKey<String>(
-                                  'asmr_work_detail_favorite',
-                                ),
-                                onPressed: _handleAsmrToggleFavorite,
-                                style: _actionCapsuleStyle(
-                                  backgroundColor: isFav
-                                      ? asmrBlue.withValues(alpha: 0.2)
-                                      : null,
-                                  foregroundColor: isFav ? asmrBlue : null,
-                                ),
-                                icon: Icon(
-                                  isFav
-                                      ? Icons.favorite_rounded
-                                      : Icons.favorite_border_rounded,
-                                  size: 18,
-                                  color: isFav ? asmrBlue : null,
-                                ),
-                                label: Text(
-                                  i18n.tr(
-                                    isFav
-                                        ? 'asmr_unfavorite_action'
-                                        : 'asmr_favorite_action',
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                            );
-                          },
-                        ),
-                      ],
-                    ),
-                  ],
-
-                  const SizedBox(height: 12),
-                  const Divider(height: 1),
-                  const SizedBox(height: 8),
-
-                  // 3. Navigation Breadcrumb Bar
-                  Row(
-                    children: [
-                      Expanded(
-                        child: WindowsHorizontalWheelScroll(
-                          controller: _breadcrumbScrollController,
-                          builder: (scrollController) => SingleChildScrollView(
-                          controller: scrollController,
-                          scrollDirection: Axis.horizontal,
-                          physics: const BouncingScrollPhysics(
-                            parent: AlwaysScrollableScrollPhysics(),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
+                        // Voice Actors row
+                        if (displayVoiceActors.isNotEmpty) ...[
+                          Row(
                             children: [
-                              InkWell(
-                                borderRadius: BorderRadius.circular(8),
-                                onTap: () => _navigateToBreadcrumbIndex(-1),
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 6,
-                                    vertical: 4,
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(
-                                        Icons.home_rounded,
-                                        size: 18,
-                                        color: cs.primary,
-                                      ),
-                                      const SizedBox(width: 4),
-                                      Text(
-                                        i18n.tr('root_directory'),
-                                        style: TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          color: cs.primary,
-                                          fontSize: 13,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
+                              Icon(
+                                Icons.badge_outlined,
+                                size: 17,
+                                color: cs.onSurfaceVariant,
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: _buildVoiceActorScroller(
+                                  context,
+                                  cs,
+                                  displayVoiceActors,
                                 ),
                               ),
-                              for (
-                                var i = 0;
-                                i < _currentPathSegments.length;
-                                i++
-                              ) ...[
-                                const Text(
-                                  ' > ',
-                                  style: TextStyle(color: Colors.grey),
-                                ),
-                                InkWell(
-                                  borderRadius: BorderRadius.circular(8),
-                                  onTap: () => _navigateToBreadcrumbIndex(i),
-                                  child: Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 4,
-                                      vertical: 4,
-                                    ),
-                                    child: Text(
-                                      _currentPathSegments[i],
-                                      style: TextStyle(
-                                        fontWeight:
-                                            i == _currentPathSegments.length - 1
-                                            ? FontWeight.bold
-                                            : FontWeight.normal,
-                                        color:
-                                            i == _currentPathSegments.length - 1
-                                            ? cs.onSurface
-                                            : cs.primary,
-                                        fontSize: 13,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ],
                             ],
                           ),
+                          const SizedBox(height: 8),
+                        ],
+
+                        // Tags row
+                        if (displayTags.isNotEmpty) ...[
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.local_offer_outlined,
+                                size: 17,
+                                color: cs.onSurfaceVariant,
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: _buildTagScroller(
+                                  context,
+                                  cs,
+                                  displayTags,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 10),
+                        ],
+
+                        // Action Buttons Row
+                        if (widget.isLocal) ...[
+                          Row(
+                            children: [
+                              // 补充信息
+                              Expanded(
+                                child: FilledButton.tonalIcon(
+                                  key: const ValueKey<String>(
+                                    'work_detail_fetch_info',
+                                  ),
+                                  onPressed: _handleLocalFetchInfo,
+                                  style: _actionCapsuleStyle(),
+                                  icon: const Icon(
+                                    Icons.cloud_download_rounded,
+                                    size: 18,
+                                  ),
+                                  label: Text(
+                                    i18n.tr('audio_detail_fetch_info'),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              // 下载
+                              Expanded(
+                                child: FilledButton.tonalIcon(
+                                  key: const ValueKey<String>(
+                                    'work_detail_download',
+                                  ),
+                                  onPressed: _handleLocalDownload,
+                                  style: _actionCapsuleStyle(),
+                                  icon: const Icon(
+                                    Icons.download_rounded,
+                                    size: 18,
+                                  ),
+                                  label: Text(
+                                    i18n.tr('download'),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ] else ...[
+                          Row(
+                            children: [
+                              // 下载
+                              Expanded(
+                                child: FilledButton.tonalIcon(
+                                  key: const ValueKey<String>(
+                                    'asmr_work_detail_download',
+                                  ),
+                                  onPressed: _handleAsmrDownload,
+                                  style: _actionCapsuleStyle(),
+                                  icon: const Icon(
+                                    Icons.download_rounded,
+                                    size: 18,
+                                  ),
+                                  label: Text(
+                                    i18n.tr('download'),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              // 收藏 / 取消收藏
+                              Consumer(
+                                builder: (context, ref, _) {
+                                  final controller = ref.watch(
+                                    asmrLibraryControllerProvider,
+                                  );
+                                  final isFav =
+                                      controller?.isFavorite(
+                                        widget.asmrWork!.id,
+                                      ) ??
+                                      widget.asmrWork!.isFavorite;
+                                  return Expanded(
+                                    child: FilledButton.tonalIcon(
+                                      key: const ValueKey<String>(
+                                        'asmr_work_detail_favorite',
+                                      ),
+                                      onPressed: _handleAsmrToggleFavorite,
+                                      style: _actionCapsuleStyle(
+                                        backgroundColor: isFav
+                                            ? asmrBlue.withValues(alpha: 0.2)
+                                            : null,
+                                        foregroundColor: isFav
+                                            ? asmrBlue
+                                            : null,
+                                      ),
+                                      icon: Icon(
+                                        isFav
+                                            ? Icons.favorite_rounded
+                                            : Icons.favorite_border_rounded,
+                                        size: 18,
+                                        color: isFav ? asmrBlue : null,
+                                      ),
+                                      label: Text(
+                                        i18n.tr(
+                                          isFav
+                                              ? 'asmr_unfavorite_action'
+                                              : 'asmr_favorite_action',
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                            ],
+                          ),
+                        ],
+
+                        const SizedBox(height: 12),
+                        const Divider(height: 1),
+                        const SizedBox(height: 8),
+
+                        // 3. Navigation Breadcrumb Bar
+                        Row(
+                          children: [
+                            Expanded(
+                              child: WindowsHorizontalWheelScroll(
+                                controller: _breadcrumbScrollController,
+                                builder: (scrollController) =>
+                                    SingleChildScrollView(
+                                      controller: scrollController,
+                                      scrollDirection: Axis.horizontal,
+                                      physics: const BouncingScrollPhysics(
+                                        parent: AlwaysScrollableScrollPhysics(),
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          InkWell(
+                                            borderRadius: BorderRadius.circular(
+                                              8,
+                                            ),
+                                            onTap: () =>
+                                                _navigateToBreadcrumbIndex(-1),
+                                            child: Padding(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 6,
+                                                    vertical: 4,
+                                                  ),
+                                              child: Row(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  Icon(
+                                                    Icons.home_rounded,
+                                                    size: 18,
+                                                    color: cs.primary,
+                                                  ),
+                                                  const SizedBox(width: 4),
+                                                  Text(
+                                                    i18n.tr('root_directory'),
+                                                    style: TextStyle(
+                                                      fontWeight:
+                                                          FontWeight.bold,
+                                                      color: cs.primary,
+                                                      fontSize: 13,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          ),
+                                          for (
+                                            var i = 0;
+                                            i < _currentPathSegments.length;
+                                            i++
+                                          ) ...[
+                                            const Text(
+                                              ' > ',
+                                              style: TextStyle(
+                                                color: Colors.grey,
+                                              ),
+                                            ),
+                                            InkWell(
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
+                                              onTap: () =>
+                                                  _navigateToBreadcrumbIndex(i),
+                                              child: Padding(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      horizontal: 4,
+                                                      vertical: 4,
+                                                    ),
+                                                child: Text(
+                                                  _currentPathSegments[i],
+                                                  style: TextStyle(
+                                                    fontWeight:
+                                                        i ==
+                                                            _currentPathSegments
+                                                                    .length -
+                                                                1
+                                                        ? FontWeight.bold
+                                                        : FontWeight.normal,
+                                                    color:
+                                                        i ==
+                                                            _currentPathSegments
+                                                                    .length -
+                                                                1
+                                                        ? cs.onSurface
+                                                        : cs.primary,
+                                                    fontSize: 13,
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ],
+                                      ),
+                                    ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              '${currentEntries.length} 项',
+                              style: Theme.of(context).textTheme.bodySmall
+                                  ?.copyWith(color: cs.onSurfaceVariant),
+                            ),
+                          ],
                         ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        '${currentEntries.length} 项',
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: cs.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                ],
-              ),
+                ),
+
+                // 4. Directory File Tree List
+                if (isLoading)
+                  const SliverFillRemaining(
+                    hasScrollBody: false,
+                    child: Center(child: CircularProgressIndicator()),
+                  )
+                else if (currentEntries.isEmpty)
+                  SliverFillRemaining(
+                    hasScrollBody: false,
+                    child: Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.folder_open_rounded,
+                            size: 48,
+                            color: cs.onSurfaceVariant.withValues(alpha: 0.5),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            i18n.tr('empty_folder'),
+                            style: TextStyle(color: cs.onSurfaceVariant),
+                          ),
+                        ],
+                      ),
+                    ),
+                  )
+                else
+                  SliverPadding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    sliver: SliverList(
+                      delegate: SliverChildBuilderDelegate((context, index) {
+                        final item = currentEntries[index];
+                        return _buildFileEntryTile(context, item, cs, asmrBlue);
+                      }, childCount: currentEntries.length),
+                    ),
+                  ),
+                if (bottomOverlayInset > 0)
+                  SliverToBoxAdapter(
+                    child: SizedBox(
+                      key: const ValueKey<String>('work_detail_playback_inset'),
+                      height: bottomOverlayInset,
+                    ),
+                  ),
+              ],
             ),
           ),
-
-          // 4. Directory File Tree List
-          if (isLoading)
-            const SliverFillRemaining(
-              hasScrollBody: false,
-              child: Center(child: CircularProgressIndicator()),
-            )
-          else if (currentEntries.isEmpty)
-            SliverFillRemaining(
-              hasScrollBody: false,
-              child: Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      Icons.folder_open_rounded,
-                      size: 48,
-                      color: cs.onSurfaceVariant.withValues(alpha: 0.5),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      i18n.tr('empty_folder'),
-                      style: TextStyle(color: cs.onSurfaceVariant),
-                    ),
-                  ],
-                ),
-              ),
-            )
-          else
-            SliverPadding(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              sliver: SliverList(
-                delegate: SliverChildBuilderDelegate((context, index) {
-                  final item = currentEntries[index];
-                  return _buildFileEntryTile(context, item, cs, asmrBlue);
-                }, childCount: currentEntries.length),
-              ),
-            ),
-          if (bottomOverlayInset > 0)
-            SliverToBoxAdapter(
-              child: SizedBox(
-                key: const ValueKey<String>('work_detail_playback_inset'),
-                height: bottomOverlayInset,
-              ),
-            ),
-        ],
-      )),
           // Floating Back Button (top-left)
           Positioned(
             top: topSafeArea + 6,
             left: 16,
-            child: AppPageHeaderTransition(child: HeaderFloatingButton(
-              child: IconButton(
-                key: const ValueKey<String>('work_detail_back_button'),
-                icon: const Icon(Icons.arrow_back_rounded),
-                onPressed: () => Navigator.of(context).maybePop(),
-                tooltip: MaterialLocalizations.of(context).backButtonTooltip,
+            child: AppPageHeaderTransition(
+              child: HeaderFloatingButton(
+                child: IconButton(
+                  key: const ValueKey<String>('work_detail_back_button'),
+                  icon: const Icon(Icons.arrow_back_rounded),
+                  onPressed: () => Navigator.of(context).maybePop(),
+                  tooltip: MaterialLocalizations.of(context).backButtonTooltip,
+                ),
               ),
-            )),
+            ),
           ),
+          if (hasSubtitle != null)
+            Positioned(
+              top: topSafeArea + 6,
+              right: 16,
+              child: AppPageHeaderTransition(
+                child: HeaderFloatingSurface(
+                  key: const ValueKey<String>('work_detail_subtitle_status'),
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        hasSubtitle
+                            ? Icons.subtitles_rounded
+                            : Icons.subtitles_off_rounded,
+                        size: 16,
+                        color: hasSubtitle ? asmrBlue : cs.onSurfaceVariant,
+                      ),
+                      const SizedBox(width: 5),
+                      Text(
+                        i18n.tr(
+                          hasSubtitle
+                              ? 'asmr_has_subtitle'
+                              : 'asmr_no_subtitle',
+                        ),
+                        style: Theme.of(context).textTheme.labelMedium
+                            ?.copyWith(
+                              fontWeight: FontWeight.w600,
+                              color: hasSubtitle
+                                  ? asmrBlue
+                                  : cs.onSurfaceVariant,
+                            ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
           if (widget.isLocal)
             Positioned(
               top: topSafeArea + 6,
               right: 16,
-              child: AppPageHeaderTransition(child: HeaderFloatingButton(
-                child: IconButton(
-                  key: const ValueKey<String>('work_detail_edit'),
-                  onPressed: _handleLocalEdit,
-                  tooltip: i18n.tr('edit'),
-                  icon: const Icon(Icons.edit_rounded),
+              child: AppPageHeaderTransition(
+                child: HeaderFloatingButton(
+                  child: IconButton(
+                    key: const ValueKey<String>('work_detail_edit'),
+                    onPressed: _handleLocalEdit,
+                    tooltip: i18n.tr('edit'),
+                    icon: const Icon(Icons.edit_rounded),
+                  ),
                 ),
-              )),
+              ),
             ),
         ],
       ),
@@ -1563,10 +1639,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       shape: const StadiumBorder(),
       visualDensity: VisualDensity.standard,
-      textStyle: const TextStyle(
-        fontSize: 13,
-        fontWeight: FontWeight.w700,
-      ),
+      textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
       backgroundColor: backgroundColor,
       foregroundColor: foregroundColor,
     );
@@ -1667,11 +1740,11 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
       ).createShader(bounds),
       child: WindowsHorizontalWheelScroll(
         builder: (scrollController) => SingleChildScrollView(
-        key: ValueKey<String>('work_detail_${keyPrefix}_scroller'),
-        controller: scrollController,
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        child: Row(children: children),
+          key: ValueKey<String>('work_detail_${keyPrefix}_scroller'),
+          controller: scrollController,
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Row(children: children),
         ),
       ),
     );
@@ -1980,16 +2053,13 @@ class _DockMenuOverlayState<T> extends State<_DockMenuOverlay<T>>
               opacity: curved,
               child: ScaleTransition(
                 alignment: Alignment.topRight,
-                scale:
-                    Tween<double>(begin: 0.96, end: 1).animate(curved),
+                scale: Tween<double>(begin: 0.96, end: 1).animate(curved),
                 child: ClipRRect(
-                  borderRadius:
-                      BorderRadius.circular(tokens.radiusSection),
+                  borderRadius: BorderRadius.circular(tokens.radiusSection),
                   child: DecoratedBox(
                     decoration: BoxDecoration(
                       color: background,
-                      borderRadius:
-                          BorderRadius.circular(tokens.radiusSection),
+                      borderRadius: BorderRadius.circular(tokens.radiusSection),
                       border: Border.all(
                         color: cs.outlineVariant.withValues(
                           alpha: tokens.standardBorderAlpha,
@@ -2007,8 +2077,7 @@ class _DockMenuOverlayState<T> extends State<_DockMenuOverlay<T>>
                     ),
                     child: IntrinsicWidth(
                       child: Padding(
-                        padding:
-                            const EdgeInsets.symmetric(vertical: 6),
+                        padding: const EdgeInsets.symmetric(vertical: 6),
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
@@ -2022,8 +2091,9 @@ class _DockMenuOverlayState<T> extends State<_DockMenuOverlay<T>>
                                   child: Divider(
                                     height: 1,
                                     thickness: 1,
-                                    color: cs.outlineVariant
-                                        .withValues(alpha: 0.56),
+                                    color: cs.outlineVariant.withValues(
+                                      alpha: 0.56,
+                                    ),
                                   ),
                                 )
                               else
@@ -2036,8 +2106,7 @@ class _DockMenuOverlayState<T> extends State<_DockMenuOverlay<T>>
                                     child: SizedBox(
                                       height: 40,
                                       child: Padding(
-                                        padding:
-                                            const EdgeInsets.symmetric(
+                                        padding: const EdgeInsets.symmetric(
                                           horizontal: 12,
                                         ),
                                         child: Row(
@@ -2052,15 +2121,13 @@ class _DockMenuOverlayState<T> extends State<_DockMenuOverlay<T>>
                                               child: Text(
                                                 e.label,
                                                 maxLines: 1,
-                                                overflow: TextOverflow
-                                                    .ellipsis,
-                                                style: theme
-                                                    .textTheme.bodySmall
+                                                overflow: TextOverflow.ellipsis,
+                                                style: theme.textTheme.bodySmall
                                                     ?.copyWith(
-                                                  color: cs.onSurface,
-                                                  fontWeight:
-                                                      FontWeight.w700,
-                                                ),
+                                                      color: cs.onSurface,
+                                                      fontWeight:
+                                                          FontWeight.w700,
+                                                    ),
                                               ),
                                             ),
                                           ],
@@ -2097,8 +2164,6 @@ class _WorkDetailHeaderDelegate extends SliverPersistentHeaderDelegate {
     required this.title,
     required this.rjCode,
     required this.circleName,
-    required this.hasSubtitle,
-    required this.subtitleLabel,
     required this.coverWidget,
     required this.accentColor,
     required this.surfaceColor,
@@ -2112,8 +2177,6 @@ class _WorkDetailHeaderDelegate extends SliverPersistentHeaderDelegate {
   final String title;
   final String rjCode;
   final String circleName;
-  final bool? hasSubtitle;
-  final String? subtitleLabel;
   final Widget coverWidget;
   final Color accentColor;
   final Color surfaceColor;
@@ -2236,7 +2299,7 @@ class _WorkDetailHeaderDelegate extends SliverPersistentHeaderDelegate {
                             rjCode,
                             style: TextStyle(
                               fontWeight: FontWeight.bold,
-                              fontSize: 14,
+                              fontSize: 13,
                               color: accentColor,
                             ),
                           ),
@@ -2247,6 +2310,7 @@ class _WorkDetailHeaderDelegate extends SliverPersistentHeaderDelegate {
                     Text(
                       '|',
                       style: TextStyle(
+                        fontSize: 13,
                         color: Colors.grey.withValues(alpha: 0.6),
                         fontWeight: FontWeight.w300,
                       ),
@@ -2255,7 +2319,7 @@ class _WorkDetailHeaderDelegate extends SliverPersistentHeaderDelegate {
                   ],
                   Icon(
                     Icons.storefront_outlined,
-                    size: 16,
+                    size: 14,
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
                   const SizedBox(width: 4),
@@ -2286,55 +2350,15 @@ class _WorkDetailHeaderDelegate extends SliverPersistentHeaderDelegate {
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: Theme.of(context).textTheme.bodyMedium
-                                ?.copyWith(fontWeight: FontWeight.w600),
+                                ?.copyWith(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                ),
                           ),
                         ),
                       ),
                     ),
                   ),
-                  if (subtitleLabel != null) ...[
-                    const SizedBox(width: 8),
-                    Flexible(
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          color: (hasSubtitle == true
-                                  ? accentColor
-                                  : Theme.of(context).colorScheme.onSurfaceVariant)
-                              .withValues(alpha: 0.12),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 7,
-                            vertical: 4,
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                hasSubtitle == true
-                                    ? Icons.subtitles_rounded
-                                    : Icons.subtitles_off_rounded,
-                                size: 14,
-                                color: hasSubtitle == true
-                                    ? accentColor
-                                    : Theme.of(context).colorScheme.onSurfaceVariant,
-                              ),
-                              const SizedBox(width: 4),
-                              Flexible(
-                                child: Text(
-                                  subtitleLabel!,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: Theme.of(context).textTheme.labelSmall,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
                 ],
               ),
             ),
@@ -2349,8 +2373,6 @@ class _WorkDetailHeaderDelegate extends SliverPersistentHeaderDelegate {
     return oldDelegate.title != title ||
         oldDelegate.rjCode != rjCode ||
         oldDelegate.circleName != circleName ||
-        oldDelegate.hasSubtitle != hasSubtitle ||
-        oldDelegate.subtitleLabel != subtitleLabel ||
         oldDelegate.coverWidget != coverWidget ||
         oldDelegate.accentColor != accentColor ||
         oldDelegate.surfaceColor != surfaceColor;

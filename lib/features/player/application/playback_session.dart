@@ -125,6 +125,7 @@ class PlaybackSession {
   Duration? duration;
   Duration bufferedPosition = Duration.zero;
   double speed = 1.0;
+  int speedCommandGeneration = 0;
   AudioEffectsState audioEffects = AudioEffectsState.flat;
   NativeAudioEffects? pendingNativeAudioEffects;
   NativeAudioEffects? confirmedNativeAudioEffects;

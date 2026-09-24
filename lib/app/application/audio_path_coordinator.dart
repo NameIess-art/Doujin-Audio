@@ -8,7 +8,7 @@ import '../../features/player/application/playback_track_resolver.dart';
 
 /// Coordinates path changes that affect both the library and active playback.
 final class AudioPathCoordinator implements PlaybackTrackResolver {
-  const AudioPathCoordinator({
+  AudioPathCoordinator({
     required LibraryFacade library,
     required PlaybackFacade playback,
   }) : _library = library,
@@ -16,6 +16,9 @@ final class AudioPathCoordinator implements PlaybackTrackResolver {
 
   final LibraryFacade _library;
   final PlaybackFacade _playback;
+  static const _maxCachedWorks = 64;
+  final Map<String, _WorkTracksCache> _workTracksCache = {};
+  int _cachedStructureRevision = -1;
 
   LibraryFacade get library => _library;
 
@@ -95,8 +98,33 @@ final class AudioPathCoordinator implements PlaybackTrackResolver {
   List<MusicTrack> tracksInSameWork(String trackPath) =>
       _tracksInSameWork(trackPath);
 
-  bool hasOtherTracksInSameWork(String trackPath) =>
-      _tracksInSameWork(trackPath, limit: 2).length > 1;
+  bool hasOtherTracksInSameWork(String trackPath) {
+    final cached = cachedHasOtherTracksInSameWork(trackPath);
+    return cached ?? _tracksInSameWork(trackPath, limit: 2).length > 1;
+  }
+
+  bool? cachedHasOtherTracksInSameWork(String trackPath) {
+    final track = trackByPath(trackPath);
+    if (track == null || track.isSingle) return false;
+    if (track.isRemoteAsmr || PathMatcher.isRemoteUri(track.path)) {
+      return tracksInSameGroup(trackPath, limit: 2).length > 1;
+    }
+    final root = workRootForTrack(trackPath);
+    if (root == null) return tracksInSameGroup(trackPath, limit: 2).length > 1;
+    final cached = _cachedWork(root);
+    if (cached != null) return cached.hasSiblings;
+
+    // Two tracks in the indexed group prove sibling presence. A single
+    // indexed track cannot rule out tracks in nested groups.
+    if (PathMatcher.isWithinOrEqual(track.groupKey, root)) {
+      final groupTracks = _library.tracksInGroup(track.groupKey, limit: 2);
+      if (groupTracks.length > 1) {
+        _cacheWork(root, const _WorkTracksCache(hasSiblings: true));
+        return true;
+      }
+    }
+    return null;
+  }
 
   List<MusicTrack> _tracksInSameWork(String trackPath, {int? limit}) {
     final track = trackByPath(trackPath);
@@ -107,6 +135,13 @@ final class AudioPathCoordinator implements PlaybackTrackResolver {
     }
     final root = workRootForTrack(trackPath);
     if (root == null) return tracksInSameGroup(trackPath, limit: limit);
+    final cached = _cachedWork(root);
+    if (cached?.tracks != null) {
+      final tracks = cached!.tracks!;
+      return limit == null
+          ? tracks.toList(growable: false)
+          : tracks.take(limit).toList(growable: false);
+    }
     final matches = _library.library.where(
       (candidate) =>
           PathMatcher.isWithinOrEqual(candidate.path, root) ||
@@ -115,9 +150,49 @@ final class AudioPathCoordinator implements PlaybackTrackResolver {
     final tracks = (limit == null ? matches : matches.take(limit)).toList(
       growable: false,
     );
-    if (tracks.isEmpty) return tracksInSameGroup(trackPath, limit: limit);
+    if (tracks.isEmpty) {
+      final fallback = tracksInSameGroup(trackPath, limit: limit);
+      if (limit == null && fallback.isNotEmpty) {
+        _cacheWork(
+          root,
+          _WorkTracksCache(
+            hasSiblings: fallback.length > 1,
+            tracks: List<MusicTrack>.unmodifiable(fallback),
+          ),
+        );
+      }
+      return fallback;
+    }
     if (limit == null) tracks.sort(_library.compareTracks);
+    _cacheWork(
+      root,
+      _WorkTracksCache(
+        hasSiblings: tracks.length > 1,
+        tracks: limit == null ? List<MusicTrack>.unmodifiable(tracks) : null,
+      ),
+    );
     return tracks;
+  }
+
+  _WorkTracksCache? _cachedWork(String root) {
+    _invalidateWorkCacheIfNeeded();
+    return _workTracksCache[PathMatcher.equivalenceKey(root)];
+  }
+
+  void _cacheWork(String root, _WorkTracksCache result) {
+    _invalidateWorkCacheIfNeeded();
+    final key = PathMatcher.equivalenceKey(root);
+    if (!_workTracksCache.containsKey(key) &&
+        _workTracksCache.length >= _maxCachedWorks) {
+      _workTracksCache.remove(_workTracksCache.keys.first);
+    }
+    _workTracksCache[key] = result;
+  }
+
+  void _invalidateWorkCacheIfNeeded() {
+    if (_cachedStructureRevision == _library.structureRevision) return;
+    _cachedStructureRevision = _library.structureRevision;
+    _workTracksCache.clear();
   }
 
   List<MusicTrack> tracksForSessionSwitcher(String sessionId) {
@@ -237,4 +312,11 @@ final class AudioPathCoordinator implements PlaybackTrackResolver {
     }
     return result;
   }
+}
+
+final class _WorkTracksCache {
+  const _WorkTracksCache({required this.hasSiblings, this.tracks});
+
+  final bool hasSiblings;
+  final List<MusicTrack>? tracks;
 }

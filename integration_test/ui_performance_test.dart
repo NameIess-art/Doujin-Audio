@@ -1,5 +1,6 @@
 import 'package:doujin_audio/features/asmr/presentation/asmr_providers.dart';
 import '../test/support/asmr_controller_test_fixture.dart';
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:ui';
@@ -12,6 +13,7 @@ import 'package:integration_test/integration_test.dart';
 import 'package:doujin_audio/app/presentation/main_screen.dart';
 import 'package:doujin_audio/app/presentation/app_presentation_providers.dart';
 import 'package:doujin_audio/core/app_language.dart';
+import 'package:doujin_audio/core/media/music_track.dart';
 import 'package:doujin_audio/core/persistence/app_database.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
@@ -43,7 +45,7 @@ const _backupByteOverride = int.fromEnvironment('PERF_BACKUP_BYTES');
 
 int get _libraryItemCount => _libraryItemOverride > 0
     ? _libraryItemOverride
-    : _scenario == 'library-large'
+    : _scenario == 'library-large' || _scenario == 'detail-compare'
     ? 20000
     : 100;
 
@@ -70,7 +72,13 @@ void main() {
 
   testWidgets('profile main interaction path', (tester) async {
     expect(
-      const <String>{'core', 'library-large', 'asmr-large', 'backup'},
+      const <String>{
+        'core',
+        'library-large',
+        'asmr-large',
+        'backup',
+        'detail-compare',
+      },
       contains(_scenario),
       reason: 'Unsupported PERF_SCENARIO=$_scenario',
     );
@@ -121,6 +129,30 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+
+    if (_scenario == 'detail-compare') {
+      final rounds = await _measureDetailComparison(tester, fixture);
+      final report = <String, Object>{
+        'fixture': <String, int>{
+          'libraryItems': _libraryItemCount + 2,
+          'asmrItems': _asmrItemCount,
+          'asmrTracks': _asmrTrackCount,
+          'backupBytes': _backupByteCount,
+          'playbackSessions': sessions.length,
+        },
+        'scenario': _scenario,
+        'frameBudgetUs': _frameBudget.inMicroseconds,
+        'rounds': rounds,
+      };
+      binding.reportData = <String, dynamic>{'uiPerformance': report};
+      debugPrint('UI_PERFORMANCE ${jsonEncode(report)}');
+      expect(
+        !kProfileMode ||
+            rounds.every((round) => (round['frameCount'] as int) > 0),
+        isTrue,
+      );
+      return;
+    }
 
     // The first pass warms shaders, text and lazily-created list/card widgets.
     await _runScenario(tester, sessions, _scenario, backupFixture);
@@ -173,6 +205,22 @@ List<PlaybackSession> _seedRuntime(
       isSingle: true,
     ),
   );
+  if (_scenario == 'detail-compare') {
+    tracks.addAll(<MusicTrack>[
+      testMusicTrack(
+        name: 'Local work track 1',
+        path: '/profile/work/track_1.mp3',
+        groupKey: '/profile/work',
+        groupTitle: 'Local performance work',
+      ),
+      testMusicTrack(
+        name: 'Local work track 2',
+        path: '/profile/work/track_2.mp3',
+        groupKey: '/profile/work',
+        groupTitle: 'Local performance work',
+      ),
+    ]);
+  }
   fixture.library.addTracks(tracks, notify: false, persist: false);
   fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 0);
 
@@ -192,6 +240,41 @@ List<PlaybackSession> _seedRuntime(
     fixture.playbackService.registerSession(session);
     return session;
   });
+  if (_scenario == 'detail-compare') {
+    final remoteTracks = List.generate(
+      2,
+      (index) => MusicTrack(
+        path: 'https://example.com/profile/asmr_${index + 1}.mp3',
+        displayName: 'ASMR track ${index + 1}',
+        groupKey: 'asmr-work-profile',
+        groupTitle: 'ASMR performance work',
+        groupSubtitle: 'RJ100000',
+        isSingle: false,
+        remoteMetadataKind: MusicTrack.remoteMetadataKindAsmrOne,
+        remoteMetadata: const <String, Object?>{
+          'id': 100000,
+          'workTitle': 'ASMR performance work',
+        },
+      ),
+    );
+    for (final (id, track, queue) in <(String, MusicTrack, List<MusicTrack>?)>[
+      ('profile_local_detail', tracks[trackCount], null),
+      ('profile_asmr_detail', remoteTracks.first, remoteTracks),
+    ]) {
+      final session = PlaybackSession(
+        id: id,
+        currentTrackPath: track.path,
+        loopMode: SessionLoopMode.single,
+        nonSingleLoopMode: SessionLoopMode.single,
+        volume: 1,
+        createdAt: DateTime(2026, 8, 3),
+        state: const PlayerState(false, ProcessingState.ready),
+        customQueueTracks: queue,
+      )..duration = const Duration(minutes: 20);
+      fixture.playbackService.registerSession(session);
+      sessions.add(session);
+    }
+  }
   fixture.playbackService.syncSlice(
     activeSessions: fixture.playbackService.activeSessions,
     playingSessionCount: 1,
@@ -200,6 +283,52 @@ List<PlaybackSession> _seedRuntime(
     isInitialized: true,
   );
   return sessions;
+}
+
+Future<List<Map<String, Object>>> _measureDetailComparison(
+  WidgetTester tester,
+  AppRuntimeWidgetTestFixture fixture,
+) async {
+  final navigator = tester.state<NavigatorState>(find.byType(Navigator).first);
+  final rounds = <Map<String, Object>>[];
+  unawaited(
+    navigator.push(buildSessionDetailRoute(sessionId: 'profile_session_11')),
+  );
+  await tester.pump(const Duration(milliseconds: 350));
+  navigator.pop();
+  await tester.pump(const Duration(milliseconds: 350));
+  for (final blurEnabled in <bool>[true, false]) {
+    fixture.settingsRepository.blurPlayerBackgroundEnabled = blurEnabled;
+    fixture.settingsRepository.syncSlice(isInitialized: true);
+    await tester.pump(const Duration(milliseconds: 50));
+    for (final (source, sessionId) in <(String, String)>[
+      ('local', 'profile_local_detail'),
+      ('asmr', 'profile_asmr_detail'),
+    ]) {
+      for (var opening = 1; opening <= 3; opening++) {
+        final timings = <FrameTiming>[];
+        void collect(List<FrameTiming> values) => timings.addAll(values);
+        WidgetsBinding.instance.addTimingsCallback(collect);
+        unawaited(
+          navigator.push(buildSessionDetailRoute(sessionId: sessionId)),
+        );
+        for (var frame = 0; frame < 20; frame++) {
+          await tester.pump(const Duration(milliseconds: 16));
+        }
+        await tester.pump(const Duration(milliseconds: 100));
+        WidgetsBinding.instance.removeTimingsCallback(collect);
+        rounds.add(<String, Object>{
+          ..._summarizeRound(opening, timings),
+          'source': source,
+          'blurEnabled': blurEnabled,
+          'opening': opening,
+        });
+        navigator.pop();
+        await tester.pump(const Duration(milliseconds: 350));
+      }
+    }
+  }
+  return rounds;
 }
 
 List<AsmrWork> _buildAsmrWorks(int count) => List.generate(
@@ -483,6 +612,7 @@ Map<String, Object> _summarizeRound(int round, List<FrameTiming> timings) {
     'frameCount': timings.length,
     'uiP95Us': _percentile95(ui).inMicroseconds,
     'rasterP95Us': _percentile95(raster).inMicroseconds,
+    'overBudgetFrames': overBudget.where((slow) => slow).length,
     'overBudgetPercent': timings.isEmpty
         ? 0
         : overBudget.where((slow) => slow).length * 100 / timings.length,

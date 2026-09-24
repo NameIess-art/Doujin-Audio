@@ -7,6 +7,7 @@ const kPlaceholderContentTransitionDuration = Duration(milliseconds: 750);
 const kAppMotionFast = Duration(milliseconds: 180);
 const kAppMotionStandard = Duration(milliseconds: 220);
 const kAppMotionSlow = Duration(milliseconds: 300);
+const kAppPageTransitionDuration = Duration(milliseconds: 750);
 
 typedef _PageTransitionBuilder = Widget Function(BuildContext, Widget);
 
@@ -189,11 +190,15 @@ class PlaceholderContentTransition extends StatefulWidget {
     required this.showPlaceholder,
     required this.placeholder,
     required this.content,
+    this.duration = kPlaceholderContentTransitionDuration,
+    this.fadeContent = true,
   });
 
   final bool showPlaceholder;
   final Widget placeholder;
   final Widget content;
+  final Duration duration;
+  final bool fadeContent;
 
   @override
   State<PlaceholderContentTransition> createState() =>
@@ -211,10 +216,8 @@ class _PlaceholderContentTransitionState
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: kPlaceholderContentTransitionDuration,
-    )..addStatusListener(_handleAnimationStatus);
+    _controller = AnimationController(vsync: this, duration: widget.duration)
+      ..addStatusListener(_handleAnimationStatus);
     final crossFade = CurvedAnimation(
       parent: _controller,
       curve: Curves.easeInOutCubic,
@@ -238,6 +241,9 @@ class _PlaceholderContentTransitionState
   @override
   void didUpdateWidget(covariant PlaceholderContentTransition oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.duration != widget.duration) {
+      _controller.duration = widget.duration;
+    }
     if (oldWidget.showPlaceholder && !widget.showPlaceholder) {
       if (MediaQuery.disableAnimationsOf(context)) {
         _fadingPlaceholder = false;
@@ -276,7 +282,10 @@ class _PlaceholderContentTransitionState
               child: widget.placeholder,
             ),
           ),
-        FadeTransition(opacity: _contentOpacity, child: widget.content),
+        if (widget.fadeContent)
+          FadeTransition(opacity: _contentOpacity, child: widget.content)
+        else
+          widget.content,
       ],
     );
   }
@@ -850,6 +859,12 @@ class AppPageTransitionsBuilder extends PageTransitionsBuilder {
   const AppPageTransitionsBuilder();
 
   @override
+  Duration get transitionDuration => kAppPageTransitionDuration;
+
+  @override
+  Duration get reverseTransitionDuration => kAppPageTransitionDuration;
+
+  @override
   Widget buildTransitions<T>(
     PageRoute<T> route,
     BuildContext context,
@@ -870,14 +885,16 @@ PageRouteBuilder<T> buildAppPageRoute<T>({
   required BuildContext context,
   required Widget child,
   RouteSettings? settings,
-  Duration duration = kAppMotionSlow,
-  Duration reverseDuration = kAppMotionFast,
 }) {
   final reducedMotion = MediaQuery.disableAnimationsOf(context);
   return PageRouteBuilder<T>(
     settings: settings,
-    transitionDuration: reducedMotion ? Duration.zero : duration,
-    reverseTransitionDuration: reducedMotion ? Duration.zero : reverseDuration,
+    transitionDuration: reducedMotion
+        ? Duration.zero
+        : kAppPageTransitionDuration,
+    reverseTransitionDuration: reducedMotion
+        ? Duration.zero
+        : kAppPageTransitionDuration,
     pageBuilder: (context, animation, secondaryAnimation) => child,
     transitionsBuilder: (context, animation, secondaryAnimation, routedChild) {
       return _buildCoveringPageTransition(

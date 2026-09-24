@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/core/media/subtitle_parser.dart';
 import 'package:doujin_audio/features/player/application/playback_subtitle_service.dart';
+import 'package:doujin_audio/features/player/application/native_playback_bridge.dart';
+import 'package:doujin_audio/features/player/application/native_playback_repository.dart';
 import 'package:doujin_audio/features/player/presentation/playlist/playlist_speed_controls.dart';
 import 'package:doujin_audio/features/player/presentation/playlist/playlist_subtitle_panel.dart';
 import 'package:doujin_audio/features/player/presentation/timer_tab.dart';
@@ -82,18 +84,27 @@ void main() {
       'SpeedWheelPage scrolls exactly 1 speed step per wheel event on Windows',
       (tester) async {
         debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+        final speedCalls = <double>[];
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-            .setMockMethodCallHandler(
-              nativePlaybackChannel,
-              (_) async => <String, Object?>{'ok': true, 'value': null},
-            );
+            .setMockMethodCallHandler(nativePlaybackChannel, (call) async {
+              if (call.method == 'setSpeed') {
+                speedCalls.add(
+                  ((call.arguments as Map)['speed'] as num).toDouble(),
+                );
+              }
+              return <String, Object?>{'ok': true, 'value': null};
+            });
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
             .setMockMethodCallHandler(
               notificationsChannel,
               (_) async => <String, Object?>{'ok': true, 'value': null},
             );
         try {
-          final fixture = AppRuntimeWidgetTestFixture();
+          final fixture = AppRuntimeWidgetTestFixture(
+            providedNativePlaybackRepository: NativePlaybackRepository(
+              bridge: NativePlaybackBridge.instance,
+            ),
+          );
           addTearDown(() {
             TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
                 .setMockMethodCallHandler(nativePlaybackChannel, null);
@@ -156,8 +167,19 @@ void main() {
           );
           await tester.pump();
           await tester.pump(const Duration(milliseconds: 250));
+          await tester.pumpAndSettle();
 
           expect(currentController().selectedItem, 4); // 1.25x
+          expect(
+            tester
+                .widget<FilledButton>(
+                  find.byKey(const ValueKey('restore_playback_speed')),
+                )
+                .onPressed,
+            isNotNull,
+          );
+          expect(speedCalls, <double>[1.25]);
+          expect(session.speed, 1.25);
 
           // Scroll again -> index 5 (1.5x)
           tester.binding.handlePointerEvent(
@@ -165,8 +187,10 @@ void main() {
           );
           await tester.pump();
           await tester.pump(const Duration(milliseconds: 250));
+          await tester.pumpAndSettle();
 
           expect(currentController().selectedItem, 5); // 1.5x
+          expect(session.speed, 1.5);
 
           // Reverse wheel -> index 4 (1.25x)
           tester.binding.handlePointerEvent(
@@ -178,6 +202,12 @@ void main() {
           expect(currentController().selectedItem, 4); // 1.25x
 
           await tester.pumpAndSettle();
+          expect(session.speed, 1.25);
+
+          await tester.tap(find.byKey(const ValueKey('restore_playback_speed')));
+          await tester.pumpAndSettle();
+          expect(currentController().selectedItem, 3);
+          expect(session.speed, 1.0);
         } finally {
           debugDefaultTargetPlatformOverride = null;
         }
@@ -297,4 +327,81 @@ void main() {
       },
     );
   });
+
+  testWidgets(
+    'SpeedWheelPage touch selection survives a stale parent snapshot',
+    (tester) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      final speedCalls = <double>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(nativePlaybackChannel, (call) async {
+            if (call.method == 'setSpeed') {
+              speedCalls.add(
+                ((call.arguments as Map)['speed'] as num).toDouble(),
+              );
+            }
+            return <String, Object?>{'ok': true, 'value': null};
+          });
+      try {
+        final fixture = AppRuntimeWidgetTestFixture(
+          providedNativePlaybackRepository: NativePlaybackRepository(
+            bridge: NativePlaybackBridge.instance,
+          ),
+        );
+        addTearDown(() {
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+              .setMockMethodCallHandler(nativePlaybackChannel, null);
+          fixture.dispose();
+        });
+        final session = PlaybackSession(
+          id: 'touch-speed',
+          currentTrackPath: '/track.mp3',
+          loopMode: SessionLoopMode.single,
+          nonSingleLoopMode: SessionLoopMode.single,
+          volume: 1,
+          createdAt: DateTime(2026),
+          state: const PlayerState(false, ProcessingState.ready),
+        )..speed = 1.0;
+        fixture.playbackService.registerSession(session);
+        fixture.playbackService.syncSlice(
+          activeSessions: [session],
+          playingSessionCount: 0,
+          focusedSessionId: session.id,
+          coverGeneration: 1,
+          isInitialized: true,
+        );
+        final staleSnapshot = fixture.runtimeGraph.playback.sessionSnapshotById(
+          session.id,
+        )!;
+        Widget page() => fixture.build(
+          SizedBox(
+            width: 300,
+            height: 400,
+            child: SpeedWheelPage(
+              session: staleSnapshot,
+              playback: fixture.runtimeGraph.playback,
+            ),
+          ),
+        );
+
+        await tester.pumpWidget(page());
+        await tester.pumpAndSettle();
+        final wheel = find.byKey(const ValueKey('playback_speed_wheel'));
+        await tester.drag(wheel, const Offset(0, -52));
+        await tester.pumpAndSettle();
+
+        expect(session.speed, 1.25);
+        expect(speedCalls, <double>[1.25]);
+        await tester.pumpWidget(page());
+        await tester.pumpAndSettle();
+        final controller =
+            tester.widget<ListWheelScrollView>(wheel).controller!
+                as FixedExtentScrollController;
+        expect(controller.selectedItem, 4);
+        expect(session.speed, 1.25);
+      } finally {
+        debugDefaultTargetPlatformOverride = null;
+      }
+    },
+  );
 }

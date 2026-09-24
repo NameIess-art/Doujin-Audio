@@ -65,12 +65,136 @@ void main() {
           graph.audioPaths.hasOtherTracksInSameWork(tracks.first.path),
           isTrue,
         );
-        expect(counted.reads, 2);
+        expect(counted.reads, 0);
         expect(service.comparisons, 0);
         expect(graph.audioPaths.tracksInSameWork(tracks.first.path), ordered);
       },
     );
   }
+
+  test('sibling lookup skips unrelated tracks and reuses the work cache', () {
+    final service = _CountingLibrary();
+    final graph = createTestRuntimeGraph(libraryService: service);
+    addTearDown(graph.runtime.dispose);
+    final tracks = <MusicTrack>[
+      for (var index = 0; index < 5000; index++)
+        MusicTrack(
+          path: '/other/$index.mp3',
+          displayName: '$index',
+          groupKey: '/other',
+          groupTitle: 'Other',
+          groupSubtitle: '',
+          isSingle: true,
+        ),
+      for (var index = 0; index < 2; index++)
+        MusicTrack(
+          path: PathMatcher.normalize('/library/work/disc/$index.mp3'),
+          displayName: 'Work $index',
+          groupKey: '/library/work/disc',
+          groupTitle: 'Work',
+          groupSubtitle: '',
+          isSingle: false,
+        ),
+    ];
+    graph.library.addWatchedFolder('/library/work', notify: false);
+    graph.library.addTracks(tracks, notify: false, persist: false);
+    final counted = _CountingTracks(service.library);
+    service.library = counted;
+    final path = tracks[5000].path;
+    expect(graph.audioPaths.cachedHasOtherTracksInSameWork(path), isTrue);
+    expect(graph.audioPaths.hasOtherTracksInSameWork(path), isTrue);
+    expect(counted.reads, 0);
+    expect(graph.audioPaths.cachedHasOtherTracksInSameWork(path), isTrue);
+    expect(
+      graph.audioPaths
+          .tracksForSessionSwitcher(
+            graph.playback.createTrackSession(tracks[5000]).id,
+          )
+          .map((track) => track.path),
+      [tracks[5000].path, tracks[5001].path],
+    );
+    counted.reads = 0;
+    expect(graph.audioPaths.tracksInSameWork(path).length, 2);
+    expect(counted.reads, 0);
+  });
+
+  test(
+    'cross-folder work cache invalidates when library structure changes',
+    () {
+      final graph = createTestRuntimeGraph();
+      addTearDown(graph.runtime.dispose);
+      MusicTrack track(String path) => MusicTrack(
+        path: path,
+        displayName: path,
+        groupKey: PathMatcher.parentPath(path)!,
+        groupTitle: 'Work',
+        groupSubtitle: '',
+        isSingle: false,
+      );
+      final first = track('/library/work/one/1.mp3');
+      final second = track('/library/work/two/2.mp3');
+      graph.library.addWatchedFolder('/library/work', notify: false);
+      graph.library.addTracks([first], notify: false, persist: false);
+      expect(graph.audioPaths.hasOtherTracksInSameWork(first.path), isFalse);
+      expect(
+        graph.audioPaths.cachedHasOtherTracksInSameWork(first.path),
+        isFalse,
+      );
+      graph.library.addTracks([second], notify: false, persist: false);
+      expect(
+        graph.audioPaths.cachedHasOtherTracksInSameWork(first.path),
+        isNull,
+      );
+      expect(graph.audioPaths.hasOtherTracksInSameWork(first.path), isTrue);
+      expect(graph.audioPaths.tracksInSameWork(first.path), [first, second]);
+    },
+  );
+
+  test('Windows work paths use normalized case-insensitive cache keys', () {
+    final graph = createTestRuntimeGraph();
+    addTearDown(graph.runtime.dispose);
+    final first = MusicTrack(
+      path: r'C:\Music\Work\Disc 1\first.mp3',
+      displayName: 'First',
+      groupKey: r'C:\Music\Work\Disc 1',
+      groupTitle: 'Work',
+      groupSubtitle: '',
+      isSingle: false,
+    );
+    final second = MusicTrack(
+      path: r'c:\music\work\Disc 2\second.mp3',
+      displayName: 'Second',
+      groupKey: r'c:\music\work\Disc 2',
+      groupTitle: 'Work',
+      groupSubtitle: '',
+      isSingle: false,
+    );
+    graph.library.addWatchedFolder(r'C:\Music\Work', notify: false);
+    graph.library.addTracks([first, second], notify: false, persist: false);
+    expect(graph.audioPaths.hasOtherTracksInSameWork(first.path), isTrue);
+    expect(graph.audioPaths.tracksInSameWork(first.path), [first, second]);
+  });
+
+  test('SAF work paths include tracks across nested folders', () {
+    final graph = createTestRuntimeGraph();
+    addTearDown(graph.runtime.dispose);
+    const root =
+        'content://com.android.externalstorage.documents/tree/primary%3AMusic%2FWork';
+    MusicTrack track(String folder, String name) => MusicTrack(
+      path: '$root::$folder/$name.mp3',
+      displayName: name,
+      groupKey: '$root::$folder',
+      groupTitle: 'Work',
+      groupSubtitle: '',
+      isSingle: false,
+    );
+    final first = track('disc1', 'first');
+    final second = track('disc2', 'second');
+    graph.library.addWatchedFolder(root, notify: false);
+    graph.library.addTracks([first, second], notify: false, persist: false);
+    expect(graph.audioPaths.hasOtherTracksInSameWork(first.path), isTrue);
+    expect(graph.audioPaths.tracksInSameWork(first.path), [first, second]);
+  });
 
   test('sibling presence preserves single, remote, and missing behavior', () {
     final graph = createTestRuntimeGraph();

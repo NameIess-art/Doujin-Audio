@@ -907,12 +907,14 @@ final class PlaybackFacade {
       return;
     }
     final previous = session.speed;
+    final generation = ++session.speedCommandGeneration;
     session.speed = nextSpeed;
     _service.markActiveSessionsDirty();
     if (notify) _onSessionSettingsChanged?.call();
     final response = await nativeRepository.setSpeed(session.id, nextSpeed);
     if (!_isCurrentSession(session)) return;
     if (response.isFailure) {
+      if (generation != session.speedCommandGeneration) return;
       session.speed = previous;
       _service.markActiveSessionsDirty();
       AppLogService.warning(

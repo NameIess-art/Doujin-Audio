@@ -320,6 +320,36 @@ void main() {
     await library.dispose();
   });
 
+  test('older failed speed command cannot roll back a newer selection', () async {
+    final library = _createLibraryFacade();
+    final native = _RecordingNativePlaybackRepository();
+    final playback = PlaybackFacade.create(
+      databaseRepository:
+          library.databaseRepository as PlaybackPersistenceRepository,
+      nativeRepository: native,
+    )..configurePersistence(enabled: false);
+    final session = _session('speed-race');
+    playback.registerSession(session);
+    addTearDown(() async {
+      await playback.dispose();
+      await library.dispose();
+    });
+
+    final firstResponse = Completer<NativeResult<NativePlaybackSnapshot>>();
+    native.speedGate = firstResponse;
+    final firstChange = playback.setSessionSpeed(session.id, 1.25);
+    native.speedGate = null;
+    await playback.setSessionSpeed(session.id, 1.5);
+
+    firstResponse.complete(
+      const NativeFailure<NativePlaybackSnapshot>('older request failed'),
+    );
+    await firstChange;
+
+    expect(native.speedUpdates, <double>[1.25, 1.5]);
+    expect(session.speed, 1.5);
+  });
+
   test(
     'loading playback intent can be paused from the spinner control',
     () async {

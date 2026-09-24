@@ -20,6 +20,47 @@ class _StateProbeState extends State<_StateProbe> {
 }
 
 void main() {
+  testWidgets('right-side page routes enter and exit in 750ms', (tester) async {
+    final navigatorKey = GlobalKey<NavigatorState>();
+    await tester.pumpWidget(
+      MaterialApp(
+        navigatorKey: navigatorKey,
+        theme: ThemeData(
+          pageTransitionsTheme: const PageTransitionsTheme(
+            builders: {
+              TargetPlatform.android: AppPageTransitionsBuilder(),
+              TargetPlatform.windows: AppPageTransitionsBuilder(),
+            },
+          ),
+        ),
+        home: const Scaffold(),
+      ),
+    );
+
+    final navigator = navigatorKey.currentState!;
+    final appRoute = buildAppPageRoute<void>(
+      context: navigator.context,
+      child: const Scaffold(),
+    );
+    expect(appRoute.transitionDuration, const Duration(milliseconds: 750));
+    expect(
+      appRoute.reverseTransitionDuration,
+      const Duration(milliseconds: 750),
+    );
+
+    final materialRoute = MaterialPageRoute<void>(
+      builder: (_) => const Scaffold(),
+    );
+    unawaited(navigator.push(materialRoute));
+    await tester.pump();
+    expect(materialRoute.transitionDuration, const Duration(milliseconds: 750));
+    expect(
+      materialRoute.reverseTransitionDuration,
+      const Duration(milliseconds: 750),
+    );
+    await tester.pumpAndSettle();
+  });
+
   Widget regions(String name) => Scaffold(
     body: Column(
       children: [
@@ -39,7 +80,9 @@ void main() {
     ),
   );
 
-  testWidgets('route content covers while headers change in place', (tester) async {
+  testWidgets('route content covers while headers change in place', (
+    tester,
+  ) async {
     final navigatorKey = GlobalKey<NavigatorState>();
     await tester.pumpWidget(
       MaterialApp(navigatorKey: navigatorKey, home: regions('home')),
@@ -118,12 +161,14 @@ void main() {
       matching: find.byType(Scaffold),
     );
     expect(
-      tester.widgetList<Opacity>(find.ancestor(
-        of: incomingPage,
-        matching: find.byType(Opacity),
-      )).any((opacity) => opacity.opacity == 0),
+      tester
+          .widgetList<Opacity>(
+            find.ancestor(of: incomingPage, matching: find.byType(Opacity)),
+          )
+          .any((opacity) => opacity.opacity == 0),
       isTrue,
-      reason: 'The incoming page surface must not obscure the old header immediately.',
+      reason:
+          'The incoming page surface must not obscure the old header immediately.',
     );
     await tester.pump(const Duration(milliseconds: 70));
     expect(
@@ -501,7 +546,10 @@ void main() {
           .toList();
 
       expect(translations1.any((t) => t.dy < 0), isTrue); // outgoing moves up
-      expect(translations2.any((t) => t.dy > 0), isTrue); // incoming from bottom
+      expect(
+        translations2.any((t) => t.dy > 0),
+        isTrue,
+      ); // incoming from bottom
 
       await tester.pumpAndSettle();
       expect(find.text('2'), findsOneWidget);

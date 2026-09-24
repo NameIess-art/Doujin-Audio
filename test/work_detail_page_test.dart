@@ -662,6 +662,51 @@ void main() {
         find.text(fixture.languageProvider.tr('asmr_has_subtitle')),
         findsOneWidget,
       );
+      final subtitleStatus = find.text(
+        fixture.languageProvider.tr('asmr_has_subtitle'),
+      );
+      final statusCapsule = find.byKey(
+        const ValueKey<String>('work_detail_subtitle_status'),
+      );
+      expect(
+        find.ancestor(
+          of: subtitleStatus,
+          matching: find.byType(HeaderFloatingSurface),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: statusCapsule,
+          matching: find.byIcon(Icons.subtitles_rounded),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        tester.getRect(statusCapsule).top,
+        tester.getRect(
+          find.ancestor(
+            of: find.byKey(
+              const ValueKey<String>('work_detail_back_button'),
+            ),
+            matching: find.byType(HeaderFloatingButton),
+          ),
+        ).top,
+      );
+      expect(tester.getRect(statusCapsule).right, 304);
+      expect(find.text('|'), findsOneWidget);
+      expect(tester.widget<Text>(find.text('RJ9999')).style?.fontSize, 13);
+      expect(
+        tester.widget<Text>(find.text('Remote Circle')).style?.fontSize,
+        13,
+      );
+      final highlightedStyle = tester.widget<Text>(subtitleStatus).style!;
+      expect(
+        highlightedStyle.color,
+        isNot(
+          Theme.of(tester.element(subtitleStatus)).colorScheme.onSurfaceVariant,
+        ),
+      );
       expect(
         find.byKey(const ValueKey<String>('work_detail_edit')),
         findsNothing,
@@ -741,6 +786,27 @@ void main() {
       expect(
         find.text(fixture.languageProvider.tr('asmr_no_subtitle')),
         findsOneWidget,
+      );
+      final noSubtitleStatus = find.text(
+        fixture.languageProvider.tr('asmr_no_subtitle'),
+      );
+      expect(
+        find.ancestor(
+          of: noSubtitleStatus,
+          matching: find.byType(HeaderFloatingSurface),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey<String>('work_detail_subtitle_status')),
+          matching: find.byIcon(Icons.subtitles_off_rounded),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        tester.widget<Text>(noSubtitleStatus).style?.color,
+        Theme.of(tester.element(noSubtitleStatus)).colorScheme.onSurfaceVariant,
       );
 
       expect(
@@ -949,9 +1015,7 @@ void main() {
                 find.byKey(const ValueKey<String>('work_image_viewport')),
               )
               .dy,
-          lessThanOrEqualTo(
-            tester.getTopRight(prevBtn).dy - 10,
-          ),
+          lessThanOrEqualTo(tester.getTopRight(prevBtn).dy - 10),
         );
 
         // Previous button is disabled at first image (no loop)
@@ -999,7 +1063,9 @@ void main() {
       },
     );
 
-    testWidgets('double-tap toggles zoom and blocks swiping when zoomed', (tester) async {
+    testWidgets('double-tap toggles zoom and blocks swiping when zoomed', (
+      tester,
+    ) async {
       SharedPreferences.setMockInitialValues(const <String, Object>{});
       final fixture = AppRuntimeWidgetTestFixture();
       addTearDown(fixture.dispose);
@@ -1018,15 +1084,18 @@ void main() {
       ];
 
       await tester.pumpWidget(
-        fixture.build(
-          WorkImageViewerPage(images: images),
-        ),
+        fixture.build(WorkImageViewerPage(images: images)),
       );
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 100));
 
-      final viewportFinder = find.byKey(const ValueKey<String>('work_image_viewport'));
-      expect(tester.widget<PageView>(find.byType(PageView)).physics, isA<PageScrollPhysics>());
+      final viewportFinder = find.byKey(
+        const ValueKey<String>('work_image_viewport'),
+      );
+      expect(
+        tester.widget<PageView>(find.byType(PageView)).physics,
+        isA<PageScrollPhysics>(),
+      );
 
       // Double-tap to zoom
       await tester.tap(viewportFinder);
@@ -1034,7 +1103,10 @@ void main() {
       await tester.tap(viewportFinder);
       await tester.pumpAndSettle();
 
-      expect(tester.widget<PageView>(find.byType(PageView)).physics, isA<NeverScrollableScrollPhysics>());
+      expect(
+        tester.widget<PageView>(find.byType(PageView)).physics,
+        isA<NeverScrollableScrollPhysics>(),
+      );
 
       // Double-tap to reset zoom
       await tester.tap(viewportFinder);
@@ -1042,7 +1114,10 @@ void main() {
       await tester.tap(viewportFinder);
       await tester.pumpAndSettle();
 
-      expect(tester.widget<PageView>(find.byType(PageView)).physics, isA<PageScrollPhysics>());
+      expect(
+        tester.widget<PageView>(find.byType(PageView)).physics,
+        isA<PageScrollPhysics>(),
+      );
     });
 
     testWidgets('loads ASMR image URLs as network images', (tester) async {

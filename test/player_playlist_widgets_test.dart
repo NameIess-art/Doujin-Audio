@@ -11,6 +11,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 import 'package:flutter_test/flutter_test.dart';
 import 'support/runtime_test_models.dart';
 import 'package:doujin_audio/app/presentation/app_presentation_providers.dart';
+import 'package:doujin_audio/app/state/app_runtime_providers.dart';
 import 'package:doujin_audio/app/state/subtitle_settings_provider.dart';
 import 'package:doujin_audio/app/theme/app_design_tokens.dart';
 import 'package:doujin_audio/core/media/path_matcher.dart';
@@ -69,6 +70,13 @@ class _RecordingPlaybackCoverCacheService extends CoverArtworkCacheService {
     if (path != null) warmupRequestedPaths.add(path);
     return SynchronousFuture<String?>(null);
   }
+}
+
+class _RecordingWorkCoverCacheService
+    extends _RecordingPlaybackCoverCacheService {
+  @override
+  String? coverScopeFolderForTrack(MusicTrack? track, {String? trackPath}) =>
+      '/library/work';
 }
 
 Set<String> _selectedSortControls(WidgetTester tester) {
@@ -254,6 +262,139 @@ void main() {
     expect(find.byType(SessionDetailPage), findsNothing);
     expect(find.byType(PlaylistTab), findsOneWidget);
     expect(UiInteractionCoordinator.instance.isInteracting, isFalse);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('local work switcher waits for idle and reuses the result', (
+    tester,
+  ) async {
+    UiInteractionCoordinator.instance.resetForTest();
+    addTearDown(UiInteractionCoordinator.instance.resetForTest);
+    tester.view.devicePixelRatio = 3;
+    tester.view.physicalSize = const Size(1080, 2400);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
+    final fixture = AppRuntimeWidgetTestFixture(
+      coverArtworkCacheService: _RecordingWorkCoverCacheService(),
+    );
+    addTearDown(fixture.dispose);
+    final busy = ValueNotifier<bool>(true);
+    addTearDown(busy.dispose);
+    final showDetail = ValueNotifier<bool>(true);
+    addTearDown(showDetail.dispose);
+    final tracks = <MusicTrack>[
+      for (final folder in ['one', 'two'])
+        MusicTrack(
+          path: PathMatcher.normalize('/library/work/$folder/track.mp3'),
+          displayName: folder,
+          groupKey: '/library/work/$folder',
+          groupTitle: 'Work',
+          groupSubtitle: '',
+          isSingle: false,
+        ),
+    ];
+    fixture.library.addWatchedFolder('/library/work', notify: false);
+    fixture.library.addTracks(tracks, notify: false, persist: false);
+    final session = fixture.playback.createTrackSession(tracks.first);
+    final snapshot = fixture.playback.sessionSnapshotById(session.id)!;
+    final singleTrack = MusicTrack(
+      path: PathMatcher.normalize('/library/single.mp3'),
+      displayName: 'Single',
+      groupKey: '/library',
+      groupTitle: 'Single',
+      groupSubtitle: '',
+      isSingle: true,
+    );
+    fixture.library.addTracks([singleTrack], notify: false, persist: false);
+    final singleSession = fixture.playback.createTrackSession(singleTrack);
+    final selectedSession = ValueNotifier<PlaybackSessionSnapshot>(snapshot);
+    addTearDown(selectedSession.dispose);
+    final app = fixture.build(
+      ValueListenableBuilder<bool>(
+        valueListenable: showDetail,
+        builder: (context, visible, _) => visible
+            ? Scaffold(
+                body: ValueListenableBuilder<PlaybackSessionSnapshot>(
+                  valueListenable: selectedSession,
+                  builder: (context, current, _) => SessionDetailContent(
+                    session: current,
+                    artworkWidget: const SizedBox.shrink(),
+                    transitionActive: busy,
+                  ),
+                ),
+              )
+            : const SizedBox.shrink(),
+      ),
+    );
+    bool switcherEnabled() => tester
+        .widget<TransportPlaybackControlPanel>(
+          find.byType(TransportPlaybackControlPanel),
+        )
+        .hasSiblings;
+
+    await tester.pumpWidget(app);
+    await tester.pump();
+    final paths = ProviderScope.containerOf(
+      tester.element(find.byType(SessionDetailContent)),
+    ).read(audioPathCoordinatorProvider);
+    expect(switcherEnabled(), isFalse);
+    expect(paths.cachedHasOtherTracksInSameWork(tracks.first.path), isNull);
+
+    final disposedInteraction = Object();
+    UiInteractionCoordinator.instance.beginInteraction(disposedInteraction);
+    busy.value = false;
+    await tester.pump();
+    showDetail.value = false;
+    await tester.pump();
+    UiInteractionCoordinator.instance.endInteraction(disposedInteraction);
+    await tester.pump(
+      UiInteractionCoordinator.instance.idleDelay +
+          const Duration(milliseconds: 20),
+    );
+    await tester.pump(const Duration(milliseconds: 1));
+    expect(paths.cachedHasOtherTracksInSameWork(tracks.first.path), isNull);
+    busy.value = true;
+    showDetail.value = true;
+    await tester.pump();
+    expect(switcherEnabled(), isFalse);
+
+    final interaction = Object();
+    UiInteractionCoordinator.instance.beginInteraction(interaction);
+    busy.value = false;
+    await tester.pump();
+    selectedSession.value = fixture.playback.sessionSnapshotById(
+      singleSession.id,
+    )!;
+    await tester.pump();
+    UiInteractionCoordinator.instance.endInteraction(interaction);
+    await tester.pump(
+      UiInteractionCoordinator.instance.idleDelay +
+          const Duration(milliseconds: 20),
+    );
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 20)),
+    );
+    await tester.pump();
+    expect(switcherEnabled(), isFalse);
+    expect(paths.cachedHasOtherTracksInSameWork(tracks.first.path), isNull);
+
+    selectedSession.value = snapshot;
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 1));
+    await tester.pump();
+    expect(switcherEnabled(), isTrue);
+    expect(paths.cachedHasOtherTracksInSameWork(tracks.first.path), isTrue);
+
+    showDetail.value = false;
+    await tester.pump();
+    showDetail.value = true;
+    await tester.pump();
+    expect(switcherEnabled(), isTrue);
+    await tester.pump(const Duration(milliseconds: 120));
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 200)),
+    );
+    await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
   });
 
@@ -3927,6 +4068,49 @@ void main() {
 
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pumpAndSettle();
+  });
+
+  testWidgets('failed playlist item keeps play control without retry text', (
+    tester,
+  ) async {
+    final fixture = AppRuntimeWidgetTestFixture(
+      coverArtworkCacheService: _RecordingPlaybackCoverCacheService(),
+    );
+    addTearDown(fixture.dispose);
+    final track = MusicTrack(
+      path: '/library/work/failed.mp3',
+      displayName: 'Failed track',
+      groupKey: '/library/work',
+      groupTitle: 'Work',
+      groupSubtitle: '',
+      isSingle: false,
+    );
+    fixture.library.addTracks([track], notify: false, persist: false);
+    final session = fixture.playback.createTrackSession(track)
+      ..finishPreparation(
+        0,
+        prepared: false,
+        autoPlay: false,
+        error: 'playback failed',
+      );
+    addTearDown(session.shutdown);
+    fixture.playbackService.syncSlice(
+      activeSessions: [session],
+      playingSessionCount: 0,
+      focusedSessionId: session.id,
+      coverGeneration: 0,
+      isInitialized: true,
+    );
+
+    await tester.pumpWidget(fixture.build(const PlaylistTab()));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(ValueKey<String>('playlist_card_content_${session.id}')),
+      findsOneWidget,
+    );
+    expect(find.byTooltip(fixture.languageProvider.tr('play')), findsOneWidget);
+    expect(find.text(fixture.languageProvider.tr('playback_failed_retry')),
+        findsNothing);
   });
 
   testWidgets('playlist card, playback card and detail share a decoded cover', (

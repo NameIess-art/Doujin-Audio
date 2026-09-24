@@ -12,6 +12,7 @@ import 'package:doujin_audio/core/media/cover_image_resolution.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
 import 'package:doujin_audio/features/settings/application/settings_state.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
+import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/core/widgets/async_cover_image.dart';
 import 'package:doujin_audio/core/widgets/scroll_activity_gate.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -259,7 +260,6 @@ void main() {
             imageBuilder: (_, _) => RetryingImage(
               retryKey: 'cover',
               imageProviderBuilder: () => provider,
-              showPlaceholderWhileDecoding: false,
               fallbackBuilder: (_) => const ColoredBox(
                 key: ValueKey('cover_placeholder'),
                 color: Colors.pink,
@@ -284,6 +284,9 @@ void main() {
     provider.complete(image);
     await tester.pump();
     await tester.pump();
+    await tester.pump(const Duration(milliseconds: 599));
+    expect(find.byKey(const ValueKey('cover_placeholder')), findsOneWidget);
+    await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('cover_placeholder')), findsNothing);
     expect(find.byType(RawImage), findsOneWidget);
   });
@@ -692,11 +695,16 @@ void main() {
       expect(find.byType(Image), findsOneWidget);
       expect(find.text('loading'), findsNothing);
       expect(provider.loadCount, 1);
+      expect(find.text('fallback'), findsOneWidget);
+      await tester.pump(const Duration(milliseconds: 599));
+      expect(find.text('fallback'), findsOneWidget);
+      await tester.pumpAndSettle();
+      expect(find.text('fallback'), findsNothing);
     },
   );
 
   testWidgets(
-    'RetryingImage fades the first decoded frame in over 750ms',
+    'RetryingImage fades the placeholder off the decoded frame over 600ms',
     (tester) async {
       final provider = _ControlledImageProvider();
 
@@ -732,7 +740,14 @@ void main() {
         find.byKey(const ValueKey<String>('decoding_placeholder')),
         findsOneWidget,
       );
-      await tester.pump(const Duration(milliseconds: 749));
+      expect(
+        find.descendant(
+          of: find.byType(PlaceholderContentTransition),
+          matching: find.byType(FadeTransition),
+        ),
+        findsOneWidget,
+      );
+      await tester.pump(const Duration(milliseconds: 599));
       expect(
         find.byKey(const ValueKey<String>('decoding_placeholder')),
         findsOneWidget,
@@ -746,37 +761,6 @@ void main() {
       expect(find.byType(RawImage), findsOneWidget);
     },
   );
-
-  testWidgets('Windows file covers appear as soon as decoding completes', (
-    tester,
-  ) async {
-    final provider = _ControlledImageProvider();
-
-    await tester.pumpWidget(
-      MaterialApp(
-        home: SizedBox(
-          width: 120,
-          height: 90,
-          child: RetryingImage(
-            retryKey: 'stored-cover',
-            imageProviderBuilder: () => provider,
-            showPlaceholderWhileDecoding: false,
-            fallbackBuilder: (_) => const Text('loading'),
-          ),
-        ),
-      ),
-    );
-    expect(find.text('loading'), findsOneWidget);
-
-    final image = await _createTestImage();
-    addTearDown(provider.evict);
-    provider.complete(image);
-    await tester.pump();
-    await tester.pump();
-
-    expect(find.text('loading'), findsNothing);
-    expect(find.byType(RawImage), findsOneWidget);
-  });
 
   testWidgets('RetryingImage renders every cover display mode', (tester) async {
     final imageBytes = base64Decode(
@@ -815,7 +799,7 @@ void main() {
     expect(find.byType(ImageFiltered), findsOneWidget);
   });
 
-  testWidgets('file covers swap directly on Android and Windows', (
+  testWidgets('file covers retain the placeholder during decoding', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -844,7 +828,6 @@ void main() {
     );
     expect(retryingImage.displayMode, CoverImageDisplayMode.fill);
     expect(retryingImage.deferLoadDuringInteraction, isFalse);
-    expect(retryingImage.showPlaceholderWhileDecoding, isFalse);
   }, variant: const TargetPlatformVariant({
     TargetPlatform.android,
     TargetPlatform.windows,

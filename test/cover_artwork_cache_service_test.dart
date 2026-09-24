@@ -1409,6 +1409,61 @@ void main() {
   });
 
   test(
+    'in-flight video frame cannot replace selected folder cover after preference changes',
+    () async {
+      final directory = await Directory.systemTemp.createTemp(
+        'cover_video_race_',
+      );
+      addTearDown(() async {
+        if (await directory.exists()) await directory.delete(recursive: true);
+      });
+      final videoPath = '${directory.path}${Platform.pathSeparator}video.mp4';
+      final folderCover = '${directory.path}${Platform.pathSeparator}cover.jpg';
+      await File(videoPath).writeAsBytes(<int>[1]);
+      await File(folderCover).writeAsBytes(<int>[0xff, 0xd8, 0xff, 0xd9]);
+      final frame = Completer<String?>();
+      final frameRequested = Completer<void>();
+      final track = _track(
+        path: videoPath,
+        groupKey: directory.path,
+        isVideo: true,
+      );
+      final library = LibraryService()
+        ..watchedFolders.add(directory.path)
+        ..library.add(track);
+      var preferEmbedded = true;
+      final cache = CoverArtworkCacheService(
+        libraryService: library,
+        fileCacheGateway: _FakeFileCachePlatformGateway(
+          coversByPath: const {},
+          resolveVideoFrameHandler: (_) {
+            frameRequested.complete();
+            return frame.future;
+          },
+        ),
+        preferEmbeddedCover: () => preferEmbedded,
+      );
+      await cache.setFolderCoverSelection(
+        directory.path,
+        folderCover,
+        newlySaved: true,
+      );
+
+      final oldFuture = cache.futureForPlaybackTrack(track);
+      await frameRequested.future;
+      preferEmbedded = false;
+      cache.invalidateAll();
+      expect(await cache.futureForPlaybackTrack(track), folderCover);
+
+      frame.complete('/cache/video-frame.image');
+      expect(await oldFuture, folderCover);
+      expect(cache.resolvedForTrack(track), folderCover);
+      expect(cache.resolvedForPlaybackTrack(track), folderCover);
+      expect(await cache.futureForPlaybackTrack(track), folderCover);
+    },
+  );
+
+  test(
     'selected folder cover is used for video only when its frame is unavailable',
     () async {
       final directory = await Directory.systemTemp.createTemp(
@@ -2222,6 +2277,7 @@ class _FakeFileCachePlatformGateway extends FileCachePlatformGateway {
     this.videoFramesByPath = const <String, String>{},
     this.discoveredImages,
     this.resolveTrackCoverHandler,
+    this.resolveVideoFrameHandler,
   });
 
   final Map<String, String> coversByPath;
@@ -2230,6 +2286,7 @@ class _FakeFileCachePlatformGateway extends FileCachePlatformGateway {
   discoveredImages;
   final Future<String?> Function(String path, String? groupKey)?
   resolveTrackCoverHandler;
+  final Future<String?> Function(String path)? resolveVideoFrameHandler;
   final List<String> resolveTrackCoverPaths = <String>[];
   final List<String?> resolveTrackCoverGroupKeys = <String?>[];
 
@@ -2256,7 +2313,8 @@ class _FakeFileCachePlatformGateway extends FileCachePlatformGateway {
 
   @override
   Future<String?> resolveVideoFrame({required String path, int? modifiedAtMs}) {
-    return Future<String?>.value(videoFramesByPath[path]);
+    return resolveVideoFrameHandler?.call(path) ??
+        Future<String?>.value(videoFramesByPath[path]);
   }
 }
 

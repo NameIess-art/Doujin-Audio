@@ -485,6 +485,94 @@ void main() {
     expect(tester.getSize(playback).width, closeTo(56, 0.1));
   });
 
+  testWidgets(
+    'capsule dock smoothly animates circular playback card appearance and disappearance',
+    (tester) async {
+      tester.view.devicePixelRatio = 3;
+      tester.view.physicalSize = const Size(1080, 2400);
+      addTearDown(() {
+        tester.view.resetDevicePixelRatio();
+        tester.view.resetPhysicalSize();
+      });
+
+      final harness = await _pumpAppShell(tester, includePlaybackSession: false);
+      final navigation = find.byKey(
+        const ValueKey<String>('mobile_dock_navigation'),
+      );
+      final playback = find.byKey(const ValueKey<String>('mobile_dock_playback'));
+
+      expect(playback, findsNothing);
+      final initialNavWidth = tester.getSize(navigation).width;
+      expect(initialNavWidth, greaterThan(200));
+
+      final session = PlaybackSession(
+        id: 'anim_test_session',
+        currentTrackPath: '/audio/anim_test.mp3',
+        loopMode: SessionLoopMode.single,
+        nonSingleLoopMode: SessionLoopMode.single,
+        volume: 1,
+        createdAt: DateTime(2026),
+        state: const PlayerState(true, ProcessingState.ready),
+      );
+      addTearDown(session.shutdown);
+
+      harness.playbackService.registerSession(session);
+      harness.playbackService.syncSlice(
+        activeSessions: <PlaybackSession>[session],
+        playingSessionCount: 1,
+        focusedSessionId: session.id,
+        coverGeneration: 0,
+        isInitialized: true,
+      );
+
+      // Let stream deliver and trigger forward animation
+      await tester.pump(const Duration(milliseconds: 16));
+      expect(playback, findsOneWidget);
+
+      // Advance mid-way through appearance animation
+      await tester.pump(const Duration(milliseconds: 140));
+
+      final midPlaybackWidth = tester.getSize(playback).width;
+      final midNavWidth = tester.getSize(navigation).width;
+      expect(midPlaybackWidth, greaterThan(0));
+      expect(midPlaybackWidth, lessThan(56));
+      expect(midNavWidth + midPlaybackWidth, closeTo(initialNavWidth, 0.5));
+
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(tester.getSize(playback).width, closeTo(56, 0.1));
+      expect(
+        tester.getSize(navigation).width,
+        closeTo(initialNavWidth - 56, 0.5),
+      );
+
+      harness.playbackService.syncSlice(
+        activeSessions: const <PlaybackSession>[],
+        playingSessionCount: 0,
+        focusedSessionId: null,
+        coverGeneration: 0,
+        isInitialized: true,
+      );
+
+      // Let stream deliver and trigger reverse animation
+      await tester.pump(const Duration(milliseconds: 16));
+      expect(playback, findsOneWidget);
+
+      // Advance mid-way through reverse animation
+      await tester.pump(const Duration(milliseconds: 140));
+
+      expect(playback, findsOneWidget);
+      final exitPlaybackWidth = tester.getSize(playback).width;
+      final exitNavWidth = tester.getSize(navigation).width;
+      expect(exitPlaybackWidth, greaterThan(0));
+      expect(exitPlaybackWidth, lessThan(56));
+      expect(exitNavWidth + exitPlaybackWidth, closeTo(initialNavWidth, 0.5));
+
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(playback, findsNothing);
+      expect(tester.getSize(navigation).width, closeTo(initialNavWidth, 0.5));
+    },
+  );
+
   testWidgets('only work detail routes show a bottom playback dock', (
     tester,
   ) async {
@@ -2489,6 +2577,30 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('landscape shell keeps its top inset when status bar hides', (
+    tester,
+  ) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    _setLogicalTestViewSize(tester, const Size(1400, 800));
+    tester.view.viewPadding = const FakeViewPadding(top: 24);
+    tester.view.padding = const FakeViewPadding(top: 24);
+    addTearDown(() {
+      debugDefaultTargetPlatformOverride = null;
+      tester.view.resetViewPadding();
+      tester.view.resetPadding();
+    });
+    await _pumpAppShell(tester, includePlaybackSession: false);
+    final rail = find.byType(NavigationRail);
+    expect(MediaQuery.paddingOf(tester.element(rail)).top, 24);
+
+    tester.view.padding = FakeViewPadding.zero;
+    tester.view.viewPadding = FakeViewPadding.zero;
+    await tester.pump();
+    expect(MediaQuery.paddingOf(tester.element(rail)).top, 24);
+    expect(MediaQuery.viewPaddingOf(tester.element(rail)).top, 24);
+    debugDefaultTargetPlatformOverride = null;
+  });
+
   testWidgets('expanded landscape dock stays unchanged on detail routes', (
     tester,
   ) async {
@@ -3432,6 +3544,84 @@ void main() {
       await tester.pumpWidget(const SizedBox.shrink());
     },
   );
+
+  testWidgets('rotation interrupts a landscape detail swipe safely', (
+    tester,
+  ) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    addTearDown(() => debugDefaultTargetPlatformOverride = null);
+    _setLogicalTestViewSize(tester, const Size(1400, 800));
+    await _pumpAppShell(tester);
+    final navigator = Navigator.of(tester.element(find.byType(MainScreen)));
+    unawaited(navigator.push(buildSessionDetailRoute(
+      sessionId: 'orientation_session',
+    )));
+    await tester.pumpAndSettle();
+
+    final detail = find.byType(SessionDetailPage);
+    final route = ModalRoute.of(tester.element(detail))!;
+    final gesture = tester.widget<GestureDetector>(
+      find.descendant(
+        of: detail,
+        matching: find.byWidgetPredicate(
+          (widget) => widget is GestureDetector &&
+              widget.onVerticalDragUpdate != null,
+        ),
+      ).first,
+    );
+    gesture.onVerticalDragStart!(DragStartDetails());
+    gesture.onVerticalDragUpdate!(DragUpdateDetails(
+      globalPosition: Offset.zero,
+      delta: const Offset(0, 80),
+      primaryDelta: 80,
+    ));
+    await tester.pump();
+    expect(route.opaque, isFalse);
+    expect(UiInteractionCoordinator.instance.isInteracting, isTrue);
+
+    tester.view.physicalSize = const Size(800, 1400);
+    await tester.pump();
+    expect(route.opaque, isTrue);
+    await tester.pump(
+      UiInteractionCoordinator.instance.idleDelay +
+          const Duration(milliseconds: 20),
+    );
+    expect(UiInteractionCoordinator.instance.isInteracting, isFalse);
+
+    final resumedGesture = tester.widget<GestureDetector>(
+      find.descendant(
+        of: detail,
+        matching: find.byWidgetPredicate(
+          (widget) => widget is GestureDetector &&
+              widget.onVerticalDragUpdate != null,
+        ),
+      ).first,
+    );
+    resumedGesture.onVerticalDragStart!(DragStartDetails());
+    resumedGesture.onVerticalDragUpdate!(DragUpdateDetails(
+      globalPosition: Offset.zero,
+      delta: const Offset(0, 80),
+      primaryDelta: 80,
+    ));
+    await tester.pump();
+    expect(route.opaque, isFalse);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    await tester.pump();
+    expect(route.opaque, isTrue);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pump(
+      UiInteractionCoordinator.instance.idleDelay +
+          const Duration(milliseconds: 20),
+    );
+    expect(UiInteractionCoordinator.instance.isInteracting, isFalse);
+    await tester.tap(find.byIcon(Icons.keyboard_arrow_down_rounded).first);
+    await tester.pumpAndSettle();
+    expect(detail, findsNothing);
+    await _settleSessionDetailAsyncWork(tester);
+    await tester.pumpWidget(const SizedBox.shrink());
+    UiInteractionCoordinator.instance.finishInteractionsForTest();
+    debugDefaultTargetPlatformOverride = null;
+  });
 
   testWidgets(
     'session loop and volume controls open corresponding modes and allow configuration',

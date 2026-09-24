@@ -1,5 +1,6 @@
 import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/features/settings/application/settings_state.dart';
@@ -41,15 +42,40 @@ void main() {
   });
 
   test('applyCoverImageCachePolicy updates an ImageCache instance', () {
-    final cache = ImageCache();
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    try {
+      final cache = ImageCache();
+      applyCoverImageCachePolicy(
+        CoverImageResolution.memorySaver,
+        imageCache: cache,
+      );
+      expect(cache.maximumSize, 120);
+      expect(cache.maximumSizeBytes, 32 * 1024 * 1024);
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
+  });
 
-    applyCoverImageCachePolicy(
-      CoverImageResolution.memorySaver,
-      imageCache: cache,
-    );
+  test('Windows keeps more decoded covers across page changes', () {
+    debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+    try {
+      final cache = ImageCache();
+      applyCoverImageCachePolicy(
+        CoverImageResolution.balanced,
+        imageCache: cache,
+      );
+      expect(cache.maximumSize, 1200);
+      expect(cache.maximumSizeBytes, 256 * 1024 * 1024);
 
-    expect(cache.maximumSize, 120);
-    expect(cache.maximumSizeBytes, 32 * 1024 * 1024);
+      applyCoverImageCachePolicy(
+        CoverImageResolution.memorySaver,
+        imageCache: cache,
+      );
+      expect(cache.maximumSize, 120);
+      expect(cache.maximumSizeBytes, 32 * 1024 * 1024);
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
   });
 
   test(

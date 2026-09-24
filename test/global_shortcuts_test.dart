@@ -75,10 +75,23 @@ void main() {
     Widget child, {
     bool enabled = true,
     GlobalKey<NavigatorState>? navigatorKey,
+    String? focusedCardSessionId,
+    String? focusedDetailSessionId,
   }) => ProviderScope(
+    key: ValueKey<String>(
+      'scope_${focusedCardSessionId}_$focusedDetailSessionId',
+    ),
     overrides: [
       playbackFacadeProvider.overrideWithValue(playback),
       notificationFacadeProvider.overrideWithValue(notifications),
+      activeVisibleSessionCardIdProvider.overrideWith(
+        () => _TestCardIdNotifier(focusedCardSessionId),
+      ),
+      activeSessionDetailIdsProvider.overrideWith(
+        () => _TestDetailIdsNotifier(
+          focusedDetailSessionId != null ? [focusedDetailSessionId] : const [],
+        ),
+      ),
     ],
     child: MaterialApp(
       navigatorKey: navigatorKey,
@@ -92,13 +105,70 @@ void main() {
   );
 
   testWidgets(
-    'Windows space controls notification primary session',
+    'Windows space only controls focused audio (detail page or card)',
     (tester) async {
+      // 1. When no session is focused, space does not control playback
       await tester.pumpWidget(app(const SizedBox()));
       await tester.pump();
       await tester.sendKeyEvent(LogicalKeyboardKey.space);
       await tester.pump();
+      expect(resumed, isEmpty);
+
+      // 2. When card session is focused, space toggles that session
+      await tester.pumpWidget(app(const SizedBox(), focusedCardSessionId: 'primary'));
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.space);
+      await tester.pump();
       expect(resumed, ['primary']);
+
+      // 3. When detail session is focused, space toggles detail session
+      resumed.clear();
+      await tester.pumpWidget(
+        app(
+          const SizedBox(),
+          focusedCardSessionId: 'primary',
+          focusedDetailSessionId: 'first',
+        ),
+      );
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.space);
+      await tester.pump();
+      expect(resumed, ['first']);
+      await tester.pump(const Duration(milliseconds: 200));
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.windows),
+  );
+
+  testWidgets(
+    'Windows left and right arrow keys seek 5s on focused audio only',
+    (tester) async {
+      playback.sessionById('primary')!
+        ..duration = const Duration(seconds: 10)
+        ..lastKnownPosition = const Duration(seconds: 3);
+
+      // 1. Without focused audio, arrow keys do not seek
+      await tester.pumpWidget(app(const SizedBox()));
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(native.seeks, isEmpty);
+
+      // 2. With focused audio, plain Right arrow seeks forward 5s (3s -> 8s)
+      await tester.pumpWidget(app(const SizedBox(), focusedCardSessionId: 'primary'));
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(native.seeks, [('primary', const Duration(seconds: 8))]);
+
+      // 3. Plain Left arrow seeks backward 5s (8s -> 3s)
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(native.seeks.last, ('primary', const Duration(seconds: 3)));
+
+      // 4. Plain Left arrow again seeks backward 5s (3s -> clamped to 0s)
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(native.seeks.last, ('primary', Duration.zero));
       await tester.pump(const Duration(milliseconds: 200));
     },
     variant: TargetPlatformVariant.only(TargetPlatform.windows),
@@ -107,7 +177,9 @@ void main() {
   testWidgets(
     'text editing preserves space and Ctrl arrow shortcuts',
     (tester) async {
-      await tester.pumpWidget(app(const TextField(autofocus: true)));
+      await tester.pumpWidget(
+        app(const TextField(autofocus: true), focusedCardSessionId: 'primary'),
+      );
       await tester.pump();
       await tester.sendKeyEvent(LogicalKeyboardKey.space);
       await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
@@ -131,6 +203,7 @@ void main() {
             onPressed: () => activated++,
             child: const Text('Action'),
           ),
+          focusedCardSessionId: 'primary',
         ),
       );
       await tester.pump();
@@ -187,7 +260,7 @@ void main() {
       playback.sessionById('primary')!
         ..duration = const Duration(seconds: 2)
         ..volume = 0.02;
-      await tester.pumpWidget(app(const SizedBox()));
+      await tester.pumpWidget(app(const SizedBox(), focusedCardSessionId: 'primary'));
       await tester.pump();
       await tester.sendKeyDownEvent(LogicalKeyboardKey.altLeft);
       await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
@@ -257,6 +330,20 @@ void main() {
     },
     variant: TargetPlatformVariant.only(TargetPlatform.android),
   );
+}
+
+class _TestCardIdNotifier extends ActiveVisibleSessionCardIdNotifier {
+  _TestCardIdNotifier(this._initial);
+  final String? _initial;
+  @override
+  String? build() => _initial;
+}
+
+class _TestDetailIdsNotifier extends ActiveSessionDetailIdsNotifier {
+  _TestDetailIdsNotifier(this._initial);
+  final List<String> _initial;
+  @override
+  List<String> build() => _initial;
 }
 
 class _RecordingRepository extends NativePlaybackRepository {

@@ -149,6 +149,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
     with WidgetsBindingObserver {
   static const double _desktopBreakpoint = 980;
   double _stablePortraitTopPadding = 0;
+  double _stableLandscapeTopPadding = 0;
   bool _isMenuCollapsed = false;
   bool _isMobilePlaybackExpanded = false;
   late final ValueNotifier<int> _activePageIndex;
@@ -1047,18 +1048,33 @@ class _MainScreenState extends ConsumerState<MainScreen>
       _stablePortraitTopPadding = rawTop;
     }
 
-    final effectiveTop = !isDesktop && _stablePortraitTopPadding > 0
+    final isAndroidLandscape =
+        defaultTargetPlatform == TargetPlatform.android &&
+        mediaQuery.orientation == Orientation.landscape;
+    if (isAndroidLandscape) {
+      _stableLandscapeTopPadding = max(
+        _stableLandscapeTopPadding,
+        max(rawTop, mediaQuery.viewPadding.top),
+      );
+    }
+
+    final effectiveTop = isAndroidLandscape
+        ? max(rawTop, _stableLandscapeTopPadding)
+        : !isDesktop && _stablePortraitTopPadding > 0
         ? max(rawTop, _stablePortraitTopPadding)
         : rawTop;
     final effectivePadding = effectiveTop != rawTop
         ? mediaQuery.padding.copyWith(top: effectiveTop)
         : mediaQuery.padding;
-    final effectiveViewPadding =
-        !isDesktop && _stablePortraitTopPadding > 0
-            ? mediaQuery.viewPadding.copyWith(
-                top: max(mediaQuery.viewPadding.top, _stablePortraitTopPadding),
-              )
-            : mediaQuery.viewPadding;
+    final effectiveViewPadding = isAndroidLandscape
+        ? mediaQuery.viewPadding.copyWith(
+            top: max(mediaQuery.viewPadding.top, _stableLandscapeTopPadding),
+          )
+        : !isDesktop && _stablePortraitTopPadding > 0
+        ? mediaQuery.viewPadding.copyWith(
+            top: max(mediaQuery.viewPadding.top, _stablePortraitTopPadding),
+          )
+        : mediaQuery.viewPadding;
     final effectiveMediaQuery = mediaQuery.copyWith(
       padding: effectivePadding,
       viewPadding: effectiveViewPadding,

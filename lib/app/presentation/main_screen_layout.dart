@@ -159,6 +159,7 @@ extension _MainScreenLayout on _MainScreenState {
     );
 
     return ValueListenableBuilder<int>(
+      key: ValueKey<bool>(currentOnly),
       valueListenable: _activePageIndex,
       builder: (context, selectedIndex, _) => _buildBottomBarContent(
         context,
@@ -299,9 +300,6 @@ extension _MainScreenLayout on _MainScreenState {
         systemBottom;
     final hasPlayback = overlaySessions.isNotEmpty;
     final playbackExpanded = hasPlayback && _isMobilePlaybackExpanded;
-    final duration = MediaQuery.disableAnimationsOf(context)
-        ? Duration.zero
-        : const Duration(milliseconds: 280);
     return Stack(
       key: key,
       fit: StackFit.expand,
@@ -347,109 +345,17 @@ extension _MainScreenLayout on _MainScreenState {
                             tinyMode: tinyMode,
                             child: SizedBox(
                               height: kActiveSessionCarouselDockHeight,
-                              child: LayoutBuilder(
-                                builder: (context, constraints) {
-                                  const compactWidth =
-                                      kActiveSessionCarouselDockHeight;
-                                  const gap = 0.0;
-                                  final availableWidth = constraints.maxWidth;
-                                  final navigationWidth = !hasPlayback
-                                      ? availableWidth
-                                      : playbackExpanded
-                                      ? compactWidth
-                                      : (availableWidth - compactWidth - gap)
-                                            .clamp(0.0, availableWidth);
-                                  final playbackWidth = !hasPlayback
-                                      ? 0.0
-                                      : playbackExpanded
-                                      ? (availableWidth - compactWidth - gap)
-                                            .clamp(0.0, availableWidth)
-                                      : compactWidth;
-                                  _reportMobilePlaybackCoverRect();
-                                  return Stack(
-                                    children: [
-                                      Align(
-                                        alignment: Alignment.centerLeft,
-                                        child: AnimatedContainer(
-                                          key: const ValueKey<String>(
-                                            'mobile_dock_navigation',
-                                          ),
-                                          duration: duration,
-                                          curve: Curves.easeOutCubic,
-                                          width: navigationWidth,
-                                          height:
-                                              kActiveSessionCarouselDockHeight,
-                                          child: ClipRect(
-                                            child: AnimatedSwitcher(
-                                              duration: duration,
-                                              child: _buildBottomBar(
-                                                context,
-                                                currentOnly: playbackExpanded,
-                                                onCurrentTap:
-                                                    _showMobileDestinations,
-                                              ),
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                      if (hasPlayback)
-                                        Align(
-                                          alignment: Alignment.centerRight,
-                                          child: SizedBox(
-                                            key: const ValueKey<String>(
-                                              'mobile_dock_playback',
-                                            ),
-                                            child: AnimatedContainer(
-                                              duration: duration,
-                                              curve: Curves.easeOutCubic,
-                                              onEnd:
-                                                  _reportMobilePlaybackCoverRect,
-                                              width: playbackWidth,
-                                              height:
-                                                  kActiveSessionCarouselDockHeight,
-                                              child: SizedBox.expand(
-                                                key: _mobilePlaybackGeometryKey,
-                                                child: ClipRRect(
-                                                  key: const ValueKey<String>(
-                                                    'mobile_dock_playback_viewport',
-                                                  ),
-                                                  borderRadius:
-                                                      BorderRadius.circular(
-                                                        kActiveSessionCarouselDockHeight /
-                                                            2,
-                                                      ),
-                                                  child: ActiveSessionCarousel(
-                                                    key: const ValueKey<String>(
-                                                      'mobile_dock_carousel',
-                                                    ),
-                                                    sessions: overlaySessions,
-                                                    i18n: i18n,
-                                                    viewportFraction: 1,
-                                                    presentation:
-                                                        ActiveSessionCarouselPresentation
-                                                            .embedded,
-                                                    onOpenSession: (sessionId) {
-                                                      if (!playbackExpanded) {
-                                                        _showMobilePlayback();
-                                                        return;
-                                                      }
-                                                      Navigator.of(
-                                                        context,
-                                                      ).push(
-                                                        buildSessionDetailRoute(
-                                                          sessionId: sessionId,
-                                                        ),
-                                                      );
-                                                    },
-                                                  ),
-                                                ),
-                                              ),
-                                            ),
-                                          ),
-                                        ),
-                                    ],
-                                  );
-                                },
+                              child: _MobileDockCapsuleContent(
+                                overlaySessions: overlaySessions,
+                                isPlaybackExpanded: playbackExpanded,
+                                i18n: i18n,
+                                mobilePlaybackGeometryKey:
+                                    _mobilePlaybackGeometryKey,
+                                onShowPlayback: _showMobilePlayback,
+                                onShowDestinations: _showMobileDestinations,
+                                onReportPlaybackCoverRect:
+                                    _reportMobilePlaybackCoverRect,
+                                buildBottomBar: _buildBottomBar,
                               ),
                             ),
                           ),
@@ -462,6 +368,7 @@ extension _MainScreenLayout on _MainScreenState {
       ],
     );
   }
+
 
   Widget _buildDesktopNavigation(
     BuildContext context,
@@ -764,5 +671,251 @@ extension _MainScreenLayout on _MainScreenState {
     }
     final systemBottom = MediaQuery.of(context).padding.bottom;
     return max(systemBottom, kMobileDockBottomMargin) + 72;
+  }
+}
+
+class _MobileDockCapsuleContent extends StatefulWidget {
+  const _MobileDockCapsuleContent({
+    required this.overlaySessions,
+    required this.isPlaybackExpanded,
+    required this.i18n,
+    required this.mobilePlaybackGeometryKey,
+    required this.onShowPlayback,
+    required this.onShowDestinations,
+    required this.onReportPlaybackCoverRect,
+    required this.buildBottomBar,
+  });
+
+  final List<PlaybackSessionSnapshot> overlaySessions;
+  final bool isPlaybackExpanded;
+  final AppLanguageProvider i18n;
+  final GlobalKey mobilePlaybackGeometryKey;
+  final VoidCallback onShowPlayback;
+  final VoidCallback onShowDestinations;
+  final VoidCallback onReportPlaybackCoverRect;
+  final Widget Function(
+    BuildContext context, {
+    required bool currentOnly,
+    VoidCallback? onCurrentTap,
+  }) buildBottomBar;
+
+  @override
+  State<_MobileDockCapsuleContent> createState() =>
+      _MobileDockCapsuleContentState();
+}
+
+class _MobileDockCapsuleContentState extends State<_MobileDockCapsuleContent>
+    with TickerProviderStateMixin {
+  late final AnimationController _appearanceController;
+  late final CurvedAnimation _appearanceCurve;
+  late final AnimationController _expandController;
+  late final CurvedAnimation _expandCurve;
+  List<PlaybackSessionSnapshot> _cachedSessions = const [];
+
+  static const Duration _motionDuration = Duration(milliseconds: 280);
+
+  @override
+  void initState() {
+    super.initState();
+    final hasPlayback = widget.overlaySessions.isNotEmpty;
+    if (hasPlayback) {
+      _cachedSessions = widget.overlaySessions;
+    }
+    _appearanceController = AnimationController(
+      vsync: this,
+      duration: _motionDuration,
+      value: hasPlayback ? 1.0 : 0.0,
+    );
+    _appearanceCurve = CurvedAnimation(
+      parent: _appearanceController,
+      curve: Curves.easeOutCubic,
+      reverseCurve: Curves.easeOutCubic,
+    );
+    _expandController = AnimationController(
+      vsync: this,
+      duration: _motionDuration,
+      value: (hasPlayback && widget.isPlaybackExpanded) ? 1.0 : 0.0,
+    );
+    _expandCurve = CurvedAnimation(
+      parent: _expandController,
+      curve: Curves.easeOutCubic,
+      reverseCurve: Curves.easeOutCubic,
+    );
+
+    _appearanceController.addStatusListener((status) {
+      if (status == AnimationStatus.dismissed) {
+        if (mounted && widget.overlaySessions.isEmpty) {
+          setState(() {
+            _cachedSessions = const [];
+          });
+        }
+      }
+      widget.onReportPlaybackCoverRect();
+    });
+    _expandController.addStatusListener((_) {
+      widget.onReportPlaybackCoverRect();
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) widget.onReportPlaybackCoverRect();
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant _MobileDockCapsuleContent oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final hasPlayback = widget.overlaySessions.isNotEmpty;
+    final hadPlayback = oldWidget.overlaySessions.isNotEmpty;
+
+    if (hasPlayback) {
+      _cachedSessions = widget.overlaySessions;
+    }
+
+    final disableAnimations = MediaQuery.disableAnimationsOf(context);
+
+    if (hasPlayback != hadPlayback) {
+      if (disableAnimations) {
+        _appearanceController.value = hasPlayback ? 1.0 : 0.0;
+        if (!hasPlayback) {
+          _cachedSessions = const [];
+        }
+      } else {
+        if (hasPlayback) {
+          _appearanceController.forward();
+        } else {
+          _appearanceController.reverse();
+        }
+      }
+    }
+
+    final isExpanded = hasPlayback && widget.isPlaybackExpanded;
+    final wasExpanded = hadPlayback && oldWidget.isPlaybackExpanded;
+    if (isExpanded != wasExpanded) {
+      if (disableAnimations) {
+        _expandController.value = isExpanded ? 1.0 : 0.0;
+      } else {
+        if (isExpanded) {
+          _expandController.forward();
+        } else {
+          _expandController.reverse();
+        }
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _appearanceCurve.dispose();
+    _appearanceController.dispose();
+    _expandCurve.dispose();
+    _expandController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: Listenable.merge([_appearanceCurve, _expandCurve]),
+      builder: (context, _) {
+        final appearance = _appearanceCurve.value;
+        final expand = _expandCurve.value;
+        final showPlayback =
+            appearance > 0.0 || widget.overlaySessions.isNotEmpty;
+
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            final availableWidth = constraints.maxWidth;
+            const compactWidth = kActiveSessionCarouselDockHeight;
+
+            final targetExpandedWidth = compactWidth +
+                (availableWidth - compactWidth * 2).clamp(0.0, availableWidth) *
+                    expand;
+            final playbackWidth =
+                (targetExpandedWidth * appearance).clamp(0.0, availableWidth);
+            final navigationWidth =
+                (availableWidth - playbackWidth).clamp(0.0, availableWidth);
+
+            Widget? playbackWidget;
+            if (showPlayback && _cachedSessions.isNotEmpty) {
+              Widget carousel = ActiveSessionCarousel(
+                key: const ValueKey<String>('mobile_dock_carousel'),
+                sessions: _cachedSessions,
+                i18n: widget.i18n,
+                viewportFraction: 1,
+                presentation: ActiveSessionCarouselPresentation.embedded,
+                onOpenSession: (sessionId) {
+                  if (!widget.isPlaybackExpanded) {
+                    widget.onShowPlayback();
+                    return;
+                  }
+                  Navigator.of(context).push(
+                    buildSessionDetailRoute(sessionId: sessionId),
+                  );
+                },
+              );
+
+              if (appearance < 1.0) {
+                carousel = Opacity(
+                  opacity: appearance.clamp(0.0, 1.0),
+                  child: Transform.scale(
+                    scale: (0.7 + 0.3 * appearance).clamp(0.0, 1.0),
+                    alignment: Alignment.centerRight,
+                    child: carousel,
+                  ),
+                );
+              }
+
+              playbackWidget = Align(
+                alignment: Alignment.centerRight,
+                child: RepaintBoundary(
+                  child: SizedBox(
+                    key: const ValueKey<String>('mobile_dock_playback'),
+                    width: playbackWidth,
+                    height: kActiveSessionCarouselDockHeight,
+                    child: SizedBox.expand(
+                      key: widget.mobilePlaybackGeometryKey,
+                      child: ClipRRect(
+                        key: const ValueKey<String>(
+                          'mobile_dock_playback_viewport',
+                        ),
+                        borderRadius: BorderRadius.circular(
+                          kActiveSessionCarouselDockHeight / 2,
+                        ),
+                        child: carousel,
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            }
+
+            return Stack(
+              children: [
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: RepaintBoundary(
+                    child: SizedBox(
+                      key: const ValueKey<String>('mobile_dock_navigation'),
+                      width: navigationWidth,
+                      height: kActiveSessionCarouselDockHeight,
+                      child: ClipRect(
+                        child: AnimatedSwitcher(
+                          duration: _motionDuration,
+                          child: widget.buildBottomBar(
+                            context,
+                            currentOnly: widget.isPlaybackExpanded,
+                            onCurrentTap: widget.onShowDestinations,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                ?playbackWidget,
+              ],
+            );
+          },
+        );
+      },
+    );
   }
 }

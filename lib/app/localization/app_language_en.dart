@@ -1,7 +1,7 @@
 const Map<String, String> appLanguageEn = {
   'keyboard_shortcuts_title': 'Keyboard shortcuts',
   'keyboard_shortcuts_local':
-      'In the app\nSpace / Ctrl + Space: Play or pause\nCtrl + ← / →: Previous / next track\nAlt + ← / →: Seek backward / forward 5 seconds\nAlt + ↑ / ↓: Volume up / down 5%\nCtrl + 1–4: Library / Playback / ASMR / Settings\nTab / Shift + Tab: Next / previous control\nEnter / Space: Activate focused control\nArrow keys: Adjust sliders or change options\nEsc: Go back or close dialog\nF1: Show this help\nEditing keys are preserved in text inputs.',
+      'In the app\nSpace / Ctrl + Space: Play or pause\nCtrl + ← / →: Previous / next track\n← / →: Seek backward / forward 5 seconds\nAlt + ↑ / ↓: Volume up / down 5%\nCtrl + 1–4: Library / Playback / ASMR / Settings\nTab / Shift + Tab: Next / previous control\nEnter / Space: Activate focused control\nArrow keys: Adjust sliders or change options\nEsc: Go back or close dialog\nF1: Show this help\nEditing keys are preserved in text inputs.',
   'keyboard_shortcuts_global':
       'System-wide (also works in the background)\nCtrl + Alt + Space: Play or pause\nCtrl + Alt + ← / →: Previous / next track\nCtrl + Alt + ↑: Show main window',
   'keyboard_shortcuts_registered': 'Enabled',

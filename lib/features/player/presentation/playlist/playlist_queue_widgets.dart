@@ -205,18 +205,17 @@ class PlaybackQueueCard extends ConsumerWidget {
         constraints: const BoxConstraints(minHeight: playlistRowHeight),
         child: Material(
           key: ValueKey('playback_queue_row_surface_${session.id}'),
-          color: Colors.transparent,
+          color: isSelected
+              ? cs.primaryContainer.withValues(alpha: 0.15)
+              : Colors.transparent,
           child: DecoratedBox(
             key: ValueKey('playback_queue_active_highlight_${session.id}'),
-            decoration: BoxDecoration(
+            decoration: ShapeDecoration(
               gradient: playlistActiveHighlightGradient(
                 isPlaying,
                 highlightColor,
               ),
-              color: isSelected
-                  ? cs.primaryContainer.withValues(alpha: 0.15)
-                  : null,
-              borderRadius: playlistRowBorderRadius,
+              shape: playlistRowShape,
             ),
             child: InkWell(
               excludeFromSemantics: true,
@@ -907,6 +906,7 @@ class _PlaybackQueueAudioEditPageState
     final sessionId = widget.sessionId;
     final structure = ref.watch(playlistStructureUiProvider);
     final playback = ref.read(playbackFacadeProvider);
+    final paths = ref.read(audioPathCoordinatorProvider);
 
     ref.listen(
       playlistStructureUiProvider.select((s) {
@@ -1020,11 +1020,9 @@ class _PlaybackQueueAudioEditPageState
                                       ),
                                   builder: (context, triggerRemove) {
                                   final firstTrack = entry.tracks.firstOrNull;
-                                  final workTitle =
-                                      (firstTrack?.groupTitle.trim().isNotEmpty ==
-                                              true)
-                                          ? firstTrack!.groupTitle
-                                          : entry.title;
+                                  final workTitle = firstTrack != null
+                                      ? paths.workTitleForTrack(firstTrack)
+                                      : entry.title;
                                   final itemTitle =
                                       entry.kind == PlaybackQueueEntryKind.work
                                           ? i18n.tr('audio_count', {
@@ -1268,6 +1266,7 @@ class _QueueSourceAudioTile extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final library = ref.read(libraryFacadeProvider);
+    final paths = ref.read(audioPathCoordinatorProvider);
     final queueCoordinator = ref.read(playbackQueueCoordinatorProvider);
     final track = library.trackByPath(source.currentTrackPath);
     if (track == null) return const SizedBox.shrink();
@@ -1280,9 +1279,7 @@ class _QueueSourceAudioTile extends ConsumerWidget {
     final playlistAreaBackground = isDark
         ? cs.surfaceContainerLowest
         : cs.surfaceContainer;
-    final workTitle = track.groupTitle.trim().isNotEmpty
-        ? track.groupTitle
-        : track.displayName;
+    final workTitle = paths.workTitleForTrack(track);
     return _QueueAudioEditCard(
       track: track,
       title: track.displayName,

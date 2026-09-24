@@ -94,7 +94,6 @@ class GlobalShortcuts extends ConsumerWidget {
         (key == LogicalKeyboardKey.arrowLeft ||
             key == LogicalKeyboardKey.arrowRight);
     final seek =
-        alt &&
         !control &&
         (key == LogicalKeyboardKey.arrowLeft ||
             key == LogicalKeyboardKey.arrowRight);
@@ -113,38 +112,34 @@ class GlobalShortcuts extends ConsumerWidget {
         return KeyEventResult.ignored;
       }
     }
+    final session = ref.read(focusedPlaybackSessionProvider);
+    if (session == null) {
+      return KeyEventResult.ignored;
+    }
     final notifications = ref.read(notificationFacadeProvider);
     if (toggle) {
-      unawaited(notifications.togglePrimarySessionPlayPause());
+      unawaited(notifications.toggleSessionPlayback(session.id));
     } else if (skip) {
       unawaited(
         key == LogicalKeyboardKey.arrowRight
-            ? notifications.skipPrimarySessionToNext()
-            : notifications.skipPrimarySessionToPrevious(),
+            ? notifications.skipSessionToNext(session.id)
+            : notifications.skipSessionToPrevious(session.id),
       );
-    } else {
-      final session = notifications.notificationActionSession;
-      if (session == null) return KeyEventResult.handled;
-      if (seek) {
-        unawaited(
-          notifications.seekPrimarySession(
-            session.position +
-                Duration(
-                  seconds: key == LogicalKeyboardKey.arrowRight ? 5 : -5,
-                ),
-          ),
-        );
-      } else {
-        unawaited(
-          ref
-              .read(playbackFacadeProvider)
-              .setSessionVolume(
-                session.id,
-                session.volume +
-                    (key == LogicalKeyboardKey.arrowUp ? 0.05 : -0.05),
-              ),
-        );
-      }
+    } else if (seek) {
+      final offset = key == LogicalKeyboardKey.arrowRight
+          ? const Duration(seconds: 5)
+          : const Duration(seconds: -5);
+      unawaited(notifications.seekSessionByOffset(session.id, offset));
+    } else if (volume) {
+      unawaited(
+        ref
+            .read(playbackFacadeProvider)
+            .setSessionVolume(
+              session.id,
+              session.volume +
+                  (key == LogicalKeyboardKey.arrowUp ? 0.05 : -0.05),
+            ),
+      );
     }
     return KeyEventResult.handled;
   }

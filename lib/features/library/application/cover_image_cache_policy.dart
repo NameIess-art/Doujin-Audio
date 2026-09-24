@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart';
 
 export '../../../core/media/cover_image_format.dart';
@@ -52,8 +53,13 @@ void applyCoverImageCachePolicy(
 }) {
   final cache = imageCache ?? PaintingBinding.instance.imageCache;
   final budget = coverImageCacheBudgetForResolution(resolution);
-  cache.maximumSizeBytes = budget.maximumSizeBytes;
-  cache.maximumSize = budget.maximumSize;
+  final useDesktopBudget =
+      defaultTargetPlatform == TargetPlatform.windows &&
+      resolution != CoverImageResolution.memorySaver;
+  cache.maximumSizeBytes = useDesktopBudget
+      ? 256 * 1024 * 1024
+      : budget.maximumSizeBytes;
+  cache.maximumSize = useDesktopBudget ? 1200 : budget.maximumSize;
   if (clear) {
     cache.clear();
   }

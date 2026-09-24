@@ -209,7 +209,7 @@ class AppDockGlassPanel extends ConsumerWidget {
                 ),
               ),
             ),
-          child,
+          RepaintBoundary(child: child),
         ],
       ),
     );

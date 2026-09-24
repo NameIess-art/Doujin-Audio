@@ -159,6 +159,70 @@ final class AudioPathCoordinator implements PlaybackTrackResolver {
     return root == null ? '' : PathDisplay.folderName(root);
   }
 
+  String workTitleForTrack(MusicTrack track) {
+    if (track.isRemoteAsmr) {
+      final remoteTitle = track.remoteMetadata?['workTitle'] as String?;
+      if (remoteTitle != null && remoteTitle.trim().isNotEmpty) {
+        return remoteTitle.trim();
+      }
+      if (track.groupTitle.trim().isNotEmpty) {
+        return track.groupTitle.trim();
+      }
+      return track.displayName;
+    }
+
+    final detailTarget = _library.audioDetailTargetForTrack(track);
+    final detail = _library.resolvedAudioDetail(detailTarget) ??
+        _library.categorySnapshot?.detailFor(detailTarget);
+    if (detail != null && detail.workTitle.trim().isNotEmpty) {
+      return detail.workTitle.trim();
+    }
+
+    final workRoot = workRootForTrack(track.path);
+    if (workRoot != null && workRoot.isNotEmpty) {
+      final folderName = PathDisplay.folderName(workRoot);
+      if (folderName.isNotEmpty) {
+        if (track.groupTitle.trim().isNotEmpty &&
+            track.groupTitle.trim().toLowerCase() ==
+                folderName.trim().toLowerCase()) {
+          return track.groupTitle.trim();
+        }
+        return folderName;
+      }
+    }
+
+    if (detailTarget.targetPath.isNotEmpty &&
+        detailTarget.isLibraryRootFolder) {
+      final folderName = PathDisplay.folderName(detailTarget.targetPath);
+      if (folderName.isNotEmpty) {
+        if (track.groupTitle.trim().isNotEmpty &&
+            track.groupTitle.trim().toLowerCase() ==
+                folderName.trim().toLowerCase()) {
+          return track.groupTitle.trim();
+        }
+        return folderName;
+      }
+    }
+
+    final rootFolder = rootFolderName(track.path);
+    if (rootFolder.isNotEmpty) {
+      if (track.groupTitle.trim().isNotEmpty &&
+          track.groupTitle.trim().toLowerCase() ==
+              rootFolder.trim().toLowerCase()) {
+        return track.groupTitle.trim();
+      }
+      return rootFolder;
+    }
+
+    if (track.isSingle) {
+      return track.displayName;
+    }
+
+    return track.groupTitle.trim().isNotEmpty
+        ? track.groupTitle.trim()
+        : track.displayName;
+  }
+
   Future<AudioDetailRenameResult> renameAudioDetailTargetToName(
     AudioDetail detail,
     String targetName,

@@ -622,7 +622,7 @@ void main() {
     expect(trackCoverLookups, greaterThan(0));
   });
 
-  testWidgets('library card and work detail share a decoded cover', (
+  testWidgets('Android library card and work detail share a decoded cover', (
     WidgetTester tester,
   ) async {
     tester.view.devicePixelRatio = 2;
@@ -730,7 +730,39 @@ void main() {
     expect(playlistKey, cardKey);
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump();
-  });
+  }, variant: TargetPlatformVariant.only(TargetPlatform.android));
+
+  testWidgets('Windows library thumbnails decode at displayed size', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 2;
+    tester.view.physicalSize = const Size(1000, 1800);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
+    final fixture = AppRuntimeWidgetTestFixture();
+    addTearDown(fixture.dispose);
+    fixture.runtimeGraph.library.addTracks(
+      [
+        testMusicTrack(
+          name: 'Windows cover',
+          path: 'C:/music/track.mp3',
+          groupKey: 'C:/music',
+          groupTitle: 'Windows cover',
+        ),
+      ],
+      notify: false,
+      persist: false,
+    );
+    fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 0);
+
+    await tester.pumpWidget(fixture.build(const LibraryTab()));
+    await pumpUntilLibraryTreeReady(tester, fixture.runtimeGraph.library);
+    final cover = tester.widget<AsyncLocalCoverImage>(
+      find.byType(AsyncLocalCoverImage).first,
+    );
+    expect(cover.cacheWidth, 240);
+    await tester.pumpWidget(const SizedBox.shrink());
+  }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
 
   testWidgets('library folder expansion does not collide with list storage', (
     WidgetTester tester,

@@ -709,6 +709,37 @@ void main() {
     },
   );
 
+  testWidgets('Windows file covers appear as soon as decoding completes', (
+    tester,
+  ) async {
+    final provider = _ControlledImageProvider();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SizedBox(
+          width: 120,
+          height: 90,
+          child: RetryingImage(
+            retryKey: 'stored-cover',
+            imageProviderBuilder: () => provider,
+            showPlaceholderWhileDecoding: false,
+            fallbackBuilder: (_) => const Text('loading'),
+          ),
+        ),
+      ),
+    );
+    expect(find.text('loading'), findsOneWidget);
+
+    final image = await _createTestImage();
+    addTearDown(provider.evict);
+    provider.complete(image);
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.text('loading'), findsNothing);
+    expect(find.byType(RawImage), findsOneWidget);
+  });
+
   testWidgets('RetryingImage renders every cover display mode', (tester) async {
     final imageBytes = base64Decode(
       'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
@@ -775,6 +806,6 @@ void main() {
     );
     expect(retryingImage.displayMode, CoverImageDisplayMode.fill);
     expect(retryingImage.deferLoadDuringInteraction, isFalse);
-    expect(retryingImage.showPlaceholderWhileDecoding, isTrue);
-  });
+    expect(retryingImage.showPlaceholderWhileDecoding, isFalse);
+  }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
 }

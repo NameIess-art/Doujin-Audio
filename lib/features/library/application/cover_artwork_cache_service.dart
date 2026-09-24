@@ -351,7 +351,11 @@ class CoverArtworkCacheService {
     MusicTrack? track, {
     String? trackPath,
   }) async {
+    final requestGeneration = _generation;
     await _ensureFolderCoverSelections();
+    if (requestGeneration != _generation) {
+      return futureForPlaybackTrack(track, trackPath: trackPath);
+    }
     final preferEmbedded = _preferTrackEmbeddedCover(
       track,
       trackPath: trackPath,
@@ -386,12 +390,24 @@ class CoverArtworkCacheService {
 
     if (!preferEmbedded) {
       final folderCover = await resolveFromFolder();
+      if (requestGeneration != _generation) {
+        return futureForPlaybackTrack(track, trackPath: trackPath);
+      }
       if (folderCover != null) return folderCover;
-      return futureForTrack(track, trackPath: trackPath);
+      final trackCover = await futureForTrack(track, trackPath: trackPath);
+      return requestGeneration == _generation
+          ? trackCover
+          : futureForPlaybackTrack(track, trackPath: trackPath);
     } else {
       final trackCover = await futureForTrack(track, trackPath: trackPath);
+      if (requestGeneration != _generation) {
+        return futureForPlaybackTrack(track, trackPath: trackPath);
+      }
       if (trackCover != null) return trackCover;
-      return resolveFromFolder();
+      final folderCover = await resolveFromFolder();
+      return requestGeneration == _generation
+          ? folderCover
+          : futureForPlaybackTrack(track, trackPath: trackPath);
     }
   }
 
@@ -1090,6 +1106,7 @@ class CoverArtworkCacheService {
     MusicTrack? track, {
     String? trackPath,
   }) async {
+    final requestGeneration = _generation;
     final pathValue = track?.path ?? trackPath;
     final coverSearchKey = coverSearchKeyForTrack(track, trackPath: pathValue);
     if (coverSearchKey == null) return Future<String?>.value();
@@ -1103,6 +1120,9 @@ class CoverArtworkCacheService {
         track,
         trackPath: pathValue,
       );
+      if (requestGeneration != _generation) {
+        return resolvedForTrack(track, trackPath: trackPath);
+      }
       if (folderCoverPath != null) {
         _resolvedTrackCovers[coverSearchKey] = folderCoverPath;
         _resolvedTrackCoverFutures[coverSearchKey] = SynchronousFuture<String?>(
@@ -1240,6 +1260,10 @@ class CoverArtworkCacheService {
         if (coverPath == null && track != null) {
           coverPath = await _resolvePlatformCoverPathForTrack(track);
         }
+      }
+
+      if (requestGeneration != _generation) {
+        return resolvedForTrack(track, trackPath: trackPath);
       }
 
       final removedTrackFuture = _trackCoverFutures.remove(coverSearchKey);

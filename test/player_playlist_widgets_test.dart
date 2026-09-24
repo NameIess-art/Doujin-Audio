@@ -32,7 +32,6 @@ import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/core/widgets/async_cover_image.dart';
 import 'package:doujin_audio/core/widgets/duration_overlay.dart';
 import 'package:doujin_audio/core/widgets/app_feedback.dart';
-import 'package:doujin_audio/core/widgets/library_like_cards.dart';
 import 'package:doujin_audio/core/widgets/mobile_overlay_inset.dart';
 import 'package:doujin_audio/core/widgets/swipe_reveal_card.dart';
 import 'package:doujin_audio/core/widgets/top_page_header.dart';
@@ -2632,12 +2631,7 @@ void main() {
     final queueCard = tester
         .widgetList<SwipeRevealCard>(find.byType(SwipeRevealCard))
         .singleWhere((card) => card.key == ValueKey(queueSession.id));
-    final queueRowShape = queueCard.shape as RoundedRectangleBorder;
-    expect(queueRowShape.side, BorderSide.none);
-    expect(
-      queueRowShape.borderRadius.resolve(TextDirection.ltr),
-      playlistRowBorderRadius,
-    );
+    expect(queueCard.shape, same(playlistRowShape));
     expect(queueCard.margin, EdgeInsets.zero);
     final queueCoverGrid = find.byKey(
       const ValueKey('playback_queue_cover_grid'),
@@ -2759,7 +2753,7 @@ void main() {
       ),
     );
     final activeGradient =
-        (activeHighlight.decoration as BoxDecoration).gradient!
+        (activeHighlight.decoration as ShapeDecoration).gradient!
             as LinearGradient;
     final playlistTheme = Theme.of(tester.element(find.byType(PlaylistTab)));
     expect(activeGradient.colors, <Color>[
@@ -3183,6 +3177,72 @@ void main() {
     },
   );
 
+  testWidgets(
+    'queue audio edit page displays work title instead of folder name',
+    (tester) async {
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      fixture.runtimeGraph.library.addWatchedLibrary('/library');
+      final track = MusicTrack(
+        path: '/library/RJ123456_Work/Disc 1/track1.mp3',
+        displayName: 'Track 1',
+        groupKey: '/library/RJ123456_Work/Disc 1',
+        groupTitle: 'Disc 1',
+        groupSubtitle: '/library/RJ123456_Work/Disc 1',
+        isSingle: false,
+      );
+      fixture.runtimeGraph.library.addTracks(
+        <MusicTrack>[track],
+        notify: false,
+        persist: false,
+      );
+      final sourceSession = PlaybackSession(
+        id: 'source-session',
+        currentTrackPath: track.path,
+        loopMode: SessionLoopMode.single,
+        nonSingleLoopMode: SessionLoopMode.single,
+        volume: 1,
+        createdAt: DateTime(2026),
+        state: const PlayerState(false, ProcessingState.ready),
+      );
+      addTearDown(sourceSession.shutdown);
+      final queueSession = fixture.runtimeGraph.playback.createPlaybackQueue(
+        'Queue',
+      );
+      addTearDown(queueSession.shutdown);
+      fixture.playbackService.registerSession(sourceSession);
+      fixture.playbackService.syncSlice(
+        activeSessions: <PlaybackSession>[sourceSession, queueSession],
+        playingSessionCount: 0,
+        focusedSessionId: sourceSession.id,
+        coverGeneration: 0,
+        isInitialized: true,
+      );
+
+      await tester.pumpWidget(
+        fixture.build(PlaybackQueueAudioEditPage(sessionId: queueSession.id)),
+      );
+      await tester.pumpAndSettle();
+
+      // Top line should display work title ('RJ123456_Work'), not folder name ('Disc 1')
+      expect(find.text('RJ123456_Work'), findsOneWidget);
+      expect(find.text('Disc 1'), findsNothing);
+      expect(find.text('Track 1'), findsOneWidget);
+
+      // Add to queue and verify added entry also displays work title
+      final addAudio = find.byTooltip(
+        fixture.languageProvider.tr('add_audio_to_queue'),
+      );
+      await tester.tap(addAudio);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+
+      expect(find.text('RJ123456_Work'), findsWidgets);
+      expect(find.text('Disc 1'), findsNothing);
+      await tester.pump(const Duration(seconds: 1));
+    },
+  );
+
   testWidgets('playlist resolves ASMR metadata from the session queue', (
     tester,
   ) async {
@@ -3349,12 +3409,7 @@ void main() {
     );
     expect(swipeCard.color, isNull);
     expect(swipeCard.margin, EdgeInsets.zero);
-    final rowShape = swipeCard.shape as RoundedRectangleBorder;
-    expect(rowShape.side, BorderSide.none);
-    expect(
-      rowShape.borderRadius.resolve(TextDirection.ltr),
-      playlistRowBorderRadius,
-    );
+    expect(swipeCard.shape, same(playlistRowShape));
     expect(
       swipeCard.closedColor,
       Theme.of(tester.element(find.byType(PlaylistTab))).colorScheme.surface,
@@ -3375,12 +3430,7 @@ void main() {
           .first,
     );
     expect(visualCard.clipBehavior, Clip.antiAlias);
-    expect(
-      (visualCard.shape as RoundedRectangleBorder).borderRadius.resolve(
-        TextDirection.ltr,
-      ),
-      playlistRowBorderRadius,
-    );
+    expect(visualCard.shape, same(playlistRowShape));
     expect(cardContent.padding, playlistRowPadding);
     final cardContentRow = cardContent.child! as Row;
     expect(
@@ -3405,8 +3455,10 @@ void main() {
       find.byWidgetPredicate((widget) {
         if (widget is! DecoratedBox) return false;
         final decoration = widget.decoration;
-        return decoration is ShapeDecoration && decoration.gradient != null;
-      }),
+        return widget.child is Stack &&
+            decoration is ShapeDecoration &&
+            decoration.gradient != null;
+      }).first,
     );
     expect(
       (revealPane.decoration as ShapeDecoration).gradient!.colors.last,
@@ -4863,25 +4915,17 @@ void main() {
           indicatorContainer.decoration as BoxDecoration;
       expect(indicatorDecoration.color, const Color(0xFF4CAF50));
       expect(indicatorDecoration.shape, BoxShape.circle);
-      final trackDecoration =
-          tester
-                  .widget<DecoratedBox>(
-                    find.byKey(
-                      ValueKey<String>(
-                        'playlist_card_highlight_${trackSession.id}',
-                      ),
-                    ),
-                  )
-                  .decoration
-              as BoxDecoration;
       final colorScheme = Theme.of(
         tester.element(find.byType(PlaylistTab)),
       ).colorScheme;
+      final trackCard = tester.widget<Card>(
+        find.ancestor(of: trackContent, matching: find.byType(Card)).first,
+      );
       expect(
-        trackDecoration.color,
+        trackCard.color,
         colorScheme.primaryContainer.withValues(alpha: 0.15),
       );
-      expect(trackDecoration.border, isNull);
+      expect(trackCard.shape, same(playlistRowShape));
       final trackSemantics = tester
           .widgetList<Semantics>(
             find.ancestor(of: trackTitle, matching: find.byType(Semantics)),
@@ -4897,22 +4941,13 @@ void main() {
       expect(queueIndicator, findsOneWidget);
       expect(tester.getTopLeft(trackTitle).dx, trackTitleX);
       expect(tester.getTopLeft(queueTitle).dx, queueTitleX);
-      final queueDecoration =
-          tester
-                  .widget<DecoratedBox>(
-                    find.byKey(
-                      ValueKey<String>(
-                        'playback_queue_active_highlight_${queueSession.id}',
-                      ),
-                    ),
-                  )
-                  .decoration
-              as BoxDecoration;
+      final queueSurface = tester.widget<Material>(
+        find.byKey(ValueKey('playback_queue_row_surface_${queueSession.id}')),
+      );
       expect(
-        queueDecoration.color,
+        queueSurface.color,
         colorScheme.primaryContainer.withValues(alpha: 0.15),
       );
-      expect(queueDecoration.border, isNull);
 
       final pauseIconButton = find.byKey(
         const ValueKey<String>('batch_pause_button'),
@@ -5720,18 +5755,15 @@ void main() {
       final cardSize = tester.getSize(swipeCardFinder);
       expect(cardSize.height, 64.0);
 
-      // Verify left border is semicircular (radius = 32)
-      final rowShape = swipeCard.shape as RoundedRectangleBorder;
-      final borderRadius = rowShape.borderRadius.resolve(TextDirection.ltr);
-      expect(borderRadius.topLeft, const Radius.circular(32));
-      expect(borderRadius.bottomLeft, const Radius.circular(32));
+      expect(swipeCard.shape, same(playlistRowShape));
       expect(
-        borderRadius.topRight,
-        const Radius.circular(LibraryLikeCardMetrics.cardRadius),
-      );
-      expect(
-        borderRadius.bottomRight,
-        const Radius.circular(LibraryLikeCardMetrics.cardRadius),
+        tester.widgetList<ClipPath>(
+          find.descendant(of: swipeCardFinder, matching: find.byType(ClipPath)),
+        ).any(
+          (clip) => clip.clipper is ShapeBorderClipper &&
+              (clip.clipper! as ShapeBorderClipper).shape == playlistRowShape,
+        ),
+        isTrue,
       );
 
       // Swipe right to reveal leading action (pin)
@@ -5749,14 +5781,19 @@ void main() {
         (box) => box.decoration is ShapeDecoration,
       );
       final shapeDeco = revealedUnderlayer.decoration as ShapeDecoration;
-      final revealShape = shapeDeco.shape as RoundedRectangleBorder;
-      final revealBorderRadius = revealShape.borderRadius.resolve(
-        TextDirection.ltr,
-      );
-      expect(revealBorderRadius.topLeft, const Radius.circular(32));
-      expect(revealBorderRadius.bottomLeft, const Radius.circular(32));
+      expect(shapeDeco.shape, same(playlistRowShape));
     },
   );
+
+  test('playlist row left edge stays semicircular at larger heights', () {
+    for (final height in <double>[64, 96]) {
+      final path = playlistRowShape.getOuterPath(
+        Rect.fromLTWH(0, 0, 300, height),
+      );
+      expect(path.contains(Offset(0.5, height / 2)), isTrue);
+      expect(path.contains(Offset(0.5, height / 2 - 15)), isFalse);
+    }
+  });
 
   test('formatSpeedValue formats 1, 2, and 3 to two decimal places', () {
     expect(formatSpeedValue(1.0), '1.00x');

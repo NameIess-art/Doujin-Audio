@@ -23,20 +23,51 @@ const double sessionVolumeDisplayMaximum = 1.5;
 const int sessionVolumeDisplayMaximumPercent = 150;
 const double playlistCoverSize = 52;
 const double playlistRowHeight = 64;
-const double playlistRowRadius = playlistRowHeight / 2;
 const EdgeInsets playlistRowPadding = EdgeInsets.symmetric(
   horizontal: AppSpacing.xs,
   vertical: 6,
 );
+const double playlistRowRadius = playlistRowHeight / 2;
 const BorderRadius playlistRowBorderRadius = BorderRadius.only(
   topLeft: Radius.circular(playlistRowRadius),
   bottomLeft: Radius.circular(playlistRowRadius),
   topRight: Radius.circular(LibraryLikeCardMetrics.cardRadius),
   bottomRight: Radius.circular(LibraryLikeCardMetrics.cardRadius),
 );
-const RoundedRectangleBorder playlistRowShape = RoundedRectangleBorder(
-  borderRadius: playlistRowBorderRadius,
-);
+const RoundedRectangleBorder playlistRowShape = _PlaylistRowShape();
+
+class _PlaylistRowShape extends RoundedRectangleBorder {
+  const _PlaylistRowShape({super.side})
+      : super(borderRadius: playlistRowBorderRadius);
+
+  @override
+  RoundedRectangleBorder copyWith({
+    BorderSide? side,
+    BorderRadiusGeometry? borderRadius,
+  }) {
+    if ((side == null || side == this.side) && borderRadius == null) {
+      return this;
+    }
+    return _PlaylistRowShape(side: side ?? this.side);
+  }
+
+  @override
+  Path getInnerPath(Rect rect, {TextDirection? textDirection}) =>
+      getOuterPath(rect, textDirection: textDirection);
+
+  @override
+  Path getOuterPath(Rect rect, {TextDirection? textDirection}) {
+    final leftRadius = Radius.circular(rect.height / 2);
+    const rightRadius = Radius.circular(LibraryLikeCardMetrics.cardRadius);
+    return Path()..addRRect(RRect.fromRectAndCorners(
+      rect,
+      topLeft: leftRadius,
+      bottomLeft: leftRadius,
+      topRight: rightRadius,
+      bottomRight: rightRadius,
+    ));
+  }
+}
 
 LinearGradient playlistActiveHighlightGradient(
   bool isPlaying,

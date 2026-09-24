@@ -43,7 +43,7 @@ final class PlaybackQueueCoordinator {
 
     await _playback.addWorkToPlaybackQueue(
       sessionId,
-      title: track.groupTitle,
+      title: _paths.workTitleForTrack(track),
       tracks: tracks,
       workRootPath: workRootPath,
     );

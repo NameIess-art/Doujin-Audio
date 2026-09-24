@@ -419,7 +419,8 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
         child: IgnorePointer(ignoring: _isOpen, child: widget.child),
       );
 
-      if (widget.shape case final RoundedRectangleBorder roundedShape) {
+      if (widget.shape.runtimeType == RoundedRectangleBorder) {
+        final roundedShape = widget.shape as RoundedRectangleBorder;
         return ClipRRect(
           borderRadius: roundedShape.borderRadius.resolve(
             Directionality.of(context),

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -787,6 +788,8 @@ class RetryingFileImage extends ConsumerWidget {
       maxRetryAttempts: maxRetryAttempts,
       displayMode: effectiveDisplayMode,
       deferLoadDuringInteraction: false,
+      showPlaceholderWhileDecoding:
+          defaultTargetPlatform != TargetPlatform.windows,
     );
   }
 }
@@ -966,18 +969,21 @@ class _RetryingImageState extends State<RetryingImage> {
         gaplessPlayback: widget.gaplessPlayback,
         frameBuilder: primary
             ? (context, child, frame, wasSynchronouslyLoaded) {
-                if (wasSynchronouslyLoaded ||
-                    !widget.showPlaceholderWhileDecoding) {
+                if (wasSynchronouslyLoaded) {
                   return child;
                 }
                 final loadingBuilder = widget.loadingBuilder;
+                final placeholder = loadingBuilder != null
+                    ? loadingBuilder(context)
+                    : CoverLoadingArtwork(
+                        placeholder: widget.fallbackBuilder(context),
+                      );
+                if (!widget.showPlaceholderWhileDecoding) {
+                  return frame == null ? placeholder : child;
+                }
                 return PlaceholderContentTransition(
                   showPlaceholder: frame == null,
-                  placeholder: loadingBuilder != null
-                      ? loadingBuilder(context)
-                      : CoverLoadingArtwork(
-                          placeholder: widget.fallbackBuilder(context),
-                        ),
+                  placeholder: placeholder,
                   content: child,
                 );
               }

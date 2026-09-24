@@ -501,20 +501,19 @@ class SessionListCard extends ConsumerWidget {
               margin: EdgeInsets.zero,
               clipBehavior: Clip.antiAlias,
               shape: playlistRowShape,
-              color: Colors.transparent,
+              color: isSelected
+                  ? cs.primaryContainer.withValues(alpha: 0.15)
+                  : Colors.transparent,
               elevation: 0,
               shadowColor: Colors.transparent,
               child: DecoratedBox(
                 key: ValueKey<String>('playlist_card_highlight_$sessionId'),
-                decoration: BoxDecoration(
+                decoration: ShapeDecoration(
                   gradient: playlistActiveHighlightGradient(
                     isPlaying,
                     highlightColor,
                   ),
-                  color: isSelected
-                      ? cs.primaryContainer.withValues(alpha: 0.15)
-                      : null,
-                  borderRadius: playlistRowBorderRadius,
+                  shape: playlistRowShape,
                 ),
                 child: InkWell(
                   excludeFromSemantics: true,

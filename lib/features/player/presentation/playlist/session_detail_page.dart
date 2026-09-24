@@ -244,7 +244,7 @@ class _DetailStructure {
 }
 
 class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   late final AnimationController _dismissController;
   late final AnimationController _contentEnterController;
   bool _contentEnterStarted = false;
@@ -264,6 +264,7 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _systemUiRestored = false;
     if (defaultTargetPlatform == TargetPlatform.android ||
         defaultTargetPlatform == TargetPlatform.iOS) {
@@ -283,6 +284,12 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
       vsync: this,
       duration: const Duration(milliseconds: 220),
     )..addStatusListener(_handleEnterStatus);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        ref.read(activeSessionDetailIdsProvider.notifier).push(widget.sessionId);
+        ref.read(notificationFacadeProvider).setFocusedSession(widget.sessionId);
+      }
+    });
   }
 
   void _handleEnterStatus(AnimationStatus status) {
@@ -305,6 +312,7 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _restoreSystemUiMode();
     _dismissOperation++;
     UiInteractionCoordinator.instance.cancelInteraction(
@@ -316,6 +324,9 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
     _transitionActive.dispose();
     _dismissController.dispose();
     _contentEnterController.dispose();
+    try {
+      ref.read(activeSessionDetailIdsProvider.notifier).pop(widget.sessionId);
+    } catch (_) {}
     super.dispose();
   }
 
@@ -357,6 +368,24 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
     _dismissInteractionNotifier.value = false;
     _transitionActive.value = !_contentEnterController.isCompleted || _closing;
     UiInteractionCoordinator.instance.endInteraction(_dismissInteractionSource);
+  }
+
+  void _resetInterruptedDismiss() {
+    if (!_dismissInteractionActive && !_closing) return;
+    _dismissOperation++;
+    _closing = false;
+    _dismissController.stop();
+    _dismissController.value = 0;
+    _endDismissInteraction();
+    _setRevealBehind(false);
+  }
+
+  @override
+  void didChangeMetrics() => _resetInterruptedDismiss();
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) _resetInterruptedDismiss();
   }
 
   Future<void> _handleVerticalDragEnd(

@@ -98,6 +98,7 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         _carouselSnapListenable.addListener(_handleCarouselSnap);
+        _notifyVisibleSessionChanged();
       }
     });
   }
@@ -116,6 +117,9 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
       ..removeListener(_handlePageTick)
       ..dispose();
     _pageNotifier.dispose();
+    try {
+      ref.read(activeVisibleSessionCardIdProvider.notifier).setVisible(null);
+    } catch (_) {}
     super.dispose();
   }
 
@@ -142,6 +146,8 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
     _lastVisibleSessionId = sessionId;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || _lastVisibleSessionId != sessionId) return;
+      ref.read(activeVisibleSessionCardIdProvider.notifier).setVisible(sessionId);
+      ref.read(notificationFacadeProvider).setFocusedSession(sessionId);
       widget.onVisibleSessionChanged?.call(sessionId);
     });
   }
@@ -261,7 +267,14 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
     }
     if (sessions.isEmpty) {
       _currentSessions = const [];
-      _lastVisibleSessionId = null;
+      if (_lastVisibleSessionId != null) {
+        _lastVisibleSessionId = null;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            ref.read(activeVisibleSessionCardIdProvider.notifier).setVisible(null);
+          }
+        });
+      }
       return const SizedBox.shrink();
     }
     _currentSessions = sessions;

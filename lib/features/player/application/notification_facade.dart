@@ -446,11 +446,16 @@ final class NotificationFacade {
 
   Future<void> toggleSessionPlayback(String sessionId) {
     return _guardAction(() async {
+      final session = _resolveSession(sessionId);
       final playback = _playback;
-      final session = playback?.sessionById(sessionId);
-      if (session == null || playback == null) return;
-      _focusExplicitSession(session);
-      await playback.toggleSessionPlayPause(session.id);
+      if (session == null || playback == null || session.isLoading) return;
+      _setFocusSessionId(session.id);
+      if (session.state.playing) {
+        if (!await _pauseNativeSession(playback, session)) return;
+        session.setOptimisticState(playing: false);
+        return;
+      }
+      await _resumeSession(session);
     });
   }
 
@@ -471,6 +476,26 @@ final class NotificationFacade {
       if (session == null || playback == null) return;
       _focusExplicitSession(session);
       await playback.seekSessionToNext(session.id);
+    });
+  }
+
+  Future<void> seekSession(String sessionId, Duration position) {
+    return _guardAction(() async {
+      final session = _resolveSession(sessionId);
+      final playback = _playback;
+      if (session == null || playback == null) return;
+      _setFocusSessionId(session.id);
+      await playback.seekSession(session.id, position);
+    });
+  }
+
+  Future<void> seekSessionByOffset(String sessionId, Duration offset) {
+    return _guardAction(() async {
+      final session = _resolveSession(sessionId);
+      final playback = _playback;
+      if (session == null || playback == null) return;
+      _setFocusSessionId(session.id);
+      await playback.seekSessionByOffset(session.id, offset);
     });
   }
 

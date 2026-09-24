@@ -5,6 +5,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/features/player/application/notification_facade.dart';
+import 'package:doujin_audio/features/player/application/native_playback_bridge.dart';
 import 'support/runtime_test_models.dart';
 import 'package:doujin_audio/app/application/playback_queue_coordinator.dart';
 import 'package:doujin_audio/app/application/audio_path_coordinator.dart';
@@ -190,6 +191,126 @@ void main() {
 
         expect(preparedQueueIndexes.last, 0);
         expect(queueSession.currentQueueIndex, 0);
+      },
+    );
+
+    test(
+      'direct work playback uses folder-relative native queue indexes',
+      () async {
+        final preparations = <Map<Object?, Object?>>[];
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(nativePlaybackChannel, (call) async {
+              if (call.method == NativePlaybackMethod.prepareSession) {
+                preparations.add(call.arguments as Map<Object?, Object?>);
+              }
+              return <String, Object?>{'ok': true, 'value': null};
+            });
+        final tracks = <MusicTrack>[
+          testMusicTrack(
+            name: '1_ここは触手の世界',
+            path: '/works/触手世界/1_ここは触手の世界.wav',
+            groupKey: '/works/触手世界',
+            groupTitle: '触手世界',
+          ),
+          testMusicTrack(
+            name: '2_媚薬の洗礼',
+            path: '/works/触手世界/2_媚薬の洗礼.wav',
+            groupKey: '/works/触手世界',
+            groupTitle: '触手世界',
+          ),
+          testMusicTrack(
+            name: 'loop1_吐息',
+            path: '/works/触手世界/おまけループ/loop1_吐息.wav',
+            groupKey: '/works/触手世界/おまけループ',
+            groupTitle: 'おまけループ',
+          ),
+          testMusicTrack(
+            name: 'loop2_喘ぎ',
+            path: '/works/触手世界/おまけループ/loop2_喘ぎ.wav',
+            groupKey: '/works/触手世界/おまけループ',
+            groupTitle: 'おまけループ',
+          ),
+        ];
+        runtimeGraph.library.addTracks(tracks, notify: false, persist: false);
+
+        await runtimeGraph.playback.playDirect(tracks, startIndex: 2);
+        expect(preparations.last['queueStartIndex'], 0);
+        expect(
+          (preparations.last['queue'] as List<Object?>)
+              .map(
+                (item) => PathMatcher.equivalenceKey(
+                  (item as Map<Object?, Object?>)['path'] as String,
+                ),
+              )
+              .toList(),
+          [
+            PathMatcher.equivalenceKey(tracks[2].path),
+            PathMatcher.equivalenceKey(tracks[3].path),
+          ],
+        );
+
+        final session = runtimeGraph.playback.sessions.values.single;
+        runtimeGraph.playbackCommands.handleNativeSnapshot(
+          NativePlaybackSnapshot(
+            sessionId: session.id,
+            path: tracks[2].path,
+            playing: true,
+            playWhenReady: true,
+            processingState: 'ready',
+            position: Duration.zero,
+            bufferedPosition: Duration.zero,
+            volume: 1,
+            boostGain: 0,
+            channelSwapEnabled: false,
+          ),
+        );
+        expect(session.currentQueueIndex, 2);
+
+        await runtimeGraph.playback.seekSessionToNext(session.id);
+        expect(preparations.last['queueStartIndex'], 1);
+        expect(
+          PathMatcher.equalsNormalized(
+            session.currentTrackPath,
+            tracks[3].path,
+          ),
+          isTrue,
+        );
+
+        await runtimeGraph.playback.seekSessionToPrev(session.id);
+        expect(preparations.last['queueStartIndex'], 0);
+        expect(
+          PathMatcher.equalsNormalized(
+            session.currentTrackPath,
+            tracks[2].path,
+          ),
+          isTrue,
+        );
+
+        final nestedOnlyTracks = <MusicTrack>[
+          for (final (folder, name) in <(String, String)>[
+            ('DM特典', 'CpEX.デレデレ妹.mp3'),
+            ('DM特典', 'CpEX.デレデレ妹.wav'),
+            ('mp3', '01.ブラコン妹との添い寝.mp3'),
+            ('mp3', '02.耳舐め手コキ.mp3'),
+            ('特典音声', 'EX01.添い寝ループ.mp3'),
+            ('特典音声', 'EX02.耳舐めループ.mp3'),
+          ])
+            testMusicTrack(
+              name: name,
+              path: '/works/お布団フォーリー/$folder/$name',
+              groupKey: '/works/お布団フォーリー/$folder',
+              groupTitle: folder,
+            ),
+        ];
+        runtimeGraph.library.addTracks(
+          nestedOnlyTracks,
+          notify: false,
+          persist: false,
+        );
+        await runtimeGraph.playback.playDirect(nestedOnlyTracks, startIndex: 2);
+        expect(preparations.last['queueStartIndex'], 0);
+        await runtimeGraph.playback.playDirect(nestedOnlyTracks, startIndex: 4);
+        expect(preparations.last['queueStartIndex'], 0);
       },
     );
 

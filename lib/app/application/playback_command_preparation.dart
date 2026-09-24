@@ -356,12 +356,11 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
         ),
         repeatOne: session.loopMode == SessionLoopMode.single,
         queue: nativeQueue,
-        queueStartIndex:
-            targetQueueIndex ??
-            _nativePlaybackQueueStartIndexFor(
-              session,
-              currentPath: target.resolvedPath,
-            ),
+        queueStartIndex: _nativePlaybackQueueStartIndexFor(
+          session,
+          currentPath: target.resolvedPath,
+          targetQueueIndex: targetQueueIndex,
+        ),
         repeatAll:
             !_hasDetachedPlaybackQueueCurrent(session) &&
             session.loopMode != SessionLoopMode.single &&
@@ -536,6 +535,7 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
   int? _nativePlaybackQueueStartIndexFor(
     PlaybackSession session, {
     required String currentPath,
+    int? targetQueueIndex,
   }) {
     final resolvedCurrentPath = _playbackFacade.resolveRetargetedPath(
       currentPath,
@@ -544,6 +544,10 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
       session,
       currentPath: resolvedCurrentPath,
     );
+    if (targetQueueIndex != null && scope.isCustomQueue) {
+      final scopedIndex = scope.queueIndices.indexOf(targetQueueIndex);
+      if (scopedIndex >= 0) return scopedIndex;
+    }
     return scope.currentIndex;
   }
 

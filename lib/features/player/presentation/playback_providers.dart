@@ -59,11 +59,13 @@ class ActiveSessionDetailIdsNotifier extends Notifier<List<String>> {
   List<String> build() => const [];
 
   void push(String sessionId) {
+    if (!ref.mounted) return;
     if (state.isNotEmpty && state.last == sessionId) return;
     state = [...state, sessionId];
   }
 
   void pop(String sessionId) {
+    if (!ref.mounted) return;
     if (!state.contains(sessionId)) return;
     final updated = List<String>.from(state)..remove(sessionId);
     state = updated;
@@ -80,6 +82,7 @@ class ActiveVisibleSessionCardIdNotifier extends Notifier<String?> {
   String? build() => null;
 
   void setVisible(String? sessionId) {
+    if (!ref.mounted) return;
     if (state != sessionId) {
       state = sessionId;
     }

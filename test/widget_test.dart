@@ -495,11 +495,16 @@ void main() {
         tester.view.resetPhysicalSize();
       });
 
-      final harness = await _pumpAppShell(tester, includePlaybackSession: false);
+      final harness = await _pumpAppShell(
+        tester,
+        includePlaybackSession: false,
+      );
       final navigation = find.byKey(
         const ValueKey<String>('mobile_dock_navigation'),
       );
-      final playback = find.byKey(const ValueKey<String>('mobile_dock_playback'));
+      final playback = find.byKey(
+        const ValueKey<String>('mobile_dock_playback'),
+      );
 
       expect(playback, findsNothing);
       final initialNavWidth = tester.getSize(navigation).width;
@@ -1303,6 +1308,73 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('ASMR categories keep independent scroll controllers', (
+    tester,
+  ) async {
+    final activePageIndex = ValueNotifier<int>(0);
+    final controller = _QueuedEmptyAsmrLibraryController(
+      services: createTestAsmrServices(),
+    );
+    final harness = AppRuntimeWidgetTestFixture();
+    addTearDown(activePageIndex.dispose);
+    addTearDown(controller.dispose);
+    addTearDown(harness.dispose);
+
+    await tester.pumpWidget(
+      harness.build(
+        AsmrTab(activeTabIndexListenable: activePageIndex),
+        overrides: [
+          asmrLibraryControllerProvider.overrideWithValue(controller),
+        ],
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    final collectedList = tester.widget<ListView>(
+      find.descendant(
+        of: find.byKey(const ValueKey(AsmrCategoryType.collected)),
+        matching: find.byKey(const ValueKey<String>('content')),
+      ),
+    );
+    final collectedController = collectedList.controller;
+
+    await tester.tap(
+      find.text(harness.languageProvider.tr('asmr_category_recommendation')),
+    );
+    await tester.pump();
+    controller.completeRecommendationRefresh();
+    await tester.pump(const Duration(milliseconds: 400));
+    final recommendationView = find.byKey(
+      const ValueKey(AsmrCategoryType.recommendation),
+    );
+    expect(recommendationView, findsOneWidget);
+    final recommendationController = tester
+        .widget<ListView>(
+          find.descendant(
+            of: recommendationView,
+            matching: find.byKey(const ValueKey<String>('content')),
+          ),
+        )
+        .controller;
+    expect(recommendationController, isNot(same(collectedController)));
+
+    await tester.tap(
+      find.text(harness.languageProvider.tr('asmr_category_collected')),
+    );
+    await tester.pump(const Duration(milliseconds: 400));
+    final restoredCollectedController = tester
+        .widget<ListView>(
+          find.descendant(
+            of: find.byKey(const ValueKey(AsmrCategoryType.collected)),
+            matching: find.byKey(const ValueKey<String>('content')),
+          ),
+        )
+        .controller;
+    expect(restoredCollectedController, same(collectedController));
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('ASMR search results support multi-selection mode', (
     tester,
   ) async {
@@ -1399,7 +1471,10 @@ void main() {
         findsNothing,
       );
       final loadingList = tester.widget<ListView>(
-        find.byKey(const ValueKey<String>('loading')),
+        find.descendant(
+          of: find.byKey(const ValueKey<String>('loading')),
+          matching: find.byType(ListView),
+        ),
       );
       expect(loadingList.physics, isA<NeverScrollableScrollPhysics>());
 
@@ -3553,28 +3628,33 @@ void main() {
     _setLogicalTestViewSize(tester, const Size(1400, 800));
     await _pumpAppShell(tester);
     final navigator = Navigator.of(tester.element(find.byType(MainScreen)));
-    unawaited(navigator.push(buildSessionDetailRoute(
-      sessionId: 'orientation_session',
-    )));
+    unawaited(
+      navigator.push(buildSessionDetailRoute(sessionId: 'orientation_session')),
+    );
     await tester.pumpAndSettle();
 
     final detail = find.byType(SessionDetailPage);
     final route = ModalRoute.of(tester.element(detail))!;
     final gesture = tester.widget<GestureDetector>(
-      find.descendant(
-        of: detail,
-        matching: find.byWidgetPredicate(
-          (widget) => widget is GestureDetector &&
-              widget.onVerticalDragUpdate != null,
-        ),
-      ).first,
+      find
+          .descendant(
+            of: detail,
+            matching: find.byWidgetPredicate(
+              (widget) =>
+                  widget is GestureDetector &&
+                  widget.onVerticalDragUpdate != null,
+            ),
+          )
+          .first,
     );
     gesture.onVerticalDragStart!(DragStartDetails());
-    gesture.onVerticalDragUpdate!(DragUpdateDetails(
-      globalPosition: Offset.zero,
-      delta: const Offset(0, 80),
-      primaryDelta: 80,
-    ));
+    gesture.onVerticalDragUpdate!(
+      DragUpdateDetails(
+        globalPosition: Offset.zero,
+        delta: const Offset(0, 80),
+        primaryDelta: 80,
+      ),
+    );
     await tester.pump();
     expect(route.opaque, isFalse);
     expect(UiInteractionCoordinator.instance.isInteracting, isTrue);
@@ -3589,20 +3669,25 @@ void main() {
     expect(UiInteractionCoordinator.instance.isInteracting, isFalse);
 
     final resumedGesture = tester.widget<GestureDetector>(
-      find.descendant(
-        of: detail,
-        matching: find.byWidgetPredicate(
-          (widget) => widget is GestureDetector &&
-              widget.onVerticalDragUpdate != null,
-        ),
-      ).first,
+      find
+          .descendant(
+            of: detail,
+            matching: find.byWidgetPredicate(
+              (widget) =>
+                  widget is GestureDetector &&
+                  widget.onVerticalDragUpdate != null,
+            ),
+          )
+          .first,
     );
     resumedGesture.onVerticalDragStart!(DragStartDetails());
-    resumedGesture.onVerticalDragUpdate!(DragUpdateDetails(
-      globalPosition: Offset.zero,
-      delta: const Offset(0, 80),
-      primaryDelta: 80,
-    ));
+    resumedGesture.onVerticalDragUpdate!(
+      DragUpdateDetails(
+        globalPosition: Offset.zero,
+        delta: const Offset(0, 80),
+        primaryDelta: 80,
+      ),
+    );
     await tester.pump();
     expect(route.opaque, isFalse);
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);

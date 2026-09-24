@@ -337,12 +337,7 @@ class AsmrLibraryController extends ChangeNotifier
     super.notifyListeners();
   }
 
-  void _commitPresentation(
-    String key,
-    VoidCallback commit, {
-    bool Function()? isCurrent,
-    bool preserveAcrossUiGenerations = false,
-  }) {
+  void _commitPresentation(VoidCallback commit, {bool Function()? isCurrent}) {
     if (isCurrent != null && !isCurrent()) return;
     commit();
   }
@@ -648,7 +643,7 @@ class AsmrLibraryController extends ChangeNotifier
     _updateLocalCategoryCounts();
     _initialized = true;
     _bumpGlobalRevision();
-    _commitPresentation('asmr_initialize', notifyListeners);
+    _commitPresentation(notifyListeners);
     if (restoreAccountSession) {
       unawaited(restoreAsmrAccountSession());
     }
@@ -667,12 +662,12 @@ class AsmrLibraryController extends ChangeNotifier
       if (identical(_authRestoreTask, task)) {
         _authRestoreTask = null;
         _bumpGlobalRevision();
-        _commitPresentation('asmr_auth_restore_complete', notifyListeners);
+        _commitPresentation(notifyListeners);
       }
     });
     _authRestoreTask = task;
     _bumpGlobalRevision();
-    _commitPresentation('asmr_auth_restore_start', notifyListeners);
+    _commitPresentation(notifyListeners);
     return task;
   }
 
@@ -696,7 +691,6 @@ class AsmrLibraryController extends ChangeNotifier
       _bumpGlobalRevision();
       final appliedEpoch = _authEpoch;
       _commitPresentation(
-        'asmr_auth_restore',
         notifyListeners,
         isCurrent: () => appliedEpoch == _authEpoch,
       );
@@ -706,7 +700,6 @@ class AsmrLibraryController extends ChangeNotifier
       _lastSyncError = error;
       _bumpGlobalRevision();
       _commitPresentation(
-        'asmr_auth_restore_error',
         notifyListeners,
         isCurrent: () => requestEpoch == _authEpoch,
       );
@@ -1013,7 +1006,6 @@ class AsmrLibraryController extends ChangeNotifier
     _category(category).needsLoadMoreRetry = false;
     _category(category).error = null;
     _commitPresentation(
-      'asmr_loading_more_start_${category.name}',
       notifyListeners,
       isCurrent: () => _isCategoryRequestCurrent(category, requestKey),
     );
@@ -1038,22 +1030,18 @@ class AsmrLibraryController extends ChangeNotifier
           .toList(growable: false);
       final merged = <AsmrWork>[...?_category(category).works, ...additions];
       final decorated = immutableList(merged.map(_decorateWork));
-      _commitPresentation(
-        'asmr_page_${category.name}',
-        () {
-          _category(category).works = decorated;
-          _bumpCategoryRevision(category);
-          _applyPageResult(
-            category,
-            query: normalizedQuery,
-            pageResult: pageResult,
-          );
-          _category(category).needsLoadMoreRetry =
-              additions.isEmpty && hasMoreCategory(category);
-          notifyListeners();
-        },
-        isCurrent: () => _isCategoryRequestCurrent(category, requestKey),
-      );
+      _commitPresentation(() {
+        _category(category).works = decorated;
+        _bumpCategoryRevision(category);
+        _applyPageResult(
+          category,
+          query: normalizedQuery,
+          pageResult: pageResult,
+        );
+        _category(category).needsLoadMoreRetry =
+            additions.isEmpty && hasMoreCategory(category);
+        notifyListeners();
+      }, isCurrent: () => _isCategoryRequestCurrent(category, requestKey));
     } catch (error) {
       if (_isCategoryRequestCurrent(category, requestKey)) {
         _category(category).error = error;
@@ -1061,15 +1049,10 @@ class AsmrLibraryController extends ChangeNotifier
       }
     } finally {
       if (_isCategoryRequestCurrent(category, requestKey)) {
-        _commitPresentation(
-          'asmr_loading_more_${category.name}',
-          () {
-            _category(category).isLoadingMore = false;
-            notifyListeners();
-          },
-          isCurrent: () => _isCategoryRequestCurrent(category, requestKey),
-          preserveAcrossUiGenerations: true,
-        );
+        _commitPresentation(() {
+          _category(category).isLoadingMore = false;
+          notifyListeners();
+        }, isCurrent: () => _isCategoryRequestCurrent(category, requestKey));
       }
     }
   }
@@ -1085,7 +1068,6 @@ class AsmrLibraryController extends ChangeNotifier
     _category(category).needsLoadMoreRetry = false;
     _category(category).error = null;
     _commitPresentation(
-      'asmr_loading_start_${category.name}',
       notifyListeners,
       isCurrent: () => _isCategoryRequestCurrent(category, requestKey),
     );
@@ -1163,15 +1145,10 @@ class AsmrLibraryController extends ChangeNotifier
       }
     } finally {
       if (_isCategoryRequestCurrent(category, requestKey)) {
-        _commitPresentation(
-          'asmr_loading_end_${category.name}',
-          () {
-            _category(category).isLoading = false;
-            notifyListeners();
-          },
-          isCurrent: () => _isCategoryRequestCurrent(category, requestKey),
-          preserveAcrossUiGenerations: true,
-        );
+        _commitPresentation(() {
+          _category(category).isLoading = false;
+          notifyListeners();
+        }, isCurrent: () => _isCategoryRequestCurrent(category, requestKey));
       }
     }
   }
@@ -1193,16 +1170,12 @@ class AsmrLibraryController extends ChangeNotifier
       return;
     }
     final decorated = immutableList(pageResult.works.map(_decorateWork));
-    _commitPresentation(
-      'asmr_refresh_${category.name}',
-      () {
-        _category(category).works = decorated;
-        _bumpCategoryRevision(category);
-        _applyPageResult(category, query: searchQuery, pageResult: pageResult);
-        notifyListeners();
-      },
-      isCurrent: () => _isCategoryRequestCurrent(category, requestKey),
-    );
+    _commitPresentation(() {
+      _category(category).works = decorated;
+      _bumpCategoryRevision(category);
+      _applyPageResult(category, query: searchQuery, pageResult: pageResult);
+      notifyListeners();
+    }, isCurrent: () => _isCategoryRequestCurrent(category, requestKey));
   }
 
   Future<void> _loadRecommendedWorks(
@@ -1223,26 +1196,22 @@ class AsmrLibraryController extends ChangeNotifier
       return;
     }
     final decorated = immutableList(ranked.map(_decorateWork));
-    _commitPresentation(
-      'asmr_refresh_${category.name}',
-      () {
-        _category(category).works = decorated;
-        _bumpCategoryRevision(category);
-        _applyPageResult(
-          category,
-          query: searchQuery,
-          pageResult: AsmrWorkPage(
-            works: decorated,
-            currentPage: 1,
-            pageSize: decorated.length,
-            totalCount: decorated.length,
-          ),
-        );
-        _category(category).hasMore = false;
-        notifyListeners();
-      },
-      isCurrent: () => _isCategoryRequestCurrent(category, requestKey),
-    );
+    _commitPresentation(() {
+      _category(category).works = decorated;
+      _bumpCategoryRevision(category);
+      _applyPageResult(
+        category,
+        query: searchQuery,
+        pageResult: AsmrWorkPage(
+          works: decorated,
+          currentPage: 1,
+          pageSize: decorated.length,
+          totalCount: decorated.length,
+        ),
+      );
+      _category(category).hasMore = false;
+      notifyListeners();
+    }, isCurrent: () => _isCategoryRequestCurrent(category, requestKey));
   }
 
   Future<AsmrWorkPage> _loadRemotePage(
@@ -1825,9 +1794,9 @@ List<WorkTextFile> collectAsmrWorkTextFiles(
 
         final url = usesOfficialMedia
             ? AsmrApiService.mediaStreamUrlsForHash(node.hash).firstOrNull ??
-                node.streamUrl ??
-                node.downloadUrl ??
-                ''
+                  node.streamUrl ??
+                  node.downloadUrl ??
+                  ''
             : (node.streamUrl ?? node.downloadUrl ?? '');
 
         final resolvedPath = localPath ?? url;

@@ -192,7 +192,6 @@ ThemeData _createPlaybackQueueSessionDetailTheme(
   );
 }
 
-
 class SessionDetailPage extends ConsumerStatefulWidget {
   const SessionDetailPage({
     super.key,
@@ -225,10 +224,16 @@ class _DetailStructure {
       session?.queueVersion == other.session?.queueVersion &&
       session?.playbackQueue == other.session?.playbackQueue &&
       session?.positionStream == other.session?.positionStream &&
-      (identical(session?.customQueueTracks, other.session?.customQueueTracks) ||
+      (identical(
+            session?.customQueueTracks,
+            other.session?.customQueueTracks,
+          ) ||
           ((session?.queueVersion ?? 0) != 0 &&
               session?.queueVersion == other.session?.queueVersion) ||
-          listEquals(session?.customQueueTracks, other.session?.customQueueTracks));
+          listEquals(
+            session?.customQueueTracks,
+            other.session?.customQueueTracks,
+          ));
 
   @override
   int get hashCode => Object.hash(
@@ -260,10 +265,14 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
   String? _cachedTrackPath;
   int? _cachedCoverGeneration;
   Future<String?>? _cachedCoverFuture;
+  late final ActiveSessionDetailIdsNotifier _activeSessionDetailIdsNotifier;
 
   @override
   void initState() {
     super.initState();
+    _activeSessionDetailIdsNotifier = ref.read(
+      activeSessionDetailIdsProvider.notifier,
+    );
     WidgetsBinding.instance.addObserver(this);
     _systemUiRestored = false;
     if (defaultTargetPlatform == TargetPlatform.android ||
@@ -286,8 +295,10 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
     )..addStatusListener(_handleEnterStatus);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
-        ref.read(activeSessionDetailIdsProvider.notifier).push(widget.sessionId);
-        ref.read(notificationFacadeProvider).setFocusedSession(widget.sessionId);
+        _activeSessionDetailIdsNotifier.push(widget.sessionId);
+        ref
+            .read(notificationFacadeProvider)
+            .setFocusedSession(widget.sessionId);
       }
     });
   }
@@ -324,9 +335,9 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
     _transitionActive.dispose();
     _dismissController.dispose();
     _contentEnterController.dispose();
-    try {
-      ref.read(activeSessionDetailIdsProvider.notifier).pop(widget.sessionId);
-    } catch (_) {}
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _activeSessionDetailIdsNotifier.pop(widget.sessionId);
+    });
     super.dispose();
   }
 
@@ -1093,7 +1104,6 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                         Expanded(
                           child: Builder(
                             builder: (context) {
-
                               Widget artworkWidget = AnimatedSwitcher(
                                 duration: kAppMotionSlow,
                                 reverseDuration: kAppMotionStandard,
@@ -1103,16 +1113,17 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                                       animation: animation,
                                       child: child,
                                     ),
-                                layoutBuilder: (currentChild, previousChildren) {
-                                  return Stack(
-                                    alignment: Alignment.center,
-                                    fit: StackFit.expand,
-                                    children: [
-                                      ...previousChildren,
-                                      ?currentChild,
-                                    ],
-                                  );
-                                },
+                                layoutBuilder:
+                                    (currentChild, previousChildren) {
+                                      return Stack(
+                                        alignment: Alignment.center,
+                                        fit: StackFit.expand,
+                                        children: [
+                                          ...previousChildren,
+                                          ?currentChild,
+                                        ],
+                                      );
+                                    },
                                 child: KeyedSubtree(
                                   key: ValueKey('artwork_${session.id}'),
                                   child: SessionHeroArtwork(

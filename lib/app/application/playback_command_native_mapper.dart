@@ -8,6 +8,26 @@ extension PlaybackCommandNativeMapper on PlaybackCommandCoordinator {
         snapshot.retainedUris,
       );
     }
+    final currentSession = _sessions[snapshot.sessionId];
+    if (currentSession != null &&
+        (currentSession.customQueueTracks?.isNotEmpty == true ||
+            currentSession.isPlaybackQueue)) {
+      final scope = _playbackQueueScopeFor(
+        currentSession,
+        currentPath: snapshot.path ?? currentSession.currentTrackPath,
+      );
+      if (snapshot.queueIndex >= 0 &&
+          snapshot.queueIndex < scope.queueIndices.length &&
+          (snapshot.path == null ||
+              PathMatcher.equalsNormalized(
+                scope.paths[snapshot.queueIndex],
+                _playbackFacade.resolveRetargetedPath(snapshot.path!),
+              ))) {
+        snapshot = snapshot.copyWith(
+          queueIndex: scope.queueIndices[snapshot.queueIndex],
+        );
+      }
+    }
     final application = _playbackFacade.applyNativeSnapshot(
       snapshot,
       hasLibraryTrack: (path) =>

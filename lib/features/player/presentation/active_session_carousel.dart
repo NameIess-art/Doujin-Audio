@@ -79,6 +79,7 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
 
   late PageController _pageController;
   late final ValueListenable<String?> _carouselSnapListenable;
+  late final ActiveVisibleSessionCardIdNotifier _visibleSessionNotifier;
   final ValueNotifier<double> _pageNotifier = ValueNotifier<double>(0);
   List<PlaybackSessionSnapshot> _currentSessions = const [];
   String? _lastCarouselSnapSessionId;
@@ -95,6 +96,9 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
     _carouselSnapListenable = ref
         .read(playlistUiControllerProvider)
         .carouselSnap;
+    _visibleSessionNotifier = ref.read(
+      activeVisibleSessionCardIdProvider.notifier,
+    );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         _carouselSnapListenable.addListener(_handleCarouselSnap);
@@ -117,9 +121,9 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
       ..removeListener(_handlePageTick)
       ..dispose();
     _pageNotifier.dispose();
-    try {
-      ref.read(activeVisibleSessionCardIdProvider.notifier).setVisible(null);
-    } catch (_) {}
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _visibleSessionNotifier.setVisible(null);
+    });
     super.dispose();
   }
 
@@ -146,7 +150,9 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
     _lastVisibleSessionId = sessionId;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || _lastVisibleSessionId != sessionId) return;
-      ref.read(activeVisibleSessionCardIdProvider.notifier).setVisible(sessionId);
+      ref
+          .read(activeVisibleSessionCardIdProvider.notifier)
+          .setVisible(sessionId);
       ref.read(notificationFacadeProvider).setFocusedSession(sessionId);
       widget.onVisibleSessionChanged?.call(sessionId);
     });
@@ -271,7 +277,9 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
         _lastVisibleSessionId = null;
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) {
-            ref.read(activeVisibleSessionCardIdProvider.notifier).setVisible(null);
+            ref
+                .read(activeVisibleSessionCardIdProvider.notifier)
+                .setVisible(null);
           }
         });
       }

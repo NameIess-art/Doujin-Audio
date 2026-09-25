@@ -647,13 +647,6 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     );
   }
 
-  bool _isSelectableLibraryNode(LibraryNode node) =>
-      node is FolderNode && node.depth == 0 ||
-      node is TrackNode && node.track.isSingle;
-
-  String _selectionKeyForLibraryNode(LibraryNode node) =>
-      PathMatcher.normalize(node.path);
-
   void _enterSelectionMode(LibraryNode node) {
     if (!_isSelectableLibraryNode(node)) return;
     AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
@@ -687,17 +680,6 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
       }
     });
   }
-
-  List<_LibraryBatchSelection> _selectedLibrarySelections(
-    List<LibraryNode> tree,
-  ) => tree
-      .where(_isSelectableLibraryNode)
-      .where(
-        (node) =>
-            _selectedLibraryPaths.contains(_selectionKeyForLibraryNode(node)),
-      )
-      .map(_LibraryBatchSelection.fromNode)
-      .toList(growable: false);
 
   Future<void> _scheduleWatchedFoldersRefresh({
     bool silent = false,
@@ -1024,7 +1006,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
       structureRevision: listStateStructureRevision,
     );
     final selectedSelections = _isSelectionMode
-        ? _selectedLibrarySelections(tree)
+        ? _selectedLibraryNodeSelections(tree, _selectedLibraryPaths)
         : const <_LibraryBatchSelection>[];
     final bottomInset = MobileOverlayInset.of(context);
 

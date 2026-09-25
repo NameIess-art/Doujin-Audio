@@ -73,13 +73,6 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
       <int, _CollapsingAsmrWork>{};
   List<AsmrWork>? _lastFavoritesWorks;
   String? _lastFavoritesQuery;
-  List<AsmrWork> _visibleWorks = const <AsmrWork>[];
-  List<AsmrWork>? _visibleWorksSource;
-  int? _visibleWorksCategoryRevision;
-
-  @visibleForTesting
-  Object get visibleItemsCache => _visibleWorks;
-
   @override
   void didUpdateWidget(covariant _AsmrCategoryList oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -92,7 +85,6 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
       _collapsingWorks.clear();
       _lastFavoritesWorks = null;
       _lastFavoritesQuery = null;
-      _visibleWorksSource = null;
     }
   }
 
@@ -191,22 +183,17 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
       _lastFavoritesQuery = normalizedSearchQuery;
     }
 
-    final effectiveWorks = _collapsingWorks.isEmpty
+    final visibleWorks = _collapsingWorks.isEmpty
         ? works
         : <AsmrWork>[...works];
     if (_collapsingWorks.isNotEmpty) {
       final sortedCollapsing = _collapsingWorks.values.toList()
         ..sort((a, b) => a.originalIndex.compareTo(b.originalIndex));
       for (final entry in sortedCollapsing) {
-        final insertIndex = entry.originalIndex.clamp(0, effectiveWorks.length);
-        effectiveWorks.insert(insertIndex, entry.work);
+        final insertIndex = entry.originalIndex.clamp(0, visibleWorks.length);
+        visibleWorks.insert(insertIndex, entry.work);
       }
     }
-
-    final visibleWorks = _buildVisibleWorks(
-      works: effectiveWorks,
-      categoryRevision: state.revision,
-    );
 
     Widget buildWorkCard(AsmrWork work) {
       final workCard = RepaintBoundary(
@@ -242,7 +229,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
     final showPlaceholder =
         (queryMismatch && state.operationError == null) ||
         (widget.isLoadPending && normalizedSearchQuery.isNotEmpty) ||
-        (effectiveWorks.isEmpty &&
+        (visibleWorks.isEmpty &&
             (widget.isLoadPending ||
                 state.isLoading ||
                 !state.hasAttemptedLoad));
@@ -351,11 +338,11 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
                         LibraryLikeCardMetrics.listHorizontalPadding,
                         widget.bottomInset + 24,
                       ),
-                      itemCount: effectiveWorks.isEmpty
+                      itemCount: visibleWorks.isEmpty
                           ? 1
                           : rowCount + (hasLoadMore ? 1 : 0),
                       itemBuilder: (context, rowIndex) {
-                        if (effectiveWorks.isEmpty) {
+                        if (visibleWorks.isEmpty) {
                           final errorText = state.lastError == null
                               ? null
                               : localizedAsmrCatalogErrorText(
@@ -448,20 +435,6 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
         ),
       ),
     );
-  }
-
-  List<AsmrWork> _buildVisibleWorks({
-    required List<AsmrWork> works,
-    required int categoryRevision,
-  }) {
-    if (identical(_visibleWorksSource, works) &&
-        _visibleWorksCategoryRevision == categoryRevision &&
-        _collapsingWorks.isEmpty) {
-      return _visibleWorks;
-    }
-    _visibleWorksSource = works;
-    _visibleWorksCategoryRevision = categoryRevision;
-    return _visibleWorks = works;
   }
 
   void _loadMoreOncePerScroll(AsmrCategoryViewState state) {

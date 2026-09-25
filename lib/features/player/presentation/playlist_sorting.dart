@@ -22,7 +22,13 @@ List<PlaybackSessionSnapshot> sortPlaylistSessions({
       if (!session.isTemporary)
         (
           session: session,
-          value: _playlistSortValue(session, library, trackForSession),
+          value: _playlistSortValue(
+            session,
+            criterion,
+            groupByLibrary,
+            library,
+            trackForSession,
+          ),
           pinned: pinnedSessionIds.contains(session.id),
         ),
   ];
@@ -81,26 +87,39 @@ class PlaylistSortValue {
 
 PlaylistSortValue _playlistSortValue(
   PlaybackSessionSnapshot session,
+  PlaylistSortCriterion criterion,
+  bool groupByLibrary,
   LibraryFacade library,
   MusicTrack? Function(PlaybackSessionSnapshot session) trackForSession,
 ) {
   final queue = session.playbackQueue;
-  final currentTrack = trackForSession(session);
-  final queueTrack = queue?.expandedTracks.firstOrNull;
-  final track = currentTrack ?? queueTrack;
-  final detail = track == null ? null : _detailForTrack(track, library);
-  final voiceActors =
-      detail?.voiceActors ??
-      stringListFromSortMetadata(track?.remoteMetadata?['voiceActors']);
+  final hasQueueName = queue?.name.trim().isNotEmpty == true;
+  final needsDetail =
+      criterion == PlaylistSortCriterion.voiceActor ||
+      criterion == PlaylistSortCriterion.releaseDate;
+  final needsTrack = groupByLibrary || needsDetail || !hasQueueName;
+  final track = needsTrack
+      ? trackForSession(session) ?? queue?.expandedTracks.firstOrNull
+      : null;
+  final detail = needsDetail && track != null
+      ? _detailForTrack(track, library)
+      : null;
+  final voiceActors = criterion == PlaylistSortCriterion.voiceActor
+      ? detail?.voiceActors ??
+            stringListFromSortMetadata(track?.remoteMetadata?['voiceActors'])
+      : const <String>[];
   return PlaylistSortValue(
-    name: queue?.name.trim().isNotEmpty == true
+    name: hasQueueName
         ? queue!.name
         : track?.displayName ?? session.currentTrackPath,
-    libraryKey: track == null ? null : library.libraryRootForPath(track.path),
+    libraryKey: groupByLibrary && track != null
+        ? library.libraryRootForPath(track.path)
+        : null,
     voiceActor: voiceActors.isEmpty ? null : voiceActors.join('\u0000'),
-    releaseDate:
-        detail?.releaseDate ??
-        dateTimeFromSortMetadata(track?.remoteMetadata?['releaseDate']),
+    releaseDate: criterion == PlaylistSortCriterion.releaseDate
+        ? detail?.releaseDate ??
+              dateTimeFromSortMetadata(track?.remoteMetadata?['releaseDate'])
+        : null,
     addedAt: session.createdAt,
     lastPlayedAt: session.lastPlayedAt,
   );

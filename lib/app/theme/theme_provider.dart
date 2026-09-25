@@ -673,6 +673,9 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
       visualDensity: VisualDensity.standard,
       colorScheme: scheme,
       textTheme: textTheme,
+      tooltipTheme: const TooltipThemeData(
+        triggerMode: TooltipTriggerMode.manual,
+      ),
       pageTransitionsTheme: const PageTransitionsTheme(
         builders: {
           TargetPlatform.android: AppPageTransitionsBuilder(),

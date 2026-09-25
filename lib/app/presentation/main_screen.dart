@@ -159,6 +159,10 @@ class _MainScreenState extends ConsumerState<MainScreen>
     MainDestinationType.values.length,
     (_) => GlobalKey(),
   );
+  final List<Offset> _menuIconCenters = List<Offset>.filled(
+    MainDestinationType.values.length,
+    Offset.zero,
+  );
   bool _isMobilePlaybackExpanded = false;
   late final ValueNotifier<int> _activePageIndex;
   final Object _pageSwitchInteraction = Object();
@@ -170,18 +174,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
   Offset _menuIconCollapseOffset(
     MainDestinationType source,
     MainDestinationType target,
-  ) {
-    final sourceBox = _menuIconKeys[source.index].currentContext
-        ?.findRenderObject() as RenderBox?;
-    final targetBox = _menuIconKeys[target.index].currentContext
-        ?.findRenderObject() as RenderBox?;
-    if (sourceBox == null || targetBox == null ||
-        !sourceBox.hasSize || !targetBox.hasSize) {
-      return Offset.zero;
-    }
-    return targetBox.localToGlobal(targetBox.size.center(Offset.zero)) -
-        sourceBox.localToGlobal(sourceBox.size.center(Offset.zero));
-  }
+  ) => _menuIconCenters[target.index] - _menuIconCenters[source.index];
 
   void _reportMobilePlaybackCoverRect() {
     final geometry = widget.playbackDockGeometry;
@@ -512,6 +505,17 @@ class _MainScreenState extends ConsumerState<MainScreen>
   }
 
   void _toggleMenuCollapsed() {
+    // Rail destination spacing stays fixed during extension; sample it once.
+    for (final destination in MainDestinationType.values) {
+      final box =
+          _menuIconKeys[destination.index].currentContext?.findRenderObject()
+              as RenderBox?;
+      if (box != null && box.hasSize) {
+        _menuIconCenters[destination.index] = box.localToGlobal(
+          box.size.center(Offset.zero),
+        );
+      }
+    }
     setState(() {
       _isMenuCollapsed = !_isMenuCollapsed;
     });

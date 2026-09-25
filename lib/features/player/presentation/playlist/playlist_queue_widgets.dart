@@ -10,6 +10,7 @@ import 'package:path/path.dart' as path;
 
 import '../../../../app/presentation/app_presentation_providers.dart';
 import '../../../../app/state/app_runtime_providers.dart';
+import '../../../../app/state/subtitle_settings_provider.dart';
 import '../../../../app/theme/app_design_tokens.dart';
 import '../../../../app/theme/app_styles.dart';
 import '../../../../core/media/cover_image_resolution.dart';
@@ -65,7 +66,6 @@ class PlaybackQueueCard extends ConsumerStatefulWidget {
     required this.coverCacheWidth,
     required this.onOpen,
     required this.onEdit,
-    this.showSubtitles = false,
     this.isSelectionMode = false,
     this.isSelected = false,
     this.isPinned = false,
@@ -80,7 +80,6 @@ class PlaybackQueueCard extends ConsumerStatefulWidget {
   final int? coverCacheWidth;
   final VoidCallback onOpen;
   final VoidCallback onEdit;
-  final bool showSubtitles;
   final bool isSelectionMode;
   final bool isSelected;
   final bool isPinned;
@@ -106,7 +105,11 @@ class _PlaybackQueueCardState extends ConsumerState<PlaybackQueueCard> {
     final coverCacheWidth = widget.coverCacheWidth;
     final onOpen = widget.onOpen;
     final onEdit = widget.onEdit;
-    final showSubtitles = widget.showSubtitles;
+    final showSubtitles = ref.watch(
+      subtitleSettingsProvider.select(
+        (settings) => settings.isGlobalEnabled(session.id),
+      ),
+    );
     final isSelectionMode = widget.isSelectionMode;
     final isSelected = widget.isSelected;
     final isPinned = widget.isPinned;

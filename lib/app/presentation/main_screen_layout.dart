@@ -227,56 +227,53 @@ extension _MainScreenLayout on _MainScreenState {
               button: true,
               selected: selected,
               label: label,
-              child: Tooltip(
-                message: label,
-                child: Material(
-                  type: MaterialType.transparency,
-                  child: _BottomDestinationInkResponse(
-                    inkKey: ValueKey<String>(
-                      'main_destination_ink_${item.labelKey}',
-                    ),
-                    onTap: isPlaybackExpanded && selected
-                        ? onCurrentTap
-                        : () => _switchPage(index),
-                    child: Stack(
-                      alignment: Alignment.center,
-                      children: [
-                        AnimatedContainer(
-                          duration: MediaQuery.disableAnimationsOf(context)
-                              ? Duration.zero
-                              : const Duration(milliseconds: 250),
-                          curve: Curves.easeOutCubic,
-                          width: selected ? 44 : 0,
-                          height: selected ? 44 : 0,
-                          decoration: BoxDecoration(
-                            color: selected
-                                ? activeColor.withValues(alpha: 0.11)
-                                : Colors.transparent,
-                            shape: BoxShape.circle,
-                          ),
+              child: Material(
+                type: MaterialType.transparency,
+                child: _BottomDestinationInkResponse(
+                  inkKey: ValueKey<String>(
+                    'main_destination_ink_${item.labelKey}',
+                  ),
+                  onTap: isPlaybackExpanded && selected
+                      ? onCurrentTap
+                      : () => _switchPage(index),
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      AnimatedContainer(
+                        duration: MediaQuery.disableAnimationsOf(context)
+                            ? Duration.zero
+                            : const Duration(milliseconds: 250),
+                        curve: Curves.easeOutCubic,
+                        width: selected ? 44 : 0,
+                        height: selected ? 44 : 0,
+                        decoration: BoxDecoration(
+                          color: selected
+                              ? activeColor.withValues(alpha: 0.11)
+                              : Colors.transparent,
+                          shape: BoxShape.circle,
                         ),
-                        AnimatedSwitcher(
-                          duration: MediaQuery.disableAnimationsOf(context)
-                              ? Duration.zero
-                              : kAppMotionFast,
-                          switchInCurve: Curves.easeOutCubic,
-                          switchOutCurve: Curves.easeInCubic,
-                          transitionBuilder: (child, animation) =>
-                              buildAppScaleFadeTransition(
-                                context: context,
-                                animation: animation,
-                                child: child,
-                                beginScale: 0.9,
-                              ),
-                          child: Icon(
-                            selected ? item.selectedIcon : item.icon,
-                            key: ValueKey<bool>(selected),
-                            size: 28,
-                            color: selected ? activeColor : inactive,
-                          ),
+                      ),
+                      AnimatedSwitcher(
+                        duration: MediaQuery.disableAnimationsOf(context)
+                            ? Duration.zero
+                            : kAppMotionFast,
+                        switchInCurve: Curves.easeOutCubic,
+                        switchOutCurve: Curves.easeInCubic,
+                        transitionBuilder: (child, animation) =>
+                            buildAppScaleFadeTransition(
+                              context: context,
+                              animation: animation,
+                              child: child,
+                              beginScale: 0.9,
+                            ),
+                        child: Icon(
+                          selected ? item.selectedIcon : item.icon,
+                          key: ValueKey<bool>(selected),
+                          size: 28,
+                          color: selected ? activeColor : inactive,
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ),
               ),

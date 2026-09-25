@@ -23,7 +23,7 @@ List<LibraryNode> sortLibraryNodes({
     for (final node in nodes)
       (
         node: node,
-        value: _librarySortValue(node, library),
+        value: _librarySortValue(node, criterion, groupByLibrary, library),
         pinned: normalizedPinned.contains(PathMatcher.normalize(node.path)),
       ),
   ];
@@ -75,44 +75,72 @@ class LibrarySortValue {
   final DateTime? lastPlayedAt;
 }
 
-LibrarySortValue _librarySortValue(LibraryNode node, LibraryFacade library) {
-  final tracks = node is FolderNode
-      ? node.allTracks
-      : <MusicTrack>[(node as TrackNode).track];
-  final firstTrack = tracks.firstOrNull;
-  final detail = node is FolderNode
-      ? _detailForTarget(
-          AudioDetailTarget.libraryRootFolder(node.path),
-          library,
-        )
-      : firstTrack == null
-      ? null
-      : _detailForTrack(firstTrack, library);
-  final voiceActors =
-      detail?.voiceActors ??
-      stringListFromSortMetadata(firstTrack?.remoteMetadata?['voiceActors']);
-  final addedAt = tracks
-      .map((track) => track.scannedAt)
-      .whereType<DateTime>()
-      .fold<DateTime?>(null, (oldest, value) {
-        if (oldest == null || value.isBefore(oldest)) return value;
-        return oldest;
-      });
-  final lastPlayedAt = tracks
-      .map((track) => track.lastPlayedAt)
-      .whereType<DateTime>()
-      .fold<DateTime?>(null, (latest, value) {
-        if (latest == null || value.isAfter(latest)) return value;
-        return latest;
-      });
+LibrarySortValue _librarySortValue(
+  LibraryNode node,
+  LibrarySortCriterion criterion,
+  bool groupByLibrary,
+  LibraryFacade library,
+) {
+  final needsDetail = criterion == LibrarySortCriterion.voiceActor ||
+      criterion == LibrarySortCriterion.releaseDate;
+  final needsTrackDates = criterion == LibrarySortCriterion.addedAt ||
+      criterion == LibrarySortCriterion.playbackTime;
+  List<MusicTrack> tracks = const <MusicTrack>[];
+  if (needsTrackDates) {
+    tracks = node is FolderNode
+        ? node.allTracks
+        : <MusicTrack>[(node as TrackNode).track];
+  }
+  MusicTrack? firstTrack;
+  if (node is TrackNode) {
+    firstTrack = node.track;
+  } else if (needsDetail && node is FolderNode) {
+    firstTrack = node.firstTrack;
+  }
+  AudioDetail? detail;
+  if (needsDetail && node is FolderNode) {
+    detail = _detailForTarget(
+      AudioDetailTarget.libraryRootFolder(node.path),
+      library,
+    );
+  } else if (needsDetail && firstTrack != null) {
+    detail = _detailForTrack(firstTrack, library);
+  }
+  final voiceActors = criterion == LibrarySortCriterion.voiceActor
+      ? detail?.voiceActors ??
+          stringListFromSortMetadata(firstTrack?.remoteMetadata?['voiceActors'])
+      : const <String>[];
+  final addedAt = needsTrackDates
+      ? tracks
+          .map((track) => track.scannedAt)
+          .whereType<DateTime>()
+          .fold<DateTime?>(null, (oldest, value) {
+            if (oldest == null || value.isBefore(oldest)) return value;
+            return oldest;
+          })
+      : null;
+  final lastPlayedAt = criterion == LibrarySortCriterion.playbackTime
+      ? tracks
+          .map((track) => track.lastPlayedAt)
+          .whereType<DateTime>()
+          .fold<DateTime?>(null, (latest, value) {
+            if (latest == null || value.isAfter(latest)) return value;
+            return latest;
+          })
+      : null;
   return LibrarySortValue(
     name: node.name,
-    libraryKey: library.libraryRootForPath(node.path),
+    libraryKey: groupByLibrary ? library.libraryRootForPath(node.path) : null,
     voiceActor: voiceActors.isEmpty ? null : voiceActors.join('\u0000'),
-    duration: node is FolderNode ? node.totalDuration : firstTrack?.duration,
-    releaseDate:
-        detail?.releaseDate ??
-        dateTimeFromSortMetadata(firstTrack?.remoteMetadata?['releaseDate']),
+    duration: criterion == LibrarySortCriterion.duration
+        ? node is FolderNode
+            ? node.totalDuration
+            : firstTrack?.duration
+        : null,
+    releaseDate: criterion == LibrarySortCriterion.releaseDate
+        ? detail?.releaseDate ??
+            dateTimeFromSortMetadata(firstTrack?.remoteMetadata?['releaseDate'])
+        : null,
     addedAt: addedAt,
     lastPlayedAt: lastPlayedAt,
   );

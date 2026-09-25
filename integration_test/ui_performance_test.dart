@@ -17,7 +17,6 @@ import 'package:doujin_audio/core/media/music_track.dart';
 import 'package:doujin_audio/core/persistence/app_database.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
-import 'package:doujin_audio/core/widgets/top_page_header.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_library_controller.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_tab.dart';
@@ -381,32 +380,32 @@ Future<void> _runScenario(
   _BackupProfileFixture? backupFixture,
 ) async {
   if (scenario == 'library-large') {
-    await _switchMainPage(tester, 0);
+    await _switchMainPage(tester, MainDestinationType.library);
     await _ensureLocalLibrary(tester);
     await _flingPageList<LibraryTab>(tester);
     return;
   }
   if (scenario == 'asmr-large') {
-    await _switchMainPage(tester, 0);
+    await _switchMainPage(tester, MainDestinationType.library);
     await _switchToAsmr(tester);
-    await _expandFirstAsmrWork(tester);
     await _flingPageList<AsmrTab>(tester);
+    await _openAndCloseFirstAsmrWork(tester);
     return;
   }
   if (scenario == 'backup') {
     await _runBackupExport(tester, backupFixture!);
-    await _switchMainPage(tester, 1);
+    await _switchMainPage(tester, MainDestinationType.playlist);
     await _flingPageList<PlaylistTab>(tester);
-    await _switchMainPage(tester, 0);
+    await _switchMainPage(tester, MainDestinationType.library);
     return;
   }
-  await _switchMainPage(tester, 0);
+  await _switchMainPage(tester, MainDestinationType.library);
   await _ensureLocalLibrary(tester);
   await _flingPageList<LibraryTab>(tester);
   await _switchToAsmr(tester);
   await _flingPageList<AsmrTab>(tester);
 
-  await _switchMainPage(tester, 1);
+  await _switchMainPage(tester, MainDestinationType.playlist);
   for (var frame = 0; frame < 24; frame++) {
     sessions.first.applyNativeProgress(
       NativePlaybackProgressUpdate(
@@ -421,15 +420,17 @@ Future<void> _runScenario(
   }
   await _openAndCloseSessionDetail(tester);
   await _flingPageList<PlaylistTab>(tester);
-  await _switchMainPage(tester, 2);
-  await _switchMainPage(tester, 0);
+  await _switchMainPage(tester, MainDestinationType.settings);
+  await _switchMainPage(tester, MainDestinationType.library);
   await _ensureLocalLibrary(tester);
 }
 
-Future<void> _expandFirstAsmrWork(WidgetTester tester) async {
+Future<void> _openAndCloseFirstAsmrWork(WidgetTester tester) async {
   final firstWork = find.text('Performance ASMR 1');
   if (firstWork.evaluate().isEmpty) return;
   await tester.tap(firstWork.first);
+  await tester.pump(const Duration(milliseconds: 350));
+  await tester.pageBack();
   await tester.pump(const Duration(milliseconds: 350));
 }
 
@@ -538,45 +539,94 @@ final class _BackupProfileFixture {
   }
 }
 
-Future<void> _switchMainPage(WidgetTester tester, int index) async {
+Future<void> _switchMainPage(
+  WidgetTester tester,
+  MainDestinationType destination,
+) async {
+  final index = switch (destination) {
+    MainDestinationType.asmrOne => 0,
+    MainDestinationType.library => 1,
+    MainDestinationType.playlist => 2,
+    MainDestinationType.settings => 3,
+  };
   final stack = find.byKey(const ValueKey<String>('main_page_stack'));
+  for (var attempt = 0; attempt < 100 && stack.evaluate().isEmpty; attempt++) {
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 100)),
+    );
+    await tester.pump();
+  }
+  if (stack.evaluate().isEmpty) {
+    debugPrint(
+      'UI_PERFORMANCE_STARTUP main=${find.byType(MainScreen).evaluate().length} '
+      'stackOffstage=${find.byKey(const ValueKey<String>('main_page_stack'), skipOffstage: false).evaluate().length} '
+      'errors=${find.byType(ErrorWidget).evaluate().length}',
+    );
+  }
+  expect(stack, findsOneWidget);
   if (tester.widget<AppFadeThroughIndexedStack>(stack).index == index) return;
-  const keys = <String>[
-    'main_destination_nav_library',
-    'main_destination_nav_sessions',
-    'main_destination_nav_settings',
-  ];
-  await tester.tap(find.byKey(ValueKey<String>(keys[index])));
-  await tester.pump(const Duration(milliseconds: 320));
+  final rail = find.byType(NavigationRail);
+  if (rail.evaluate().isNotEmpty) {
+    tester.widget<NavigationRail>(rail).onDestinationSelected!(index);
+  } else {
+    final labelKey = switch (destination) {
+      MainDestinationType.asmrOne => 'show_asmr_one',
+      MainDestinationType.library => 'music_library',
+      MainDestinationType.playlist => 'nav_sessions',
+      MainDestinationType.settings => 'nav_settings',
+    };
+    await tester.tap(
+      find.byKey(ValueKey<String>('main_destination_ink_$labelKey')),
+    );
+  }
+  await tester.pump(const Duration(milliseconds: 900));
 }
 
 Future<void> _switchToAsmr(WidgetTester tester) async {
-  final localHeader = find.byWidgetPredicate(
-    (widget) => widget is TopPageHeader && widget.title != 'ASMR.ONE',
-  );
-  await tester.fling(localHeader.first, const Offset(-160, 0), 1200);
-  await tester.pump(const Duration(milliseconds: 260));
+  await _switchMainPage(tester, MainDestinationType.asmrOne);
 }
 
 Future<void> _ensureLocalLibrary(WidgetTester tester) async {
-  final asmrHeader = find.byWidgetPredicate(
-    (widget) => widget is TopPageHeader && widget.title == 'ASMR.ONE',
-  );
-  if (asmrHeader.evaluate().isEmpty) return;
-  await tester.fling(asmrHeader.first, const Offset(160, 0), 1200);
-  await tester.pump(const Duration(milliseconds: 260));
+  await _switchMainPage(tester, MainDestinationType.library);
 }
 
 Future<void> _flingPageList<T extends Widget>(WidgetTester tester) async {
-  final scrollables = find.descendant(
-    of: find.byType(T),
-    matching: find.byType(Scrollable),
-  );
-  if (scrollables.evaluate().isEmpty) return;
-  await tester.fling(scrollables.last, const Offset(0, -1200), 5000);
-  await tester.pump(const Duration(milliseconds: 500));
-  await tester.fling(scrollables.last, const Offset(0, 1200), 5000);
-  await tester.pump(const Duration(milliseconds: 500));
+  ScrollPosition? currentPosition() {
+    final scrollables = find.descendant(
+      of: find.byType(T),
+      matching: find.byType(Scrollable),
+    );
+    final positions = scrollables
+        .evaluate()
+        .map((element) => (element as StatefulElement).state)
+        .whereType<ScrollableState>()
+        .map((state) => state.position)
+        .where((position) => position.axis == Axis.vertical)
+        .toList(growable: false);
+    if (positions.isEmpty) return null;
+    positions.sort((a, b) => b.maxScrollExtent.compareTo(a.maxScrollExtent));
+    return positions.first;
+  }
+
+  Future<void> animateTo({required bool end}) async {
+    final position = currentPosition();
+    if (position == null ||
+        position.maxScrollExtent <= position.minScrollExtent) {
+      return;
+    }
+    final animation = position.animateTo(
+      end ? position.maxScrollExtent : position.minScrollExtent,
+      duration: const Duration(milliseconds: 480),
+      curve: Curves.easeOut,
+    );
+    for (var frame = 0; frame < 32; frame++) {
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    await animation;
+  }
+
+  await animateTo(end: true);
+  await animateTo(end: false);
 }
 
 Future<void> _openAndCloseSessionDetail(WidgetTester tester) async {

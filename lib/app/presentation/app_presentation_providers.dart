@@ -15,7 +15,6 @@ import '../../features/library/presentation/library_sorting.dart';
 import '../../features/player/presentation/playlist_sorting.dart';
 import '../../features/settings/application/settings_state.dart';
 import '../state/app_runtime_providers.dart';
-import '../state/subtitle_settings_provider.dart';
 import 'app_interaction_effects_controller.dart';
 import 'audio_ui_controllers.dart';
 import 'screen_view_models.dart';
@@ -114,7 +113,11 @@ final libraryListUiProvider = Provider<LibraryListState>((ref) {
 });
 
 final librarySortedTreeUiProvider = Provider<List<LibraryNode>>((ref) {
-  final listState = ref.watch(libraryListUiProvider);
+  final sortedInput = ref.watch(
+    libraryListUiProvider.select(
+      (state) => (nodes: state.rawTree, revision: state.structureRevision),
+    ),
+  );
   final criterion = ref.watch(
     settingsStateProvider.select(
       (state) =>
@@ -136,11 +139,19 @@ final librarySortedTreeUiProvider = Provider<List<LibraryNode>>((ref) {
       (state) => state.value?.pinnedLibraryPaths ?? const <String>[],
     ),
   ).toSet();
-  ref.watch(libraryDetailRevisionProvider);
+  if (criterion == LibrarySortCriterion.voiceActor ||
+      criterion == LibrarySortCriterion.releaseDate) {
+    ref.watch(libraryDetailRevisionProvider);
+  }
+  if (criterion != LibrarySortCriterion.name) {
+    ref.watch(
+      libraryStateProvider.select((state) => state.value?.contentRevision),
+    );
+  }
   final libraryFacade = ref.watch(libraryFacadeProvider);
 
   return sortLibraryNodes(
-    nodes: listState.rawTree,
+    nodes: sortedInput.nodes,
     criterion: criterion,
     ascending: ascending,
     groupByLibrary: groupByLibrary,
@@ -236,7 +247,23 @@ final playlistSortedEntriesUiProvider =
           (state) => state.value?.pinnedPlaylistSessionIds ?? const <String>[],
         ),
       ).toSet();
-      ref.watch(libraryDetailRevisionProvider);
+      if (criterion == PlaylistSortCriterion.voiceActor ||
+          criterion == PlaylistSortCriterion.releaseDate) {
+        ref.watch(libraryDetailRevisionProvider);
+      }
+      final needsLibraryTrack = groupByLibrary ||
+          criterion == PlaylistSortCriterion.voiceActor ||
+          criterion == PlaylistSortCriterion.releaseDate ||
+          structureState.entries.any(
+            (entry) =>
+                !entry.session.isTemporary &&
+                entry.session.playbackQueue?.name.trim().isNotEmpty != true,
+          );
+      if (needsLibraryTrack) {
+        ref.watch(
+          libraryStateProvider.select((state) => state.value?.contentRevision),
+        );
+      }
       final library = ref.watch(libraryFacadeProvider);
       final paths = ref.watch(audioPathCoordinatorProvider);
 
@@ -328,7 +355,6 @@ final mainOverlayUiProvider = Provider<MainOverlayUiState>((ref) {
       (s) => s.value?.isInitialized ?? fallbackSettings.isInitialized,
     ),
   );
-  ref.watch(subtitleSettingsProvider);
   final overlaySessions = overlaySessionsFromPlaybackState(playbackState);
   return MainOverlayUiState(
     overlaySessions: overlaySessions,

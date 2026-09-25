@@ -1,5 +1,21 @@
 part of 'library_tab.dart';
 
+bool _isSelectableLibraryNode(LibraryNode node) =>
+    node is FolderNode && node.depth == 0 ||
+    node is TrackNode && node.track.isSingle;
+
+String _selectionKeyForLibraryNode(LibraryNode node) =>
+    PathMatcher.normalize(node.path);
+
+List<_LibraryBatchSelection> _selectedLibraryNodeSelections(
+  List<LibraryNode> nodes,
+  Set<String> selectedPaths,
+) => nodes
+    .where(_isSelectableLibraryNode)
+    .where((node) => selectedPaths.contains(_selectionKeyForLibraryNode(node)))
+    .map(_LibraryBatchSelection.fromNode)
+    .toList(growable: false);
+
 class _LibraryBatchSelection {
   const _LibraryBatchSelection({
     required this.path,

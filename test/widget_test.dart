@@ -1151,30 +1151,33 @@ void main() {
     await tester.pump();
   });
 
-  testWidgets('production app shell allows tooltips to become visible', (
+  testWidgets('mobile destination long press does not show its name', (
     tester,
   ) async {
-    await _pumpAppShell(tester);
-
-    expect(find.byType(TooltipVisibility), findsNothing);
-    final tooltipFinder = find.byWidgetPredicate(
-      (widget) => widget is Tooltip && widget.message?.isNotEmpty == true,
+    _setLogicalTestViewSize(tester, const Size(390, 800));
+    final harness = await _pumpAppShell(tester, includePlaybackSession: false);
+    final destination = find.byKey(
+      const ValueKey<String>('main_destination_nav_settings'),
     );
-    expect(tooltipFinder, findsWidgets);
-    final target = tooltipFinder.first;
-    final message = tester.widget<Tooltip>(target).message!;
-    final originalTextCount = find.text(message).evaluate().length;
-
-    await tester.longPress(target);
-    await tester.pump();
-
+    final label = harness.language.tr('nav_settings');
+    expect(tester.widget<Semantics>(destination).properties.label, label);
     expect(
-      find.text(message).evaluate().length,
-      greaterThan(originalTextCount),
+      find.ancestor(of: destination, matching: find.byType(Tooltip)),
+      findsNothing,
     );
+    final originalTextCount = find.text(label).evaluate().length;
+    final pageStack = find.byKey(const ValueKey<String>('main_page_stack'));
+    final originalPageIndex = tester.widget<AppFadeThroughIndexedStack>(
+      pageStack,
+    ).index;
 
-    await tester.pump(const Duration(seconds: 3));
-    expect(find.text(message).evaluate().length, originalTextCount);
+    await tester.longPress(destination);
+    await tester.pump();
+    expect(
+      tester.widget<AppFadeThroughIndexedStack>(pageStack).index,
+      originalPageIndex,
+    );
+    expect(find.text(label).evaluate().length, originalTextCount);
   });
 
   testWidgets('windows production app shell disables tooltips on hover', (
@@ -2782,6 +2785,48 @@ void main() {
     expect(find.byType(ActiveSessionCarousel), findsNothing);
     debugDefaultTargetPlatformOverride = null;
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Windows menu icons move smoothly into the selected icon', (
+    tester,
+  ) async {
+    _setLogicalTestViewSize(tester, const Size(1280, 800));
+    await _pumpAppShell(tester, includePlaybackSession: false);
+    debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+    addTearDown(() => debugDefaultTargetPlatformOverride = null);
+    tester.element(find.byType(MainScreen)).markNeedsBuild();
+    await tester.pump();
+
+    final selectedIcon = find.byKey(
+      const ValueKey<String>('main_destination_show_asmr_one'),
+    );
+    final otherIcon = find.byKey(
+      const ValueKey<String>('main_destination_nav_settings'),
+    );
+    double iconGap() =>
+        (tester.getCenter(otherIcon) - tester.getCenter(selectedIcon)).distance;
+
+    final expandedGap = iconGap();
+    expect(expandedGap, greaterThan(0));
+    await tester.tap(find.byIcon(Icons.menu_open_rounded));
+    await tester.pump();
+
+    var previousGap = expandedGap;
+    for (var frame = 0; frame < 10; frame++) {
+      await tester.pump(const Duration(milliseconds: 20));
+      final gap = iconGap();
+      expect(gap, lessThanOrEqualTo(previousGap + 0.1));
+      previousGap = gap;
+    }
+    await tester.pumpAndSettle();
+    expect(iconGap(), lessThan(0.1));
+
+    await tester.tap(find.byIcon(Icons.menu_rounded));
+    await tester.pump();
+    await tester.pumpAndSettle();
+    expect(iconGap(), closeTo(expandedGap, 0.1));
+    expect(tester.takeException(), isNull);
+    debugDefaultTargetPlatformOverride = null;
   });
 
   testWidgets('landscape shell keeps its top inset when status bar hides', (

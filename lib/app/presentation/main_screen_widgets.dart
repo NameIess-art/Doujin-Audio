@@ -40,6 +40,8 @@ class _BottomDestinationInkResponse extends StatelessWidget {
     return InkResponse(
       key: inkKey,
       onTap: onTap,
+      // Consume long presses so they do not turn into navigation taps.
+      onLongPress: () {},
       containedInkWell: true,
       radius: 32,
       highlightColor: Colors.transparent,

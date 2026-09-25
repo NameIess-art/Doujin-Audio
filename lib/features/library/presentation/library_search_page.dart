@@ -58,13 +58,6 @@ class _LibrarySearchPageState extends ConsumerState<_LibrarySearchPage> {
     }
   }
 
-  bool _isSelectableLibraryNode(LibraryNode node) =>
-      node is FolderNode && node.depth == 0 ||
-      node is TrackNode && node.track.isSingle;
-
-  String _selectionKeyForLibraryNode(LibraryNode node) =>
-      PathMatcher.normalize(node.path);
-
   void _setLocalState(VoidCallback fn) => setState(fn);
 
   void _onChanged(String value) {
@@ -185,17 +178,6 @@ class _LibrarySearchPageState extends ConsumerState<_LibrarySearchPage> {
     });
   }
 
-  List<_LibraryBatchSelection> _selectedAllSearchSelections(
-    List<LibraryNode> tree,
-  ) => tree
-      .where(_isSelectableLibraryNode)
-      .where(
-        (node) =>
-            _selectedLibraryPaths.contains(_selectionKeyForLibraryNode(node)),
-      )
-      .map(_LibraryBatchSelection.fromNode)
-      .toList(growable: false);
-
   List<_LibraryBatchSelection> _selectedCategorySelections(
     AudioLibraryCategorySnapshot? snapshot,
   ) => (snapshot?.entries ?? const <AudioLibraryCategoryEntry>[])
@@ -208,8 +190,9 @@ class _LibrarySearchPageState extends ConsumerState<_LibrarySearchPage> {
 
   Future<List<_LibraryBatchSelection>> _currentSelections() async {
     if (_categoryType == AudioLibraryCategoryType.all) {
-      return _selectedAllSearchSelections(
+      return _selectedLibraryNodeSelections(
         _visibleSearchResult?.tree ?? const <LibraryNode>[],
+        _selectedLibraryPaths,
       );
     }
     final snapshot = await ref

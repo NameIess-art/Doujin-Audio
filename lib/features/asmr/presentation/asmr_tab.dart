@@ -89,19 +89,40 @@ List<AsmrWork> _selectedAsmrWorks(
       .toList(growable: false);
 }
 
-Future<int> _addAsmrWorksToPlaylist(WidgetRef ref, List<AsmrWork> works) async {
+Future<void> _addAsmrWorksToPlaylist({
+  required BuildContext context,
+  required WidgetRef ref,
+  required List<AsmrWork> works,
+  required VoidCallback exitSelectionMode,
+}) async {
   final playback = ref.read(asmrPlaybackCoordinatorProvider);
-  if (playback == null) return 0;
   var addedCount = 0;
-  for (final work in works) {
-    try {
-      await playback.playWork(work, autoPlay: false);
-      addedCount += 1;
-    } catch (_) {
-      // Continue adding the remaining selected works.
+  if (playback != null) {
+    for (final work in works) {
+      try {
+        await playback.playWork(work, autoPlay: false);
+        addedCount += 1;
+      } catch (_) {
+        // Continue adding the remaining selected works.
+      }
     }
   }
-  return addedCount;
+  if (!context.mounted) return;
+  final i18n = ref.read(appLanguageProviderInstanceProvider);
+  exitSelectionMode();
+  showAppSnackBar(
+    context,
+    addedCount > 0
+        ? i18n.tr('batch_added_to_playlist', {'count': addedCount.toString()})
+        : i18n.tr('operation_failed_retry'),
+    tone: addedCount > 0
+        ? AppFeedbackTone.success
+        : AppFeedbackTone.destructive,
+    icon: addedCount > 0
+        ? Icons.playlist_add_check_rounded
+        : Icons.error_outline_rounded,
+    iconColor: AppDesignTokens.of(context).asmrAccent,
+  );
 }
 
 Future<void> _toggleAsmrWorksFavorite(
@@ -114,6 +135,42 @@ Future<void> _toggleAsmrWorksFavorite(
   for (final work in works) {
     if (work.isFavorite == shouldFavorite) continue;
     await controller.toggleFavorite(work);
+  }
+}
+
+Future<void> _toggleSelectedAsmrWorksFavorite({
+  required BuildContext context,
+  required WidgetRef ref,
+  required List<AsmrWork> works,
+  required VoidCallback refreshSelectionState,
+}) async {
+  final shouldFavorite = works.any((work) => !work.isFavorite);
+  await _toggleAsmrWorksFavorite(ref, works);
+  if (!context.mounted) return;
+  refreshSelectionState();
+  final i18n = ref.read(appLanguageProviderInstanceProvider);
+  final accent = AppDesignTokens.of(context).asmrAccent;
+  if (!shouldFavorite) {
+    showAppSnackBar(
+      context,
+      i18n.tr('asmr_favorite_removed'),
+      actionLabel: i18n.tr('undo'),
+      onAction: () => unawaited(_toggleAsmrWorksFavorite(ref, works)),
+      duration: const Duration(seconds: 5),
+      showCountdown: true,
+      showActionCountdown: true,
+      tone: AppFeedbackTone.warning,
+      icon: Icons.favorite_border_rounded,
+      iconColor: accent,
+    );
+  } else {
+    showAppSnackBar(
+      context,
+      i18n.tr('asmr_favorite_added'),
+      tone: AppFeedbackTone.success,
+      icon: Icons.favorite_rounded,
+      iconColor: accent,
+    );
   }
 }
 
@@ -600,55 +657,21 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
   }
 
   Future<void> _addSelectedWorksToPlaylist() async {
-    final addedCount = await _addAsmrWorksToPlaylist(ref, _selectedWorks());
-    if (!mounted) return;
-    final i18n = ref.read(appLanguageProviderInstanceProvider);
-    _exitSelectionMode();
-    showAppSnackBar(
-      context,
-      addedCount > 0
-          ? i18n.tr('batch_added_to_playlist', {'count': addedCount.toString()})
-          : i18n.tr('operation_failed_retry'),
-      tone: addedCount > 0
-          ? AppFeedbackTone.success
-          : AppFeedbackTone.destructive,
-      icon: addedCount > 0
-          ? Icons.playlist_add_check_rounded
-          : Icons.error_outline_rounded,
-      iconColor: AppDesignTokens.of(context).asmrAccent,
+    await _addAsmrWorksToPlaylist(
+      context: context,
+      ref: ref,
+      works: _selectedWorks(),
+      exitSelectionMode: _exitSelectionMode,
     );
   }
 
   Future<void> _toggleSelectedFavorites() async {
-    final selected = _selectedWorks();
-    final shouldFavorite = selected.any((work) => !work.isFavorite);
-    await _toggleAsmrWorksFavorite(ref, selected);
-    if (!mounted) return;
-    setState(() {});
-    final i18n = ref.read(appLanguageProviderInstanceProvider);
-    final asmrBlue = AppDesignTokens.of(context).asmrAccent;
-    if (!shouldFavorite) {
-      showAppSnackBar(
-        context,
-        i18n.tr('asmr_favorite_removed'),
-        actionLabel: i18n.tr('undo'),
-        onAction: () => unawaited(_toggleAsmrWorksFavorite(ref, selected)),
-        duration: const Duration(seconds: 5),
-        showCountdown: true,
-        showActionCountdown: true,
-        tone: AppFeedbackTone.warning,
-        icon: Icons.favorite_border_rounded,
-        iconColor: asmrBlue,
-      );
-    } else {
-      showAppSnackBar(
-        context,
-        i18n.tr('asmr_favorite_added'),
-        tone: AppFeedbackTone.success,
-        icon: Icons.favorite_rounded,
-        iconColor: asmrBlue,
-      );
-    }
+    await _toggleSelectedAsmrWorksFavorite(
+      context: context,
+      ref: ref,
+      works: _selectedWorks(),
+      refreshSelectionState: () => setState(() {}),
+    );
   }
 
   Future<void> _downloadSelectedWorks() async {

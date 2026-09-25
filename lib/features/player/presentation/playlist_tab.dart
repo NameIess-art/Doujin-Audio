@@ -14,7 +14,6 @@ import '../../../app/presentation/app_presentation_providers.dart';
 import '../../../app/presentation/main_tab_state_mixin.dart';
 import '../../../app/presentation/screen_view_models.dart';
 import '../../../app/state/app_runtime_providers.dart';
-import '../../../app/state/subtitle_settings_provider.dart';
 import '../../../app/theme/app_styles.dart';
 import '../../../core/widgets/app_bottom_sheet.dart';
 import '../../../core/widgets/app_feedback.dart';
@@ -352,9 +351,6 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
     final coverImageResolution = _readOrWatch(
       coverImageResolutionProvider,
     );
-    final subtitleSettings = _isActive
-        ? ref.watch(subtitleSettingsProvider)
-        : ref.read(subtitleSettingsProvider);
     _scheduleInitialPlaceholderDismissal(
       isInitialized: structureState.isInitialized,
     );
@@ -389,7 +385,6 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                 library: library,
                 playback: playback,
                 coverCacheWidth: coverCacheWidth,
-                showSubtitles: subtitleSettings.isGlobalEnabled(session.id),
                 isSelectionMode: _isSelectionMode && !isTemporary,
                 isSelected: _selectedSessionIds.contains(session.id),
                 isPinned: isPinned,
@@ -418,7 +413,6 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                 coverPath: coverPath,
                 coverGeneration: structureState.coverGeneration,
                 coverCacheWidth: coverCacheWidth,
-                showSubtitles: subtitleSettings.isGlobalEnabled(session.id),
                 library: library,
                 playback: playback,
                 isTemporary: isTemporary,

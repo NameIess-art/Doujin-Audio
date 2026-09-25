@@ -6,6 +6,7 @@ import 'package:path/path.dart' as path;
 
 import '../../../../app/presentation/app_presentation_providers.dart';
 import '../../../../app/state/app_runtime_providers.dart';
+import '../../../../app/state/subtitle_settings_provider.dart';
 import '../../../../app/theme/app_design_tokens.dart';
 import '../../../../app/theme/app_styles.dart';
 import '../../../../core/media/music_track.dart';
@@ -410,7 +411,6 @@ class SessionListCard extends ConsumerWidget {
     required this.coverPath,
     required this.coverGeneration,
     required this.coverCacheWidth,
-    required this.showSubtitles,
     required this.library,
     required this.playback,
     required this.isTemporary,
@@ -428,7 +428,6 @@ class SessionListCard extends ConsumerWidget {
   final String? coverPath;
   final int coverGeneration;
   final int? coverCacheWidth;
-  final bool showSubtitles;
   final LibraryFacade library;
   final PlaybackFacade playback;
   final bool isTemporary;
@@ -442,6 +441,11 @@ class SessionListCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final showSubtitles = ref.watch(
+      subtitleSettingsProvider.select(
+        (settings) => settings.isGlobalEnabled(sessionId),
+      ),
+    );
     final isHidden = ref.watch(
       isUndoableRemovalHiddenProvider(playbackSessionRemovalKey(sessionId)),
     );

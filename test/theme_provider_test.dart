@@ -23,6 +23,45 @@ void main() {
     expect(ThemeAccentPreset.values, hasLength(16));
   });
 
+  testWidgets('touch long press does not show icon tooltips', (tester) async {
+    SharedPreferences.setMockInitialValues(const <String, Object>{});
+    await AppPreferences.init();
+    final theme = ThemeProvider().lightTheme;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: theme,
+        home: Scaffold(
+          body: Row(
+            children: [
+              IconButton(
+                tooltip: 'Search',
+                onPressed: () {},
+                icon: const Icon(Icons.search),
+              ),
+              Tooltip(
+                message: 'More',
+                child: IconButton(
+                  onPressed: () {},
+                  icon: const Icon(Icons.more_horiz),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byTooltip('Search'), findsOneWidget);
+    expect(find.byTooltip('More'), findsOneWidget);
+    await tester.longPress(find.byIcon(Icons.search));
+    await tester.pump();
+    expect(find.text('Search'), findsNothing);
+    await tester.longPress(find.byIcon(Icons.more_horiz));
+    await tester.pump();
+    expect(find.text('More'), findsNothing);
+  });
+
   test('theme presets convert only the light primary palette', () {
     expect(
       ThemeAccentPreset.values.map((preset) => preset.primaryColor),

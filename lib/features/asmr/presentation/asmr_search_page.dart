@@ -141,55 +141,21 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
   );
 
   Future<void> _addSelectedWorksToPlaylist() async {
-    final addedCount = await _addAsmrWorksToPlaylist(ref, _selectedWorks());
-    if (!mounted) return;
-    final i18n = ref.read(appLanguageProviderInstanceProvider);
-    _exitSelectionMode();
-    showAppSnackBar(
-      context,
-      addedCount > 0
-          ? i18n.tr('batch_added_to_playlist', {'count': addedCount.toString()})
-          : i18n.tr('operation_failed_retry'),
-      tone: addedCount > 0
-          ? AppFeedbackTone.success
-          : AppFeedbackTone.destructive,
-      icon: addedCount > 0
-          ? Icons.playlist_add_check_rounded
-          : Icons.error_outline_rounded,
-      iconColor: AppDesignTokens.of(context).asmrAccent,
+    await _addAsmrWorksToPlaylist(
+      context: context,
+      ref: ref,
+      works: _selectedWorks(),
+      exitSelectionMode: _exitSelectionMode,
     );
   }
 
   Future<void> _toggleSelectedFavorites() async {
-    final selected = _selectedWorks();
-    final shouldFavorite = selected.any((work) => !work.isFavorite);
-    await _toggleAsmrWorksFavorite(ref, selected);
-    if (!mounted) return;
-    setState(() {});
-    final i18n = ref.read(appLanguageProviderInstanceProvider);
-    final asmrBlue = AppDesignTokens.of(context).asmrAccent;
-    if (!shouldFavorite) {
-      showAppSnackBar(
-        context,
-        i18n.tr('asmr_favorite_removed'),
-        actionLabel: i18n.tr('undo'),
-        onAction: () => unawaited(_toggleAsmrWorksFavorite(ref, selected)),
-        duration: const Duration(seconds: 5),
-        showCountdown: true,
-        showActionCountdown: true,
-        tone: AppFeedbackTone.warning,
-        icon: Icons.favorite_border_rounded,
-        iconColor: asmrBlue,
-      );
-    } else {
-      showAppSnackBar(
-        context,
-        i18n.tr('asmr_favorite_added'),
-        tone: AppFeedbackTone.success,
-        icon: Icons.favorite_rounded,
-        iconColor: asmrBlue,
-      );
-    }
+    await _toggleSelectedAsmrWorksFavorite(
+      context: context,
+      ref: ref,
+      works: _selectedWorks(),
+      refreshSelectionState: () => setState(() {}),
+    );
   }
 
   Future<void> _downloadSelectedWorks() async {

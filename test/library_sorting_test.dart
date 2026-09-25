@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:doujin_audio/core/media/audio_detail.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
 import 'package:doujin_audio/features/library/application/library_facade.dart';
 import 'package:doujin_audio/features/library/domain/library_node.dart';
@@ -22,6 +23,35 @@ TrackNode _track(String name, String path) {
       isSingle: true,
     ),
   );
+}
+
+class _LazyFolderNode extends FolderNode {
+  _LazyFolderNode(super.name, super.path);
+
+  @override
+  List<MusicTrack> get allTracks => throw StateError('Unneeded track walk');
+
+  @override
+  MusicTrack? get firstTrack => throw StateError('Unneeded first track');
+
+  @override
+  Duration get totalDuration => throw StateError('Unneeded duration');
+}
+
+class _NoMetadataTrack extends MusicTrack {
+  _NoMetadataTrack(String name, String path)
+      : super(
+          path: path,
+          displayName: name,
+          groupKey: path,
+          groupTitle: name,
+          groupSubtitle: '',
+          isSingle: true,
+        );
+
+  @override
+  Map<String, Object?>? get remoteMetadata =>
+      throw StateError('Unneeded metadata');
 }
 
 void main() {
@@ -105,5 +135,62 @@ void main() {
       pinnedPaths: {'C:\\Music\\Track1.mp3'},
     );
     expect(pinned.map((n) => n.name).toList(), ['Track 1', 'Folder 1', 'Folder 2']);
+  });
+
+  test('name sorting skips folder track walks and track metadata', () {
+    final sortedFolders = sortLibraryNodes(
+      nodes: [_LazyFolderNode('Beta', '/b'), _LazyFolderNode('Alpha', '/a')],
+      criterion: LibrarySortCriterion.name,
+      ascending: true,
+      groupByLibrary: false,
+      library: library,
+    );
+    expect(sortedFolders.map((node) => node.name), ['Alpha', 'Beta']);
+
+    final sortedTracks = sortLibraryNodes(
+      nodes: [
+        TrackNode(_NoMetadataTrack('Beta', '/b.mp3')),
+        TrackNode(_NoMetadataTrack('Alpha', '/a.mp3')),
+      ],
+      criterion: LibrarySortCriterion.name,
+      ascending: true,
+      groupByLibrary: false,
+      library: library,
+    );
+    expect(sortedTracks.map((node) => node.name), ['Alpha', 'Beta']);
+  });
+
+  test('voice actor detail changes reorder library nodes', () {
+    final first = _track('First', '/first.mp3');
+    final second = _track('Second', '/second.mp3');
+
+    void updateDetail(TrackNode node, String voiceActor) {
+      library.detailCacheService.markChanged(
+        AudioDetail(
+          target: library.audioDetailTargetForTrack(node.track),
+          rjCode: '',
+          workTitle: '',
+          circleName: '',
+          voiceActors: [voiceActor],
+          tags: const [],
+        ),
+      );
+    }
+
+    List<String> sortedNames() => sortLibraryNodes(
+      nodes: [first, second],
+      criterion: LibrarySortCriterion.voiceActor,
+      ascending: true,
+      groupByLibrary: false,
+      library: library,
+    ).map((node) => node.name).toList();
+
+    updateDetail(first, 'Zeta');
+    updateDetail(second, 'Alpha');
+    expect(sortedNames(), ['Second', 'First']);
+
+    updateDetail(first, 'Alpha');
+    updateDetail(second, 'Zeta');
+    expect(sortedNames(), ['First', 'Second']);
   });
 }

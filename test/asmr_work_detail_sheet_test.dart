@@ -6,6 +6,7 @@ import 'package:doujin_audio/features/asmr/presentation/asmr_providers.dart';
 import 'support/asmr_controller_test_fixture.dart';
 import 'package:doujin_audio/app/localization/app_language_provider.dart';
 import 'package:doujin_audio/core/immutable_collections.dart';
+import 'package:doujin_audio/core/media/music_track.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/widgets/swipe_reveal_card.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
@@ -13,12 +14,14 @@ import 'package:doujin_audio/core/widgets/operation_feedback.dart';
 import 'package:doujin_audio/core/widgets/top_page_header.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_download_manager.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_library_controller.dart';
+import 'package:doujin_audio/features/asmr/application/asmr_playback_coordinator.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_download_page.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_tab.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_work_detail_sheet.dart';
 import 'package:doujin_audio/features/library/presentation/work_detail_page.dart';
 import 'package:doujin_audio/features/library/presentation/library_providers.dart';
+import 'package:doujin_audio/features/player/application/playback_session_launcher.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -195,7 +198,7 @@ void main() {
   tearDown(UiInteractionCoordinator.instance.resetForTest);
 
   for (final count in <int>[100, 1000, 5000]) {
-    testWidgets('selection reuses visible rows for $count ASMR works', (
+    testWidgets('selection and updated rows stay visible for $count ASMR works', (
       tester,
     ) async {
       SharedPreferences.setMockInitialValues(const <String, Object>{});
@@ -224,15 +227,10 @@ void main() {
       await tester.longPress(find.text('Work 0'));
       await tester.pumpAndSettle();
 
-      final dynamic listState = tester.state(
-        find.byWidgetPredicate(
-          (widget) => widget.runtimeType.toString() == '_AsmrCategoryList',
-        ),
-      );
-      final Object cachedRows = listState.visibleItemsCache as Object;
+      expect(find.text('已选择 1 项'), findsOneWidget);
       await tester.tap(find.text('Work 1'));
       await tester.pumpAndSettle();
-      expect(identical(listState.visibleItemsCache, cachedRows), isTrue);
+      expect(find.text('已选择 2 项'), findsOneWidget);
       expect(find.text('Work 0'), findsOneWidget);
       expect(find.text('Work 1'), findsOneWidget);
       expect(find.text('Work ${count - 1}'), findsNothing);
@@ -241,7 +239,6 @@ void main() {
         _work(id: count, title: 'New work'),
       ]);
       await tester.pumpAndSettle();
-      expect(identical(listState.visibleItemsCache, cachedRows), isFalse);
       expect(find.text('New work'), findsOneWidget);
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump();
@@ -626,6 +623,107 @@ void main() {
       expect(find.text('Swipe Test Work'), findsOneWidget);
     },
   );
+
+  for (final inSearch in <bool>[false, true]) {
+    final page = inSearch ? 'search' : 'main';
+    final keyPrefix = inSearch ? 'asmr_search' : 'asmr';
+
+    testWidgets('$page batch add shows feedback and exits selection', (
+      tester,
+    ) async {
+      SharedPreferences.setMockInitialValues(const <String, Object>{});
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      await fixture.languageProvider.setLanguage(AppLanguage.zh);
+      final work = _work(id: 301, title: 'Batch work');
+      final controller = _BatchAsmrLibraryController(
+        createTestAsmrServices(),
+        [work],
+      );
+      addTearDown(controller.dispose);
+      final coordinator = AsmrPlaybackCoordinator(
+        source: controller,
+        launcher: PlaybackFacadeSessionLauncher(fixture.playback),
+      );
+      await tester.pumpWidget(
+        fixture.build(
+          const AsmrTab(),
+          overrides: [
+            asmrLibraryControllerProvider.overrideWithValue(controller),
+            asmrPlaybackCoordinatorProvider.overrideWithValue(coordinator),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+      if (inSearch) {
+        await tester.tap(
+          find.byKey(const ValueKey<String>('asmr_search_button')),
+        );
+        await tester.pumpAndSettle();
+      }
+      await tester.tap(find.text('收藏'));
+      await tester.pumpAndSettle();
+      await tester.longPress(find.text('Batch work'));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(ValueKey<String>('${keyPrefix}_batch_selection_header')),
+        findsOneWidget,
+      );
+
+      await tester.tap(
+        find.byKey(ValueKey<String>('${keyPrefix}_batch_add_button')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('已添加 1 个作品至播放列表'), findsOneWidget);
+      expect(
+        find.byKey(ValueKey<String>('${keyPrefix}_batch_selection_header')),
+        findsNothing,
+      );
+      expect(fixture.playback.sessions, hasLength(1));
+    });
+
+    testWidgets('$page batch unfavorite can be undone', (tester) async {
+      SharedPreferences.setMockInitialValues(const <String, Object>{});
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      await fixture.languageProvider.setLanguage(AppLanguage.zh);
+      final work = _work(id: 302, title: 'Favorite batch work');
+      final controller = _BatchAsmrLibraryController(
+        createTestAsmrServices(),
+        [work],
+      );
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(
+        fixture.build(
+          const AsmrTab(),
+          overrides: [
+            asmrLibraryControllerProvider.overrideWithValue(controller),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+      if (inSearch) {
+        await tester.tap(
+          find.byKey(const ValueKey<String>('asmr_search_button')),
+        );
+        await tester.pumpAndSettle();
+      }
+      await tester.tap(find.text('收藏'));
+      await tester.pumpAndSettle();
+      await tester.longPress(find.text('Favorite batch work'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(
+        find.byKey(ValueKey<String>('${keyPrefix}_batch_favorite_button')),
+      );
+      await tester.pumpAndSettle();
+      expect(controller.favoriteWorks, isEmpty);
+      expect(find.text('已取消收藏。'), findsOneWidget);
+      await tester.tap(find.textContaining('撤销').first);
+      await tester.pumpAndSettle();
+      expect(controller.favoriteWorks.map((work) => work.id), contains(302));
+    });
+  }
 }
 
 class _TestFavoritesAsmrLibraryController extends AsmrLibraryController {
@@ -735,6 +833,23 @@ class _TestFavoritesAsmrLibraryController extends AsmrLibraryController {
       revision: _revision,
     );
   }
+}
+
+class _BatchAsmrLibraryController extends _TestFavoritesAsmrLibraryController {
+  _BatchAsmrLibraryController(super.services, super.initialWorks);
+
+  @override
+  Future<List<MusicTrack>> loadPlayableTracks(AsmrWork work) async => [
+    testMusicTrack(
+      name: work.title,
+      path: '/asmr/${work.id}.mp3',
+      groupKey: '/asmr/${work.id}',
+      groupTitle: work.title,
+    ),
+  ];
+
+  @override
+  Future<void> recordHistory(AsmrWork work) async {}
 }
 
 AsmrWork _work({

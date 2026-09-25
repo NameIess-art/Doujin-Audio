@@ -136,6 +136,14 @@ void main() {
           .separateHeader,
       isTrue,
     );
+    expect(
+      tester
+          .widget<AppFadeThroughIndexedStack>(
+            find.byKey(const ValueKey<String>('main_page_stack')),
+          )
+          .style,
+      AppIndexedStackTransitionStyle.gradient,
+    );
     expect(find.byKey(const ValueKey<String>('main_page_fade_1')), findsOne);
     expect(
       find.byKey(const ValueKey<String>('main_page_fade_0')),
@@ -3060,33 +3068,45 @@ void main() {
     );
     await tester.pump();
 
+    final sessionCard = find
+        .byKey(const ValueKey('active_session_card_asmr_error_session'))
+        .first;
+    Finder inSessionCard(Finder matching) =>
+        find.descendant(of: sessionCard, matching: matching);
+
     expect(
       tester.getSize(
-        find.byKey(const ValueKey('active_session_cover_asmr_error_session')),
+        find
+            .byKey(const ValueKey('active_session_cover_asmr_error_session'))
+            .first,
       ),
       const Size.square(48),
     );
     final playbackCardRect = tester.getRect(
-      find.byKey(const ValueKey('active_session_card_asmr_error_session')),
+      find
+          .byKey(const ValueKey('active_session_card_asmr_error_session'))
+          .first,
     );
     final playbackCoverRect = tester.getRect(
-      find.byKey(const ValueKey('active_session_cover_asmr_error_session')),
+      find
+          .byKey(const ValueKey('active_session_cover_asmr_error_session'))
+          .first,
     );
     expect(playbackCoverRect.left - playbackCardRect.left, 4);
     expect(playbackCoverRect.top - playbackCardRect.top, 4);
     expect(playbackCardRect.bottom - playbackCoverRect.bottom, 4);
     expect(
       tester
-          .widget<AsyncLocalCoverImage>(find.byType(AsyncLocalCoverImage))
+          .widget<AsyncLocalCoverImage>(find.byType(AsyncLocalCoverImage).first)
           .displayMode,
       CoverImageDisplayMode.fill,
     );
     expect(
       tester
           .widget<ClipRRect>(
-            find.byKey(
-              const ValueKey('active_session_card_asmr_error_session'),
-            ),
+            find
+                .byKey(const ValueKey('active_session_card_asmr_error_session'))
+                .first,
           )
           .borderRadius,
       BorderRadius.circular(LibraryLikeCardMetrics.coverRadius + 4),
@@ -3095,9 +3115,11 @@ void main() {
       tester
           .widget<Material>(
             find.descendant(
-              of: find.byKey(
-                const ValueKey('active_session_cover_asmr_error_session'),
-              ),
+              of: find
+                  .byKey(
+                    const ValueKey('active_session_cover_asmr_error_session'),
+                  )
+                  .first,
               matching: find.byType(Material),
             ),
           )
@@ -3106,12 +3128,17 @@ void main() {
     );
 
     expect(
-      find.text(languageProvider.tr('asmr_playback_network_failed_retry')),
+      inSessionCard(
+        find.text(languageProvider.tr('asmr_playback_network_failed_retry')),
+      ),
       findsOneWidget,
     );
     expect(find.text('network failed'), findsNothing);
-    expect(find.byIcon(Icons.pause_rounded), findsNothing);
-    expect(find.byIcon(Icons.play_arrow_rounded), findsOneWidget);
+    expect(inSessionCard(find.byIcon(Icons.pause_rounded)), findsNothing);
+    expect(
+      inSessionCard(find.byIcon(Icons.play_arrow_rounded)),
+      findsOneWidget,
+    );
     expect(find.byType(SessionFeatureBadgeStack), findsNothing);
 
     session.beginTransportCommand(
@@ -3132,9 +3159,15 @@ void main() {
     );
     await tester.pump();
 
-    expect(find.byType(CircularProgressIndicator), findsOneWidget);
-    expect(find.text(languageProvider.tr('playback_loading')), findsOneWidget);
-    expect(find.byIcon(Icons.pause_rounded), findsNothing);
+    expect(
+      inSessionCard(find.byType(CircularProgressIndicator)),
+      findsOneWidget,
+    );
+    expect(
+      inSessionCard(find.text(languageProvider.tr('playback_loading'))),
+      findsOneWidget,
+    );
+    expect(inSessionCard(find.byIcon(Icons.pause_rounded)), findsNothing);
 
     session.finishPreparation(
       session.loadGeneration,
@@ -3157,10 +3190,13 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 150));
 
-    expect(find.byType(CircularProgressIndicator), findsNothing);
-    expect(find.text(languageProvider.tr('playback_loading')), findsNothing);
-    expect(find.byIcon(Icons.pause_rounded), findsNothing);
-    expect(find.byIcon(Icons.play_arrow_rounded), findsWidgets);
+    expect(inSessionCard(find.byType(CircularProgressIndicator)), findsNothing);
+    expect(
+      inSessionCard(find.text(languageProvider.tr('playback_loading'))),
+      findsNothing,
+    );
+    expect(inSessionCard(find.byIcon(Icons.pause_rounded)), findsNothing);
+    expect(inSessionCard(find.byIcon(Icons.play_arrow_rounded)), findsWidgets);
 
     session.setOptimisticState(
       playing: true,
@@ -3176,12 +3212,15 @@ void main() {
     );
     await tester.pump();
 
-    expect(find.byType(CircularProgressIndicator), findsNothing);
-    expect(find.byIcon(Icons.pause_rounded), findsOneWidget);
+    expect(inSessionCard(find.byType(CircularProgressIndicator)), findsNothing);
+    expect(inSessionCard(find.byIcon(Icons.pause_rounded)), findsWidgets);
     expect(
-      find.byWidgetPredicate(
-        (widget) => widget is Semantics && widget.properties.value == '1 / 1',
-      ),
+      find
+          .byWidgetPredicate(
+            (widget) =>
+                widget is Semantics && widget.properties.value == '1 / 1',
+          )
+          .first,
       findsOneWidget,
     );
     expect(tester.takeException(), isNull);

@@ -261,10 +261,30 @@ class _LibraryLikeSkeletonActions extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: LibraryLikeCardMetrics.compactActionButtonLayoutSize,
+      width: LibraryLikeCardMetrics.actionButtonSize + 23,
       height: actionHeight,
-      child: const Center(
-        child: ShimmerContainer(width: 25, height: 25, borderRadius: 12.5),
+      child: const Row(
+        children: [
+          SizedBox(
+            width: LibraryLikeCardMetrics.actionButtonSize,
+            child: Center(
+              child: Padding(
+                padding: EdgeInsets.only(left: 8),
+                child: Center(
+                  child: ShimmerContainer(
+                    width: 25,
+                    height: 25,
+                    borderRadius: 12.5,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          Padding(
+            padding: EdgeInsets.only(left: 2.5),
+            child: ShimmerContainer(width: 16, height: 16, borderRadius: 4),
+          ),
+        ],
       ),
     );
   }
@@ -309,8 +329,9 @@ class LibrarySkeletonListView extends StatelessWidget {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final columnCount =
-            responsiveLibraryCardColumnCount(constraints.maxWidth);
+        final columnCount = responsiveLibraryCardColumnCount(
+          constraints.maxWidth,
+        );
         return ListView(
           primary: false,
           physics: const NeverScrollableScrollPhysics(),
@@ -323,9 +344,7 @@ class LibrarySkeletonListView extends StatelessWidget {
           children: [
             for (var rowIndex = 0; rowIndex < itemCount; rowIndex++)
               if (columnCount <= 1)
-                LibraryLikeSkeletonCard(
-                  compactCoverLayout: compactCoverLayout,
-                )
+                LibraryLikeSkeletonCard(compactCoverLayout: compactCoverLayout)
               else
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,

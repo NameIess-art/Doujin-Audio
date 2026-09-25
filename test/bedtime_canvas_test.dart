@@ -149,7 +149,7 @@ void main() {
       }
       await gesture.up();
       await tester.pump();
-      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pump(const Duration(milliseconds: 500));
 
       // BedtimeCanvasPage should be popped, and keepScreenOn(false) called
       expect(find.byType(BedtimeCanvasPage), findsNothing);
@@ -427,7 +427,7 @@ void main() {
 
       Navigator.of(tester.element(find.byType(BedtimeCanvasPage))).pop();
       await tester.pump();
-      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pump(const Duration(milliseconds: 500));
       expect(BedtimeCanvasPage.isCanvasActive, isFalse);
     });
 
@@ -455,7 +455,7 @@ void main() {
 
         Navigator.of(tester.element(find.byType(BedtimeCanvasPage))).pop();
         await tester.pump();
-        await tester.pump(const Duration(milliseconds: 400));
+        await tester.pump(const Duration(milliseconds: 500));
 
         expect(display.endTokens, equals(['bedtime-brightness-token']));
       },

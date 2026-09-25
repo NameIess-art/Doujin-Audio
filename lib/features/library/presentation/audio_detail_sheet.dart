@@ -99,6 +99,8 @@ Future<void> showAudioDetailSheet(
     context: context,
     settings: const RouteSettings(name: workDetailRouteName),
     child: WorkDetailPage.forLocal(target: target),
+    fadePage: false,
+    transitionDuration: kAppMotionSlow,
   );
   if (replace && navigator.canPop()) {
     return navigator.pushAndRemoveUntil(route, (candidate) => candidate.isFirst);

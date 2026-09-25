@@ -16,7 +16,6 @@ import 'package:doujin_audio/features/player/application/native_playback_reposit
 import 'package:doujin_audio/features/player/application/playback_command_runner.dart';
 import 'package:doujin_audio/features/player/application/playback_notification_service.dart';
 import 'package:doujin_audio/app/theme/theme_provider.dart';
-import 'package:doujin_audio/core/widgets/operation_feedback.dart';
 import 'support/app_runtime_test_fixture.dart';
 
 void main() {
@@ -52,7 +51,11 @@ void main() {
       find.text(languageProvider.tr('dlsite_review_title')),
       findsOneWidget,
     );
-    expect(find.byType(OperationSkeletonList), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('dlsite_review_skeleton_field_0')),
+      findsOneWidget,
+    );
+    expect(find.byType(Scrollable), findsNothing);
 
     metadataCompleter.complete(
       DlsiteMetadata(
@@ -65,7 +68,10 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.byType(OperationSkeletonList), findsNothing);
+    expect(
+      find.byKey(const ValueKey<String>('dlsite_review_skeleton_field_0')),
+      findsNothing,
+    );
     expect(
       find.text(languageProvider.tr('audio_detail_work_title')),
       findsOneWidget,

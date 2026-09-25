@@ -14,6 +14,8 @@ Future<void> showAsmrWorkDetailSheet(
     context: context,
     settings: const RouteSettings(name: workDetailRouteName),
     child: WorkDetailPage.forAsmr(work: work),
+    fadePage: false,
+    transitionDuration: kAppMotionSlow,
   );
   if (replace && navigator.canPop()) {
     return navigator.pushAndRemoveUntil(

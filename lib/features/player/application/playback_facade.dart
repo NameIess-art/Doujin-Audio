@@ -130,15 +130,8 @@ final class PlaybackFacade {
   final Set<String> _pendingPlaybackStateSessionIds = <String>{};
   Future<void>? _sessionPersistenceTail;
 
-  /// Position-persistence bucket while the UI is visible.
   static const int foregroundPositionBucketSeconds = 5;
 
-  /// Position-persistence bucket once the UI is gone.
-  ///
-  /// Nothing on screen consumes a resumable position in the background, and the
-  /// native service persists its own copy. A 5s bucket there costs ~720 SQLite
-  /// transactions per hour - ~8600 over a 12h screen-off session - for a
-  /// precision no one can observe.
   static const int backgroundPositionBucketSeconds = 30;
 
   static const double maxSessionVolume = 3.0;
@@ -629,7 +622,10 @@ final class PlaybackFacade {
       // the original native session was never created.
       if (session.loadedPath != null) {
         session.beginLoadingIndicatorThreshold();
-        await _commandPort?.startSession(session, shouldStartTriggerCountdown: true);
+        await _commandPort?.startSession(
+          session,
+          shouldStartTriggerCountdown: true,
+        );
       } else {
         await _commandPort?.prepareSession(
           session,
@@ -644,7 +640,10 @@ final class PlaybackFacade {
     }
     session.lastPlayedAt = DateTime.now();
     if (session.isLoading) {
-      await _commandPort?.prepareSession(session, nextPath: session.currentTrackPath);
+      await _commandPort?.prepareSession(
+        session,
+        nextPath: session.currentTrackPath,
+      );
       return;
     }
     if (session.state.processingState == ProcessingState.completed ||
@@ -658,7 +657,10 @@ final class PlaybackFacade {
       return;
     }
     session.beginLoadingIndicatorThreshold();
-    await _commandPort?.startSession(session, shouldStartTriggerCountdown: true);
+    await _commandPort?.startSession(
+      session,
+      shouldStartTriggerCountdown: true,
+    );
   }
 
   Future<void> switchSessionTrack(String sessionId, String newPath) async {
@@ -744,10 +746,6 @@ final class PlaybackFacade {
       ? backgroundPositionBucketSeconds
       : foregroundPositionBucketSeconds;
 
-  /// Switches position-persistence cadence with UI visibility.
-  ///
-  /// Entering the background flushes first so the fine-grained position observed
-  /// while visible is not lost to the coarser bucket.
   void setBackgroundMode(bool value) {
     if (_backgroundMode == value) return;
     if (value) {
@@ -758,7 +756,6 @@ final class PlaybackFacade {
       }
     }
     _backgroundMode = value;
-    // Buckets from the previous width are not comparable to the new one.
     for (final session in _service.sessions.values) {
       session.lastPersistedPositionBucket =
           session.lastKnownPosition.inSeconds ~/ positionBucketSeconds;

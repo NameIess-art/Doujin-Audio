@@ -96,6 +96,7 @@ class _DlsiteMetadataBatchPageState
         .push<List<AudioLibraryCategoryEntry>>(
           buildAppPageRoute(
             context: context,
+            fadeHeader: false,
             child: DlsiteMetadataWorkPickerPage(
               entries: _entries,
               initialSelection: _specificEntries,
@@ -167,6 +168,7 @@ class _DlsiteMetadataBatchPageState
     await Navigator.of(context).push<void>(
       buildAppPageRoute(
         context: context,
+        fadeHeader: false,
         child: DlsiteMetadataBatchResultsPage(session: session),
       ),
     );
@@ -657,6 +659,7 @@ class _DlsiteMetadataBatchResultsPageState
       await Navigator.of(context).push<void>(
         buildAppPageRoute(
           context: context,
+          fadeHeader: false,
           child: DlsiteMetadataBatchReviewPage(
             session: widget.session,
             initialIndex: index,

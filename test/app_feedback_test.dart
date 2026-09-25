@@ -119,7 +119,7 @@ void main() {
     expect(find.text('Import failed'), findsNothing);
   });
 
-  testWidgets('undoable removal merges, resets its window, and commits', (
+  testWidgets('undoable removal updates in place and resets its window', (
     tester,
   ) async {
     final service = UndoableRemovalService();
@@ -178,15 +178,27 @@ void main() {
     expect(find.text('Undo (5s)'), findsOneWidget);
     expect(find.text('Removed one'), findsOneWidget);
     await tester.pump(const Duration(seconds: 2));
+    final fade = find.ancestor(
+      of: find.byType(AppFeedbackSurface),
+      matching: find.byType(FadeTransition),
+    );
+    final firstFadeAnimation = tester.widget<FadeTransition>(fade).opacity;
     await tester.tap(find.text('Remove two'));
     await tester.pump();
+    expect(
+      identical(
+        tester.widget<FadeTransition>(fade).opacity,
+        firstFadeAnimation,
+      ),
+      isTrue,
+    );
     expect(find.text('Undo (5s)'), findsOneWidget);
     expect(find.text('Removed 2'), findsOneWidget);
-    for (var i = 0; i < 45; i++) {
+    for (var i = 0; i < 20; i++) {
       await tester.pump(const Duration(milliseconds: 100));
     }
     expect(committed, isEmpty);
-    for (var i = 0; i < 6; i++) {
+    for (var i = 0; i < 35; i++) {
       await tester.pump(const Duration(milliseconds: 100));
     }
     await tester.runAsync(() => Future<void>.delayed(Duration.zero));

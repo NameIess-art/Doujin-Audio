@@ -1144,10 +1144,11 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
     }
 
     return Scaffold(
-      backgroundColor: cs.surface,
+      backgroundColor: Colors.transparent,
       body: Stack(
         children: [
           AppPageContentTransition(
+            backgroundColor: cs.surface,
             child: CustomScrollView(
               slivers: [
                 // 1. Collapsible Sticky Header

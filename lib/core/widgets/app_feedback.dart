@@ -24,9 +24,11 @@ const Duration kUndoableRemovalFeedbackDuration = Duration(seconds: 5);
 const String _undoableRemovalFeedbackGroup = 'undoable-removal';
 
 OverlayEntry? _activeFeedbackEntry;
-Timer? _activeFeedbackTimer;
 void Function(AppFeedbackDismissReason reason)? _activeFeedbackRemove;
+void Function(String message)? _activeFeedbackUpdateMessage;
+VoidCallback? _activeFeedbackResetDuration;
 Object? _activeFeedbackReplacementGroup;
+Object? _activeFeedbackReplacementOwner;
 
 abstract final class AppInteractionFeedback {
   static bool get hapticFeedbackEnabled =>
@@ -43,7 +45,8 @@ abstract final class AppInteractionFeedback {
     AppInteractionFeedbackType type, {
     BuildContext? context,
   }) {
-    if (defaultTargetPlatform == TargetPlatform.windows || !hapticFeedbackEnabled) {
+    if (defaultTargetPlatform == TargetPlatform.windows ||
+        !hapticFeedbackEnabled) {
       return Future<void>.value();
     }
     switch (type) {
@@ -64,7 +67,8 @@ abstract final class AppInteractionFeedback {
     Object value, {
     Duration interval = const Duration(milliseconds: 72),
   }) {
-    if (defaultTargetPlatform == TargetPlatform.windows || !hapticFeedbackEnabled) {
+    if (defaultTargetPlatform == TargetPlatform.windows ||
+        !hapticFeedbackEnabled) {
       return Future<void>.value();
     }
     final now = DateTime.now();
@@ -95,6 +99,7 @@ void showAppSnackBar(
   String? actionLabel,
   VoidCallback? onAction,
   Object? replacementGroup,
+  Object? replacementOwner,
   ValueChanged<AppFeedbackDismissReason>? onDismissed,
   bool provideHapticFeedback = true,
   bool? showCountdown,
@@ -115,6 +120,7 @@ void showAppSnackBar(
     actionLabel: actionLabel,
     onAction: onAction,
     replacementGroup: replacementGroup,
+    replacementOwner: replacementOwner,
     onDismissed: onDismissed,
     provideHapticFeedback: provideHapticFeedback,
     showCountdown:
@@ -177,15 +183,27 @@ void showPendingUndoableRemovalFeedback(
 }) {
   final count = service.state.pendingCount;
   if (count == 0) return;
+  final nextMessage = count == 1 ? message : batchMessage(count);
+  if (_activeFeedbackReplacementGroup == _undoableRemovalFeedbackGroup &&
+      identical(_activeFeedbackReplacementOwner, service) &&
+      _activeFeedbackUpdateMessage != null) {
+    _activeFeedbackUpdateMessage!(nextMessage);
+    _activeFeedbackResetDuration?.call();
+    unawaited(
+      AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection),
+    );
+    return;
+  }
   showAppSnackBar(
     context,
-    count == 1 ? message : batchMessage(count),
+    nextMessage,
     tone: AppFeedbackTone.destructive,
     icon: icon,
     duration: kUndoableRemovalFeedbackDuration,
     actionLabel: undoLabel,
     onAction: () => unawaited(service.undoPending()),
     replacementGroup: _undoableRemovalFeedbackGroup,
+    replacementOwner: service,
     onDismissed: (reason) {
       if (reason == AppFeedbackDismissReason.action ||
           reason == AppFeedbackDismissReason.updated) {
@@ -217,6 +235,7 @@ void _showTopFeedback(
   String? actionLabel,
   VoidCallback? onAction,
   Object? replacementGroup,
+  Object? replacementOwner,
   ValueChanged<AppFeedbackDismissReason>? onDismissed,
   required bool provideHapticFeedback,
   bool showCountdown = false,
@@ -232,15 +251,17 @@ void _showTopFeedback(
     );
   }
 
-  _activeFeedbackTimer?.cancel();
   final replacementReason =
       replacementGroup != null &&
-          replacementGroup == _activeFeedbackReplacementGroup
+          replacementGroup == _activeFeedbackReplacementGroup &&
+          identical(replacementOwner, _activeFeedbackReplacementOwner)
       ? AppFeedbackDismissReason.updated
       : AppFeedbackDismissReason.replaced;
   _activeFeedbackRemove?.call(replacementReason);
 
   final dismissKey = Object();
+  final animationKey = GlobalKey<_FeedbackAnimationWrapperState>();
+  final messageNotifier = ValueNotifier<String>(message);
   late final OverlayEntry entry;
   var removed = false;
   void removeEntry(AppFeedbackDismissReason reason) {
@@ -249,8 +270,12 @@ void _showTopFeedback(
     if (_activeFeedbackEntry == entry) {
       _activeFeedbackEntry = null;
       _activeFeedbackRemove = null;
+      _activeFeedbackUpdateMessage = null;
+      _activeFeedbackResetDuration = null;
       _activeFeedbackReplacementGroup = null;
+      _activeFeedbackReplacementOwner = null;
     }
+    messageNotifier.dispose();
     entry.remove();
     onDismissed?.call(reason);
   }
@@ -313,50 +338,52 @@ void _showTopFeedback(
         left: leftInset,
         right: rightInset,
         child: _FeedbackAnimationWrapper(
+          key: animationKey,
           duration: duration,
           transitionDuration: AppDesignTokens.of(overlayContext).motionStandard,
           showCountdown: showCountdown,
           onRemove: () => removeEntry(AppFeedbackDismissReason.timeout),
           builder: (wrapperContext, remainingSeconds) {
             final isRemovalAction =
-                hasAction &&
-                showActionCountdown &&
-                remainingSeconds != null;
+                hasAction && showActionCountdown && remainingSeconds != null;
             final resolvedActionLabel = hasAction
                 ? (isRemovalAction
-                    ? '$actionLabel (${remainingSeconds}s)'
-                    : actionLabel)
+                      ? '$actionLabel (${remainingSeconds}s)'
+                      : actionLabel)
                 : null;
             return Dismissible(
               key: ValueKey<Object>(dismissKey),
               onDismissed: (_) => removeEntry(AppFeedbackDismissReason.swipe),
               child: Material(
                 color: Colors.transparent,
-                child: AppFeedbackSurface(
-                  tone: tone,
-                  icon: resolvedIcon,
-                  iconColor: iconColor,
-                  title: title,
-                  message: message,
-                  remainingSeconds: hasAction ? null : remainingSeconds,
-                  trailing: hasAction
-                      ? TextButton(
-                          style: TextButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 4,
+                child: ValueListenableBuilder<String>(
+                  valueListenable: messageNotifier,
+                  builder: (context, currentMessage, _) => AppFeedbackSurface(
+                    tone: tone,
+                    icon: resolvedIcon,
+                    iconColor: iconColor,
+                    title: title,
+                    message: currentMessage,
+                    remainingSeconds: hasAction ? null : remainingSeconds,
+                    trailing: hasAction
+                        ? TextButton(
+                            style: TextButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 4,
+                              ),
+                              minimumSize: Size.zero,
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              shape: const StadiumBorder(),
                             ),
-                            minimumSize: Size.zero,
-                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                            shape: const StadiumBorder(),
-                          ),
-                          onPressed: () {
-                            removeEntry(AppFeedbackDismissReason.action);
-                            onAction();
-                          },
-                          child: Text(resolvedActionLabel!),
-                        )
-                      : null,
+                            onPressed: () {
+                              removeEntry(AppFeedbackDismissReason.action);
+                              onAction();
+                            },
+                            child: Text(resolvedActionLabel!),
+                          )
+                        : null,
+                  ),
                 ),
               ),
             );
@@ -369,11 +396,20 @@ void _showTopFeedback(
   overlay.insert(entry);
   _activeFeedbackEntry = entry;
   _activeFeedbackRemove = removeEntry;
+  _activeFeedbackUpdateMessage = (nextMessage) {
+    if (!removed && messageNotifier.value != nextMessage) {
+      messageNotifier.value = nextMessage;
+    }
+  };
+  _activeFeedbackResetDuration = () =>
+      animationKey.currentState?.resetDuration();
   _activeFeedbackReplacementGroup = replacementGroup;
+  _activeFeedbackReplacementOwner = replacementOwner;
 }
 
 class _FeedbackAnimationWrapper extends StatefulWidget {
   const _FeedbackAnimationWrapper({
+    super.key,
     required this.builder,
     required this.duration,
     required this.transitionDuration,
@@ -410,22 +446,24 @@ class _FeedbackAnimationWrapperState extends State<_FeedbackAnimationWrapper>
     _opacity = CurvedAnimation(parent: _controller, curve: Curves.easeOut);
 
     _controller.forward();
+    _startDuration();
+  }
 
+  void _startDuration() {
+    _dismissTimer?.cancel();
+    _countdownTimer?.cancel();
     final totalSeconds = (widget.duration.inMilliseconds / 1000).ceil();
     _remainingSeconds = totalSeconds > 0 ? totalSeconds : 1;
 
     if (widget.showCountdown && totalSeconds > 1) {
-      _countdownTimer = Timer.periodic(
-        const Duration(seconds: 1),
-        (_) {
-          if (!mounted) return;
-          if (_remainingSeconds > 1) {
-            setState(() {
-              _remainingSeconds--;
-            });
-          }
-        },
-      );
+      _countdownTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+        if (!mounted) return;
+        if (_remainingSeconds > 1) {
+          setState(() {
+            _remainingSeconds--;
+          });
+        }
+      });
     }
 
     final stayDuration = widget.duration - widget.transitionDuration;
@@ -439,6 +477,12 @@ class _FeedbackAnimationWrapperState extends State<_FeedbackAnimationWrapper>
         });
       },
     );
+  }
+
+  void resetDuration() {
+    if (!mounted) return;
+    _startDuration();
+    setState(() {});
   }
 
   @override

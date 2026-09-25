@@ -446,7 +446,10 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
                     return _ActiveSessionPageTransform(
                       pageListenable: _pageNotifier,
                       index: index,
-                      enabled: !circularCover && !embedded,
+                      enabled:
+                          visibleSessions.length > 1 &&
+                          !circularCover &&
+                          !embedded,
                       child: RepaintBoundary(
                         child: _ActiveSessionCard(
                           session: session,
@@ -544,14 +547,19 @@ class _ActiveSessionPageTransform extends StatelessWidget {
       animation: pageListenable,
       child: child,
       builder: (context, child) {
-        if (!enabled) return child!;
         final pageDelta = index - pageListenable.value;
         final selectedness = (1 - pageDelta.abs()).clamp(0.0, 1.0);
-        final scale = lerpDouble(0.972, 1.0, selectedness) ?? 1.0;
-        final translateY = lerpDouble(2.5, 0, selectedness) ?? 0;
+        final scale = enabled
+            ? (lerpDouble(0.972, 1.0, selectedness) ?? 1.0)
+            : 1.0;
+        final translateY = enabled
+            ? (lerpDouble(2.5, 0, selectedness) ?? 0)
+            : 0.0;
 
         return Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 2),
+          padding: enabled
+              ? const EdgeInsets.symmetric(horizontal: 2)
+              : EdgeInsets.zero,
           child: Transform.translate(
             offset: Offset(0, translateY),
             child: Transform.scale(scale: scale, child: child),

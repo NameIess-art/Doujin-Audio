@@ -641,6 +641,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     await Navigator.of(context).push(
       buildAppPageRoute<void>(
         context: context,
+        fadeHeader: false,
         child: const DlsiteMetadataBatchPage(),
       ),
     );

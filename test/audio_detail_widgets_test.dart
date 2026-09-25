@@ -169,10 +169,35 @@ void main() {
             ),
           ),
           rjCode: 'RJ123456',
+          batchIndex: 1,
+          batchTotal: 2,
+          onBatchNavigate: (_) {},
         ),
       ),
     );
     await tester.pump();
+
+    expect(find.byType(Scrollable), findsNothing);
+    final skeletonConfirm = find.byKey(
+      const ValueKey<String>('dlsite_review_skeleton_confirm'),
+    );
+    final skeletonConfirmIcon = find.byKey(
+      const ValueKey<String>('dlsite_review_skeleton_confirm_icon'),
+    );
+    final skeletonPrevious = find.byKey(
+      const ValueKey<String>('dlsite_review_skeleton_previous_work'),
+    );
+    final skeletonNext = find.byKey(
+      const ValueKey<String>('dlsite_review_skeleton_next_work'),
+    );
+    expect(skeletonConfirm, findsOneWidget);
+    expect(skeletonConfirmIcon, findsOneWidget);
+    expect(skeletonPrevious, findsOneWidget);
+    expect(skeletonNext, findsOneWidget);
+    final skeletonConfirmRect = tester.getRect(skeletonConfirm);
+    final skeletonConfirmIconCenter = tester.getCenter(skeletonConfirmIcon);
+    final skeletonPreviousCenter = tester.getCenter(skeletonPrevious);
+    final skeletonNextCenter = tester.getCenter(skeletonNext);
 
     final skeletonCover = find.byKey(
       const ValueKey<String>('dlsite_review_skeleton_cover'),
@@ -205,6 +230,18 @@ void main() {
     expect(skeletonCover, findsOneWidget);
     await tester.pump(const Duration(milliseconds: 376));
     expect(skeletonCover, findsNothing);
+    final confirm = find.byKey(const ValueKey<String>('dlsite_review_confirm'));
+    final confirmIcon = find.byKey(
+      const ValueKey<String>('dlsite_review_confirm_icon'),
+    );
+    final previous = find.byKey(
+      const ValueKey<String>('dlsite_review_previous_work'),
+    );
+    final next = find.byKey(const ValueKey<String>('dlsite_review_next_work'));
+    expect(tester.getRect(confirm), skeletonConfirmRect);
+    expect(tester.getCenter(confirmIcon), skeletonConfirmIconCenter);
+    expect(tester.getCenter(previous), skeletonPreviousCenter);
+    expect(tester.getCenter(next), skeletonNextCenter);
     final actualCover = find.ancestor(
       of: find.byType(AsyncRemoteCoverImage),
       matching: find.byType(AspectRatio),

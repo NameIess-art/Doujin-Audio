@@ -421,6 +421,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                 showSubtitles: subtitleSettings.isGlobalEnabled(session.id),
                 library: library,
                 playback: playback,
+                isTemporary: isTemporary,
                 isSelectionMode: _isSelectionMode && !isTemporary,
                 isSelected: _selectedSessionIds.contains(session.id),
                 isPinned: isPinned,
@@ -438,20 +439,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
       );
       return KeyedSubtree(
         key: ValueKey(session.id),
-        child: isTemporary && index + 1 < visibleEntries.length
-            ? Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  child,
-                  const Divider(
-                    key: ValueKey('playlist_temporary_session_divider'),
-                    height: 24,
-                    indent: 12,
-                    endIndent: 12,
-                  ),
-                ],
-              )
-            : child,
+        child: child,
       );
     }
 

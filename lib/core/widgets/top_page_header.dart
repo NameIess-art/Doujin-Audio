@@ -818,34 +818,33 @@ class HeaderSegmentedCategoryBar<T> extends StatelessWidget {
                   final isSelected = item == selected;
                   final label = labelBuilder(item);
                   return Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 1.5),
+                    padding: const EdgeInsets.symmetric(horizontal: 1),
                     child: Material(
                       color: isSelected
-                          ? activeColor.withValues(alpha: 0.16)
+                          ? activeColor.withValues(alpha: 0.19)
                           : Colors.transparent,
                       borderRadius: BorderRadius.circular(15),
                       child: InkWell(
                         borderRadius: BorderRadius.circular(15),
                         onTap: () => onSelected(item),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8.5,
-                            vertical: 4,
-                          ),
+                        child: SizedBox(
+                          height: 32,
                           child: Center(
-                            child: Text(
-                              label,
-                              style: textTheme.labelMedium?.copyWith(
-                                color: isSelected
-                                    ? activeColor
-                                    : cs.onSurfaceVariant.withValues(
-                                        alpha: 0.85,
-                                      ),
-                                fontWeight: isSelected
-                                    ? FontWeight.w700
-                                    : FontWeight.w500,
-                                fontSize: 12.5,
-                                letterSpacing: 0,
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 12),
+                              child: Text(
+                                label,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: textTheme.labelMedium?.copyWith(
+                                  color: isSelected
+                                      ? activeColor
+                                      : cs.onSurfaceVariant,
+                                  fontWeight: isSelected
+                                      ? FontWeight.w700
+                                      : FontWeight.w600,
+                                  fontSize: 12.5,
+                                ),
                               ),
                             ),
                           ),

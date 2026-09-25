@@ -151,6 +151,14 @@ class _MainScreenState extends ConsumerState<MainScreen>
   double _stablePortraitTopPadding = 0;
   double _stableLandscapeTopPadding = 0;
   bool _isMenuCollapsed = false;
+  final List<LayerLink> _menuIconLinks = List<LayerLink>.generate(
+    MainDestinationType.values.length,
+    (_) => LayerLink(),
+  );
+  final List<GlobalKey> _menuIconKeys = List<GlobalKey>.generate(
+    MainDestinationType.values.length,
+    (_) => GlobalKey(),
+  );
   bool _isMobilePlaybackExpanded = false;
   late final ValueNotifier<int> _activePageIndex;
   final Object _pageSwitchInteraction = Object();
@@ -158,6 +166,22 @@ class _MainScreenState extends ConsumerState<MainScreen>
   final GlobalKey _mobilePlaybackGeometryKey = GlobalKey();
   final GlobalKey _desktopPlaybackGeometryKey = GlobalKey();
   int _pageSwitchCoordinatorGeneration = 0;
+
+  Offset _menuIconCollapseOffset(
+    MainDestinationType source,
+    MainDestinationType target,
+  ) {
+    final sourceBox = _menuIconKeys[source.index].currentContext
+        ?.findRenderObject() as RenderBox?;
+    final targetBox = _menuIconKeys[target.index].currentContext
+        ?.findRenderObject() as RenderBox?;
+    if (sourceBox == null || targetBox == null ||
+        !sourceBox.hasSize || !targetBox.hasSize) {
+      return Offset.zero;
+    }
+    return targetBox.localToGlobal(targetBox.size.center(Offset.zero)) -
+        sourceBox.localToGlobal(sourceBox.size.center(Offset.zero));
+  }
 
   void _reportMobilePlaybackCoverRect() {
     final geometry = widget.playbackDockGeometry;

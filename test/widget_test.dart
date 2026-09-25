@@ -403,6 +403,14 @@ void main() {
     )) {
       expect(icon.size, 28);
     }
+    final focusedDestination = find.byKey(
+      const ValueKey<String>('main_destination_music_library'),
+    );
+    final trailingDestination = find.byKey(
+      const ValueKey<String>('main_destination_nav_settings'),
+    );
+    final expandedFocusX = tester.getCenter(focusedDestination).dx;
+    final expandedTrailingX = tester.getCenter(trailingDestination).dx;
 
     final collapsedCoverCenter = tester.getCenter(playbackCover);
     expect(
@@ -415,7 +423,13 @@ void main() {
     );
     await tester.tap(playbackCard);
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 140));
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(tester.getCenter(focusedDestination).dx, lessThan(expandedFocusX));
+    expect(
+      tester.getCenter(trailingDestination).dx,
+      closeTo(expandedTrailingX, 0.1),
+    );
+    await tester.pump(const Duration(milliseconds: 90));
     expect(
       find.byKey(
         const ValueKey<String>(
@@ -434,6 +448,10 @@ void main() {
     );
     final transitioningCoverCenter = tester.getCenter(playbackCover);
     expect(transitioningCoverCenter.dx, lessThan(collapsedCoverCenter.dx));
+    expect(
+      tester.getCenter(trailingDestination).dx,
+      lessThan(expandedTrailingX),
+    );
     expect(
       transitioningCoverCenter.dx,
       greaterThan(tester.getRect(menuSurface).left + 72),
@@ -479,18 +497,34 @@ void main() {
       find.byKey(const ValueKey<String>('main_destination_music_library')),
       findsOneWidget,
     );
-    expect(
-      find.byKey(const ValueKey<String>('main_destination_nav_settings')),
-      findsNothing,
-    );
+    expect(trailingDestination, findsNothing);
 
     await tester.tap(
       find.byKey(const ValueKey<String>('main_destination_ink_music_library')),
     );
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 350));
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(
+      tester.getCenter(focusedDestination).dx,
+      closeTo(tester.getRect(menuSurface).left + 28, 0.1),
+    );
+    expect(trailingDestination, findsNothing);
+    await tester.pump(const Duration(milliseconds: 90));
+    expect(
+      tester.getCenter(trailingDestination).dx,
+      greaterThan(tester.getCenter(focusedDestination).dx),
+    );
+    await tester.pump(const Duration(milliseconds: 210));
     expect(tester.getSize(navigation).width, greaterThan(200));
     expect(tester.getSize(playback).width, closeTo(56, 0.1));
+    expect(
+      tester.getCenter(focusedDestination).dx,
+      closeTo(expandedFocusX, 0.1),
+    );
+    expect(
+      tester.getCenter(trailingDestination).dx,
+      closeTo(expandedTrailingX, 0.1),
+    );
   });
 
   testWidgets(
@@ -2678,12 +2712,18 @@ void main() {
       find.ancestor(of: navigationRail, matching: find.byType(FittedBox)),
       findsNothing,
     );
-    final settingsNavigationIcon = find.descendant(
-      of: navigationRail,
-      matching: find.byIcon(Icons.settings_outlined),
+    final settingsNavigationIcon = find.byKey(
+      const ValueKey<String>('main_destination_nav_settings'),
     );
     expect(settingsNavigationIcon, findsOneWidget);
-    expect(tester.widget<Icon>(settingsNavigationIcon).size, isNull);
+    expect(tester.widget<Icon>(settingsNavigationIcon).size, 21);
+    expect(
+      find.descendant(
+        of: navigationRail,
+        matching: find.byIcon(Icons.settings_outlined),
+      ),
+      findsNothing,
+    );
 
     final expandedMenuButton = find.descendant(
       of: navigationRail,
@@ -2692,6 +2732,15 @@ void main() {
     expect(expandedMenuButton, findsOneWidget);
     expect(tester.getSize(expandedMenuButton), isNot(Size.zero));
     final expandedWidth = tester.getSize(navigationRail).width;
+    final focusedIcon = find.byKey(
+      const ValueKey<String>('main_destination_show_asmr_one'),
+    );
+    final settingsIcon = find.byKey(
+      const ValueKey<String>('main_destination_nav_settings'),
+    );
+    final expandedIconGap =
+        tester.getCenter(settingsIcon).dy - tester.getCenter(focusedIcon).dy;
+    expect(expandedIconGap, greaterThan(0));
 
     await tester.tap(expandedMenuButton);
     await tester.pump();
@@ -2710,8 +2759,26 @@ void main() {
       animatingWidth,
       inExclusiveRange(collapsedRail.minWidth!, expandedWidth),
     );
+    final collapsingIconGap =
+        tester.getCenter(settingsIcon).dy - tester.getCenter(focusedIcon).dy;
+    expect(collapsingIconGap, inExclusiveRange(0, expandedIconGap));
     await tester.pumpAndSettle();
     expect(tester.getSize(navigationRail).width, collapsedRail.minWidth);
+    expect(
+      tester.getCenter(settingsIcon).dy,
+      closeTo(tester.getCenter(focusedIcon).dy, 0.1),
+    );
+    await tester.tap(find.byIcon(Icons.menu_rounded));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    final expandingIconGap =
+        tester.getCenter(settingsIcon).dy - tester.getCenter(focusedIcon).dy;
+    expect(expandingIconGap, inExclusiveRange(0, expandedIconGap));
+    await tester.pumpAndSettle();
+    expect(
+      tester.getCenter(settingsIcon).dy - tester.getCenter(focusedIcon).dy,
+      closeTo(expandedIconGap, 0.1),
+    );
     expect(find.byType(ActiveSessionCarousel), findsNothing);
     debugDefaultTargetPlatformOverride = null;
     expect(tester.takeException(), isNull);
@@ -2915,11 +2982,14 @@ void main() {
       same(asmrState),
     );
     expect(find.byKey(const ValueKey<String>('main_page_fade_3')), findsOne);
+    expect(
+      find.byKey(const ValueKey<String>('main_destination_music_library')),
+      findsOneWidget,
+    );
 
-    await tester.tap(
-      find.descendant(
-        of: find.byType(NavigationRail),
-        matching: find.byIcon(Icons.library_music_outlined),
+    await tester.tapAt(
+      tester.getCenter(
+        find.byKey(const ValueKey<String>('main_destination_music_library')),
       ),
     );
     await _pumpMainScreenAnimations(tester);

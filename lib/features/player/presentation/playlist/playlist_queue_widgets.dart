@@ -305,7 +305,7 @@ class _PlaybackQueueCardState extends ConsumerState<PlaybackQueueCard> {
                           if (isPinned)
                             Positioned(
                               top: 4,
-                              left: 4,
+                              right: 4,
                               child: PlaylistPinnedIndicator(
                                 sessionId: session.id,
                                 color: activeColor,

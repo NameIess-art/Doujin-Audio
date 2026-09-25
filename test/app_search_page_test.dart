@@ -110,6 +110,12 @@ void main() {
         38,
       );
       expect(
+        tester
+            .getSize(find.byKey(const ValueKey<String>('app_search_category_0')))
+            .height,
+        32,
+      );
+      expect(
         find.byKey(const ValueKey<String>('direct_search_content')),
         findsOneWidget,
       );

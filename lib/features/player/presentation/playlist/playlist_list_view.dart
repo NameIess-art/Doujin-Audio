@@ -413,6 +413,7 @@ class SessionListCard extends ConsumerWidget {
     required this.showSubtitles,
     required this.library,
     required this.playback,
+    required this.isTemporary,
     required this.onOpen,
     this.isSelectionMode = false,
     this.isSelected = false,
@@ -430,6 +431,7 @@ class SessionListCard extends ConsumerWidget {
   final bool showSubtitles;
   final LibraryFacade library;
   final PlaybackFacade playback;
+  final bool isTemporary;
   final VoidCallback onOpen;
   final bool isSelectionMode;
   final bool isSelected;
@@ -476,218 +478,243 @@ class SessionListCard extends ConsumerWidget {
     final activeColor = isAsmrOne ? asmrBlue : localPlayRose;
     final showCover = shouldShowPlaylistCoverArtwork(track, coverPath);
 
-    return UndoableRemovalTransition(
-      hidden: isHidden,
-      child: SwipeRevealCard(
-        key: ValueKey(sessionId),
-        shape: playlistRowShape,
-        closedColor: cs.surface,
-        enabled: !isSelectionMode,
-        actionLabel: i18n.tr('remove'),
-        removeTooltip: i18n.tr('remove_audio'),
-        onRemove: () => stagePlaybackSessionRemovals(context, ref, [sessionId]),
-        onLeadingAction: onTogglePin,
-        leadingActionLabel: i18n.tr(isPinned ? 'unpin_from_top' : 'pin_to_top'),
-        leadingActionTooltip: i18n.tr(
-          isPinned ? 'unpin_from_top' : 'pin_to_top',
-        ),
-        leadingActionIcon: Icons.push_pin_rounded,
-        leadingActionIconWidget: isPinned ? const PushPinOffIcon() : null,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(minHeight: playlistRowHeight),
-          child: Material(
-            color: Colors.transparent,
-            child: Card(
-              margin: EdgeInsets.zero,
-              clipBehavior: Clip.antiAlias,
-              shape: playlistRowShape,
-              color: isSelected
-                  ? cs.primaryContainer.withValues(alpha: 0.15)
-                  : Colors.transparent,
-              elevation: 0,
-              shadowColor: Colors.transparent,
-              child: DecoratedBox(
-                key: ValueKey<String>('playlist_card_highlight_$sessionId'),
-                decoration: ShapeDecoration(
-                  gradient: playlistActiveHighlightGradient(
-                    isPlaying,
-                    highlightColor,
+    final swipeCard = SwipeRevealCard(
+      key: ValueKey(sessionId),
+      shape: playlistRowShape,
+      closedColor: isTemporary ? cs.surfaceContainerHigh : cs.surface,
+      enabled: !isSelectionMode,
+      actionLabel: i18n.tr('remove'),
+      removeTooltip: i18n.tr('remove_audio'),
+      onRemove: () => stagePlaybackSessionRemovals(context, ref, [sessionId]),
+      onLeadingAction: onTogglePin,
+      leadingActionLabel: i18n.tr(isPinned ? 'unpin_from_top' : 'pin_to_top'),
+      leadingActionTooltip: i18n.tr(isPinned ? 'unpin_from_top' : 'pin_to_top'),
+      leadingActionIcon: Icons.push_pin_rounded,
+      leadingActionIconWidget: isPinned ? const PushPinOffIcon() : null,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: playlistRowHeight),
+        child: Material(
+          color: Colors.transparent,
+          child: Card(
+            margin: EdgeInsets.zero,
+            clipBehavior: Clip.antiAlias,
+            shape: playlistRowShape,
+            color: isSelected
+                ? cs.primaryContainer.withValues(alpha: 0.15)
+                : isTemporary
+                ? cs.surfaceContainerHigh
+                : Colors.transparent,
+            elevation: 0,
+            shadowColor: Colors.transparent,
+            child: Stack(
+              fit: StackFit.passthrough,
+              children: [
+                DecoratedBox(
+                  key: ValueKey<String>('playlist_card_highlight_$sessionId'),
+                  decoration: ShapeDecoration(
+                    gradient: playlistActiveHighlightGradient(
+                      isPlaying,
+                      highlightColor,
+                    ),
+                    shape: playlistRowShape,
                   ),
-                  shape: playlistRowShape,
-                ),
-                child: InkWell(
-                  excludeFromSemantics: true,
-                  onTap: () {
-                    if (isSelectionMode) {
-                      onToggleSelect?.call();
-                    } else {
-                      AppInteractionFeedback.trigger(
-                        AppInteractionFeedbackType.tap,
-                      );
-                      onOpen();
-                    }
-                  },
-                  onLongPress: () {
-                    if (isSelectionMode) {
-                      onToggleSelect?.call();
-                    } else {
-                      onLongPress?.call();
-                    }
-                  },
-                  child: Padding(
-                    key: ValueKey<String>('playlist_card_content_$sessionId'),
-                    padding: playlistRowPadding,
-                    child: Row(
-                      children: [
-                        if (showCover) ...[
-                          Stack(
-                            clipBehavior: Clip.none,
-                            children: [
-                              SessionCoverThumbnail(
-                                sessionId: sessionId,
-                                track: track,
-                                coverPath: coverPath,
-                                coverGeneration: coverGeneration,
-                                coverCacheWidth: coverCacheWidth,
-                              ),
-                              Positioned(
-                                left: 4,
-                                bottom: 4,
-                                child: PlaylistSelectionIndicator(
+                  child: InkWell(
+                    excludeFromSemantics: true,
+                    onTap: () {
+                      if (isSelectionMode) {
+                        onToggleSelect?.call();
+                      } else {
+                        AppInteractionFeedback.trigger(
+                          AppInteractionFeedbackType.tap,
+                        );
+                        onOpen();
+                      }
+                    },
+                    onLongPress: () {
+                      if (isSelectionMode) {
+                        onToggleSelect?.call();
+                      } else {
+                        onLongPress?.call();
+                      }
+                    },
+                    child: Padding(
+                      key: ValueKey<String>('playlist_card_content_$sessionId'),
+                      padding: playlistRowPadding,
+                      child: Row(
+                        children: [
+                          if (showCover) ...[
+                            Stack(
+                              clipBehavior: Clip.none,
+                              children: [
+                                SessionCoverThumbnail(
                                   sessionId: sessionId,
-                                  isSelected: isSelected,
+                                  track: track,
+                                  coverPath: coverPath,
+                                  coverGeneration: coverGeneration,
+                                  coverCacheWidth: coverCacheWidth,
                                 ),
-                              ),
-                              if (isPinned)
                                 Positioned(
-                                  top: 4,
                                   left: 4,
-                                  child: PlaylistPinnedIndicator(
+                                  bottom: 4,
+                                  child: PlaylistSelectionIndicator(
                                     sessionId: sessionId,
-                                    color: isAsmrOne ? asmrBlue : localPlayRose,
+                                    isSelected: isSelected,
                                   ),
                                 ),
-                            ],
-                          ),
-                          const SizedBox(width: AppSpacing.xs),
-                        ] else ...[
-                          PlaylistLeadingIndicators(
-                            sessionId: sessionId,
-                            isSelected: isSelected,
-                            isPinned: isPinned,
-                            isSelectionMode: isSelectionMode,
-                            pinColor: isAsmrOne ? asmrBlue : localPlayRose,
-                          ),
-                        ],
-                        Expanded(
-                          child: Semantics(
-                            button: true,
-                            selected: isSelectionMode ? isSelected : null,
-                            label: i18n.tr('open_playback_details'),
-                            onTap: isSelectionMode ? onToggleSelect : onOpen,
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Text(
-                                  folderName,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: Theme.of(context).textTheme.bodySmall
-                                      ?.copyWith(
-                                        color: cs.onSurfaceVariant,
-                                        fontWeight: FontWeight.w600,
-                                        fontSize: 12,
-                                      ),
-                                ),
-                                const SizedBox(height: 3),
-                                Text(
-                                  displayName,
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: Theme.of(context).textTheme.titleMedium
-                                      ?.copyWith(
-                                        fontWeight: FontWeight.w800,
-                                        fontSize: 14,
-                                        height: 1.12,
-                                      ),
-                                ),
+                                if (isPinned)
+                                  Positioned(
+                                    top: 4,
+                                    right: 4,
+                                    child: PlaylistPinnedIndicator(
+                                      sessionId: sessionId,
+                                      color: isAsmrOne
+                                          ? asmrBlue
+                                          : localPlayRose,
+                                    ),
+                                  ),
                               ],
                             ),
-                          ),
-                        ),
-                        const SizedBox(width: AppSpacing.xxs),
-                        SessionFeatureBadgeStack(
-                          featureIcons: sessionFeatureBadgeIcons(
-                            showSubtitles: showSubtitles,
-                            channelSwapEnabled: cardState.channelSwapEnabled,
-                            audioEffects: cardState.audioEffects,
-                            speed: cardState.speed,
-                          ),
-                          color: isAsmrOne ? asmrBlue : localPlayRose,
-                          child: IconButton(
-                            tooltip: isPlaying
-                                ? i18n.tr('pause')
-                                : i18n.tr('play'),
-                            onPressed: () {
-                              AppInteractionFeedback.trigger(
-                                AppInteractionFeedbackType.selection,
-                              );
-                              playback.toggleSessionPlayPause(sessionId);
-                            },
-                            style: IconButton.styleFrom(
-                              foregroundColor: isPlaying
-                                  ? activeColor
-                                  : cs.onSurface,
-                              minimumSize: const Size(44, 44),
-                              maximumSize: const Size(44, 44),
-                              padding: EdgeInsets.zero,
+                            const SizedBox(width: AppSpacing.xs),
+                          ] else ...[
+                            PlaylistLeadingIndicators(
+                              sessionId: sessionId,
+                              isSelected: isSelected,
+                              isPinned: isPinned,
+                              isSelectionMode: isSelectionMode,
+                              pinColor: isAsmrOne ? asmrBlue : localPlayRose,
                             ),
-                            icon: AnimatedSwitcher(
-                              duration: const Duration(milliseconds: 120),
-                              transitionBuilder: (child, animation) {
-                                return ScaleTransition(
-                                  scale: Tween<double>(begin: 0.4, end: 1.0)
-                                      .animate(
-                                        CurvedAnimation(
-                                          parent: animation,
-                                          curve: Curves.easeOutBack,
+                          ],
+                          Expanded(
+                            child: Semantics(
+                              button: true,
+                              selected: isSelectionMode ? isSelected : null,
+                              label: i18n.tr('open_playback_details'),
+                              onTap: isSelectionMode ? onToggleSelect : onOpen,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Text(
+                                    folderName,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: Theme.of(context).textTheme.bodySmall
+                                        ?.copyWith(
+                                          color: cs.onSurfaceVariant,
+                                          fontWeight: FontWeight.w600,
+                                          fontSize: 12,
                                         ),
-                                      ),
-                                  child: FadeTransition(
-                                    opacity: animation,
-                                    child: child,
                                   ),
-                                );
-                              },
-                              child: cardState.isLoading
-                                  ? const SizedBox(
-                                      key: ValueKey('loading'),
-                                      width: 22,
-                                      height: 22,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2.3,
-                                      ),
-                                    )
-                                  : Icon(
-                                      isPlaying
-                                          ? Icons.pause_rounded
-                                          : Icons.play_arrow_rounded,
-                                      key: ValueKey(isPlaying),
-                                      size: 28,
-                                    ),
+                                  const SizedBox(height: 3),
+                                  Text(
+                                    displayName,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .titleMedium
+                                        ?.copyWith(
+                                          fontWeight: FontWeight.w800,
+                                          fontSize: 14,
+                                          height: 1.12,
+                                        ),
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
-                        ),
-                      ],
+                          const SizedBox(width: AppSpacing.xxs),
+                          SessionFeatureBadgeStack(
+                            featureIcons: sessionFeatureBadgeIcons(
+                              showSubtitles: showSubtitles,
+                              channelSwapEnabled: cardState.channelSwapEnabled,
+                              audioEffects: cardState.audioEffects,
+                              speed: cardState.speed,
+                            ),
+                            color: isAsmrOne ? asmrBlue : localPlayRose,
+                            child: IconButton(
+                              tooltip: isPlaying
+                                  ? i18n.tr('pause')
+                                  : i18n.tr('play'),
+                              onPressed: () {
+                                AppInteractionFeedback.trigger(
+                                  AppInteractionFeedbackType.selection,
+                                );
+                                playback.toggleSessionPlayPause(sessionId);
+                              },
+                              style: IconButton.styleFrom(
+                                foregroundColor: isPlaying
+                                    ? activeColor
+                                    : cs.onSurface,
+                                minimumSize: const Size(44, 44),
+                                maximumSize: const Size(44, 44),
+                                padding: EdgeInsets.zero,
+                              ),
+                              icon: AnimatedSwitcher(
+                                duration: const Duration(milliseconds: 120),
+                                transitionBuilder: (child, animation) {
+                                  return ScaleTransition(
+                                    scale: Tween<double>(begin: 0.4, end: 1.0)
+                                        .animate(
+                                          CurvedAnimation(
+                                            parent: animation,
+                                            curve: Curves.easeOutBack,
+                                          ),
+                                        ),
+                                    child: FadeTransition(
+                                      opacity: animation,
+                                      child: child,
+                                    ),
+                                  );
+                                },
+                                child: cardState.isLoading
+                                    ? const SizedBox(
+                                        key: ValueKey('loading'),
+                                        width: 22,
+                                        height: 22,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2.3,
+                                        ),
+                                      )
+                                    : Icon(
+                                        isPlaying
+                                            ? Icons.pause_rounded
+                                            : Icons.play_arrow_rounded,
+                                        key: ValueKey(isPlaying),
+                                        size: 28,
+                                      ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
-              ),
+              ],
             ),
           ),
         ),
       ),
+    );
+    return UndoableRemovalTransition(
+      hidden: isHidden,
+      child: isTemporary
+          ? DecoratedBox(
+              key: ValueKey<String>('playlist_card_raised_$sessionId'),
+              decoration: ShapeDecoration(
+                shape: playlistRowShape,
+                shadows: [
+                  BoxShadow(
+                    color: cs.shadow.withValues(alpha: isDark ? 0.4 : 0.2),
+                    blurRadius: 14,
+                    offset: const Offset(0, 5),
+                  ),
+                ],
+              ),
+              child: swipeCard,
+            )
+          : swipeCard,
     );
   }
 }

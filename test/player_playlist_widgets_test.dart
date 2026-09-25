@@ -1150,7 +1150,9 @@ void main() {
       tester.element(find.byType(ActiveSessionCarousel)),
     ).read(playlistUiControllerProvider);
 
-    final pageController = tester.widget<PageView>(find.byType(PageView)).controller!;
+    final pageController = tester
+        .widget<PageView>(find.byType(PageView))
+        .controller!;
     pageController.jumpToPage(pageController.page!.round() + 1);
     await tester.pumpAndSettle();
     expect(visible.last, 'second');
@@ -1206,7 +1208,10 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(visible.last, 'latest');
-    expect(find.byKey(const ValueKey('active_session_card_latest')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('active_session_card_latest')),
+      findsOneWidget,
+    );
   });
 
   testWidgets('new playback takes focus when a second card appears', (
@@ -1253,63 +1258,71 @@ void main() {
     expect(visible.last, 'second');
   });
 
-  testWidgets('focused pause slides in the left card; other pause keeps focus', (
-    tester,
-  ) async {
-    final fixture = AppRuntimeWidgetTestFixture();
-    addTearDown(fixture.dispose);
-    final sessions = <PlaybackSession>[
-      for (final id in ['first', 'middle', 'last'])
-        PlaybackSession(
-          id: id,
-          currentTrackPath: '/$id.mp3',
-          loopMode: SessionLoopMode.single,
-          nonSingleLoopMode: SessionLoopMode.single,
-          volume: 1,
-          createdAt: DateTime(2026),
-          state: const PlayerState(true, ProcessingState.ready),
+  testWidgets(
+    'focused pause slides in the left card; other pause keeps focus',
+    (tester) async {
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      final sessions = <PlaybackSession>[
+        for (final id in ['first', 'middle', 'last'])
+          PlaybackSession(
+            id: id,
+            currentTrackPath: '/$id.mp3',
+            loopMode: SessionLoopMode.single,
+            nonSingleLoopMode: SessionLoopMode.single,
+            volume: 1,
+            createdAt: DateTime(2026),
+            state: const PlayerState(true, ProcessingState.ready),
+          ),
+      ];
+      for (final session in sessions) {
+        addTearDown(session.shutdown);
+      }
+      sessions[1].lastPlayedAt = DateTime(2026, 1, 2);
+      final visible = <String>[];
+
+      Widget carousel(List<PlaybackSession> shown) => fixture.build(
+        ActiveSessionCarousel(
+          sessions: shown.map(PlaybackSessionSnapshot.fromRuntime).toList(),
+          viewportFraction: 1,
+          onVisibleSessionChanged: visible.add,
+          onOpenSession: (_) {},
         ),
-    ];
-    for (final session in sessions) {
-      addTearDown(session.shutdown);
-    }
-    sessions[1].lastPlayedAt = DateTime(2026, 1, 2);
-    final visible = <String>[];
+      );
 
-    Widget carousel(List<PlaybackSession> shown) => fixture.build(
-      ActiveSessionCarousel(
-        sessions: shown.map(PlaybackSessionSnapshot.fromRuntime).toList(),
-        viewportFraction: 1,
-        onVisibleSessionChanged: visible.add,
-        onOpenSession: (_) {},
-      ),
-    );
+      await tester.pumpWidget(carousel(sessions));
+      await tester.pumpAndSettle();
+      final pageController = tester
+          .widget<PageView>(find.byType(PageView))
+          .controller!;
+      final startingPage = pageController.page!;
+      expect(visible.last, 'middle');
 
-    await tester.pumpWidget(carousel(sessions));
-    await tester.pumpAndSettle();
-    final pageController = tester.widget<PageView>(find.byType(PageView)).controller!;
-    final startingPage = pageController.page!;
-    expect(visible.last, 'middle');
+      await tester.pumpWidget(carousel([sessions[0], sessions[2]]));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(pageController.page!, lessThan(startingPage));
+      expect(pageController.page!, greaterThan(startingPage - 1));
+      expect(
+        find.byKey(const ValueKey('active_session_card_middle')),
+        findsWidgets,
+      );
 
-    await tester.pumpWidget(carousel([sessions[0], sessions[2]]));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 100));
-    expect(pageController.page!, lessThan(startingPage));
-    expect(pageController.page!, greaterThan(startingPage - 1));
-    expect(find.byKey(const ValueKey('active_session_card_middle')), findsWidgets);
+      await tester.pumpAndSettle();
+      expect(visible.last, 'first');
+      final focusedCard = find.byKey(
+        const ValueKey('active_session_card_first'),
+      );
+      final focusedElement = tester.element(focusedCard.first);
+      final focusedPage = pageController.page!;
 
-    await tester.pumpAndSettle();
-    expect(visible.last, 'first');
-    final focusedCard = find.byKey(const ValueKey('active_session_card_first'));
-    final focusedElement = tester.element(focusedCard.first);
-    final focusedPage = pageController.page!;
-
-    await tester.pumpWidget(carousel([sessions[0]]));
-    await tester.pumpAndSettle();
-    expect(pageController.page, focusedPage);
-    expect(tester.element(focusedCard.first), same(focusedElement));
-    expect(visible.last, 'first');
-  });
+      await tester.pumpWidget(carousel([sessions[0]]));
+      await tester.pumpAndSettle();
+      expect(pageController.page, focusedPage);
+      expect(tester.element(focusedCard.first), same(focusedElement));
+      expect(visible.last, 'first');
+    },
+  );
 
   testWidgets(
     'circular cover disables paging and preserves the visible session',
@@ -1702,7 +1715,10 @@ void main() {
       container.read(activeTrackPathsProvider).paths,
       contains('/tracks/other.mp3'),
     );
-    expect(container.read(isTrackActiveProvider('/tracks/active.mp3')), isFalse);
+    expect(
+      container.read(isTrackActiveProvider('/tracks/active.mp3')),
+      isFalse,
+    );
     expect(activeChanges, [false]);
     expect(container.read(isTrackActiveProvider('/tracks/other.mp3')), isTrue);
 
@@ -1778,106 +1794,105 @@ void main() {
     },
   );
 
-  testWidgets(
-    'horizontal drag does not switch the detail session',
-    (tester) async {
-      tester.view.devicePixelRatio = 1;
-      tester.view.physicalSize = const Size(500, 1000);
-      addTearDown(tester.view.resetDevicePixelRatio);
-      addTearDown(tester.view.resetPhysicalSize);
-      final fixture = AppRuntimeWidgetTestFixture();
-      addTearDown(fixture.dispose);
-      final tracks = <MusicTrack>[
-        testMusicTrack(
-          name: 'First session track',
-          path: '/library/first.mp3',
-          groupKey: '/library/first',
-          groupTitle: 'First work',
+  testWidgets('horizontal drag does not switch the detail session', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(500, 1000);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
+    final fixture = AppRuntimeWidgetTestFixture();
+    addTearDown(fixture.dispose);
+    final tracks = <MusicTrack>[
+      testMusicTrack(
+        name: 'First session track',
+        path: '/library/first.mp3',
+        groupKey: '/library/first',
+        groupTitle: 'First work',
+      ),
+      testMusicTrack(
+        name: 'Second session track',
+        path: '/library/second.mp3',
+        groupKey: '/library/second',
+        groupTitle: 'Second work',
+      ),
+    ];
+    fixture.runtimeGraph.library.addTracks(
+      tracks,
+      notify: false,
+      persist: false,
+    );
+    final sessions = <PlaybackSession>[
+      for (final track in tracks)
+        fixture.runtimeGraph.playback.createTrackSession(track),
+    ];
+    for (final s in sessions) {
+      addTearDown(s.shutdown);
+    }
+    final subtitleLoads = <String>[];
+    final firstSubtitle = SubtitleTrack(
+      sourcePath: '/library/first.srt',
+      cues: <SubtitleCue>[
+        const SubtitleCue(
+          start: Duration.zero,
+          end: Duration(seconds: 5),
+          text: 'First session subtitle',
         ),
-        testMusicTrack(
-          name: 'Second session track',
-          path: '/library/second.mp3',
-          groupKey: '/library/second',
-          groupTitle: 'Second work',
-        ),
-      ];
-      fixture.runtimeGraph.library.addTracks(
-        tracks,
-        notify: false,
-        persist: false,
-      );
-      final sessions = <PlaybackSession>[
-        for (final track in tracks)
-          fixture.runtimeGraph.playback.createTrackSession(track),
-      ];
-      for (final s in sessions) {
-        addTearDown(s.shutdown);
-      }
-      final subtitleLoads = <String>[];
-      final firstSubtitle = SubtitleTrack(
-        sourcePath: '/library/first.srt',
-        cues: <SubtitleCue>[
-          const SubtitleCue(
-            start: Duration.zero,
-            end: Duration(seconds: 5),
-            text: 'First session subtitle',
-          ),
-        ],
-      );
-      final subtitleService = PlaybackSubtitleService(
-        trackResolver: (path) => fixture.library.trackByPath(path),
-        subtitleLoader: (path, _) async {
-          subtitleLoads.add(path);
-          return path == tracks.first.path ? firstSubtitle : null;
-        },
-      );
-      fixture.playbackService.syncSlice(
-        activeSessions: sessions,
-        playingSessionCount: 0,
-        focusedSessionId: sessions.first.id,
-        coverGeneration: 0,
-        isInitialized: true,
-      );
+      ],
+    );
+    final subtitleService = PlaybackSubtitleService(
+      trackResolver: (path) => fixture.library.trackByPath(path),
+      subtitleLoader: (path, _) async {
+        subtitleLoads.add(path);
+        return path == tracks.first.path ? firstSubtitle : null;
+      },
+    );
+    fixture.playbackService.syncSlice(
+      activeSessions: sessions,
+      playingSessionCount: 0,
+      focusedSessionId: sessions.first.id,
+      coverGeneration: 0,
+      isInitialized: true,
+    );
 
-      await tester.pumpWidget(
-        fixture.build(const PlaylistTab(), subtitleService: subtitleService),
-      );
-      await tester.pumpAndSettle();
-      unawaited(
-        Navigator.of(
-          tester.element(find.byType(PlaylistTab)),
-        ).push(buildSessionDetailRoute(sessionId: sessions.first.id)),
-      );
-      await tester.pumpAndSettle();
-      await tester.pump(const Duration(milliseconds: 200));
-      await tester.pumpAndSettle();
-      subtitleLoads.clear();
+    await tester.pumpWidget(
+      fixture.build(const PlaylistTab(), subtitleService: subtitleService),
+    );
+    await tester.pumpAndSettle();
+    unawaited(
+      Navigator.of(
+        tester.element(find.byType(PlaylistTab)),
+      ).push(buildSessionDetailRoute(sessionId: sessions.first.id)),
+    );
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 200));
+    await tester.pumpAndSettle();
+    subtitleLoads.clear();
 
-      await tester.drag(find.byType(SessionDetailPage), const Offset(-120, 0));
-      await tester.pumpAndSettle();
+    await tester.drag(find.byType(SessionDetailPage), const Offset(-120, 0));
+    await tester.pumpAndSettle();
 
-      expect(subtitleLoads, isNot(contains(tracks.last.path)));
-      expect(
-        find.byKey(ValueKey<String>('progress_${sessions.first.id}')),
-        findsOneWidget,
-      );
-      expect(
-        find.byKey(ValueKey<String>('progress_${sessions.last.id}')),
-        findsNothing,
-      );
-      expect(find.text(tracks.first.displayName), findsOneWidget);
-      expect(find.text(tracks.last.displayName), findsNothing);
+    expect(subtitleLoads, isNot(contains(tracks.last.path)));
+    expect(
+      find.byKey(ValueKey<String>('progress_${sessions.first.id}')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(ValueKey<String>('progress_${sessions.last.id}')),
+      findsNothing,
+    );
+    expect(find.text(tracks.first.displayName), findsOneWidget);
+    expect(find.text(tracks.last.displayName), findsNothing);
 
-      if (find.byType(SessionDetailPage).evaluate().isNotEmpty) {
-        Navigator.of(tester.element(find.byType(SessionDetailPage))).pop();
-        await tester.pumpAndSettle();
-      }
-      UiInteractionCoordinator.instance.resetForTest();
-      await tester.pumpWidget(const SizedBox.shrink());
+    if (find.byType(SessionDetailPage).evaluate().isNotEmpty) {
+      Navigator.of(tester.element(find.byType(SessionDetailPage))).pop();
       await tester.pumpAndSettle();
-      await tester.pump(const Duration(seconds: 10));
-    },
-  );
+    }
+    UiInteractionCoordinator.instance.resetForTest();
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(seconds: 10));
+  });
 
   testWidgets(
     'session detail forward 5s and replay 5s seek relative to live position',
@@ -2507,7 +2522,9 @@ void main() {
     },
   );
 
-  testWidgets('deleting a segment survives a pending name save', (tester) async {
+  testWidgets('deleting a segment survives a pending name save', (
+    tester,
+  ) async {
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(430, 900);
     addTearDown(tester.view.resetDevicePixelRatio);
@@ -2563,9 +2580,9 @@ void main() {
     await tester.pumpWidget(fixture.build(const PlaylistTab()));
     await tester.pumpAndSettle();
     unawaited(
-      Navigator.of(tester.element(find.byType(PlaylistTab))).push(
-        buildSessionDetailRoute(sessionId: session.id),
-      ),
+      Navigator.of(
+        tester.element(find.byType(PlaylistTab)),
+      ).push(buildSessionDetailRoute(sessionId: session.id)),
     );
     await tester.pumpAndSettle();
     final i18n = fixture.languageProvider;
@@ -2618,186 +2635,193 @@ void main() {
     expect(remaining, isEmpty);
   });
 
-  testWidgets('playlist cards render circular covers without duration overlays', (
-    WidgetTester tester,
+  testWidgets(
+    'playlist cards render circular covers without duration overlays',
+    (WidgetTester tester) async {
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      final runtimeGraph = fixture.runtimeGraph;
+      final persistenceRepository = fixture.persistenceRepository;
+      final nativePlaybackRepository = fixture.nativePlaybackRepository;
+      const playbackCommandRunner =
+          AppRuntimeWidgetTestFixture.playbackCommandRunner;
+      final libraryService = fixture.libraryService;
+      final playbackService = fixture.playbackService;
+      final timerService = fixture.timerService;
+      final notificationCoordinatorService =
+          fixture.notificationCoordinatorService;
+      final settingsRepository = fixture.settings;
+      final languageProvider = fixture.languageProvider;
+      final workTrack = testMusicTrack(
+        name: 'Work track',
+        path: Platform.isWindows
+            ? r'C:\library\duration\work-track.mp3'
+            : '/library/duration/work-track.mp3',
+        groupKey: Platform.isWindows
+            ? r'C:\library\duration'
+            : '/library/duration',
+        groupTitle: 'Duration',
+      );
+      final singleTrack = testMusicTrack(
+        name: 'Single track',
+        path: Platform.isWindows
+            ? r'C:\imports\single-track.mp3'
+            : '/imports/single-track.mp3',
+        groupKey: Platform.isWindows
+            ? r'C:\imports\single-track.mp3'
+            : '/imports/single-track.mp3',
+        groupTitle: 'Single track',
+        isSingle: true,
+      ).copyWith(manualCoverPath: '/covers/single.jpg');
+      final workSession = PlaybackSession(
+        id: 'work-duration-session',
+        currentTrackPath: workTrack.path,
+        loopMode: SessionLoopMode.single,
+        nonSingleLoopMode: SessionLoopMode.single,
+        volume: 1,
+        createdAt: DateTime(2026),
+        state: const PlayerState(false, ProcessingState.ready),
+      );
+      final singleSession = PlaybackSession(
+        id: 'single-duration-session',
+        currentTrackPath: singleTrack.path,
+        loopMode: SessionLoopMode.single,
+        nonSingleLoopMode: SessionLoopMode.single,
+        volume: 1,
+        createdAt: DateTime(2026, 1, 2),
+        state: const PlayerState(false, ProcessingState.ready),
+      );
+      addTearDown(workSession.shutdown);
+      addTearDown(singleSession.shutdown);
+      runtimeGraph.library.addTracks([workTrack, singleTrack], persist: false);
+      playbackService.registerSession(workSession);
+      playbackService.registerSession(singleSession);
+      playbackService.syncSlice(
+        activeSessions: [workSession, singleSession],
+        playingSessionCount: 0,
+        focusedSessionId: workSession.id,
+        coverGeneration: 0,
+        isInitialized: true,
+      );
+
+      await tester.pumpWidget(
+        buildAppRuntimeTestApp(
+          runtimeGraph: runtimeGraph,
+          persistenceRepository: persistenceRepository,
+          nativePlaybackRepository: nativePlaybackRepository,
+          playbackCommandRunner: playbackCommandRunner,
+          libraryService: libraryService,
+          playbackService: playbackService,
+          timerService: timerService,
+          notificationCoordinatorService: notificationCoordinatorService,
+          settingsRepository: settingsRepository,
+          languageProvider: languageProvider,
+          child: const PlaylistTab(),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('02:05'), findsNothing);
+
+      final workRow = find.byWidgetPredicate(
+        (widget) =>
+            widget is SwipeRevealCard &&
+            widget.key == const ValueKey('work-duration-session'),
+      );
+      final singleRow = find.byWidgetPredicate(
+        (widget) =>
+            widget is SwipeRevealCard &&
+            widget.key == const ValueKey('single-duration-session'),
+      );
+      final rowsByTop = [workRow, singleRow]
+        ..sort(
+          (a, b) => tester.getTopLeft(a).dy.compareTo(tester.getTopLeft(b).dy),
+        );
+      expect(
+        tester.getBottomLeft(rowsByTop.first).dy,
+        closeTo(tester.getTopLeft(rowsByTop.last).dy, 0.01),
+        reason: 'Playlist rows should form one continuous list.',
+      );
+      expect(
+        tester.getSize(
+          find.byKey(const ValueKey('playlist_cover_single-duration-session')),
+        ),
+        const Size.square(52),
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(
+            const ValueKey('playlist_cover_single-duration-session'),
+          ),
+          matching: find.byType(ClipOval),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(
+            const ValueKey('playlist_cover_work-duration-session'),
+          ),
+          matching: find.byType(ClipOval),
+        ),
+        findsOneWidget,
+      );
+
+      workSession.setOptimisticDuration(const Duration(minutes: 2, seconds: 5));
+      singleSession.setOptimisticDuration(
+        const Duration(minutes: 1, seconds: 10),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byType(DurationOverlay), findsNothing);
+      expect(find.text('02:05'), findsNothing);
+      expect(find.text('01:10'), findsNothing);
+
+      final workDetailTarget = AudioDetailTarget.libraryRootFolder(
+        workTrack.groupKey,
+      );
+      final singleDetailTarget = AudioDetailTarget.singleAudioFile(
+        singleTrack.path,
+      );
+      await tester.runAsync(() async {
+        await runtimeGraph.library.saveAudioDetail(
+          AudioDetail.empty(
+            workDetailTarget,
+          ).copyWith(duration: const Duration(minutes: 3, seconds: 40)),
+        );
+        await runtimeGraph.library.saveAudioDetail(
+          AudioDetail.empty(
+            singleDetailTarget,
+          ).copyWith(duration: const Duration(minutes: 4, seconds: 50)),
+        );
+      });
+      playbackService.syncSlice(
+        activeSessions: [workSession, singleSession],
+        playingSessionCount: 0,
+        focusedSessionId: workSession.id,
+        coverGeneration: 0,
+        isInitialized: true,
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        runtimeGraph.library.resolvedAudioDetail(workDetailTarget)?.duration,
+        const Duration(minutes: 3, seconds: 40),
+      );
+      expect(
+        runtimeGraph.library.resolvedAudioDetail(singleDetailTarget)?.duration,
+        const Duration(minutes: 4, seconds: 50),
+      );
+      expect(find.byType(DurationOverlay), findsNothing);
+      expect(find.text('02:05'), findsNothing);
+      expect(find.text('04:50'), findsNothing);
+      expect(find.text('03:40'), findsNothing);
+      expect(find.text('01:10'), findsNothing);
+    },
+  );
+
+  testWidgets('queue cover lookup is reused across card rebuilds', (
+    tester,
   ) async {
-    final fixture = AppRuntimeWidgetTestFixture();
-    addTearDown(fixture.dispose);
-    final runtimeGraph = fixture.runtimeGraph;
-    final persistenceRepository = fixture.persistenceRepository;
-    final nativePlaybackRepository = fixture.nativePlaybackRepository;
-    const playbackCommandRunner =
-        AppRuntimeWidgetTestFixture.playbackCommandRunner;
-    final libraryService = fixture.libraryService;
-    final playbackService = fixture.playbackService;
-    final timerService = fixture.timerService;
-    final notificationCoordinatorService =
-        fixture.notificationCoordinatorService;
-    final settingsRepository = fixture.settings;
-    final languageProvider = fixture.languageProvider;
-    final workTrack = testMusicTrack(
-      name: 'Work track',
-      path: Platform.isWindows
-          ? r'C:\library\duration\work-track.mp3'
-          : '/library/duration/work-track.mp3',
-      groupKey: Platform.isWindows
-          ? r'C:\library\duration'
-          : '/library/duration',
-      groupTitle: 'Duration',
-    );
-    final singleTrack = testMusicTrack(
-      name: 'Single track',
-      path: Platform.isWindows
-          ? r'C:\imports\single-track.mp3'
-          : '/imports/single-track.mp3',
-      groupKey: Platform.isWindows
-          ? r'C:\imports\single-track.mp3'
-          : '/imports/single-track.mp3',
-      groupTitle: 'Single track',
-      isSingle: true,
-    ).copyWith(manualCoverPath: '/covers/single.jpg');
-    final workSession = PlaybackSession(
-      id: 'work-duration-session',
-      currentTrackPath: workTrack.path,
-      loopMode: SessionLoopMode.single,
-      nonSingleLoopMode: SessionLoopMode.single,
-      volume: 1,
-      createdAt: DateTime(2026),
-      state: const PlayerState(false, ProcessingState.ready),
-    );
-    final singleSession = PlaybackSession(
-      id: 'single-duration-session',
-      currentTrackPath: singleTrack.path,
-      loopMode: SessionLoopMode.single,
-      nonSingleLoopMode: SessionLoopMode.single,
-      volume: 1,
-      createdAt: DateTime(2026, 1, 2),
-      state: const PlayerState(false, ProcessingState.ready),
-    );
-    addTearDown(workSession.shutdown);
-    addTearDown(singleSession.shutdown);
-    runtimeGraph.library.addTracks([workTrack, singleTrack], persist: false);
-    playbackService.registerSession(workSession);
-    playbackService.registerSession(singleSession);
-    playbackService.syncSlice(
-      activeSessions: [workSession, singleSession],
-      playingSessionCount: 0,
-      focusedSessionId: workSession.id,
-      coverGeneration: 0,
-      isInitialized: true,
-    );
-
-    await tester.pumpWidget(
-      buildAppRuntimeTestApp(
-        runtimeGraph: runtimeGraph,
-        persistenceRepository: persistenceRepository,
-        nativePlaybackRepository: nativePlaybackRepository,
-        playbackCommandRunner: playbackCommandRunner,
-        libraryService: libraryService,
-        playbackService: playbackService,
-        timerService: timerService,
-        notificationCoordinatorService: notificationCoordinatorService,
-        settingsRepository: settingsRepository,
-        languageProvider: languageProvider,
-        child: const PlaylistTab(),
-      ),
-    );
-    await tester.pumpAndSettle();
-    expect(find.text('02:05'), findsNothing);
-
-    final workRow = find.byWidgetPredicate(
-      (widget) =>
-          widget is SwipeRevealCard &&
-          widget.key == const ValueKey('work-duration-session'),
-    );
-    final singleRow = find.byWidgetPredicate(
-      (widget) =>
-          widget is SwipeRevealCard &&
-          widget.key == const ValueKey('single-duration-session'),
-    );
-    final rowsByTop = [workRow, singleRow]
-      ..sort(
-        (a, b) => tester.getTopLeft(a).dy.compareTo(tester.getTopLeft(b).dy),
-      );
-    expect(
-      tester.getBottomLeft(rowsByTop.first).dy,
-      closeTo(tester.getTopLeft(rowsByTop.last).dy, 0.01),
-      reason: 'Playlist rows should form one continuous list.',
-    );
-    expect(
-      tester.getSize(
-        find.byKey(const ValueKey('playlist_cover_single-duration-session')),
-      ),
-      const Size.square(52),
-    );
-    expect(
-      find.descendant(
-        of: find.byKey(const ValueKey('playlist_cover_single-duration-session')),
-        matching: find.byType(ClipOval),
-      ),
-      findsOneWidget,
-    );
-    expect(
-      find.descendant(
-        of: find.byKey(const ValueKey('playlist_cover_work-duration-session')),
-        matching: find.byType(ClipOval),
-      ),
-      findsOneWidget,
-    );
-
-    workSession.setOptimisticDuration(const Duration(minutes: 2, seconds: 5));
-    singleSession.setOptimisticDuration(
-      const Duration(minutes: 1, seconds: 10),
-    );
-    await tester.pumpAndSettle();
-
-    expect(find.byType(DurationOverlay), findsNothing);
-    expect(find.text('02:05'), findsNothing);
-    expect(find.text('01:10'), findsNothing);
-
-    final workDetailTarget = AudioDetailTarget.libraryRootFolder(
-      workTrack.groupKey,
-    );
-    final singleDetailTarget = AudioDetailTarget.singleAudioFile(
-      singleTrack.path,
-    );
-    await tester.runAsync(() async {
-      await runtimeGraph.library.saveAudioDetail(
-        AudioDetail.empty(
-          workDetailTarget,
-        ).copyWith(duration: const Duration(minutes: 3, seconds: 40)),
-      );
-      await runtimeGraph.library.saveAudioDetail(
-        AudioDetail.empty(
-          singleDetailTarget,
-        ).copyWith(duration: const Duration(minutes: 4, seconds: 50)),
-      );
-    });
-    playbackService.syncSlice(
-      activeSessions: [workSession, singleSession],
-      playingSessionCount: 0,
-      focusedSessionId: workSession.id,
-      coverGeneration: 0,
-      isInitialized: true,
-    );
-    await tester.pumpAndSettle();
-
-    expect(
-      runtimeGraph.library.resolvedAudioDetail(workDetailTarget)?.duration,
-      const Duration(minutes: 3, seconds: 40),
-    );
-    expect(
-      runtimeGraph.library.resolvedAudioDetail(singleDetailTarget)?.duration,
-      const Duration(minutes: 4, seconds: 50),
-    );
-    expect(find.byType(DurationOverlay), findsNothing);
-    expect(find.text('02:05'), findsNothing);
-    expect(find.text('04:50'), findsNothing);
-    expect(find.text('03:40'), findsNothing);
-    expect(find.text('01:10'), findsNothing);
-  });
-
-  testWidgets('queue cover lookup is reused across card rebuilds', (tester) async {
     final coverCache = _RecordingPlaybackCoverCacheService();
     final fixture = AppRuntimeWidgetTestFixture(
       coverArtworkCacheService: coverCache,
@@ -3421,129 +3445,135 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
   });
 
-  testWidgets('queue edit rows arrange 44px actions horizontally and provide haptics', (
-    WidgetTester tester,
-  ) async {
-    tester.view.physicalSize = const Size(1080, 2400);
-    tester.view.devicePixelRatio = 3;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-    final platformCalls = <MethodCall>[];
-    final previousHaptics = AppInteractionFeedback.hapticFeedbackEnabled;
-    AppInteractionFeedback.hapticFeedbackEnabled = true;
-    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(SystemChannels.platform, (call) async {
-          platformCalls.add(call);
-          return null;
-        });
-    addTearDown(() {
-      AppInteractionFeedback.hapticFeedbackEnabled = previousHaptics;
+  testWidgets(
+    'queue edit rows arrange 44px actions horizontally and provide haptics',
+    (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(1080, 2400);
+      tester.view.devicePixelRatio = 3;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final platformCalls = <MethodCall>[];
+      final previousHaptics = AppInteractionFeedback.hapticFeedbackEnabled;
+      AppInteractionFeedback.hapticFeedbackEnabled = true;
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(SystemChannels.platform, null);
-    });
+          .setMockMethodCallHandler(SystemChannels.platform, (call) async {
+            platformCalls.add(call);
+            return null;
+          });
+      addTearDown(() {
+        AppInteractionFeedback.hapticFeedbackEnabled = previousHaptics;
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(SystemChannels.platform, null);
+      });
 
-    final fixture = AppRuntimeWidgetTestFixture();
-    addTearDown(fixture.dispose);
-    final track = MusicTrack(
-      path: '/library/work/track.mp3',
-      displayName: 'Track',
-      groupKey: '/library/work',
-      groupTitle: 'Work',
-      groupSubtitle: '/library/work',
-      isSingle: false,
-    );
-    fixture.runtimeGraph.library.addTracks(
-      <MusicTrack>[track],
-      notify: false,
-      persist: false,
-    );
-    final sourceSession = PlaybackSession(
-      id: 'queue-source',
-      currentTrackPath: track.path,
-      loopMode: SessionLoopMode.single,
-      nonSingleLoopMode: SessionLoopMode.single,
-      volume: 1,
-      createdAt: DateTime(2026),
-      state: const PlayerState(false, ProcessingState.ready),
-    );
-    addTearDown(sourceSession.shutdown);
-    final queueSession = fixture.runtimeGraph.playback.createPlaybackQueue(
-      'Queue',
-    );
-    addTearDown(queueSession.shutdown);
-    fixture.playbackService.registerSession(sourceSession);
-    fixture.playbackService.syncSlice(
-      activeSessions: <PlaybackSession>[sourceSession, queueSession],
-      playingSessionCount: 0,
-      focusedSessionId: sourceSession.id,
-      coverGeneration: 0,
-      isInitialized: true,
-    );
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      final track = MusicTrack(
+        path: '/library/work/track.mp3',
+        displayName: 'Track',
+        groupKey: '/library/work',
+        groupTitle: 'Work',
+        groupSubtitle: '/library/work',
+        isSingle: false,
+      );
+      fixture.runtimeGraph.library.addTracks(
+        <MusicTrack>[track],
+        notify: false,
+        persist: false,
+      );
+      final sourceSession = PlaybackSession(
+        id: 'queue-source',
+        currentTrackPath: track.path,
+        loopMode: SessionLoopMode.single,
+        nonSingleLoopMode: SessionLoopMode.single,
+        volume: 1,
+        createdAt: DateTime(2026),
+        state: const PlayerState(false, ProcessingState.ready),
+      );
+      addTearDown(sourceSession.shutdown);
+      final queueSession = fixture.runtimeGraph.playback.createPlaybackQueue(
+        'Queue',
+      );
+      addTearDown(queueSession.shutdown);
+      fixture.playbackService.registerSession(sourceSession);
+      fixture.playbackService.syncSlice(
+        activeSessions: <PlaybackSession>[sourceSession, queueSession],
+        playingSessionCount: 0,
+        focusedSessionId: sourceSession.id,
+        coverGeneration: 0,
+        isInitialized: true,
+      );
 
-    await tester.pumpWidget(
-      fixture.build(PlaybackQueueAudioEditPage(sessionId: queueSession.id)),
-    );
-    await tester.pumpAndSettle();
+      await tester.pumpWidget(
+        fixture.build(PlaybackQueueAudioEditPage(sessionId: queueSession.id)),
+      );
+      await tester.pumpAndSettle();
 
-    expect(find.byType(TopPageHeader), findsOneWidget);
+      expect(find.byType(TopPageHeader), findsOneWidget);
 
-    final addAudio = find.byTooltip(
-      fixture.languageProvider.tr('add_audio_to_queue'),
-    );
-    final addWork = find.byTooltip(
-      fixture.languageProvider.tr('add_work_to_queue'),
-    );
-    expect(tester.getSize(addAudio), const Size(44, 44));
-    expect(tester.getSize(addWork), const Size(44, 44));
-    expect(tester.getCenter(addAudio).dy, tester.getCenter(addWork).dy);
-    expect(
-      tester.getCenter(addAudio).dx,
-      lessThan(tester.getCenter(addWork).dx),
-    );
-    final sourceCard = tester.widget<Card>(
-      find.ancestor(of: addAudio, matching: find.byType(Card)).first,
-    );
-    final sourceElement = tester.element(addAudio);
-    final isDark = Theme.of(sourceElement).brightness == Brightness.dark;
-    final cs = Theme.of(sourceElement).colorScheme;
-    expect(
-      sourceCard.color,
-      isDark ? cs.surfaceContainerLowest : cs.surfaceContainer,
-    );
-    expect((sourceCard.shape! as RoundedRectangleBorder).side, BorderSide.none);
+      final addAudio = find.byTooltip(
+        fixture.languageProvider.tr('add_audio_to_queue'),
+      );
+      final addWork = find.byTooltip(
+        fixture.languageProvider.tr('add_work_to_queue'),
+      );
+      expect(tester.getSize(addAudio), const Size(44, 44));
+      expect(tester.getSize(addWork), const Size(44, 44));
+      expect(tester.getCenter(addAudio).dy, tester.getCenter(addWork).dy);
+      expect(
+        tester.getCenter(addAudio).dx,
+        lessThan(tester.getCenter(addWork).dx),
+      );
+      final sourceCard = tester.widget<Card>(
+        find.ancestor(of: addAudio, matching: find.byType(Card)).first,
+      );
+      final sourceElement = tester.element(addAudio);
+      final isDark = Theme.of(sourceElement).brightness == Brightness.dark;
+      final cs = Theme.of(sourceElement).colorScheme;
+      expect(
+        sourceCard.color,
+        isDark ? cs.surfaceContainerLowest : cs.surfaceContainer,
+      );
+      expect(
+        (sourceCard.shape! as RoundedRectangleBorder).side,
+        BorderSide.none,
+      );
 
-    await tester.tap(addAudio);
-    await tester.pump();
-    expect(
-      platformCalls.where((call) => call.method == 'HapticFeedback.vibrate'),
-      hasLength(1),
-    );
-    final removeAudio = find.byTooltip(fixture.languageProvider.tr('remove'));
-    expect(removeAudio, findsOneWidget);
-    final dragHandle = find.byIcon(Icons.drag_handle_rounded);
-    expect(dragHandle, findsOneWidget);
-    expect(
-      tester.getCenter(removeAudio).dy,
-      closeTo(tester.getCenter(dragHandle).dy, 1.0),
-    );
-    expect(
-      tester.getCenter(removeAudio).dx,
-      lessThan(tester.getCenter(dragHandle).dx),
-    );
-    expect(find.text('Work'), findsWidgets);
-    expect(find.text('Track'), findsWidgets);
-    await tester.tap(removeAudio);
-    await tester.pump(const Duration(milliseconds: 300));
-    await tester.pumpAndSettle();
-    await tester.pump(const Duration(milliseconds: 800));
-    expect(
-      platformCalls.where((call) => call.method == 'HapticFeedback.vibrate'),
-      hasLength(3),
-    );
-    await tester.tap(find.textContaining(fixture.languageProvider.tr('undo')));
-    await tester.pumpAndSettle();
-    expect(tester.takeException(), isNull);
-  });
+      await tester.tap(addAudio);
+      await tester.pump();
+      expect(
+        platformCalls.where((call) => call.method == 'HapticFeedback.vibrate'),
+        hasLength(1),
+      );
+      final removeAudio = find.byTooltip(fixture.languageProvider.tr('remove'));
+      expect(removeAudio, findsOneWidget);
+      final dragHandle = find.byIcon(Icons.drag_handle_rounded);
+      expect(dragHandle, findsOneWidget);
+      expect(
+        tester.getCenter(removeAudio).dy,
+        closeTo(tester.getCenter(dragHandle).dy, 1.0),
+      );
+      expect(
+        tester.getCenter(removeAudio).dx,
+        lessThan(tester.getCenter(dragHandle).dx),
+      );
+      expect(find.text('Work'), findsWidgets);
+      expect(find.text('Track'), findsWidgets);
+      await tester.tap(removeAudio);
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.pumpAndSettle();
+      await tester.pump(const Duration(milliseconds: 800));
+      expect(
+        platformCalls.where((call) => call.method == 'HapticFeedback.vibrate'),
+        hasLength(3),
+      );
+      await tester.tap(
+        find.textContaining(fixture.languageProvider.tr('undo')),
+      );
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets(
     'playback queue audio edit page renders floating capsule section headers and scrolls on add',
@@ -4062,7 +4092,7 @@ void main() {
   });
 
   testWidgets(
-    'playlist item pinned indicator displays on top-left of cover or top-left above selection checkmark when no cover',
+    'playlist item pinned indicator displays on top-right of cover or above selection checkmark when no cover',
     (tester) async {
       final fixture = AppRuntimeWidgetTestFixture();
       addTearDown(fixture.dispose);
@@ -4140,7 +4170,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      // 1. Session with cover: pushpin indicator is at top-left of the cover
+      // Session with cover: pushpin indicator is at top-right of the cover.
       final pinCoverFinder = find.byKey(
         ValueKey<String>('playlist_session_pinned_${sessionCover.id}'),
       );
@@ -4151,11 +4181,10 @@ void main() {
       expect(coverFinder, findsOneWidget);
       final coverRect = tester.getRect(coverFinder);
       final pinCoverRect = tester.getRect(pinCoverFinder);
-      // Pinned icon is in the top-left quadrant of the cover
-      expect(pinCoverRect.center.dx < coverRect.center.dx, isTrue);
+      expect(pinCoverRect.center.dx > coverRect.center.dx, isTrue);
       expect(pinCoverRect.center.dy < coverRect.center.dy, isTrue);
 
-      // Queue session with cover: pushpin indicator is at top-left of the queue cover grid
+      // Queue cover grid uses the same corner.
       final pinQueueFinder = find.byKey(
         ValueKey<String>('playlist_session_pinned_${sessionQueueCover.id}'),
       );
@@ -4166,7 +4195,7 @@ void main() {
       expect(queueCoverFinder, findsOneWidget);
       final queueCoverRect = tester.getRect(queueCoverFinder);
       final pinQueueRect = tester.getRect(pinQueueFinder);
-      expect(pinQueueRect.center.dx < queueCoverRect.center.dx, isTrue);
+      expect(pinQueueRect.center.dx > queueCoverRect.center.dx, isTrue);
       expect(pinQueueRect.center.dy < queueCoverRect.center.dy, isTrue);
 
       // Verify icon is push_pin_rounded
@@ -4321,8 +4350,10 @@ void main() {
       findsOneWidget,
     );
     expect(find.byTooltip(fixture.languageProvider.tr('play')), findsOneWidget);
-    expect(find.text(fixture.languageProvider.tr('playback_failed_retry')),
-        findsNothing);
+    expect(
+      find.text(fixture.languageProvider.tr('playback_failed_retry')),
+      findsNothing,
+    );
   });
 
   testWidgets('playlist card, playback card and detail share a decoded cover', (
@@ -4342,7 +4373,11 @@ void main() {
       groupKey: '/library',
       groupTitle: 'Library',
     );
-    fixture.runtimeGraph.library.addTracks([track], notify: false, persist: false);
+    fixture.runtimeGraph.library.addTracks(
+      [track],
+      notify: false,
+      persist: false,
+    );
     final session = fixture.runtimeGraph.playback.createTrackSession(
       track,
       customQueueTracks: [track],
@@ -4365,15 +4400,20 @@ void main() {
           useDefaultCacheWidth: cover.useDefaultCacheWidth,
         ).obtainKey(ImageConfiguration.empty);
     final cardKey = await imageKey(
-      tester.widget<AsyncLocalCoverImage>(find.byType(AsyncLocalCoverImage).first),
+      tester.widget<AsyncLocalCoverImage>(
+        find.byType(AsyncLocalCoverImage).first,
+      ),
     );
     unawaited(
-      Navigator.of(tester.element(find.byType(PlaylistTab)))
-          .push(buildSessionDetailRoute(sessionId: session.id)),
+      Navigator.of(
+        tester.element(find.byType(PlaylistTab)),
+      ).push(buildSessionDetailRoute(sessionId: session.id)),
     );
     await tester.pumpAndSettle();
     final detailKey = await imageKey(
-      tester.widget<AsyncLocalCoverImage>(find.byType(AsyncLocalCoverImage).first),
+      tester.widget<AsyncLocalCoverImage>(
+        find.byType(AsyncLocalCoverImage).first,
+      ),
     );
     expect(detailKey, cardKey);
     await tester.pumpWidget(
@@ -4387,7 +4427,9 @@ void main() {
     await tester.pumpAndSettle();
     expect(
       await imageKey(
-        tester.widget<AsyncLocalCoverImage>(find.byType(AsyncLocalCoverImage).first),
+        tester.widget<AsyncLocalCoverImage>(
+          find.byType(AsyncLocalCoverImage).first,
+        ),
       ),
       cardKey,
     );
@@ -4815,87 +4857,93 @@ void main() {
     },
   );
 
-  testWidgets('detail loading subtitle fades while the cover remains fixed at 4:3', (
-    tester,
-  ) async {
-    final subtitleTrack = SubtitleTrack(
-      sourcePath: '/library/subtitles/empty.srt',
-      cues: <SubtitleCue>[],
-    );
-    final result = await _pumpSubtitleDetail(
-      tester: tester,
-      subtitleTrack: subtitleTrack,
-      initialPosition: Duration.zero,
-    );
-    final loadingText = result.fixture.languageProvider.tr('playback_loading');
-    final cover = find.byKey(
-      const ValueKey('session_detail_cover_subtitle-session'),
-    );
-    final initialCoverHeight = tester.getSize(cover).height;
-    expect(initialCoverHeight, 270.0);
+  testWidgets(
+    'detail loading subtitle fades while the cover remains fixed at 4:3',
+    (tester) async {
+      final subtitleTrack = SubtitleTrack(
+        sourcePath: '/library/subtitles/empty.srt',
+        cues: <SubtitleCue>[],
+      );
+      final result = await _pumpSubtitleDetail(
+        tester: tester,
+        subtitleTrack: subtitleTrack,
+        initialPosition: Duration.zero,
+      );
+      final loadingText = result.fixture.languageProvider.tr(
+        'playback_loading',
+      );
+      final cover = find.byKey(
+        const ValueKey('session_detail_cover_subtitle-session'),
+      );
+      final initialCoverHeight = tester.getSize(cover).height;
+      expect(initialCoverHeight, 270.0);
 
-    result.session.beginPreparation(showLoading: true, autoPlay: true);
-    result.fixture.playbackService.markActiveSessionsDirty();
-    result.fixture.playbackService.syncSlice(
-      activeSessions: <PlaybackSession>[result.session],
-      playingSessionCount: 1,
-      focusedSessionId: result.session.id,
-      coverGeneration: 0,
-      isInitialized: true,
-    );
-    await pumpUntilFound(tester, find.text(loadingText));
-    await tester.pump(const Duration(milliseconds: 110));
+      result.session.beginPreparation(showLoading: true, autoPlay: true);
+      result.fixture.playbackService.markActiveSessionsDirty();
+      result.fixture.playbackService.syncSlice(
+        activeSessions: <PlaybackSession>[result.session],
+        playingSessionCount: 1,
+        focusedSessionId: result.session.id,
+        coverGeneration: 0,
+        isInitialized: true,
+      );
+      await pumpUntilFound(tester, find.text(loadingText));
+      await tester.pump(const Duration(milliseconds: 110));
 
-    final fadeIn = tester.widget<FadeTransition>(
-      find.byKey(
-        const ValueKey<Object>((
-          'subtitle_fade',
-          ValueKey<String>('subtitle_loading'),
-        )),
-      ),
-    );
-    expect(fadeIn.opacity.value, greaterThan(0));
-    expect(fadeIn.opacity.value, lessThan(1));
-    final midCoverHeight = tester.getSize(cover).height;
-    expect(midCoverHeight, 270.0);
+      final fadeIn = tester.widget<FadeTransition>(
+        find.byKey(
+          const ValueKey<Object>((
+            'subtitle_fade',
+            ValueKey<String>('subtitle_loading'),
+          )),
+        ),
+      );
+      expect(fadeIn.opacity.value, greaterThan(0));
+      expect(fadeIn.opacity.value, lessThan(1));
+      final midCoverHeight = tester.getSize(cover).height;
+      expect(midCoverHeight, 270.0);
 
-    await tester.pump(const Duration(milliseconds: 220));
-    final loadingCoverHeight = tester.getSize(cover).height;
-    expect(loadingCoverHeight, 270.0);
+      await tester.pump(const Duration(milliseconds: 220));
+      final loadingCoverHeight = tester.getSize(cover).height;
+      expect(loadingCoverHeight, 270.0);
 
-    result.session.finishPreparation(
-      result.session.loadGeneration,
-      prepared: false,
-      autoPlay: true,
-    );
-    result.fixture.playbackService.markActiveSessionsDirty();
-    result.fixture.playbackService.syncSlice(
-      activeSessions: <PlaybackSession>[result.session],
-      playingSessionCount: 0,
-      focusedSessionId: result.session.id,
-      coverGeneration: 0,
-      isInitialized: true,
-    );
-    await pumpUntilFound(tester, find.byKey(const ValueKey('subtitle_empty')));
-    await tester.pump(const Duration(milliseconds: 110));
+      result.session.finishPreparation(
+        result.session.loadGeneration,
+        prepared: false,
+        autoPlay: true,
+      );
+      result.fixture.playbackService.markActiveSessionsDirty();
+      result.fixture.playbackService.syncSlice(
+        activeSessions: <PlaybackSession>[result.session],
+        playingSessionCount: 0,
+        focusedSessionId: result.session.id,
+        coverGeneration: 0,
+        isInitialized: true,
+      );
+      await pumpUntilFound(
+        tester,
+        find.byKey(const ValueKey('subtitle_empty')),
+      );
+      await tester.pump(const Duration(milliseconds: 110));
 
-    expect(find.text(loadingText), findsOneWidget);
-    final fadeOut = tester.widget<FadeTransition>(
-      find.byKey(
-        const ValueKey<Object>((
-          'subtitle_fade',
-          ValueKey<String>('subtitle_loading'),
-        )),
-      ),
-    );
-    expect(fadeOut.opacity.value, greaterThan(0));
-    expect(fadeOut.opacity.value, lessThan(1));
+      expect(find.text(loadingText), findsOneWidget);
+      final fadeOut = tester.widget<FadeTransition>(
+        find.byKey(
+          const ValueKey<Object>((
+            'subtitle_fade',
+            ValueKey<String>('subtitle_loading'),
+          )),
+        ),
+      );
+      expect(fadeOut.opacity.value, greaterThan(0));
+      expect(fadeOut.opacity.value, lessThan(1));
 
-    await tester.pump(const Duration(milliseconds: 250));
-    expect(find.text(loadingText), findsNothing);
-    await tester.pump(const Duration(milliseconds: 250));
-    expect(tester.getSize(cover).height, 270.0);
-  });
+      await tester.pump(const Duration(milliseconds: 250));
+      expect(find.text(loadingText), findsNothing);
+      await tester.pump(const Duration(milliseconds: 250));
+      expect(tester.getSize(cover).height, 270.0);
+    },
+  );
 
   testWidgets(
     'timeline subtitles scroll, snap, return, and seek while paused',
@@ -5412,8 +5460,7 @@ void main() {
       );
       expect(
         tester.getBottomLeft(trackIndicator).dy,
-        tester.getBottomLeft(trackContent).dy -
-            (playlistRowPadding.bottom + 4),
+        tester.getBottomLeft(trackContent).dy - (playlistRowPadding.bottom + 4),
       );
       final indicatorContainer = tester.widget<Container>(trackIndicator);
       final indicatorDecoration =
@@ -5678,16 +5725,43 @@ void main() {
       final savedCard = find.byKey(
         ValueKey<String>('playlist_card_content_${saved.id}'),
       );
-      final divider = find.byKey(
-        const ValueKey('playlist_temporary_session_divider'),
+      expect(
+        find.byKey(const ValueKey('playlist_temporary_session_divider')),
+        findsNothing,
       );
-      expect(divider, findsOneWidget);
+      final temporaryHighlight = tester.widget<DecoratedBox>(
+        find.byKey(ValueKey('playlist_card_highlight_${temporary.id}')),
+      );
+      final savedHighlight = tester.widget<DecoratedBox>(
+        find.byKey(ValueKey('playlist_card_highlight_${saved.id}')),
+      );
+      expect(
+        ((temporaryHighlight.decoration as ShapeDecoration).shape
+                as RoundedRectangleBorder)
+            .side,
+        BorderSide.none,
+      );
+      expect(
+        ((savedHighlight.decoration as ShapeDecoration).shape
+                as RoundedRectangleBorder)
+            .side,
+        BorderSide.none,
+      );
+      final raised = find.byKey(
+        ValueKey<String>('playlist_card_raised_${temporary.id}'),
+      );
+      expect(raised, findsOneWidget);
+      expect(
+        (tester.widget<DecoratedBox>(raised).decoration as ShapeDecoration)
+            .shadows,
+        isNotEmpty,
+      );
+      expect(
+        find.byKey(ValueKey<String>('playlist_card_raised_${saved.id}')),
+        findsNothing,
+      );
       expect(
         tester.getBottomLeft(temporaryCard).dy,
-        lessThanOrEqualTo(tester.getTopLeft(divider).dy),
-      );
-      expect(
-        tester.getBottomLeft(divider).dy,
         lessThanOrEqualTo(tester.getTopLeft(savedCard).dy),
       );
       final temporarySwipe = tester.widget<SwipeRevealCard>(
@@ -5695,6 +5769,10 @@ void main() {
           of: temporaryCard,
           matching: find.byType(SwipeRevealCard),
         ),
+      );
+      expect(
+        temporarySwipe.closedColor,
+        Theme.of(tester.element(raised)).colorScheme.surfaceContainerHigh,
       );
       expect(temporarySwipe.onLeadingAction, isNull);
       await tester.longPress(find.text('Temporary audio'));
@@ -6053,52 +6131,49 @@ void main() {
     },
   );
 
-  testWidgets(
-    'exit button size in landscape matches portrait',
-    (tester) async {
-      await _pumpSubtitleDetail(
-        tester: tester,
-        subtitleTrack: SubtitleTrack(sourcePath: 'empty.srt', cues: const []),
-        initialPosition: Duration.zero,
-      );
+  testWidgets('exit button size in landscape matches portrait', (tester) async {
+    await _pumpSubtitleDetail(
+      tester: tester,
+      subtitleTrack: SubtitleTrack(sourcePath: 'empty.srt', cues: const []),
+      initialPosition: Duration.zero,
+    );
 
-      final portraitButton = tester.widget<IconButton>(
-        find.widgetWithIcon(IconButton, Icons.keyboard_arrow_down_rounded),
-      );
-      expect(
-        portraitButton.constraints,
-        const BoxConstraints(minWidth: 32, minHeight: 24),
-      );
-      expect(portraitButton.padding, EdgeInsets.zero);
-      final portraitIcon = tester.widget<Icon>(
-        find.byIcon(Icons.keyboard_arrow_down_rounded),
-      );
-      expect(portraitIcon.size, 22.0);
+    final portraitButton = tester.widget<IconButton>(
+      find.widgetWithIcon(IconButton, Icons.keyboard_arrow_down_rounded),
+    );
+    expect(
+      portraitButton.constraints,
+      const BoxConstraints(minWidth: 32, minHeight: 24),
+    );
+    expect(portraitButton.padding, EdgeInsets.zero);
+    final portraitIcon = tester.widget<Icon>(
+      find.byIcon(Icons.keyboard_arrow_down_rounded),
+    );
+    expect(portraitIcon.size, 22.0);
 
-      await tester.pumpWidget(const SizedBox.shrink());
-      await tester.pumpAndSettle();
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpAndSettle();
 
-      await _pumpSubtitleDetail(
-        tester: tester,
-        subtitleTrack: SubtitleTrack(sourcePath: 'empty.srt', cues: const []),
-        initialPosition: Duration.zero,
-        physicalSize: const Size(2400, 1080),
-      );
+    await _pumpSubtitleDetail(
+      tester: tester,
+      subtitleTrack: SubtitleTrack(sourcePath: 'empty.srt', cues: const []),
+      initialPosition: Duration.zero,
+      physicalSize: const Size(2400, 1080),
+    );
 
-      final landscapeButton = tester.widget<IconButton>(
-        find.widgetWithIcon(IconButton, Icons.keyboard_arrow_down_rounded),
-      );
-      expect(
-        landscapeButton.constraints,
-        const BoxConstraints(minWidth: 32, minHeight: 24),
-      );
-      expect(landscapeButton.padding, EdgeInsets.zero);
-      final landscapeIcon = tester.widget<Icon>(
-        find.byIcon(Icons.keyboard_arrow_down_rounded),
-      );
-      expect(landscapeIcon.size, 22.0);
-    },
-  );
+    final landscapeButton = tester.widget<IconButton>(
+      find.widgetWithIcon(IconButton, Icons.keyboard_arrow_down_rounded),
+    );
+    expect(
+      landscapeButton.constraints,
+      const BoxConstraints(minWidth: 32, minHeight: 24),
+    );
+    expect(landscapeButton.padding, EdgeInsets.zero);
+    final landscapeIcon = tester.widget<Icon>(
+      find.byIcon(Icons.keyboard_arrow_down_rounded),
+    );
+    expect(landscapeIcon.size, 22.0);
+  });
 
   testWidgets(
     'secondary controls has 6 evenly spaced buttons and navigates to work detail',
@@ -6260,7 +6335,7 @@ void main() {
   );
 
   testWidgets(
-    'playlist item row height is compact with semicircular left border and swipe-right underlayer is semicircular',
+    'playlist item row height is compact with semicircular ends and swipe-right underlayer is semicircular',
     (tester) async {
       final fixture = AppRuntimeWidgetTestFixture();
       addTearDown(fixture.dispose);
@@ -6308,12 +6383,19 @@ void main() {
 
       expect(swipeCard.shape, same(playlistRowShape));
       expect(
-        tester.widgetList<ClipPath>(
-          find.descendant(of: swipeCardFinder, matching: find.byType(ClipPath)),
-        ).any(
-          (clip) => clip.clipper is ShapeBorderClipper &&
-              (clip.clipper! as ShapeBorderClipper).shape == playlistRowShape,
-        ),
+        tester
+            .widgetList<ClipPath>(
+              find.descendant(
+                of: swipeCardFinder,
+                matching: find.byType(ClipPath),
+              ),
+            )
+            .any(
+              (clip) =>
+                  clip.clipper is ShapeBorderClipper &&
+                  (clip.clipper! as ShapeBorderClipper).shape ==
+                      playlistRowShape,
+            ),
         isTrue,
       );
 
@@ -6336,13 +6418,15 @@ void main() {
     },
   );
 
-  test('playlist row left edge stays semicircular at larger heights', () {
+  test('playlist row ends stay semicircular at larger heights', () {
     for (final height in <double>[64, 96]) {
       final path = playlistRowShape.getOuterPath(
         Rect.fromLTWH(0, 0, 300, height),
       );
       expect(path.contains(Offset(0.5, height / 2)), isTrue);
       expect(path.contains(Offset(0.5, height / 2 - 15)), isFalse);
+      expect(path.contains(Offset(299.5, height / 2)), isTrue);
+      expect(path.contains(Offset(299.5, height / 2 - 15)), isFalse);
     }
   });
 

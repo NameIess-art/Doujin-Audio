@@ -17,7 +17,6 @@ import '../../../../core/media/natural_sort.dart';
 import '../../../../core/media/path_matcher.dart';
 import '../../../../core/ui/undoable_removal_service.dart';
 import '../../../../core/widgets/app_feedback.dart';
-import '../../../../core/widgets/library_like_cards.dart';
 
 const double sessionVolumeDisplayMaximum = 1.5;
 const int sessionVolumeDisplayMaximumPercent = 150;
@@ -28,11 +27,8 @@ const EdgeInsets playlistRowPadding = EdgeInsets.symmetric(
   vertical: 6,
 );
 const double playlistRowRadius = playlistRowHeight / 2;
-const BorderRadius playlistRowBorderRadius = BorderRadius.only(
-  topLeft: Radius.circular(playlistRowRadius),
-  bottomLeft: Radius.circular(playlistRowRadius),
-  topRight: Radius.circular(LibraryLikeCardMetrics.cardRadius),
-  bottomRight: Radius.circular(LibraryLikeCardMetrics.cardRadius),
+const BorderRadius playlistRowBorderRadius = BorderRadius.all(
+  Radius.circular(playlistRowRadius),
 );
 const RoundedRectangleBorder playlistRowShape = _PlaylistRowShape();
 
@@ -57,15 +53,9 @@ class _PlaylistRowShape extends RoundedRectangleBorder {
 
   @override
   Path getOuterPath(Rect rect, {TextDirection? textDirection}) {
-    final leftRadius = Radius.circular(rect.height / 2);
-    const rightRadius = Radius.circular(LibraryLikeCardMetrics.cardRadius);
-    return Path()..addRRect(RRect.fromRectAndCorners(
-      rect,
-      topLeft: leftRadius,
-      bottomLeft: leftRadius,
-      topRight: rightRadius,
-      bottomRight: rightRadius,
-    ));
+    return Path()..addRRect(
+      RRect.fromRectAndRadius(rect, Radius.circular(rect.height / 2)),
+    );
   }
 }
 

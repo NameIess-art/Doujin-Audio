@@ -7,7 +7,6 @@ const kPlaceholderContentTransitionDuration = Duration(milliseconds: 750);
 const kAppMotionFast = Duration(milliseconds: 180);
 const kAppMotionStandard = Duration(milliseconds: 220);
 const kAppMotionSlow = Duration(milliseconds: 300);
-const kAppPageTransitionDuration = Duration(milliseconds: 450);
 
 typedef _PageTransitionBuilder = Widget Function(BuildContext, Widget);
 
@@ -66,20 +65,11 @@ Widget _buildCoveringPageTransition({
   required Animation<double> animation,
   required Animation<double> secondaryAnimation,
   required Widget child,
-  bool fadePage = true,
   bool fadeHeader = true,
 }) {
   if (MediaQuery.disableAnimationsOf(context)) return child;
   final motionScope = _AppPageMotionScope(
-    contentBuilder: (context, content) => SlideTransition(
-      position: animation.drive(
-        Tween<Offset>(
-          begin: const Offset(1, 0),
-          end: Offset.zero,
-        ).chain(CurveTween(curve: Curves.easeInOutCubic)),
-      ),
-      child: RepaintBoundary(child: content),
-    ),
+    contentBuilder: (context, content) => RepaintBoundary(child: content),
     headerBuilder: (context, header) => !fadeHeader
         ? header
         : AnimatedBuilder(
@@ -92,20 +82,43 @@ Widget _buildCoveringPageTransition({
               final outgoing = Curves.easeOutCubic.transform(
                 (secondaryAnimation.value / 0.6).clamp(0.0, 1.0),
               );
-              return Opacity(
-                opacity: incoming * (1 - outgoing),
-                child: header,
-              );
+              return Opacity(opacity: incoming * (1 - outgoing), child: header);
             },
           ),
     child: child,
   );
-  if (!fadePage) return ClipRect(child: motionScope);
   return ClipRect(
-    child: FadeTransition(
-      opacity: animation.drive(CurveTween(curve: Curves.easeInOutCubic)),
+    child: AnimatedBuilder(
+      animation: animation,
       child: motionScope,
+      builder: (context, child) => _buildGradientReveal(
+        progress: animation.value,
+        forward: true,
+        child: child!,
+      ),
     ),
+  );
+}
+
+Widget _buildGradientReveal({
+  required double progress,
+  required bool forward,
+  required Widget child,
+}) {
+  const feather = 0.12;
+  final edge = Curves.easeOutCubic.transform(progress) * (1 + feather);
+  final begin = forward ? edge - feather : 1 - edge;
+  final end = forward ? edge : 1 - edge + feather;
+  return ShaderMask(
+    blendMode: BlendMode.dstIn,
+    shaderCallback: (bounds) => LinearGradient(
+      begin: Alignment(2 * begin - 1, 0),
+      end: Alignment(2 * end - 1, 0),
+      colors: forward
+          ? const [Colors.white, Colors.transparent]
+          : const [Colors.transparent, Colors.white],
+    ).createShader(bounds),
+    child: child,
   );
 }
 
@@ -805,22 +818,10 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
               child: child,
             );
           }
-          final progress = Curves.easeOutCubic.transform(_controller.value);
-          const feather = 0.12;
-          final edge = progress * (1 + feather);
-          final forward = _transitionDirection > 0;
-          final begin = forward ? edge - feather : 1 - edge;
-          final end = forward ? edge : 1 - edge + feather;
-          return ShaderMask(
-            blendMode: BlendMode.dstIn,
-            shaderCallback: (bounds) => LinearGradient(
-              begin: Alignment(2 * begin - 1, 0),
-              end: Alignment(2 * end - 1, 0),
-              colors: forward
-                  ? const [Colors.white, Colors.transparent]
-                  : const [Colors.transparent, Colors.white],
-            ).createShader(bounds),
-            child: child,
+          return _buildGradientReveal(
+            progress: _controller.value,
+            forward: _transitionDirection > 0,
+            child: child!,
           );
         },
       );
@@ -917,10 +918,10 @@ class AppPageTransitionsBuilder extends PageTransitionsBuilder {
   const AppPageTransitionsBuilder();
 
   @override
-  Duration get transitionDuration => kAppPageTransitionDuration;
+  Duration get transitionDuration => kAppMotionSlow;
 
   @override
-  Duration get reverseTransitionDuration => kAppPageTransitionDuration;
+  Duration get reverseTransitionDuration => kAppMotionSlow;
 
   @override
   Widget buildTransitions<T>(
@@ -943,16 +944,13 @@ PageRouteBuilder<T> buildAppPageRoute<T>({
   required BuildContext context,
   required Widget child,
   RouteSettings? settings,
-  bool fadePage = true,
   bool fadeHeader = true,
-  Duration? transitionDuration,
 }) {
   final reducedMotion = MediaQuery.disableAnimationsOf(context);
-  final duration = transitionDuration ?? kAppPageTransitionDuration;
   return PageRouteBuilder<T>(
     settings: settings,
-    transitionDuration: reducedMotion ? Duration.zero : duration,
-    reverseTransitionDuration: reducedMotion ? Duration.zero : duration,
+    transitionDuration: reducedMotion ? Duration.zero : kAppMotionSlow,
+    reverseTransitionDuration: reducedMotion ? Duration.zero : kAppMotionSlow,
     pageBuilder: (context, animation, secondaryAnimation) => child,
     transitionsBuilder: (context, animation, secondaryAnimation, routedChild) {
       return _buildCoveringPageTransition(
@@ -960,7 +958,6 @@ PageRouteBuilder<T> buildAppPageRoute<T>({
         animation: animation,
         secondaryAnimation: secondaryAnimation,
         child: routedChild,
-        fadePage: fadePage,
         fadeHeader: fadeHeader,
       );
     },

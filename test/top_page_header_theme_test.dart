@@ -86,7 +86,7 @@ void main() {
       expect(iconWidget.color, primaryColor);
     });
 
-    testWidgets('HeaderSegmentedCategoryBar uses accentColor for selected item', (
+    testWidgets('HeaderSegmentedCategoryBar matches search category capsule sizing', (
       tester,
     ) async {
       const customAccent = Color(0xFF1D4ED8);
@@ -113,6 +113,8 @@ void main() {
       expect(textFinder, findsOneWidget);
       final textWidget = tester.widget<Text>(textFinder);
       expect(textWidget.style?.color, customAccent);
+      expect(textWidget.style?.fontSize, 12.5);
+      expect(textWidget.style?.fontWeight, FontWeight.w700);
 
       // Check selected tab background Material color
       final materialFinder = find.ancestor(
@@ -120,7 +122,19 @@ void main() {
         matching: find.byType(Material),
       );
       final materialWidget = tester.widget<Material>(materialFinder.first);
-      expect(materialWidget.color, customAccent.withValues(alpha: 0.16));
+      expect(materialWidget.color, customAccent.withValues(alpha: 0.19));
+      expect(tester.getSize(materialFinder.first).height, 32);
+      final nextMaterial = find.ancestor(
+        of: find.text('Tab 1'),
+        matching: find.byType(Material),
+      );
+      expect(
+        tester.getTopLeft(nextMaterial.first).dx -
+            tester.getTopRight(materialFinder.first).dx,
+        2,
+      );
+      expect(tester.widget<Text>(find.text('Tab 1')).style?.fontWeight,
+          FontWeight.w600);
     });
 
     testWidgets('asmrThemeData produces ThemeData with asmrAccent as primary', (

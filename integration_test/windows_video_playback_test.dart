@@ -17,7 +17,7 @@ void main() {
 void registerWindowsVideoPlaybackTest() {
   testWidgets(
     'Windows renders video and reuses the player across surfaces',
-    (tester) async {
+    (tester) => tester.runAsync(() async {
       MediaKit.ensureInitialized();
       final directory = await Directory.systemTemp.createTemp('windows_video_');
       final file = File('${directory.path}/中文 video.mp4');
@@ -45,28 +45,28 @@ void registerWindowsVideoPlaybackTest() {
         ]);
         expect(await encoder.exitCode, 0);
         await output;
-        Widget surface() => const MaterialApp(
+        Widget surface(String sessionId) => MaterialApp(
           home: Scaffold(
             body: SizedBox(
               width: 640,
               height: 360,
-              child: NativeSessionVideoSurface(sessionId: 'video'),
+              child: NativeSessionVideoSurface(sessionId: sessionId),
             ),
           ),
         );
-        final prepareFuture = bridge.prepareSession(
+        final result = await bridge.prepareSession(
           sessionId: 'video',
           uri: file.uri,
           title: 'Video',
           volume: 0,
-          autoPlay: true,
         );
-        await tester.pumpWidget(surface());
-        final result = await prepareFuture;
         expect(result.isOk, true, reason: result.errorOrNull);
         final player = bridge.playerForSession('video')!;
+        await tester.pumpWidget(surface('video'));
         await tester.pump();
         final controller = tester.widget<Video>(find.byType(Video)).controller;
+        final playResult = await bridge.play('video');
+        expect(playResult.isOk, true, reason: playResult.errorOrNull);
         final deadline = DateTime.now().add(const Duration(seconds: 15));
         while (DateTime.now().isBefore(deadline) &&
             (controller.rect.value?.width ?? 0) <= 0) {
@@ -74,19 +74,12 @@ void registerWindowsVideoPlaybackTest() {
         }
         if ((controller.rect.value?.width ?? 0) <= 0) {
           final native = player.platform! as NativePlayer;
-          final properties = <String, String>{};
-          for (final key in [
-            'vid',
-            'vo',
-            'path',
-            'idle-active',
-            'pause',
-            'track-list'
-          ]) {
-            properties[key] = await native.getProperty(key);
-          }
+          final snapshot =
+              (await bridge.snapshot()).valueOrNull!.sessions.single;
           throw TestFailure(
-              'No video frame: $properties; video=${player.state.videoParams}; rect=${controller.rect.value}');
+            'No video frame: playlist-pos=${await native.getProperty('playlist-pos')}, '
+            'path=${await native.getProperty('path')}, error=${snapshot.error}',
+          );
         }
         await tester.pump(const Duration(milliseconds: 500));
         expect(controller.rect.value?.size, const Size(320, 180));
@@ -96,7 +89,7 @@ void registerWindowsVideoPlaybackTest() {
 
         // The detail surface is removed while fullscreen owns the same session.
         await tester.pumpWidget(const SizedBox.shrink());
-        await tester.pumpWidget(surface());
+        await tester.pumpWidget(surface('video'));
         await tester.pump();
         expect(
           tester.widget<Video>(find.byType(Video)).controller,
@@ -104,12 +97,30 @@ void registerWindowsVideoPlaybackTest() {
         );
         expect(bridge.playerForSession('video'), same(player));
         expect(controller.id.value, isNotNull);
+
+        final autoResult = await bridge.prepareSession(
+          sessionId: 'autoVideo',
+          uri: file.uri,
+          title: 'Auto Video',
+          volume: 0,
+          autoPlay: true,
+        );
+        expect(autoResult.isOk, true, reason: autoResult.errorOrNull);
+        await tester.pumpWidget(surface('autoVideo'));
+        await tester.pump();
+        final autoController = tester.widget<Video>(find.byType(Video)).controller;
+        final autoDeadline = DateTime.now().add(const Duration(seconds: 15));
+        while (DateTime.now().isBefore(autoDeadline) &&
+            (autoController.rect.value?.width ?? 0) <= 0) {
+          await tester.pump(const Duration(milliseconds: 100));
+        }
+        expect(autoController.rect.value?.size, const Size(320, 180));
       } finally {
         await tester.pumpWidget(const SizedBox.shrink());
         await bridge.dispose();
         await directory.delete(recursive: true);
       }
-    },
+    }),
     skip: !Platform.isWindows,
   );
 }

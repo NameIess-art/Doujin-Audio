@@ -50,7 +50,28 @@ class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
     final session = _sessions[sessionId];
     final player = session?.player;
     if (session == null || player == null) return null;
-    return session.videoController ??= VideoController(player);
+    if (session.videoController == null) {
+      session.videoController = VideoController(player);
+      unawaited(
+        _change(sessionId, (current) async {
+          await player.platform!.waitForVideoControllerInitializationIfAttached;
+          if (current.wantsPlay) await _playIfIdle(current);
+        }),
+      );
+    }
+    return session.videoController;
+  }
+
+  Future<void> _playIfIdle(_WindowsPlaybackSession session) async {
+    final player = session.player!;
+    final native = player.platform;
+    if (session.videoController != null &&
+        native is NativePlayer &&
+        !player.state.completed &&
+        await native.getProperty('playlist-pos') == '-1') {
+      await player.jump(session.index);
+      await player.play();
+    }
   }
 
   @override
@@ -318,7 +339,8 @@ class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
         Uri.tryParse(item['uri'] as String)?.scheme.startsWith('http') == true;
     if (!canFallback && !remote) return;
     session.retryStartedAt ??= _clock.elapsed;
-    if (_clock.elapsed - session.retryStartedAt! >= const Duration(minutes: 10)) {
+    if (_clock.elapsed - session.retryStartedAt! >=
+        const Duration(minutes: 10)) {
       return;
     }
     final generation = session.generation;
@@ -383,6 +405,7 @@ class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
       await _open(session);
     } else if (session.pendingStart == null) {
       await session.player!.play();
+      await _playIfIdle(session);
     }
   });
 
@@ -603,6 +626,7 @@ class _WindowsPlaybackSession {
   void invalidateRetainedUris() {
     _cachedRetainedUris = null;
   }
+
   List<String> mediaUris = [];
   int index = 0;
   Duration position = Duration.zero;
@@ -656,8 +680,9 @@ class _WindowsPlaybackSession {
       eqCapabilities: windowsEqCapabilities,
       error: error,
       queueIndex: index,
-      retainedUris: _cachedRetainedUris ??=
-          queue.map((i) => i['uri'] as String).toList(growable: false),
+      retainedUris: _cachedRetainedUris ??= queue
+          .map((i) => i['uri'] as String)
+          .toList(growable: false),
       hasRetainedUrisPayload: true,
       transportCommandId: commandId,
     );

@@ -50,7 +50,7 @@ void main() {
         '${Directory.systemTemp.path}${Platform.pathSeparator}'
         'doujin_audio_native_smoke_${DateTime.now().microsecondsSinceEpoch}.wav',
       );
-      await wav.writeAsBytes(_pcmWav(seconds: 8), flush: true);
+      await wav.writeAsBytes(_pcmWav(seconds: 30), flush: true);
 
       try {
         await playback.launchQueue(
@@ -63,7 +63,7 @@ void main() {
               groupSubtitle: '',
               isSingle: true,
               fileSizeBytes: await wav.length(),
-              duration: const Duration(seconds: 8),
+              duration: const Duration(seconds: 30),
             ),
           ],
           autoPlay: true,

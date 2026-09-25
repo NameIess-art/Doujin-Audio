@@ -103,6 +103,9 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      - name: Build device test APK
+        run: flutter build apk --debug
+
       - name: Enable KVM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
@@ -118,8 +121,14 @@ jobs:
           arch: x86_64
           profile: pixel_7
           script: |
+            adb install -r build/app/outputs/flutter-apk/app-debug.apk
+            adb shell pm grant com.doujin.audio android.permission.POST_NOTIFICATIONS
             flutter test integration_test/app_smoke_test.dart -d emulator-5554 || { adb logcat -d > android-device-logcat.txt || true; adb exec-out screencap -p > android-device-screen.png || true; exit 1; }
-            if [ "${GITHUB_REF_TYPE:-}" = "tag" ]; then flutter test integration_test/android_native_smoke_test.dart -d emulator-5554 || { adb logcat -d > android-device-logcat.txt || true; adb exec-out screencap -p > android-device-screen.png || true; exit 1; }; fi
+            if [ "${GITHUB_REF_TYPE:-}" = "tag" ]; then
+              adb install -r build/app/outputs/flutter-apk/app-debug.apk
+              adb shell pm grant com.doujin.audio android.permission.POST_NOTIFICATIONS
+              flutter test integration_test/android_native_smoke_test.dart -d emulator-5554 || { adb logcat -d > android-device-logcat.txt || true; adb exec-out screencap -p > android-device-screen.png || true; exit 1; }
+            fi
 
       - name: Upload Android device diagnostics
         if: failure()

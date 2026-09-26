@@ -336,9 +336,10 @@ ButtonStyle sessionDetailResetButtonStyle(BuildContext context) {
     backgroundColor: cs.primary.withValues(alpha: 0.12),
     foregroundColor: cs.primary,
     elevation: 0,
-    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-    visualDensity: VisualDensity.compact,
+    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+    visualDensity: VisualDensity.standard,
     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+    textStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
   );
 }
 

@@ -153,9 +153,10 @@ class _TimeSegmentPanelState extends State<TimeSegmentPanel> {
               ),
               if (widget.onClose != null)
                 Positioned(
-                  right: -10,
+                  left: -10,
                   child: IconButton(
                     key: const ValueKey<String>('close_console_panel'),
+                    tooltip: i18n.tr('close'),
                     padding: EdgeInsets.zero,
                     constraints: const BoxConstraints.tightFor(
                       width: 40,

@@ -99,19 +99,22 @@ void _expectThemeSessionResetButtonStyle(WidgetTester tester, Finder finder) {
 
   expect(
     style.padding!.resolve(enabled),
-    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
   );
   expect(
     style.shape!.resolve(enabled),
     RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
   );
-  expect(style.visualDensity, VisualDensity.compact);
+  expect(style.visualDensity, VisualDensity.standard);
   expect(style.elevation!.resolve(enabled), 0);
   expect(
     style.backgroundColor!.resolve(enabled),
     colorScheme.primary.withValues(alpha: 0.12),
   );
   expect(style.foregroundColor!.resolve(enabled), colorScheme.primary);
+  final textStyle = style.textStyle!.resolve(enabled)!;
+  expect(textStyle.fontSize, 14);
+  expect(textStyle.fontWeight, FontWeight.w700);
 }
 
 Future<
@@ -2176,7 +2179,21 @@ void main() {
     expect(panelDecoration.borderRadius, BorderRadius.circular(16));
     expect(panelDecoration.boxShadow, isNotEmpty);
 
-    await tester.tap(find.byKey(const ValueKey<String>('close_console_panel')));
+    final closeButtonFinder = find.byKey(
+      const ValueKey<String>('close_console_panel'),
+    );
+    expect(closeButtonFinder, findsOneWidget);
+    expect(
+      tester.getCenter(closeButtonFinder).dx,
+      lessThan(tester.getCenter(find.byKey(expandedPanel)).dx),
+    );
+    expect(
+      tester.getTopLeft(closeButtonFinder).dx,
+      lessThan(
+        tester.getTopLeft(find.text(languageProvider.tr('equalizer'))).dx,
+      ),
+    );
+    await tester.tap(closeButtonFinder);
     await tester.pumpAndSettle();
     expect(artwork, findsOneWidget);
     expect(find.byKey(expandedPanel), findsNothing);
@@ -2196,6 +2213,10 @@ void main() {
       const ValueKey<String>('restore_playback_speed'),
     );
     _expectThemeSessionResetButtonStyle(tester, speedRestoreButton);
+    expect(
+      tester.getSize(speedRestoreButton).width,
+      closeTo(tester.getSize(find.byKey(expandedPanel)).width - 34, 1),
+    );
     expect(tester.widget<FilledButton>(speedRestoreButton).onPressed, isNull);
 
     await tester.tap(find.text(languageProvider.tr('equalizer')));
@@ -2208,6 +2229,14 @@ void main() {
     );
     _expectThemeSessionResetButtonStyle(tester, equalizerResetButton);
     _expectThemeSessionResetButtonStyle(tester, saveEqualizerPresetButton);
+    final resetRect = tester.getRect(equalizerResetButton);
+    final saveRect = tester.getRect(saveEqualizerPresetButton);
+    expect(resetRect.width, closeTo(saveRect.width, 1));
+    expect(saveRect.left - resetRect.right, closeTo(10, 1));
+    expect(
+      resetRect.width + saveRect.width + 10,
+      closeTo(tester.getSize(find.byKey(expandedPanel)).width - 34, 1),
+    );
     expect(tester.widget<FilledButton>(equalizerResetButton).onPressed, isNull);
     expect(
       tester.widget<FilledButton>(saveEqualizerPresetButton).onPressed,
@@ -2292,6 +2321,10 @@ void main() {
       const ValueKey<String>('restore_volume_balance'),
     );
     _expectThemeSessionResetButtonStyle(tester, restoreButton);
+    expect(
+      tester.getSize(restoreButton).width,
+      closeTo(tester.getSize(find.byKey(expandedPanel)).width - 82, 1),
+    );
     expect(tester.widget<FilledButton>(restoreButton).onPressed, isNotNull);
     expect(find.text(languageProvider.tr('restore_default')), findsOneWidget);
     await tester.tap(restoreButton);

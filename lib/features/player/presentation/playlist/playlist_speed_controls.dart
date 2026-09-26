@@ -285,13 +285,11 @@ class _SpeedWheelPageState extends ConsumerState<SpeedWheelPage> {
           ),
         ),
         const SizedBox(height: 8),
-        Center(
-          child: FilledButton.tonal(
-            key: const ValueKey<String>('restore_playback_speed'),
-            style: sessionDetailResetButtonStyle(context),
-            onPressed: (selectedSpeed - 1.0).abs() < 0.001 ? null : _resetSpeed,
-            child: Text(i18n.tr('speed_reset')),
-          ),
+        FilledButton.tonal(
+          key: const ValueKey<String>('restore_playback_speed'),
+          style: sessionDetailResetButtonStyle(context),
+          onPressed: (selectedSpeed - 1.0).abs() < 0.001 ? null : _resetSpeed,
+          child: Text(i18n.tr('speed_reset')),
         ),
       ],
     );

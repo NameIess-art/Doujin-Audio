@@ -55,9 +55,8 @@ final class SettingsCommandController {
   Future<int> clearApplicationCache() async {
     final deletedBytes = await _clearApplicationCacheFiles();
     await _library?.coverArtworkCacheService.clearPersistentCache();
-    PaintingBinding.instance.imageCache
-      ..clear()
-      ..clearLiveImages();
+    applyCoverImageCachePolicy(_settings.coverImageResolution, clear: true);
+    PaintingBinding.instance.imageCache.clearLiveImages();
     _library?.invalidateCoverArtwork();
     return deletedBytes;
   }

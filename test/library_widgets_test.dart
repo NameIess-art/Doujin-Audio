@@ -12,6 +12,7 @@ import 'package:doujin_audio/features/player/presentation/playlist_tab.dart';
 import 'package:doujin_audio/core/widgets/app_scroll_physics.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/core/widgets/async_cover_image.dart';
+import 'package:doujin_audio/core/ui/cover_image_retention.dart';
 import 'package:doujin_audio/core/widgets/library_like_cards.dart';
 import 'package:doujin_audio/core/widgets/mobile_overlay_inset.dart';
 import 'package:doujin_audio/core/widgets/shimmer_loading.dart';
@@ -665,9 +666,10 @@ void main() {
     expect(trackCoverLookups, greaterThan(0));
   });
 
-  testWidgets('Android library card and work detail share a decoded cover', (
+  testWidgets('library card and work detail share a decoded cover', (
     WidgetTester tester,
   ) async {
+    addTearDown(releaseRetainedCoverImages);
     tester.view.devicePixelRatio = 2;
     tester.view.physicalSize = const Size(1000, 1800);
     addTearDown(tester.view.resetDevicePixelRatio);
@@ -745,6 +747,13 @@ void main() {
     expect(detailKey, cardKey);
     Navigator.of(tester.element(find.byType(WorkDetailPage))).pop();
     await tester.pumpAndSettle();
+    expect(
+      find.descendant(
+        of: find.byType(AsyncLocalCoverImage).first,
+        matching: find.byType(RawImage),
+      ),
+      findsOneWidget,
+    );
 
     final session = fixture.runtimeGraph.playback.createTrackSession(
       track,
@@ -772,10 +781,26 @@ void main() {
     ).obtainKey(ImageConfiguration.empty);
     expect(playlistKey, cardKey);
     await tester.pumpWidget(const SizedBox.shrink());
+    if (defaultTargetPlatform == TargetPlatform.windows) {
+      PaintingBinding.instance.imageCache.clear();
+    }
+    await tester.pumpWidget(fixture.build(const LibraryTab()));
     await tester.pump();
-  }, variant: TargetPlatformVariant.only(TargetPlatform.android));
+    expect(
+      find.descendant(
+        of: find.byType(AsyncLocalCoverImage).first,
+        matching: find.byType(RawImage),
+      ),
+      findsOneWidget,
+    );
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(seconds: 6));
+  }, variant: const TargetPlatformVariant({
+    TargetPlatform.android,
+    TargetPlatform.windows,
+  }));
 
-  testWidgets('Windows library thumbnails decode at displayed size', (
+  testWidgets('Windows library thumbnails use the shared cover decode size', (
     tester,
   ) async {
     tester.view.devicePixelRatio = 2;
@@ -803,7 +828,7 @@ void main() {
     final cover = tester.widget<AsyncLocalCoverImage>(
       find.byType(AsyncLocalCoverImage).first,
     );
-    expect(cover.cacheWidth, 240);
+    expect(cover.cacheWidth, 600);
     await tester.pumpWidget(const SizedBox.shrink());
   }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
 

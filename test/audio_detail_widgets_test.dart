@@ -12,6 +12,7 @@ import 'package:doujin_audio/features/library/presentation/audio_detail_sheet.da
 import 'package:doujin_audio/features/library/presentation/folder_cover_selector.dart';
 import 'package:doujin_audio/core/widgets/async_cover_image.dart';
 import 'package:doujin_audio/core/widgets/operation_feedback.dart';
+import 'package:doujin_audio/core/widgets/shimmer_loading.dart';
 import 'package:doujin_audio/core/widgets/top_page_header.dart';
 import 'package:doujin_audio/features/library/presentation/dlsite_metadata_batch_page.dart';
 import 'package:doujin_audio/features/library/presentation/dlsite_metadata_review_page.dart';
@@ -178,11 +179,11 @@ void main() {
     await tester.pump();
 
     expect(find.byType(Scrollable), findsNothing);
-    final skeletonConfirm = find.byKey(
-      const ValueKey<String>('dlsite_review_skeleton_confirm'),
+    final loadingConfirm = find.byKey(
+      const ValueKey<String>('dlsite_review_confirm'),
     );
-    final skeletonConfirmIcon = find.byKey(
-      const ValueKey<String>('dlsite_review_skeleton_confirm_icon'),
+    final loadingConfirmIcon = find.byKey(
+      const ValueKey<String>('dlsite_review_confirm_icon'),
     );
     final skeletonPrevious = find.byKey(
       const ValueKey<String>('dlsite_review_skeleton_previous_work'),
@@ -190,12 +191,29 @@ void main() {
     final skeletonNext = find.byKey(
       const ValueKey<String>('dlsite_review_skeleton_next_work'),
     );
-    expect(skeletonConfirm, findsOneWidget);
-    expect(skeletonConfirmIcon, findsOneWidget);
+    expect(loadingConfirm, findsOneWidget);
+    expect(loadingConfirmIcon, findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('dlsite_review_skeleton_confirm')),
+      findsNothing,
+    );
+    expect(
+      find.descendant(
+        of: loadingConfirm,
+        matching: find.byType(ShimmerContainer),
+      ),
+      findsNothing,
+    );
+    expect(
+      tester.widget<InkWell>(
+        find.descendant(of: loadingConfirm, matching: find.byType(InkWell)),
+      ).onTap,
+      isNull,
+    );
     expect(skeletonPrevious, findsOneWidget);
     expect(skeletonNext, findsOneWidget);
-    final skeletonConfirmRect = tester.getRect(skeletonConfirm);
-    final skeletonConfirmIconCenter = tester.getCenter(skeletonConfirmIcon);
+    final loadingConfirmRect = tester.getRect(loadingConfirm);
+    final loadingConfirmIconCenter = tester.getCenter(loadingConfirmIcon);
     final skeletonPreviousCenter = tester.getCenter(skeletonPrevious);
     final skeletonNextCenter = tester.getCenter(skeletonNext);
 
@@ -211,6 +229,39 @@ void main() {
     );
     expect(tester.getRect(firstField).top, greaterThan(coverRect.bottom));
     expect(tester.getRect(firstField).width, coverRect.width);
+    final skeletonFields = find.byWidgetPredicate(
+      (widget) =>
+          widget.key is ValueKey<String> &&
+          (widget.key! as ValueKey<String>).value.startsWith(
+            'dlsite_review_skeleton_field_',
+          ),
+    );
+    final behindConfirmElement = skeletonFields.evaluate().firstWhere((
+      element,
+    ) {
+      final field = find.byElementPredicate(
+        (candidate) => candidate == element,
+      );
+      return tester.getRect(field).overlaps(loadingConfirmRect);
+    });
+    final behindConfirm = find.byElementPredicate(
+      (element) => element == behindConfirmElement,
+    );
+    final fieldRect = tester.getRect(behindConfirm);
+    final exposedPoint = Offset(
+      loadingConfirmRect.left - 20,
+      (fieldRect.top > loadingConfirmRect.top
+              ? fieldRect.top
+              : loadingConfirmRect.top) +
+          2,
+    );
+    expect(
+      tester
+          .hitTestOnBinding(exposedPoint)
+          .path
+          .any((entry) => entry.target == tester.renderObject(behindConfirm)),
+      isTrue,
+    );
 
     metadataService.result.complete(
       DlsiteMetadata(
@@ -238,8 +289,14 @@ void main() {
       const ValueKey<String>('dlsite_review_previous_work'),
     );
     final next = find.byKey(const ValueKey<String>('dlsite_review_next_work'));
-    expect(tester.getRect(confirm), skeletonConfirmRect);
-    expect(tester.getCenter(confirmIcon), skeletonConfirmIconCenter);
+    expect(tester.getRect(confirm), loadingConfirmRect);
+    expect(tester.getCenter(confirmIcon), loadingConfirmIconCenter);
+    expect(
+      tester.widget<InkWell>(
+        find.descendant(of: confirm, matching: find.byType(InkWell)),
+      ).onTap,
+      isNotNull,
+    );
     expect(tester.getCenter(previous), skeletonPreviousCenter);
     expect(tester.getCenter(next), skeletonNextCenter);
     final actualCover = find.ancestor(

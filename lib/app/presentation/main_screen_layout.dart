@@ -514,17 +514,19 @@ extension _MainScreenLayout on _MainScreenState {
                             leading: isLandscapeLayout
                                 ? Container(
                                     alignment: Alignment.centerLeft,
-                                    child: Padding(
-                                      padding: EdgeInsets.only(
-                                        left: _isMenuCollapsed ? 7.5 : 12,
-                                      ),
-                                      child: IconButton(
-                                        icon: Icon(
-                                          _isMenuCollapsed
-                                              ? Icons.menu_rounded
-                                              : Icons.menu_open_rounded,
+                                    child: SizedBox(
+                                      width: _isMenuCollapsed
+                                          ? railMinWidth
+                                          : 72,
+                                      child: Center(
+                                        child: IconButton(
+                                          icon: Icon(
+                                            _isMenuCollapsed
+                                                ? Icons.menu_rounded
+                                                : Icons.menu_open_rounded,
+                                          ),
+                                          onPressed: _toggleMenuCollapsed,
                                         ),
-                                        onPressed: _toggleMenuCollapsed,
                                       ),
                                     ),
                                   )

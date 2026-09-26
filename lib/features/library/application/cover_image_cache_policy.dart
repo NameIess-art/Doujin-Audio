@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart';
 
+import '../../../core/ui/cover_image_retention.dart';
+
 export '../../../core/media/cover_image_format.dart';
 import '../../settings/application/settings_state.dart';
 
@@ -61,12 +63,14 @@ void applyCoverImageCachePolicy(
       : budget.maximumSizeBytes;
   cache.maximumSize = useDesktopBudget ? 1200 : budget.maximumSize;
   if (clear) {
+    releaseRetainedCoverImages();
     cache.clear();
   }
 }
 
 void trimCoverImageCacheOnMemoryPressure({ImageCache? imageCache}) {
   final cache = imageCache ?? PaintingBinding.instance.imageCache;
+  releaseRetainedCoverImages();
   cache.clear();
   // Mounted covers still own their decoded frames; keep them discoverable so
   // another card can share the same image after memory pressure.

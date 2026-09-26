@@ -3,11 +3,13 @@ import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../media/music_track.dart' show MusicTrack;
 import '../media/cover_image_resolution.dart';
 import '../ui/visual_settings_providers.dart';
+import '../ui/cover_image_retention.dart';
 import '../ui/ui_interaction_coordinator.dart';
 import 'app_transitions.dart';
 import 'scroll_activity_gate.dart';
@@ -791,6 +793,7 @@ class RetryingFileImage extends ConsumerWidget {
       maxRetryAttempts: maxRetryAttempts,
       displayMode: effectiveDisplayMode,
       deferLoadDuringInteraction: false,
+      retainInImageCache: defaultTargetPlatform == TargetPlatform.windows,
     );
   }
 }
@@ -812,6 +815,7 @@ class RetryingImage extends StatefulWidget {
     this.maxRetryAttempts = 12,
     this.displayMode = CoverImageDisplayMode.fill,
     this.deferLoadDuringInteraction = true,
+    this.retainInImageCache = false,
   });
 
   final Object retryKey;
@@ -828,6 +832,7 @@ class RetryingImage extends StatefulWidget {
   final int maxRetryAttempts;
   final CoverImageDisplayMode displayMode;
   final bool deferLoadDuringInteraction;
+  final bool retainInImageCache;
 
   @override
   State<RetryingImage> createState() => _RetryingImageState();
@@ -927,6 +932,9 @@ class _RetryingImageState extends State<RetryingImage> {
       if (!mounted) return;
       void retry() {
         if (!mounted) return;
+        if (widget.retainInImageCache) {
+          releaseRetainedCoverImage(provider);
+        }
         provider.evict().ignore();
         setState(() {
           _retryAttempt = nextAttempt;
@@ -968,6 +976,13 @@ class _RetryingImageState extends State<RetryingImage> {
         gaplessPlayback: widget.gaplessPlayback,
         frameBuilder: primary
             ? (context, child, frame, wasSynchronouslyLoaded) {
+                if (widget.retainInImageCache &&
+                    (wasSynchronouslyLoaded || frame != null)) {
+                  retainCoverImage(
+                    imageProvider,
+                    createLocalImageConfiguration(context),
+                  );
+                }
                 if (wasSynchronouslyLoaded) {
                   return child;
                 }

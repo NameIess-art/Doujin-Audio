@@ -592,12 +592,7 @@ class _DlsiteMetadataReviewPageState
                   showPlaceholder: _loading,
                   placeholder: ClipRect(
                     child: Padding(
-                      padding: EdgeInsets.fromLTRB(
-                        20,
-                        listTopPadding,
-                        20,
-                        bottomInset,
-                      ),
+                      padding: EdgeInsets.fromLTRB(20, listTopPadding, 20, 0),
                       child: Stack(
                         children: [
                           Positioned(
@@ -814,9 +809,8 @@ class _DlsiteMetadataReviewPageState
                 bottom: 16 + MediaQuery.paddingOf(context).bottom,
                 child: AppPageContentTransition(
                   child: _ReviewConfirmButton(
-                    skeleton: _loading,
                     saving: _saving,
-                    onTap: _apply,
+                    onTap: _loading ? null : _apply,
                     label: i18n.tr(widget.editing ? 'save' : 'confirm'),
                   ),
                 ),
@@ -1064,15 +1058,13 @@ class _ReviewWorkNavigation extends StatelessWidget {
 
 class _ReviewConfirmButton extends StatelessWidget {
   const _ReviewConfirmButton({
-    this.skeleton = false,
     required this.saving,
     required this.onTap,
     required this.label,
   });
 
-  final bool skeleton;
   final bool saving;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
   final String label;
 
   @override
@@ -1083,35 +1075,12 @@ class _ReviewConfirmButton extends StatelessWidget {
       fontWeight: FontWeight.w700,
     );
 
-    Widget content;
-    if (skeleton) {
-      content = ShimmerLoader(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const ShimmerContainer(
-                key: ValueKey<String>('dlsite_review_skeleton_confirm_icon'),
-                width: 18,
-                height: 18,
-                borderRadius: 9,
-              ),
-              const SizedBox(width: 6),
-              Stack(
-                children: [
-                  Opacity(opacity: 0, child: Text(label, style: labelStyle)),
-                  const Positioned.fill(
-                    child: ShimmerContainer(height: 14, borderRadius: 4),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      );
-    } else {
-      content = Material(
+    return HeaderFloatingSurface(
+      key: const ValueKey<String>('dlsite_review_confirm'),
+      height: 46,
+      radius: 23,
+      padding: EdgeInsets.zero,
+      child: Material(
         color: cs.primary,
         borderRadius: BorderRadius.circular(23),
         child: InkWell(
@@ -1144,17 +1113,7 @@ class _ReviewConfirmButton extends StatelessWidget {
             ),
           ),
         ),
-      );
-    }
-
-    return HeaderFloatingSurface(
-      key: ValueKey<String>(
-        skeleton ? 'dlsite_review_skeleton_confirm' : 'dlsite_review_confirm',
       ),
-      height: 46,
-      radius: 23,
-      padding: EdgeInsets.zero,
-      child: content,
     );
   }
 }

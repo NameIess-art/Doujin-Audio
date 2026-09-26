@@ -2826,6 +2826,36 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('mobile landscape menu toggle aligns with collapsed icons', (
+    tester,
+  ) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    tester.view.devicePixelRatio = 3;
+    tester.view.physicalSize = const Size(2310, 1080);
+    tester.view.padding = const FakeViewPadding(top: 72);
+    tester.view.viewPadding = const FakeViewPadding(top: 72);
+    addTearDown(() {
+      debugDefaultTargetPlatformOverride = null;
+      tester.view.resetDevicePixelRatio();
+      tester.view.resetPhysicalSize();
+      tester.view.resetPadding();
+      tester.view.resetViewPadding();
+    });
+    await _pumpAppShell(tester, includePlaybackSession: false);
+
+    await tester.tap(find.byIcon(Icons.menu_open_rounded));
+    await tester.pumpAndSettle();
+
+    final menuX = tester.getCenter(find.byIcon(Icons.menu_rounded)).dx;
+    for (final label in ['show_asmr_one', 'nav_settings']) {
+      final icon = find.byKey(ValueKey<String>('main_destination_$label'));
+      expect(icon, findsOneWidget);
+      expect(tester.getCenter(icon).dx, closeTo(menuX, 0.1));
+    }
+    debugDefaultTargetPlatformOverride = null;
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('Windows menu icons stay visible when collapsed', (tester) async {
     _setLogicalTestViewSize(tester, const Size(1280, 800));
     await _pumpAppShell(tester, includePlaybackSession: false);

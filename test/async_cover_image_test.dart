@@ -11,6 +11,7 @@ import 'package:doujin_audio/core/media/cover_image_resolution.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
 import 'package:doujin_audio/features/settings/application/settings_state.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
+import 'package:doujin_audio/core/ui/cover_image_retention.dart';
 import 'package:doujin_audio/core/ui/visual_settings_providers.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/core/widgets/async_cover_image.dart';
@@ -280,7 +281,6 @@ void main() {
     expect(find.byKey(const ValueKey('cover_placeholder')), findsOneWidget);
 
     final image = await _createTestImage();
-    addTearDown(image.dispose);
     provider.complete(image);
     await tester.pump();
     await tester.pump();
@@ -289,6 +289,41 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('cover_placeholder')), findsNothing);
     expect(find.byType(RawImage), findsOneWidget);
+  });
+
+  testWidgets('a displayed cover remains decoded after its page is rebuilt', (
+    tester,
+  ) async {
+    final provider = _ControlledImageProvider();
+    final image = await _createTestImage();
+    final cache = PaintingBinding.instance.imageCache;
+    addTearDown(releaseRetainedCoverImages);
+
+    Widget page() => MaterialApp(
+      home: SizedBox(
+        width: 120,
+        height: 90,
+        child: RetryingImage(
+          retryKey: 'retained-cover',
+          imageProviderBuilder: () => provider,
+          retainInImageCache: true,
+          fallbackBuilder: (_) => const Text('loading cover'),
+        ),
+      ),
+    );
+
+    await tester.pumpWidget(page());
+    provider.complete(image);
+    await tester.pumpAndSettle();
+    expect(provider.loadCount, 1);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    cache.clear();
+    await tester.pumpWidget(page());
+    expect(provider.loadCount, 1);
+    expect(find.text('loading cover'), findsNothing);
+    expect(find.byType(RawImage), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
   });
 
   testWidgets('AsyncCoverImage retries when the first path is empty', (

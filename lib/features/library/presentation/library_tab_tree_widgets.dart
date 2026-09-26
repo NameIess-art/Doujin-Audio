@@ -997,13 +997,7 @@ class _LibraryCoverThumbnailState
     final coverPathFuture = _coverFutureFor(coverUi, coverGeneration);
     final width = widget.width;
     final height = width / kStandardCoverAspectRatio;
-    final coverCacheWidth = defaultTargetPlatform == TargetPlatform.windows
-        ? coverThumbnailCacheWidth(
-            logicalWidth: width,
-            devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
-            resolution: resolution,
-          )
-        : coverCacheWidthForResolution(resolution);
+    final coverCacheWidth = coverCacheWidthForResolution(resolution);
     return SizedBox(
       width: width,
       height: height,
@@ -1094,13 +1088,7 @@ class _LibraryTrackCoverThumbnailState
 
     final width = widget.width;
     final height = width / kStandardCoverAspectRatio;
-    final coverCacheWidth = defaultTargetPlatform == TargetPlatform.windows
-        ? coverThumbnailCacheWidth(
-            logicalWidth: width,
-            devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
-            resolution: resolution,
-          )
-        : coverCacheWidthForResolution(resolution);
+    final coverCacheWidth = coverCacheWidthForResolution(resolution);
     return Stack(
       children: [
         SizedBox(

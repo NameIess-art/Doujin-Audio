@@ -1167,9 +1167,9 @@ void main() {
     );
     final originalTextCount = find.text(label).evaluate().length;
     final pageStack = find.byKey(const ValueKey<String>('main_page_stack'));
-    final originalPageIndex = tester.widget<AppFadeThroughIndexedStack>(
-      pageStack,
-    ).index;
+    final originalPageIndex = tester
+        .widget<AppFadeThroughIndexedStack>(pageStack)
+        .index;
 
     await tester.longPress(destination);
     await tester.pump();
@@ -2734,6 +2734,7 @@ void main() {
     );
     expect(expandedMenuButton, findsOneWidget);
     expect(tester.getSize(expandedMenuButton), isNot(Size.zero));
+    final expandedMenuX = tester.getCenter(expandedMenuButton).dx;
     final expandedWidth = tester.getSize(navigationRail).width;
     final focusedIcon = find.byKey(
       const ValueKey<String>('main_destination_show_asmr_one'),
@@ -2741,12 +2742,22 @@ void main() {
     final settingsIcon = find.byKey(
       const ValueKey<String>('main_destination_nav_settings'),
     );
+    double settingsIconOpacity() => tester
+        .widget<Opacity>(
+          find.ancestor(of: settingsIcon, matching: find.byType(Opacity)).first,
+        )
+        .opacity;
     final expandedIconGap =
         tester.getCenter(settingsIcon).dy - tester.getCenter(focusedIcon).dy;
     expect(expandedIconGap, greaterThan(0));
 
     await tester.tap(expandedMenuButton);
     await tester.pump();
+    final collapsingStartX = tester
+        .getCenter(find.byIcon(Icons.menu_rounded))
+        .dx;
+    expect(collapsingStartX, closeTo(tester.getCenter(focusedIcon).dx, 0.1));
+    expect(collapsingStartX, closeTo(tester.getCenter(settingsIcon).dx, 0.1));
     final collapsedRail = tester.widget<NavigationRail>(navigationRail);
     expect(collapsedRail.extended, isFalse);
     expect(
@@ -2757,6 +2768,11 @@ void main() {
       isTrue,
     );
     await tester.pump(const Duration(milliseconds: 100));
+    final collapsingMiddleX = tester
+        .getCenter(find.byIcon(Icons.menu_rounded))
+        .dx;
+    expect(collapsingMiddleX, closeTo(tester.getCenter(focusedIcon).dx, 0.1));
+    expect(collapsingMiddleX, closeTo(tester.getCenter(settingsIcon).dx, 0.1));
     final animatingWidth = tester.getSize(navigationRail).width;
     expect(
       animatingWidth,
@@ -2764,20 +2780,43 @@ void main() {
     );
     final collapsingIconGap =
         tester.getCenter(settingsIcon).dy - tester.getCenter(focusedIcon).dy;
-    expect(collapsingIconGap, inExclusiveRange(0, expandedIconGap));
+    expect(collapsingIconGap, greaterThan(0));
+    expect(settingsIconOpacity(), 1);
     await tester.pumpAndSettle();
+    final collapsedMenuX = tester.getCenter(find.byIcon(Icons.menu_rounded)).dx;
+    expect((expandedMenuX - collapsedMenuX).abs(), lessThan(20));
+    expect(collapsedMenuX, closeTo(tester.getCenter(focusedIcon).dx, 0.1));
+    expect(collapsedMenuX, closeTo(tester.getCenter(settingsIcon).dx, 0.1));
+    for (final x in [collapsingStartX, collapsingMiddleX]) {
+      expect(x, inInclusiveRange(collapsedMenuX - 1, expandedMenuX + 1));
+    }
     expect(tester.getSize(navigationRail).width, collapsedRail.minWidth);
     expect(
-      tester.getCenter(settingsIcon).dy,
-      closeTo(tester.getCenter(focusedIcon).dy, 0.1),
+      tester.getCenter(settingsIcon).dy - tester.getCenter(focusedIcon).dy,
+      greaterThan(0),
     );
+    expect(settingsIconOpacity(), 1);
     await tester.tap(find.byIcon(Icons.menu_rounded));
     await tester.pump();
+    final expandingStartX = tester
+        .getCenter(find.byIcon(Icons.menu_open_rounded))
+        .dx;
     await tester.pump(const Duration(milliseconds: 100));
+    final expandingMiddleX = tester
+        .getCenter(find.byIcon(Icons.menu_open_rounded))
+        .dx;
     final expandingIconGap =
         tester.getCenter(settingsIcon).dy - tester.getCenter(focusedIcon).dy;
-    expect(expandingIconGap, inExclusiveRange(0, expandedIconGap));
+    expect(expandingIconGap, greaterThan(0));
+    expect(settingsIconOpacity(), 1);
     await tester.pumpAndSettle();
+    for (final x in [expandingStartX, expandingMiddleX]) {
+      expect(x, inInclusiveRange(collapsedMenuX - 1, expandedMenuX + 1));
+    }
+    expect(
+      tester.getCenter(find.byIcon(Icons.menu_open_rounded)).dx,
+      closeTo(expandedMenuX, 0.1),
+    );
     expect(
       tester.getCenter(settingsIcon).dy - tester.getCenter(focusedIcon).dy,
       closeTo(expandedIconGap, 0.1),
@@ -2806,9 +2845,30 @@ void main() {
 
     final expandedGap = iconGap();
     expect(expandedGap, greaterThan(0));
+    final expandedMenuX = tester
+        .getCenter(find.byIcon(Icons.menu_open_rounded))
+        .dx;
     await tester.tap(find.byIcon(Icons.menu_open_rounded));
     await tester.pump();
+    final collapsingStartX = tester
+        .getCenter(find.byIcon(Icons.menu_rounded))
+        .dx;
+    expect(collapsingStartX, closeTo(tester.getCenter(selectedIcon).dx, 0.1));
+    expect(collapsingStartX, closeTo(tester.getCenter(otherIcon).dx, 0.1));
+    await tester.pump(const Duration(milliseconds: 100));
+    final collapsingMiddleX = tester
+        .getCenter(find.byIcon(Icons.menu_rounded))
+        .dx;
+    expect(collapsingMiddleX, closeTo(tester.getCenter(selectedIcon).dx, 0.1));
+    expect(collapsingMiddleX, closeTo(tester.getCenter(otherIcon).dx, 0.1));
     await tester.pumpAndSettle();
+    final collapsedMenuX = tester.getCenter(find.byIcon(Icons.menu_rounded)).dx;
+    expect((expandedMenuX - collapsedMenuX).abs(), lessThan(20));
+    expect(collapsedMenuX, closeTo(tester.getCenter(selectedIcon).dx, 0.1));
+    expect(collapsedMenuX, closeTo(tester.getCenter(otherIcon).dx, 0.1));
+    for (final x in [collapsingStartX, collapsingMiddleX]) {
+      expect(x, inInclusiveRange(collapsedMenuX - 1, expandedMenuX + 1));
+    }
     expect(
       tester.widget<NavigationRail>(find.byType(NavigationRail)).extended,
       isFalse,
@@ -2825,7 +2885,21 @@ void main() {
 
     await tester.tap(find.byIcon(Icons.menu_rounded));
     await tester.pump();
+    final expandingStartX = tester
+        .getCenter(find.byIcon(Icons.menu_open_rounded))
+        .dx;
+    await tester.pump(const Duration(milliseconds: 100));
+    final expandingMiddleX = tester
+        .getCenter(find.byIcon(Icons.menu_open_rounded))
+        .dx;
     await tester.pumpAndSettle();
+    for (final x in [expandingStartX, expandingMiddleX]) {
+      expect(x, inInclusiveRange(collapsedMenuX - 1, expandedMenuX + 1));
+    }
+    expect(
+      tester.getCenter(find.byIcon(Icons.menu_open_rounded)).dx,
+      closeTo(expandedMenuX, 0.1),
+    );
     expect(iconGap(), closeTo(expandedGap, 0.1));
     expect(tester.takeException(), isNull);
     debugDefaultTargetPlatformOverride = null;

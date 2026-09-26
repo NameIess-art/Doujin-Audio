@@ -370,6 +370,21 @@ void main() {
     expect(violations, isEmpty, reason: violations.join('\n'));
   });
 
+  test('core does not depend on app presentation', () {
+    final violations = <String>[];
+    for (final file in _dartFiles(Directory('lib/core'))) {
+      final source = _normalizedPath(file);
+      for (final import in _imports(file.readAsStringSync())) {
+        final resolved = _resolvedProjectImport(file, import);
+        if (resolved?.startsWith('lib/app/presentation/') ?? false) {
+          violations.add('$source imports $import');
+        }
+      }
+    }
+
+    expect(violations, isEmpty, reason: violations.join('\n'));
+  });
+
   test('ASMR task state is owned by a composable task store', () {
     final manager = File(
       'lib/features/asmr/application/asmr_download_manager.dart',

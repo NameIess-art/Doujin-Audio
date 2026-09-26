@@ -15,6 +15,7 @@ import '../../../app/presentation/main_tab_state_mixin.dart';
 import '../../../app/presentation/screen_view_models.dart';
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/theme/app_styles.dart';
+import '../../../core/ui/visual_settings_providers.dart';
 import '../../../core/widgets/app_bottom_sheet.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/app_transitions.dart';

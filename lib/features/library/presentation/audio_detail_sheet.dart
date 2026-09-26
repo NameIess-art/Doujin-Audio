@@ -17,6 +17,7 @@ import '../application/audio_detail_repository.dart';
 import '../application/library_facade.dart';
 import '../../../core/logging/app_log_service.dart';
 import '../../../core/ui/ui_operation_service.dart';
+import '../../../core/ui/visual_settings_providers.dart';
 import '../../../core/media/path_display.dart';
 import '../../../core/media/time_text_formatters.dart';
 import '../../../core/widgets/app_buttons.dart';

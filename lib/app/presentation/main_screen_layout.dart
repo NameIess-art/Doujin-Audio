@@ -513,12 +513,10 @@ extension _MainScreenLayout on _MainScreenState {
                             groupAlignment: -1.0,
                             leading: isLandscapeLayout
                                 ? Container(
-                                    alignment: _isMenuCollapsed
-                                        ? Alignment.center
-                                        : Alignment.centerLeft,
+                                    alignment: Alignment.centerLeft,
                                     child: Padding(
                                       padding: EdgeInsets.only(
-                                        left: _isMenuCollapsed ? 0 : 12,
+                                        left: _isMenuCollapsed ? 7.5 : 12,
                                       ),
                                       child: IconButton(
                                         icon: Icon(
@@ -632,10 +630,7 @@ extension _MainScreenLayout on _MainScreenState {
                               child: ExcludeSemantics(
                                 child: TweenAnimationBuilder<double>(
                                   tween: Tween<double>(
-                                    end:
-                                        _isMenuCollapsed &&
-                                            defaultTargetPlatform !=
-                                                TargetPlatform.windows
+                                    end: _isMenuCollapsed && !isLandscapeLayout
                                         ? 1
                                         : 0,
                                   ),

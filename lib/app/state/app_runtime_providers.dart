@@ -31,6 +31,7 @@ import '../../features/data_support/application/data_support_file_service.dart';
 import '../../features/data_support/application/data_backup_service.dart';
 import '../../features/data_support/application/storage_usage_service.dart';
 import '../../core/ui/interaction_deferred_stream.dart';
+import '../../core/ui/visual_settings_providers.dart';
 import '../../core/platform/file_cache_platform_gateway.dart';
 import '../../core/platform/app_lifecycle_platform_service.dart';
 import '../../core/platform/power_platform_gateway.dart';
@@ -264,6 +265,33 @@ List<Override> createAppRuntimeOverrides({
     timerFacadeProvider.overrideWithValue(timer),
     notificationFacadeProvider.overrideWithValue(notifications),
     settingsRepositoryProvider.overrideWithValue(settings),
+    coverImageResolutionProvider.overrideWith((ref) {
+      return ref.watch(
+            settingsStateProvider.select((s) => s.value?.coverImageResolution),
+          ) ??
+          ref
+              .watch(settingsRepositoryProvider)
+              .slice
+              .state
+              .coverImageResolution;
+    }),
+    coverImageDisplayModeProvider.overrideWith((ref) {
+      return ref.watch(
+            settingsStateProvider.select((s) => s.value?.coverImageDisplayMode),
+          ) ??
+          ref
+              .watch(settingsRepositoryProvider)
+              .slice
+              .state
+              .coverImageDisplayMode;
+    }),
+    uiBlurEnabledProvider.overrideWith((ref) {
+      return ref.watch(
+        settingsStateProvider.select(
+          (state) => state.value?.uiBlurEffectEnabled ?? true,
+        ),
+      );
+    }),
     powerPlatformGatewayProvider.overrideWithValue(
       powerPlatformGateway ?? timer.powerPlatformService,
     ),

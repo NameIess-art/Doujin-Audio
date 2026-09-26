@@ -1,4 +1,3 @@
-import 'package:doujin_audio/features/settings/presentation/settings_providers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -8,18 +7,12 @@ import 'package:doujin_audio/app/theme/app_design_tokens.dart';
 import 'package:doujin_audio/core/widgets/app_feedback.dart';
 import 'package:doujin_audio/core/widgets/confirm_action_dialog.dart';
 import 'package:doujin_audio/core/ui/undoable_removal_service.dart';
-import 'package:doujin_audio/features/settings/application/settings_state.dart';
+import 'package:doujin_audio/core/ui/visual_settings_providers.dart';
 
 Widget _feedbackApp({required bool blurEnabled, required Widget home}) {
   return ProviderScope(
     key: ValueKey<bool>(blurEnabled),
-    overrides: [
-      settingsStateProvider.overrideWith(
-        (ref) => Stream<SettingsState>.value(
-          SettingsState(uiBlurEffectEnabled: blurEnabled),
-        ),
-      ),
-    ],
+    overrides: [uiBlurEnabledProvider.overrideWithValue(blurEnabled)],
     child: MaterialApp(theme: ThemeData.dark(useMaterial3: true), home: home),
   );
 }

@@ -29,6 +29,7 @@ import '../../../core/media/path_display.dart';
 import '../../../core/logging/app_log_service.dart';
 import '../../../core/ui/ui_interaction_coordinator.dart';
 import '../../../core/ui/ui_operation_service.dart';
+import '../../../core/ui/visual_settings_providers.dart';
 import '../../../app/theme/app_design_tokens.dart';
 import '../application/library_scanner_service.dart';
 import '../application/library_catalog.dart';

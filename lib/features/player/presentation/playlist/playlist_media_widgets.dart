@@ -4,8 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../app/state/app_runtime_providers.dart';
-import '../../../../app/presentation/app_presentation_providers.dart';
 import '../../../../core/media/music_track.dart';
+import '../../../../core/ui/visual_settings_providers.dart';
 import '../../../../core/widgets/async_cover_image.dart';
 import '../../../library/application/library_facade.dart';
 import '../../../settings/application/settings_state.dart';

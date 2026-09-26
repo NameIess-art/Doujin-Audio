@@ -1,4 +1,4 @@
-import '../../app/presentation/app_presentation_providers.dart';
+import '../ui/visual_settings_providers.dart';
 import 'dart:math' as math;
 import 'dart:ui' as dart_ui;
 

@@ -13,6 +13,7 @@ import '../../../core/media/dlsite_metadata.dart';
 import '../../../core/media/path_display.dart';
 import '../../../core/media/time_text_formatters.dart';
 import '../../../core/ui/ui_operation_service.dart';
+import '../../../core/ui/visual_settings_providers.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/async_cover_image.dart';
 import '../../../core/widgets/library_like_cards.dart';

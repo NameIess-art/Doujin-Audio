@@ -19,6 +19,7 @@ import '../application/settings_state.dart';
 import '../../../core/media/path_display.dart';
 import '../../../core/ui/permission_action_controller.dart';
 import '../../../core/ui/ui_operation_service.dart';
+import '../../../core/ui/visual_settings_providers.dart';
 import '../../../app/theme/app_design_tokens.dart';
 import '../../../app/theme/app_styles.dart';
 import '../../../app/theme/theme_provider.dart';

@@ -304,20 +304,6 @@ final coverGenerationProvider = Provider<int>((ref) {
   return ref.watch(playbackFacadeProvider).state.coverGeneration;
 });
 
-final coverImageResolutionProvider = Provider<CoverImageResolution>((ref) {
-  return ref.watch(
-        settingsStateProvider.select((s) => s.value?.coverImageResolution),
-      ) ??
-      ref.watch(settingsRepositoryProvider).slice.state.coverImageResolution;
-});
-
-final coverImageDisplayModeProvider = Provider<CoverImageDisplayMode>((ref) {
-  return ref.watch(
-        settingsStateProvider.select((s) => s.value?.coverImageDisplayMode),
-      ) ??
-      ref.watch(settingsRepositoryProvider).slice.state.coverImageDisplayMode;
-});
-
 final libraryTrackProvider = Provider.autoDispose.family<MusicTrack?, String>((
   ref,
   trackPath,
@@ -385,9 +371,3 @@ final sessionDetailTransportProvider = Provider.autoDispose
         sessionDetailUiProvider(sessionId).select((state) => state.detail),
       );
     });
-
-final uiBlurEnabledProvider = Provider<bool>((ref) {
-  return ref.watch(
-    settingsStateProvider.select((state) => state.value?.uiBlurEffectEnabled ?? true),
-  );
-});

@@ -21,6 +21,7 @@ import '../../../core/media/time_text_formatters.dart';
 import '../../../core/widgets/rj_code_overlay.dart';
 import '../../../core/logging/app_log_service.dart';
 import '../../../core/ui/ui_operation_service.dart';
+import '../../../core/ui/visual_settings_providers.dart';
 import '../../../core/ui/ui_interaction_coordinator.dart';
 import '../../../app/theme/app_design_tokens.dart';
 import '../../../app/theme/app_styles.dart';

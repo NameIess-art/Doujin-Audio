@@ -1,4 +1,3 @@
-import 'package:doujin_audio/app/presentation/app_presentation_providers.dart';
 import 'package:doujin_audio/features/settings/presentation/settings_providers.dart';
 import 'package:doujin_audio/features/settings/application/settings_state.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_providers.dart';
@@ -11,9 +10,12 @@ import 'package:doujin_audio/app/localization/app_language_provider.dart';
 import 'package:doujin_audio/app/state/app_runtime_providers.dart';
 import 'package:doujin_audio/app/theme/theme_provider.dart';
 import 'package:doujin_audio/core/ui/ui_operation_service.dart';
+import 'package:doujin_audio/core/ui/visual_settings_providers.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_download_manager.dart';
 import 'package:doujin_audio/features/settings/application/app_preferences.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import 'support/app_runtime_test_fixture.dart';
 
 final class _DisposalObserver extends ProviderObserver {
   final Set<Object> disposedProviders = <Object>{};
@@ -28,7 +30,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   test(
-    'shared blur consumers retain a single settings stream subscription',
+    'visual settings follow Settings and share one stream subscription',
     () async {
       var subscriptions = 0;
       var cancellations = 0;
@@ -37,8 +39,24 @@ void main() {
         onListen: () => subscriptions++,
         onCancel: () => cancellations++,
       );
+      final graph = createTestRuntimeGraph();
       final container = ProviderContainer(
-        overrides: [settingsStateProvider.overrideWith((ref) => states.stream)],
+        overrides: [
+          ...createAppRuntimeOverrides(
+            persistence: graph.persistence,
+            runtime: graph.runtime,
+            warmup: graph.warmup,
+            playbackCommands: graph.playbackCommands,
+            keepAlive: graph.keepAlive,
+            library: graph.library,
+            playback: graph.playback,
+            subtitles: graph.subtitles,
+            timer: graph.timer,
+            notifications: graph.notifications,
+            settings: graph.settings,
+          ),
+          settingsStateProvider.overrideWith((ref) => states.stream),
+        ],
       );
       final values = List.generate(3, (_) => <bool>[]);
       for (final consumerValues in values) {
@@ -48,7 +66,17 @@ void main() {
           fireImmediately: true,
         );
       }
+      final resolutions = <CoverImageResolution>[];
+      final displayModes = <CoverImageDisplayMode>[];
+      container.listen(coverImageResolutionProvider, (_, next) {
+        resolutions.add(next);
+      }, fireImmediately: true);
+      container.listen(coverImageDisplayModeProvider, (_, next) {
+        displayModes.add(next);
+      }, fireImmediately: true);
       await container.pump();
+      expect(resolutions, [CoverImageResolution.balanced]);
+      expect(displayModes, [CoverImageDisplayMode.fill]);
       states.add(SettingsState());
       await container.pump();
       states.add(SettingsState(notificationsEnabled: false));
@@ -56,13 +84,28 @@ void main() {
       for (final consumerValues in values) {
         expect(consumerValues, [true]);
       }
-      states.add(SettingsState(uiBlurEffectEnabled: false));
+      states.add(
+        SettingsState(
+          uiBlurEffectEnabled: false,
+          coverImageResolution: CoverImageResolution.high,
+          coverImageDisplayMode: CoverImageDisplayMode.tile,
+        ),
+      );
       await container.pump();
       for (final consumerValues in values) {
         expect(consumerValues, [true, false]);
       }
+      expect(resolutions, [
+        CoverImageResolution.balanced,
+        CoverImageResolution.high,
+      ]);
+      expect(displayModes, [
+        CoverImageDisplayMode.fill,
+        CoverImageDisplayMode.tile,
+      ]);
       expect(subscriptions, 1);
       container.dispose();
+      await graph.runtime.dispose();
       await Future<void>.delayed(Duration.zero);
       expect(cancellations, 1);
       await states.close();

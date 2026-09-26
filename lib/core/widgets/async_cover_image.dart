@@ -7,7 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../media/music_track.dart' show MusicTrack;
 import '../media/cover_image_resolution.dart';
-import '../../app/presentation/app_presentation_providers.dart';
+import '../ui/visual_settings_providers.dart';
 import '../ui/ui_interaction_coordinator.dart';
 import 'app_transitions.dart';
 import 'scroll_activity_gate.dart';

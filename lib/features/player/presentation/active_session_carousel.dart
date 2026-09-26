@@ -16,6 +16,7 @@ import '../../../app/presentation/app_presentation_providers.dart';
 import '../../../app/theme/app_design_tokens.dart';
 import '../../../core/media/music_track.dart';
 import '../../../core/media/subtitle_parser.dart';
+import '../../../core/ui/visual_settings_providers.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/async_cover_image.dart';
 import '../../../core/widgets/library_like_cards.dart';

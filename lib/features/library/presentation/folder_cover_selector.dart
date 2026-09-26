@@ -6,8 +6,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/localization/app_language_provider.dart';
-import '../../../app/presentation/app_presentation_providers.dart';
 import '../../../app/state/app_runtime_providers.dart';
+import '../../../core/ui/visual_settings_providers.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/async_cover_image.dart';

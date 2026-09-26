@@ -1,4 +1,4 @@
-import '../../app/presentation/app_presentation_providers.dart';
+import '../ui/visual_settings_providers.dart';
 import 'dart:async';
 import 'dart:ui' as ui;
 

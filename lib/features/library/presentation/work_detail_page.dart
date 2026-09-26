@@ -14,6 +14,7 @@ import '../../../core/media/music_track.dart';
 import '../../../core/media/natural_sort.dart';
 import '../../../core/media/path_display.dart';
 import '../../../core/ui/ui_operation_service.dart';
+import '../../../core/ui/visual_settings_providers.dart';
 import '../../../core/ui/undoable_removal_service.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/app_buttons.dart';

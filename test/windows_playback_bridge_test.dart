@@ -314,6 +314,8 @@ void main() {
   test(
     'audio filters compose EQ normalization denoise and channel balance',
     () {
+      expect(windowsEqCapabilities.minGainDb, -18);
+      expect(windowsEqCapabilities.maxGainDb, 18);
       final filter = windowsAudioFilter(
         NativeAudioEffects(
           channelSwapEnabled: true,
@@ -328,6 +330,18 @@ void main() {
       );
       expect(filter, contains('afftdn=nf=-25'));
       expect(filter, contains('equalizer=f=1000:t=o:w=1:g=3.0'));
+      expect(
+        windowsAudioFilter(
+          NativeAudioEffects(
+            channelSwapEnabled: false,
+            state: AudioEffectsState(
+              eqEnabled: true,
+              eqBandLevels: {1000: 18, 3000: -18},
+            ),
+          ),
+        ),
+        allOf(contains('g=18.0'), contains('g=-18.0')),
+      );
       expect(filter, contains('dynaudnorm'));
       expect(filter, contains('pan=args=stereo|c0=0.5*c1|c1=1.0*c0'));
       expect(

@@ -707,6 +707,8 @@ double _finite(double value, double min, double max) {
 
 final windowsEqCapabilities = EqCapabilities(
   supported: true,
+  minGainDb: -18,
+  maxGainDb: 18,
   bands: [
     for (final frequency in [60, 170, 310, 600, 1000, 3000, 6000, 12000])
       EqBandInfo(frequencyHz: frequency),
@@ -721,7 +723,7 @@ String windowsAudioFilter(NativeAudioEffects effects) {
     for (final entry in state.eqBandLevels.entries) {
       if (entry.key > 0) {
         filters.add(
-          'equalizer=f=${entry.key}:t=o:w=1:g=${_finite(entry.value, -12, 12)}',
+          'equalizer=f=${entry.key}:t=o:w=1:g=${_finite(entry.value, windowsEqCapabilities.minGainDb, windowsEqCapabilities.maxGainDb)}',
         );
       }
     }

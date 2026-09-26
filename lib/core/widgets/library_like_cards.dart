@@ -261,30 +261,19 @@ class _LibraryLikeSkeletonActions extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: LibraryLikeCardMetrics.actionButtonSize + 23,
+      width: LibraryLikeCardMetrics.actionButtonSize,
       height: actionHeight,
-      child: const Row(
-        children: [
-          SizedBox(
-            width: LibraryLikeCardMetrics.actionButtonSize,
-            child: Center(
-              child: Padding(
-                padding: EdgeInsets.only(left: 8),
-                child: Center(
-                  child: ShimmerContainer(
-                    width: 25,
-                    height: 25,
-                    borderRadius: 12.5,
-                  ),
-                ),
-              ),
+      child: const Center(
+        child: Padding(
+          padding: EdgeInsets.only(left: 8),
+          child: Center(
+            child: ShimmerContainer(
+              width: 25,
+              height: 25,
+              borderRadius: 12.5,
             ),
           ),
-          Padding(
-            padding: EdgeInsets.only(left: 2.5),
-            child: ShimmerContainer(width: 16, height: 16, borderRadius: 4),
-          ),
-        ],
+        ),
       ),
     );
   }

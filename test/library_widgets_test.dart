@@ -353,7 +353,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
   });
 
-  testWidgets('library and ASMR skeleton cards align both action placeholders', (
+  testWidgets('library and ASMR skeleton cards omit expand placeholders', (
     WidgetTester tester,
   ) async {
     for (final compactCoverLayout in <bool>[false, true]) {
@@ -391,7 +391,7 @@ void main() {
         ),
       );
       expect(playPlaceholder, findsOneWidget);
-      expect(expandPlaceholder, findsOneWidget);
+      expect(expandPlaceholder, findsNothing);
     }
   });
 

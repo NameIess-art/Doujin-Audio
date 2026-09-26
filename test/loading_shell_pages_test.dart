@@ -19,6 +19,58 @@ import 'package:doujin_audio/app/theme/theme_provider.dart';
 import 'support/app_runtime_test_fixture.dart';
 
 void main() {
+  testWidgets('metadata review skeleton fills tall screens without scrolling', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(390, 1200);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
+
+    final metadataCompleter = Completer<DlsiteMetadata>();
+    final services = _TestServices(
+      dlsiteMetadataService: _DelayedDlsiteMetadataService(metadataCompleter),
+      asmrMetadataService: _DelayedAsmrMetadataService(metadataCompleter),
+    );
+    addTearDown(services.dispose);
+
+    await tester.pumpWidget(
+      _buildTestApp(
+        services: services,
+        languageProvider: AppLanguageProvider(),
+        child: DlsiteMetadataReviewPage(
+          detail: AudioDetail.empty(
+            const AudioDetailTarget(
+              targetType: AudioDetailTargetType.singleAudioFile,
+              targetPath: '/library/Work/audio.mp3',
+            ),
+          ),
+          rjCode: 'RJ123456',
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final firstField = find.byKey(
+      const ValueKey<String>('dlsite_review_skeleton_field_0'),
+    );
+    expect(firstField, findsOneWidget);
+    expect(find.byType(Scrollable), findsNothing);
+    final lastField = find.byWidgetPredicate(
+      (widget) =>
+          widget.key is ValueKey<String> &&
+          (widget.key! as ValueKey<String>).value.startsWith(
+            'dlsite_review_skeleton_field_',
+          ),
+    ).last;
+    expect(tester.getRect(lastField).bottom, greaterThanOrEqualTo(1200));
+
+    final firstFieldTop = tester.getRect(firstField).top;
+    await tester.drag(firstField, const Offset(0, -300));
+    await tester.pump();
+    expect(tester.getRect(firstField).top, firstFieldTop);
+  });
+
   testWidgets('metadata review page shows shell while metadata loads', (
     tester,
   ) async {
@@ -57,6 +109,25 @@ void main() {
     );
     expect(find.byType(Scrollable), findsNothing);
 
+    final skeletonCover = find.byKey(
+      const ValueKey<String>('dlsite_review_skeleton_cover'),
+    );
+    final skeletonSaveCover = find.byKey(
+      const ValueKey<String>('dlsite_review_skeleton_save_cover'),
+    );
+    final skeletonSaveCoverLabel = find.byKey(
+      const ValueKey<String>('dlsite_review_skeleton_save_cover_label'),
+    );
+    expect(tester.getSize(skeletonSaveCover), const Size(52, 32));
+    final skeletonOffset =
+        tester.getCenter(skeletonSaveCover).dy -
+        tester.getRect(skeletonCover).bottom;
+    final skeletonCenterX = tester.getCenter(skeletonSaveCover).dx;
+    final skeletonLabelOffset =
+        tester.getCenter(skeletonSaveCoverLabel).dy -
+        tester.getRect(skeletonCover).bottom;
+    final skeletonLabelLeft = tester.getRect(skeletonSaveCoverLabel).left;
+
     metadataCompleter.complete(
       DlsiteMetadata(
         rjCode: 'RJ123456',
@@ -64,9 +135,38 @@ void main() {
         circleName: 'Circle',
         voiceActors: <String>['Voice'],
         tags: <String>['ASMR'],
+        coverUrl: 'https://example.com/cover.jpg',
       ),
     );
     await tester.pumpAndSettle();
+
+    await tester.scrollUntilVisible(find.byType(SwitchListTile), 300);
+    expect(find.byType(SwitchListTile), findsOneWidget);
+    expect(tester.getSize(find.byType(SwitchListTile)).height, 56);
+    final actualSaveCover = find.descendant(
+      of: find.byType(SwitchListTile),
+      matching: find.byType(Switch),
+    );
+    expect(actualSaveCover, findsOneWidget);
+    expect(
+      skeletonOffset,
+      closeTo(
+        tester.getCenter(actualSaveCover).dy -
+            tester.getRect(find.byType(SwitchListTile)).top,
+        1,
+      ),
+    );
+    expect(skeletonCenterX, closeTo(tester.getCenter(actualSaveCover).dx, 1));
+    final actualLabel = find.text(languageProvider.tr('dlsite_save_cover'));
+    expect(
+      skeletonLabelOffset,
+      closeTo(
+        tester.getCenter(actualLabel).dy -
+            tester.getRect(find.byType(SwitchListTile)).top,
+        1,
+      ),
+    );
+    expect(skeletonLabelLeft, closeTo(tester.getRect(actualLabel).left, 1));
 
     expect(
       find.byKey(const ValueKey<String>('dlsite_review_skeleton_field_0')),

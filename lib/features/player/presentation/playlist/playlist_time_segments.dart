@@ -125,7 +125,12 @@ class _TimeSegmentPanelState extends State<TimeSegmentPanel> {
         : max(360.0, mediaHeight * 0.5 - 130.0);
 
     final content = Padding(
-      padding: EdgeInsets.fromLTRB(0, isPortrait ? 12 : 6, 0, 16),
+      padding: EdgeInsets.fromLTRB(
+        isPortrait ? 0 : 16,
+        isPortrait ? 12 : 6,
+        isPortrait ? 0 : 16,
+        16,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [

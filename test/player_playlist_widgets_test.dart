@@ -6295,6 +6295,14 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byKey(const ValueKey('segments_landscape')), findsOneWidget);
+      final panelPage = find.descendant(
+        of: find.byKey(const ValueKey('segments_landscape')),
+        matching: find.byType(PageView),
+      );
+      final contentPadding = tester.widget<Padding>(
+        find.ancestor(of: panelPage, matching: find.byType(Padding)).first,
+      );
+      expect(contentPadding.padding, const EdgeInsets.fromLTRB(16, 6, 16, 16));
       // Secondary controls capsule remains visible in landscape
       expect(secondaryControlsFinder, findsOneWidget);
 

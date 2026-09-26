@@ -675,6 +675,7 @@ void main() {
                   title: 'Work',
                   coverKey: coverKey,
                   lines: const <LibraryLikeInfoLineData>[],
+                  showExpandIndicator: false,
                   compactCoverLayout: true,
                 ),
               ),
@@ -720,27 +721,18 @@ void main() {
       final cardRect = tester.getRect(find.byType(Card));
       final tileRect = tester.getRect(find.byType(ListTile));
       final actualAdd = find.byIcon(Icons.add_circle_rounded);
-      final actualExpand = find.byIcon(Icons.expand_more_rounded);
 
       expect(
         tester.getCenter(skeletonAdd).dx - tester.getCenter(actualAdd).dx,
         closeTo(0, 0.1),
       );
-      expect(
-        tester.getCenter(skeletonExpand).dx - tester.getCenter(actualExpand).dx,
-        closeTo(0, 0.1),
-      );
+      expect(skeletonExpand, findsNothing);
 
       final skeletonAddRelativeY =
           tester.getCenter(skeletonAdd).dy - cardRect.top;
       final actualAddRelativeY = tester.getCenter(actualAdd).dy - tileRect.top;
-      final skeletonExpandRelativeY =
-          tester.getCenter(skeletonExpand).dy - cardRect.top;
-      final actualExpandRelativeY =
-          tester.getCenter(actualExpand).dy - tileRect.top;
 
       expect(skeletonAddRelativeY, closeTo(actualAddRelativeY, 0.1));
-      expect(skeletonExpandRelativeY, closeTo(actualExpandRelativeY, 0.1));
     },
   );
 
@@ -763,6 +755,7 @@ void main() {
                   title: 'Work',
                   coverKey: coverKey,
                   lines: const <LibraryLikeInfoLineData>[],
+                  showExpandIndicator: false,
                 ),
               ),
             ],
@@ -784,14 +777,11 @@ void main() {
       );
 
       expect(skeletonAdd, findsOneWidget);
-      expect(skeletonExpand, findsOneWidget);
+      expect(skeletonExpand, findsNothing);
       final addDelta =
           tester.getCenter(skeletonAdd).dx -
           tester.getCenter(find.byIcon(Icons.add_circle_rounded)).dx;
-      final expandDelta =
-          tester.getCenter(skeletonExpand).dx -
-          tester.getCenter(find.byIcon(Icons.expand_more_rounded)).dx;
-      expect(<double>[addDelta, expandDelta], everyElement(closeTo(0, 0.1)));
+      expect(addDelta, closeTo(0, 0.1));
     },
   );
 

@@ -632,7 +632,12 @@ extension _MainScreenLayout on _MainScreenState {
                               child: ExcludeSemantics(
                                 child: TweenAnimationBuilder<double>(
                                   tween: Tween<double>(
-                                    end: _isMenuCollapsed ? 1 : 0,
+                                    end:
+                                        _isMenuCollapsed &&
+                                            defaultTargetPlatform !=
+                                                TargetPlatform.windows
+                                        ? 1
+                                        : 0,
                                   ),
                                   duration: kThemeAnimationDuration,
                                   curve: Curves.easeInOut,

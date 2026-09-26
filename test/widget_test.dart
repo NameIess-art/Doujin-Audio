@@ -2787,9 +2787,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('Windows menu icons move smoothly into the selected icon', (
-    tester,
-  ) async {
+  testWidgets('Windows menu icons stay visible when collapsed', (tester) async {
     _setLogicalTestViewSize(tester, const Size(1280, 800));
     await _pumpAppShell(tester, includePlaybackSession: false);
     debugDefaultTargetPlatformOverride = TargetPlatform.windows;
@@ -2810,16 +2808,20 @@ void main() {
     expect(expandedGap, greaterThan(0));
     await tester.tap(find.byIcon(Icons.menu_open_rounded));
     await tester.pump();
-
-    var previousGap = expandedGap;
-    for (var frame = 0; frame < 10; frame++) {
-      await tester.pump(const Duration(milliseconds: 20));
-      final gap = iconGap();
-      expect(gap, lessThanOrEqualTo(previousGap + 0.1));
-      previousGap = gap;
-    }
     await tester.pumpAndSettle();
-    expect(iconGap(), lessThan(0.1));
+    expect(
+      tester.widget<NavigationRail>(find.byType(NavigationRail)).extended,
+      isFalse,
+    );
+    expect(iconGap(), closeTo(expandedGap, 0.1));
+    expect(
+      tester
+          .widget<Opacity>(
+            find.ancestor(of: otherIcon, matching: find.byType(Opacity)).first,
+          )
+          .opacity,
+      1,
+    );
 
     await tester.tap(find.byIcon(Icons.menu_rounded));
     await tester.pump();

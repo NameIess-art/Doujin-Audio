@@ -873,6 +873,7 @@ class _MetadataReviewSkeleton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final fieldCount = (MediaQuery.sizeOf(context).height / 68).ceil();
     return ShimmerLoader(
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -888,15 +889,34 @@ class _MetadataReviewSkeleton extends StatelessWidget {
               height: 56,
               child: Row(
                 children: [
-                  ShimmerContainer(width: 150, height: 14),
+                  ShimmerContainer(
+                    key: ValueKey<String>(
+                      'dlsite_review_skeleton_save_cover_label',
+                    ),
+                    width: 150,
+                    height: 14,
+                  ),
                   Spacer(),
-                  ShimmerContainer(width: 48, height: 28, borderRadius: 14),
+                  SizedBox(
+                    width: 60,
+                    height: 40,
+                    child: Center(
+                      child: ShimmerContainer(
+                        key: ValueKey<String>(
+                          'dlsite_review_skeleton_save_cover',
+                        ),
+                        width: 52,
+                        height: 32,
+                        borderRadius: 16,
+                      ),
+                    ),
+                  ),
                 ],
               ),
             ),
             const SizedBox(height: 12),
           ],
-          for (var index = 0; index < 8; index++)
+          for (var index = 0; index < fieldCount; index++)
             Padding(
               padding: const EdgeInsets.only(bottom: 12),
               child: Container(

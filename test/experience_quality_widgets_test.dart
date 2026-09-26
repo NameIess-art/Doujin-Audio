@@ -1,3 +1,4 @@
+import 'package:doujin_audio/core/ui/visual_settings_providers.dart';
 import 'package:doujin_audio/features/settings/presentation/settings_providers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -26,6 +27,7 @@ Widget _buildSurface(Widget child) => MaterialApp(
 Widget _buildScrollableHeader({required bool blurEnabled}) {
   return ProviderScope(
     overrides: [
+      uiBlurEnabledProvider.overrideWithValue(blurEnabled),
       settingsStateProvider.overrideWith(
         (ref) => Stream<SettingsState>.value(
           SettingsState(uiBlurEffectEnabled: blurEnabled),
@@ -60,6 +62,7 @@ Widget _buildPageAppBar({required bool blurEnabled}) {
   return ProviderScope(
     key: ValueKey<String>('page_app_bar_blur_$blurEnabled'),
     overrides: [
+      uiBlurEnabledProvider.overrideWithValue(blurEnabled),
       settingsStateProvider.overrideWith(
         (ref) => Stream<SettingsState>.value(
           SettingsState(uiBlurEffectEnabled: blurEnabled),

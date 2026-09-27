@@ -128,6 +128,81 @@ class PlaybackSubtitleService extends ChangeNotifier {
     }
   }
 
+  Future<SubtitleTrack> saveEditedSubtitle(
+    String trackPath,
+    List<SubtitleCue> cues,
+  ) async {
+    _validateCues(trackPath, cues);
+
+    final dir = await _subtitlesDirectoryResolver();
+    final safeKey = md5.convert(utf8.encode(trackPath)).toString();
+    final destFile = File(path.join(dir.path, '$safeKey.srt'));
+    await _writeSrt(destFile, cues);
+
+    final edited = SubtitleTrack(
+      sourcePath: destFile.path,
+      cues: cues,
+      offset: getOffset(trackPath),
+    );
+    _customPaths[trackPath] = destFile.path;
+    await _persistCustomPaths();
+    _tracks[trackPath] = edited;
+    _results[trackPath] = SynchronousFuture<SubtitleTrack?>(edited);
+    _trimResults();
+    _onTrackLoaded?.call(trackPath, edited);
+    notifyListeners();
+
+    return edited;
+  }
+
+  static void _validateCues(String trackPath, List<SubtitleCue> cues) {
+    if (trackPath.isEmpty || cues.isEmpty) {
+      throw ArgumentError('A track and subtitle cues are required.');
+    }
+    for (var index = 0; index < cues.length; index++) {
+      final cue = cues[index];
+      if (cue.start < Duration.zero ||
+          cue.end <= cue.start ||
+          cue.text.trim().isEmpty ||
+          (index > 0 && cue.start < cues[index - 1].end)) {
+        throw ArgumentError(
+          'Subtitle cues must be ordered and non-overlapping.',
+        );
+      }
+    }
+  }
+
+  static Future<void> _writeSrt(File destFile, List<SubtitleCue> cues) async {
+    final tempFile = File('${destFile.path}.tmp');
+    final backupFile = File('${destFile.path}.bak');
+    final content = cues.indexed
+        .map((entry) {
+          final (index, cue) = entry;
+          return '${index + 1}\n${_srtTime(cue.start)} --> ${_srtTime(cue.end)}\n${cue.text.trim()}';
+        })
+        .join('\n\n');
+    await tempFile.writeAsString('$content\n', flush: true);
+
+    if (await backupFile.exists()) await backupFile.delete();
+    if (await destFile.exists()) await destFile.rename(backupFile.path);
+    try {
+      await tempFile.rename(destFile.path);
+      if (await backupFile.exists()) await backupFile.delete();
+    } catch (_) {
+      if (await backupFile.exists()) await backupFile.rename(destFile.path);
+      rethrow;
+    }
+  }
+
+  static String _srtTime(Duration duration) {
+    final milliseconds = duration.inMilliseconds;
+    final hours = milliseconds ~/ 3600000;
+    final minutes = (milliseconds ~/ 60000) % 60;
+    final seconds = (milliseconds ~/ 1000) % 60;
+    final millis = milliseconds % 1000;
+    return '${hours.toString().padLeft(2, '0')}:${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')},${millis.toString().padLeft(3, '0')}';
+  }
+
   Future<void> removeCustomSubtitle(String trackPath) async {
     final custom = _customPaths.remove(trackPath);
     if (custom != null) {

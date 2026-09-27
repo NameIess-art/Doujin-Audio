@@ -165,8 +165,8 @@ class GlobalShortcuts extends ConsumerWidget {
                     final statusAsync = ref.watch(windowsHotkeyStatusProvider);
                     return statusAsync.when(
                       loading: () => const LinearProgressIndicator(),
-                      error: (error, _) => Text(
-                        '${i18n.tr('keyboard_shortcuts_status_error')}: $error',
+                      error: (_, _) => Text(
+                        i18n.tr('keyboard_shortcuts_status_error'),
                       ),
                       data: (status) => Column(
                         crossAxisAlignment: CrossAxisAlignment.start,

@@ -125,7 +125,7 @@ class _DataSupportSettingsControlsState
                   AppPrimaryButton(
                     onPressed: _terminateForPendingRestore,
                     icon: Icons.close_rounded,
-                    label: i18n.tr('close_and_restart'),
+                    label: i18n.tr('close_app'),
                   ),
                 ],
               ),

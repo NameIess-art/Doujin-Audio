@@ -139,53 +139,33 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage> {
     }
   }
 
-  Widget _buildImage(
-    WorkImageItem image, {
-    required BoxFit fit,
-    required bool showFallbackIcon,
-    bool showFallbackArtwork = true,
-  }) {
+  Widget _buildImage(WorkImageItem image) {
     final imagePath = image.path.trim();
     final isRemoteImage =
         imagePath.startsWith('http://') || imagePath.startsWith('https://');
     if (isRemoteImage) {
       return RetryingNetworkImage(
         url: imagePath,
-        fit: fit,
+        fit: BoxFit.contain,
         displayMode: CoverImageDisplayMode.fill,
         useDefaultCacheWidth: false,
-        loadingBuilder: showFallbackArtwork
-            ? null
-            : (_) => const SizedBox.expand(),
-        fallbackBuilder: (_) => showFallbackArtwork
-            ? CoverFallbackArtwork(
-                seed: imagePath,
-                showIcon: showFallbackIcon,
-                icon: Icons.broken_image_rounded,
-              )
-            : const SizedBox.expand(),
+        loadingBuilder: (_) => const SizedBox.expand(),
+        fallbackBuilder: (_) => const SizedBox.expand(),
       );
     }
     return RetryingFileImage(
       path: imagePath,
-      fit: fit,
+      fit: BoxFit.contain,
       displayMode: CoverImageDisplayMode.fill,
       useDefaultCacheWidth: false,
-      loadingBuilder: showFallbackArtwork
-          ? null
-          : (_) => const SizedBox.expand(),
-      fallbackBuilder: (_) => showFallbackArtwork
-          ? CoverFallbackArtwork(
-              seed: imagePath,
-              showIcon: showFallbackIcon,
-              icon: Icons.broken_image_rounded,
-            )
-          : const SizedBox.expand(),
+      loadingBuilder: (_) => const SizedBox.expand(),
+      fallbackBuilder: (_) => const SizedBox.expand(),
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    final i18n = ref.watch(appLanguageProviderInstanceProvider);
     if (widget.images.isEmpty) {
       return Scaffold(
         backgroundColor: Colors.black,
@@ -193,8 +173,11 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage> {
           backgroundColor: Colors.black,
           foregroundColor: Colors.white,
         ),
-        body: const AppPageContentTransition(child: Center(
-          child: Text('No images', style: TextStyle(color: Colors.white70)),
+        body: AppPageContentTransition(child: Center(
+          child: Text(
+            i18n.tr('no_images'),
+            style: const TextStyle(color: Colors.white70),
+          ),
         )),
       );
     }
@@ -236,39 +219,6 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage> {
       body: Stack(
         children: [
           Positioned.fill(
-            key: const ValueKey<String>('work_image_fullscreen_placeholder'),
-            child: AppPageContentTransition(child: CoverFallbackArtwork(
-              seed: currentImage.path,
-              showIcon: true,
-              icon: Icons.broken_image_rounded,
-            )),
-          ),
-          Positioned.fill(
-            key: const ValueKey<String>('work_image_blurred_backdrop'),
-            child: AppPageContentTransition(child: ClipRect(
-              child: ImageFiltered(
-                imageFilter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
-                child: Transform.scale(
-                  scale: 1.12,
-                  child: AnimatedSwitcher(
-                    duration: kAppMotionStandard,
-                    child: KeyedSubtree(
-                      key: ValueKey<String>(currentImage.path),
-                      child: _buildImage(
-                        currentImage,
-                        fit: BoxFit.cover,
-                        showFallbackIcon: false,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            )),
-          ),
-          Positioned.fill(
-            child: AppPageContentTransition(child: ColoredBox(color: Colors.black.withValues(alpha: 0.42))),
-          ),
-          Positioned.fill(
             top: imageTop,
             bottom: imageBottom,
             child: AppPageContentTransition(
@@ -297,12 +247,7 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage> {
                       onZoomChanged: (zoomed) {
                         setState(() => _isCurrentZoomed = zoomed);
                       },
-                      child: _buildImage(
-                        img,
-                        fit: BoxFit.contain,
-                        showFallbackIcon: true,
-                        showFallbackArtwork: false,
-                      ),
+                      child: _buildImage(img),
                     );
                   },
                 ),
@@ -399,7 +344,7 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage> {
                         height: 32,
                       ),
                       icon: const Icon(Icons.chevron_left_rounded),
-                      tooltip: 'Previous',
+                      tooltip: i18n.tr('previous'),
                       onPressed: _currentIndex > 0 ? _goToPrevious : null,
                     ),
                     Padding(
@@ -423,7 +368,7 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage> {
                         height: 32,
                       ),
                       icon: const Icon(Icons.chevron_right_rounded),
-                      tooltip: 'Next',
+                      tooltip: i18n.tr('next'),
                       onPressed: _currentIndex < widget.images.length - 1
                           ? _goToNext
                           : null,

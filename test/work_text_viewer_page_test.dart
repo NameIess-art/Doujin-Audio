@@ -439,13 +439,14 @@ void main() {
     },
   );
 
-  testWidgets(
-    'WorkTextViewerPage displays error state when PDF file cannot be loaded',
-    (tester) async {
+  for (final locale in AppLanguage.values) {
+    testWidgets('WorkTextViewerPage localizes PDF load failure in $locale', (
+      tester,
+    ) async {
       SharedPreferences.setMockInitialValues(const <String, Object>{});
       final language = AppLanguageProvider();
       addTearDown(language.dispose);
-      await language.setLanguage(AppLanguage.zh);
+      await language.setLanguage(locale);
 
       const pdfFile = WorkTextFile(
         name: 'manual.pdf',
@@ -470,10 +471,10 @@ void main() {
 
       expect(find.text('manual'), findsOneWidget);
       expect(find.text('manual.pdf'), findsNothing);
-      expect(find.text('Failed to load PDF file'), findsOneWidget);
-      expect(find.text('Retry'), findsOneWidget);
-    },
-  );
+      expect(find.text(language.tr('text_file_load_failed')), findsOneWidget);
+      expect(find.text(language.tr('retry')), findsOneWidget);
+    });
+  }
 
   testWidgets(
     'WorkTextViewerPage uses TopPageHeader with fade mask and spans full width',

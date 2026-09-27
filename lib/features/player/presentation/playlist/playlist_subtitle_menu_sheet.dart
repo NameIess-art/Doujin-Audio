@@ -11,6 +11,7 @@ import '../../../../core/widgets/app_feedback.dart';
 import '../../application/playback_session_snapshot.dart';
 import '../../application/playback_subtitle_service.dart';
 import '../playback_providers.dart';
+import 'subtitle_editor_page.dart';
 
 Future<void> showSubtitleMenuBottomSheet({
   required BuildContext context,
@@ -354,7 +355,11 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
                             activeCustomPath != null
                                 ? '${i18n.tr('reimport_subtitle')}: ${path.basename(activeCustomPath)}'
                                 : (activeTrack != null
-                                    ? '已载入: ${path.basename(activeTrack.sourcePath)}'
+                                    ? i18n.tr('subtitle_loaded_file', {
+                                        'file': path.basename(
+                                          activeTrack.sourcePath,
+                                        ),
+                                      })
                                     : i18n.tr('import_subtitle_hint')),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
@@ -408,6 +413,34 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
                         ],
                       ],
                     ),
+                  ),
+                  const SizedBox(height: 12),
+
+                  ListTile(
+                    key: const ValueKey('subtitle_edit_tile'),
+                    enabled: activeTrack != null,
+                    tileColor: cs.surfaceContainerHighest.withValues(
+                      alpha: 0.45,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    leading: Icon(
+                      Icons.edit_note_rounded,
+                      color: activeTrack != null
+                          ? cs.primary
+                          : cs.onSurface.withValues(alpha: 0.38),
+                    ),
+                    title: Text(i18n.tr('subtitle_edit')),
+                    trailing: const Icon(Icons.chevron_right_rounded),
+                    onTap: activeTrack == null
+                        ? null
+                        : () => Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) =>
+                                  SubtitleEditorPage(trackPath: trackPath),
+                            ),
+                          ),
                   ),
                   const SizedBox(height: 12),
 

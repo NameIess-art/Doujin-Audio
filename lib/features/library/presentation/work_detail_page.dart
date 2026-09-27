@@ -1445,7 +1445,9 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
                             ),
                             const SizedBox(width: 8),
                             Text(
-                              '${currentEntries.length} 项',
+                              i18n.tr('items_count', {
+                                'count': currentEntries.length,
+                              }),
                               style: Theme.of(context).textTheme.bodySmall
                                   ?.copyWith(color: cs.onSurfaceVariant),
                             ),

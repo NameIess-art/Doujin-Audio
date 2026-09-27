@@ -324,6 +324,7 @@ const Map<String, String> appLanguageEn = {
   'removed_prefix': 'Removed: {name}',
   'session_created': 'Created session: {name}',
   'items_count': '{count} items',
+  'empty_folder': 'Empty folder',
   'root_directory': 'Root directory',
   'play_first': 'Play first track',
   'remove_audio_folder': 'Remove folder',
@@ -358,6 +359,7 @@ const Map<String, String> appLanguageEn = {
   'audio_detail_rj_format_hint':
       'RJ number should usually look like RJ + digits.',
   'audio_detail_save_failed': 'Save failed. Please try again.',
+  'audio_detail_cover_saved': 'Cover saved',
   'audio_detail_load_failed': 'Load failed. Please try again.',
   'audio_detail_duration_calculation_failed':
       'Unable to calculate duration. Please try again.',
@@ -379,6 +381,9 @@ const Map<String, String> appLanguageEn = {
   'script_text_tooltip': 'View document',
   'script_text_not_found': 'No document or text files found in this work',
   'script_text_viewer_title': 'Document',
+  'text_file_load_failed': 'Could not read the file. Please try again.',
+  'empty_file': 'Empty file',
+  'no_images': 'No images',
   'prev_text_file': 'Previous file',
   'next_text_file': 'Next file',
   'audio_detail_cover_swipe_hint': 'Swipe left or right to change',
@@ -612,20 +617,20 @@ const Map<String, String> appLanguageEn = {
   'backup_sensitive_warning':
       'This unencrypted backup contains the ASMR.ONE account name, password, and login token. Anyone with the file may be able to sign in. Continue?',
   'restore_backup_warning':
-      'Restoring replaces all current app data and stops playback. Audio files and folder permissions are not restored. The app must be closed and restarted.',
+      'Restoring replaces all current app data and stops playback. Audio files and folder permissions are not restored. Close the app when prompted, then open it again manually.',
   'select_backup': 'Select backup',
   'backup_exported': 'Backup exported to {path}',
   'backup_ready_to_restore': 'Backup is ready',
   'backup_restart_required':
-      'The backup passed validation and will be restored on the next start. Close and restart the app now.',
+      'The backup passed validation and will be restored on the next start. Select Close app, then open it again manually.',
   'backup_restore_succeeded':
       'Backup restored. App data and the ASMR.ONE account were updated.',
   'backup_restore_failed_rolled_back':
       'Backup restore failed. The previous app data was restored safely.',
   'unexpected_error_title': 'Doujin Audio encountered an unexpected error',
   'unexpected_error_message':
-      'Your local data is safe. Export diagnostics, then close and restart the app.',
-  'close_and_restart': 'Close and restart',
+      'Your local data is safe. Export diagnostics, then close the app and open it again manually.',
+  'close_app': 'Close app',
   'export_diagnostics_subtitle':
       'Export sanitized logs and diagnostic information.',
   'diagnostics_exported': 'Diagnostic report exported to {path}',
@@ -692,8 +697,6 @@ const Map<String, String> appLanguageEn = {
   'update_install_failed': 'Could not continue installing the update.',
   'update_install_failed_next_step':
       'Try again later. If it still fails, check the update log or open the GitHub Release page to install it manually.',
-  'update_install_failed_with_detail':
-      'Retry later. If it still fails, check the update log. Detail: {detail}',
   'install_permission_needed':
       'Please allow this app to install unknown apps first.',
   'install_permission_title': 'Allow update installs',
@@ -834,7 +837,18 @@ const Map<String, String> appLanguageEn = {
   'import_subtitle': 'Import subtitle',
   'import_subtitle_hint': 'Select a subtitle file for this audio track',
   'subtitle_imported': 'Subtitle imported successfully',
+  'subtitle_loaded_file': 'Loaded: {file}',
   'subtitle_import_failed': 'Failed to parse subtitle file',
+  'subtitle_load_failed': 'Could not load subtitles. Please try again.',
+  'subtitle_save_failed': 'Could not save subtitles. Please try again.',
+  'subtitle_edit': 'Edit subtitles',
+  'subtitle_edit_text': 'Edit text',
+  'subtitle_edit_time': 'Edit time range',
+  'subtitle_start_time': 'Start time',
+  'subtitle_end_time': 'End time',
+  'subtitle_invalid_time': 'Invalid time or overlap with adjacent subtitle',
+  'subtitle_no_content': 'No subtitles to edit for this audio',
+  'subtitle_saved': 'Subtitles saved',
   'subtitle_sync': 'Subtitle sync',
   'subtitle_reset': 'Reset',
   'subtitle_offset_current': 'Current offset: {offset}',

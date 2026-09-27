@@ -105,9 +105,7 @@ Future<void> showVideoConversionResultDialog(
               ),
             ] else ...[
               Text(
-                result.errorMessage?.isNotEmpty == true
-                    ? result.errorMessage!
-                    : i18n.tr('conversion_failed'),
+                i18n.tr('conversion_failed'),
                 style: theme.textTheme.bodyMedium?.copyWith(
                   color: cs.onSurfaceVariant,
                 ),

@@ -134,8 +134,8 @@ class _AppErrorViewState extends State<AppErrorView> {
                     const SizedBox(height: AppSpacing.sm),
                     AppSecondaryButton(
                       onPressed: SystemNavigator.pop,
-                      icon: Icons.restart_alt_rounded,
-                      label: tr('close_and_restart'),
+                      icon: Icons.close_rounded,
+                      label: tr('close_app'),
                     ),
                   ],
                 ],

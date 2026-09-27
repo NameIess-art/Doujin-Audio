@@ -331,6 +331,50 @@ void main() {
       'Second line',
     );
   });
+
+  test('editing a subtitle preserves the source and updates playback', () async {
+    final directory = await Directory.systemTemp.createTemp('edited_subtitle_');
+    addTearDown(() => directory.delete(recursive: true));
+    final original = File('${directory.path}/original.srt');
+    await original.writeAsString('1\n00:00:01,000 --> 00:00:02,000\nOriginal\n');
+    final service = PlaybackSubtitleService(
+      trackResolver: (_) => null,
+      subtitleLoader: (_, _) async => SubtitleTrack(
+        sourcePath: original.path,
+        cues: const [
+          SubtitleCue(
+            start: Duration(seconds: 1),
+            end: Duration(seconds: 2),
+            text: 'Original',
+          ),
+        ],
+      ),
+      subtitlesDirectoryResolver: () async => directory,
+    );
+    const audioPath = '/music/original.mp3';
+    await service.load(audioPath);
+    await expectLater(
+      service.saveEditedSubtitle(audioPath, [
+        const SubtitleCue(
+          start: Duration(seconds: 2),
+          end: Duration(seconds: 1),
+          text: 'Invalid',
+        ),
+      ]),
+      throwsArgumentError,
+    );
+    final edited = await service.saveEditedSubtitle(audioPath, [
+      const SubtitleCue(
+        start: Duration(milliseconds: 1500),
+        end: Duration(milliseconds: 2800),
+        text: 'Edited\nTranslated',
+      ),
+    ]);
+    expect(edited.sourcePath, isNot(original.path));
+    expect(await original.readAsString(), contains('Original'));
+    expect(await File(edited.sourcePath).readAsString(), contains('Edited\nTranslated'));
+    expect(service.textAt(audioPath, const Duration(seconds: 2)), 'Edited\nTranslated');
+  });
 }
 
 MusicTrack _remoteTrack(String path) => MusicTrack(

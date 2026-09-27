@@ -36,7 +36,7 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
   String _content = '';
   int _visibleContentLength = 0;
   PdfController? _pdfController;
-  String? _errorMessage;
+  bool _loadFailed = false;
   int _loadGeneration = 0;
 
   @override
@@ -74,14 +74,14 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
         _loading = false;
         _content = '';
         _visibleContentLength = 0;
-        _errorMessage = null;
+        _loadFailed = false;
       });
       return;
     }
 
     setState(() {
       _loading = true;
-      _errorMessage = null;
+      _loadFailed = false;
       _content = '';
       _visibleContentLength = 0;
     });
@@ -94,7 +94,7 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
         if (bytes == null || bytes.isEmpty) {
           setState(() {
             _loading = false;
-            _errorMessage = 'Failed to load PDF file';
+            _loadFailed = true;
           });
           return;
         }
@@ -113,11 +113,11 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
         });
         _scheduleViewportFill(gen);
       }
-    } catch (e) {
+    } catch (_) {
       if (!mounted || gen != _loadGeneration) return;
       setState(() {
         _loading = false;
-        _errorMessage = e.toString();
+        _loadFailed = true;
       });
     }
   }
@@ -257,11 +257,12 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
     double contentTopInset,
     double bottomPadding,
   ) {
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
     if (_loading) {
       return const Center(child: CircularProgressIndicator.adaptive());
     }
 
-    if (_errorMessage != null) {
+    if (_loadFailed) {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
@@ -271,7 +272,7 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
               Icon(Icons.error_outline_rounded, size: 48, color: cs.error),
               const SizedBox(height: 12),
               Text(
-                _errorMessage!,
+                i18n.tr('text_file_load_failed'),
                 textAlign: TextAlign.center,
                 style: theme.textTheme.bodyMedium?.copyWith(
                   color: cs.onSurfaceVariant,
@@ -280,7 +281,7 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
               const SizedBox(height: 16),
               FilledButton.tonal(
                 onPressed: _loadFile,
-                child: const Text('Retry'),
+                child: Text(i18n.tr('retry')),
               ),
             ],
           ),
@@ -292,7 +293,7 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
     if (file == null) {
       return Center(
         child: Text(
-          '(Empty file)',
+          i18n.tr('empty_file'),
           style: theme.textTheme.bodyMedium?.copyWith(
             color: cs.onSurfaceVariant.withValues(alpha: 0.7),
           ),
@@ -313,7 +314,7 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
     if (_content.isEmpty) {
       return Center(
         child: Text(
-          '(Empty file)',
+          i18n.tr('empty_file'),
           style: theme.textTheme.bodyMedium?.copyWith(
             color: cs.onSurfaceVariant.withValues(alpha: 0.7),
           ),
@@ -379,11 +380,13 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
                       pageLoaderBuilder: (_) => const Center(
                         child: CircularProgressIndicator.adaptive(),
                       ),
-                      errorBuilder: (context, error) => Center(
+                      errorBuilder: (context, _) => Center(
                         child: Padding(
                           padding: const EdgeInsets.all(24),
                           child: Text(
-                            error.toString(),
+                            ref
+                                .read(appLanguageProviderInstanceProvider)
+                                .tr('text_file_load_failed'),
                             style: theme.textTheme.bodyMedium?.copyWith(
                               color: cs.error,
                             ),

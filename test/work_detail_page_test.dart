@@ -961,24 +961,23 @@ void main() {
 
         expect(find.text('1 / 2'), findsOneWidget);
         expect(find.text('01.jpg'), findsOneWidget);
+        final viewport = find.byKey(
+          const ValueKey<String>('work_image_viewport'),
+        );
         expect(
-          find.byKey(const ValueKey<String>('work_image_blurred_backdrop')),
-          findsOneWidget,
+          tester
+              .widgetList<Scaffold>(
+                find.ancestor(of: viewport, matching: find.byType(Scaffold)),
+              )
+              .any((scaffold) => scaffold.backgroundColor == Colors.black),
+          isTrue,
         );
-        final fullscreenPlaceholder = find.byKey(
-          const ValueKey<String>('work_image_fullscreen_placeholder'),
-        );
-        expect(fullscreenPlaceholder, findsOneWidget);
-        expect(
-          tester.getRect(fullscreenPlaceholder),
-          Offset.zero & tester.view.physicalSize / tester.view.devicePixelRatio,
-        );
-        expect(find.byType(ImageFiltered), findsOneWidget);
+        expect(find.byType(ImageFiltered), findsNothing);
         final pageView = tester.widget<PageView>(find.byType(PageView));
         expect(pageView.physics, isA<PageScrollPhysics>());
         final foregroundImages = tester.widgetList<RetryingFileImage>(
           find.descendant(
-            of: find.byKey(const ValueKey<String>('work_image_viewport')),
+            of: viewport,
             matching: find.byType(RetryingFileImage),
           ),
         );
@@ -1140,7 +1139,7 @@ void main() {
       );
       await tester.pump();
 
-      expect(find.byType(RetryingNetworkImage), findsNWidgets(2));
+      expect(find.byType(RetryingNetworkImage), findsOneWidget);
       expect(find.byType(LocalCoverImage), findsNothing);
       final foregroundImage = tester.widget<RetryingNetworkImage>(
         find.descendant(
@@ -1150,6 +1149,7 @@ void main() {
       );
       expect(foregroundImage.fit, BoxFit.contain);
       expect(foregroundImage.displayMode, CoverImageDisplayMode.fill);
+      expect(foregroundImage.cacheHeight, isNull);
 
       await tester.pumpWidget(const SizedBox.shrink());
     });

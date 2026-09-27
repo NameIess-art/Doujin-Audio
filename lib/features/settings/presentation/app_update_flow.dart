@@ -283,7 +283,7 @@ class AppUpdateFlow {
         return;
       }
       if (!result.ok) {
-        _showInstallFailure(context, i18n, detail: result.message);
+        _showInstallFailure(context, i18n);
         return;
       }
       showAppSnackBar(
@@ -302,19 +302,10 @@ class AppUpdateFlow {
     }
   }
 
-  void _showInstallFailure(
-    BuildContext context,
-    AppLanguageProvider i18n, {
-    String? detail,
-  }) {
-    final normalizedDetail = detail?.trim();
+  void _showInstallFailure(BuildContext context, AppLanguageProvider i18n) {
     showAppSnackBar(
       context,
-      normalizedDetail != null && normalizedDetail.isNotEmpty
-          ? i18n.tr('update_install_failed_with_detail', {
-              'detail': normalizedDetail,
-            })
-          : i18n.tr('update_install_failed_next_step'),
+      i18n.tr('update_install_failed_next_step'),
       tone: AppFeedbackTone.destructive,
       title: i18n.tr('update_install_failed'),
       icon: Icons.error_outline_rounded,

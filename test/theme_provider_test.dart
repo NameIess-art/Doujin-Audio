@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:doujin_audio/features/settings/application/app_preferences.dart';
+import 'package:doujin_audio/core/persistence/app_preferences.dart';
 import 'package:doujin_audio/app/theme/app_design_tokens.dart';
 import 'package:doujin_audio/app/theme/app_styles.dart';
 import 'package:doujin_audio/app/theme/theme_provider.dart';

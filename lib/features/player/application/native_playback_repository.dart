@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:media_kit_video/media_kit_video.dart';
 
 import '../../../core/errors/native_result.dart';
 import '../domain/audio_effects.dart';
@@ -162,6 +163,20 @@ class NativePlaybackRepository {
   }
 
   Future<NativeResult<void>> pauseAll() => _bridge.pauseAll();
+
+  Future<void> handleDeviceDisconnected() async {
+    final bridge = _bridge;
+    if (bridge is WindowsPlaybackBridge) {
+      await bridge.handleDeviceDisconnected();
+    }
+  }
+
+  VideoController? videoControllerForSession(String sessionId) {
+    final bridge = _bridge;
+    return bridge is WindowsPlaybackBridge
+        ? bridge.videoControllerForSession(sessionId)
+        : null;
+  }
 
   Future<NativeResult<void>> clearAll() => _bridge.clearAll();
 

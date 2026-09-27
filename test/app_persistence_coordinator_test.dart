@@ -8,6 +8,7 @@ import 'package:doujin_audio/app/application/playback_command_coordinator.dart';
 import 'package:doujin_audio/app/application/playback_keep_alive_coordinator.dart';
 import 'package:doujin_audio/core/errors/native_result.dart';
 import 'package:doujin_audio/core/persistence/app_database.dart';
+import 'package:doujin_audio/features/asmr/application/asmr_playback_cache_service.dart';
 import 'support/test_persistence_repository.dart';
 import 'package:doujin_audio/features/library/application/library_facade.dart';
 import 'package:doujin_audio/features/library/application/audio_detail_cache_service.dart';
@@ -77,6 +78,7 @@ void main() {
       audioPaths: paths,
       subtitles: subtitles,
       keepAlive: keepAlive,
+      asmrPlaybackCacheService: AsmrPlaybackCacheService(),
       notifyPlaybackChanged: () {},
       syncNotificationState: notifications.syncPlaybackState,
     );
@@ -120,6 +122,7 @@ void main() {
       coordinator.dispose();
       await warmup.shutdown();
       await playback.dispose();
+      await commands.dispose();
       await library.dispose();
       await timer.dispose();
       await notifications.dispose();
@@ -217,6 +220,7 @@ void main() {
         audioPaths: paths,
         subtitles: subtitles,
         keepAlive: keepAlive,
+        asmrPlaybackCacheService: AsmrPlaybackCacheService(),
         notifyPlaybackChanged: () {},
         syncNotificationState: notifications.syncPlaybackState,
       );
@@ -260,6 +264,7 @@ void main() {
         coordinator.dispose();
         await warmup.shutdown();
         await playback.dispose();
+        await commands.dispose();
         await library.dispose();
         await timer.dispose();
         await notifications.dispose();

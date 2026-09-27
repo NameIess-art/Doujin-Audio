@@ -16,7 +16,7 @@ import 'package:doujin_audio/features/library/application/library_scan_data_sour
 import 'package:doujin_audio/features/library/application/library_facade.dart';
 import 'package:doujin_audio/features/library/application/library_scanner_service.dart';
 import 'package:doujin_audio/features/player/application/playback_notification_service.dart';
-import 'package:doujin_audio/features/settings/application/app_preferences.dart';
+import 'package:doujin_audio/core/persistence/app_preferences.dart';
 import 'package:doujin_audio/core/platform/platform_channels.dart';
 import 'package:path/path.dart' as path;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';

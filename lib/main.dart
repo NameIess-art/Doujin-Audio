@@ -32,6 +32,7 @@ import 'app/presentation/main_screen.dart';
 import 'app/presentation/onboarding_page.dart';
 import 'features/asmr/application/asmr_library_controller.dart';
 import 'features/asmr/application/asmr_api_service.dart';
+import 'features/asmr/application/asmr_metadata_service.dart';
 import 'features/asmr/application/asmr_auth_service.dart';
 import 'features/asmr/application/asmr_remote_catalog_service.dart';
 import 'features/asmr/application/asmr_account_sync_service.dart';
@@ -60,8 +61,8 @@ import 'core/ui/ui_interaction_coordinator.dart';
 import 'core/widgets/app_feedback.dart';
 import 'app/theme/app_styles.dart';
 import 'app/theme/theme_provider.dart';
-import 'features/settings/application/app_preferences.dart';
-import 'features/settings/application/app_cache_service.dart';
+import 'core/persistence/app_preferences.dart';
+import 'core/cache/app_cache_service.dart';
 import 'features/settings/application/app_update_service.dart';
 import 'features/settings/application/settings_repository.dart';
 import 'features/settings/application/settings_state.dart';
@@ -225,10 +226,13 @@ Widget _createAudioPlayerApp({
   );
   final appLanguageProvider = AppLanguageProvider();
   final appUpdateService = AppUpdateService();
+  final asmrApiService = AsmrApiService();
+  final asmrMetadataService = AsmrMetadataService(apiService: asmrApiService);
   final libraryFacade = LibraryFacade.create(
     databaseRepository: libraryRepository,
     jsonDocumentStore: jsonDocumentStore,
     service: libraryService,
+    asmrMetadataService: asmrMetadataService,
   );
   final playbackFacade = PlaybackFacade.create(
     databaseRepository: playbackRepository,
@@ -248,7 +252,6 @@ Widget _createAudioPlayerApp({
     settings: settingsRepository,
     asmrDownloads: asmrDownloadManager,
   );
-  final asmrApiService = AsmrApiService();
   final asmrPreferences = AsmrPreferencesStore(repository: asmrRepository);
   final asmrLibraryController = AsmrLibraryController(
     preferencesStore: asmrPreferences,
@@ -309,6 +312,9 @@ Widget _createAudioPlayerApp({
       ),
       appUpdateServiceProvider.overrideWithValue(appUpdateService),
       asmrDownloadManagerProvider.overrideWithValue(asmrDownloadManager),
+      asmrWorkFinderProvider.overrideWithValue(
+        asmrMetadataService.findAsmrWorkByRjCode,
+      ),
       asmrLibraryControllerProvider.overrideWith((ref) {
         ref.onDispose(() {
           asmrLibraryController.dispose();

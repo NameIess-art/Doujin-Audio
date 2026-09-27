@@ -13,6 +13,7 @@ class PlaylistHeaderState {
   const PlaylistHeaderState({
     required this.sessionCount,
     required this.playingCount,
+    required this.hasPlayingAudioSession,
     required this.timerDuration,
     required this.timerRemaining,
     required this.timerActive,
@@ -21,6 +22,7 @@ class PlaylistHeaderState {
 
   final int sessionCount;
   final int playingCount;
+  final bool hasPlayingAudioSession;
   final Duration? timerDuration;
   final Duration? timerRemaining;
   final bool timerActive;
@@ -36,6 +38,7 @@ class PlaylistHeaderState {
     return other is PlaylistHeaderState &&
         other.sessionCount == sessionCount &&
         other.playingCount == playingCount &&
+        other.hasPlayingAudioSession == hasPlayingAudioSession &&
         other.timerDuration == timerDuration &&
         other.timerRemaining == timerRemaining &&
         other.timerActive == timerActive &&
@@ -46,6 +49,7 @@ class PlaylistHeaderState {
   int get hashCode => Object.hash(
     sessionCount,
     playingCount,
+    hasPlayingAudioSession,
     timerDuration,
     timerRemaining,
     timerActive,
@@ -127,6 +131,7 @@ class MainOverlayUiState {
   const MainOverlayUiState({
     required this.overlaySessions,
     required this.playingSessionCount,
+    required this.hasPlayingAudioSession,
     required this.activeSessionCount,
     required this.isInitialized,
     required this.startupReady,
@@ -134,6 +139,7 @@ class MainOverlayUiState {
 
   final List<PlaybackSessionSnapshot> overlaySessions;
   final int playingSessionCount;
+  final bool hasPlayingAudioSession;
   final int activeSessionCount;
   final bool isInitialized;
   final bool startupReady;
@@ -146,6 +152,7 @@ class MainOverlayUiState {
     return other is MainOverlayUiState &&
         listEquals(other.overlaySessions, overlaySessions) &&
         other.playingSessionCount == playingSessionCount &&
+        other.hasPlayingAudioSession == hasPlayingAudioSession &&
         other.activeSessionCount == activeSessionCount &&
         other.isInitialized == isInitialized &&
         other.startupReady == startupReady;
@@ -155,6 +162,7 @@ class MainOverlayUiState {
   int get hashCode => Object.hash(
     Object.hashAll(overlaySessions),
     playingSessionCount,
+    hasPlayingAudioSession,
     activeSessionCount,
     isInitialized,
     startupReady,
@@ -429,11 +437,13 @@ double playlistListCacheExtent({
 
 PlaylistHeaderState playlistHeaderStateFromSlices(
   PlaybackStateSliceData playbackState,
-  TimerStateSliceData timerState,
-) {
+  TimerStateSliceData timerState, {
+  required bool hasPlayingAudioSession,
+}) {
   return PlaylistHeaderState(
     sessionCount: playbackState.activeSessions.length,
     playingCount: playbackState.playingSessionCount,
+    hasPlayingAudioSession: hasPlayingAudioSession,
     timerDuration: timerState.duration,
     timerRemaining: timerState.remaining,
     timerActive: timerState.active,

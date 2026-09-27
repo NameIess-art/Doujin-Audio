@@ -5,7 +5,7 @@ import 'package:flutter/foundation.dart';
 
 import '../../../core/logging/app_log_service.dart';
 import '../../../core/media/path_matcher.dart';
-import '../../settings/application/app_preferences.dart';
+import '../../../core/persistence/app_preferences.dart';
 import 'asmr_download_models.dart';
 
 const Duration _taskStructurePersistenceDebounce = Duration(milliseconds: 400);

@@ -2,9 +2,9 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart';
 
 import '../../../core/ui/cover_image_retention.dart';
+import '../../../core/media/cover_image_resolution.dart';
 
 export '../../../core/media/cover_image_format.dart';
-import '../../settings/application/settings_state.dart';
 
 class CoverImageCacheBudget {
   const CoverImageCacheBudget({

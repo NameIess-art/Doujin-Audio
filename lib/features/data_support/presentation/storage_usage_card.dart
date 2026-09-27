@@ -5,7 +5,7 @@ import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/theme/app_design_tokens.dart';
 import '../../../core/ui/ui_operation_service.dart';
 import '../../../core/widgets/app_transitions.dart';
-import '../../settings/application/app_cache_service.dart';
+import '../../../core/cache/app_cache_service.dart';
 import '../application/storage_usage_service.dart';
 
 class StorageUsageCard extends ConsumerStatefulWidget {

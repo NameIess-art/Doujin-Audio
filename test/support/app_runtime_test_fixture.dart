@@ -39,7 +39,7 @@ import 'package:doujin_audio/features/player/application/playback_facade.dart';
 import 'package:doujin_audio/features/player/application/playback_notification_service.dart';
 import 'package:doujin_audio/features/player/application/playback_subtitle_service.dart';
 import 'package:doujin_audio/features/player/application/timer_facade.dart';
-import 'package:doujin_audio/features/settings/application/app_cache_service.dart';
+import 'package:doujin_audio/core/cache/app_cache_service.dart';
 import 'package:doujin_audio/features/settings/application/app_update_service.dart';
 import 'package:doujin_audio/features/settings/application/settings_repository.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -109,8 +109,6 @@ AppRuntimeGraph createTestRuntimeGraph({
         databaseRepository: database,
         nativeRepository: nativePlaybackRepository,
         commandRunner: playbackCommandRunner,
-        playbackCacheService:
-            asmrPlaybackCacheService ?? AsmrPlaybackCacheService(),
         service: playbackService,
       );
   final graph = createAppRuntimeGraph(
@@ -130,6 +128,7 @@ AppRuntimeGraph createTestRuntimeGraph({
         ),
     settings: settings ?? settingsRepository ?? SettingsRepository(),
     asmrDownloads: asmrDownloads,
+    asmrPlaybackCacheService: asmrPlaybackCacheService,
     persistenceEnabled: !skipPersistence,
   );
   if (startRuntime) unawaited(graph.runtime.start());
@@ -337,7 +336,8 @@ final class AppRuntimeWidgetTestFixture {
     );
     timer = TimerFacade.create(
       service: timerService,
-      powerPlatformService: powerPlatformService ??
+      powerPlatformService:
+          powerPlatformService ??
           PowerPlatformService(isAndroidOverride: false),
     );
     notifications = NotificationFacade.create(

@@ -6,8 +6,8 @@ import '../../../core/media/path_matcher.dart';
 import '../../../core/ui/app_interaction_feedback_settings.dart';
 import '../../asmr/domain/asmr_download.dart';
 import '../../player/domain/audio_effects.dart';
-import 'app_cache_service.dart';
-import 'app_preferences.dart';
+import '../../../core/cache/app_cache_service.dart';
+import '../../../core/persistence/app_preferences.dart';
 import 'settings_state.dart';
 
 class SettingsRepository {

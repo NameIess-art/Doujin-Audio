@@ -673,11 +673,18 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                               key: const ValueKey<String>(
                                 'playlist_sleep_canvas_button',
                               ),
-                              onPressed: () {
-                                Navigator.of(
-                                  context,
-                                ).push(BedtimeCanvasPage.route(context));
-                              },
+                              onPressed: headerState.hasPlayingAudioSession
+                                  ? () {
+                                      if (!ref
+                                          .read(playbackFacadeProvider)
+                                          .hasPlayingAudioSession) {
+                                        return;
+                                      }
+                                      Navigator.of(context).push(
+                                        BedtimeCanvasPage.route(context),
+                                      );
+                                    }
+                                  : null,
                               icon: const Icon(Icons.bedtime_outlined),
                               tooltip: i18n.tr('sleep_mode'),
                               iconSize: 20,

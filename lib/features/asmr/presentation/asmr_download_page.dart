@@ -21,7 +21,6 @@ import '../../../core/widgets/operation_feedback.dart';
 import '../../../core/widgets/shimmer_loading.dart';
 import '../../../core/widgets/page_header_inset.dart';
 import '../../../core/widgets/top_page_header.dart';
-import '../../library/presentation/library_providers.dart';
 import 'asmr_download_details_page.dart';
 
 class AsmrDownloadPage extends ConsumerStatefulWidget {
@@ -83,16 +82,12 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
                 if (rjCode == null || rjCode.isEmpty) {
                   throw StateError('No RJ code provided');
                 }
-                final customFinder = ref.read(asmrWorkFinderOverrideProvider);
-                if (customFinder != null) {
-                  work = await customFinder(rjCode);
-                } else {
-                  final language =
-                      ref.read(appLanguageProviderInstanceProvider).language;
-                  work = await ref
-                      .read(libraryFacadeProvider)
-                      .findAsmrWorkByRjCode(rjCode, language: language);
-                }
+                final language =
+                    ref.read(appLanguageProviderInstanceProvider).language;
+                work = await ref.read(asmrWorkFinderProvider)(
+                  rjCode,
+                  language: language,
+                );
                 if (work == null) {
                   final i18n = ref.read(appLanguageProviderInstanceProvider);
                   throw StateError(

@@ -99,8 +99,10 @@ void _expectThemeSessionResetButtonStyle(WidgetTester tester, Finder finder) {
 
   expect(
     style.padding!.resolve(enabled),
-    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+    const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
   );
+  expect(style.minimumSize!.resolve(enabled), const Size.fromHeight(48));
+  expect(tester.getSize(finder).height, 48);
   expect(
     style.shape!.resolve(enabled),
     RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -2920,6 +2922,109 @@ void main() {
     expect(coverCache.requestedPaths, [track.path, track.path]);
     await tester.pump(const Duration(milliseconds: 200));
   });
+
+  for (final count in [1, 2, 3, 4]) {
+    testWidgets('$count queue covers fill equal sectors at their centroids', (
+      tester,
+    ) async {
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      final tracks = List.generate(
+        count,
+        (index) => testMusicTrack(
+          name: 'Queue track $index',
+          path: '/library/queue/track-$index.mp3',
+          groupKey: '/library/queue',
+          groupTitle: 'Queue work',
+        ),
+      );
+      final session = fixture.runtimeGraph.playback.createPlaybackQueue('Queue')
+        ..currentTrackPath = tracks.first.path
+        ..playbackQueue = PlaybackQueueDefinition(
+          name: 'Queue',
+          entries: [
+            for (var index = 0; index < tracks.length; index++)
+              PlaybackQueueEntry(
+                id: 'track-$index',
+                kind: PlaybackQueueEntryKind.track,
+                title: tracks[index].displayName,
+                tracks: [tracks[index]],
+              ),
+          ],
+        );
+      addTearDown(session.shutdown);
+      fixture.playbackService.syncSlice(
+        activeSessions: [session],
+        playingSessionCount: 0,
+        focusedSessionId: session.id,
+        coverGeneration: 0,
+        isInitialized: true,
+      );
+      await tester.pumpWidget(
+        fixture.build(
+          Center(
+            child: PlaybackQueueCard(
+              session: PlaybackSessionSnapshot.fromRuntime(session),
+              library: fixture.runtimeGraph.library,
+              playback: fixture.runtimeGraph.playback,
+              coverCacheWidth: 96,
+              onOpen: () {},
+              onEdit: () {},
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      final grid = find.byKey(const ValueKey('playback_queue_cover_grid'));
+      final gridCenter = tester.getCenter(grid);
+      const sectorPoints = <int, List<Offset>>{
+        1: [Offset(26, 26)],
+        2: [Offset(8, 26), Offset(44, 26)],
+        3: [Offset(26, 8), Offset(42, 35), Offset(10, 35)],
+        4: [Offset(12, 12), Offset(40, 12), Offset(12, 40), Offset(40, 40)],
+      };
+      const centerOffsets = <int, List<Offset>>{
+        1: [Offset.zero],
+        2: [Offset(-11.0347, 0), Offset(11.0347, 0)],
+        3: [
+          Offset(0, -14.3346),
+          Offset(12.4141, 7.1673),
+          Offset(-12.4141, 7.1673),
+        ],
+        4: [
+          Offset(-11.0347, -11.0347),
+          Offset(11.0347, -11.0347),
+          Offset(-11.0347, 11.0347),
+          Offset(11.0347, 11.0347),
+        ],
+      };
+      expect(
+        find.byKey(ValueKey('playback_queue_cover_cell_$count')),
+        findsNothing,
+      );
+      for (var index = 0; index < count; index++) {
+        final cell = find.byKey(ValueKey('playback_queue_cover_cell_$index'));
+        expect(cell, findsOneWidget);
+        final expectedCenter = gridCenter + centerOffsets[count]![index];
+        final actualCenter = tester.getCenter(cell);
+        expect(actualCenter.dx, closeTo(expectedCenter.dx, 0.01));
+        expect(actualCenter.dy, closeTo(expectedCenter.dy, 0.01));
+        if (count == 1) continue;
+        final clip = tester.widget<ClipPath>(
+          find.ancestor(of: cell, matching: find.byType(ClipPath)).first,
+        );
+        final path = clip.clipper!.getClip(const Size.square(52));
+        for (var pointIndex = 0; pointIndex < count; pointIndex++) {
+          expect(
+            path.contains(sectorPoints[count]![pointIndex]),
+            pointIndex == index,
+          );
+        }
+      }
+      await tester.pump(const Duration(milliseconds: 200));
+    });
+  }
 
   testWidgets('playlist more menu and sort button remain available', (
     WidgetTester tester,

@@ -2,7 +2,7 @@ import 'dart:convert';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../../../core/logging/app_log_service.dart';
+import '../logging/app_log_service.dart';
 
 typedef JsonValueReader<T> = T Function(Object? value);
 

@@ -13,7 +13,7 @@ import '../localization/app_language_provider.dart';
 import '../state/app_runtime_providers.dart';
 import 'app_presentation_providers.dart';
 import '../state/subtitle_settings_provider.dart';
-import '../../features/settings/application/app_preferences.dart';
+import '../../core/persistence/app_preferences.dart';
 import '../../features/settings/application/permission_status_service.dart';
 import '../../features/settings/application/settings_state.dart';
 import '../../core/logging/app_log_service.dart';
@@ -293,6 +293,11 @@ class _MainScreenState extends ConsumerState<MainScreen>
       fireImmediately: true,
     );
     ref.listenManual<bool>(
+      mainOverlayUiProvider.select((state) => state.hasPlayingAudioSession),
+      (_, _) => _evaluateSleepModeAutoTrigger(),
+      fireImmediately: true,
+    );
+    ref.listenManual<bool>(
       mainOverlayUiProvider.select((state) => state.hasNowPlaying),
       (_, hasNowPlaying) {
         if (!hasNowPlaying && _isMobilePlaybackExpanded && mounted) {
@@ -401,7 +406,6 @@ class _MainScreenState extends ConsumerState<MainScreen>
 
   void _handlePlayingSessionChanged(bool hasPlayingSession) {
     if (!mounted) return;
-    _evaluateSleepModeAutoTrigger();
     if (Platform.isAndroid &&
         hasPlayingSession &&
         !_backgroundPlaybackPromptShownThisLaunch &&
@@ -425,7 +429,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
       _lastSleepModeTrigger = trigger;
     }
 
-    final hasPlaying = ref.read(mainOverlayUiProvider).hasPlayingSession;
+    final hasPlaying = ref.read(mainOverlayUiProvider).hasPlayingAudioSession;
     final timerActive =
         ref.read(timerStateProvider).value?.active ??
         ref.read(timerFacadeProvider).state.active;
@@ -433,7 +437,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
     final shouldRun = switch (trigger) {
       SleepModeAutoTrigger.manual => false,
       SleepModeAutoTrigger.afterPlayback5min => hasPlaying,
-      SleepModeAutoTrigger.afterCountdown5min => timerActive,
+      SleepModeAutoTrigger.afterCountdown5min => timerActive && hasPlaying,
     };
 
     if (!shouldRun) {
@@ -460,7 +464,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
     final settings = ref.read(settingsStateProvider).value;
     final trigger =
         settings?.sleepModeAutoTrigger ?? SleepModeAutoTrigger.manual;
-    final hasPlaying = ref.read(mainOverlayUiProvider).hasPlayingSession;
+    final hasPlaying = ref.read(mainOverlayUiProvider).hasPlayingAudioSession;
     final timerActive =
         ref.read(timerStateProvider).value?.active ??
         ref.read(timerFacadeProvider).state.active;
@@ -468,7 +472,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
     final conditionMet = switch (trigger) {
       SleepModeAutoTrigger.manual => false,
       SleepModeAutoTrigger.afterPlayback5min => hasPlaying,
-      SleepModeAutoTrigger.afterCountdown5min => timerActive,
+      SleepModeAutoTrigger.afterCountdown5min => timerActive && hasPlaying,
     };
 
     if (!conditionMet) return;

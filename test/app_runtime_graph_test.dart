@@ -8,6 +8,7 @@ import 'package:doujin_audio/app/application/app_runtime_graph.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
 import 'package:doujin_audio/core/platform/file_cache_platform_gateway.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_download_manager.dart';
+import 'package:doujin_audio/features/asmr/application/asmr_playback_cache_service.dart';
 import 'package:doujin_audio/features/library/application/library_facade.dart';
 import 'package:doujin_audio/features/library/application/library_service.dart';
 import 'package:doujin_audio/features/player/application/notification_facade.dart';
@@ -52,6 +53,30 @@ void main() {
       expect(runtimeGraph.settings, same(settings));
     },
   );
+
+  test('runtime releases the playback command cache owner', () async {
+    final library = _createLibraryFacade();
+    final playback = PlaybackFacade.create(
+      databaseRepository:
+          library.databaseRepository as PlaybackPersistenceRepository,
+    );
+    final cache = _RecordingPlaybackCacheService();
+    final graph = createAppRuntimeGraph(
+      library: library,
+      playback: playback,
+      timer: TimerFacade.create(),
+      notifications: NotificationFacade.create(
+        service: PlaybackNotificationService(),
+      ),
+      settings: SettingsRepository(),
+      asmrPlaybackCacheService: cache,
+      persistenceEnabled: false,
+    );
+
+    await graph.runtime.dispose();
+
+    expect(cache.disposeCount, 1);
+  });
 
   test(
     'production subtitles resolve ASMR tracks from session queues',
@@ -355,6 +380,15 @@ LibraryFacade _createLibraryFacade({LibraryService? service}) {
     databaseRepository: TestPersistenceRepository(),
     service: service,
   );
+}
+
+final class _RecordingPlaybackCacheService extends AsmrPlaybackCacheService {
+  int disposeCount = 0;
+
+  @override
+  Future<void> dispose() async {
+    disposeCount++;
+  }
 }
 
 final class _ElementReadCountingList<E> extends ListBase<E> {

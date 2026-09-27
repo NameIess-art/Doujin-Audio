@@ -24,9 +24,9 @@ import 'package:doujin_audio/core/media/path_matcher.dart';
 import 'package:doujin_audio/features/library/application/library_organizer.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_download_page.dart';
+import 'package:doujin_audio/features/asmr/presentation/asmr_providers.dart';
 import 'package:doujin_audio/core/widgets/operation_feedback.dart';
-import 'package:doujin_audio/features/library/presentation/library_providers.dart';
-import 'package:doujin_audio/features/settings/application/app_preferences.dart';
+import 'package:doujin_audio/core/persistence/app_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'support/app_runtime_test_fixture.dart';
@@ -2702,8 +2702,8 @@ void main() {
         fixture.build(
           const LibraryTab(),
           overrides: [
-            asmrWorkFinderOverrideProvider.overrideWithValue(
-              (rjCode) =>
+            asmrWorkFinderProvider.overrideWithValue(
+              (rjCode, {required language}) =>
                   rjCode == 'RJ123456' ? workCompleter.future : Future.value(),
             ),
           ],

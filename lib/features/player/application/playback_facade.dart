@@ -5,11 +5,11 @@ import 'dart:math';
 import '../../../core/errors/native_result.dart';
 import '../../../core/immutable_collections.dart';
 import '../../../core/media/music_track.dart';
+import '../../../core/media/media_file_support.dart';
 import '../../../core/media/path_matcher.dart';
 import '../../../core/media/path_display.dart';
 import '../../../core/logging/app_log_service.dart';
-import '../../asmr/application/asmr_playback_cache_service.dart';
-import '../../settings/application/app_preferences.dart';
+import '../../../core/persistence/app_preferences.dart';
 import '../domain/audio_effects.dart';
 import '../domain/playback_mode.dart';
 import '../domain/playback_queue.dart';
@@ -52,7 +52,6 @@ final class PlaybackFacade {
     required this.databaseRepository,
     required this.nativeRepository,
     required this.commandRunner,
-    required this.playbackCacheService,
     required PlaybackSessionService service,
   }) : _service = service;
 
@@ -60,14 +59,12 @@ final class PlaybackFacade {
     required PlaybackPersistenceRepository databaseRepository,
     NativePlaybackRepository? nativeRepository,
     PlaybackCommandRunner commandRunner = const PlaybackCommandRunner(),
-    AsmrPlaybackCacheService? playbackCacheService,
     PlaybackSessionService? service,
   }) {
     return PlaybackFacade(
       databaseRepository: databaseRepository,
       nativeRepository: nativeRepository ?? NativePlaybackRepository(),
       commandRunner: commandRunner,
-      playbackCacheService: playbackCacheService ?? AsmrPlaybackCacheService(),
       service: service ?? PlaybackSessionService(),
     );
   }
@@ -75,7 +72,6 @@ final class PlaybackFacade {
   final PlaybackPersistenceRepository databaseRepository;
   final NativePlaybackRepository nativeRepository;
   final PlaybackCommandRunner commandRunner;
-  final AsmrPlaybackCacheService playbackCacheService;
   final PlaybackSessionService _service;
   final StreamController<String> _sessionActivations =
       StreamController<String>.broadcast(sync: true);
@@ -165,6 +161,15 @@ final class PlaybackFacade {
   bool hasSession(String sessionId) => _service.sessions.containsKey(sessionId);
   bool get hasPlayingSession =>
       _service.sessions.values.any((session) => session.state.playing);
+  bool get hasPlayingAudioSession => _service.sessions.values.any((session) {
+    if (!session.state.playing || session.currentTrackPath.isEmpty) return false;
+    final trackPath = session.currentTrackPath;
+    final track =
+        session.trackForPath(trackPath) ??
+        _persistedTrackResolver?.call(trackPath);
+    if (isVideoMediaFile(trackPath)) return false;
+    return track != null ? !track.isVideo : isSupportedMediaFile(trackPath);
+  });
   bool get hasPlaybackToKeepAlive => _service.sessions.values.any(
     (session) =>
         session.state.playing ||
@@ -1213,7 +1218,6 @@ final class PlaybackFacade {
     await Future.wait(
       sessionsToDispose.map((session) => attempt(session.shutdown)),
     );
-    await attempt(playbackCacheService.dispose);
     await attempt(nativeRepository.dispose);
     await attempt(_service.dispose);
     if (firstError != null) {

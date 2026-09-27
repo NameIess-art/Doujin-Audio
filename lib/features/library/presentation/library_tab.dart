@@ -20,7 +20,7 @@ import '../../../core/widgets/rj_code_overlay.dart';
 import '../../../core/media/search_query_utils.dart';
 import '../../player/application/playback_facade.dart';
 import '../../settings/application/settings_state.dart';
-import '../../settings/application/app_preferences.dart';
+import '../../../core/persistence/app_preferences.dart';
 import '../application/library_facade.dart';
 import '../domain/audio_library_category.dart';
 import '../domain/library_node.dart';

@@ -385,6 +385,29 @@ void main() {
     expect(violations, isEmpty, reason: violations.join('\n'));
   });
 
+  test(
+    'library and player application do not depend on ASMR or settings application',
+    () {
+      final violations = <String>[];
+      for (final feature in const <String>['library', 'player']) {
+        for (final file in _dartFiles(
+          Directory('lib/features/$feature/application'),
+        )) {
+          for (final import in _imports(file.readAsStringSync())) {
+            final resolved = _resolvedProjectImport(file, import);
+            if (resolved?.startsWith('lib/features/asmr/application/') ==
+                    true ||
+                resolved?.startsWith('lib/features/settings/application/') ==
+                    true) {
+              violations.add('${_normalizedPath(file)} imports $import');
+            }
+          }
+        }
+      }
+      expect(violations, isEmpty, reason: violations.join('\n'));
+    },
+  );
+
   test('ASMR task state is owned by a composable task store', () {
     final manager = File(
       'lib/features/asmr/application/asmr_download_manager.dart',

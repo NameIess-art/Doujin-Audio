@@ -8,7 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/core/persistence/app_database.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_auth_service.dart';
 import 'package:doujin_audio/features/data_support/application/data_backup_service.dart';
-import 'package:doujin_audio/features/settings/application/app_preferences.dart';
+import 'package:doujin_audio/core/persistence/app_preferences.dart';
 import 'package:doujin_audio/features/settings/application/app_update_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';

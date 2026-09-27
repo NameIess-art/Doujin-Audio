@@ -10,6 +10,7 @@ import '../../../../core/widgets/async_cover_image.dart';
 import '../../../library/application/library_facade.dart';
 import '../../../settings/application/settings_state.dart';
 import '../../application/playback_session_snapshot.dart';
+import '../playback_providers.dart';
 import '../session_video_surface.dart';
 import '../session_video_viewport.dart';
 import 'playlist_shared_helpers.dart';
@@ -118,7 +119,12 @@ class SessionHeroArtwork extends ConsumerWidget {
                       allowVideoPlayback &&
                       isSessionVideoReady(session, track),
                   surfaceBuilder: (_) =>
-                      NativeSessionVideoSurface(sessionId: sessionId),
+                      NativeSessionVideoSurface(
+                        sessionId: sessionId,
+                        nativeRepository: ref
+                            .read(playbackFacadeProvider)
+                            .nativeRepository,
+                      ),
                   onFullscreen: () => showSessionVideoFullscreen(
                     context,
                     ref,

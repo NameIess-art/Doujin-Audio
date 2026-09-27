@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/ui/interaction_deferred_stream.dart';
+import '../../../core/app_language.dart';
 import '../application/asmr_download_manager.dart';
 import '../application/asmr_library_controller.dart';
 import '../application/asmr_playback_coordinator.dart';
@@ -15,6 +16,15 @@ final asmrDownloadManagerProvider = Provider<AsmrDownloadManager?>((ref) {
 final asmrLibraryControllerProvider = Provider<AsmrLibraryController?>((ref) {
   return null;
 });
+
+final asmrWorkFinderProvider =
+    Provider<
+      Future<AsmrWork?> Function(String, {required AppLanguage language})
+    >(
+      (ref) => throw UnimplementedError(
+        'asmrWorkFinderProvider must be overridden in ProviderScope.',
+      ),
+    );
 
 final asmrLibraryGlobalStateProvider =
     StreamProvider<AsmrLibraryGlobalViewState?>((ref) {

@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import '../../core/ui/app_interaction_feedback_settings.dart';
 import '../../core/platform/file_cache_platform_gateway.dart';
 import '../../features/asmr/application/asmr_download_manager.dart';
+import '../../features/asmr/application/asmr_playback_cache_service.dart';
 import '../../features/library/application/library_facade.dart';
 import '../../features/player/application/notification_facade.dart';
 import '../../features/player/application/playback_facade.dart';
@@ -49,6 +50,7 @@ AppRuntimeGraph createAppRuntimeGraph({
   required NotificationFacade notifications,
   required SettingsRepository settings,
   AsmrDownloadManager? asmrDownloads,
+  AsmrPlaybackCacheService? asmrPlaybackCacheService,
   FileCachePlatformGateway? fileCacheGateway,
   bool persistenceEnabled = true,
 }) {
@@ -109,6 +111,8 @@ AppRuntimeGraph createAppRuntimeGraph({
     audioPaths: audioPaths,
     subtitles: subtitles,
     keepAlive: keepAlive,
+    asmrPlaybackCacheService:
+        asmrPlaybackCacheService ?? AsmrPlaybackCacheService(),
     notifyPlaybackChanged: syncPlaybackState,
     syncNotificationState: notifications.syncPlaybackState,
   );

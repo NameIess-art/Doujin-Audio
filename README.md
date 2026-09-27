@@ -210,7 +210,7 @@ DoujinAudio-windows-x64-<tag>-setup.exe.sha256
 ## 代码结构
 
 - `lib/app`：应用入口与全局装配层，负责依赖图注入、路由、主题状态、多语言本地化与应用级控制器。
-- `lib/core`：通用核心支撑层，包含 SQLite 关系型持久化、平台通信网关（MethodChannel）、共享媒体领域模型与通用 UI 组件。
+- `lib/core`：通用核心支撑层，包含 SQLite 关系型持久化、应用偏好与文件缓存、平台通信网关（MethodChannel）、共享媒体模型与通用 UI 组件。
 - `lib/features`：业务功能特性模块，遵循 `domain` / `application` / `presentation` 严格分层：
   - `library`：本地媒体库索引、SAF 授权目录扫描、封面提取与缓存、元数据编辑、台本与剧本文档查看（`.txt` / `.md` / `.pdf`）与 DLsite 在线匹配。
   - `player`：多会话播放管理、队列调度、传输控制、DSP 音频调音台、时间轴与悬浮字幕。
@@ -218,9 +218,11 @@ DoujinAudio-windows-x64-<tag>-setup.exe.sha256
   - `settings`：全局偏好设置、外观定制、内联权限卡片与 GitHub 自动更新。
   - `data_support`：存储空间分析、精细缓存清理、脱敏诊断报告与 `.dabackup` 备份/恢复。
   - `video_converter`：本地视频提取音轨与格式编码转换。
+- 本地媒体库通过 Library 侧元数据接口调用 ASMR.ONE 查询；播放缓存由应用级播放命令协调器管理。Library 和 Playback 的可写状态分别由各自 Service 持有。
 - `android/`：Android 原生层代码，按功能包严格隔离：
   - `player/`：基于 Media3 / ExoPlayer 的 `NativePlaybackService` 前台媒体服务、锁屏通知栏会话、AudioFocus 控制与硬件音效。
   - `channel/`、`scanner/`、`storage/`、`metadata/`、`subtitle/`、`update/`、`common/`：分别负责 Platform Channel 通信、分块流式扫描、SAF 存储、元数据提取、系统悬浮字幕与更新包安装。
+- `windows/runner/desktop/`：窗口与托盘生命周期、系统媒体控制、悬浮字幕及当前用户定时任务；播放会话沿用 Flutter 侧 Windows bridge 持有的 libmpv 播放器。
 
 ## Android 权限
 

@@ -1,7 +1,7 @@
 import '../../../core/media/music_track.dart';
 import '../../../core/media/path_matcher.dart';
 import '../../../core/platform/file_cache_platform_gateway.dart';
-import '../../settings/application/app_cache_service.dart';
+import '../../../core/cache/app_cache_service.dart';
 
 class StorageUsageSnapshot {
   const StorageUsageSnapshot({

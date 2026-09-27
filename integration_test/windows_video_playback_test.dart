@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:doujin_audio/core/platform/windows_media_tools.dart';
 import 'package:doujin_audio/features/player/application/windows_playback_bridge.dart';
+import 'package:doujin_audio/features/player/application/native_playback_repository.dart';
 import 'package:doujin_audio/features/player/presentation/session_video_surface.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -22,6 +23,7 @@ void registerWindowsVideoPlaybackTest() {
       final directory = await Directory.systemTemp.createTemp('windows_video_');
       final file = File('${directory.path}/中文 video.mp4');
       final bridge = WindowsPlaybackBridge.instance..startListening();
+      final repository = NativePlaybackRepository(bridge: bridge);
       try {
         final encoder = await WindowsMediaTools.instance.start('ffmpeg', [
           '-nostdin',
@@ -50,7 +52,10 @@ void registerWindowsVideoPlaybackTest() {
             body: SizedBox(
               width: 640,
               height: 360,
-              child: NativeSessionVideoSurface(sessionId: sessionId),
+              child: NativeSessionVideoSurface(
+                sessionId: sessionId,
+                nativeRepository: repository,
+              ),
             ),
           ),
         );

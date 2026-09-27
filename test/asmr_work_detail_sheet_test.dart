@@ -20,7 +20,6 @@ import 'package:doujin_audio/features/asmr/presentation/asmr_download_page.dart'
 import 'package:doujin_audio/features/asmr/presentation/asmr_tab.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_work_detail_sheet.dart';
 import 'package:doujin_audio/features/library/presentation/work_detail_page.dart';
-import 'package:doujin_audio/features/library/presentation/library_providers.dart';
 import 'package:doujin_audio/features/player/application/playback_session_launcher.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -324,8 +323,8 @@ void main() {
       fixture.build(
         const AsmrDownloadPage(initialRjCode: 'RJ000123'),
         overrides: [
-          asmrWorkFinderOverrideProvider.overrideWithValue(
-            (_) => workResult.future,
+          asmrWorkFinderProvider.overrideWithValue(
+            (_, {required language}) => workResult.future,
           ),
           asmrLibraryControllerProvider.overrideWithValue(controller),
           asmrDownloadManagerProvider.overrideWithValue(downloads),

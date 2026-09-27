@@ -6,8 +6,8 @@ import 'package:meta/meta.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 
-import '../../../core/platform/file_cache_platform_gateway.dart';
-import '../../../core/media/cover_image_format.dart';
+import '../platform/file_cache_platform_gateway.dart';
+import '../media/cover_image_format.dart';
 
 const String legacyRemoteCoverCacheDirectoryName = 'remote_covers';
 

@@ -6,7 +6,7 @@ import '../../player/application/playback_facade.dart';
 import '../../player/domain/audio_effects.dart';
 import 'settings_repository.dart';
 import 'settings_state.dart';
-import 'app_cache_service.dart';
+import '../../../core/cache/app_cache_service.dart';
 
 /// Applies settings whose changes require cross-service coordination.
 final class SettingsCommandController {

@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/persistence/persisted_state_reloader.dart';
 import '../../core/app_language.dart';
-import '../../features/settings/application/app_preferences.dart';
+import '../../core/persistence/app_preferences.dart';
 
 import 'app_language_en.dart';
 import 'app_language_ja.dart';

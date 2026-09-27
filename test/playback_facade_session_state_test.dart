@@ -9,7 +9,6 @@ import 'package:doujin_audio/core/media/path_matcher.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
 import 'support/test_persistence_repository.dart';
 import 'package:doujin_audio/features/library/application/library_facade.dart';
-import 'package:doujin_audio/features/asmr/application/asmr_playback_cache_service.dart';
 import 'package:doujin_audio/features/player/application/audio_state_services.dart';
 import 'package:doujin_audio/features/player/application/playback_facade.dart';
 import 'package:doujin_audio/features/player/application/native_playback_bridge.dart';
@@ -21,11 +20,10 @@ import 'package:doujin_audio/features/player/domain/playback_queue.dart';
 
 void main() {
   test(
-    'dispose releases dependencies when session cancellation fails',
+    'dispose releases the native repository when session cancellation fails',
     () async {
       final library = _createLibraryFacade();
       final native = _RecordingNativePlaybackRepository();
-      final cache = _RecordingPlaybackCacheService();
       final source = StreamController<void>(
         onCancel: () => Future<void>.error(StateError('cancel failed')),
       );
@@ -35,13 +33,11 @@ void main() {
         databaseRepository:
             library.databaseRepository as PlaybackPersistenceRepository,
         nativeRepository: native,
-        playbackCacheService: cache,
         service: PlaybackSessionService(),
       )..registerSession(session);
 
       await expectLater(playback.dispose(), throwsStateError);
 
-      expect(cache.disposeCount, 1);
       expect(native.disposeCount, 1);
       await source.close();
       await library.dispose();
@@ -2003,15 +1999,6 @@ final class _RecordingNativePlaybackRepository
     }
     return const NativeSuccess<NativePlaybackSnapshot>();
   }
-
-  @override
-  Future<void> dispose() async {
-    disposeCount++;
-  }
-}
-
-final class _RecordingPlaybackCacheService extends AsmrPlaybackCacheService {
-  int disposeCount = 0;
 
   @override
   Future<void> dispose() async {

@@ -6,11 +6,13 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/app/presentation/main_screen.dart';
 import 'package:doujin_audio/app/state/app_runtime_providers.dart';
 import 'package:doujin_audio/core/errors/native_result.dart';
+import 'package:doujin_audio/core/media/music_track.dart';
 import 'package:doujin_audio/core/platform/power_platform_service.dart';
 import 'package:doujin_audio/core/platform/video_display_platform_gateway.dart';
 import 'package:doujin_audio/features/player/application/playback_session.dart';
 import 'package:doujin_audio/features/player/domain/playback_mode.dart';
 import 'package:doujin_audio/features/player/presentation/bedtime_canvas_page.dart';
+import 'package:doujin_audio/features/player/presentation/playlist_tab.dart';
 import 'package:doujin_audio/features/settings/application/settings_repository.dart';
 import 'package:doujin_audio/features/settings/application/settings_state.dart';
 
@@ -738,6 +740,24 @@ void main() {
           SleepModeAutoTrigger.afterCountdown5min,
         );
 
+        final session = PlaybackSession(
+          id: 'test-session-countdown',
+          currentTrackPath: '/music/test.mp3',
+          loopMode: SessionLoopMode.single,
+          nonSingleLoopMode: SessionLoopMode.single,
+          volume: 0.8,
+          createdAt: DateTime(2026),
+          state: const PlayerState(true, ProcessingState.ready),
+        );
+        fixture.playbackService.registerSession(session);
+        fixture.playbackService.syncSlice(
+          activeSessions: <PlaybackSession>[session],
+          playingSessionCount: 1,
+          focusedSessionId: session.id,
+          coverGeneration: 0,
+          isInitialized: true,
+        );
+
         fixture.timer.configureTimer(
           TimerMode.manual,
           const Duration(minutes: 30),
@@ -763,6 +783,84 @@ void main() {
         await tester.pump();
       },
     );
+
+    testWidgets('countdown does not open sleep mode without playback', (
+      tester,
+    ) async {
+      await fixture.settings.setSleepModeAutoTrigger(
+        SleepModeAutoTrigger.afterCountdown5min,
+      );
+      fixture.timer.configureTimer(
+        TimerMode.manual,
+        const Duration(minutes: 30),
+      );
+      fixture.timer.startCountdown();
+
+      await tester.pumpWidget(fixture.build(const MainScreen()));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 900));
+      await tester.pump(const Duration(minutes: 6));
+      await tester.pump(const Duration(milliseconds: 400));
+
+      expect(find.byType(BedtimeCanvasPage), findsNothing);
+      fixture.timer.cancelTimer();
+      await tester.pump();
+    });
+
+    testWidgets('video playback does not enable automatic sleep mode', (
+      tester,
+    ) async {
+      await fixture.settings.setSleepModeAutoTrigger(
+        SleepModeAutoTrigger.afterCountdown5min,
+      );
+      const videoPath = 'content://media/external/video/5';
+      final video = MusicTrack(
+        path: videoPath,
+        displayName: 'Video',
+        groupKey: '/videos',
+        groupTitle: 'Videos',
+        groupSubtitle: '',
+        isSingle: true,
+        isVideo: true,
+      );
+      fixture.library.addTracks(
+        <MusicTrack>[video],
+        notify: false,
+        persist: false,
+      );
+      final session = PlaybackSession(
+        id: 'test-session-video',
+        currentTrackPath: videoPath,
+        loopMode: SessionLoopMode.single,
+        nonSingleLoopMode: SessionLoopMode.single,
+        volume: 0.8,
+        createdAt: DateTime(2026),
+        state: const PlayerState(true, ProcessingState.ready),
+      );
+      fixture.playbackService.registerSession(session);
+      fixture.playbackService.syncSlice(
+        activeSessions: <PlaybackSession>[session],
+        playingSessionCount: 1,
+        focusedSessionId: session.id,
+        coverGeneration: 0,
+        isInitialized: true,
+      );
+      fixture.timer.configureTimer(
+        TimerMode.manual,
+        const Duration(minutes: 30),
+      );
+      fixture.timer.startCountdown();
+
+      await tester.pumpWidget(fixture.build(const MainScreen()));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 900));
+      await tester.pump(const Duration(minutes: 6));
+      await tester.pump(const Duration(milliseconds: 400));
+
+      expect(find.byType(BedtimeCanvasPage), findsNothing);
+      fixture.timer.cancelTimer();
+      await tester.pump();
+    });
 
     testWidgets(
       'does not enter BedtimeCanvasPage when manual even after 5 min',
@@ -799,5 +897,79 @@ void main() {
         expect(find.byType(BedtimeCanvasPage), findsNothing);
       },
     );
+  });
+
+  testWidgets('sleep mode button requires an actively playing session', (
+    tester,
+  ) async {
+    final fixture = AppRuntimeWidgetTestFixture();
+    addTearDown(fixture.dispose);
+    final session = PlaybackSession(
+      id: 'test-session-manual-button',
+      currentTrackPath: '/music/test.mp3',
+      loopMode: SessionLoopMode.single,
+      nonSingleLoopMode: SessionLoopMode.single,
+      volume: 0.8,
+      createdAt: DateTime(2026),
+      state: const PlayerState(false, ProcessingState.ready),
+    );
+    fixture.playbackService.registerSession(session);
+    void syncSession(int playingCount) {
+      fixture.playbackService.syncSlice(
+        activeSessions: <PlaybackSession>[session],
+        playingSessionCount: playingCount,
+        focusedSessionId: session.id,
+        coverGeneration: 0,
+        isInitialized: true,
+      );
+    }
+
+    syncSession(0);
+    await tester.pumpWidget(fixture.build(const PlaylistTab()));
+    await tester.pump();
+    final button = find.byKey(const ValueKey('playlist_sleep_canvas_button'));
+    expect(tester.widget<IconButton>(button).onPressed, isNull);
+
+    session.state = const PlayerState(true, ProcessingState.ready);
+    session.currentTrackPath = '/music/test.mp4';
+    syncSession(1);
+    await tester.pump();
+    expect(tester.widget<IconButton>(button).onPressed, isNull);
+
+    session.currentTrackPath = 'content://media/external/file/6';
+    syncSession(1);
+    await tester.pump();
+    expect(tester.widget<IconButton>(button).onPressed, isNull);
+
+    const audioPath = 'content://media/external/audio/7';
+    fixture.library.addTracks(
+      <MusicTrack>[
+        MusicTrack(
+          path: audioPath,
+          displayName: 'Audio',
+          groupKey: '/music',
+          groupTitle: 'Music',
+          groupSubtitle: '',
+          isSingle: true,
+        ),
+      ],
+      notify: false,
+      persist: false,
+    );
+    session.currentTrackPath = audioPath;
+    syncSession(1);
+    await tester.pump();
+    expect(tester.widget<IconButton>(button).onPressed, isNotNull);
+
+    session.state = const PlayerState(false, ProcessingState.ready);
+    await tester.tap(button);
+    await tester.pump();
+    expect(find.byType(BedtimeCanvasPage), findsNothing);
+
+    session.state = const PlayerState(true, ProcessingState.ready);
+    await tester.tap(button);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.byType(BedtimeCanvasPage), findsOneWidget);
   });
 }

@@ -2,7 +2,7 @@ import 'package:flutter/foundation.dart';
 
 import '../../../core/errors/app_failure.dart';
 import '../../../core/logging/app_log_service.dart';
-import '../../settings/application/app_cache_service.dart';
+import '../../../core/cache/app_cache_service.dart';
 import 'library_catalog.dart';
 import 'library_scanner_service.dart';
 

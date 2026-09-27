@@ -11,9 +11,7 @@ import '../../../core/media/music_track.dart';
 import '../../../core/media/path_matcher.dart';
 import '../../../core/platform/file_cache_platform_gateway.dart';
 import '../../../core/persistence/json_document_store.dart';
-import '../../asmr/application/asmr_metadata_service.dart';
-import '../../asmr/domain/asmr_models.dart';
-import '../../settings/application/app_cache_service.dart';
+import '../../../core/cache/app_cache_service.dart';
 import 'audio_detail_cache_service.dart';
 import 'audio_detail_repository.dart';
 import 'cover_artwork_cache_service.dart';
@@ -25,6 +23,7 @@ import 'library_catalog.dart';
 import 'library_entry_editor_service.dart';
 import 'library_scan_models.dart';
 import 'library_metadata_coordinator.dart';
+import 'library_metadata_source.dart';
 import 'library_mutation_coordinator.dart';
 import 'library_persistence_coordinator.dart';
 import 'library_service.dart';
@@ -63,7 +62,7 @@ final class LibraryFacade implements LibraryCatalog {
     AudioDetailRepository? detailRepository,
     AudioDetailCacheService? detailCacheService,
     DlsiteMetadataService? metadataService,
-    AsmrMetadataService? asmrMetadataService,
+    LibraryMetadataSource? asmrMetadataService,
     LibraryService? service,
     LibrarySnapshotCacheService? snapshotCacheService,
     LibraryEntryEditorService? entryEditorService,
@@ -93,7 +92,7 @@ final class LibraryFacade implements LibraryCatalog {
       databaseRepository: databaseRepository,
       detailCacheService: resolvedDetailCache,
       metadataService: metadataService ?? DlsiteMetadataService(),
-      asmrMetadataService: asmrMetadataService ?? AsmrMetadataService(),
+      asmrMetadataService: asmrMetadataService,
       service: resolvedService,
       snapshotCacheService:
           snapshotCacheService ??
@@ -109,7 +108,7 @@ final class LibraryFacade implements LibraryCatalog {
   final LibraryPersistenceRepository databaseRepository;
   final AudioDetailCacheService detailCacheService;
   final DlsiteMetadataService metadataService;
-  final AsmrMetadataService asmrMetadataService;
+  final LibraryMetadataSource? asmrMetadataService;
   final LibraryService _service;
   final LibrarySnapshotCacheService snapshotCacheService;
   final LibraryEntryEditorService entryEditorService;
@@ -410,11 +409,6 @@ final class LibraryFacade implements LibraryCatalog {
     required AppLanguage language,
   }) =>
       _metadataCoordinator.searchPreferredMetadata(titles, language: language);
-
-  Future<AsmrWork?> findAsmrWorkByRjCode(
-    String rjCode, {
-    required AppLanguage language,
-  }) => asmrMetadataService.findAsmrWorkByRjCode(rjCode, language: language);
 
   AudioDetail? resolvedAudioDetail(AudioDetailTarget target) =>
       _metadataCoordinator.resolvedDetail(target);

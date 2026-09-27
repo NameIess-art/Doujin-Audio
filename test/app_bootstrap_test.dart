@@ -10,7 +10,7 @@ import 'package:doujin_audio/app/presentation/onboarding_page.dart';
 import 'package:doujin_audio/app/state/app_runtime_providers.dart';
 import 'package:doujin_audio/app/theme/theme_provider.dart';
 import 'package:doujin_audio/core/widgets/app_brand_icon.dart';
-import 'package:doujin_audio/features/settings/application/app_preferences.dart';
+import 'package:doujin_audio/core/persistence/app_preferences.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {

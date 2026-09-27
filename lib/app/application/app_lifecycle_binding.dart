@@ -4,7 +4,7 @@ import '../../features/library/application/library_facade.dart';
 import '../../features/player/application/notification_facade.dart';
 import '../../features/player/application/playback_facade.dart';
 import '../../features/player/application/timer_facade.dart';
-import '../../features/settings/application/app_cache_service.dart';
+import '../../core/cache/app_cache_service.dart';
 import '../../features/settings/application/settings_repository.dart';
 import 'app_persistence_coordinator.dart';
 import 'app_runtime_lifecycle.dart';
@@ -150,7 +150,11 @@ final class AppLifecycleBinding implements RuntimeBinding, AppRuntimeLifecycle {
     }
     await _asmrDownloads?.shutdown();
     await _library.dispose();
-    await _playback.dispose();
+    try {
+      await _playback.dispose();
+    } finally {
+      await _playbackCommands.dispose();
+    }
     await _timer.dispose();
     await _notifications.dispose();
     await _settings.dispose();

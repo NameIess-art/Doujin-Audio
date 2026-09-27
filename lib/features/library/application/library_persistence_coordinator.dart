@@ -4,7 +4,7 @@ import 'dart:convert';
 import '../../../core/logging/app_log_service.dart';
 import '../../../core/media/music_track.dart';
 import '../../../core/media/path_matcher.dart';
-import '../../settings/application/app_preferences.dart';
+import '../../../core/persistence/app_preferences.dart';
 import '../domain/library_entry.dart';
 import '../domain/library_persistence_repository.dart';
 import 'library_service.dart';

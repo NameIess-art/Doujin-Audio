@@ -6,7 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../application/app_bootstrap_controller.dart';
 import '../state/app_runtime_providers.dart';
 import '../theme/app_styles.dart';
-import '../../features/settings/application/app_preferences.dart';
+import '../../core/persistence/app_preferences.dart';
 import '../../core/widgets/app_transitions.dart';
 import '../../core/widgets/page_header_inset.dart';
 import '../../core/widgets/top_page_header.dart';

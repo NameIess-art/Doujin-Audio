@@ -22,7 +22,7 @@ import '../../features/player/application/playback_subtitle_service.dart';
 import '../../features/player/application/timer_facade.dart';
 import '../../features/player/domain/audio_effects.dart';
 import '../../features/player/domain/playback_mode.dart';
-import '../../features/settings/application/app_cache_service.dart';
+import '../../core/cache/app_cache_service.dart';
 import '../../features/settings/application/settings_repository.dart';
 import 'audio_path_coordinator.dart';
 import 'playback_keep_alive_coordinator.dart';
@@ -51,6 +51,7 @@ final class PlaybackCommandCoordinator
     required AudioPathCoordinator audioPaths,
     required PlaybackSubtitleService subtitles,
     required PlaybackKeepAliveCoordinator keepAlive,
+    required AsmrPlaybackCacheService asmrPlaybackCacheService,
     required void Function() notifyPlaybackChanged,
     required PlaybackNotificationSynchronizer syncNotificationState,
     Random? random,
@@ -62,6 +63,7 @@ final class PlaybackCommandCoordinator
        _audioPathCoordinator = audioPaths,
        _subtitleService = subtitles,
        _keepAliveCoordinator = keepAlive,
+       _asmrPlaybackCacheService = asmrPlaybackCacheService,
        _notifyPlaybackChangedCallback = notifyPlaybackChanged,
        _syncNotificationStateCallback = syncNotificationState,
        _random = random ?? Random();
@@ -74,6 +76,7 @@ final class PlaybackCommandCoordinator
   final AudioPathCoordinator _audioPathCoordinator;
   final PlaybackSubtitleService _subtitleService;
   final PlaybackKeepAliveCoordinator _keepAliveCoordinator;
+  final AsmrPlaybackCacheService _asmrPlaybackCacheService;
   final void Function() _notifyPlaybackChangedCallback;
   final PlaybackNotificationSynchronizer _syncNotificationStateCallback;
   final Random _random;
@@ -89,9 +92,6 @@ final class PlaybackCommandCoordinator
       _libraryFacade.sortedLibraryTrackPaths;
   Map<String, List<MusicTrack>> get _tracksByGroup =>
       _libraryFacade.tracksByGroup;
-  AsmrPlaybackCacheService get _asmrPlaybackCacheService =>
-      _playbackFacade.playbackCacheService;
-
   List<PlaybackSession> get activeSessions => _playbackFacade.activeSessions;
 
   Future<bool> _activateAudioSessionForPlayback() =>
@@ -103,6 +103,12 @@ final class PlaybackCommandCoordinator
       );
 
   CachePathLease? _activePlaybackCacheLease;
+
+  Future<void> dispose() async {
+    _activePlaybackCacheLease?.release();
+    _activePlaybackCacheLease = null;
+    await _asmrPlaybackCacheService.dispose();
+  }
 
   void _syncActivePlaybackCacheLease() {
     final activePaths = _sessions.values

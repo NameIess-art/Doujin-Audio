@@ -9,7 +9,6 @@ import '../../../core/media/dlsite_metadata.dart';
 import '../../../core/media/music_track.dart';
 import '../../../core/media/path_matcher.dart';
 import '../../../core/platform/file_cache_platform_gateway.dart';
-import '../../asmr/application/asmr_metadata_service.dart';
 import '../domain/library_persistence_repository.dart';
 import 'audio_detail_cache_service.dart';
 import 'audio_detail_repository.dart';
@@ -17,6 +16,7 @@ import 'cover_artwork_cache_service.dart';
 import 'dlsite_metadata_query.dart';
 import 'dlsite_metadata_service.dart';
 import 'library_organizer.dart';
+import 'library_metadata_source.dart';
 import 'library_service.dart';
 import 'library_snapshot_cache_service.dart';
 
@@ -26,7 +26,7 @@ final class LibraryMetadataCoordinator {
     required LibraryPersistenceRepository databaseRepository,
     required AudioDetailCacheService detailCacheService,
     required DlsiteMetadataService metadataService,
-    required AsmrMetadataService asmrMetadataService,
+    required LibraryMetadataSource? asmrMetadataService,
     required LibraryService service,
     required LibrarySnapshotCacheService snapshotCacheService,
     required CoverArtworkCacheService Function() coverArtwork,
@@ -48,7 +48,7 @@ final class LibraryMetadataCoordinator {
   final LibraryPersistenceRepository _databaseRepository;
   final AudioDetailCacheService _detailCacheService;
   final DlsiteMetadataService _metadataService;
-  final AsmrMetadataService _asmrMetadataService;
+  final LibraryMetadataSource? _asmrMetadataService;
   final LibraryService _service;
   final LibrarySnapshotCacheService _snapshotCacheService;
   final CoverArtworkCacheService Function() _coverArtwork;
@@ -390,9 +390,13 @@ final class LibraryMetadataCoordinator {
     String rjCode, {
     required AppLanguage language,
   }) async {
+    final asmrMetadataService = _asmrMetadataService;
+    if (asmrMetadataService == null) {
+      return _metadataService.fetchByRjCode(rjCode, language: language);
+    }
     DlsiteMetadata primary;
     try {
-      primary = await _asmrMetadataService.fetchByRjCode(
+      primary = await asmrMetadataService.fetchByRjCode(
         rjCode,
         language: language,
       );
@@ -414,9 +418,16 @@ final class LibraryMetadataCoordinator {
     Iterable<String> titles, {
     required AppLanguage language,
   }) async {
+    final asmrMetadataService = _asmrMetadataService;
+    if (asmrMetadataService == null) {
+      return _metadataService.searchByTitleCandidates(
+        titles,
+        language: language,
+      );
+    }
     List<DlsiteMetadata> primary;
     try {
-      primary = await _asmrMetadataService.searchByTitleCandidates(
+      primary = await asmrMetadataService.searchByTitleCandidates(
         titles,
         language: language,
       );

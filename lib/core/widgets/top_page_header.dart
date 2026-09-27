@@ -805,56 +805,60 @@ class HeaderSegmentedCategoryBar<T> extends StatelessWidget {
     return Align(
       alignment: Alignment.centerLeft,
       child: HeaderFloatingSurface(
-        padding: const EdgeInsets.all(3),
         child: WindowsHorizontalWheelScroll(
           builder: (scrollController) => SingleChildScrollView(
-          controller: scrollController,
-          scrollDirection: Axis.horizontal,
-          physics: const BouncingScrollPhysics(),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: items
-                .map((item) {
-                  final isSelected = item == selected;
-                  final label = labelBuilder(item);
-                  return Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 1),
-                    child: Material(
-                      color: isSelected
-                          ? activeColor.withValues(alpha: 0.19)
-                          : Colors.transparent,
-                      borderRadius: BorderRadius.circular(15),
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(15),
-                        onTap: () => onSelected(item),
-                        child: SizedBox(
-                          height: 32,
-                          child: Center(
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 12),
-                              child: Text(
-                                label,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: textTheme.labelMedium?.copyWith(
-                                  color: isSelected
-                                      ? activeColor
-                                      : cs.onSurfaceVariant,
-                                  fontWeight: isSelected
-                                      ? FontWeight.w700
-                                      : FontWeight.w600,
-                                  fontSize: 12.5,
+            controller: scrollController,
+            scrollDirection: Axis.horizontal,
+            physics: const BouncingScrollPhysics(),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 3),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: items
+                    .map((item) {
+                      final isSelected = item == selected;
+                      final label = labelBuilder(item);
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 1),
+                        child: Material(
+                          color: isSelected
+                              ? activeColor.withValues(alpha: 0.19)
+                              : Colors.transparent,
+                          borderRadius: BorderRadius.circular(15),
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(15),
+                            onTap: () => onSelected(item),
+                            child: SizedBox(
+                              height: 32,
+                              child: Center(
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                  ),
+                                  child: Text(
+                                    label,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: textTheme.labelMedium?.copyWith(
+                                      color: isSelected
+                                          ? activeColor
+                                          : cs.onSurfaceVariant,
+                                      fontWeight: isSelected
+                                          ? FontWeight.w700
+                                          : FontWeight.w600,
+                                      fontSize: 12.5,
+                                    ),
+                                  ),
                                 ),
                               ),
                             ),
                           ),
                         ),
-                      ),
-                    ),
-                  );
-                })
-                .toList(growable: false),
-          ),
+                      );
+                    })
+                    .toList(growable: false),
+              ),
+            ),
           ),
         ),
       ),

@@ -1,4 +1,5 @@
 import 'package:doujin_audio/core/errors/native_result.dart';
+import 'package:doujin_audio/features/player/application/native_playback_repository.dart';
 import 'package:doujin_audio/features/player/application/windows_playback_bridge.dart';
 import 'package:doujin_audio/features/player/domain/audio_effects.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -268,6 +269,7 @@ void main() {
   });
 
   test('device disconnect follows the configured preference', () async {
+    final repository = NativePlaybackRepository(bridge: bridge);
     await prepare('one');
     await bridge.play('one');
     await bridge.setPlaybackBehavior(
@@ -276,7 +278,7 @@ void main() {
       pauseOnTransientAudioFocusLoss: false,
       resumeAfterTransientAudioFocusGain: false,
     );
-    await bridge.handleDeviceDisconnected();
+    await repository.handleDeviceDisconnected();
     expect(players.single.state.playing, true);
     await bridge.setPlaybackBehavior(
       pauseOnAudioDeviceDisconnect: true,
@@ -284,7 +286,7 @@ void main() {
       pauseOnTransientAudioFocusLoss: false,
       resumeAfterTransientAudioFocusGain: false,
     );
-    await bridge.handleDeviceDisconnected();
+    await repository.handleDeviceDisconnected();
     expect(players.single.state.playing, false);
   });
 

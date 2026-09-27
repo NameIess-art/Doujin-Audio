@@ -3,7 +3,7 @@ import 'dart:ui';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/immutable_collections.dart';
 import '../../core/persistence/persisted_state_reloader.dart';
-import '../../features/settings/application/app_preferences.dart';
+import '../../core/persistence/app_preferences.dart';
 
 final subtitleSettingsProvider =
     NotifierProvider<SubtitleSettingsNotifier, SubtitleSettingsState>(

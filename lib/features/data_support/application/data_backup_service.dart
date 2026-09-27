@@ -10,7 +10,7 @@ import 'package:sqflite/sqflite.dart';
 
 import '../../../core/persistence/app_database.dart';
 import '../../asmr/application/asmr_auth_service.dart';
-import '../../settings/application/app_preferences.dart';
+import '../../../core/persistence/app_preferences.dart';
 import '../../settings/application/app_update_service.dart';
 
 const _backupFormatVersion = 1;

@@ -259,7 +259,11 @@ std::optional<LRESULT> DesktopIntegration::HandleMessage(UINT message, WPARAM wp
   if (message == kActivate) { if (wp == 0) Show(); else Action("resume"); return 0; }
   if (message == WM_EXITSIZEMOVE) SavePlacement();
   if (message == WM_CLOSE && !quitting_) { SavePlacement(); ShowWindow(window_,SW_HIDE); Action("background"); return 0; }
-  if (message == WM_QUERYENDSESSION) { Action("exit"); return TRUE; }
+  if (message == WM_QUERYENDSESSION) return TRUE;
+  if (message == WM_ENDSESSION) {
+    if (wp) Action("exit");
+    return 0;
+  }
   if (message == WM_APP + 43) { Action("exit"); return 0; }
   if (message == WM_APP + 44) { Action("deviceDisconnected"); return 0; }
   if (message == WM_GETMINMAXINFO && !fullscreen_) {

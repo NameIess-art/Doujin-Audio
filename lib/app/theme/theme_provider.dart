@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/persistence/persisted_state_reloader.dart';
 import '../../core/platform/app_lifecycle_platform_service.dart';
-import '../../features/settings/application/app_preferences.dart';
+import '../../core/persistence/app_preferences.dart';
 import '../../core/widgets/app_transitions.dart';
 import 'app_design_tokens.dart';
 import 'app_styles.dart';

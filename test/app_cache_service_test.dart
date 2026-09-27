@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/core/media/cover_image_format.dart';
-import 'package:doujin_audio/features/settings/application/app_cache_service.dart';
+import 'package:doujin_audio/core/cache/app_cache_service.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

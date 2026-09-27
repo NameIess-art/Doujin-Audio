@@ -12,7 +12,7 @@ import 'package:doujin_audio/app/theme/theme_provider.dart';
 import 'package:doujin_audio/core/ui/ui_operation_service.dart';
 import 'package:doujin_audio/core/ui/visual_settings_providers.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_download_manager.dart';
-import 'package:doujin_audio/features/settings/application/app_preferences.dart';
+import 'package:doujin_audio/core/persistence/app_preferences.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'support/app_runtime_test_fixture.dart';

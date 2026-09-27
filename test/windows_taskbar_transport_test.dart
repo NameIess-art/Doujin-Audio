@@ -87,33 +87,36 @@ void main() {
       timer: timer,
     );
 
+    await _sendDesktopAction(channel, 'deviceDisconnected');
+    expect(native.deviceDisconnectCount, 1);
+
     native.failPauseAll = true;
-    await _sendTaskbarToggle(channel);
+    await _sendDesktopAction(channel, 'taskbarToggle');
     expect(playback.sessionById('first')!.state.playing, isTrue);
     native.failPauseAll = false;
-    await _sendTaskbarToggle(channel);
+    await _sendDesktopAction(channel, 'taskbarToggle');
     expect(native.pauseAllCount, 2);
     expect(playback.sessions.values.every((s) => !s.state.playing), isTrue);
 
-    await _sendTaskbarToggle(channel);
+    await _sendDesktopAction(channel, 'taskbarToggle');
     expect(resumed, ['first', 'third']);
     expect(playback.sessionById('second')!.state.playing, isFalse);
 
-    await _sendTaskbarToggle(channel);
+    await _sendDesktopAction(channel, 'taskbarToggle');
     expect(native.pauseAllCount, 3);
     await playback.removeSession('third');
-    await _sendTaskbarToggle(channel);
+    await _sendDesktopAction(channel, 'taskbarToggle');
     expect(resumed, ['first', 'third', 'first']);
   });
 }
 
-Future<void> _sendTaskbarToggle(MethodChannel channel) {
+Future<void> _sendDesktopAction(MethodChannel channel, String action) {
   final completer = Completer<void>();
   TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
       .handlePlatformMessage(
         channel.name,
         const StandardMethodCodec().encodeMethodCall(
-          const MethodCall('action', 'taskbarToggle'),
+          MethodCall('action', action),
         ),
         (ByteData? data) => completer.complete(),
       );
@@ -122,7 +125,13 @@ Future<void> _sendTaskbarToggle(MethodChannel channel) {
 
 final class _RecordingNativeRepository extends NativePlaybackRepository {
   int pauseAllCount = 0;
+  int deviceDisconnectCount = 0;
   bool failPauseAll = false;
+
+  @override
+  Future<void> handleDeviceDisconnected() async {
+    deviceDisconnectCount++;
+  }
 
   @override
   Future<NativeResult<void>> pauseAll() async {

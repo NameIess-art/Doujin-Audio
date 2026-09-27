@@ -210,11 +210,16 @@ final libraryCoverForTrackProvider = FutureProvider.autoDispose
 
 final playlistHeaderUiProvider = Provider<PlaylistHeaderState>((ref) {
   ref.watch(playbackStateProvider);
-  final playbackState = ref.watch(playbackFacadeProvider).state;
+  final playback = ref.watch(playbackFacadeProvider);
+  final playbackState = playback.state;
   final timerState =
       ref.watch(timerStateProvider).value ??
       ref.watch(timerFacadeProvider).state;
-  return playlistHeaderStateFromSlices(playbackState, timerState);
+  return playlistHeaderStateFromSlices(
+    playbackState,
+    timerState,
+    hasPlayingAudioSession: playback.hasPlayingAudioSession,
+  );
 });
 
 final playlistStructureUiProvider = Provider<PlaylistStructureState>((ref) {
@@ -334,7 +339,8 @@ final isTrackActiveProvider = Provider.autoDispose.family<bool, String>((
 
 final mainOverlayUiProvider = Provider<MainOverlayUiState>((ref) {
   ref.watch(playbackStateProvider);
-  final playbackState = ref.watch(playbackFacadeProvider).state;
+  final playback = ref.watch(playbackFacadeProvider);
+  final playbackState = playback.state;
   final fallbackSettings = ref.watch(settingsRepositoryProvider).slice.state;
   final startupReady = ref.watch(
     settingsStateProvider.select(
@@ -345,6 +351,7 @@ final mainOverlayUiProvider = Provider<MainOverlayUiState>((ref) {
   return MainOverlayUiState(
     overlaySessions: overlaySessions,
     playingSessionCount: playbackState.playingSessionCount,
+    hasPlayingAudioSession: playback.hasPlayingAudioSession,
     activeSessionCount: playbackState.activeSessions.length,
     isInitialized: playbackState.isInitialized,
     startupReady: startupReady,

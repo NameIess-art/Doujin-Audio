@@ -214,6 +214,7 @@ void main() {
       final headerState = playlistHeaderStateFromSlices(
         playbackState,
         timerState,
+        hasPlayingAudioSession: false,
       );
 
       expect(headerState.sessionCount, 0);

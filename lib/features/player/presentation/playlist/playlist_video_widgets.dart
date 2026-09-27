@@ -671,7 +671,12 @@ class _SessionVideoFullscreenPageState
                         ),
                       ),
                       if (isSessionVideoReady(activeSession, track))
-                        NativeSessionVideoSurface(sessionId: widget.sessionId),
+                        NativeSessionVideoSurface(
+                          sessionId: widget.sessionId,
+                          nativeRepository: ref
+                              .read(playbackFacadeProvider)
+                              .nativeRepository,
+                        ),
                       Positioned.fromRect(
                         rect: gestureRect,
                         child: GestureDetector(

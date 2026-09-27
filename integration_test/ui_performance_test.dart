@@ -28,7 +28,7 @@ import 'package:doujin_audio/features/player/application/playback_session_snapsh
 import 'package:doujin_audio/features/player/domain/playback_mode.dart';
 import 'package:doujin_audio/features/player/presentation/playlist_tab.dart';
 import 'package:doujin_audio/features/player/presentation/playlist_view_models.dart';
-import 'package:doujin_audio/features/settings/application/app_preferences.dart';
+import 'package:doujin_audio/core/persistence/app_preferences.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite/sqflite.dart';
@@ -119,6 +119,7 @@ void main() {
             const MainOverlayUiState(
               overlaySessions: <PlaybackSessionSnapshot>[],
               playingSessionCount: 0,
+              hasPlayingAudioSession: false,
               activeSessionCount: 0,
               isInitialized: true,
               startupReady: true,

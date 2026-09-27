@@ -3,7 +3,7 @@ import 'dart:io';
 
 import 'package:archive/archive.dart';
 
-import '../../settings/application/app_cache_service.dart';
+import '../../../core/cache/app_cache_service.dart';
 import '../../../core/persistence/app_database.dart';
 import '../../../core/logging/app_log_service.dart';
 import '../../settings/application/app_update_service.dart';

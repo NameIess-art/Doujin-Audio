@@ -9,7 +9,7 @@ import 'support/test_persistence_repository.dart';
 import 'package:doujin_audio/features/library/application/audio_detail_cache_service.dart';
 import 'package:doujin_audio/features/library/application/audio_detail_repository.dart';
 import 'package:doujin_audio/features/library/application/library_service.dart';
-import 'package:doujin_audio/features/settings/application/app_cache_service.dart';
+import 'package:doujin_audio/core/cache/app_cache_service.dart';
 import 'package:doujin_audio/features/library/application/cover_artwork_cache_service.dart';
 import 'package:doujin_audio/features/library/application/cover_image_cache_policy.dart';
 import 'package:doujin_audio/core/platform/file_cache_platform_gateway.dart';

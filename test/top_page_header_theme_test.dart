@@ -137,6 +137,60 @@ void main() {
           FontWeight.w600);
     });
 
+    testWidgets('category pills scroll inside search-sized outer capsule', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _buildThemedApp(
+          child: Center(
+            child: SizedBox(
+              width: 180,
+              child: HeaderSegmentedCategoryBar<int>(
+                items: const [0, 1, 2, 3, 4],
+                selected: 0,
+                onSelected: (_) {},
+                labelBuilder: (item) => 'Category $item',
+              ),
+            ),
+          ),
+        ),
+      );
+
+      final viewport = find.byType(SingleChildScrollView);
+      final clips = find.descendant(
+        of: find.byType(HeaderSegmentedCategoryBar<int>),
+        matching: find.byType(ClipRRect),
+      );
+      expect(clips, findsOneWidget);
+      expect(tester.widget<ClipRRect>(clips).borderRadius,
+          BorderRadius.circular(19));
+      expect(tester.getSize(clips).height, 38);
+      expect(
+        (tester.widget<SingleChildScrollView>(viewport).child as Padding)
+            .padding,
+        const EdgeInsets.symmetric(horizontal: 3, vertical: 3),
+      );
+      final firstPill = find.ancestor(
+        of: find.text('Category 0'),
+        matching: find.byType(Material),
+      ).first;
+      expect(tester.getTopLeft(firstPill).dx - tester.getTopLeft(clips).dx, 4);
+      expect(tester.getTopLeft(firstPill).dy - tester.getTopLeft(clips).dy, 3);
+
+      await tester.drag(viewport, const Offset(-500, 0));
+      await tester.pumpAndSettle();
+      expect(
+        tester.state<ScrollableState>(find.byType(Scrollable)).position.pixels,
+        greaterThan(0),
+      );
+      await tester.drag(viewport, const Offset(500, 0));
+      await tester.pumpAndSettle();
+      expect(
+        tester.state<ScrollableState>(find.byType(Scrollable)).position.pixels,
+        0,
+      );
+    });
+
     testWidgets('asmrThemeData produces ThemeData with asmrAccent as primary', (
       tester,
     ) async {

@@ -4,13 +4,15 @@ import '../../../core/media/audio_detail.dart';
 import '../../../core/media/dlsite_metadata.dart';
 import 'asmr_api_service.dart';
 import '../../library/application/dlsite_metadata_service.dart';
+import '../../library/application/library_metadata_source.dart';
 
-class AsmrMetadataService {
+class AsmrMetadataService implements LibraryMetadataSource {
   AsmrMetadataService({AsmrApiService? apiService})
     : _apiService = apiService ?? AsmrApiService();
 
   final AsmrApiService _apiService;
 
+  @override
   Future<DlsiteMetadata> fetchByRjCode(
     String rjCode, {
     AppLanguage language = AppLanguage.zh,
@@ -58,6 +60,7 @@ class AsmrMetadataService {
     }
   }
 
+  @override
   Future<List<DlsiteMetadata>> searchByTitleCandidates(
     Iterable<String> titles, {
     AppLanguage language = AppLanguage.zh,

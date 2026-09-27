@@ -19,7 +19,7 @@ import 'package:doujin_audio/app/state/app_runtime_providers.dart';
 import 'package:doujin_audio/app/theme/theme_provider.dart';
 import 'package:doujin_audio/app/theme/app_styles.dart';
 import 'package:doujin_audio/core/widgets/app_feedback.dart';
-import 'package:doujin_audio/features/settings/application/app_preferences.dart';
+import 'package:doujin_audio/core/persistence/app_preferences.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 

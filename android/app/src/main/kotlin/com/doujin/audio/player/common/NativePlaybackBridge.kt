@@ -2,7 +2,6 @@ package com.doujin.audio.player.common
 
 import com.doujin.audio.channel.*
 import com.doujin.audio.player.service.*
-import com.doujin.audio.player.session.NativeAudioEffects
 
 import android.content.Context
 import android.os.Handler
@@ -34,30 +33,8 @@ class NativePlaybackBridge(
             result.notImplemented()
             return
         }
-        var prepareArguments: NativePrepareSessionArguments? = null
-        var repeatArguments: NativeRepeatOneArguments? = null
-        var audioEffectsSessionId: String? = null
-        var audioEffects: NativeAudioEffects? = null
-        try {
-            validatePlaybackArgumentsBeforeService(call)
-            when (call.method) {
-                NativePlaybackMethods.PREPARE_SESSION -> {
-                    prepareArguments = NativePlaybackCommandPayloads.parsePrepareSession(
-                        call.argumentsMap()
-                    )
-                }
-                NativePlaybackMethods.SET_REPEAT_ONE -> {
-                    repeatArguments = NativePlaybackCommandPayloads.parseRepeatOne(
-                        call.argumentsMap()
-                    )
-                }
-                NativePlaybackMethods.SET_AUDIO_EFFECTS -> {
-                    val reader = call.argumentReader()
-                    audioEffectsSessionId = reader.requiredString("sessionId")
-                    val effects = reader.requiredMap("effects")
-                    audioEffects = NativePlaybackCommandPayloads.parseAudioEffects(effects)
-                }
-            }
+        val command = try {
+            parsePlaybackCommand(call)
         } catch (error: IllegalArgumentException) {
             result.success(
                 channelFailure(
@@ -68,73 +45,11 @@ class NativePlaybackBridge(
             )
             return
         }
-        val dispatch: (NativePlaybackService) -> Map<String, Any?> = { service ->
-            when (call.method) {
-                NativePlaybackMethods.PREPARE_SESSION -> service.prepareSession(prepareArguments!!)
-                NativePlaybackMethods.PLAY -> service.play(
-                    call.requiredString("sessionId"),
-                    call.requiredLong("transportCommandId"),
-                    call.argument<Boolean>("exclusive") ?: false
-                )
-                NativePlaybackMethods.PAUSE -> service.pause(
-                    call.requiredString("sessionId"),
-                    call.requiredLong("transportCommandId")
-                )
-                NativePlaybackMethods.STOP -> service.stop(call.requiredString("sessionId"))
-                NativePlaybackMethods.SEEK -> service.seek(
-                    call.requiredString("sessionId"),
-                    call.requiredLong("positionMs")
-                )
-                NativePlaybackMethods.SET_VOLUME -> service.setVolume(
-                    call.requiredString("sessionId"),
-                    call.requiredDouble("volume").toFloat()
-                )
-                NativePlaybackMethods.SET_SPEED -> service.setSpeed(
-                    call.requiredString("sessionId"),
-                    call.requiredDouble("speed").toFloat()
-                )
-                NativePlaybackMethods.SET_TEMPORARY_SPEED -> service.setTemporarySpeed(
-                    call.requiredString("sessionId"),
-                    (call.argumentsMap()["speed"] as? Number)?.toFloat()
-                )
-                NativePlaybackMethods.SET_FADE_MULTIPLIER -> service.setFadeMultiplier(
-                    call.requiredString("sessionId"),
-                    call.requiredDouble("multiplier").toFloat()
-                )
-                NativePlaybackMethods.SET_REPEAT_ONE -> service.setRepeatOne(repeatArguments!!)
-                NativePlaybackMethods.SET_AUDIO_EFFECTS -> service.setAudioEffects(
-                    audioEffectsSessionId!!,
-                    audioEffects!!
-                )
-                NativePlaybackMethods.REMOVE_SESSION -> service.removeSession(call.requiredString("sessionId"))
-                NativePlaybackMethods.PAUSE_ALL -> service.pauseAll()
-                NativePlaybackMethods.CLEAR_ALL -> service.clearAll()
-                NativePlaybackMethods.SET_FOREGROUND_ENABLED -> service.setForegroundEnabled(
-                    call.argument<Boolean>("enabled") ?: true
-                )
-                NativePlaybackMethods.SET_PLAYBACK_BEHAVIOR -> {
-                    val reader = call.argumentReader()
-                    service.setPlaybackBehavior(
-                        pauseOnAudioDeviceDisconnect =
-                            reader.requiredBoolean("pauseOnAudioDeviceDisconnect"),
-                        requestAudioFocus = reader.requiredBoolean("requestAudioFocus"),
-                        pauseOnTransientAudioFocusLoss =
-                            reader.requiredBoolean("pauseOnTransientAudioFocusLoss"),
-                        resumeAfterTransientAudioFocusGain =
-                            reader.requiredBoolean("resumeAfterTransientAudioFocusGain")
-                    )
-                }
-                NativePlaybackMethods.DISMISS_NOTIFICATIONS -> service.dismissNotifications()
-                NativePlaybackMethods.UNDISMISS_NOTIFICATIONS -> service.undismissNotifications()
-                NativePlaybackMethods.SNAPSHOT -> service.snapshot()
-                else -> error("Unsupported native playback method: ${call.method}")
-            }
-        }
         val pendingCall = PendingServiceCall(
-            call = call,
+            method = call.method,
             result = result,
-            requireForegroundBootstrap = call.requiresForegroundBootstrap(prepareArguments),
-            dispatch = dispatch
+            requireForegroundBootstrap = command.requireForegroundBootstrap,
+            dispatch = command.dispatch
         )
         pendingCalls += pendingCall
         pendingCall.run()
@@ -204,7 +119,7 @@ class NativePlaybackBridge(
     }
 
     private inner class PendingServiceCall(
-        private val call: MethodCall,
+        private val method: String,
         private val result: MethodChannel.Result,
         private val requireForegroundBootstrap: Boolean,
         private val dispatch: (NativePlaybackService) -> Map<String, Any?>
@@ -238,7 +153,7 @@ class NativePlaybackBridge(
                     channelFailure(
                         code = ChannelErrorCodes.INVALID_ARGUMENT,
                         message = error.message ?: "Invalid arguments.",
-                        details = mapOf("method" to call.method)
+                        details = mapOf("method" to method)
                     )
                 }
                 complete(response)
@@ -246,7 +161,7 @@ class NativePlaybackBridge(
             }
             val elapsedMs = SystemClock.elapsedRealtime() - startedAtMs
             if (elapsedMs >= SERVICE_READY_TIMEOUT_MS) {
-                complete(serviceUnavailable(call.method))
+                complete(serviceUnavailable(method))
                 return
             }
             mainHandler.postDelayed(this, SERVICE_READY_RETRY_DELAY_MS)
@@ -254,7 +169,7 @@ class NativePlaybackBridge(
 
         fun cancel() {
             mainHandler.removeCallbacks(this)
-            complete(serviceUnavailable(call.method))
+            complete(serviceUnavailable(method))
         }
 
         private fun complete(response: Map<String, Any?>) {
@@ -298,61 +213,123 @@ internal fun isSupportedNativePlaybackMethod(method: String): Boolean = method i
     NativePlaybackMethods.SNAPSHOT
 )
 
-internal fun validatePlaybackArgumentsBeforeService(call: MethodCall) {
+internal class ParsedPlaybackCommand(
+    val requireForegroundBootstrap: Boolean = false,
+    val dispatch: (NativePlaybackService) -> Map<String, Any?>
+)
+
+internal fun parsePlaybackCommand(call: MethodCall): ParsedPlaybackCommand {
     val arguments = call.argumentReader()
-    fun requireSessionId() {
-        arguments.requiredString("sessionId")
-    }
-    fun requireFiniteInRange(key: String, range: ClosedRange<Double>) {
-        require(arguments.requiredDouble(key) in range) {
+    fun finiteFloatInRange(key: String, range: ClosedRange<Double>): Float {
+        val value = arguments.requiredDouble(key)
+        require(value in range) {
             "Numeric argument is outside the allowed range: $key"
         }
+        return value.toFloat()
     }
-    when (call.method) {
+    return when (call.method) {
+        NativePlaybackMethods.PREPARE_SESSION -> {
+            val prepared = NativePlaybackCommandPayloads.parsePrepareSession(call.argumentsMap())
+            ParsedPlaybackCommand(requireForegroundBootstrap = prepared.autoPlay) { service ->
+                service.prepareSession(prepared)
+            }
+        }
         NativePlaybackMethods.PLAY -> {
-            requireSessionId()
-            require(arguments.requiredLong("transportCommandId") >= 0L) {
+            val sessionId = arguments.requiredString("sessionId")
+            val transportCommandId = arguments.requiredLong("transportCommandId")
+            require(transportCommandId >= 0L) {
                 "transportCommandId must not be negative."
             }
-            arguments.requiredBoolean("exclusive")
+            val exclusive = arguments.requiredBoolean("exclusive")
+            ParsedPlaybackCommand(requireForegroundBootstrap = true) { service ->
+                service.play(sessionId, transportCommandId, exclusive)
+            }
         }
         NativePlaybackMethods.PAUSE -> {
-            requireSessionId()
-            require(arguments.requiredLong("transportCommandId") >= 0L) {
+            val sessionId = arguments.requiredString("sessionId")
+            val transportCommandId = arguments.requiredLong("transportCommandId")
+            require(transportCommandId >= 0L) {
                 "transportCommandId must not be negative."
             }
+            ParsedPlaybackCommand { service -> service.pause(sessionId, transportCommandId) }
         }
-        NativePlaybackMethods.STOP,
-        NativePlaybackMethods.REMOVE_SESSION -> requireSessionId()
+        NativePlaybackMethods.STOP -> {
+            val sessionId = arguments.requiredString("sessionId")
+            ParsedPlaybackCommand { service -> service.stop(sessionId) }
+        }
         NativePlaybackMethods.SEEK -> {
-            requireSessionId()
-            require(arguments.requiredLong("positionMs") >= 0L) {
+            val sessionId = arguments.requiredString("sessionId")
+            val positionMs = arguments.requiredLong("positionMs")
+            require(positionMs >= 0L) {
                 "positionMs must not be negative."
             }
+            ParsedPlaybackCommand { service -> service.seek(sessionId, positionMs) }
         }
         NativePlaybackMethods.SET_VOLUME -> {
-            requireSessionId()
-            requireFiniteInRange("volume", 0.0..3.0)
+            val sessionId = arguments.requiredString("sessionId")
+            val volume = finiteFloatInRange("volume", 0.0..3.0)
+            ParsedPlaybackCommand { service -> service.setVolume(sessionId, volume) }
         }
         NativePlaybackMethods.SET_SPEED -> {
-            requireSessionId()
-            requireFiniteInRange("speed", NATIVE_PLAYBACK_SPEED_RANGE)
+            val sessionId = arguments.requiredString("sessionId")
+            val speed = finiteFloatInRange("speed", NATIVE_PLAYBACK_SPEED_RANGE)
+            ParsedPlaybackCommand { service -> service.setSpeed(sessionId, speed) }
         }
         NativePlaybackMethods.SET_TEMPORARY_SPEED -> {
-            requireSessionId()
-            arguments.requiredNullableDouble("speed", NATIVE_PLAYBACK_SPEED_RANGE)
+            val sessionId = arguments.requiredString("sessionId")
+            val speed = arguments.requiredNullableDouble("speed", NATIVE_PLAYBACK_SPEED_RANGE)
+                ?.toFloat()
+            ParsedPlaybackCommand { service -> service.setTemporarySpeed(sessionId, speed) }
         }
         NativePlaybackMethods.SET_FADE_MULTIPLIER -> {
-            requireSessionId()
-            requireFiniteInRange("multiplier", 0.0..1.0)
+            val sessionId = arguments.requiredString("sessionId")
+            val multiplier = finiteFloatInRange("multiplier", 0.0..1.0)
+            ParsedPlaybackCommand { service -> service.setFadeMultiplier(sessionId, multiplier) }
         }
-        NativePlaybackMethods.SET_FOREGROUND_ENABLED -> arguments.requiredBoolean("enabled")
+        NativePlaybackMethods.SET_REPEAT_ONE -> {
+            val repeat = NativePlaybackCommandPayloads.parseRepeatOne(call.argumentsMap())
+            ParsedPlaybackCommand { service -> service.setRepeatOne(repeat) }
+        }
+        NativePlaybackMethods.SET_AUDIO_EFFECTS -> {
+            val sessionId = arguments.requiredString("sessionId")
+            val effects = NativePlaybackCommandPayloads.parseAudioEffects(
+                arguments.requiredMap("effects")
+            )
+            ParsedPlaybackCommand { service -> service.setAudioEffects(sessionId, effects) }
+        }
+        NativePlaybackMethods.REMOVE_SESSION -> {
+            val sessionId = arguments.requiredString("sessionId")
+            ParsedPlaybackCommand { service -> service.removeSession(sessionId) }
+        }
+        NativePlaybackMethods.PAUSE_ALL -> ParsedPlaybackCommand { service -> service.pauseAll() }
+        NativePlaybackMethods.CLEAR_ALL -> ParsedPlaybackCommand { service -> service.clearAll() }
+        NativePlaybackMethods.SET_FOREGROUND_ENABLED -> {
+            val enabled = arguments.requiredBoolean("enabled")
+            ParsedPlaybackCommand { service -> service.setForegroundEnabled(enabled) }
+        }
         NativePlaybackMethods.SET_PLAYBACK_BEHAVIOR -> {
-            arguments.requiredBoolean("pauseOnAudioDeviceDisconnect")
-            arguments.requiredBoolean("requestAudioFocus")
-            arguments.requiredBoolean("pauseOnTransientAudioFocusLoss")
-            arguments.requiredBoolean("resumeAfterTransientAudioFocusGain")
+            val pauseOnAudioDeviceDisconnect =
+                arguments.requiredBoolean("pauseOnAudioDeviceDisconnect")
+            val requestAudioFocus = arguments.requiredBoolean("requestAudioFocus")
+            val pauseOnTransientAudioFocusLoss =
+                arguments.requiredBoolean("pauseOnTransientAudioFocusLoss")
+            val resumeAfterTransientAudioFocusGain =
+                arguments.requiredBoolean("resumeAfterTransientAudioFocusGain")
+            ParsedPlaybackCommand { service ->
+                service.setPlaybackBehavior(
+                    pauseOnAudioDeviceDisconnect = pauseOnAudioDeviceDisconnect,
+                    requestAudioFocus = requestAudioFocus,
+                    pauseOnTransientAudioFocusLoss = pauseOnTransientAudioFocusLoss,
+                    resumeAfterTransientAudioFocusGain = resumeAfterTransientAudioFocusGain
+                )
+            }
         }
+        NativePlaybackMethods.DISMISS_NOTIFICATIONS ->
+            ParsedPlaybackCommand { service -> service.dismissNotifications() }
+        NativePlaybackMethods.UNDISMISS_NOTIFICATIONS ->
+            ParsedPlaybackCommand { service -> service.undismissNotifications() }
+        NativePlaybackMethods.SNAPSHOT -> ParsedPlaybackCommand { service -> service.snapshot() }
+        else -> throw IllegalArgumentException("Unsupported native playback method: ${call.method}")
     }
 }
 
@@ -361,13 +338,3 @@ private fun serviceUnavailable(method: String): Map<String, Any?> = channelFailu
     message = "Native playback service is not ready.",
     details = mapOf("method" to method)
 )
-
-private fun MethodCall.requiresForegroundBootstrap(
-    prepareArguments: NativePrepareSessionArguments?
-): Boolean {
-    return when (method) {
-        NativePlaybackMethods.PLAY -> true
-        NativePlaybackMethods.PREPARE_SESSION -> prepareArguments?.autoPlay == true
-        else -> false
-    }
-}

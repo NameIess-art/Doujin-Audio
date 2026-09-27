@@ -2,7 +2,6 @@ import '../../core/platform/windows_desktop_service.dart';
 import '../../features/player/application/notification_facade.dart';
 import '../../features/player/application/playback_facade.dart';
 import '../../features/player/application/timer_facade.dart';
-import '../../features/player/application/windows_playback_bridge.dart';
 import 'app_runtime_lifecycle.dart';
 
 /// Routes shell commands to the same owners used by the Flutter controls.
@@ -62,7 +61,7 @@ Future<void> attachWindowsRuntime({
       case 'background':
         await runtime.enterBackground();
       case 'deviceDisconnected':
-        await WindowsPlaybackBridge.instance.handleDeviceDisconnected();
+        await playback.nativeRepository.handleDeviceDisconnected();
     }
   });
 }

@@ -11,7 +11,7 @@ import 'package:path/path.dart' as path;
 
 import '../../../core/media/music_track.dart';
 import '../../../core/media/audio_detail.dart';
-import '../../settings/application/app_cache_service.dart';
+import '../../../core/cache/app_cache_service.dart';
 import '../../../core/logging/app_log_service.dart';
 import '../../../core/media/media_file_support.dart';
 import '../domain/library_persistence_repository.dart';

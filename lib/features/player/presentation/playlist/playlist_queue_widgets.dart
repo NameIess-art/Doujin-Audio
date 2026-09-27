@@ -2,6 +2,7 @@ import '../../../library/presentation/library_providers.dart';
 import '../playback_providers.dart';
 import '../../../settings/presentation/settings_providers.dart';
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -478,74 +479,96 @@ class _QueueCoverGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final Widget content;
-    if (items.length == 1) {
-      content = _buildCell(context, 0);
-    } else if (items.length == 2) {
-      content = Row(
-        children: [
-          Expanded(child: _buildCell(context, 0)),
-          Expanded(child: _buildCell(context, 1)),
-        ],
-      );
-    } else {
-      content = Column(
-        children: [
-          Expanded(
-            child: Row(
-              children: [
-                Expanded(child: _buildCell(context, 0)),
-                Expanded(child: _buildCell(context, 1)),
-              ],
-            ),
-          ),
-          Expanded(
-            child: Row(
-              children: [
-                Expanded(child: _buildCell(context, 2)),
-                Expanded(child: _buildCell(context, 3)),
-              ],
-            ),
-          ),
-        ],
-      );
-    }
+    final content = items.length == 1
+        ? _buildCell(0)
+        : Stack(
+            fit: StackFit.expand,
+            children: [
+              for (var index = 0; index < items.length; index++)
+                _buildSector(index),
+            ],
+          );
     return ClipOval(
       key: const ValueKey('playback_queue_cover_grid'),
       child: SizedBox.square(dimension: playlistCoverSize, child: content),
     );
   }
 
-  Widget _buildCell(BuildContext context, int index) {
-    final Widget cell;
-    if (index >= items.length) {
-      final cs = Theme.of(context).colorScheme;
-      final isDark = Theme.of(context).brightness == Brightness.dark;
-      cell = ColoredBox(
-        color: cs.surfaceContainerHighest.withValues(alpha: isDark ? 0.4 : 0.6),
-        child: Center(
-          child: Icon(
-            Icons.audiotrack_rounded,
-            size: 18,
-            color: cs.onSurfaceVariant.withValues(alpha: 0.35),
-          ),
-        ),
-      );
-    } else {
-      final item = items[index];
-      cell = _QueueTrackCover(
+  Widget _buildSector(int index) {
+    final sector = _QueueCoverSectorClipper(items.length, index);
+    return ClipPath(
+      clipper: sector,
+      child: Transform.translate(
+        offset: sector.imageCenterOffset(const Size.square(playlistCoverSize)),
+        child: _buildCell(index),
+      ),
+    );
+  }
+
+  Widget _buildCell(int index) {
+    final item = items[index];
+    return SizedBox.expand(
+      key: ValueKey('playback_queue_cover_cell_$index'),
+      child: _QueueTrackCover(
         key: ValueKey('$index:${item.track.path}'),
         track: item.track,
         coverPath: item.coverPath,
         coverCacheWidth: coverCacheWidth,
         future: item.future,
-      );
-    }
-    return SizedBox.expand(
-      key: ValueKey('playback_queue_cover_cell_$index'),
-      child: cell,
+      ),
     );
   }
+}
+
+class _QueueCoverSectorClipper extends CustomClipper<Path> {
+  const _QueueCoverSectorClipper(this.count, this.index);
+
+  final int count;
+  final int index;
+
+  double get _sweepAngle => 2 * math.pi / count;
+
+  double get _startAngle => switch (count) {
+    2 => index == 0 ? math.pi / 2 : -math.pi / 2,
+    3 => -5 * math.pi / 6 + index * _sweepAngle,
+    4 => switch (index) {
+      0 => math.pi,
+      1 => -math.pi / 2,
+      2 => math.pi / 2,
+      _ => 0,
+    },
+    _ => throw StateError('Queue cover count must be between 2 and 4'),
+  };
+
+  Offset imageCenterOffset(Size size) {
+    final sweep = _sweepAngle;
+    final centroidDistance =
+        4 * (size.shortestSide / 2) * math.sin(sweep / 2) / (3 * sweep);
+    final bisector = _startAngle + sweep / 2;
+    return Offset(
+      centroidDistance * math.cos(bisector),
+      centroidDistance * math.sin(bisector),
+    );
+  }
+
+  @override
+  Path getClip(Size size) {
+    final center = size.center(Offset.zero);
+    final radius = size.shortestSide / 2;
+    return Path()
+      ..moveTo(center.dx, center.dy)
+      ..arcTo(
+        Rect.fromCircle(center: center, radius: radius),
+        _startAngle,
+        _sweepAngle,
+        false,
+      )
+      ..close();
+  }
+
+  @override
+  bool shouldReclip(_QueueCoverSectorClipper oldClipper) =>
+      count != oldClipper.count || index != oldClipper.index;
 }
 
 class _QueueTrackCover extends ConsumerStatefulWidget {

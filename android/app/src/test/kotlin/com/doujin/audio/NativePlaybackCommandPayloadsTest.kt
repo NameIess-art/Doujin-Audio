@@ -26,7 +26,7 @@ class NativePlaybackCommandPayloadsTest {
 
     @Test
     fun `simple playback commands are validated before service startup`() {
-        validatePlaybackArgumentsBeforeService(
+        parsePlaybackCommand(
             MethodCall(
                 NativePlaybackMethods.PLAY,
                 mapOf(
@@ -37,21 +37,21 @@ class NativePlaybackCommandPayloadsTest {
             )
         )
 
-        validatePlaybackArgumentsBeforeService(
+        parsePlaybackCommand(
             MethodCall(
                 NativePlaybackMethods.SET_VOLUME,
                 mapOf("sessionId" to "main", "volume" to 3.0)
             )
         )
 
-        validatePlaybackArgumentsBeforeService(
+        parsePlaybackCommand(
             MethodCall(
                 NativePlaybackMethods.SET_SPEED,
                 mapOf("sessionId" to "main", "speed" to 0.25)
             )
         )
 
-        validatePlaybackArgumentsBeforeService(
+        parsePlaybackCommand(
             MethodCall(
                 NativePlaybackMethods.SET_TEMPORARY_SPEED,
                 mapOf("sessionId" to "main", "speed" to 3.0)
@@ -59,9 +59,52 @@ class NativePlaybackCommandPayloadsTest {
         )
     }
 
+    @Test
+    fun `play command requests foreground bootstrap before service startup`() {
+        val command = parsePlaybackCommand(
+            MethodCall(
+                NativePlaybackMethods.PLAY,
+                mapOf("sessionId" to "main", "transportCommandId" to 1L, "exclusive" to false)
+            )
+        )
+
+        assertTrue(command.requireForegroundBootstrap)
+    }
+
+    @Test
+    fun `prepare command requests foreground bootstrap only for autoplay`() {
+        val paused = parsePlaybackCommand(
+            MethodCall(NativePlaybackMethods.PREPARE_SESSION, validPreparePayload())
+        )
+        val autoplay = parsePlaybackCommand(
+            MethodCall(
+                NativePlaybackMethods.PREPARE_SESSION,
+                validPreparePayload() + ("autoPlay" to true)
+            )
+        )
+
+        assertFalse(paused.requireForegroundBootstrap)
+        assertTrue(autoplay.requireForegroundBootstrap)
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun `play command rejects missing exclusive flag before service startup`() {
+        parsePlaybackCommand(
+            MethodCall(
+                NativePlaybackMethods.PLAY,
+                mapOf("sessionId" to "main", "transportCommandId" to 1L)
+            )
+        )
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun `foreground command rejects missing enabled flag before service startup`() {
+        parsePlaybackCommand(MethodCall(NativePlaybackMethods.SET_FOREGROUND_ENABLED, emptyMap<String, Any>()))
+    }
+
     @Test(expected = IllegalArgumentException::class)
     fun `simple playback commands reject volume above amplified range`() {
-        validatePlaybackArgumentsBeforeService(
+        parsePlaybackCommand(
             MethodCall(
                 NativePlaybackMethods.SET_VOLUME,
                 mapOf("sessionId" to "main", "volume" to 3.01)
@@ -71,7 +114,7 @@ class NativePlaybackCommandPayloadsTest {
 
     @Test(expected = IllegalArgumentException::class)
     fun `simple playback commands reject non finite values before service startup`() {
-        validatePlaybackArgumentsBeforeService(
+        parsePlaybackCommand(
             MethodCall(
                 NativePlaybackMethods.SET_VOLUME,
                 mapOf("sessionId" to "main", "volume" to Double.NaN)
@@ -81,7 +124,7 @@ class NativePlaybackCommandPayloadsTest {
 
     @Test
     fun `playback behavior requires a complete boolean payload`() {
-        validatePlaybackArgumentsBeforeService(
+        parsePlaybackCommand(
             MethodCall(
                 NativePlaybackMethods.SET_PLAYBACK_BEHAVIOR,
                 mapOf(
@@ -96,7 +139,7 @@ class NativePlaybackCommandPayloadsTest {
 
     @Test(expected = IllegalArgumentException::class)
     fun `playback behavior rejects missing values before service startup`() {
-        validatePlaybackArgumentsBeforeService(
+        parsePlaybackCommand(
             MethodCall(
                 NativePlaybackMethods.SET_PLAYBACK_BEHAVIOR,
                 mapOf("pauseOnAudioDeviceDisconnect" to true)

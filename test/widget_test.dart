@@ -28,8 +28,8 @@ import 'package:doujin_audio/features/library/presentation/work_detail_page.dart
 import 'package:doujin_audio/features/player/presentation/playlist_tab.dart';
 import 'package:doujin_audio/features/player/application/playback_facade.dart';
 import 'package:doujin_audio/features/player/application/playback_session_snapshot.dart';
-import 'package:doujin_audio/features/settings/application/app_cache_service.dart';
-import 'package:doujin_audio/features/settings/application/app_preferences.dart';
+import 'package:doujin_audio/core/cache/app_cache_service.dart';
+import 'package:doujin_audio/core/persistence/app_preferences.dart';
 import 'package:doujin_audio/features/settings/application/app_update_service.dart';
 import 'support/test_persistence_repository.dart';
 import 'package:doujin_audio/features/library/application/library_service.dart';

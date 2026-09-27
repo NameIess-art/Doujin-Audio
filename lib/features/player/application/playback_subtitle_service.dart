@@ -12,7 +12,7 @@ import '../../../core/logging/app_log_service.dart';
 import '../../../core/media/music_track.dart';
 import '../../../core/media/subtitle_parser.dart';
 import '../../../core/platform/file_cache_platform_gateway.dart';
-import '../../settings/application/app_preferences.dart';
+import '../../../core/persistence/app_preferences.dart';
 
 typedef PlaybackTrackResolver = MusicTrack? Function(String trackPath);
 typedef PlaybackSubtitleLoader =

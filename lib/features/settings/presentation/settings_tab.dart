@@ -11,7 +11,7 @@ import '../../../app/localization/app_language_provider.dart';
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/presentation/app_presentation_providers.dart';
 import '../../../app/presentation/app_settings_group_card.dart';
-import '../application/app_cache_service.dart';
+import '../../../core/cache/app_cache_service.dart';
 import '../application/settings_command_controller.dart';
 import '../application/app_update_service.dart';
 import '../application/settings_repository.dart';

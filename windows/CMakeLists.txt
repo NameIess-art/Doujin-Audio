@@ -137,8 +137,13 @@ install(FILES "${SQLITE_DLL}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}" RENAME sql
 # Build the pinned Japanese subtitle/translation runtime from source. It uses
 # the same C ABI on both platforms and ships beside the executable for Dart FFI.
 find_program(DART_EXECUTABLE dart REQUIRED)
-get_filename_component(DART_BIN_DIR "${DART_EXECUTABLE}" DIRECTORY)
-set(DART_RUNTIME_EXECUTABLE "${DART_BIN_DIR}/cache/dart-sdk/bin/dart.exe")
+get_filename_component(DART_EXECUTABLE_NAME "${DART_EXECUTABLE}" NAME)
+if(DART_EXECUTABLE_NAME STREQUAL "dart.exe")
+  set(DART_RUNTIME_EXECUTABLE "${DART_EXECUTABLE}")
+else()
+  get_filename_component(DART_BIN_DIR "${DART_EXECUTABLE}" DIRECTORY)
+  set(DART_RUNTIME_EXECUTABLE "${DART_BIN_DIR}/cache/dart-sdk/bin/dart.exe")
+endif()
 if(NOT EXISTS "${DART_RUNTIME_EXECUTABLE}")
   message(FATAL_ERROR "Flutter Dart runtime not found beside ${DART_EXECUTABLE}")
 endif()

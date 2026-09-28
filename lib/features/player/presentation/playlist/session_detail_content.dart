@@ -706,22 +706,28 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
                           child: AspectRatio(
                             aspectRatio: 1.0,
                             child: ClipRRect(
-                              borderRadius: BorderRadius.circular(16),
+                              borderRadius: BorderRadius.only(
+                                topLeft: Radius.circular(
+                                  _segmentPanelExpanded ? 19 : 16,
+                                ),
+                                topRight: Radius.circular(
+                                  _segmentPanelExpanded ? 19 : 16,
+                                ),
+                                bottomLeft: const Radius.circular(16),
+                                bottomRight: const Radius.circular(16),
+                              ),
                               child: Stack(
                                 fit: StackFit.expand,
                                 children: [
                                   widget.artworkWidget,
                                   if (_segmentPanelExpanded)
                                     Positioned.fill(
-                                      child: ColoredBox(
-                                        color: cs.surface,
-                                        child: _buildSegmentPanel(
-                                          playback: playback,
-                                          session: session,
-                                          labels: visibleSegmentLabels,
-                                          key: const ValueKey(
-                                            'segments_landscape',
-                                          ),
+                                      child: _buildSegmentPanel(
+                                        playback: playback,
+                                        session: session,
+                                        labels: visibleSegmentLabels,
+                                        key: const ValueKey(
+                                          'segments_landscape',
                                         ),
                                       ),
                                     ),

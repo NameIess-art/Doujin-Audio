@@ -128,7 +128,7 @@ void main() {
   );
 
   test(
-    'adding one track only registers that item without playing or recording history',
+    'adding a selected track keeps the full work available without starting playback',
     () async {
       final source = _FakeAsmrPlaybackSource(
         trackQueue: [_track('selected'), _track('next')],
@@ -142,6 +142,10 @@ void main() {
       expect(await coordinator.addTrackToPlaylist(work, target), isTrue);
 
       expect(launcher.addedTrack?.path, 'selected');
+      expect(launcher.addedWorkTracks?.map((track) => track.path), [
+        'selected',
+        'next',
+      ]);
       expect(launcher.launchCount, 0);
       expect(launcher.directCount, 0);
       expect(source.recordedWorks, isEmpty);
@@ -187,12 +191,6 @@ class _FakeAsmrPlaybackSource implements AsmrPlaybackSource {
   AsmrTrackFile? requestedTarget;
 
   @override
-  Future<MusicTrack?> loadPlayableTrack(
-    AsmrWork work,
-    AsmrTrackFile target,
-  ) async => trackQueue.firstOrNull;
-
-  @override
   Future<List<MusicTrack>> loadPlayableTracks(AsmrWork work) async =>
       workTracks;
 
@@ -215,6 +213,7 @@ class _RecordingPlaybackSessionLauncher implements PlaybackSessionLauncher {
   int launchCount = 0;
   int directCount = 0;
   MusicTrack? addedTrack;
+  List<MusicTrack>? addedWorkTracks;
   List<MusicTrack> tracks = const <MusicTrack>[];
   bool? autoPlay;
   SessionLoopMode? loopMode;
@@ -232,8 +231,12 @@ class _RecordingPlaybackSessionLauncher implements PlaybackSessionLauncher {
   }
 
   @override
-  Future<bool> addTrackToPlaylist(MusicTrack track) async {
+  Future<bool> addTrackToPlaylist(
+    MusicTrack track, {
+    List<MusicTrack>? workTracks,
+  }) async {
     addedTrack = track;
+    addedWorkTracks = workTracks;
     return true;
   }
 

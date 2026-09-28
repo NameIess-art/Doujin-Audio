@@ -506,7 +506,10 @@ extension PlaybackQueuePathCoordinator on PlaybackFacade {
     return current;
   }
 
-  Future<bool> addTrackToPlaylist(MusicTrack track) async {
+  Future<bool> addTrackToPlaylist(
+    MusicTrack track, {
+    List<MusicTrack>? workTracks,
+  }) async {
     final existing = _service.sessions.values
         .where(
           (session) =>
@@ -516,7 +519,12 @@ extension PlaybackQueuePathCoordinator on PlaybackFacade {
         )
         .firstOrNull;
     if (existing != null) return false;
-    createTrackSession(track, customQueueTracks: [track]);
+    createTrackSession(
+      track,
+      customQueueTracks: workTracks == null
+          ? (track.isRemoteAsmr ? [track] : null)
+          : List<MusicTrack>.unmodifiable(workTracks),
+    );
     return true;
   }
 

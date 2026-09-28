@@ -93,18 +93,28 @@ class AsmrRemoteCatalogService {
           searchQuery: searchQuery,
           language: language,
           token: token,
+          refreshSeed: refreshSeed,
         ),
       ),
     );
     final candidates = <int, AsmrWork>{};
+    final firstPageIds = <int>{};
+    final explorationIds = <int>{};
     Object? firstError;
     for (final result in results) {
       firstError ??= result.error;
-      for (final work in result.pages.expand((page) => page.works)) {
-        candidates.putIfAbsent(work.id, () => work);
+      for (var index = 0; index < result.pages.length; index++) {
+        for (final work in result.pages[index].works) {
+          candidates.putIfAbsent(work.id, () => work);
+          (index == 0 ? firstPageIds : explorationIds).add(work.id);
+        }
       }
     }
     if (candidates.isEmpty && firstError != null) throw firstError;
+    explorationIds.removeAll(firstPageIds);
+    final promotedIds = searchQuery.isEmpty && refreshSeed > 1
+        ? explorationIds
+        : const <int>{};
     final candidateList = candidates.values.toList(growable: false);
     final localTracks = await localTracksFuture;
     final request = AsmrRecommendationRankRequest(
@@ -114,6 +124,7 @@ class AsmrRemoteCatalogService {
       historyWorks: historyWorks,
       refreshSeed: refreshSeed,
       limit: null,
+      explorationWorkIds: promotedIds,
     );
     return AppLogService.measureAsync(
       'asmr_recommendation_rank',
@@ -123,6 +134,7 @@ class AsmrRemoteCatalogService {
         favoriteWorks: favoriteWorks,
         historyWorks: historyWorks,
         refreshSeed: refreshSeed,
+        explorationWorkIds: promotedIds,
       ),
       details: <String, Object?>{
         'candidates': candidateList.length,
@@ -160,26 +172,34 @@ class AsmrRemoteCatalogService {
     required String searchQuery,
     required AsmrContentLanguage language,
     required String? token,
+    required int refreshSeed,
   }) async {
+    final pages = <AsmrWorkPage>[];
     try {
-      final pages = <AsmrWorkPage>[];
-      var page = await loadPage(
+      final firstPage = await loadPage(
         category,
         searchQuery: searchQuery,
         page: 1,
         language: language,
         token: token,
       );
-      pages.add(page);
-      while (page.hasMore && pages.length < 2) {
-        page = await loadPage(
-          category,
-          searchQuery: searchQuery,
-          page: pages.length + 1,
-          language: language,
-          token: token,
+      pages.add(firstPage);
+      if (firstPage.hasMore) {
+        final totalPages =
+            (firstPage.totalCount + firstPage.pageSize - 1) ~/
+            firstPage.pageSize;
+        final nextPage = searchQuery.isNotEmpty || refreshSeed <= 1
+            ? 2
+            : 2 + (refreshSeed - 1) % (totalPages - 1);
+        pages.add(
+          await loadPage(
+            category,
+            searchQuery: searchQuery,
+            page: nextPage,
+            language: language,
+            token: token,
+          ),
         );
-        pages.add(page);
       }
       return _RecommendationPagesResult(pages: pages);
     } catch (error, stackTrace) {
@@ -188,7 +208,7 @@ class AsmrRemoteCatalogService {
         error: error,
         stackTrace: stackTrace,
       );
-      return _RecommendationPagesResult(error: error);
+      return _RecommendationPagesResult(pages: pages, error: error);
     }
   }
 

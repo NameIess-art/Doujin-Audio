@@ -35,6 +35,68 @@ class _CountingLibrary extends LibraryService {
 
 void main() {
   AppRuntimeTestFixture.initialize();
+  test('selected local track keeps every work audio in the switcher', () async {
+    final graph = createTestRuntimeGraph();
+    addTearDown(graph.runtime.dispose);
+    final tracks = [
+      for (final path in [
+        '/library/work/first.mp3',
+        '/library/work/disc/second.mp3',
+        '/library/work/disc/third.mp3',
+      ])
+        MusicTrack(
+          path: path,
+          displayName: path,
+          groupKey: '/library/work',
+          groupTitle: 'Work',
+          groupSubtitle: '',
+          isSingle: false,
+        ),
+    ];
+    graph.library.addWatchedFolder('/library/work', notify: false);
+    graph.library.addTracks(tracks, notify: false, persist: false);
+
+    expect(await graph.playback.addTrackToPlaylist(tracks[1]), isTrue);
+    final session = graph.playback.ordinarySessions.single;
+    expect(session.currentTrackPath, tracks[1].path);
+    expect(session.customQueueTracks, isNull);
+    expect(
+      graph.audioPaths.tracksForSessionSwitcher(session.id).map((t) => t.path),
+      graph.audioPaths.tracksInSameWork(tracks[0].path).map((t) => t.path),
+    );
+  });
+
+  test('selected ASMR track enables the full work switcher', () async {
+    final graph = createTestRuntimeGraph();
+    addTearDown(graph.runtime.dispose);
+    MusicTrack remote(String name) => MusicTrack(
+      path: 'https://example.test/$name.mp3',
+      displayName: name,
+      groupKey: 'asmr-work-7',
+      groupTitle: 'Work',
+      groupSubtitle: '',
+      isSingle: false,
+      remoteMetadataKind: MusicTrack.remoteMetadataKindAsmrOne,
+      remoteMetadata: {'id': 7, 'trackRelativePath': '$name.mp3'},
+    );
+    final selected = remote('selected');
+    final sibling = remote('sibling');
+
+    expect(
+      await graph.playback.addTrackToPlaylist(
+        selected,
+        workTracks: [selected, sibling],
+      ),
+      isTrue,
+    );
+    final session = graph.playback.ordinarySessions.single;
+    expect(graph.audioPaths.hasOtherTracksInSameWork(selected.path), isTrue);
+    expect(
+      graph.audioPaths.tracksForSessionSwitcher(session.id).map((t) => t.path),
+      [selected.path, sibling.path],
+    );
+  });
+
   for (final count in [100, 1000, 5000]) {
     test(
       'sibling presence visits two matches without sorting $count tracks',

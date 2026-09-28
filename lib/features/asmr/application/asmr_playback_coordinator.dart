@@ -11,8 +11,6 @@ abstract interface class AsmrPlaybackSource {
     AsmrTrackFile target,
   );
 
-  Future<MusicTrack?> loadPlayableTrack(AsmrWork work, AsmrTrackFile target);
-
   Future<void> recordHistory(AsmrWork work);
 }
 
@@ -37,9 +35,11 @@ class AsmrPlaybackCoordinator {
   }
 
   Future<bool> addTrackToPlaylist(AsmrWork work, AsmrTrackFile target) async {
-    final track = await _source.loadPlayableTrack(work, target);
-    if (track == null) throw StateError('The selected media is unavailable.');
-    return _launcher.addTrackToPlaylist(track);
+    final tracks = await _source.loadPlayableTracksStartingAt(work, target);
+    if (tracks.isEmpty) {
+      throw StateError('The selected media is unavailable.');
+    }
+    return _launcher.addTrackToPlaylist(tracks.first, workTracks: tracks);
   }
 
   Future<void> playWork(AsmrWork work, {bool? autoPlay}) async {

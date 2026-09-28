@@ -66,10 +66,12 @@ class AudioFeaturesPage extends ConsumerWidget {
     super.key,
     required this.session,
     required this.playback,
+    required this.topInset,
   });
 
   final PlaybackSessionSnapshot session;
   final PlaybackFacade playback;
+  final double topInset;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -85,7 +87,7 @@ class AudioFeaturesPage extends ConsumerWidget {
       listen: false,
     ).read(appLanguageProviderInstanceProvider);
     return ListView(
-      padding: const EdgeInsets.only(top: 6),
+      padding: EdgeInsets.only(top: topInset + 6),
       children: [
         FeatureSwitchTile(
           title: i18n.tr('skip_silence'),
@@ -345,10 +347,12 @@ class EqualizerPage extends ConsumerWidget {
     super.key,
     required this.session,
     required this.playback,
+    required this.topInset,
   });
 
   final PlaybackSessionSnapshot session;
   final PlaybackFacade playback;
+  final double topInset;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -368,9 +372,7 @@ class EqualizerPage extends ConsumerWidget {
     final removalState = ref.watch(undoableRemovalStateProvider);
     final customPresets =
         (ref.watch(
-                  settingsStateProvider.select(
-                    (s) => s.value?.customEqPresets,
-                  ),
+                  settingsStateProvider.select((s) => s.value?.customEqPresets),
                 ) ??
                 ref.read(settingsRepositoryProvider).customEqPresets)
             .where(
@@ -389,7 +391,7 @@ class EqualizerPage extends ConsumerWidget {
     );
 
     return ListView(
-      padding: const EdgeInsets.only(top: 2),
+      padding: EdgeInsets.only(top: topInset + 2),
       children: [
         SwitchListTile(
           contentPadding: EdgeInsets.zero,

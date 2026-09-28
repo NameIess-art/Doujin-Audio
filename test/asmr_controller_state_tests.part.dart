@@ -476,7 +476,10 @@ void registerAsmrControllerStateTests({
       await controller.setTrackHidden(work.id, node, true);
       expect(controller.trackTreeViewState(work.id).visibleTree, isEmpty);
       expect(await controller.loadPlayableTracks(work), isEmpty);
-      expect(await controller.loadPlayableTrack(work, node), isNull);
+      expect(
+        await controller.loadPlayableTracksStartingAt(work, node),
+        isEmpty,
+      );
       expect(before, hasLength(1));
       expect(
         await controller.loadPlayableTracks(_work(id: 72, title: 'Other')),
@@ -511,7 +514,10 @@ void registerAsmrControllerStateTests({
       );
       final work = _work(id: 73, title: 'Video');
       expect(
-        (await controller.loadPlayableTrack(work, refreshed))!.isVideo,
+        (await controller.loadPlayableTracksStartingAt(
+          work,
+          refreshed,
+        )).single.isVideo,
         isTrue,
       );
       await controller.setTrackHidden(work.id, first, true);

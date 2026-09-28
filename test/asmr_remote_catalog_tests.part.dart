@@ -306,6 +306,124 @@ void registerAsmrRemoteCatalogTests({
     expect(api.fetchWorkRequests, contains('release:desc:2'));
   });
 
+  test('ASMR recommendation rotates one page within eight requests', () async {
+    await resetPrefs();
+    final api = _FakeAsmrApiService(
+      largeRecommendationPool: true,
+      recommendationPageCount: 4,
+    );
+    final controller = createTestAsmrController(
+      preferencesStore: preferences,
+      apiService: api,
+      persistenceRepository: _FakeTestPersistenceRepository(
+        const <MusicTrack>[],
+      ),
+    );
+    await controller.initialize(defaultLanguage: AsmrContentLanguage.en);
+
+    Set<int>? previousIds;
+    for (final secondPage in [2, 3, 4, 2]) {
+      final requestCount = api.fetchWorkRequests.length;
+      await controller.refreshCategory(AsmrCategoryType.recommendation);
+      final requests = api.fetchWorkRequests.skip(requestCount).toList();
+      expect(requests, hasLength(8));
+      for (final order in [
+        'create_date:desc',
+        'dl_count:desc',
+        'rate_average_2dp:desc',
+        'release:desc',
+      ]) {
+        expect(requests, contains('$order:1'));
+        expect(requests, contains('$order:$secondPage'));
+      }
+      expect(
+        controller.worksFor(AsmrCategoryType.recommendation),
+        hasLength(320),
+      );
+      final ids = controller
+          .worksFor(AsmrCategoryType.recommendation)
+          .map((work) => work.id)
+          .toSet();
+      if (previousIds != null) {
+        expect(ids.difference(previousIds), isNotEmpty);
+      }
+      previousIds = ids;
+    }
+  });
+
+  test('ASMR recommendation search keeps the first two pages', () async {
+    await resetPrefs();
+    final api = _FakeAsmrApiService(
+      largeRecommendationPool: true,
+      recommendationPageCount: 4,
+      pagedSearchWorks: true,
+    );
+    final controller = createTestAsmrController(
+      preferencesStore: preferences,
+      apiService: api,
+      persistenceRepository: _FakeTestPersistenceRepository(
+        const <MusicTrack>[],
+      ),
+    );
+    await controller.initialize(defaultLanguage: AsmrContentLanguage.en);
+
+    await controller.refreshCategory(
+      AsmrCategoryType.recommendation,
+      searchQuery: 'sleep',
+    );
+    await controller.refreshCategory(
+      AsmrCategoryType.recommendation,
+      searchQuery: 'sleep',
+    );
+
+    expect(api.searchWorkRequests, hasLength(16));
+    expect(
+      api.searchWorkRequests.every(
+        (request) => request.endsWith(':1') || request.endsWith(':2'),
+      ),
+      isTrue,
+    );
+  });
+
+  test(
+    'ASMR recommendation keeps the first page if the rotating page fails',
+    () async {
+      await resetPrefs();
+      final api = _FakeAsmrApiService(
+        largeRecommendationPool: true,
+        recommendationPageCount: 4,
+        beforeFetchWorkResponse: (request) async {
+          if (request == 'create_date:desc:3') {
+            throw const HttpException('Rotating page failed');
+          }
+        },
+      );
+      final controller = createTestAsmrController(
+        preferencesStore: preferences,
+        apiService: api,
+        persistenceRepository: _FakeTestPersistenceRepository(
+          const <MusicTrack>[],
+        ),
+      );
+      await controller.initialize(defaultLanguage: AsmrContentLanguage.en);
+
+      await controller.refreshCategory(AsmrCategoryType.recommendation);
+      await controller.refreshCategory(AsmrCategoryType.recommendation);
+
+      expect(api.fetchWorkRequests, contains('create_date:desc:3'));
+      expect(
+        controller
+            .worksFor(AsmrCategoryType.recommendation)
+            .map((work) => work.id),
+        contains(1),
+      );
+      expect(
+        controller.worksFor(AsmrCategoryType.recommendation),
+        hasLength(280),
+      );
+    },
+  );
+
   test('ASMR recommendation starts candidate sources concurrently', () async {
     await resetPrefs();
     final firstPageRequests = <String>{

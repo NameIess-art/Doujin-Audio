@@ -4133,6 +4133,20 @@ void main() {
         find.byKey(const ValueKey('session_volume_exit_button')),
         findsOneWidget,
       );
+      final volumeExit = find.byKey(
+        const ValueKey('session_volume_exit_button'),
+      );
+      expect(
+        find.descendant(
+          of: volumeExit,
+          matching: find.byIcon(Icons.arrow_back_rounded),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        tester.widget<IconButton>(volumeExit).tooltip,
+        harness.language.tr('back'),
+      );
       expect(
         find.byKey(const ValueKey('session_volume_mute_button')),
         findsOneWidget,

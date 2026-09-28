@@ -1321,30 +1321,6 @@ class AsmrLibraryController extends ChangeNotifier
     return tracks;
   }
 
-  @override
-  Future<MusicTrack?> loadPlayableTrack(
-    AsmrWork work,
-    AsmrTrackFile target,
-  ) async {
-    await initializeForVisiblePage();
-    final cached = _playableTrackCache[work.id];
-    if (cached != null && identical(cached.work, work)) {
-      return cached.tracks
-          .where(
-            (track) =>
-                track.remoteMetadata?['trackRelativePath'] ==
-                target.relativePath,
-          )
-          .firstOrNull;
-    }
-    final tree = await ensureTrackTree(work);
-    return _flattenTracks(
-      work,
-      tree,
-      includeAudioNode: (node) => node.stableKey == target.stableKey,
-    ).firstOrNull;
-  }
-
   Future<List<WorkTextFile>> findWorkTextFiles(
     AsmrWork work, {
     AsmrDownloadManager? downloadManager,

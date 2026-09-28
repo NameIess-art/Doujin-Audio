@@ -162,7 +162,9 @@ final class PlaybackFacade {
   bool get hasPlayingSession =>
       _service.sessions.values.any((session) => session.state.playing);
   bool get hasPlayingAudioSession => _service.sessions.values.any((session) {
-    if (!session.state.playing || session.currentTrackPath.isEmpty) return false;
+    if (!session.state.playing || session.currentTrackPath.isEmpty) {
+      return false;
+    }
     final trackPath = session.currentTrackPath;
     final track =
         session.trackForPath(trackPath) ??
@@ -1160,8 +1162,12 @@ final class PlaybackFacade {
     this,
   ).playDirect(tracks, startIndex: startIndex, loopMode: loopMode);
 
-  Future<bool> addTrackToPlaylist(MusicTrack track) =>
-      PlaybackQueuePathCoordinator(this).addTrackToPlaylist(track);
+  Future<bool> addTrackToPlaylist(
+    MusicTrack track, {
+    List<MusicTrack>? workTracks,
+  }) => PlaybackQueuePathCoordinator(
+    this,
+  ).addTrackToPlaylist(track, workTracks: workTracks);
 
   Future<bool> launchQueue(
     List<MusicTrack> tracks, {

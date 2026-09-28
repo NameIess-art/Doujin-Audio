@@ -2182,7 +2182,15 @@ void main() {
     expect(panelDecoration.color, isNotNull);
     expect(panelDecoration.border, isNotNull);
     expect(tester.getSize(find.byKey(expandedPanel)).width, 398);
-    expect(panelDecoration.borderRadius, BorderRadius.circular(16));
+    expect(
+      panelDecoration.borderRadius,
+      const BorderRadius.only(
+        topLeft: Radius.circular(19),
+        topRight: Radius.circular(19),
+        bottomLeft: Radius.circular(16),
+        bottomRight: Radius.circular(16),
+      ),
+    );
     expect(find.byType(SessionSubtitlePanel), findsOneWidget);
     expect(
       tester.getSize(find.byType(SessionSubtitlePanel)).height,
@@ -2209,8 +2217,8 @@ void main() {
     );
     expect(capsule, findsOneWidget);
     final capsuleWidget = tester.widget<HeaderFloatingSurface>(capsule);
-    expect(capsuleWidget.radius, 22);
-    expect(capsuleWidget.height, 44);
+    expect(capsuleWidget.radius, 19);
+    expect(capsuleWidget.height, 38);
     final capsuleFill = tester.widget<Material>(
       find.descendant(of: capsule, matching: find.byType(Material)).first,
     );
@@ -2219,14 +2227,28 @@ void main() {
     final capsuleRect = tester.getRect(capsule);
     expect(panelRect.contains(tester.getCenter(closeButtonFinder)), isTrue);
     expect(panelRect.contains(capsuleRect.center), isTrue);
-    expect(panelRect.top, lessThan(capsuleRect.top));
-    expect(capsuleRect.left - panelRect.left, lessThan(8));
-    expect(panelRect.right - capsuleRect.right, lessThan(8));
+    expect(
+      tester.getRect(find.byKey(expandedPanel)).contains(capsuleRect.center),
+      isTrue,
+    );
+    expect(capsuleRect.top, closeTo(panelRect.top, 1));
+    expect(capsuleRect.left, closeTo(panelRect.left, 1));
+    expect(capsuleRect.right, closeTo(panelRect.right, 1));
+    final tabScrollClip = tester.widget<ClipRRect>(
+      find.byKey(const ValueKey<String>('console_tab_scroll_clip')),
+    );
+    expect(
+      tabScrollClip.borderRadius,
+      const BorderRadius.only(
+        topLeft: Radius.circular(19),
+        bottomLeft: Radius.circular(19),
+      ),
+    );
     final tabTaps = find.descendant(of: header, matching: find.byType(InkWell));
     expect(tabTaps, findsNWidgets(6));
     expect(
       tester.widget<InkWell>(tabTaps.at(1)).borderRadius,
-      BorderRadius.circular(18),
+      BorderRadius.circular(15),
     );
     final firstTabRect = tester.getRect(tabTaps.at(1));
     final secondTabRect = tester.getRect(tabTaps.at(2));
@@ -2241,30 +2263,6 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(tester.widget<SegmentPanelPageHeader>(header).pageIndex, 2);
-    final centers = [
-      tester.getCenter(closeButtonFinder).dx,
-      for (final label in [
-        'equalizer',
-        'audio_features',
-        'playback_speed',
-        'audio_detail_tags',
-        'volume_balance',
-      ])
-        tester
-            .getCenter(
-              find.descendant(
-                of: header,
-                matching: find.text(languageProvider.tr(label)),
-              ),
-            )
-            .dx,
-    ];
-    for (var index = 2; index < centers.length; index++) {
-      expect(
-        centers[index] - centers[index - 1],
-        closeTo(centers[1] - centers[0], 1),
-      );
-    }
     expect(
       tester.getCenter(closeButtonFinder).dx,
       lessThan(tester.getCenter(find.byKey(expandedPanel)).dx),
@@ -2303,6 +2301,11 @@ void main() {
 
     await tester.tap(find.text(languageProvider.tr('equalizer')));
     await tester.pumpAndSettle();
+    final equalizerList = find.descendant(
+      of: find.byType(EqualizerPage),
+      matching: find.byType(ListView),
+    );
+    expect(tester.getRect(equalizerList).top, closeTo(panelRect.top, 1));
     expect(
       find.descendant(
         of: find.byKey(expandedPanel),
@@ -6520,6 +6523,28 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byKey(const ValueKey('segments_landscape')), findsOneWidget);
+      final headerRect = tester.getRect(find.byType(SegmentPanelPageHeader));
+      final surfaceRect = tester.getRect(
+        find.byKey(
+          const ValueKey<String>(
+            'playback_expanded_control_panel_landscape_surface',
+          ),
+        ),
+      );
+      expect(headerRect.top, closeTo(surfaceRect.top, 1));
+      expect(surfaceRect.contains(headerRect.center), isTrue);
+      final menuClip = tester.widget<ClipRRect>(
+        find
+            .ancestor(
+              of: find.byKey(const ValueKey('segments_landscape')),
+              matching: find.byType(ClipRRect),
+            )
+            .first,
+      );
+      expect(
+        (menuClip.borderRadius as BorderRadius).topLeft,
+        const Radius.circular(19),
+      );
       await tester.tap(
         find.descendant(
           of: find.byType(SegmentPanelPageHeader),
@@ -6527,6 +6552,27 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
+      final equalizerList = find.descendant(
+        of: find.byType(EqualizerPage),
+        matching: find.byType(ListView),
+      );
+      final equalizerScroll = find
+          .descendant(of: equalizerList, matching: find.byType(Scrollable))
+          .first;
+      expect(tester.getRect(equalizerList).top, closeTo(surfaceRect.top, 1));
+      expect(
+        tester.state<ScrollableState>(equalizerScroll).position.maxScrollExtent,
+        greaterThan(0),
+      );
+      await tester.drag(equalizerList, const Offset(0, -120));
+      await tester.pumpAndSettle();
+      final equalizerTile = find
+          .descendant(
+            of: find.byType(EqualizerPage),
+            matching: find.byType(SwitchListTile),
+          )
+          .first;
+      expect(tester.getRect(equalizerTile).top, lessThan(headerRect.bottom));
       expect(
         find.descendant(
           of: find.byKey(const ValueKey('segments_landscape')),
@@ -6545,7 +6591,7 @@ void main() {
           .map((padding) => padding.padding);
       expect(
         contentPaddings,
-        contains(const EdgeInsets.fromLTRB(16, 6, 16, 16)),
+        contains(const EdgeInsets.fromLTRB(16, 0, 16, 16)),
       );
       // Secondary controls capsule remains visible in landscape
       expect(secondaryControlsFinder, findsOneWidget);

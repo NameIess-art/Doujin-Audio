@@ -18,6 +18,7 @@ class AsmrRecommendationEngine {
     required List<AsmrWork> historyWorks,
     int refreshSeed = 0,
     int? limit,
+    Set<int> explorationWorkIds = const <int>{},
   }) {
     final request = AsmrRecommendationRankRequest(
       candidates: candidates,
@@ -26,6 +27,7 @@ class AsmrRecommendationEngine {
       historyWorks: historyWorks,
       refreshSeed: refreshSeed,
       limit: limit,
+      explorationWorkIds: explorationWorkIds,
     );
     if (!usesBackgroundIsolate(request)) {
       return Future<List<AsmrWork>>.value(rankAsmrRecommendations(request));
@@ -44,6 +46,7 @@ class AsmrRecommendationEngine {
     required List<AsmrWork> historyWorks,
     int refreshSeed = 0,
     int? limit,
+    Set<int> explorationWorkIds = const <int>{},
   }) {
     final profile = _RecommendationProfile.build(
       localTracks: localTracks,
@@ -61,7 +64,12 @@ class AsmrRecommendationEngine {
       if (scoreOrder != 0) return scoreOrder;
       return a.work.id.compareTo(b.work.id);
     });
-    return _rankForRefresh(scored, refreshSeed: refreshSeed, limit: limit);
+    return _rankForRefresh(
+      scored,
+      refreshSeed: refreshSeed,
+      limit: limit,
+      explorationWorkIds: explorationWorkIds,
+    );
   }
 
   double _score(
@@ -150,14 +158,41 @@ class AsmrRecommendationEngine {
     List<_ScoredWork> scored, {
     required int refreshSeed,
     required int? limit,
+    required Set<int> explorationWorkIds,
   }) {
     if (scored.isEmpty) {
       return const <AsmrWork>[];
     }
 
-    final ranked = refreshSeed <= 0
+    var ranked = refreshSeed <= 0
         ? scored
         : _diversifyForRefresh(scored, refreshSeed);
+    if (refreshSeed > 1 && explorationWorkIds.isNotEmpty) {
+      final quota = min(40, ranked.length) ~/ 4;
+      final promoted = scored
+          .where((item) => explorationWorkIds.contains(item.work.id))
+          .take(quota)
+          .toList(growable: false);
+      if (promoted.isNotEmpty) {
+        final promotedIds = promoted.map((item) => item.work.id).toSet();
+        final remaining = ranked
+            .where((item) => !promotedIds.contains(item.work.id))
+            .toList(growable: false);
+        final mixed = <_ScoredWork>[];
+        var promotedIndex = 0;
+        var remainingIndex = 0;
+        final prefixLength = min(40, ranked.length);
+        for (var index = 0; index < prefixLength; index++) {
+          if ((index + 1) % 4 == 0 && promotedIndex < promoted.length) {
+            mixed.add(promoted[promotedIndex++]);
+          } else {
+            mixed.add(remaining[remainingIndex++]);
+          }
+        }
+        mixed.addAll(remaining.skip(remainingIndex));
+        ranked = mixed;
+      }
+    }
     final visible = limit == null || ranked.length <= limit
         ? ranked
         : ranked.take(limit);
@@ -209,6 +244,7 @@ class AsmrRecommendationRankRequest {
     required this.historyWorks,
     required this.refreshSeed,
     required this.limit,
+    this.explorationWorkIds = const <int>{},
   });
 
   final List<AsmrWork> candidates;
@@ -217,6 +253,7 @@ class AsmrRecommendationRankRequest {
   final List<AsmrWork> historyWorks;
   final int refreshSeed;
   final int? limit;
+  final Set<int> explorationWorkIds;
 
   int get totalInputCount =>
       candidates.length +
@@ -233,6 +270,7 @@ List<AsmrWork> rankAsmrRecommendations(AsmrRecommendationRankRequest request) {
     historyWorks: request.historyWorks,
     refreshSeed: request.refreshSeed,
     limit: request.limit,
+    explorationWorkIds: request.explorationWorkIds,
   );
 }
 

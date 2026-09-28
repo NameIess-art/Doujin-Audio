@@ -216,6 +216,28 @@ void main() {
     expect(added.isTemporary, isFalse);
   });
 
+  test('selected work track retains its full queue', () async {
+    final facade = PlaybackFacade.create(
+      databaseRepository: _RecordingRepository(),
+    );
+    addTearDown(facade.dispose);
+    final workTracks = [track('b'), track('c'), track('a')];
+
+    expect(
+      await facade.addTrackToPlaylist(workTracks.first, workTracks: workTracks),
+      isTrue,
+    );
+    final session = facade.ordinarySessions.single;
+    expect(session.currentTrackPath, workTracks.first.path);
+    expect(session.customQueueTracks?.map((item) => item.path), [
+      track('b').path,
+      track('c').path,
+      track('a').path,
+    ]);
+    expect(session.loadedPath, isNull);
+    expect(session.playbackRequested, isFalse);
+  });
+
   test('direct playback leaves an existing playlist queue unchanged', () async {
     final facade = PlaybackFacade.create(
       databaseRepository: _RecordingRepository(),

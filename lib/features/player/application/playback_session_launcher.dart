@@ -11,7 +11,10 @@ abstract interface class PlaybackSessionLauncher {
     SessionLoopMode loopMode = SessionLoopMode.folderSequential,
   });
 
-  Future<bool> addTrackToPlaylist(MusicTrack track);
+  Future<bool> addTrackToPlaylist(
+    MusicTrack track, {
+    List<MusicTrack>? workTracks,
+  });
 
   Future<bool> launchQueue(
     List<MusicTrack> tracks, {
@@ -33,8 +36,10 @@ final class PlaybackFacadeSessionLauncher implements PlaybackSessionLauncher {
   }) => _facade.playDirect(tracks, startIndex: startIndex, loopMode: loopMode);
 
   @override
-  Future<bool> addTrackToPlaylist(MusicTrack track) =>
-      _facade.addTrackToPlaylist(track);
+  Future<bool> addTrackToPlaylist(
+    MusicTrack track, {
+    List<MusicTrack>? workTracks,
+  }) => _facade.addTrackToPlaylist(track, workTracks: workTracks);
 
   @override
   Future<bool> launchQueue(

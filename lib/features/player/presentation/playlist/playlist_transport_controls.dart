@@ -499,9 +499,9 @@ class _PlaybackSecondaryControlsState
               key: const ValueKey('session_volume_exit_button'),
               constraints: const BoxConstraints.tightFor(width: 44, height: 44),
               padding: EdgeInsets.zero,
-              tooltip: i18n.tr('close'),
+              tooltip: i18n.tr('back'),
               icon: Icon(
-                Icons.close_rounded,
+                Icons.arrow_back_rounded,
                 size: 20,
                 color: sessionDetailForeground(
                   cs,

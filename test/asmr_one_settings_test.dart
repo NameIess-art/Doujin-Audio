@@ -263,6 +263,7 @@ class _FakeAsmrApiService extends AsmrApiService {
     this.repeatPaginatedWorks = false,
     this.recommendationPageCount = 2,
     this.recommendationWorks,
+    this.pagedSearchWorks = false,
     this.worksByToken = const <String, List<AsmrWork>>{},
     this.trackTree = const <AsmrTrackFile>[],
     List<AsmrReviewRecord> remoteReviewRecords = const <AsmrReviewRecord>[],
@@ -280,6 +281,7 @@ class _FakeAsmrApiService extends AsmrApiService {
   final List<String> fetchWorkRequests = <String>[];
   final List<String?> fetchWorkTokens = <String?>[];
   final List<String> searchKeywords = <String>[];
+  final List<String> searchWorkRequests = <String>[];
   final List<String> reviewPuts = <String>[];
   final List<int> deletedReviewWorkIds = <int>[];
   final List<String> calls = <String>[];
@@ -289,6 +291,7 @@ class _FakeAsmrApiService extends AsmrApiService {
   final bool repeatPaginatedWorks;
   final int recommendationPageCount;
   final List<AsmrWork>? recommendationWorks;
+  final bool pagedSearchWorks;
   final Map<String, List<AsmrWork>> worksByToken;
   final List<AsmrTrackFile> trackTree;
   final List<AsmrReviewRecord> remoteReviewRecords;
@@ -479,6 +482,17 @@ class _FakeAsmrApiService extends AsmrApiService {
     AsmrContentLanguage language = AsmrContentLanguage.zh,
   }) {
     searchKeywords.add(keyword);
+    searchWorkRequests.add('$order:$sort:$page');
+    if (pagedSearchWorks) {
+      return SynchronousFuture<AsmrWorkPage>(
+        _buildFetchWorksPage(
+          order: order,
+          page: page,
+          pageSize: pageSize,
+          token: token,
+        ),
+      );
+    }
     return SynchronousFuture<AsmrWorkPage>(
       AsmrWorkPage(
         works: <AsmrWork>[

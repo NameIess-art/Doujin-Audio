@@ -193,6 +193,60 @@ void main() {
     expect(first.map((item) => item.id), isNot(second.map((item) => item.id)));
   });
 
+  test(
+    'refresh mixes the highest scored exploration works every fourth slot',
+    () {
+      final candidates = [
+        for (var id = 1; id <= 60; id++)
+          work(
+            id: id,
+            title: 'Candidate $id',
+            rating: id <= 40 ? 3 : 4 + (id - 41) / 100,
+          ),
+      ];
+      final ranked = engine.rank(
+        candidates: candidates,
+        localTracks: const <MusicTrack>[],
+        favoriteWorks: const <AsmrWork>[],
+        historyWorks: const <AsmrWork>[],
+        refreshSeed: 2,
+        explorationWorkIds: {for (var id = 41; id <= 60; id++) id},
+      );
+
+      expect(
+        [for (var index = 3; index < 40; index += 4) ranked[index].id],
+        [for (var id = 60; id >= 51; id--) id],
+      );
+      expect(ranked.map((item) => item.id).toSet(), hasLength(60));
+      expect(ranked, hasLength(60));
+    },
+  );
+
+  test(
+    'exploration quota falls back to the original ranking when unavailable',
+    () {
+      final candidates = [
+        for (var id = 1; id <= 20; id++) work(id: id, title: 'Candidate $id'),
+      ];
+      List<int> ids(Set<int> explorationWorkIds) => engine
+          .rank(
+            candidates: candidates,
+            localTracks: const <MusicTrack>[],
+            favoriteWorks: [work(id: 20, title: 'Seen')],
+            historyWorks: const <AsmrWork>[],
+            refreshSeed: 2,
+            explorationWorkIds: explorationWorkIds,
+            limit: 10,
+          )
+          .map((item) => item.id)
+          .toList();
+
+      expect(ids({20}), ids(const <int>{}));
+      expect(ids({19})[3], 19);
+      expect(ids({19}), hasLength(10));
+    },
+  );
+
   test('falls back to quality when profile is empty', () {
     final ranked = engine.rank(
       candidates: <AsmrWork>[
@@ -234,6 +288,7 @@ void main() {
       historyWorks: const <AsmrWork>[],
       refreshSeed: 7,
       limit: 40,
+      explorationWorkIds: {for (var id = 1; id <= 60; id++) id},
     );
 
     expect(engine.usesBackgroundIsolate(request), isTrue);
@@ -244,6 +299,7 @@ void main() {
       historyWorks: const <AsmrWork>[],
       refreshSeed: 7,
       limit: 40,
+      explorationWorkIds: {for (var id = 1; id <= 60; id++) id},
     );
     final asynchronous = await engine.rankAsync(
       candidates: candidates,
@@ -252,6 +308,7 @@ void main() {
       historyWorks: const <AsmrWork>[],
       refreshSeed: 7,
       limit: 40,
+      explorationWorkIds: {for (var id = 1; id <= 60; id++) id},
     );
 
     expect(

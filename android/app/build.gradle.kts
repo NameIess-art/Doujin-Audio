@@ -8,6 +8,11 @@ import java.util.Properties
 
 val keystorePropertiesFile = rootProject.file("key.properties")
 val keystoreProperties = Properties()
+val localProperties = Properties().apply {
+    rootProject.file("local.properties").takeIf { it.isFile }?.inputStream()?.use(::load)
+}
+val subtitleJniLibs = layout.buildDirectory.dir("generated/crispasr/jniLibs")
+val subtitleLicenses = layout.buildDirectory.dir("generated/crispasr/assets")
 val requiredReleaseSigningProperties = listOf(
     "storeFile",
     "storePassword",
@@ -89,6 +94,9 @@ android {
         }
     }
 
+    sourceSets.getByName("main").jniLibs.srcDir(subtitleJniLibs)
+    sourceSets.getByName("main").assets.srcDir(subtitleLicenses)
+
     signingConfigs {
         if (releaseSigningConfigured) {
             create("release") {
@@ -125,7 +133,42 @@ android {
     }
 }
 
+val buildSubtitleNative by tasks.registering(Exec::class) {
+    group = "build"
+    description = "Builds pinned CrispASR libraries for Android arm64 and x86_64."
+    val sdk = localProperties.getProperty("sdk.dir")
+        ?: System.getenv("ANDROID_SDK_ROOT")
+        ?: System.getenv("ANDROID_HOME")
+        ?: throw GradleException("Android SDK path is required to build CrispASR")
+    val flutterSdk = localProperties.getProperty("flutter.sdk")
+        ?: throw GradleException("flutter.sdk is required in android/local.properties")
+    val windows = System.getProperty("os.name").startsWith("Windows")
+    val suffix = if (windows) ".exe" else ""
+    val dart = file("$flutterSdk/bin/cache/dart-sdk/bin/dart$suffix")
+    val ndk = file("$sdk/ndk/${android.ndkVersion}")
+    val ninja = file("$sdk/cmake/3.22.1/bin/ninja$suffix")
+    val script = rootProject.file("../tool/build_subtitle_native.dart")
+    workingDir = rootProject.file("..")
+    commandLine(
+        dart.absolutePath, script.absolutePath,
+        "--platform", "android",
+        "--output", subtitleJniLibs.get().asFile.absolutePath,
+        "--assets-output", subtitleLicenses.get().asFile.absolutePath,
+        "--ndk", ndk.absolutePath,
+        "--ninja", if (ninja.isFile) ninja.absolutePath else "ninja",
+    )
+    inputs.file(script)
+    outputs.dir(subtitleJniLibs)
+    outputs.dir(subtitleLicenses)
+}
+
 tasks.configureEach {
+    if (
+        (name.startsWith("merge") && name.endsWith("JniLibFolders")) ||
+        (name.startsWith("merge") && name.endsWith("Assets"))
+    ) {
+        dependsOn(buildSubtitleNative)
+    }
     if (name == "compileReleaseJavaWithJavac") {
         // A prior integration-test/debug build can leave a dev-only plugin in
         // this ignored generated file. It must never enter a release compile.

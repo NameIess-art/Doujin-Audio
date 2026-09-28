@@ -174,7 +174,7 @@ class AudioDetail {
     );
   }
 
-  AudioDetail normalizedForSave(DateTime now) {
+  AudioDetail normalizedForSave(DateTime now, {bool touchUpdatedAt = true}) {
     if (salesCount != null && salesCount! < 0) {
       throw const FormatException('Invalid audio detail field: salesCount');
     }
@@ -201,7 +201,7 @@ class AudioDetail {
       salesCount: salesCount,
       rating: rating,
       createdAt: createdAt ?? now,
-      updatedAt: now,
+      updatedAt: touchUpdatedAt ? now : updatedAt,
     );
   }
 

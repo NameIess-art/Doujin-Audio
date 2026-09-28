@@ -111,6 +111,9 @@ internal class FileCacheOperations(context: Context) {
     fun resolveTrackSubtitle(path: String, groupKey: String?): HashMap<String, String>? =
         subtitles.resolve(path, groupKey)
 
+    fun writeTrackSubtitle(folder: String, name: String, bytes: ByteArray): Boolean =
+        documentStorage.writeFileBytesToFolder(folder, name, bytes, "text/plain") != null
+
     fun resolveMediaDurationMs(source: String): Long? = mediaMetadata.resolveDurationMs(source)
 
     fun resolveTrackCover(path: String, groupKey: String?, rootFolder: String?): String? =

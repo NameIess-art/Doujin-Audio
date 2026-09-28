@@ -62,7 +62,9 @@ void main() {
         path.join(root.path, 'standalone'),
       ).create();
       final library = await Directory(path.join(root.path, 'library')).create();
-      final work = await Directory(path.join(library.path, 'work')).create();
+      final work = await Directory(
+        path.join(library.path, 'RJ123456 work'),
+      ).create();
       final dataSource = _JsonPreservationScanDataSource();
       final coordinator = LibraryScanCoordinator(
         scanner: LibraryScannerService(dataSource: dataSource),
@@ -75,7 +77,11 @@ void main() {
           File(
             path.join(folder.path, audioDetailDocumentName),
           ): const AudioDetailJsonCodec().encodeNew(
-            AudioDetail.empty(target).copyWith(workTitle: 'Original metadata'),
+            AudioDetail.empty(target).copyWith(
+              workTitle: 'Original metadata',
+              voiceActors: const <String>['Original voice'],
+              tags: const <String>['Original tag'],
+            ),
           ),
           File(path.join(folder.path, 'third-party.JSON')): utf8.encode(
             '{\r\n  "preserve": true\r\n}\r\n',
@@ -121,6 +127,12 @@ void main() {
       );
       await pumpEventQueue();
       await expectUnchanged(workJson);
+      final imported = await runtimeGraph.library.loadAudioDetail(
+        AudioDetailTarget.libraryRootFolder(work.path),
+      );
+      expect(imported.detail.workTitle, 'Original metadata');
+      expect(imported.detail.voiceActors, <String>['Original voice']);
+      expect(imported.detail.tags, <String>['Original tag']);
     },
   );
 

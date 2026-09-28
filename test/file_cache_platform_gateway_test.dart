@@ -315,6 +315,32 @@ void main() {
   );
 
   test(
+    'writeTrackSubtitle sends the local LRC to the selected SAF folder',
+    () async {
+      messenger.setMockMethodCallHandler(channel, (call) async {
+        calls.add(call);
+        return success(true);
+      });
+
+      final bytes = Uint8List.fromList(<int>[91, 48, 48, 58, 48, 49, 93]);
+      expect(
+        await gateway.writeTrackSubtitle(
+          folder: 'content://folder',
+          name: 'voice.lrc',
+          bytes: bytes,
+        ),
+        isTrue,
+      );
+      expect(calls.single.method, FileCacheMethod.writeTrackSubtitle);
+      expect(calls.single.arguments, <String, Object?>{
+        'folder': 'content://folder',
+        'name': 'voice.lrc',
+        'bytes': bytes,
+      });
+    },
+  );
+
+  test(
     'malformed and failed optional envelopes keep technical errors out of values',
     () async {
       messenger.setMockMethodCallHandler(channel, (call) async {

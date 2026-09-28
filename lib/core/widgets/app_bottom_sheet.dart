@@ -68,7 +68,10 @@ class AppBottomSheet {
             top: Radius.circular(AppRadius.dialog),
           ),
         ),
-        builder: (ctx) => RepaintBoundary(child: builder(ctx)),
+        builder: (ctx) => ScrollConfiguration(
+          behavior: ScrollConfiguration.of(ctx).copyWith(scrollbars: false),
+          child: RepaintBoundary(child: builder(ctx)),
+        ),
       ),
     );
   }

@@ -4,7 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../app/state/app_runtime_providers.dart';
 import '../../../../app/theme/app_styles.dart';
 import '../../../../core/media/subtitle_parser.dart';
+import '../../../../core/widgets/app_feedback.dart';
 import '../../../../core/widgets/page_header_inset.dart';
+import '../../../../core/widgets/swipe_reveal_card.dart';
 import '../../../../core/widgets/top_page_header.dart';
 import '../playback_providers.dart';
 
@@ -22,6 +24,20 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
   bool _saving = false;
   bool _dirty = false;
   String? _errorKey;
+
+  bool get _canSave {
+    final cues = _cues;
+    if (!_dirty || _saving || cues == null) return false;
+    for (var index = 0; index < cues.length; index++) {
+      final cue = cues[index];
+      if (cue.text.trim().isEmpty ||
+          cue.end <= cue.start ||
+          (index > 0 && cue.start < cues[index - 1].end)) {
+        return false;
+      }
+    }
+    return true;
+  }
 
   @override
   void initState() {
@@ -43,14 +59,15 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
 
   Future<void> _editText(int index) async {
     final cue = _cues![index];
-    final controller = TextEditingController(text: cue.text);
+    var text = cue.text;
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     final nextText = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
         title: Text(i18n.tr('subtitle_edit_text')),
-        content: TextField(
-          controller: controller,
+        content: TextFormField(
+          initialValue: cue.text,
+          onChanged: (value) => text = value,
           autofocus: true,
           minLines: 2,
           maxLines: 8,
@@ -62,13 +79,12 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
             child: Text(i18n.tr('cancel')),
           ),
           FilledButton(
-            onPressed: () => Navigator.pop(context, controller.text.trim()),
+            onPressed: () => Navigator.pop(context, text.trim()),
             child: Text(i18n.tr('save')),
           ),
         ],
       ),
     );
-    controller.dispose();
     if (!mounted ||
         nextText == null ||
         nextText.isEmpty ||
@@ -87,8 +103,9 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
 
   Future<void> _editTime(int index) async {
     final cue = _cues![index];
-    final startController = TextEditingController(text: _formatTime(cue.start));
-    final endController = TextEditingController(text: _formatTime(cue.end));
+    final hasTime = cue.end > cue.start;
+    var startText = hasTime ? _formatTime(cue.start) : '';
+    var endText = hasTime ? _formatTime(cue.end) : '';
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     String? validationError;
     final next = await showDialog<(Duration, Duration)>(
@@ -99,16 +116,18 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              TextField(
-                controller: startController,
+              TextFormField(
+                initialValue: startText,
+                onChanged: (value) => startText = value,
                 keyboardType: TextInputType.datetime,
                 decoration: InputDecoration(
                   labelText: i18n.tr('subtitle_start_time'),
                 ),
               ),
               const SizedBox(height: 16),
-              TextField(
-                controller: endController,
+              TextFormField(
+                initialValue: endText,
+                onChanged: (value) => endText = value,
                 keyboardType: TextInputType.datetime,
                 decoration: InputDecoration(
                   labelText: i18n.tr('subtitle_end_time'),
@@ -124,12 +143,14 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
             ),
             FilledButton(
               onPressed: () {
-                final start = _parseTime(startController.text);
-                final end = _parseTime(endController.text);
+                final start = _parseTime(startText);
+                final end = _parseTime(endText);
                 final previousEnd = index == 0
                     ? Duration.zero
                     : _cues![index - 1].end;
-                final nextStart = index + 1 == _cues!.length
+                final nextStart =
+                    index + 1 == _cues!.length ||
+                        _cues![index + 1].end <= _cues![index + 1].start
                     ? null
                     : _cues![index + 1].start;
                 if (start == null ||
@@ -150,8 +171,6 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
         ),
       ),
     );
-    startController.dispose();
-    endController.dispose();
     if (!mounted ||
         next == null ||
         (next.$1 == cue.start && next.$2 == cue.end)) {
@@ -163,8 +182,29 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
     });
   }
 
+  void _insertAfter(SubtitleCue cue) {
+    final index = _cues?.indexOf(cue) ?? -1;
+    if (index < 0) return;
+    setState(() {
+      _cues!.insert(
+        index + 1,
+        SubtitleCue(start: cue.end, end: cue.end, text: ''),
+      );
+      _dirty = true;
+    });
+  }
+
+  void _deleteCue(SubtitleCue cue) {
+    final index = _cues?.indexOf(cue) ?? -1;
+    if (index < 0) return;
+    setState(() {
+      _cues!.removeAt(index);
+      _dirty = true;
+    });
+  }
+
   Future<void> _save() async {
-    if (!_dirty || _saving || _cues == null) return;
+    if (!_canSave) return;
     setState(() => _saving = true);
     try {
       await ref
@@ -172,15 +212,23 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
           .saveEditedSubtitle(widget.trackPath, _cues!);
       if (!mounted) return;
       setState(() => _dirty = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            ref.read(appLanguageProviderInstanceProvider).tr('subtitle_saved'),
-          ),
-        ),
+      showAppSnackBar(
+        context,
+        ref.read(appLanguageProviderInstanceProvider).tr('subtitle_saved'),
+        tone: AppFeedbackTone.success,
+        icon: Icons.check_circle_rounded,
       );
     } catch (_) {
-      if (mounted) setState(() => _errorKey = 'subtitle_save_failed');
+      if (mounted) {
+        showAppSnackBar(
+          context,
+          ref
+              .read(appLanguageProviderInstanceProvider)
+              .tr('subtitle_save_failed'),
+          tone: AppFeedbackTone.warning,
+          icon: Icons.error_outline_rounded,
+        );
+      }
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -223,47 +271,104 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
                   : _cues == null
                   ? const Center(child: CircularProgressIndicator.adaptive())
                   : _cues!.isEmpty
-                  ? Center(child: Text(i18n.tr('subtitle_no_content')))
+                  ? Center(
+                      child: Text(
+                        i18n.tr(
+                          _dirty
+                              ? 'subtitle_all_removed'
+                              : 'subtitle_no_content',
+                        ),
+                      ),
+                    )
                   : ListView.separated(
                       padding: EdgeInsets.fromLTRB(16, contentTopInset, 16, 16),
                       itemCount: _cues!.length,
                       separatorBuilder: (_, _) => const SizedBox(height: 8),
                       itemBuilder: (context, index) {
                         final cue = _cues![index];
-                        return DecoratedBox(
-                          decoration: BoxDecoration(
-                            color: cs.surfaceContainerLow,
+                        final needsText = cue.text.trim().isEmpty;
+                        final needsTime = cue.end <= cue.start;
+                        return SwipeRevealCard(
+                          key: ObjectKey(cue),
+                          shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
                           ),
-                          child: Row(
-                            children: [
-                              Expanded(
-                                child: InkWell(
-                                  key: ValueKey('subtitle_text_$index'),
-                                  borderRadius: BorderRadius.circular(12),
-                                  onTap: () => _editText(index),
-                                  child: Padding(
-                                    padding: const EdgeInsets.all(14),
-                                    child: Text(cue.text),
-                                  ),
+                          closedColor: cs.surfaceContainerLow,
+                          onRemove: () => _deleteCue(cue),
+                          actionLabel: i18n.tr('subtitle_delete_cue'),
+                          removeTooltip: i18n.tr('subtitle_delete_cue'),
+                          onLeadingAction: () => _insertAfter(cue),
+                          leadingActionLabel: i18n.tr('subtitle_add_below'),
+                          leadingActionTooltip: i18n.tr('subtitle_add_below'),
+                          leadingActionIcon: Icons.add_rounded,
+                          child: Material(
+                            color: cs.surfaceContainerLow,
+                            borderRadius: BorderRadius.circular(12),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: InkWell(
+                                        key: ValueKey('subtitle_text_$index'),
+                                        borderRadius: BorderRadius.circular(12),
+                                        onTap: () => _editText(index),
+                                        child: Padding(
+                                          padding: const EdgeInsets.all(14),
+                                          child: Text(
+                                            needsText
+                                                ? i18n.tr('subtitle_new_text')
+                                                : cue.text,
+                                            style: needsText
+                                                ? TextStyle(
+                                                    color: cs.onSurfaceVariant,
+                                                  )
+                                                : null,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                    InkWell(
+                                      key: ValueKey('subtitle_time_$index'),
+                                      borderRadius: BorderRadius.circular(12),
+                                      onTap: () => _editTime(index),
+                                      child: Padding(
+                                        padding: const EdgeInsets.all(12),
+                                        child: needsTime
+                                            ? Text(i18n.tr('subtitle_new_time'))
+                                            : Column(
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.end,
+                                                children: [
+                                                  Text(_formatTime(cue.start)),
+                                                  Text(_formatTime(cue.end)),
+                                                ],
+                                              ),
+                                      ),
+                                    ),
+                                  ],
                                 ),
-                              ),
-                              InkWell(
-                                key: ValueKey('subtitle_time_$index'),
-                                borderRadius: BorderRadius.circular(12),
-                                onTap: () => _editTime(index),
-                                child: Padding(
-                                  padding: const EdgeInsets.all(12),
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.end,
-                                    children: [
-                                      Text(_formatTime(cue.start)),
-                                      Text(_formatTime(cue.end)),
-                                    ],
+                                if (needsText || needsTime)
+                                  Padding(
+                                    padding: const EdgeInsets.fromLTRB(
+                                      14,
+                                      0,
+                                      14,
+                                      12,
+                                    ),
+                                    child: Text(
+                                      i18n.tr('subtitle_complete_cue'),
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodySmall
+                                          ?.copyWith(
+                                            color: cs.onSurfaceVariant,
+                                          ),
+                                    ),
                                   ),
-                                ),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
                         );
                       },
@@ -279,7 +384,7 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
                 leading: BackButton(color: cs.onSurface),
                 trailing: IconButton(
                   tooltip: i18n.tr('save'),
-                  onPressed: _dirty && !_saving ? _save : null,
+                  onPressed: _canSave ? _save : null,
                   icon: _saving
                       ? const SizedBox.square(
                           dimension: 16,

@@ -1,4 +1,5 @@
 import 'library_providers.dart';
+import 'library_tab_edit.dart';
 import 'library_removal_feedback.dart';
 import '../../player/presentation/playback_providers.dart';
 import '../../settings/presentation/settings_providers.dart';
@@ -636,6 +637,16 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     );
   }
 
+
+  Future<void> _openLibraryManagementPage() async {
+    if (!mounted) return;
+    await Navigator.of(context).push(
+      buildAppPageRoute<void>(
+        context: context,
+        child: const LibraryManagementPage(),
+      ),
+    );
+  }
 
   Future<void> _openBatchMetadataPage() async {
     if (!mounted) return;
@@ -1481,6 +1492,15 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                 break;
             }
           },
+        ),
+        IconButton(
+          key: const ValueKey<String>('library_edit_button'),
+          onPressed: libraryRefreshBusy ? null : _openLibraryManagementPage,
+          icon: const Icon(Icons.edit_note_rounded),
+          tooltip: i18n.tr('edit_library'),
+          iconSize: 20,
+          padding: EdgeInsets.zero,
+          constraints: HeaderActionPill.buttonConstraints,
         ),
         IconButton(
           key: const ValueKey<String>('library_batch_metadata_button'),

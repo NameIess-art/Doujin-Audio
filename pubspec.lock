@@ -121,6 +121,15 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.15.1"
+  crispasr:
+    dependency: "direct main"
+    description:
+      path: "flutter/crispasr"
+      ref: d08ec2dd83411a8389745c97c4f2e3955e084280
+      resolved-ref: d08ec2dd83411a8389745c97c4f2e3955e084280
+      url: "https://github.com/CrispStrobe/CrispASR.git"
+    source: git
+    version: "0.8.37"
   cross_file:
     dependency: transitive
     description:

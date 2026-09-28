@@ -3,11 +3,17 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
 import 'package:doujin_audio/features/player/application/playback_subtitle_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   test(
     'ASMR.ONE subtitles load even when remote metadata omits the extension',
     () async {
+      TestWidgetsFlutterBinding.ensureInitialized();
+      HttpOverrides.global = null;
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      final directory = await Directory.systemTemp.createTemp('asmr_formats_');
+      addTearDown(() => directory.delete(recursive: true));
       final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
       addTearDown(() async {
         await server.close(force: true);
@@ -23,6 +29,7 @@ void main() {
       final tracks = <String, MusicTrack>{};
       final subtitles = PlaybackSubtitleService(
         trackResolver: (path) => tracks[path],
+        subtitlesDirectoryResolver: () async => directory,
       );
 
       for (final format in <String>['vtt', 'srt', 'ass', 'ssa']) {

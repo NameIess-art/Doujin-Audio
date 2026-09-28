@@ -112,6 +112,7 @@ internal object FileCacheMethods {
     const val RENAME_DOCUMENT = "renameDocument"
     const val RESOLVE_TRACK_COVER = "resolveTrackCover"
     const val RESOLVE_TRACK_SUBTITLE = "resolveTrackSubtitle"
+    const val WRITE_TRACK_SUBTITLE = "writeTrackSubtitle"
     const val RESOLVE_VIDEO_FRAME = "resolveVideoFrame"
     const val RESOLVE_MEDIA_DURATION = "resolveMediaDuration"
     const val SCAN_FOLDER = "scanFolder"

@@ -58,6 +58,7 @@ void main() {
     );
 
     expect(updated.duration, const Duration(seconds: 9));
+    expect(updated.updatedAt, isNull);
     expect(await documentFile.readAsString(), original);
   });
 

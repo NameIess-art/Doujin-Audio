@@ -165,7 +165,7 @@ class AudioDetailRepository {
     final normalized = _coverStore
         .normalize(detail)
         .copyWith(target: _normalizeTarget(detail.target))
-        .normalizedForSave(_now());
+        .normalizedForSave(_now(), touchUpdatedAt: false);
     _ensureCanCommit();
     await _store.upsert(normalized);
     return normalized;

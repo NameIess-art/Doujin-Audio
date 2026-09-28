@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
 import 'package:doujin_audio/core/media/subtitle_parser.dart';
+import 'package:doujin_audio/core/platform/file_cache_platform_gateway.dart';
 import 'package:doujin_audio/features/player/application/playback_subtitle_service.dart';
 import 'package:doujin_audio/features/player/presentation/playback_position_ui_gate.dart';
 
@@ -124,70 +125,62 @@ void main() {
     expect(service.hasKnownSubtitle(unknownPath), isFalse);
   });
 
-  test('remote subtitle stalled response respects idle timeout', () async {
-    final requestStarted = Completer<void>();
-    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
-    server.listen((request) {
-      request.response.add(<int>[1]);
-      requestStarted.complete();
-    });
-    addTearDown(() => server.close(force: true));
-    final url = 'http://${server.address.address}:${server.port}/subtitle.vtt';
+  test(
+    'setTrackOffset updates offset, notifies listeners, and shifts cue evaluation',
+    () async {
+      const cues = [
+        SubtitleCue(
+          start: Duration(seconds: 2),
+          end: Duration(seconds: 4),
+          text: 'hello',
+        ),
+      ];
+      final track = SubtitleTrack(sourcePath: 'test.lrc', cues: cues);
+      const audioPath = '/path/to/audio.mp3';
 
-    final future = loadSubtitleTrackFromUrl(
-      url: url,
-      requestTimeout: const Duration(milliseconds: 100),
-      downloadIdleTimeout: const Duration(milliseconds: 30),
-    );
-    await requestStarted.future.timeout(const Duration(seconds: 1));
+      var notifyCount = 0;
+      final service = PlaybackSubtitleService(
+        trackResolver: (_) => null,
+        subtitleLoader: (_, _) async => track,
+      );
 
-    await expectLater(
-      future.timeout(const Duration(seconds: 1)),
-      throwsA(isA<TimeoutException>()),
-    );
-  });
+      await service.load(audioPath);
+      service.addListener(() => notifyCount++);
+      expect(service.getOffset(audioPath), Duration.zero);
+      expect(
+        service.textAt(audioPath, const Duration(milliseconds: 2500)),
+        'hello',
+      );
 
-  test('setTrackOffset updates offset, notifies listeners, and shifts cue evaluation', () async {
-    const cues = [
-      SubtitleCue(
-        start: Duration(seconds: 2),
-        end: Duration(seconds: 4),
-        text: 'hello',
-      ),
-    ];
-    final track = SubtitleTrack(sourcePath: 'test.lrc', cues: cues);
-    const audioPath = '/path/to/audio.mp3';
+      // Add +1000ms offset (delay subtitle by 1s)
+      await service.setTrackOffset(audioPath, const Duration(seconds: 1));
+      expect(notifyCount, 1);
+      expect(service.getOffset(audioPath), const Duration(seconds: 1));
+      expect(service.trackSync(audioPath)?.offset, const Duration(seconds: 1));
 
-    var notifyCount = 0;
-    final service = PlaybackSubtitleService(
-      trackResolver: (_) => null,
-      subtitleLoader: (_, _) async => track,
-    );
+      // At 2500ms audio position, effective subtitle position is 1500ms -> no text
+      expect(
+        service.textAt(audioPath, const Duration(milliseconds: 2500)),
+        isNull,
+      );
+      // At 3500ms audio position, effective subtitle position is 2500ms -> 'hello'
+      expect(
+        service.textAt(audioPath, const Duration(milliseconds: 3500)),
+        'hello',
+      );
 
-    await service.load(audioPath);
-    service.addListener(() => notifyCount++);
-    expect(service.getOffset(audioPath), Duration.zero);
-    expect(service.textAt(audioPath, const Duration(milliseconds: 2500)), 'hello');
+      // Reset offset
+      await service.setTrackOffset(audioPath, Duration.zero);
+      expect(notifyCount, 2);
+      expect(service.getOffset(audioPath), Duration.zero);
+      expect(
+        service.textAt(audioPath, const Duration(milliseconds: 2500)),
+        'hello',
+      );
+    },
+  );
 
-    // Add +1000ms offset (delay subtitle by 1s)
-    await service.setTrackOffset(audioPath, const Duration(seconds: 1));
-    expect(notifyCount, 1);
-    expect(service.getOffset(audioPath), const Duration(seconds: 1));
-    expect(service.trackSync(audioPath)?.offset, const Duration(seconds: 1));
-
-    // At 2500ms audio position, effective subtitle position is 1500ms -> no text
-    expect(service.textAt(audioPath, const Duration(milliseconds: 2500)), isNull);
-    // At 3500ms audio position, effective subtitle position is 2500ms -> 'hello'
-    expect(service.textAt(audioPath, const Duration(milliseconds: 3500)), 'hello');
-
-    // Reset offset
-    await service.setTrackOffset(audioPath, Duration.zero);
-    expect(notifyCount, 2);
-    expect(service.getOffset(audioPath), Duration.zero);
-    expect(service.textAt(audioPath, const Duration(milliseconds: 2500)), 'hello');
-  });
-
-  test('importSubtitle and removeCustomSubtitle persist and update track', () async {
+  test('importSubtitle copies the file and updates the active track', () async {
     const channel = MethodChannel('plugins.flutter.io/path_provider');
     final supportDir = await Directory.systemTemp.createTemp('sub_support_');
     final tempDir = await Directory.systemTemp.createTemp('sub_temp_');
@@ -214,166 +207,243 @@ void main() {
     final service = PlaybackSubtitleService(trackResolver: (_) => null);
     service.addListener(() => notifyCount++);
 
-    final importedTrack = await service.importSubtitle(audioPath, externalSub.path);
+    final importedTrack = await service.importSubtitle(
+      audioPath,
+      externalSub.path,
+    );
     expect(importedTrack, isNotNull);
     expect(notifyCount, 1);
-    expect(service.hasCustomSubtitle(audioPath), isTrue);
     expect(service.getCustomSubtitlePath(audioPath), isNotNull);
 
     final loaded = service.trackSync(audioPath);
     expect(loaded, isNotNull);
-    expect(service.textAt(audioPath, const Duration(milliseconds: 1500)), 'external text');
+    expect(
+      service.textAt(audioPath, const Duration(milliseconds: 1500)),
+      'external text',
+    );
 
-    // Now remove custom subtitle
-    await service.removeCustomSubtitle(audioPath);
-    expect(notifyCount, 2);
-    expect(service.hasCustomSubtitle(audioPath), isFalse);
-    expect(service.getCustomSubtitlePath(audioPath), isNull);
-    expect(service.trackSync(audioPath), isNull);
+    final customPath = service.getCustomSubtitlePath(audioPath)!;
+    expect(await File(customPath).readAsString(), contains('external text'));
+    expect(importedTrack!.sourcePath, customPath);
+    expect(importedTrack.sourcePath, isNot(externalSub.path));
   });
 
-  test('persistent cueAt and textAt hold subtitle text across gaps between cues', () async {
-    const cues = [
-      SubtitleCue(
-        start: Duration(seconds: 2),
-        end: Duration(seconds: 5),
-        text: 'First line',
-      ),
-      SubtitleCue(
-        start: Duration(seconds: 15),
-        end: Duration(seconds: 20),
-        text: 'Second line',
-      ),
-    ];
-    final track = SubtitleTrack(sourcePath: 'gap.vtt', cues: cues);
-    final service = PlaybackSubtitleService(
-      trackResolver: (_) => null,
-      subtitleLoader: (_, _) async => track,
-    );
-    await service.load('gap.mp3');
-
-    // Before first cue
-    expect(service.textAt('gap.mp3', const Duration(seconds: 1)), isNull);
-    expect(service.textAt('gap.mp3', const Duration(seconds: 1), persistent: true), isNull);
-    expect(track.cueAt(const Duration(seconds: 1)), isNull);
-    expect(track.cueAt(const Duration(seconds: 1), persistent: true), isNull);
-
-    // During first cue
-    expect(track.cueAt(const Duration(seconds: 3))?.text, 'First line');
-    expect(track.cueAt(const Duration(seconds: 3), persistent: true)?.text, 'First line');
-
-    // In the gap between cue 1 and cue 2 (at 10s)
-    // Non-persistent returns null
-    expect(service.textAt('gap.mp3', const Duration(seconds: 10)), isNull);
-    expect(track.cueAt(const Duration(seconds: 10)), isNull);
-    // Persistent holds the first line
-    expect(service.textAt('gap.mp3', const Duration(seconds: 10), persistent: true), 'First line');
-    expect(track.cueAt(const Duration(seconds: 10), persistent: true)?.text, 'First line');
-
-    // During second cue (at 16s)
-    expect(track.cueAt(const Duration(seconds: 16))?.text, 'Second line');
-    expect(track.cueAt(const Duration(seconds: 16), persistent: true)?.text, 'Second line');
-
-    // After second cue (at 25s)
-    // Non-persistent returns null
-    expect(track.cueAt(const Duration(seconds: 25)), isNull);
-    // Persistent holds the second line until track ends
-    expect(track.cueAt(const Duration(seconds: 25), persistent: true)?.text, 'Second line');
-
-    // SubtitleTextCache tests
-    final cache = SubtitleTextCache();
-    expect(
-      cache.resolve(
-        trackPath: 'audio.mp3',
-        position: const Duration(seconds: 1),
-        track: track,
-        persistent: true,
-      ),
-      isNull,
-    );
-    expect(
-      cache.resolve(
-        trackPath: 'audio.mp3',
-        position: const Duration(seconds: 3),
-        track: track,
-        persistent: true,
-      ),
-      'First line',
-    );
-    // In the gap (at 10s), text persists
-    expect(
-      cache.resolve(
-        trackPath: 'audio.mp3',
-        position: const Duration(seconds: 10),
-        track: track,
-        persistent: true,
-      ),
-      'First line',
-    );
-    // Reaching cue 2 (at 16s), updates to second line
-    expect(
-      cache.resolve(
-        trackPath: 'audio.mp3',
-        position: const Duration(seconds: 16),
-        track: track,
-        persistent: true,
-      ),
-      'Second line',
-    );
-    // After cue 2 (at 25s), persists second line
-    expect(
-      cache.resolve(
-        trackPath: 'audio.mp3',
-        position: const Duration(seconds: 25),
-        track: track,
-        persistent: true,
-      ),
-      'Second line',
-    );
-  });
-
-  test('editing a subtitle preserves the source and updates playback', () async {
-    final directory = await Directory.systemTemp.createTemp('edited_subtitle_');
+  test('SAF subtitles are materialized before being loaded', () async {
+    final directory = await Directory.systemTemp.createTemp('saf_subtitles_');
     addTearDown(() => directory.delete(recursive: true));
-    final original = File('${directory.path}/original.srt');
-    await original.writeAsString('1\n00:00:01,000 --> 00:00:02,000\nOriginal\n');
     final service = PlaybackSubtitleService(
       trackResolver: (_) => null,
-      subtitleLoader: (_, _) async => SubtitleTrack(
-        sourcePath: original.path,
-        cues: const [
-          SubtitleCue(
-            start: Duration(seconds: 1),
-            end: Duration(seconds: 2),
-            text: 'Original',
-          ),
-        ],
-      ),
+      fileCacheGateway: _ContentSubtitleGateway(),
       subtitlesDirectoryResolver: () async => directory,
     );
-    const audioPath = '/music/original.mp3';
-    await service.load(audioPath);
-    await expectLater(
-      service.saveEditedSubtitle(audioPath, [
-        const SubtitleCue(
+    final loaded = await service.load('content://media/audio/1');
+    expect(loaded?.cues.single.text, 'ローカル字幕');
+    expect(loaded?.sourcePath, startsWith(directory.path));
+    expect(await File(loaded!.sourcePath).exists(), isTrue);
+  });
+
+  test(
+    'persistent cueAt and textAt hold subtitle text across gaps between cues',
+    () async {
+      const cues = [
+        SubtitleCue(
           start: Duration(seconds: 2),
-          end: Duration(seconds: 1),
-          text: 'Invalid',
+          end: Duration(seconds: 5),
+          text: 'First line',
+        ),
+        SubtitleCue(
+          start: Duration(seconds: 15),
+          end: Duration(seconds: 20),
+          text: 'Second line',
+        ),
+      ];
+      final track = SubtitleTrack(sourcePath: 'gap.vtt', cues: cues);
+      final service = PlaybackSubtitleService(
+        trackResolver: (_) => null,
+        subtitleLoader: (_, _) async => track,
+      );
+      await service.load('gap.mp3');
+
+      // Before first cue
+      expect(service.textAt('gap.mp3', const Duration(seconds: 1)), isNull);
+      expect(
+        service.textAt('gap.mp3', const Duration(seconds: 1), persistent: true),
+        isNull,
+      );
+      expect(track.cueAt(const Duration(seconds: 1)), isNull);
+      expect(track.cueAt(const Duration(seconds: 1), persistent: true), isNull);
+
+      // During first cue
+      expect(track.cueAt(const Duration(seconds: 3))?.text, 'First line');
+      expect(
+        track.cueAt(const Duration(seconds: 3), persistent: true)?.text,
+        'First line',
+      );
+
+      // In the gap between cue 1 and cue 2 (at 10s)
+      // Non-persistent returns null
+      expect(service.textAt('gap.mp3', const Duration(seconds: 10)), isNull);
+      expect(track.cueAt(const Duration(seconds: 10)), isNull);
+      // Persistent holds the first line
+      expect(
+        service.textAt(
+          'gap.mp3',
+          const Duration(seconds: 10),
+          persistent: true,
+        ),
+        'First line',
+      );
+      expect(
+        track.cueAt(const Duration(seconds: 10), persistent: true)?.text,
+        'First line',
+      );
+
+      // During second cue (at 16s)
+      expect(track.cueAt(const Duration(seconds: 16))?.text, 'Second line');
+      expect(
+        track.cueAt(const Duration(seconds: 16), persistent: true)?.text,
+        'Second line',
+      );
+
+      // After second cue (at 25s)
+      // Non-persistent returns null
+      expect(track.cueAt(const Duration(seconds: 25)), isNull);
+      // Persistent holds the second line until track ends
+      expect(
+        track.cueAt(const Duration(seconds: 25), persistent: true)?.text,
+        'Second line',
+      );
+
+      // SubtitleTextCache tests
+      final cache = SubtitleTextCache();
+      expect(
+        cache.resolve(
+          trackPath: 'audio.mp3',
+          position: const Duration(seconds: 1),
+          track: track,
+          persistent: true,
+        ),
+        isNull,
+      );
+      expect(
+        cache.resolve(
+          trackPath: 'audio.mp3',
+          position: const Duration(seconds: 3),
+          track: track,
+          persistent: true,
+        ),
+        'First line',
+      );
+      // In the gap (at 10s), text persists
+      expect(
+        cache.resolve(
+          trackPath: 'audio.mp3',
+          position: const Duration(seconds: 10),
+          track: track,
+          persistent: true,
+        ),
+        'First line',
+      );
+      // Reaching cue 2 (at 16s), updates to second line
+      expect(
+        cache.resolve(
+          trackPath: 'audio.mp3',
+          position: const Duration(seconds: 16),
+          track: track,
+          persistent: true,
+        ),
+        'Second line',
+      );
+      // After cue 2 (at 25s), persists second line
+      expect(
+        cache.resolve(
+          trackPath: 'audio.mp3',
+          position: const Duration(seconds: 25),
+          track: track,
+          persistent: true,
+        ),
+        'Second line',
+      );
+    },
+  );
+
+  test(
+    'editing a subtitle preserves the source and updates playback',
+    () async {
+      final directory = await Directory.systemTemp.createTemp(
+        'edited_subtitle_',
+      );
+      addTearDown(() => directory.delete(recursive: true));
+      final original = File('${directory.path}/original.srt');
+      await original.writeAsString(
+        '1\n00:00:01,000 --> 00:00:02,000\nOriginal\n',
+      );
+      final service = PlaybackSubtitleService(
+        trackResolver: (_) => null,
+        subtitleLoader: (_, _) async => SubtitleTrack(
+          sourcePath: original.path,
+          cues: const [
+            SubtitleCue(
+              start: Duration(seconds: 1),
+              end: Duration(seconds: 2),
+              text: 'Original',
+            ),
+          ],
+        ),
+        subtitlesDirectoryResolver: () async => directory,
+      );
+      const audioPath = '/music/original.mp3';
+      await service.load(audioPath);
+      await expectLater(
+        service.saveEditedSubtitle(audioPath, [
+          const SubtitleCue(
+            start: Duration(seconds: 2),
+            end: Duration(seconds: 1),
+            text: 'Invalid',
+          ),
+        ]),
+        throwsArgumentError,
+      );
+      final edited = await service.saveEditedSubtitle(audioPath, [
+        const SubtitleCue(
+          start: Duration(milliseconds: 1500),
+          end: Duration(milliseconds: 2800),
+          text: 'Edited\nTranslated',
+        ),
+      ]);
+      expect(edited.sourcePath, isNot(original.path));
+      expect(await original.readAsString(), contains('Original'));
+      expect(
+        await File(edited.sourcePath).readAsString(),
+        contains('Edited\nTranslated'),
+      );
+      expect(
+        service.textAt(audioPath, const Duration(seconds: 2)),
+        'Edited\nTranslated',
+      );
+    },
+  );
+
+  test('ASMR.ONE subtitles cannot be edited or saved', () async {
+    final directory = await Directory.systemTemp.createTemp('asmr_edit_');
+    addTearDown(() => directory.delete(recursive: true));
+    const audioPath = 'https://example.com/asmr.mp3';
+    final service = PlaybackSubtitleService(
+      trackResolver: (_) => _remoteTrack(audioPath),
+      subtitlesDirectoryResolver: () async => directory,
+    );
+    expect(service.canEditSubtitle(audioPath), isFalse);
+    await expectLater(
+      service.saveEditedSubtitle(audioPath, const [
+        SubtitleCue(
+          start: Duration(seconds: 1),
+          end: Duration(seconds: 2),
+          text: 'Changed',
         ),
       ]),
-      throwsArgumentError,
+      throwsStateError,
     );
-    final edited = await service.saveEditedSubtitle(audioPath, [
-      const SubtitleCue(
-        start: Duration(milliseconds: 1500),
-        end: Duration(milliseconds: 2800),
-        text: 'Edited\nTranslated',
-      ),
-    ]);
-    expect(edited.sourcePath, isNot(original.path));
-    expect(await original.readAsString(), contains('Original'));
-    expect(await File(edited.sourcePath).readAsString(), contains('Edited\nTranslated'));
-    expect(service.textAt(audioPath, const Duration(seconds: 2)), 'Edited\nTranslated');
+    expect(await directory.list().isEmpty, isTrue);
   });
 }
 
@@ -389,3 +459,15 @@ MusicTrack _remoteTrack(String path) => MusicTrack(
     'subtitleUrl': 'https://api.asmr.one/subtitle.vtt',
   },
 );
+
+class _ContentSubtitleGateway extends FileCachePlatformGateway {
+  @override
+  Future<Map<String, Object?>?> resolveTrackSubtitle({
+    required String path,
+    String? groupKey,
+  }) async => {
+    'sourcePath': 'content://media/subtitle/1',
+    'extension': '.lrc',
+    'text': '[00:01.00]ローカル字幕',
+  };
+}

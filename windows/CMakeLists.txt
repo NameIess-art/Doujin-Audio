@@ -134,6 +134,32 @@ if(NOT SQLITE_ACTUAL_SHA256 STREQUAL SQLITE_SHA256)
 endif()
 install(FILES "${SQLITE_DLL}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}" RENAME sqlite3.dll COMPONENT Runtime)
 
+# Build the pinned Japanese subtitle/translation runtime from source. It uses
+# the same C ABI on both platforms and ships beside the executable for Dart FFI.
+find_program(DART_EXECUTABLE dart REQUIRED)
+get_filename_component(DART_BIN_DIR "${DART_EXECUTABLE}" DIRECTORY)
+set(DART_RUNTIME_EXECUTABLE "${DART_BIN_DIR}/cache/dart-sdk/bin/dart.exe")
+if(NOT EXISTS "${DART_RUNTIME_EXECUTABLE}")
+  message(FATAL_ERROR "Flutter Dart runtime not found beside ${DART_EXECUTABLE}")
+endif()
+set(SUBTITLE_NATIVE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../.dart_tool/subtitle_native/windows")
+execute_process(
+  COMMAND "${DART_RUNTIME_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/../tool/build_subtitle_native.dart"
+    --platform windows --output "${SUBTITLE_NATIVE_DIR}"
+  WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/.."
+  RESULT_VARIABLE SUBTITLE_NATIVE_RESULT)
+if(NOT SUBTITLE_NATIVE_RESULT EQUAL 0)
+  message(FATAL_ERROR "CrispASR native build failed: ${SUBTITLE_NATIVE_RESULT}")
+endif()
+install(FILES
+  "${SUBTITLE_NATIVE_DIR}/crispasr.dll"
+  "${SUBTITLE_NATIVE_DIR}/ggml.dll"
+  "${SUBTITLE_NATIVE_DIR}/ggml-base.dll"
+  "${SUBTITLE_NATIVE_DIR}/ggml-cpu.dll"
+  DESTINATION "${INSTALL_BUNDLE_LIB_DIR}" COMPONENT Runtime)
+install(DIRECTORY "${SUBTITLE_NATIVE_DIR}/licenses/"
+  DESTINATION "${INSTALL_BUNDLE_LIB_DIR}/licenses" COMPONENT Runtime)
+
 # Fully re-copy the assets directory on each build to avoid having stale files
 # from a previous install.
 set(FLUTTER_ASSET_DIR_NAME "flutter_assets")

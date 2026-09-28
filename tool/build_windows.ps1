@@ -71,7 +71,7 @@ try {
             throw "Native dependency integrity check failed: $($native.name)"
         }
     }
-    foreach ($required in @('doujin_audio.exe','flutter_windows.dll','data/app.so')) {
+    foreach ($required in @('doujin_audio.exe','flutter_windows.dll','data/app.so','crispasr.dll','ggml.dll','ggml-base.dll','ggml-cpu.dll')) {
         if (!(Test-Path -LiteralPath (Join-Path $release $required))) { throw "Missing Release file: $required" }
     }
     $appRoot = Join-Path $distRoot 'app'
@@ -90,6 +90,9 @@ try {
     $crt = Get-ChildItem -Path (Join-Path $vsRoot 'VC/Redist/MSVC/*/x64/Microsoft.VC*.CRT') -Directory | Sort-Object FullName -Descending | Select-Object -First 1
     if (!$crt) { throw 'VC redistributable libraries were not found.' }
     Copy-Item -Path (Join-Path $crt.FullName '*.dll') -Destination $appRoot -Force
+    $openMp = Get-ChildItem -Path (Join-Path $crt.Parent.FullName 'Microsoft.VC*.OpenMP/vcomp140.dll') -File | Select-Object -First 1
+    if (!$openMp) { throw 'Visual C++ OpenMP runtime vcomp140.dll was not found.' }
+    Copy-Item -LiteralPath $openMp.FullName -Destination $appRoot -Force
     $licenseRoot = Join-Path $appRoot 'licenses'
     $null = New-Item -ItemType Directory -Path $licenseRoot -Force
     Copy-Item -LiteralPath (Join-Path $ffmpegRoot 'LICENSE') -Destination (Join-Path $licenseRoot 'FFmpeg-LICENSE.txt')

@@ -319,6 +319,14 @@ internal class FileCacheMethodHandler(
                     operations.resolveTrackSubtitle(trackPath, groupKey)
                 }
             }
+            FileCacheMethods.WRITE_TRACK_SUBTITLE -> {
+                val folder = arguments.requiredString("folder")
+                val name = arguments.requiredString("name")
+                val bytes = arguments.requiredByteArray("bytes")
+                runAsync(result, errorCode = { "subtitle_write_failed" }) {
+                    operations.writeTrackSubtitle(folder, name, bytes)
+                }
+            }
             FileCacheMethods.PICK_AUDIO_SOURCE -> launchPickAudioSource(result)
             FileCacheMethods.PICK_AUDIO_FILES -> launchPickAudioFiles(result)
             FileCacheMethods.PICK_AUDIO_FOLDER -> launchPickAudioFolder(result)

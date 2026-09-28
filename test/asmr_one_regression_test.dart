@@ -6,7 +6,9 @@ import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
 import 'package:doujin_audio/core/persistence/app_database.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_preferences.dart';
 import 'package:doujin_audio/infrastructure/sqlite/sqlite_asmr_repository.dart';
-import 'package:doujin_audio/core/media/subtitle_parser.dart';
+import 'package:doujin_audio/core/media/music_track.dart';
+import 'package:doujin_audio/features/player/application/playback_subtitle_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   test('ASMR work persists and restores card fields', () {
@@ -305,26 +307,57 @@ void main() {
     );
   });
 
-  test('remote ASMR subtitle files can be fetched and parsed', () async {
-    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
-    addTearDown(() async {
+  test(
+    'remote ASMR subtitles are cached and reloaded from local files',
+    () async {
+      TestWidgetsFlutterBinding.ensureInitialized();
+      HttpOverrides.global = null;
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      final directory = await Directory.systemTemp.createTemp(
+        'asmr_subtitles_',
+      );
+      addTearDown(() => directory.delete(recursive: true));
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      addTearDown(() async {
+        await server.close(force: true);
+      });
+      server.listen((request) async {
+        request.response.headers.contentType = ContentType.text;
+        request.response.write('[00:01.00]第一句\n[00:02.00]第二句');
+        await request.response.close();
+      });
+
+      final audioPath =
+          'http://${server.address.host}:${server.port}/audio.mp3';
+      final track = MusicTrack(
+        path: audioPath,
+        displayName: 'audio.mp3',
+        groupKey: 'asmr-work-1',
+        groupTitle: 'Work',
+        groupSubtitle: '',
+        isSingle: false,
+        remoteMetadataKind: 'asmr.one',
+        remoteMetadata: {
+          'subtitleUrl':
+              'http://${server.address.host}:${server.port}/track-subtitle',
+          'subtitleExtension': '.lrc',
+        },
+      );
+      PlaybackSubtitleService createService() => PlaybackSubtitleService(
+        trackResolver: (_) => track,
+        subtitlesDirectoryResolver: () async => directory,
+      );
+      final subtitleTrack = await createService().load(audioPath);
+
+      expect(subtitleTrack, isNotNull);
+      expect(subtitleTrack!.cues, hasLength(2));
+      expect(subtitleTrack.cues.first.text, '第一句');
+      expect(subtitleTrack.cues.last.text, '第二句');
+      expect(await File(subtitleTrack.sourcePath).exists(), isTrue);
       await server.close(force: true);
-    });
-    server.listen((request) async {
-      request.response.headers.contentType = ContentType.text;
-      request.response.write('[00:01.00]第一句\n[00:02.00]第二句');
-      await request.response.close();
-    });
-
-    final subtitleTrack = await loadSubtitleTrackFromUrl(
-      url: 'http://${server.address.host}:${server.port}/track-subtitle',
-      sourcePath: '01_mp3/track.lrc',
-      extension: '.lrc',
-    );
-
-    expect(subtitleTrack, isNotNull);
-    expect(subtitleTrack!.cues, hasLength(2));
-    expect(subtitleTrack.cues.first.text, '第一句');
-    expect(subtitleTrack.cues.last.text, '第二句');
-  });
+      final offline = await createService().load(audioPath);
+      expect(offline?.sourcePath, subtitleTrack.sourcePath);
+      expect(offline?.cues.last.text, '第二句');
+    },
+  );
 }

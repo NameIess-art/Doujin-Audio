@@ -331,8 +331,10 @@ class FileCachePlatformGateway {
       final directory = Directory(folderPath);
       if (!await directory.exists()) return texts;
       try {
-        await for (final entity
-            in directory.list(recursive: true, followLinks: false)) {
+        await for (final entity in directory.list(
+          recursive: true,
+          followLinks: false,
+        )) {
           if (entity is File &&
               supportedExtensions.contains(
                 path.extension(entity.path).toLowerCase(),
@@ -354,9 +356,11 @@ class FileCachePlatformGateway {
           stackTrace: stackTrace,
         );
       }
-      texts.sort((a, b) => (a['relativePath'] ?? '')
-          .toLowerCase()
-          .compareTo((b['relativePath'] ?? '').toLowerCase()));
+      texts.sort(
+        (a, b) => (a['relativePath'] ?? '').toLowerCase().compareTo(
+          (b['relativePath'] ?? '').toLowerCase(),
+        ),
+      );
       return texts;
     }
     final result = await _client.invoke<List<Object?>>(
@@ -484,6 +488,23 @@ class FileCachePlatformGateway {
       _logOptionalFailure(FileCacheMethod.resolveTrackSubtitle, result);
     }
     return result.valueOrNull;
+  }
+
+  Future<bool> writeTrackSubtitle({
+    required String folder,
+    required String name,
+    required Uint8List bytes,
+  }) async {
+    final result = await _client.invoke<bool>(
+      FileCacheMethod.writeTrackSubtitle,
+      arguments: <String, Object?>{
+        'folder': folder,
+        'name': name,
+        'bytes': bytes,
+      },
+      decode: (value) => value as bool,
+    );
+    return result.valueOrNull ?? false;
   }
 
   Future<CoverImageReference?> writeFileBytesToFolder({

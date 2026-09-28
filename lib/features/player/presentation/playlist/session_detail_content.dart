@@ -659,7 +659,6 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
             showSubtitleMenuBottomSheet(
               context: context,
               session: session,
-              canImportSubtitle: track?.isRemoteAsmr != true,
               onToggleGlobalSubtitle: widget.onToggleGlobalSubtitle,
             ),
           );
@@ -749,17 +748,11 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
                           bottom: 8,
                         ),
                         child: MarqueeText(
-                          key: ValueKey(
-                            'title_marquee_${session.id}',
-                          ),
+                          key: ValueKey('title_marquee_${session.id}'),
                           text: displayName,
                           allowAndroidMarquee: true,
-                          pauseDuration: const Duration(
-                            seconds: 1,
-                          ),
-                          style: Theme.of(context)
-                              .textTheme
-                              .titleMedium
+                          pauseDuration: const Duration(seconds: 1),
+                          style: Theme.of(context).textTheme.titleMedium
                               ?.copyWith(
                                 color: sessionDetailForeground(
                                   cs,
@@ -822,7 +815,9 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
                             child: Container(
                               height: 42,
                               width: double.infinity,
-                              padding: const EdgeInsets.symmetric(horizontal: 16),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                              ),
                               alignment: Alignment.centerLeft,
                               decoration: BoxDecoration(
                                 gradient: _segmentPanelExpanded
@@ -836,7 +831,9 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
                                         ],
                                       ),
                                 color: _segmentPanelExpanded
-                                    ? cs.surfaceContainerHighest.withValues(alpha: 0.95)
+                                    ? cs.surfaceContainerHighest.withValues(
+                                        alpha: 0.95,
+                                      )
                                     : null,
                               ),
                               child: MarqueeText(
@@ -844,16 +841,21 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
                                 text: displayName,
                                 allowAndroidMarquee: true,
                                 pauseDuration: const Duration(seconds: 1),
-                                style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                                  color: _segmentPanelExpanded
-                                      ? sessionDetailForeground(
-                                          cs,
-                                          SessionDetailForegroundLevel.medium,
-                                          darkFallback: cs.onSurface.withValues(alpha: 0.8),
-                                        )
-                                      : Colors.white.withValues(alpha: 0.85),
-                                  fontWeight: FontWeight.w700,
-                                ),
+                                style: Theme.of(context).textTheme.labelLarge
+                                    ?.copyWith(
+                                      color: _segmentPanelExpanded
+                                          ? sessionDetailForeground(
+                                              cs,
+                                              SessionDetailForegroundLevel
+                                                  .medium,
+                                              darkFallback: cs.onSurface
+                                                  .withValues(alpha: 0.8),
+                                            )
+                                          : Colors.white.withValues(
+                                              alpha: 0.85,
+                                            ),
+                                      fontWeight: FontWeight.w700,
+                                    ),
                               ),
                             ),
                           ),
@@ -907,7 +909,11 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
                           constraints: BoxConstraints(
                             maxHeight: max(
                               220.0,
-                              constraints.maxHeight - coverHeight - 44.0 - 92.0 - 50.0,
+                              constraints.maxHeight -
+                                  coverHeight -
+                                  44.0 -
+                                  92.0 -
+                                  50.0,
                             ),
                           ),
                           child: _buildSegmentPanel(

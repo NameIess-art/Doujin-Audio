@@ -35,11 +35,7 @@ class SubtitleTrack {
   final Duration offset;
 
   SubtitleTrack withOffset(Duration newOffset) {
-    return SubtitleTrack(
-      sourcePath: sourcePath,
-      cues: cues,
-      offset: newOffset,
-    );
+    return SubtitleTrack(sourcePath: sourcePath, cues: cues, offset: newOffset);
   }
 
   SubtitleCue? cueAt(Duration position, {bool persistent = false}) {
@@ -132,54 +128,6 @@ Future<SubtitleTrack?> loadSubtitleTrackForAudio(String audioPath) async {
       stackTrace: stackTrace,
     );
     return null;
-  }
-}
-
-Future<SubtitleTrack?> loadSubtitleTrackFromUrl({
-  required String url,
-  String? sourcePath,
-  String? extension,
-  Duration requestTimeout = const Duration(seconds: 15),
-  Duration downloadIdleTimeout = const Duration(seconds: 30),
-  HttpClient Function()? httpClientFactory,
-}) async {
-  final uri = Uri.tryParse(url);
-  if (uri == null) return null;
-
-  final resolvedSourcePath = (sourcePath == null || sourcePath.trim().isEmpty)
-      ? uri.path
-      : sourcePath.trim();
-  final resolvedExtension = _normalizedSubtitleExtension(
-    extension ?? path.extension(resolvedSourcePath),
-  );
-  final client = (httpClientFactory ?? HttpClient.new)();
-  HttpClientRequest? request;
-  try {
-    try {
-      client.connectionTimeout = requestTimeout;
-    } catch (_) {
-      // Some injected clients do not expose socket options.
-    }
-    request = await client.getUrl(uri).timeout(requestTimeout);
-    final response = await request.close().timeout(requestTimeout);
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      return null;
-    }
-    final raw = await response
-        .timeout(downloadIdleTimeout)
-        .transform(const Utf8Decoder(allowMalformed: true))
-        .join();
-    if (raw.trim().isEmpty) return null;
-    return parseSubtitleTrackFromRaw(
-      sourcePath: resolvedSourcePath,
-      raw: raw,
-      extension: resolvedExtension,
-    );
-  } catch (error) {
-    request?.abort(error);
-    rethrow;
-  } finally {
-    client.close(force: true);
   }
 }
 
@@ -298,7 +246,7 @@ String _subtitleMatchStem(String value) {
 }
 
 List<SubtitleCue> _parseLrc(String raw) {
-  final timestampPattern = RegExp(r'\[(\d{1,2}):(\d{1,2})(?:[.:](\d{1,3}))?\]');
+  final timestampPattern = RegExp(r'\[(\d+):(\d{1,2})(?:[.:](\d{1,3}))?\]');
   final offsetPattern = RegExp(
     r'^\[offset:([+-]?\d+)\]$',
     caseSensitive: false,
@@ -322,8 +270,6 @@ List<SubtitleCue> _parseLrc(String raw) {
     final text = _normalizeCueText(
       line.replaceAll(timestampPattern, '').trim(),
     );
-    if (text.isEmpty) continue;
-
     for (final match in matches) {
       final minutes = int.tryParse(match.group(1) ?? '') ?? 0;
       final seconds = int.tryParse(match.group(2) ?? '') ?? 0;
@@ -337,7 +283,8 @@ List<SubtitleCue> _parseLrc(String raw) {
           ).inMilliseconds +
           offsetMs;
       final safeStartMs = startMs < 0 ? 0 : startMs;
-      lineMap.putIfAbsent(safeStartMs, () => <String>[]).add(text);
+      final lines = lineMap.putIfAbsent(safeStartMs, () => <String>[]);
+      if (text.isNotEmpty) lines.add(text);
     }
   }
 

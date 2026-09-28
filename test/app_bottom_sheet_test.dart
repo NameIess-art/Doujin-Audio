@@ -1,8 +1,69 @@
 import 'package:doujin_audio/core/widgets/app_bottom_sheet.dart';
+import 'package:doujin_audio/core/widgets/drag_only_scrollbar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  for (final platform in [TargetPlatform.windows, TargetPlatform.android]) {
+    testWidgets(
+      '$platform bottom sheet hides scrollbar and remains scrollable',
+      (tester) async {
+        final sheetController = ScrollController();
+        addTearDown(sheetController.dispose);
+
+        await tester.pumpWidget(
+          MaterialApp(
+            scrollBehavior: const AppScrollBehavior().copyWith(
+              scrollbars: true,
+            ),
+            home: Scaffold(
+              body: Builder(
+                builder: (context) => ListView.builder(
+                  itemCount: 30,
+                  itemExtent: 48,
+                  itemBuilder: (_, index) => index == 0
+                      ? TextButton(
+                          onPressed: () => AppBottomSheet.show<void>(
+                            context: context,
+                            builder: (_) => ListView.builder(
+                              controller: sheetController,
+                              itemCount: 50,
+                              itemExtent: 48,
+                              itemBuilder: (_, item) =>
+                                  Text('Sheet item $item'),
+                            ),
+                          ),
+                          child: const Text('Open'),
+                        )
+                      : Text('Page item $index'),
+                ),
+              ),
+            ),
+          ),
+        );
+        expect(find.byType(DragOnlyScrollbar), findsOneWidget);
+
+        await tester.tap(find.text('Open'));
+        await tester.pumpAndSettle();
+
+        final sheet = find.byType(BottomSheet);
+        expect(
+          find.descendant(of: sheet, matching: find.byType(DragOnlyScrollbar)),
+          findsNothing,
+        );
+        expect(find.byType(DragOnlyScrollbar), findsOneWidget);
+
+        await tester.drag(
+          find.descendant(of: sheet, matching: find.byType(ListView)),
+          const Offset(0, -250),
+        );
+        await tester.pumpAndSettle();
+        expect(sheetController.offset, greaterThan(0));
+      },
+      variant: TargetPlatformVariant.only(platform),
+    );
+  }
+
   for (final platform in [TargetPlatform.windows, TargetPlatform.android]) {
     for (final windowWidth in [960.0, 1280.0, 1920.0]) {
       testWidgets(

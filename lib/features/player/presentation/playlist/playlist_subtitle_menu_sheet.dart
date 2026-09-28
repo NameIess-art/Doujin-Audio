@@ -38,10 +38,12 @@ class SubtitleMenuSheet extends ConsumerStatefulWidget {
     super.key,
     required this.session,
     this.onToggleGlobalSubtitle,
+    this.generationUnavailableReason,
   });
 
   final PlaybackSessionSnapshot session;
   final VoidCallback? onToggleGlobalSubtitle;
+  final String? Function()? generationUnavailableReason;
 
   @override
   ConsumerState<SubtitleMenuSheet> createState() => _SubtitleMenuSheetState();
@@ -341,13 +343,17 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
         final generationJob = subtitles.generationJob;
         final generationBusy =
             generationJob?.status == SubtitleGenerationStatus.running;
-        final generationUnavailableKey = subtitleGenerationUnavailableReason;
+        final generationUnavailableKey =
+            widget.generationUnavailableReason == null
+            ? subtitleGenerationUnavailableReason
+            : widget.generationUnavailableReason!();
         final hasSubtitle =
             trackPath.isNotEmpty &&
             (activeTrack?.cues.isNotEmpty == true ||
                 subtitles.hasKnownSubtitle(trackPath));
         final importEnabled =
             trackPath.isNotEmpty &&
+            subtitles.canEditSubtitle(trackPath) &&
             !_importing &&
             !(generationBusy && generationJob?.trackPath == trackPath);
         final generateEnabled =

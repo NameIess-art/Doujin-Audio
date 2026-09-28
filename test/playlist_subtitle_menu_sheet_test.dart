@@ -162,7 +162,7 @@ void main() {
               find.byKey(const ValueKey('subtitle_script_tile')),
             )
             .enabled,
-        isTrue,
+        subtitleGenerationUnavailableReason == null,
       );
       expect(
         tester
@@ -279,6 +279,7 @@ void main() {
           home: Scaffold(
             body: SubtitleMenuSheet(
               session: _createSnapshot(trackPath: audioPath),
+              generationUnavailableReason: () => null,
             ),
           ),
         ),
@@ -363,6 +364,7 @@ void main() {
             home: Scaffold(
               body: SubtitleMenuSheet(
                 session: _createSnapshot(trackPath: audioPath),
+                generationUnavailableReason: () => null,
               ),
             ),
           ),
@@ -422,6 +424,7 @@ void main() {
           home: Scaffold(
             body: SubtitleMenuSheet(
               session: _createSnapshot(trackPath: 'https://example.com/a.mp3'),
+              generationUnavailableReason: () => null,
             ),
           ),
         ),
@@ -473,6 +476,7 @@ void main() {
           home: Scaffold(
             body: SubtitleMenuSheet(
               session: _createSnapshot(trackPath: audioPath),
+              generationUnavailableReason: () => null,
             ),
           ),
         ),
@@ -531,6 +535,7 @@ void main() {
           home: Scaffold(
             body: SubtitleMenuSheet(
               session: _createSnapshot(trackPath: audioPath),
+              generationUnavailableReason: () => null,
             ),
           ),
         ),

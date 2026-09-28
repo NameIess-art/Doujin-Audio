@@ -1,5 +1,29 @@
 part of 'playback_facade.dart';
 
+final class PlaybackNativeSnapshotApplication {
+  const PlaybackNativeSnapshotApplication({
+    required this.snapshot,
+    required this.session,
+    required this.previousTrackPath,
+    required this.trackChanged,
+    required this.playbackIntentChanged,
+  });
+
+  const PlaybackNativeSnapshotApplication.notApplied(this.snapshot)
+    : session = null,
+      previousTrackPath = null,
+      trackChanged = false,
+      playbackIntentChanged = false;
+
+  final NativePlaybackSnapshot snapshot;
+  final PlaybackSession? session;
+  final String? previousTrackPath;
+  final bool trackChanged;
+  final bool playbackIntentChanged;
+
+  bool get applied => session != null;
+}
+
 extension PlaybackNativeStateCoordinator on PlaybackFacade {
   void updateNativeSessionRetainedContentUris(
     String sessionId,

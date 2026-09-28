@@ -33,7 +33,7 @@ void main() {
   }
 
   testWidgets(
-    'online audio/video menus add only one item and remove with undo',
+    'online audio/video menus add one work session and remove with undo',
     (tester) async {
       SharedPreferences.setMockInitialValues({});
       await tester.binding.setSurfaceSize(const Size(1000, 1400));
@@ -80,7 +80,11 @@ void main() {
       await settleIo(tester);
       expect(fixture.playback.sessions, hasLength(1));
       final session = fixture.playback.sessions.values.single;
-      expect(session.customQueueTracks, hasLength(1));
+      expect(session.customQueueTracks, hasLength(2));
+      expect(
+        session.customQueueTracks!.map((track) => track.displayName),
+        <String>['audio', 'video'],
+      );
       expect(session.effectivePlaying, isFalse);
       expect(session.isTemporary, isFalse);
 

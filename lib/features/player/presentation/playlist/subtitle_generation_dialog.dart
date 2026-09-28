@@ -8,21 +8,24 @@ import '../../application/subtitle_generation.dart';
 import '../../application/subtitle_model_store.dart';
 
 class SubtitleGenerationDialog extends ConsumerWidget {
-  const SubtitleGenerationDialog({super.key, required this.service});
+  const SubtitleGenerationDialog({
+    super.key,
+    required PlaybackSubtitleService service,
+  }) : _service = service;
 
-  final PlaybackSubtitleService service;
+  final PlaybackSubtitleService _service;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final i18n = ref.watch(appLanguageProviderInstanceProvider);
     return ListenableBuilder(
-      listenable: Listenable.merge([service, service.modelStore]),
+      listenable: Listenable.merge([_service, _service.modelStore]),
       builder: (context, _) {
-        final job = service.generationJob;
+        final job = _service.generationJob;
         if (job == null) return const SizedBox.shrink();
         final running = job.status == SubtitleGenerationStatus.running;
         final progress = job.progress;
-        final model = service.modelStore.snapshot(
+        final model = _service.modelStore.snapshot(
           job.kind == SubtitleDraftKind.script
               ? SubtitleModelStore.japaneseCtc
               : SubtitleModelStore.translation,
@@ -105,7 +108,7 @@ class SubtitleGenerationDialog extends ConsumerWidget {
                 onPressed:
                     job.cancellationRequested || progress?.stage == 'saving'
                     ? null
-                    : service.cancelGeneration,
+                    : _service.cancelGeneration,
                 child: Text(i18n.tr('subtitle_pause_task')),
               ),
               TextButton(
@@ -115,7 +118,7 @@ class SubtitleGenerationDialog extends ConsumerWidget {
             ] else ...[
               TextButton(
                 onPressed: () {
-                  service.clearGenerationJob();
+                  _service.clearGenerationJob();
                   Navigator.pop(context);
                 },
                 child: Text(i18n.tr('close')),

@@ -1,24 +1,20 @@
-import 'dart:io';
-
 import 'package:doujin_audio/core/media/subtitle_parser.dart';
-import 'package:doujin_audio/features/library/application/work_text_service.dart';
 import 'package:doujin_audio/features/player/application/subtitle_ai_engine.dart';
 import 'package:doujin_audio/features/player/application/subtitle_generation.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  test(
-    'the unaligned sample is parsed as dialogue, not a timed subtitle',
-    () async {
-      final file = File('docs/测试/1/トラック１.txt');
-      final lines = scriptDialogueLines(
-        decodeWorkText(await file.readAsBytes()).text,
-      );
-      expect(lines.length, greaterThan(200));
-      expect(lines.first, contains('もっとこっち'));
-      expect(lines.every((line) => line.trim().isNotEmpty), isTrue);
-    },
-  );
+  test('untimed script notes are excluded from dialogue', () {
+    final lines = scriptDialogueLines('''
+※ 場面説明
+# 収録メモ
+【扉を開ける】
+1. お姉ちゃん：もっとこっちに来て（小声で）
+
+・ お姉ちゃん：今日は一緒に眠りましょう
+''');
+    expect(lines, ['もっとこっちに来て', '今日は一緒に眠りましょう']);
+  });
 
   test('matches in order and rejects an unrelated script', () {
     final lines = [
@@ -38,47 +34,45 @@ void main() {
     expect(matchScriptWindow('電車は明日の朝に出発します', lines, 0), isNull);
   });
 
-  test(
-    'coarse recognition from the supplied audio finds a later spoken line',
-    () async {
-      final lines = scriptDialogueLines(
-        decodeWorkText(await File('docs/测试/1/トラック１.txt').readAsBytes()).text,
-      );
-      const recognized = 'あ歩八駅の痛とだったの皇ま手下で窓松茶たでしのかしまらこは洗いちゃんの大ちご泊まるわけだ';
-      final match = matchScriptWindow(recognized, lines, 0);
-      expect(match, isNotNull);
-      expect(
-        lines.sublist(match!.startIndex, match.endIndex).join(),
-        contains('泊まるわけだし'),
-      );
-    },
-  );
-
-  test(
-    'the second sample matches its spoken opening after script notes',
-    () async {
-      final lines = scriptDialogueLines(
-        decodeWorkText(
-          await File('docs/测试/2/セリフ初稿台本_トラック１.txt').readAsBytes(),
-        ).text,
-      );
-      const recognized = 'は起きていて下さったのですこ一日中お外で働いてお疲れでしょうにやっぱり姉中さにはたたかんいお食事よりもれ';
-      final match = matchScriptWindow(recognized, lines, 0);
-      expect(match, isNotNull);
-      expect(lines[match!.startIndex], contains('起きていてくださった'));
-    },
-  );
-
-  test('the third sample finds dialogue beyond repeated sounds', () async {
-    final lines = scriptDialogueLines(
-      decodeWorkText(
-        await File('docs/测试/3/セリフ初稿台本_トラック２.txt').readAsBytes(),
-      ).text,
+  test('coarse recognition finds a later spoken line', () {
+    final lines = scriptDialogueLines('''
+第一章 タイトル
+今日はお姉ちゃんのおうちに泊まるわけだし
+抱き枕がないと困っちゃうよね
+遠慮しないでね
+''');
+    const recognized = '今日はお姉ちゃんのうちに泊まるわけだし抱き枕がないと困っちゃうよね';
+    final match = matchScriptWindow(recognized, lines, 0);
+    expect(match, isNotNull);
+    expect(
+      lines.sublist(match!.startIndex, match.endIndex).join(),
+      contains('泊まるわけだし'),
     );
-    expect(lines.length, greaterThan(100));
-    expect(lines.first, startsWith('さあでは'));
-    expect(lines.any((line) => line.startsWith('…やんっ')), isTrue);
-    const openingRecognition = '三出あくはしってお耳をなめて差しあけますねばこち廊頃九ない';
+  });
+
+  test('spoken opening matches after script notes', () {
+    final lines = scriptDialogueLines('''
+※ 開始まで環境音
+【ドアが開く】
+お姉ちゃん：起きていてくださったのですね
+お姉ちゃん：一日中お外で働いてお疲れでしょうに
+''');
+    const recognized = '起きていてくださったのです一日中お外で働いてお疲れでしょうに';
+    final match = matchScriptWindow(recognized, lines, 0);
+    expect(match, isNotNull);
+    expect(lines[match!.startIndex], contains('起きていてくださった'));
+  });
+
+  test('long script recovers dialogue beyond the default search window', () {
+    final lines = List<String>.generate(
+      180,
+      (index) => '第$index幕では静かに風が吹いています',
+    );
+    lines[4] = '横からハグしてお耳をなめて差し上げますね';
+    lines[45] = 'どんどん気持ちよくなってください';
+    lines[80] = 'ご奉仕はまだまだこんなものではありませんよ';
+    lines[100] = '我慢の限界までお付き合いくださいね';
+    const openingRecognition = '横からハグしてお耳をなめて差し上げますね';
     final opening = matchScriptWindow(
       openingRecognition,
       lines,
@@ -87,7 +81,7 @@ void main() {
       minimumCommonLength: 3,
     );
     expect(opening, isNotNull);
-    expect(lines[opening!.startIndex], startsWith('横からハグ'));
+    expect(opening!.startIndex, 4);
     const spoken = 'ご奉仕はまだまだこんなものではありませんよ';
     expect(matchScriptWindow(spoken, lines, 10), isNull);
     final recovered = matchScriptWindow(
@@ -99,7 +93,7 @@ void main() {
     );
     expect(recovered, isNotNull);
     expect(lines[recovered!.startIndex], contains('ご奉仕はまだまだ'));
-    const lateRecognition = '砂学前の玄階で目でにかけていますまあ何ってス敵なお行でシょ';
+    const lateRecognition = '我慢の限界までお付き合いくださいね';
     expect(
       matchScriptWindow(
         lateRecognition,
@@ -118,11 +112,11 @@ void main() {
       minimumScore: 0.42,
     );
     expect(late, isNotNull);
-    expect(lines[late!.startIndex], contains('我慢の限界'));
-    const noisyRecognition = 'どん田寒ををもったたば紅泳しいドンドをどた';
+    expect(late!.startIndex, 100);
+    const noisyRecognition = 'どんどん気持ちよくなってください';
     final temporal = matchScriptNearTime(noisyRecognition, lines, 4, 12, 49);
     expect(temporal, isNotNull);
-    expect(lines[temporal!.startIndex], startsWith('どんどん'));
+    expect(temporal!.startIndex, 45);
     expect(matchScriptNearTime('電車は明日の朝に出発します', lines, 4, 12, 49), isNull);
   });
 

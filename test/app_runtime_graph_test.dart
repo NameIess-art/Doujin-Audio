@@ -3,6 +3,7 @@ import 'dart:collection';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/app/application/app_runtime_graph.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
@@ -82,6 +83,24 @@ void main() {
     'production subtitles resolve ASMR tracks from session queues',
     () async {
       HttpOverrides.global = null;
+      const pathProviderChannel = MethodChannel(
+        'plugins.flutter.io/path_provider',
+      );
+      final supportDir = await Directory.systemTemp.createTemp(
+        'runtime_subtitles_',
+      );
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(pathProviderChannel, (call) async {
+            if (call.method == 'getApplicationSupportDirectory') {
+              return supportDir.path;
+            }
+            return null;
+          });
+      addTearDown(() async {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(pathProviderChannel, null);
+        await supportDir.delete(recursive: true);
+      });
       final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
       addTearDown(() => server.close(force: true));
       server.listen((request) async {

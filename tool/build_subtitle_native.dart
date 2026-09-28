@@ -185,6 +185,16 @@ Future<void> _copyLicenses(String source, String destination) async {
   }
 }
 
+bool _hasOutputs(String directory, List<String> libraries) {
+  for (final name in libraries) {
+    final file = File('$directory/$name');
+    if (!file.existsSync() || file.lengthSync() == 0) {
+      return false;
+    }
+  }
+  return true;
+}
+
 Future<void> main(List<String> args) async {
   final platform = _option(args, '--platform');
   final output = Directory(_option(args, '--output')).absolute.path;
@@ -207,33 +217,40 @@ Future<void> main(List<String> args) async {
     if (!Platform.isWindows) {
       throw UnsupportedError('Windows native build requires Windows');
     }
-    final build = '$source/build-msvc';
-    await _run('cmake', [
-      '-S',
-      source,
-      '-B',
-      build,
-      '-A',
-      'x64',
-      '-DCRISPASR_PORTABLE_CPU=ON',
-      ...common,
-    ]);
-    await _run('cmake', [
-      '--build',
-      build,
-      '--config',
-      'Release',
-      '--target',
-      'crispasr-lib',
-      '--parallel',
-      '8',
-    ]);
-    await _copyLibraries(build, output, [
+    const libraries = [
       'crispasr.dll',
       'ggml.dll',
       'ggml-base.dll',
       'ggml-cpu.dll',
-    ]);
+    ];
+    if (!_hasOutputs(output, libraries)) {
+      final build = '$source/build-msvc';
+      await _run('cmake', [
+        '-S',
+        source,
+        '-B',
+        build,
+        '-A',
+        'x64',
+        '-DCRISPASR_PORTABLE_CPU=ON',
+        ...common,
+      ]);
+      await _run('cmake', [
+        '--build',
+        build,
+        '--config',
+        'Release',
+        '--target',
+        'crispasr-lib',
+        '--parallel',
+        '8',
+      ]);
+      await _copyLibraries(build, output, libraries);
+    } else {
+      stdout.writeln(
+        '$output already contains all required libraries; skipping build.',
+      );
+    }
     await _copyLicenses(source, output);
   } else if (platform == 'android') {
     final ndk = _option(args, '--ndk');
@@ -251,7 +268,20 @@ Future<void> main(List<String> args) async {
         .whereType<Directory>()
         .single
         .path;
+    const requiredLibs = [
+      'libcrispasr.so',
+      'libggml.so',
+      'libggml-base.so',
+      'libggml-cpu.so',
+      'libomp.so',
+    ];
     for (final abi in ['arm64-v8a', 'x86_64']) {
+      if (_hasOutputs('$output/$abi', requiredLibs)) {
+        stdout.writeln(
+          '$output/$abi already contains all required libraries; skipping build.',
+        );
+        continue;
+      }
       final build = '$source/build-android/$abi';
       await _run('cmake', [
         '-S',
@@ -285,20 +315,15 @@ Future<void> main(List<String> args) async {
       final ompArch = abi == 'arm64-v8a' ? 'aarch64' : 'x86_64';
       await File('$clangVersion/lib/linux/$ompArch/libomp.so')
           .copy('$output/$abi/libomp.so');
-      for (final name in [
-        'libcrispasr.so',
-        'libggml.so',
-        'libggml-base.so',
-        'libggml-cpu.so',
-        'libomp.so',
-      ]) {
+      for (final name in requiredLibs) {
         await _run(strip, ['--strip-unneeded', '$output/$abi/$name']);
       }
     }
     await _copyLicenses(source, assetsOutput);
-    await File('$ndk/NOTICE.toolchain').copy(
-      '$assetsOutput/licenses/Android-NDK-NOTICE.txt',
-    );
+    final notice = File('$ndk/NOTICE.toolchain');
+    if (notice.existsSync()) {
+      await notice.copy('$assetsOutput/licenses/Android-NDK-NOTICE.txt');
+    }
   } else {
     throw ArgumentError('Unsupported platform: $platform');
   }

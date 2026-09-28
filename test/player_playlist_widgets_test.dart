@@ -33,6 +33,7 @@ import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/core/widgets/async_cover_image.dart';
 import 'package:doujin_audio/core/widgets/duration_overlay.dart';
 import 'package:doujin_audio/core/widgets/app_feedback.dart';
+import 'package:doujin_audio/core/widgets/drag_only_scrollbar.dart';
 import 'package:doujin_audio/core/widgets/mobile_overlay_inset.dart';
 import 'package:doujin_audio/core/widgets/swipe_reveal_card.dart';
 import 'package:doujin_audio/core/widgets/top_page_header.dart';
@@ -2173,18 +2174,97 @@ void main() {
     await tester.tap(find.byTooltip(languageProvider.tr('audio_features')));
     await tester.pumpAndSettle();
     expect(artwork, findsNothing);
-    final panel = tester.widget<Container>(find.byKey(expandedPanel));
-    final panelDecoration = panel.decoration! as BoxDecoration;
+    final panelSurface = find.byKey(
+      const ValueKey<String>('playback_expanded_control_panel_surface'),
+    );
+    final panelDecoration =
+        tester.widget<DecoratedBox>(panelSurface).decoration as BoxDecoration;
     expect(panelDecoration.color, isNotNull);
     expect(panelDecoration.border, isNotNull);
     expect(tester.getSize(find.byKey(expandedPanel)).width, 398);
     expect(panelDecoration.borderRadius, BorderRadius.circular(16));
-    expect(panelDecoration.boxShadow, isNotEmpty);
+    expect(find.byType(SessionSubtitlePanel), findsOneWidget);
+    expect(
+      tester.getSize(find.byType(SessionSubtitlePanel)).height,
+      greaterThan(0),
+    );
+    expect(tester.getSize(find.byKey(expandedPanel)).height, closeTo(486, 1));
+    expect(
+      tester.getRect(find.byKey(expandedPanel)).top,
+      closeTo(tester.getRect(find.byKey(const ValueKey('controls'))).bottom, 1),
+    );
+    expect(
+      tester.getRect(find.byKey(expandedPanel)).bottom,
+      closeTo(tester.getRect(find.byType(SessionDetailContent)).bottom - 8, 1),
+    );
 
     final closeButtonFinder = find.byKey(
       const ValueKey<String>('close_console_panel'),
     );
     expect(closeButtonFinder, findsOneWidget);
+    final header = find.byType(SegmentPanelPageHeader);
+    final capsule = find.descendant(
+      of: header,
+      matching: find.byType(HeaderFloatingSurface),
+    );
+    expect(capsule, findsOneWidget);
+    final capsuleWidget = tester.widget<HeaderFloatingSurface>(capsule);
+    expect(capsuleWidget.radius, 22);
+    expect(capsuleWidget.height, 44);
+    final capsuleFill = tester.widget<Material>(
+      find.descendant(of: capsule, matching: find.byType(Material)).first,
+    );
+    expect(capsuleFill.color, Colors.transparent);
+    final panelRect = tester.getRect(panelSurface);
+    final capsuleRect = tester.getRect(capsule);
+    expect(panelRect.contains(tester.getCenter(closeButtonFinder)), isTrue);
+    expect(panelRect.contains(capsuleRect.center), isTrue);
+    expect(panelRect.top, lessThan(capsuleRect.top));
+    expect(capsuleRect.left - panelRect.left, lessThan(8));
+    expect(panelRect.right - capsuleRect.right, lessThan(8));
+    final tabTaps = find.descendant(of: header, matching: find.byType(InkWell));
+    expect(tabTaps, findsNWidgets(6));
+    expect(
+      tester.widget<InkWell>(tabTaps.at(1)).borderRadius,
+      BorderRadius.circular(18),
+    );
+    final firstTabRect = tester.getRect(tabTaps.at(1));
+    final secondTabRect = tester.getRect(tabTaps.at(2));
+    await tester.tapAt(capsuleRect.topLeft + const Offset(1, 1));
+    await tester.pumpAndSettle();
+    expect(tester.widget<SegmentPanelPageHeader>(header).pageIndex, 2);
+    await tester.tapAt(
+      Offset(
+        (firstTabRect.right + secondTabRect.left) / 2,
+        firstTabRect.center.dy,
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(tester.widget<SegmentPanelPageHeader>(header).pageIndex, 2);
+    final centers = [
+      tester.getCenter(closeButtonFinder).dx,
+      for (final label in [
+        'equalizer',
+        'audio_features',
+        'playback_speed',
+        'audio_detail_tags',
+        'volume_balance',
+      ])
+        tester
+            .getCenter(
+              find.descendant(
+                of: header,
+                matching: find.text(languageProvider.tr(label)),
+              ),
+            )
+            .dx,
+    ];
+    for (var index = 2; index < centers.length; index++) {
+      expect(
+        centers[index] - centers[index - 1],
+        closeTo(centers[1] - centers[0], 1),
+      );
+    }
     expect(
       tester.getCenter(closeButtonFinder).dx,
       lessThan(tester.getCenter(find.byKey(expandedPanel)).dx),
@@ -2217,12 +2297,19 @@ void main() {
     _expectThemeSessionResetButtonStyle(tester, speedRestoreButton);
     expect(
       tester.getSize(speedRestoreButton).width,
-      closeTo(tester.getSize(find.byKey(expandedPanel)).width - 34, 1),
+      closeTo(tester.getSize(find.byKey(expandedPanel)).width - 32, 1),
     );
     expect(tester.widget<FilledButton>(speedRestoreButton).onPressed, isNull);
 
     await tester.tap(find.text(languageProvider.tr('equalizer')));
     await tester.pumpAndSettle();
+    expect(
+      find.descendant(
+        of: find.byKey(expandedPanel),
+        matching: find.byType(DragOnlyScrollbar),
+      ),
+      findsNothing,
+    );
     final equalizerResetButton = find.byKey(
       const ValueKey<String>('reset_equalizer'),
     );
@@ -2237,7 +2324,7 @@ void main() {
     expect(saveRect.left - resetRect.right, closeTo(10, 1));
     expect(
       resetRect.width + saveRect.width + 10,
-      closeTo(tester.getSize(find.byKey(expandedPanel)).width - 34, 1),
+      closeTo(tester.getSize(find.byKey(expandedPanel)).width - 32, 1),
     );
     expect(tester.widget<FilledButton>(equalizerResetButton).onPressed, isNull);
     expect(
@@ -2325,7 +2412,7 @@ void main() {
     _expectThemeSessionResetButtonStyle(tester, restoreButton);
     expect(
       tester.getSize(restoreButton).width,
-      closeTo(tester.getSize(find.byKey(expandedPanel)).width - 82, 1),
+      closeTo(tester.getSize(find.byKey(expandedPanel)).width - 80, 1),
     );
     expect(tester.widget<FilledButton>(restoreButton).onPressed, isNotNull);
     expect(find.text(languageProvider.tr('restore_default')), findsOneWidget);
@@ -6413,7 +6500,7 @@ void main() {
   testWidgets(
     'landscape session detail keeps secondary controls visible when feature menu is open',
     (tester) async {
-      await _pumpSubtitleDetail(
+      final pumped = await _pumpSubtitleDetail(
         tester: tester,
         subtitleTrack: SubtitleTrack(sourcePath: 'empty.srt', cues: const []),
         initialPosition: Duration.zero,
@@ -6433,14 +6520,33 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byKey(const ValueKey('segments_landscape')), findsOneWidget);
+      await tester.tap(
+        find.descendant(
+          of: find.byType(SegmentPanelPageHeader),
+          matching: find.text(pumped.fixture.languageProvider.tr('equalizer')),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('segments_landscape')),
+          matching: find.byType(DragOnlyScrollbar),
+        ),
+        findsNothing,
+      );
       final panelPage = find.descendant(
         of: find.byKey(const ValueKey('segments_landscape')),
         matching: find.byType(PageView),
       );
-      final contentPadding = tester.widget<Padding>(
-        find.ancestor(of: panelPage, matching: find.byType(Padding)).first,
+      final contentPaddings = tester
+          .widgetList<Padding>(
+            find.ancestor(of: panelPage, matching: find.byType(Padding)),
+          )
+          .map((padding) => padding.padding);
+      expect(
+        contentPaddings,
+        contains(const EdgeInsets.fromLTRB(16, 6, 16, 16)),
       );
-      expect(contentPadding.padding, const EdgeInsets.fromLTRB(16, 6, 16, 16));
       // Secondary controls capsule remains visible in landscape
       expect(secondaryControlsFinder, findsOneWidget);
 
@@ -6451,6 +6557,10 @@ void main() {
       expect(find.byKey(const ValueKey('segments_landscape')), findsNothing);
       expect(secondaryControlsFinder, findsOneWidget);
     },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
   );
 
   testWidgets(
@@ -6475,6 +6585,17 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byKey(const ValueKey('segments')), findsOneWidget);
+      expect(find.byType(SessionSubtitlePanel), findsOneWidget);
+      expect(
+        tester
+            .getSize(
+              find.byKey(
+                const ValueKey<String>('playback_expanded_control_panel'),
+              ),
+            )
+            .height,
+        closeTo(432, 1),
+      );
       // Secondary controls capsule is hidden in portrait
       expect(secondaryControlsFinder, findsNothing);
     },

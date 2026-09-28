@@ -11,6 +11,7 @@ import '../../../../core/widgets/app_buttons.dart';
 import '../../../../core/widgets/app_dialog.dart';
 import '../../../../core/widgets/app_feedback.dart';
 import '../../../../core/widgets/scroll_activity_gate.dart';
+import '../../../../core/widgets/top_page_header.dart';
 import '../../../../core/widgets/windows_horizontal_wheel_scroll.dart';
 import '../../application/playback_facade.dart';
 import '../../application/playback_session_snapshot.dart';
@@ -40,7 +41,7 @@ class TimeSegmentPanel extends StatefulWidget {
     required this.onEditEnd,
     required this.onDelete,
     required this.onToggleLoop,
-    this.onClose,
+    required this.onClose,
   });
 
   final PlaybackSessionSnapshot session;
@@ -62,7 +63,7 @@ class TimeSegmentPanel extends StatefulWidget {
   final VoidCallback onEditEnd;
   final VoidCallback onDelete;
   final VoidCallback onToggleLoop;
-  final VoidCallback? onClose;
+  final VoidCallback onClose;
 
   @override
   State<TimeSegmentPanel> createState() => _TimeSegmentPanelState();
@@ -123,98 +124,85 @@ class _TimeSegmentPanelState extends State<TimeSegmentPanel> {
     final targetHeight = isPortrait
         ? max(420.0, min(560.0, mediaHeight * 0.54))
         : max(360.0, mediaHeight * 0.5 - 130.0);
+    const headerHeight = 44.0;
+    const headerGap = 12.0;
 
     final content = Padding(
       padding: EdgeInsets.fromLTRB(
-        isPortrait ? 0 : 16,
+        isPortrait ? 4 : 16,
         isPortrait ? 12 : 6,
-        isPortrait ? 0 : 16,
+        isPortrait ? 4 : 16,
         16,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Stack(
-            alignment: Alignment.center,
-            children: [
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 28),
-                child: SegmentPanelPageHeader(
-                  pageIndex: _pageIndex,
-                  onSelected: _animateToPanelPage,
-                  labels: [
-                    i18n.tr('equalizer'),
-                    i18n.tr('audio_features'),
-                    i18n.tr('playback_speed'),
-                    i18n.tr('audio_detail_tags'),
-                    i18n.tr('volume_balance'),
-                  ],
-                ),
-              ),
-              if (widget.onClose != null)
-                Positioned(
-                  left: -10,
-                  child: IconButton(
-                    key: const ValueKey<String>('close_console_panel'),
-                    tooltip: i18n.tr('close'),
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints.tightFor(
-                      width: 40,
-                      height: 40,
-                    ),
-                    iconSize: 24,
-                    icon: const Icon(Icons.keyboard_arrow_down_rounded),
-                    onPressed: widget.onClose,
-                  ),
-                ),
-            ],
+          SizedBox(
+            height: headerHeight,
+            child: SegmentPanelPageHeader(
+              pageIndex: _pageIndex,
+              onSelected: _animateToPanelPage,
+              onClose: widget.onClose,
+              closeTooltip: i18n.tr('close'),
+              labels: [
+                i18n.tr('equalizer'),
+                i18n.tr('audio_features'),
+                i18n.tr('playback_speed'),
+                i18n.tr('audio_detail_tags'),
+                i18n.tr('volume_balance'),
+              ],
+            ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: headerGap),
           Expanded(
-            child: ScrollActivityGate(
-              maxNotificationDepth: 1,
-              child: Listener(
-                onPointerSignal: (signal) {
-                  if (defaultTargetPlatform != TargetPlatform.windows ||
-                      signal is! PointerScrollEvent ||
-                      signal.scrollDelta.dy == 0) {
-                    return;
-                  }
-                  final target = _pageIndex + (signal.scrollDelta.dy > 0 ? 1 : -1);
-                  if (target < 0 || target >= 5) return;
-                  GestureBinding.instance.pointerSignalResolver.register(
-                    signal,
-                    (_) => _animateToPanelPage(target),
-                  );
-                },
-                child: PageView(
-                controller: _pageController,
-                onPageChanged: _handlePageChanged,
-                children: [
-                  EqualizerPage(
-                    session: widget.session,
-                    playback: widget.playback,
+            child: Padding(
+              padding: EdgeInsets.symmetric(horizontal: isPortrait ? 12 : 0),
+              child: ScrollActivityGate(
+                maxNotificationDepth: 1,
+                child: Listener(
+                  onPointerSignal: (signal) {
+                    if (defaultTargetPlatform != TargetPlatform.windows ||
+                        signal is! PointerScrollEvent ||
+                        signal.scrollDelta.dy == 0) {
+                      return;
+                    }
+                    final target =
+                        _pageIndex + (signal.scrollDelta.dy > 0 ? 1 : -1);
+                    if (target < 0 || target >= 5) return;
+                    GestureBinding.instance.pointerSignalResolver.register(
+                      signal,
+                      (_) => _animateToPanelPage(target),
+                    );
+                  },
+                  child: PageView(
+                    controller: _pageController,
+                    onPageChanged: _handlePageChanged,
+                    children: [
+                      EqualizerPage(
+                        session: widget.session,
+                        playback: widget.playback,
+                      ),
+                      AudioFeaturesPage(
+                        session: widget.session,
+                        playback: widget.playback,
+                      ),
+                      SpeedWheelPage(
+                        key: ValueKey<String>('speed_${widget.session.id}'),
+                        session: widget.session,
+                        playback: widget.playback,
+                      ),
+                      _buildSegmentPage(
+                        context,
+                        selected: selected,
+                        activeColor: activeColor,
+                        loopActive: loopActive,
+                      ),
+                      VolumeBalancePage(
+                        session: widget.session,
+                        playback: widget.playback,
+                      ),
+                    ],
                   ),
-                  AudioFeaturesPage(
-                    session: widget.session,
-                    playback: widget.playback,
-                  ),
-                  SpeedWheelPage(
-                    key: ValueKey<String>('speed_${widget.session.id}'),
-                    session: widget.session,
-                    playback: widget.playback,
-                  ),
-                  _buildSegmentPage(
-                    context,
-                    selected: selected,
-                    activeColor: activeColor,
-                    loopActive: loopActive,
-                  ),
-                  VolumeBalancePage(
-                    session: widget.session,
-                    playback: widget.playback,
-                  ),
-                ],
                 ),
               ),
             ),
@@ -222,27 +210,28 @@ class _TimeSegmentPanelState extends State<TimeSegmentPanel> {
         ],
       ),
     );
-    if (!isPortrait) {
-      return SizedBox(height: targetHeight, child: content);
-    }
-    return Container(
-      key: const ValueKey<String>('playback_expanded_control_panel'),
-      height: targetHeight,
-      clipBehavior: Clip.antiAlias,
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      decoration: BoxDecoration(
-        color: cs.surfaceContainerHigh.withValues(alpha: 0.9),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: cs.outlineVariant.withValues(alpha: 0.55)),
-        boxShadow: [
-          BoxShadow(
-            color: cs.shadow.withValues(alpha: 0.14),
-            blurRadius: 24,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
-      child: content,
+    final panel = isPortrait
+        ? SizedBox(
+            key: const ValueKey<String>('playback_expanded_control_panel'),
+            height: targetHeight,
+            child: DecoratedBox(
+              key: const ValueKey<String>(
+                'playback_expanded_control_panel_surface',
+              ),
+              decoration: BoxDecoration(
+                color: cs.surfaceContainerHigh.withValues(alpha: 0.9),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: cs.outlineVariant.withValues(alpha: 0.55),
+                ),
+              ),
+              child: content,
+            ),
+          )
+        : SizedBox(height: targetHeight, child: content);
+    return ScrollConfiguration(
+      behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
+      child: panel,
     );
   }
 
@@ -278,18 +267,18 @@ class _TimeSegmentPanelState extends State<TimeSegmentPanel> {
                       )
                     : WindowsHorizontalWheelScroll(
                         builder: (scrollController) => ListView.separated(
-                        controller: scrollController,
-                        scrollDirection: Axis.horizontal,
-                        itemCount: widget.labels.length,
-                        separatorBuilder: (_, _) => const SizedBox(width: 8),
-                        itemBuilder: (context, index) {
-                          final label = widget.labels[index];
-                          return TimeSegmentChip(
-                            label: label,
-                            selected: label.id == widget.selectedId,
-                            onTap: () => widget.onSelect(label),
-                          );
-                        },
+                          controller: scrollController,
+                          scrollDirection: Axis.horizontal,
+                          itemCount: widget.labels.length,
+                          separatorBuilder: (_, _) => const SizedBox(width: 8),
+                          itemBuilder: (context, index) {
+                            final label = widget.labels[index];
+                            return TimeSegmentChip(
+                              label: label,
+                              selected: label.id == widget.selectedId,
+                              onTap: () => widget.onSelect(label),
+                            );
+                          },
                         ),
                       ),
               ),
@@ -441,48 +430,89 @@ class SegmentPanelPageHeader extends StatelessWidget {
     super.key,
     required this.pageIndex,
     required this.onSelected,
+    required this.onClose,
+    required this.closeTooltip,
     required this.labels,
   });
 
   final int pageIndex;
   final ValueChanged<int> onSelected;
+  final VoidCallback onClose;
+  final String closeTooltip;
   final List<String> labels;
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    return FittedBox(
-      fit: BoxFit.scaleDown,
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: List.generate(labels.length, (index) {
-          final selected = index == pageIndex;
-          return Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 2),
-            child: InkWell(
-              borderRadius: BorderRadius.circular(999),
-              onTap: () => onSelected(index),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 140),
-                curve: Curves.easeOutCubic,
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                decoration: BoxDecoration(
-                  color: selected
-                      ? cs.primary.withValues(alpha: 0.16)
-                      : Colors.transparent,
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: Text(
-                  labels[index],
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: selected ? cs.primary : cs.onSurfaceVariant,
-                    fontWeight: FontWeight.w800,
+    return HeaderFloatingSurface(
+      height: 44,
+      radius: 22,
+      padding: const EdgeInsets.all(1),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(21),
+        child: Row(
+          children: [
+            Expanded(
+              child: Center(
+                child: IconButton(
+                  key: const ValueKey<String>('close_console_panel'),
+                  tooltip: closeTooltip,
+                  onPressed: onClose,
+                  constraints: const BoxConstraints.tightFor(
+                    width: 36,
+                    height: 36,
                   ),
+                  padding: EdgeInsets.zero,
+                  style: IconButton.styleFrom(
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 22),
                 ),
               ),
             ),
-          );
-        }),
+            ...List.generate(labels.length, (index) {
+              final selected = index == pageIndex;
+              return Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 2,
+                    vertical: 3,
+                  ),
+                  child: Material(
+                    color: selected
+                        ? cs.primary.withValues(alpha: 0.19)
+                        : Colors.transparent,
+                    borderRadius: BorderRadius.circular(18),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(18),
+                      onTap: () => onSelected(index),
+                      child: Center(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 4),
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text(
+                              labels[index],
+                              maxLines: 1,
+                              style: Theme.of(context).textTheme.labelSmall
+                                  ?.copyWith(
+                                    color: selected
+                                        ? cs.primary
+                                        : cs.onSurfaceVariant,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            }),
+          ],
+        ),
       ),
     );
   }

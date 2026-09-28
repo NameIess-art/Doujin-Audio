@@ -5,7 +5,7 @@ import 'dart:io';
 // Outputs live in ignored build directories; no generated binary is committed.
 const _sourceUrl = 'https://github.com/CrispStrobe/CrispASR.git';
 const _sourceTag = 'v0.8.37';
-const _sourceCommit = 'd08ec2dd83411a8389745c97c4f2e3955e084280';
+const _sourceCommit = '4408fe0f27d7b72308fa3430a0cfac8e5a82b40d';
 const _ggmlCommit = '2f5a80d258c46e6ac8eee95f1328c0f58376d7ee';
 const _c2paCommit = 'e40329b83f16f67bb5ddc7bb13ae18de0a9376fc';
 
@@ -71,7 +71,15 @@ Future<void> _verifySubmodule(String source, String path, String commit) async {
 }
 
 Future<void> _prepareSource(String source) async {
-  if (!Directory(source).existsSync()) {
+  final directory = Directory(source);
+  if (directory.existsSync()) {
+    final head = await _capture('git', ['rev-parse', 'HEAD'], cwd: source);
+    if (head != _sourceCommit) {
+      stdout.writeln('Recreating $source for $_sourceCommit (was $head)');
+      await directory.delete(recursive: true);
+    }
+  }
+  if (!directory.existsSync()) {
     await _run('git', [
       'clone',
       '--depth',

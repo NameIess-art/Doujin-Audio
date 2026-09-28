@@ -10,7 +10,7 @@ FFmpeg 8.0.1 essentials: GPL-3.0, https://github.com/GyanD/codexffmpeg/releases/
 FFmpeg corresponding source: https://ffmpeg.org/releases/ffmpeg-8.0.1.tar.xz
 FFmpeg build configuration and dependencies: https://www.gyan.dev/ffmpeg/builds/
 SQLite: public domain, https://www.sqlite.org/copyright.html
-CrispASR v0.8.37 (source commit d08ec2dd83411a8389745c97c4f2e3955e084280): MIT, https://github.com/CrispStrobe/CrispASR
+CrispASR v0.8.37 (source commit 4408fe0f27d7b72308fa3430a0cfac8e5a82b40d): MIT, https://github.com/CrispStrobe/CrispASR
 ggml (source commit 2f5a80d258c46e6ac8eee95f1328c0f58376d7ee): MIT, https://github.com/CrispStrobe/ggml
 CrispASR c2pa-audio (source commit e40329b83f16f67bb5ddc7bb13ae18de0a9376fc): MIT; bundled micro-ecc: BSD-2-Clause. Full texts are installed in licenses/.
 The subtitle runtime build keeps Japanese CTC alignment labels in the original script; see tool/build_subtitle_native.dart.

@@ -125,8 +125,8 @@ packages:
     dependency: "direct main"
     description:
       path: "flutter/crispasr"
-      ref: d08ec2dd83411a8389745c97c4f2e3955e084280
-      resolved-ref: d08ec2dd83411a8389745c97c4f2e3955e084280
+      ref: "4408fe0f27d7b72308fa3430a0cfac8e5a82b40d"
+      resolved-ref: "4408fe0f27d7b72308fa3430a0cfac8e5a82b40d"
       url: "https://github.com/CrispStrobe/CrispASR.git"
     source: git
     version: "0.8.37"

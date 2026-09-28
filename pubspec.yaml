@@ -34,7 +34,7 @@ dependencies:
   crispasr:
     git:
       url: https://github.com/CrispStrobe/CrispASR.git
-      ref: d08ec2dd83411a8389745c97c4f2e3955e084280
+      ref: 4408fe0f27d7b72308fa3430a0cfac8e5a82b40d
       path: flutter/crispasr
   lottie: ^3.3.3
   crypto: ^3.0.6

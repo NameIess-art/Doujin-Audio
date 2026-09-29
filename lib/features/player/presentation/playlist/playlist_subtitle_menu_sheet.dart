@@ -6,8 +6,11 @@ import 'package:path/path.dart' as path;
 
 import '../../../../app/state/app_runtime_providers.dart';
 import '../../../../app/state/subtitle_settings_provider.dart';
+import '../../../../core/media/path_matcher.dart';
 import '../../../../core/widgets/app_bottom_sheet.dart';
 import '../../../../core/widgets/app_feedback.dart';
+import '../../../library/application/work_text_service.dart';
+import '../../../library/presentation/library_providers.dart';
 import '../../application/playback_session_snapshot.dart';
 import '../../application/playback_subtitle_service.dart';
 import '../../application/subtitle_model_store.dart';
@@ -136,9 +139,55 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
   }
 
   Future<void> _pickScriptFile(PlaybackSubtitleService subtitles) async {
+    if (_importing) return;
+    setState(() => _importing = true);
     try {
+      final i18n = ref.read(appLanguageProviderInstanceProvider);
+      final target = ref
+          .read(libraryFacadeProvider)
+          .audioDetailTargetForPath(widget.session.currentTrackPath);
+      final folderPath = target.isLibraryRootFolder
+          ? target.targetPath
+          : PathMatcher.parentPath(target.targetPath);
+      final files = folderPath == null
+          ? const <WorkTextFile>[]
+          : (await ref
+                    .read(workTextServiceProvider)
+                    .findWorkTextFiles(folderPath))
+                .where((file) {
+                  final extension = path.extension(file.name).toLowerCase();
+                  return extension == '.txt' || extension == '.md';
+                })
+                .toList(growable: false);
+      if (!mounted) return;
+      setState(() => _importing = false);
+      if (files.isEmpty) {
+        showAppSnackBar(
+          context,
+          i18n.tr('script_text_not_found'),
+          tone: AppFeedbackTone.warning,
+          icon: Icons.info_outline_rounded,
+        );
+        return;
+      }
+      final selected = await showDialog<WorkTextFile>(
+        context: context,
+        builder: (dialogContext) => SimpleDialog(
+          title: Text(i18n.tr('subtitle_script_generate')),
+          children: [
+            for (final file in files)
+              SimpleDialogOption(
+                onPressed: () => Navigator.pop(dialogContext, file),
+                child: Text(
+                  file.relativePath.isEmpty ? file.name : file.relativePath,
+                ),
+              ),
+          ],
+        ),
+      );
+      if (!mounted || selected == null) return;
+      final selectedPath = selected.path;
       if (subtitles.hasKnownSubtitle(widget.session.currentTrackPath)) {
-        final i18n = ref.read(appLanguageProviderInstanceProvider);
         final confirmed = await showDialog<bool>(
           context: context,
           builder: (dialogContext) => AlertDialog(
@@ -158,13 +207,6 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
         );
         if (!mounted || confirmed != true) return;
       }
-      final result = await FilePicker.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: const ['txt', 'md'],
-      );
-      if (!mounted) return;
-      final selectedPath = result?.files.singleOrNull?.path;
-      if (selectedPath == null || selectedPath.isEmpty) return;
       if (path.extension(selectedPath).toLowerCase() == '.txt' &&
           await subtitles.isTimedSubtitleFile(selectedPath)) {
         if (!mounted) return;
@@ -193,6 +235,8 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
           icon: Icons.error_outline_rounded,
         );
       }
+    } finally {
+      if (mounted) setState(() => _importing = false);
     }
   }
 

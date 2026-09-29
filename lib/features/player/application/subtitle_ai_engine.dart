@@ -17,6 +17,7 @@ import '../../../core/media/subtitle_parser.dart';
 import '../../../core/platform/file_cache_platform_gateway.dart';
 import '../../../core/platform/windows_media_tools.dart';
 import '../../library/application/work_text_service.dart';
+import 'subtitle_ctc_alignment.dart';
 import 'subtitle_generation.dart';
 import 'subtitle_model_store.dart';
 
@@ -39,7 +40,6 @@ class SubtitleAiEngine {
     String scriptPath, {
     SubtitleProgressCallback? onProgress,
     bool Function()? isCancelled,
-    Future<void> Function(List<SubtitleCue> cues)? onPartial,
   }) async {
     _requireSupported();
     final scriptBytes = await _files.readDocumentBytes(scriptPath);
@@ -55,130 +55,71 @@ class SubtitleAiEngine {
     );
     _checkCancelled(isCancelled);
 
-    final workDir = Directory(
-      path.join(
-        (await getApplicationSupportDirectory()).path,
-        'subtitle_progress',
-      ),
-    );
-    await workDir.create(recursive: true);
     final identity = sha256.convert([
       ...utf8.encode(trackPath),
       ...scriptBytes,
     ]).toString();
-    final checkpoint = File(path.join(workDir.path, '$identity.json'));
-    final prior = await _readCheckpoint(checkpoint, expectedVersion: 4);
-    final cues = prior.cues.toList();
-    var nextLine = prior.nextLine;
-    var nextChunk = prior.nextChunk;
     final decoded = File(
       path.join((await getTemporaryDirectory()).path, '$identity.pcm'),
     );
     try {
       await _decodeAudio(trackPath, decoded, onProgress, isCancelled);
       final length = await decoded.length();
+      if (length == 0) return null;
       const samplesPerChunk = 16000 * 20;
       const bytesPerChunk = samplesPerChunk * 4;
       final totalChunks = (length / bytesPerChunk).ceil();
-      if (nextChunk > totalChunks ||
-          (nextChunk == totalChunks && cues.isEmpty)) {
-        nextChunk = 0;
-        nextLine = 0;
-        cues.clear();
-      }
-      if (cues.isNotEmpty) await onPartial?.call(List.of(cues));
       onProgress?.call(const SubtitleTaskProgress('loading', 0, ''));
       final worker = await _SubtitleWorker.open(model, 'asr');
       final reader = await decoded.open();
       try {
-        for (var chunk = nextChunk; chunk < totalChunks; chunk++) {
+        await worker.beginScriptAlignment(lines);
+        for (var chunk = 0; chunk < totalChunks; chunk++) {
           _checkCancelled(isCancelled);
-          await reader.setPosition(chunk * bytesPerChunk);
-          final bytes = await reader.read(
-            math.min(bytesPerChunk, length - chunk * bytesPerChunk),
+          final expectedBytes = math.min(
+            bytesPerChunk,
+            length - chunk * bytesPerChunk,
           );
-          final pcm = Float32List.view(Uint8List.fromList(bytes).buffer);
-          final recognized = await worker.transcribe(pcm);
-          final textMatch =
-              matchScriptWindow(
-                recognized,
-                lines,
-                nextLine,
-                minimumScore: 0.26,
-                minimumCommonLength: 3,
-              ) ??
-              matchScriptWindow(
-                recognized,
-                lines,
-                nextLine,
-                lookAhead: math.min(160, lines.length - nextLine),
-                minimumScore: 0.42,
-              );
-          final match =
-              textMatch ??
-              matchScriptNearTime(
-                recognized,
-                lines,
-                nextLine,
-                chunk,
-                totalChunks,
-              );
-          final priorCueCount = cues.length;
-          if (match != null) {
-            final selected = lines.sublist(match.startIndex, match.endIndex);
-            final words = await worker.align(
-              selected.join('\n'),
-              pcm,
-              chunk * 20.0,
+          final bytes = await reader.read(expectedBytes);
+          if (bytes.length != expectedBytes) {
+            throw FileSystemException(
+              'Decoded audio is incomplete',
+              decoded.path,
             );
-            final timedWords = words
-                .where(
-                  (word) =>
-                      word.start.isFinite &&
-                      word.end.isFinite &&
-                      word.start >= 0 &&
-                      word.end > word.start,
-                )
-                .length;
-            final aligned =
-                textMatch == null &&
-                    (words.isEmpty || timedWords / words.length < 0.8)
-                ? const <SubtitleCue>[]
-                : alignedScriptCues(selected, words);
-            var accepted = 0;
-            final windowStart = Duration(seconds: chunk * 20);
-            final windowEnd = Duration(seconds: (chunk + 1) * 20);
-            for (final cue in aligned) {
-              if (cue.start < windowStart ||
-                  cue.end > windowEnd ||
-                  (cues.isNotEmpty && cue.start < cues.last.end)) {
-                break;
-              }
-              cues.add(cue);
-              accepted++;
-            }
-            if (accepted > 0) {
-              nextLine = match.startIndex + accepted;
-            }
           }
-          await _writeCheckpoint(
-            checkpoint,
-            chunk + 1,
-            nextLine,
-            cues,
-            version: 4,
+          final pcm = Float32List.view(Uint8List.fromList(bytes).buffer);
+          await worker.feedScriptAlignment(
+            pcm,
+            chunk * 20.0,
+            bytes.length / (16000 * 4),
           );
-          if (cues.length > priorCueCount) {
-            await onPartial?.call(List.of(cues));
-          }
           onProgress?.call(
             SubtitleTaskProgress(
               'matching',
               (chunk + 1) / totalChunks,
-              '${chunk + 1}/$totalChunks · $nextLine/${lines.length}',
+              '${chunk + 1}/$totalChunks',
             ),
           );
         }
+        _checkCancelled(isCancelled);
+        final cues = await worker.endScriptAlignment();
+        if (cues.length != lines.length) {
+          throw StateError(
+            'Only ${cues.length}/${lines.length} script lines could be aligned',
+          );
+        }
+        for (var index = 0; index < cues.length; index++) {
+          if (cues[index].text != lines[index] ||
+              cues[index].end <= cues[index].start ||
+              (index > 0 && cues[index].start < cues[index - 1].end)) {
+            throw StateError('Script alignment produced invalid cue times');
+          }
+        }
+        return SubtitleDraft(
+          cues: cues,
+          kind: SubtitleDraftKind.script,
+          sourceLanguage: 'ja',
+        );
       } finally {
         await reader.close();
         await worker.close();
@@ -186,12 +127,6 @@ class SubtitleAiEngine {
     } finally {
       if (await decoded.exists()) await decoded.delete();
     }
-    if (cues.isEmpty) return null;
-    return SubtitleDraft(
-      cues: cues,
-      kind: SubtitleDraftKind.script,
-      sourceLanguage: 'ja',
-    );
   }
 
   Future<SubtitleDraft> prepareTranslation(
@@ -264,7 +199,7 @@ class SubtitleAiEngine {
             ),
           );
         }
-        await _writeCheckpoint(checkpoint, offset + group.length, 0, cues);
+        await _writeCheckpoint(checkpoint, offset + group.length, cues);
         onProgress?.call(
           SubtitleTaskProgress(
             'translating',
@@ -389,66 +324,16 @@ class SubtitleAiEngine {
   }
 }
 
-List<SubtitleCue> alignedScriptCues(
-  List<String> lines,
-  List<({String text, double start, double end})> words,
-) {
-  if (lines.isEmpty || words.isEmpty) return const [];
-  final cues = <SubtitleCue>[];
-  var cursor = 0;
-  for (final line in lines) {
-    final count = normalizeJapaneseMatch(line).length;
-    if (count == 0 || cursor >= words.length) break;
-    final first = cursor;
-    var covered = 0;
-    while (cursor < words.length && covered < count) {
-      covered += normalizeJapaneseMatch(words[cursor].text).length;
-      cursor++;
-    }
-    if (covered < count * 0.65) break;
-    final timedWords = words
-        .getRange(first, cursor)
-        .where(
-          (word) =>
-              word.start.isFinite &&
-              word.end.isFinite &&
-              word.start >= 0 &&
-              word.end > word.start,
-        );
-    if (timedWords.isEmpty) break;
-    final start = timedWords.first.start;
-    final end = timedWords.last.end;
-    if (!start.isFinite ||
-        !end.isFinite ||
-        start < 0 ||
-        end <= start ||
-        end - start > 35) {
-      break;
-    }
-    final cue = SubtitleCue(
-      start: Duration(milliseconds: (start * 1000).round()),
-      end: Duration(milliseconds: (end * 1000).round()),
-      text: line,
-    );
-    if (cues.isNotEmpty && cue.start < cues.last.end) break;
-    cues.add(cue);
-  }
-  return cues;
-}
+typedef _Checkpoint = ({int nextChunk, List<SubtitleCue> cues});
 
-typedef _Checkpoint = ({int nextChunk, int nextLine, List<SubtitleCue> cues});
-
-Future<_Checkpoint> _readCheckpoint(
-  File file, {
-  int expectedVersion = 1,
-}) async {
+Future<_Checkpoint> _readCheckpoint(File file) async {
   if (!await file.exists()) {
-    return (nextChunk: 0, nextLine: 0, cues: <SubtitleCue>[]);
+    return (nextChunk: 0, cues: <SubtitleCue>[]);
   }
   try {
     final data = jsonDecode(await file.readAsString()) as Map<String, dynamic>;
-    if ((data['version'] as int? ?? 1) != expectedVersion) {
-      return (nextChunk: 0, nextLine: 0, cues: <SubtitleCue>[]);
+    if ((data['version'] as int? ?? 1) != 1) {
+      return (nextChunk: 0, cues: <SubtitleCue>[]);
     }
     final cues = (data['cues'] as List).map((item) {
       final cue = item as List;
@@ -458,29 +343,22 @@ Future<_Checkpoint> _readCheckpoint(
         text: cue[2] as String,
       );
     }).toList();
-    return (
-      nextChunk: data['nextChunk'] as int,
-      nextLine: data['nextLine'] as int,
-      cues: cues,
-    );
+    return (nextChunk: data['nextChunk'] as int, cues: cues);
   } catch (_) {
-    return (nextChunk: 0, nextLine: 0, cues: <SubtitleCue>[]);
+    return (nextChunk: 0, cues: <SubtitleCue>[]);
   }
 }
 
 Future<void> _writeCheckpoint(
   File file,
   int nextChunk,
-  int nextLine,
-  List<SubtitleCue> cues, {
-  int version = 1,
-}) async {
+  List<SubtitleCue> cues,
+) async {
   final temporary = File('${file.path}.tmp');
   await temporary.writeAsString(
     jsonEncode({
-      'version': version,
+      'version': 1,
       'nextChunk': nextChunk,
-      'nextLine': nextLine,
       'cues': cues
           .map(
             (cue) => [
@@ -548,21 +426,26 @@ class _SubtitleWorker {
     }
   }
 
-  Future<String> transcribe(Float32List pcm) async =>
-      await _request('transcribe', pcm) as String;
+  Future<void> beginScriptAlignment(List<String> lines) async {
+    await _request('beginScriptAlignment', lines);
+  }
 
-  Future<List<({String text, double start, double end})>> align(
-    String text,
+  Future<void> feedScriptAlignment(
     Float32List pcm,
-    double offset,
+    double start,
+    double duration,
   ) async {
-    final raw = await _request('align', [text, pcm, offset]) as List;
+    await _request('feedScriptAlignment', [pcm, start, duration]);
+  }
+
+  Future<List<SubtitleCue>> endScriptAlignment() async {
+    final raw = await _request('endScriptAlignment', null) as List;
     return raw.map((item) {
-      final word = item as List;
-      return (
-        text: word[0] as String,
-        start: word[1] as double,
-        end: word[2] as double,
+      final cue = item as List;
+      return SubtitleCue(
+        start: Duration(milliseconds: ((cue[1] as double) * 1000).round()),
+        end: Duration(milliseconds: ((cue[2] as double) * 1000).round()),
+        text: cue[0] as String,
       );
     }).toList();
   }
@@ -595,10 +478,17 @@ Future<void> _workerMain(List<Object> args) async {
   final incoming = ReceivePort();
   CrispasrSession? asr;
   CrispasrChatSession? chat;
+  SubtitleCtcAlignment? scriptAlignment;
   SendPort? closeReply;
   try {
     if (mode == 'asr') {
-      asr = CrispasrSession.open(model, backend: 'wav2vec2');
+      asr = CrispasrSession.open(
+        model,
+        backend: 'wav2vec2',
+        nThreads: Platform.isWindows
+            ? math.min(12, Platform.numberOfProcessors)
+            : 4,
+      );
     } else {
       chat = CrispasrChatSession.open(
         model,
@@ -616,23 +506,49 @@ Future<void> _workerMain(List<Object> args) async {
       }
       try {
         switch (action) {
-          case 'transcribe':
-            final segments = asr!.transcribe(command[2] as Float32List);
-            reply!.send([
-              true,
-              segments.map((segment) => segment.text).join(' '),
-            ]);
-          case 'align':
-            final data = command[2] as List;
-            final words = alignWords(
-              alignerModel: model,
-              transcript: data[0] as String,
-              pcm: data[1] as Float32List,
-              tOffset: data[2] as double,
+          case 'beginScriptAlignment':
+            final vocab = asr!.ctcVocab();
+            if (vocab == null || vocab.isEmpty || vocab[0] != '<pad>') {
+              throw StateError('CTC vocabulary is unavailable');
+            }
+            scriptAlignment = SubtitleCtcAlignment(
+              lines: (command[2] as List).cast<String>(),
+              vocab: vocab,
+              blankId: 0,
             );
+            reply!.send([true, null]);
+          case 'feedScriptAlignment':
+            final data = command[2] as List;
+            final pcm = data[0] as Float32List;
+            final start = data[1] as double;
+            final duration = data[2] as double;
+            final (_, logits) = asr!.transcribeWithLogits(pcm);
+            if (logits == null) {
+              scriptAlignment!.addSilence(
+                startSeconds: start,
+                durationSeconds: duration,
+              );
+            } else {
+              scriptAlignment!.addChunk(
+                logits: logits.data,
+                nFrames: logits.nFrames,
+                nVocab: logits.nVocab,
+                startSeconds: start,
+                durationSeconds: duration,
+              );
+            }
+            reply!.send([true, null]);
+          case 'endScriptAlignment':
+            final timed = scriptAlignment!.finish();
+            scriptAlignment = null;
             reply!.send([
               true,
-              words.map((word) => [word.text, word.start, word.end]).toList(),
+              timed
+                  .whereType<CtcAlignedLine>()
+                  .map(
+                    (line) => [line.text, line.startSeconds, line.endSeconds],
+                  )
+                  .toList(),
             ]);
           case 'translate':
             final inputs = (command[2] as List).cast<String>();

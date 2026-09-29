@@ -9,6 +9,12 @@ import 'package:doujin_audio/app/localization/app_language_provider.dart';
 import 'package:doujin_audio/app/state/app_runtime_providers.dart';
 import 'package:doujin_audio/core/media/subtitle_parser.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
+import 'package:doujin_audio/features/library/application/library_facade.dart';
+import 'package:doujin_audio/features/library/application/library_service.dart';
+import 'package:doujin_audio/features/library/application/work_text_service.dart';
+import 'package:doujin_audio/features/library/domain/audio_detail_store.dart';
+import 'package:doujin_audio/features/library/domain/library_persistence_repository.dart';
+import 'package:doujin_audio/features/library/presentation/library_providers.dart';
 import 'package:doujin_audio/features/player/application/playback_session_snapshot.dart';
 import 'package:doujin_audio/features/player/application/playback_subtitle_service.dart';
 import 'package:doujin_audio/features/player/application/subtitle_ai_engine.dart';
@@ -24,6 +30,59 @@ class _ReadyModelStore extends SubtitleModelStore {
   @override
   Future<SubtitleModelStatus> status(SubtitleModelSpec spec) async =>
       const SubtitleModelStatus(ready: true, bytes: 0, availableBytes: null);
+}
+
+class _LibraryRepository extends Fake
+    implements LibraryPersistenceRepository, AudioDetailStore {}
+
+LibraryFacade _workLibrary(String folderPath, String trackPath) {
+  final libraryService = LibraryService()
+    ..watchedFolders.add(folderPath)
+    ..libraryByPath[trackPath] = MusicTrack(
+      path: trackPath,
+      displayName: 'audio',
+      groupKey: folderPath,
+      groupTitle: 'work',
+      groupSubtitle: folderPath,
+      isSingle: false,
+    );
+  return LibraryFacade.create(
+    databaseRepository: _LibraryRepository(),
+    service: libraryService,
+  );
+}
+
+class _WorkTexts extends WorkTextService {
+  _WorkTexts(this.files);
+
+  final List<WorkTextFile> files;
+  String? requestedFolder;
+
+  @override
+  Future<List<WorkTextFile>> findWorkTextFiles(String workFolderPath) async {
+    requestedFolder = workFolderPath;
+    return files;
+  }
+}
+
+class _ScriptSelectionService extends PlaybackSubtitleService {
+  _ScriptSelectionService()
+    : super(
+        trackResolver: (_) => null,
+        aiEngine: SubtitleAiEngine(models: _ReadyModelStore()),
+      );
+
+  String? selectedScript;
+
+  @override
+  bool startScriptGeneration(
+    String trackPath,
+    String scriptPath, {
+    VoidCallback? onApplied,
+  }) {
+    selectedScript = scriptPath;
+    return false;
+  }
 }
 
 class _DelayedModelStore extends SubtitleModelStore {
@@ -447,6 +506,68 @@ void main() {
     );
   });
 
+  testWidgets('script menu lists only TXT and MD files from the work', (
+    tester,
+  ) async {
+    const folder = r'E:\作品\测试';
+    const scriptPath = r'E:\作品\测试\台本\トラック１.md';
+    final texts = _WorkTexts(const [
+      WorkTextFile(
+        name: '説明.TXT',
+        relativePath: '説明.TXT',
+        path: r'E:\作品\测试\説明.TXT',
+      ),
+      WorkTextFile(
+        name: 'トラック１.md',
+        relativePath: '台本/トラック１.md',
+        path: scriptPath,
+      ),
+      WorkTextFile(
+        name: 'book.pdf',
+        relativePath: 'book.pdf',
+        path: r'E:\作品\测试\book.pdf',
+      ),
+    ]);
+    final service = _ScriptSelectionService();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appLanguageProviderInstanceProvider.overrideWithValue(
+            AppLanguageProvider(),
+          ),
+          playbackSubtitleServiceProvider.overrideWithValue(service),
+          libraryFacadeProvider.overrideWithValue(
+            _workLibrary(folder, r'E:\作品\测试\01.mp3'),
+          ),
+          workTextServiceProvider.overrideWithValue(texts),
+        ],
+        child: MaterialApp(
+          home: Scaffold(
+            body: SubtitleMenuSheet(
+              session: _createSnapshot(trackPath: r'E:\作品\测试\01.mp3'),
+              generationUnavailableReason: () => null,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final script = find.byKey(const ValueKey('subtitle_script_tile'));
+    await tester.ensureVisible(script);
+    await tester.tap(script);
+    await tester.pumpAndSettle();
+
+    expect(texts.requestedFolder, folder);
+    expect(find.byType(SimpleDialog), findsOneWidget);
+    expect(find.text('説明.TXT'), findsOneWidget);
+    expect(find.text('台本/トラック１.md'), findsOneWidget);
+    expect(find.text('book.pdf'), findsNothing);
+
+    await tester.tap(find.text('台本/トラック１.md'));
+    await tester.pumpAndSettle();
+    expect(service.selectedScript, scriptPath);
+  });
+
   testWidgets('script matching warns when the audio already has subtitles', (
     tester,
   ) async {
@@ -466,11 +587,22 @@ void main() {
     );
     await service.load(audioPath);
     final language = AppLanguageProvider();
+    final texts = _WorkTexts(const [
+      WorkTextFile(
+        name: 'script.md',
+        relativePath: 'script.md',
+        path: '/path/to/script.md',
+      ),
+    ]);
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
           appLanguageProviderInstanceProvider.overrideWithValue(language),
           playbackSubtitleServiceProvider.overrideWithValue(service),
+          libraryFacadeProvider.overrideWithValue(
+            _workLibrary('/path/to', audioPath),
+          ),
+          workTextServiceProvider.overrideWithValue(texts),
         ],
         child: MaterialApp(
           home: Scaffold(
@@ -487,6 +619,9 @@ void main() {
     final script = find.byKey(const ValueKey('subtitle_script_tile'));
     await tester.ensureVisible(script);
     await tester.tap(script);
+    await tester.pumpAndSettle();
+    expect(find.byType(SimpleDialog), findsOneWidget);
+    await tester.tap(find.text('script.md'));
     await tester.pumpAndSettle();
     expect(find.byType(AlertDialog), findsOneWidget);
     expect(

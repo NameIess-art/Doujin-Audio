@@ -84,12 +84,11 @@ class PlaybackSubtitleService extends ChangeNotifier {
   }) => _startGeneration(
     trackPath,
     SubtitleDraftKind.script,
-    (onProgress, isCancelled, onPartial) => prepareScriptSubtitle(
+    (onProgress, isCancelled) => prepareScriptSubtitle(
       trackPath,
       scriptPath,
       onProgress: onProgress,
       isCancelled: isCancelled,
-      onPartial: onPartial,
     ),
     onApplied,
   );
@@ -102,7 +101,7 @@ class PlaybackSubtitleService extends ChangeNotifier {
   }) => _startGeneration(
     trackPath,
     SubtitleDraftKind.translation,
-    (onProgress, isCancelled, _) => prepareTranslation(
+    (onProgress, isCancelled) => prepareTranslation(
       trackPath,
       targetLanguage,
       sourceJapaneseConfirmed: sourceJapaneseConfirmed,
@@ -118,7 +117,6 @@ class PlaybackSubtitleService extends ChangeNotifier {
     Future<SubtitleDraft?> Function(
       void Function(SubtitleTaskProgress),
       bool Function(),
-      Future<void> Function(List<SubtitleCue>),
     )
     prepare,
     VoidCallback? onApplied,
@@ -139,55 +137,16 @@ class PlaybackSubtitleService extends ChangeNotifier {
     Future<SubtitleDraft?> Function(
       void Function(SubtitleTaskProgress),
       bool Function(),
-      Future<void> Function(List<SubtitleCue>),
     )
     prepare,
     VoidCallback? onApplied,
   ) async {
-    String? partialPath;
-    var applied = false;
-    void notifyApplied() {
-      if (applied) return;
-      applied = true;
-      try {
-        onApplied?.call();
-      } catch (error, stackTrace) {
-        AppLogService.warning(
-          'subtitle_applied_but_enable_failed',
-          error: error,
-          stackTrace: stackTrace,
-        );
-      }
-    }
-
-    Future<void> savePartial(List<SubtitleCue> cues) async {
-      if (job._cancelRequested || cues.isEmpty) return;
-      if (partialPath == null) {
-        final saved = await saveDraft(
-          job.trackPath,
-          SubtitleDraft(
-            cues: cues,
-            kind: SubtitleDraftKind.script,
-            sourceLanguage: 'ja',
-          ),
-        );
-        partialPath = saved.sourcePath;
-        notifyApplied();
-      } else {
-        await _updateGeneratedScript(job.trackPath, partialPath!, cues);
-      }
-    }
-
     try {
-      final draft = await prepare(
-        (progress) {
-          if (!identical(_generationJob, job)) return;
-          job._progress = progress;
-          notifyListeners();
-        },
-        () => job._cancelRequested,
-        savePartial,
-      );
+      final draft = await prepare((progress) {
+        if (!identical(_generationJob, job)) return;
+        job._progress = progress;
+        notifyListeners();
+      }, () => job._cancelRequested);
       if (job._cancelRequested) {
         job._status = SubtitleGenerationStatus.cancelled;
       } else if (draft == null || draft.cues.isEmpty) {
@@ -195,13 +154,17 @@ class PlaybackSubtitleService extends ChangeNotifier {
       } else {
         job._progress = const SubtitleTaskProgress('saving', 0, '');
         notifyListeners();
-        if (partialPath == null) {
-          await saveDraft(job.trackPath, draft);
-        } else {
-          await _updateGeneratedScript(job.trackPath, partialPath!, draft.cues);
-        }
+        await saveDraft(job.trackPath, draft);
         job._status = SubtitleGenerationStatus.completed;
-        notifyApplied();
+        try {
+          onApplied?.call();
+        } catch (error, stackTrace) {
+          AppLogService.warning(
+            'subtitle_applied_but_enable_failed',
+            error: error,
+            stackTrace: stackTrace,
+          );
+        }
       }
     } on SubtitleTaskCancelled {
       job._status = SubtitleGenerationStatus.cancelled;
@@ -283,13 +246,11 @@ class PlaybackSubtitleService extends ChangeNotifier {
     String scriptPath, {
     void Function(SubtitleTaskProgress)? onProgress,
     bool Function()? isCancelled,
-    Future<void> Function(List<SubtitleCue> cues)? onPartial,
   }) => _aiEngine.prepareScript(
     trackPath,
     scriptPath,
     onProgress: onProgress,
     isCancelled: isCancelled,
-    onPartial: onPartial,
   );
 
   Future<SubtitleDraft> prepareTranslation(
@@ -367,28 +328,6 @@ class PlaybackSubtitleService extends ChangeNotifier {
     _onTrackLoaded?.call(trackPath, saved);
     notifyListeners();
     return saved;
-  }
-
-  Future<void> _updateGeneratedScript(
-    String trackPath,
-    String filePath,
-    List<SubtitleCue> cues,
-  ) async {
-    _validateCues(trackPath, cues);
-    await _writeLrc(File(filePath), cues);
-    await _writeSafScript(trackPath, File(filePath));
-    final loaded = await _loadFromFile(filePath);
-    if (loaded == null || loaded.cues.isEmpty) {
-      throw StateError('Generated subtitle file could not be read');
-    }
-    if (_customPaths[trackPath] != filePath) return;
-    final ready = loaded.withOffset(getOffset(trackPath));
-    _trackRevisions[trackPath] = (_trackRevisions[trackPath] ?? 0) + 1;
-    _tracks[trackPath] = ready;
-    _results[trackPath] = SynchronousFuture<SubtitleTrack?>(ready);
-    _trimResults();
-    _onTrackLoaded?.call(trackPath, ready);
-    notifyListeners();
   }
 
   Future<File> _scriptSubtitleFile(String trackPath) async {

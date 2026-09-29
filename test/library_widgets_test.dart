@@ -22,8 +22,6 @@ import 'package:doujin_audio/core/widgets/top_page_header.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/platform/platform_channels.dart';
 import 'package:doujin_audio/core/media/path_matcher.dart';
-import 'package:doujin_audio/core/media/audio_detail.dart';
-import 'package:doujin_audio/features/settings/application/settings_state.dart';
 import 'package:doujin_audio/features/library/application/library_entry_editor_service.dart';
 import 'package:doujin_audio/features/library/application/library_organizer.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';

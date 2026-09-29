@@ -93,11 +93,12 @@ class SubtitleAiEngine {
             chunk * 20.0,
             bytes.length / (16000 * 4),
           );
+          final fraction = (chunk + 1) / totalChunks;
           onProgress?.call(
             SubtitleTaskProgress(
               'matching',
-              (chunk + 1) / totalChunks,
-              '${chunk + 1}/$totalChunks',
+              fraction,
+              '${(fraction * 100).round()}%',
             ),
           );
         }
@@ -200,11 +201,12 @@ class SubtitleAiEngine {
           );
         }
         await _writeCheckpoint(checkpoint, offset + group.length, cues);
+        final fraction = cues.length / source.length;
         onProgress?.call(
           SubtitleTaskProgress(
             'translating',
-            cues.length / source.length,
-            '${cues.length}/${source.length}',
+            fraction,
+            '${(fraction * 100).round()}%',
           ),
         );
       }

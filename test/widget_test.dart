@@ -1384,6 +1384,40 @@ void main() {
       ),
     );
     final collectedController = collectedList.controller;
+    expect(collectedList.physics, isA<AlwaysScrollableScrollPhysics>());
+    expect(
+      collectedList.physics?.parent,
+      isA<GlassRefreshIndicatorScrollPhysics>(),
+    );
+    expect(
+      tester.widget<GlassRefreshIndicator>(
+        find.descendant(
+          of: find.byKey(const ValueKey(AsmrCategoryType.collected)),
+          matching: find.byType(GlassRefreshIndicator),
+        ),
+      ).lockChildWhileRefreshing,
+      isTrue,
+    );
+
+    final collectedListFinder = find.descendant(
+      of: find.byKey(const ValueKey(AsmrCategoryType.collected)),
+      matching: find.byKey(const ValueKey<String>('content')),
+    );
+    final pull = await tester.startGesture(tester.getCenter(collectedListFinder));
+    await pull.moveBy(const Offset(0, 60));
+    await tester.pump();
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey(AsmrCategoryType.collected)),
+        matching: find.byType(RefreshProgressIndicator),
+      ),
+      findsOneWidget,
+    );
+    await pull.moveBy(const Offset(0, -20));
+    await tester.pump();
+    expect(collectedController?.offset, 0);
+    await pull.up();
+    await tester.pump(const Duration(milliseconds: 300));
 
     await tester.tap(
       find.text(harness.languageProvider.tr('asmr_category_recommendation')),

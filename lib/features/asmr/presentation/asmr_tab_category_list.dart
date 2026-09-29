@@ -64,9 +64,7 @@ class _AsmrCategoryList extends ConsumerStatefulWidget {
 
 class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
     with AutomaticKeepAliveClientMixin, TickerProviderStateMixin {
-  final GlobalKey<GlassRefreshIndicatorState> _refreshIndicatorKey =
-      GlobalKey<GlassRefreshIndicatorState>();
-  bool _refreshTriggeredInCurrentScroll = false;
+  final GlobalKey<GlassRefreshIndicatorState> _refreshIndicatorKey = GlobalKey();
   bool _loadMoreTriggeredInCurrentScroll = false;
   bool _automaticLoadMoreScheduled = false;
   final Map<int, _CollapsingAsmrWork> _collapsingWorks =
@@ -267,17 +265,6 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
           child: NotificationListener<ScrollNotification>(
             onNotification: (notification) {
               if (notification is ScrollUpdateNotification) {
-                if (notification.dragDetails != null &&
-                    notification.metrics.pixels < -68 &&
-                    !_refreshTriggeredInCurrentScroll) {
-                  _refreshTriggeredInCurrentScroll = true;
-                  unawaited(
-                    AppInteractionFeedback.trigger(
-                      AppInteractionFeedbackType.confirmation,
-                    ),
-                  );
-                  _refreshIndicatorKey.currentState?.show();
-                }
                 final nearBottom =
                     notification.metrics.extentAfter <=
                     notification.metrics.viewportDimension;
@@ -296,13 +283,13 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
                   _loadMoreOncePerScroll(state);
                 }
               } else if (notification is ScrollEndNotification) {
-                _refreshTriggeredInCurrentScroll = false;
                 _loadMoreTriggeredInCurrentScroll = false;
               }
               return false;
             },
             child: GlassRefreshIndicator(
               key: _refreshIndicatorKey,
+              lockChildWhileRefreshing: true,
               color: asmrBlue,
               backgroundColor: Theme.of(
                 context,
@@ -329,8 +316,14 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
                       key: const ValueKey('content'),
                       controller: widget.scrollController,
                       cacheExtent: 520,
-                      physics: const AlwaysScrollableScrollPhysics(
-                        parent: RefreshTopScrollPhysics(),
+                      physics: AlwaysScrollableScrollPhysics(
+                        parent: GlassRefreshIndicatorScrollPhysics(
+                          isIndicatorVisible: () =>
+                              _refreshIndicatorKey
+                                  .currentState
+                                  ?.isIndicatorVisible ??
+                              false,
+                        ),
                       ),
                       padding: EdgeInsets.fromLTRB(
                         LibraryLikeCardMetrics.listHorizontalPadding,

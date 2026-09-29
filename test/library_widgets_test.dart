@@ -10,8 +10,8 @@ import 'package:doujin_audio/features/library/presentation/library_tab.dart';
 import 'package:doujin_audio/features/library/presentation/library_tab_edit.dart';
 import 'package:doujin_audio/features/library/presentation/work_detail_page.dart';
 import 'package:doujin_audio/features/player/presentation/playlist_tab.dart';
-import 'package:doujin_audio/core/widgets/app_scroll_physics.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
+import 'package:doujin_audio/core/widgets/glass_refresh_indicator.dart';
 import 'package:doujin_audio/core/widgets/async_cover_image.dart';
 import 'package:doujin_audio/core/ui/cover_image_retention.dart';
 import 'package:doujin_audio/core/widgets/library_like_cards.dart';
@@ -535,7 +535,29 @@ void main() {
       closeTo(tester.getTopLeft(libraryCards.at(1)).dy, 0.01),
     );
     expect(libraryList.physics, isA<AlwaysScrollableScrollPhysics>());
-    expect(libraryList.physics?.parent, isA<RefreshTopScrollPhysics>());
+    expect(
+      libraryList.physics?.parent,
+      isA<GlassRefreshIndicatorScrollPhysics>(),
+    );
+    expect(
+      tester.widget<GlassRefreshIndicator>(
+        find.byType(GlassRefreshIndicator),
+      ).lockChildWhileRefreshing,
+      isTrue,
+    );
+
+    final cardTop = tester.getTopLeft(libraryCards.at(0)).dy;
+    final pull = await tester.startGesture(tester.getCenter(libraryCards.at(0)));
+    await pull.moveBy(const Offset(0, 60));
+    await tester.pump();
+    expect(tester.getTopLeft(libraryCards.at(0)).dy, cardTop);
+    expect(find.byType(RefreshProgressIndicator), findsOneWidget);
+    await pull.moveBy(const Offset(0, -20));
+    await tester.pump();
+    expect(tester.getTopLeft(libraryCards.at(0)).dy, cardTop);
+    expect(libraryList.controller?.offset, 0);
+    await pull.up();
+    await tester.pump(const Duration(milliseconds: 500));
 
     final refreshGeneration = runtimeGraph.library.tryBeginScan(
       source: 'Pull to refresh',

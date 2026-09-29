@@ -82,7 +82,10 @@ void main() {
 
       // Verify FadeTransition ancestor exists and opacity is partially faded in
       final fadeTransitions = tester.widgetList<FadeTransition>(
-        find.ancestor(of: indicatorFinder, matching: find.byType(FadeTransition)),
+        find.ancestor(
+          of: indicatorFinder,
+          matching: find.byType(FadeTransition),
+        ),
       );
       expect(fadeTransitions, isNotEmpty);
       final dragFade = fadeTransitions.firstWhere(
@@ -104,6 +107,86 @@ void main() {
 
       refresh.complete();
       await tester.pump(const Duration(milliseconds: 300));
+    },
+  );
+
+  testWidgets(
+    'clamped pull keeps content fixed while the indicator refreshes',
+    (tester) async {
+      final refresh = Completer<void>();
+      final controller = ScrollController();
+      final indicatorKey = GlobalKey<GlassRefreshIndicatorState>();
+      addTearDown(controller.dispose);
+      var refreshCount = 0;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: GlassRefreshIndicator(
+              key: indicatorKey,
+              lockChildWhileRefreshing: true,
+              onRefresh: () {
+                refreshCount++;
+                return refresh.future;
+              },
+              child: ListView(
+                controller: controller,
+                physics: AlwaysScrollableScrollPhysics(
+                  parent: GlassRefreshIndicatorScrollPhysics(
+                    isIndicatorVisible: () =>
+                        indicatorKey.currentState?.isIndicatorVisible ?? false,
+                  ),
+                ),
+                children: const [
+                  SizedBox(key: ValueKey('first-item'), height: 120),
+                  SizedBox(height: 1200),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+
+      final item = find.byKey(const ValueKey('first-item'));
+      final initialTop = tester.getTopLeft(item).dy;
+      final gesture = await tester.startGesture(tester.getCenter(item));
+      await gesture.moveBy(const Offset(0, 60));
+      await tester.pump();
+      expect(tester.getTopLeft(item).dy, initialTop);
+      expect(find.byType(RefreshProgressIndicator), findsOneWidget);
+
+      await gesture.moveBy(const Offset(0, -20));
+      await tester.pump();
+      expect(controller.offset, 0);
+      expect(indicatorKey.currentState?.isIndicatorVisible, isTrue);
+
+      await gesture.moveBy(const Offset(0, -70));
+      await tester.pump();
+      expect(controller.offset, 0);
+
+      await gesture.moveBy(const Offset(0, 120));
+      await tester.pump();
+
+      await gesture.moveBy(const Offset(0, 260));
+      await tester.pump();
+      expect(tester.getTopLeft(item).dy, initialTop);
+      await gesture.up();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 250));
+      expect(refreshCount, 1);
+
+      await tester.dragFrom(
+        const Offset(400, 300),
+        const Offset(0, -250),
+      );
+      await tester.pump();
+      expect(controller.offset, 0);
+
+      refresh.complete();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+      await tester.drag(find.byType(ListView), const Offset(0, -250));
+      await tester.pump();
+      expect(controller.offset, greaterThan(0));
     },
   );
 }

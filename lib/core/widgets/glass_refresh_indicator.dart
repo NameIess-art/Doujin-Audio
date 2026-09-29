@@ -73,6 +73,32 @@ enum GlassRefreshIndicatorTriggerMode {
 
 enum _IndicatorType { material, adaptive, noSpinner }
 
+/// Keeps a clamped list in place while its pull-to-refresh indicator is visible.
+class GlassRefreshIndicatorScrollPhysics extends ClampingScrollPhysics {
+  const GlassRefreshIndicatorScrollPhysics({
+    super.parent,
+    required this.isIndicatorVisible,
+  });
+
+  final bool Function() isIndicatorVisible;
+
+  @override
+  GlassRefreshIndicatorScrollPhysics applyTo(ScrollPhysics? ancestor) {
+    return GlassRefreshIndicatorScrollPhysics(
+      parent: buildParent(ancestor),
+      isIndicatorVisible: isIndicatorVisible,
+    );
+  }
+
+  @override
+  double applyBoundaryConditions(ScrollMetrics position, double value) {
+    if (isIndicatorVisible() && value > position.pixels) {
+      return value - position.pixels;
+    }
+    return super.applyBoundaryConditions(position, value);
+  }
+}
+
 /// A widget that supports the Material "swipe to refresh" idiom.
 ///
 /// {@youtube 560 315 https://www.youtube.com/watch?v=ORApMlzwMdM}
@@ -157,6 +183,7 @@ class GlassRefreshIndicator extends StatefulWidget {
     this.semanticsValue,
     this.strokeWidth = RefreshProgressIndicator.defaultStrokeWidth,
     this.triggerMode = GlassRefreshIndicatorTriggerMode.onEdge,
+    this.lockChildWhileRefreshing = false,
     required this.child,
   }) : _indicatorType = _IndicatorType.material,
        onStatusChange = null;
@@ -189,6 +216,7 @@ class GlassRefreshIndicator extends StatefulWidget {
     this.semanticsValue,
     this.strokeWidth = RefreshProgressIndicator.defaultStrokeWidth,
     this.triggerMode = GlassRefreshIndicatorTriggerMode.onEdge,
+    this.lockChildWhileRefreshing = false,
     required this.child,
   }) : _indicatorType = _IndicatorType.adaptive,
        onStatusChange = null;
@@ -214,7 +242,8 @@ class GlassRefreshIndicator extends StatefulWidget {
        edgeOffset = 0.0,
        color = null,
        backgroundColor = null,
-       strokeWidth = 0.0;
+       strokeWidth = 0.0,
+       lockChildWhileRefreshing = false;
 
   /// The widget below this widget in the tree.
   ///
@@ -223,6 +252,9 @@ class GlassRefreshIndicator extends StatefulWidget {
   ///
   /// Typically a [ListView] or [CustomScrollView].
   final Widget child;
+
+  /// Blocks child gestures from the refresh snap until the indicator closes.
+  final bool lockChildWhileRefreshing;
 
   /// The distance from the child's top or bottom [edgeOffset] where
   /// the refresh indicator will settle. During the drag that exposes the refresh
@@ -312,6 +344,11 @@ class GlassRefreshIndicator extends StatefulWidget {
 /// programmatically show the refresh indicator, see the [show] method.
 class GlassRefreshIndicatorState extends State<GlassRefreshIndicator>
     with TickerProviderStateMixin<GlassRefreshIndicator> {
+  bool get isIndicatorVisible =>
+      _status != null &&
+      (_status != GlassGlassRefreshIndicatorStatus.drag ||
+          _positionController.value > 0);
+
   late AnimationController _positionController;
   late AnimationController _scaleController;
   late Animation<double> _positionFactor;
@@ -589,8 +626,10 @@ class GlassRefreshIndicatorState extends State<GlassRefreshIndicator>
     assert(_status != GlassGlassRefreshIndicatorStatus.snap);
     final completer = Completer<void>();
     _pendingRefreshFuture = completer.future;
-    _status = GlassGlassRefreshIndicatorStatus.snap;
-    widget.onStatusChange?.call(_status);
+    setState(() {
+      _status = GlassGlassRefreshIndicatorStatus.snap;
+      widget.onStatusChange?.call(_status);
+    });
     _positionController
         .animateTo(
           1.0 / _kDragSizeFactorLimit,
@@ -651,11 +690,22 @@ class GlassRefreshIndicatorState extends State<GlassRefreshIndicator>
   @override
   Widget build(BuildContext context) {
     assert(debugCheckHasMaterialLocalizations(context));
+    final lockChild = widget.lockChildWhileRefreshing &&
+        (_status == GlassGlassRefreshIndicatorStatus.snap ||
+            _status == GlassGlassRefreshIndicatorStatus.refresh ||
+            _status == GlassGlassRefreshIndicatorStatus.done);
     final Widget child = NotificationListener<ScrollNotification>(
       onNotification: _handleScrollNotification,
       child: NotificationListener<OverscrollIndicatorNotification>(
         onNotification: _handleIndicatorNotification,
-        child: widget.child,
+        child: widget.lockChildWhileRefreshing
+            ? ScrollConfiguration(
+                behavior: ScrollConfiguration.of(context).copyWith(
+                  overscroll: false,
+                ),
+                child: IgnorePointer(ignoring: lockChild, child: widget.child),
+              )
+            : widget.child,
       ),
     );
     assert(() {

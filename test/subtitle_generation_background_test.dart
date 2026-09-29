@@ -113,7 +113,7 @@ void main() {
       expect(service.startScriptGeneration('other.mp3', 'other.txt'), isFalse);
       await Future<void>.delayed(Duration.zero);
       engine.scriptProgress!(
-        const SubtitleTaskProgress('matching', 0.5, '2/4'),
+        const SubtitleTaskProgress('matching', 0.5, '50%'),
       );
       expect(service.generationJob?.progress?.fraction, 0.5);
       expect(engine.scriptCancelled!(), isFalse);
@@ -230,9 +230,9 @@ void main() {
     expect(service.startTranslationGeneration('audio.mp3', 'zh'), isTrue);
     await Future<void>.delayed(const Duration(milliseconds: 20));
     engine.translationProgress!(
-      const SubtitleTaskProgress('translating', 0.75, '3/4'),
+      const SubtitleTaskProgress('translating', 0.75, '75%'),
     );
-    expect(service.generationJob?.progress?.message, '3/4');
+    expect(service.generationJob?.progress?.message, '75%');
     const draft = SubtitleDraft(
       cues: [
         SubtitleCue(
@@ -389,10 +389,10 @@ void main() {
           .value,
       0.5,
     );
-    engine.scriptProgress!(const SubtitleTaskProgress('matching', 0.5, '2/4'));
+    engine.scriptProgress!(const SubtitleTaskProgress('matching', 0.5, '50%'));
     await tester.pump();
     expect(find.text(language.tr('subtitle_stage_matching')), findsOneWidget);
-    expect(find.text('2/4'), findsOneWidget);
+    expect(find.text('50%'), findsOneWidget);
     expect(
       tester
           .widget<LinearProgressIndicator>(
@@ -437,7 +437,7 @@ void main() {
     expect(find.byType(FilledButton), findsNothing);
   });
 
-  testWidgets('translation dialog displays the live translation count', (
+  testWidgets('translation dialog displays the live translation percent', (
     tester,
   ) async {
     final engine = _FakeSubtitleAiEngine();
@@ -462,14 +462,14 @@ void main() {
     );
     await tester.pump();
     engine.translationProgress!(
-      const SubtitleTaskProgress('translating', 0.25, '1/4'),
+      const SubtitleTaskProgress('translating', 0.25, '25%'),
     );
     await tester.pump();
     expect(
       find.text(language.tr('subtitle_stage_translating')),
       findsOneWidget,
     );
-    expect(find.text('1/4'), findsOneWidget);
+    expect(find.text('25%'), findsOneWidget);
     expect(
       tester
           .widget<LinearProgressIndicator>(

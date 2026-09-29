@@ -756,7 +756,6 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
                         child: MarqueeText(
                           key: ValueKey('title_marquee_${session.id}'),
                           text: displayName,
-                          allowAndroidMarquee: true,
                           pauseDuration: const Duration(seconds: 1),
                           style: Theme.of(context).textTheme.titleMedium
                               ?.copyWith(
@@ -845,7 +844,6 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
                               child: MarqueeText(
                                 key: ValueKey('title_marquee_${session.id}'),
                                 text: displayName,
-                                allowAndroidMarquee: true,
                                 pauseDuration: const Duration(seconds: 1),
                                 style: Theme.of(context).textTheme.labelLarge
                                     ?.copyWith(

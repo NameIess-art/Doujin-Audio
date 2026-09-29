@@ -30,6 +30,8 @@ import '../../asmr/domain/asmr_models.dart';
 import '../../asmr/presentation/asmr_download_page.dart';
 import '../../asmr/presentation/asmr_providers.dart';
 import '../../player/presentation/playback_providers.dart';
+import '../../settings/application/settings_state.dart';
+import '../../settings/presentation/settings_providers.dart';
 import '../application/work_text_service.dart';
 import '../domain/library_node.dart';
 import 'dlsite_metadata_review_page.dart';
@@ -1069,7 +1071,17 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
 
     if (widget.isLocal) {
       final detail = _localDetail;
-      displayTitle = PathDisplay.folderName(_localTarget!.targetPath);
+      final folderName = PathDisplay.folderName(_localTarget!.targetPath);
+      final workTitle = detail?.workTitle.trim() ?? '';
+      final displayMode = ref.watch(
+        settingsStateProvider.select(
+          (state) => state.value?.workNameDisplay ?? WorkNameDisplay.workTitle,
+        ),
+      );
+      displayTitle =
+          displayMode == WorkNameDisplay.workTitle && workTitle.isNotEmpty
+          ? workTitle
+          : folderName;
       displayRj = detail?.rjCode ?? '';
       displayCircle = detail?.circleName ?? '';
       displayVoiceActors = detail?.voiceActors ?? const [];

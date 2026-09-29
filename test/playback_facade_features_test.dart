@@ -88,26 +88,41 @@ void main() {
       );
     });
 
-    test('new audio replaces an existing session from the same work', () async {
-      await runtimeGraph.playback.spawnSession(first, autoPlay: false);
-      await runtimeGraph.playback.spawnSession(second, autoPlay: false);
-      await runtimeGraph.playback.pendingSessionPreparation;
-
-      expect(runtimeGraph.playback.activeSessions, hasLength(1));
-      expect(
-        runtimeGraph.playback.activeSessions.single.currentTrackPath,
-        second.path,
-      );
-    });
-
-    test('duplicate works can be explicitly allowed', () async {
-      await runtimeGraph.settings.setAllowDuplicateWorks(true);
-
+    test('new audio keeps an existing session from the same work', () async {
       await runtimeGraph.playback.spawnSession(first, autoPlay: false);
       await runtimeGraph.playback.spawnSession(second, autoPlay: false);
       await runtimeGraph.playback.pendingSessionPreparation;
 
       expect(runtimeGraph.playback.activeSessions, hasLength(2));
+      expect(
+        runtimeGraph.playback.activeSessions.map(
+          (session) => session.currentTrackPath,
+        ),
+        containsAll(<String>[first.path, second.path]),
+      );
+    });
+
+    test('new queue keeps an existing session from the same work', () async {
+      await runtimeGraph.playback.spawnSession(first, autoPlay: false);
+      await runtimeGraph.playback.spawnSessionWithQueue(<MusicTrack>[
+        first,
+        second,
+      ]);
+      await runtimeGraph.playback.pendingSessionPreparation;
+
+      expect(runtimeGraph.playback.activeSessions, hasLength(2));
+      expect(
+        runtimeGraph.playback.activeSessions.where(
+          (session) => session.customQueueTracks == null,
+        ),
+        hasLength(1),
+      );
+      expect(
+        runtimeGraph.playback.activeSessions
+            .singleWhere((session) => session.customQueueTracks != null)
+            .customQueueTracks,
+        <MusicTrack>[first, second],
+      );
     });
   });
 
@@ -431,7 +446,6 @@ void main() {
     );
 
     test('different sessions synchronize audio effects concurrently', () async {
-      await runtimeGraph.settings.setAllowDuplicateWorks(true);
       final native = _ControlledAudioEffectsNative();
       native.install();
       final first = await addAudioEffectsSession(

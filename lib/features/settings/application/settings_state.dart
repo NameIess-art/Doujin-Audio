@@ -10,6 +10,8 @@ export '../../../core/media/cover_image_resolution.dart';
 
 enum StartupPage { asmrOne, library, playlist }
 
+enum WorkNameDisplay { workTitle, folderName }
+
 enum AudioDeviceDisconnectBehavior { pause, continuePlayback }
 
 enum AudioFocusStrategy { standard, mixWithOthers }
@@ -64,6 +66,7 @@ class SettingsState {
     this.hapticFeedbackEnabled = true,
     this.showLocalLibrary = true,
     this.showAsmrOne = true,
+    this.workNameDisplay = WorkNameDisplay.workTitle,
     this.startupPage = StartupPage.library,
     this.portraitLockEnabled = false,
     this.coverImageResolution = CoverImageResolution.balanced,
@@ -82,7 +85,6 @@ class SettingsState {
     this.transientAudioFocusLossBehavior = TransientAudioFocusLossBehavior.duck,
     this.interruptionResumeBehavior = InterruptionResumeBehavior.resume,
     this.sleepModeAutoTrigger = SleepModeAutoTrigger.manual,
-    this.allowDuplicateWorks = false,
     this.reduceAnimations = false,
     this.isInitialized = false,
   }) : pinnedLibraryPaths = immutableList(pinnedLibraryPaths),
@@ -116,6 +118,7 @@ class SettingsState {
   final bool hapticFeedbackEnabled;
   final bool showLocalLibrary;
   final bool showAsmrOne;
+  final WorkNameDisplay workNameDisplay;
   final StartupPage startupPage;
   final bool portraitLockEnabled;
   final CoverImageResolution coverImageResolution;
@@ -133,7 +136,6 @@ class SettingsState {
   final TransientAudioFocusLossBehavior transientAudioFocusLossBehavior;
   final InterruptionResumeBehavior interruptionResumeBehavior;
   final SleepModeAutoTrigger sleepModeAutoTrigger;
-  final bool allowDuplicateWorks;
   final bool reduceAnimations;
   final bool isInitialized;
 
@@ -164,6 +166,7 @@ class SettingsState {
         other.hapticFeedbackEnabled == hapticFeedbackEnabled &&
         other.showLocalLibrary == showLocalLibrary &&
         other.showAsmrOne == showAsmrOne &&
+        other.workNameDisplay == workNameDisplay &&
         other.startupPage == startupPage &&
         other.portraitLockEnabled == portraitLockEnabled &&
         other.coverImageResolution == coverImageResolution &&
@@ -185,7 +188,6 @@ class SettingsState {
             transientAudioFocusLossBehavior &&
         other.interruptionResumeBehavior == interruptionResumeBehavior &&
         other.sleepModeAutoTrigger == sleepModeAutoTrigger &&
-        other.allowDuplicateWorks == allowDuplicateWorks &&
         other.reduceAnimations == reduceAnimations &&
         other.isInitialized == isInitialized;
   }
@@ -216,6 +218,7 @@ class SettingsState {
     hapticFeedbackEnabled,
     showLocalLibrary,
     showAsmrOne,
+    workNameDisplay,
     startupPage,
     portraitLockEnabled,
     coverImageResolution,
@@ -233,7 +236,6 @@ class SettingsState {
     transientAudioFocusLossBehavior,
     interruptionResumeBehavior,
     sleepModeAutoTrigger,
-    allowDuplicateWorks,
     reduceAnimations,
     isInitialized,
   ]);

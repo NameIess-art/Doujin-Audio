@@ -204,22 +204,6 @@ List<Widget> _buildSettingsGeneralSection({
           builder: (context, ref, _) {
             final enabled = ref.watch(
               settingsStateProvider.select(
-                (state) => state.value?.allowDuplicateWorks ?? false,
-              ),
-            );
-            return SwitchListTile(
-              title: _settingsTitle(i18n.tr('allow_duplicate_works')),
-              value: enabled,
-              onChanged: settings.setAllowDuplicateWorks,
-              secondary: _settingsIcon(Icons.copy_all_rounded, cs.onSurface),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-            );
-          },
-        ),
-        Consumer(
-          builder: (context, ref, _) {
-            final enabled = ref.watch(
-              settingsStateProvider.select(
                 (state) => state.value?.reduceAnimations ?? false,
               ),
             );
@@ -268,6 +252,8 @@ List<Widget> _buildSettingsPageDisplaySection({
             final settingsState = ref.watch(settingsStateProvider).value;
             final showLocal = settingsState?.showLocalLibrary ?? true;
             final showAsmr = settingsState?.showAsmrOne ?? true;
+            final displayMode =
+                settingsState?.workNameDisplay ?? WorkNameDisplay.workTitle;
             return Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -294,6 +280,30 @@ List<Widget> _buildSettingsPageDisplaySection({
                   secondary: _settingsIcon(
                     Icons.library_music_rounded,
                     cs.onSurface,
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+                ),
+                ListTile(
+                  title: _settingsTitle(i18n.tr('work_name_display')),
+                  leading: _settingsIcon(Icons.title_rounded, cs.onSurface),
+                  trailing: _settingsDropdown<WorkNameDisplay>(
+                    context,
+                    value: displayMode,
+                    onChanged: (value) {
+                      if (value != null) {
+                        unawaited(settings.setWorkNameDisplay(value));
+                      }
+                    },
+                    items: WorkNameDisplay.values
+                        .map(
+                          (mode) => DropdownMenuItem<WorkNameDisplay>(
+                            value: mode,
+                            child: _settingsDropdownText(
+                              i18n.tr('work_name_display_${mode.name}'),
+                            ),
+                          ),
+                        )
+                        .toList(),
                   ),
                   contentPadding: const EdgeInsets.symmetric(horizontal: 8),
                 ),

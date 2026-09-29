@@ -84,7 +84,7 @@ void main() {
               TransientAudioFocusLossBehavior.pause.name,
           'interruptionResumeBehavior':
               InterruptionResumeBehavior.stayPaused.name,
-          'allowDuplicateWorks': true,
+          'allowDuplicateWorks': false,
           'reduceAnimations': true,
           'dlsiteMetadataLanguage': ContentLanguagePreference.en.name,
           'librarySortCriterion': LibrarySortCriterion.duration.name,
@@ -134,8 +134,12 @@ void main() {
         repository.interruptionResumeBehavior,
         InterruptionResumeBehavior.stayPaused,
       );
-      expect(repository.allowDuplicateWorks, isTrue);
       expect(repository.reduceAnimations, isTrue);
+      await repository.persist();
+      final savedPlayback =
+          json.decode(preferences.getString('playback_settings_v1')!)
+              as Map<String, dynamic>;
+      expect(savedPlayback.containsKey('allowDuplicateWorks'), isFalse);
       expect(repository.librarySortCriterion, LibrarySortCriterion.duration);
       expect(repository.librarySortAscending, isFalse);
       expect(repository.libraryGroupByLibrary, isTrue);
@@ -174,7 +178,6 @@ void main() {
         ..transientAudioFocusLossBehavior =
             TransientAudioFocusLossBehavior.pause
         ..interruptionResumeBehavior = InterruptionResumeBehavior.stayPaused
-        ..allowDuplicateWorks = true
         ..reduceAnimations = true
         ..maxCacheBytes = 500 * 1024 * 1024;
       repository.syncSlice();
@@ -248,11 +251,6 @@ void main() {
               (state) => state.interruptionResumeBehavior,
               'interruption resume',
               InterruptionResumeBehavior.stayPaused,
-            )
-            .having(
-              (state) => state.allowDuplicateWorks,
-              'duplicate works',
-              isTrue,
             )
             .having(
               (state) => state.reduceAnimations,
@@ -329,7 +327,6 @@ void main() {
         state.interruptionResumeBehavior,
         InterruptionResumeBehavior.resume,
       );
-      expect(state.allowDuplicateWorks, isFalse);
       expect(state.reduceAnimations, isFalse);
       expect(state.portraitLockEnabled, isFalse);
       expect(state.coverImageDisplayMode, CoverImageDisplayMode.fill);
@@ -449,6 +446,40 @@ void main() {
       await invalid.loadPersistedState();
       expect(invalid.coverImageDisplayMode, CoverImageDisplayMode.fill);
     });
+
+    test(
+      'work name display defaults to title and persists folder choice',
+      () async {
+        final repository = SettingsRepository();
+        addTearDown(repository.dispose);
+        expect(repository.workNameDisplay, WorkNameDisplay.workTitle);
+        expect(
+          repository.slice.state.workNameDisplay,
+          WorkNameDisplay.workTitle,
+        );
+
+        await repository.setWorkNameDisplay(WorkNameDisplay.folderName);
+        expect(
+          repository.slice.state.workNameDisplay,
+          WorkNameDisplay.folderName,
+        );
+
+        final restored = SettingsRepository();
+        addTearDown(restored.dispose);
+        await restored.loadPersistedState();
+        expect(restored.workNameDisplay, WorkNameDisplay.folderName);
+
+        SharedPreferences.setMockInitialValues(<String, Object>{
+          'playback_settings_v1': json.encode(<String, Object?>{
+            'workNameDisplay': 'unknown',
+          }),
+        });
+        final invalid = SettingsRepository();
+        addTearDown(invalid.dispose);
+        await invalid.loadPersistedState();
+        expect(invalid.workNameDisplay, WorkNameDisplay.workTitle);
+      },
+    );
 
     test('portrait lock persists and defaults to disabled', () async {
       final repository = SettingsRepository();

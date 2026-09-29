@@ -259,9 +259,10 @@ class _FolderCoverSelectorState extends ConsumerState<FolderCoverSelector> {
 
   Widget _buildCompactCoverAction(AppLanguageProvider i18n) {
     final isCurrent = _currentCoverPath == _images[_currentIndex];
+    final foregroundColor = isCurrent ? Colors.grey.shade400 : Colors.white;
     return Material(
       key: const ValueKey<String>('audio_detail_cover_action_capsule'),
-      color: Colors.black.withValues(alpha: 0.62),
+      color: Colors.black.withValues(alpha: isCurrent ? 0.42 : 0.62),
       borderRadius: BorderRadius.circular(999),
       child: InkWell(
         borderRadius: BorderRadius.circular(999),
@@ -288,7 +289,7 @@ class _FolderCoverSelectorState extends ConsumerState<FolderCoverSelector> {
                         ? Icons.check_circle_rounded
                         : Icons.image_rounded,
                     size: 18,
-                    color: Colors.white,
+                    color: foregroundColor,
                   ),
                 const SizedBox(width: 6),
                 Text(
@@ -297,8 +298,8 @@ class _FolderCoverSelectorState extends ConsumerState<FolderCoverSelector> {
                         ? 'audio_detail_current_cover'
                         : 'audio_detail_set_cover',
                   ),
-                  style: const TextStyle(
-                    color: Colors.white,
+                  style: TextStyle(
+                    color: foregroundColor,
                     fontSize: 12,
                     fontWeight: FontWeight.w700,
                   ),

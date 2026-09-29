@@ -24,9 +24,6 @@ final class PlaybackRuntimeBinding implements RuntimeBinding {
   }) {
     final existing = _attached[playback];
     if (existing != null && !existing._disposed) return existing;
-    playback.attachSessionDefaults(
-      allowDuplicateWorks: () => settings.allowDuplicateWorks,
-    );
     playback.attachPersistenceRuntime(
       trackByPath: library.trackByPath,
       recordPlaybackProgress: () => settings.recordPlaybackProgress,

@@ -1123,7 +1123,7 @@ class _LibraryTrackCoverThumbnailState
   }
 }
 
-class _RootFolderCardContent extends StatelessWidget {
+class _RootFolderCardContent extends ConsumerWidget {
   const _RootFolderCardContent({
     required this.folderPath,
     required this.folderName,
@@ -1151,9 +1151,17 @@ class _RootFolderCardContent extends StatelessWidget {
   final int? index;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final displayMode = ref.watch(
+      settingsStateProvider.select(
+        (state) => state.value?.workNameDisplay ?? WorkNameDisplay.workTitle,
+      ),
+    );
+    final workTitle = detail?.workTitle.trim() ?? '';
     return _AudioDetailWorkCardContent(
-      title: folderName,
+      title: displayMode == WorkNameDisplay.workTitle && workTitle.isNotEmpty
+          ? workTitle
+          : folderName,
       detail: detail,
       detailLoading: detailLoading,
       expanded: expanded,

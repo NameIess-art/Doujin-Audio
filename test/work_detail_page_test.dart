@@ -20,6 +20,7 @@ import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
 import 'package:doujin_audio/features/library/presentation/dlsite_metadata_review_page.dart';
 import 'package:doujin_audio/features/library/presentation/work_detail_page.dart';
 import 'package:doujin_audio/features/library/presentation/work_image_viewer_page.dart';
+import 'package:doujin_audio/features/settings/application/settings_state.dart';
 import 'package:doujin_audio/features/library/application/work_text_service.dart';
 import 'support/app_runtime_test_fixture.dart';
 import 'support/test_playback_commands.dart';
@@ -483,7 +484,12 @@ void main() {
           tester.getSize(backFloatingButton),
         );
 
-        // Title at bottom of cover shows folder name instead of metadata title
+        expect(find.text('Test Local Work Title'), findsOneWidget);
+        expect(find.text('RJ123456 - Test Work'), findsNothing);
+        await tester.runAsync(
+          () => fixture.settings.setWorkNameDisplay(WorkNameDisplay.folderName),
+        );
+        await tester.pump();
         expect(find.text('RJ123456 - Test Work'), findsOneWidget);
         expect(find.text('Test Local Work Title'), findsNothing);
 
@@ -993,6 +999,13 @@ void main() {
           isTrue,
         );
         expect(
+          find.descendant(
+            of: viewport,
+            matching: find.byType(CircularProgressIndicator),
+          ),
+          findsWidgets,
+        );
+        expect(
           tester
               .getTopLeft(
                 find.byKey(const ValueKey<String>('work_image_viewport')),
@@ -1025,7 +1038,7 @@ void main() {
           find.byKey(const ValueKey<String>('work_image_viewport')),
           const Offset(-500, 0),
         );
-        await tester.pumpAndSettle();
+        await tester.pump(const Duration(milliseconds: 400));
         expect(find.text('2 / 2'), findsOneWidget);
         expect(find.text('02.jpg'), findsOneWidget);
 
@@ -1034,7 +1047,7 @@ void main() {
           find.byKey(const ValueKey<String>('work_image_viewport')),
           const Offset(500, 0),
         );
-        await tester.pumpAndSettle();
+        await tester.pump(const Duration(milliseconds: 400));
         expect(find.text('1 / 2'), findsOneWidget);
         expect(find.text('01.jpg'), findsOneWidget);
 
@@ -1100,7 +1113,7 @@ void main() {
       await tester.tap(viewportFinder);
       await tester.pump(const Duration(milliseconds: 50));
       await tester.tap(viewportFinder);
-      await tester.pumpAndSettle();
+      await tester.pump(const Duration(milliseconds: 400));
 
       expect(
         tester.widget<PageView>(find.byType(PageView)).physics,
@@ -1111,7 +1124,7 @@ void main() {
       await tester.tap(viewportFinder);
       await tester.pump(const Duration(milliseconds: 50));
       await tester.tap(viewportFinder);
-      await tester.pumpAndSettle();
+      await tester.pump(const Duration(milliseconds: 400));
 
       expect(
         tester.widget<PageView>(find.byType(PageView)).physics,
@@ -1150,6 +1163,13 @@ void main() {
       expect(foregroundImage.fit, BoxFit.contain);
       expect(foregroundImage.displayMode, CoverImageDisplayMode.fill);
       expect(foregroundImage.cacheHeight, isNull);
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey<String>('work_image_viewport')),
+          matching: find.byType(CircularProgressIndicator),
+        ),
+        findsOneWidget,
+      );
 
       await tester.pumpWidget(const SizedBox.shrink());
     });

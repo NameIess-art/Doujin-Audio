@@ -22,6 +22,8 @@ import 'package:doujin_audio/core/widgets/top_page_header.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/platform/platform_channels.dart';
 import 'package:doujin_audio/core/media/path_matcher.dart';
+import 'package:doujin_audio/core/media/audio_detail.dart';
+import 'package:doujin_audio/features/settings/application/settings_state.dart';
 import 'package:doujin_audio/features/library/application/library_entry_editor_service.dart';
 import 'package:doujin_audio/features/library/application/library_organizer.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
@@ -744,6 +746,11 @@ void main() {
         folder.path,
         coverPath,
       );
+      await fixture.runtimeGraph.library.saveAudioDetail(
+        AudioDetail.empty(
+          AudioDetailTarget.libraryRootFolder(folder.path),
+        ).copyWith(workTitle: 'Metadata Work Title'),
+      );
     });
     fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 0);
 
@@ -751,6 +758,20 @@ void main() {
     await tester.pump();
     await pumpUntilLibraryTreeReady(tester, fixture.runtimeGraph.library);
     await pumpUntilNotFound(tester, find.byType(LibraryLikeSkeletonCard));
+    await pumpUntilFound(tester, find.text('Metadata Work Title'));
+    await tester.runAsync(
+      () => fixture.settings.setWorkNameDisplay(WorkNameDisplay.folderName),
+    );
+    await tester.pump();
+    expect(
+      find.text(folder.path.split(Platform.pathSeparator).last),
+      findsOneWidget,
+    );
+    await tester.runAsync(
+      () => fixture.settings.setWorkNameDisplay(WorkNameDisplay.workTitle),
+    );
+    await tester.pump();
+    expect(find.text('Metadata Work Title'), findsOneWidget);
     final card = tester.widget<AsyncLocalCoverImage>(
       find.byType(AsyncLocalCoverImage).first,
     );

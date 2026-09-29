@@ -806,6 +806,16 @@ void main() {
         const ValueKey<String>('audio_detail_cover_action_capsule'),
       );
       expect(actionCapsule, findsOneWidget);
+      final currentCoverLabel = tester.widget<Text>(
+        find.text(fixture.languageProvider.tr('audio_detail_current_cover')),
+      );
+      expect(currentCoverLabel.style?.color, Colors.grey.shade400);
+      expect(
+        tester.widget<InkWell>(
+          find.descendant(of: actionCapsule, matching: find.byType(InkWell)),
+        ).onTap,
+        isNull,
+      );
       expect(
         find.ancestor(
           of: actionCapsule,
@@ -831,6 +841,15 @@ void main() {
       expect(
         find.text(fixture.languageProvider.tr('audio_detail_set_cover')),
         findsOneWidget,
+      );
+      expect(
+        tester
+            .widget<Text>(
+              find.text(fixture.languageProvider.tr('audio_detail_set_cover')),
+            )
+            .style
+            ?.color,
+        Colors.white,
       );
     },
   );

@@ -66,7 +66,7 @@ void main() {
   });
 
   testWidgets('marquee text forwards custom edge padding', (tester) async {
-    await _withPlatform(TargetPlatform.android, () async {
+    await _withPlatform(TargetPlatform.windows, () async {
       await tester.pumpWidget(
         _buildApp(
           const SizedBox(
@@ -74,7 +74,6 @@ void main() {
             child: MarqueeText(
               text: 'long text',
               edgePadding: 3,
-              allowAndroidMarquee: true,
             ),
           ),
         ),
@@ -105,7 +104,7 @@ void main() {
     });
   });
 
-  testWidgets('android marquee can be allowed explicitly', (tester) async {
+  testWidgets('android forced marquee still renders static text', (tester) async {
     await _withPlatform(TargetPlatform.android, () async {
       await tester.pumpWidget(
         _buildApp(
@@ -113,13 +112,18 @@ void main() {
             width: 40,
             child: MarqueeText(
               text: 'A very long text that should scroll',
-              allowAndroidMarquee: true,
+              forceMarquee: true,
             ),
           ),
         ),
       );
 
-      expect(find.byType(SingleChildScrollView), findsOneWidget);
+      expect(find.byType(SingleChildScrollView), findsNothing);
+      final text = tester.widget<Text>(
+        find.text('A very long text that should scroll'),
+      );
+      expect(text.maxLines, 1);
+      expect(text.overflow, TextOverflow.ellipsis);
     });
   });
 
@@ -272,10 +276,10 @@ void main() {
     expect(staticInfo.overflow, TextOverflow.ellipsis);
   });
 
-  testWidgets('marquee resumes after vertical scrolling becomes idle', (
+  testWidgets('windows marquee resumes after vertical scrolling becomes idle', (
     tester,
   ) async {
-    await _withPlatform(TargetPlatform.android, () async {
+    await _withPlatform(TargetPlatform.windows, () async {
       const marqueeKey = ValueKey('resuming_marquee');
       await tester.pumpWidget(
         _buildApp(
@@ -289,7 +293,6 @@ void main() {
                 text: 'A very long information value that must scroll',
                 pauseDuration: Duration(milliseconds: 1),
                 scrollSpeed: 100,
-                allowAndroidMarquee: true,
               ),
             ),
           ),

@@ -541,11 +541,6 @@ extension PlaybackQueuePathCoordinator on PlaybackFacade {
   }
 
   Future<bool> spawnSession(MusicTrack track, {bool? autoPlay}) async {
-    final matchingSessionIds = _matchingWorkSessionIds(track);
-    if (matchingSessionIds.isNotEmpty) {
-      final removed = await removeSessions(matchingSessionIds);
-      if (!removed) return false;
-    }
     final session = createTrackSession(track);
     final shouldAutoPlay = autoPlay ?? false;
     if (shouldAutoPlay) {
@@ -564,11 +559,6 @@ extension PlaybackQueuePathCoordinator on PlaybackFacade {
     if (tracks.isEmpty) return false;
     final clampedStartIndex = startIndex.clamp(0, tracks.length - 1);
     final startTrack = tracks[clampedStartIndex];
-    final matchingSessionIds = _matchingWorkSessionIds(startTrack);
-    if (matchingSessionIds.isNotEmpty) {
-      final removed = await removeSessions(matchingSessionIds);
-      if (!removed) return false;
-    }
     final session = createTrackSession(
       startTrack,
       loopMode: loopMode,
@@ -580,37 +570,6 @@ extension PlaybackQueuePathCoordinator on PlaybackFacade {
     }
     publishSessionActivated(session.id);
     return true;
-  }
-
-  List<String> _matchingWorkSessionIds(MusicTrack incomingTrack) {
-    if (_allowDuplicateWorks()) return const <String>[];
-    final incomingKey = _workKey(incomingTrack);
-    return _service.sessions.values
-        .where((session) {
-          final representative = _representativeTrack(session);
-          return representative != null &&
-              _workKey(representative) == incomingKey;
-        })
-        .map((session) => session.id)
-        .toList(growable: false);
-  }
-
-  MusicTrack? _representativeTrack(PlaybackSession session) {
-    final queueTracks = session.customQueueTracks;
-    if (queueTracks != null && queueTracks.isNotEmpty) {
-      return queueTracks.first;
-    }
-    return _persistedTrackResolver?.call(session.currentTrackPath);
-  }
-
-  String _workKey(MusicTrack track) {
-    if (track.isSingle || track.groupKey == '__single_files__') {
-      return 'track:${PathMatcher.normalize(track.path)}';
-    }
-    final groupKey = PathMatcher.normalize(track.groupKey);
-    return groupKey.isEmpty
-        ? 'track:${PathMatcher.normalize(track.path)}'
-        : 'group:$groupKey';
   }
 
   Future<void> _enqueueSessionPreparation(

@@ -33,7 +33,6 @@ class MarqueeText extends StatefulWidget {
   final double scrollSpeed;
   final double edgePadding;
   final bool forceMarquee;
-  final bool allowAndroidMarquee;
 
   const MarqueeText({
     super.key,
@@ -43,7 +42,6 @@ class MarqueeText extends StatefulWidget {
     this.scrollSpeed = 30.0,
     this.edgePadding = 8.0,
     this.forceMarquee = false,
-    this.allowAndroidMarquee = false,
   });
 
   @override
@@ -62,10 +60,7 @@ class _MarqueeTextState extends State<MarqueeText> {
     super.initState();
     _scrollController = ScrollController();
     _isMounted = true;
-    if (defaultTargetPlatform == TargetPlatform.android &&
-        !widget.allowAndroidMarquee) {
-      return;
-    }
+    if (defaultTargetPlatform == TargetPlatform.android) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _startScrolling();
     });
@@ -160,8 +155,7 @@ class _MarqueeTextState extends State<MarqueeText> {
 
   @override
   Widget build(BuildContext context) {
-    if (defaultTargetPlatform == TargetPlatform.android &&
-        !widget.allowAndroidMarquee) {
+    if (defaultTargetPlatform == TargetPlatform.android) {
       return Text(
         widget.text,
         style: widget.style,

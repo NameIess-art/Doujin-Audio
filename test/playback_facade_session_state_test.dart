@@ -346,6 +346,59 @@ void main() {
     expect(session.speed, 1.5);
   });
 
+  test('a stale native snapshot cannot undo a pending speed change', () async {
+    final library = _createLibraryFacade();
+    final native = _RecordingNativePlaybackRepository();
+    final playback = PlaybackFacade.create(
+      databaseRepository:
+          library.databaseRepository as PlaybackPersistenceRepository,
+      nativeRepository: native,
+    )..configurePersistence(enabled: false);
+    final session = _session('speed-snapshot-race');
+    playback.registerSession(session);
+    addTearDown(() async {
+      await playback.dispose();
+      await library.dispose();
+    });
+
+    final response = Completer<NativeResult<NativePlaybackSnapshot>>();
+    native.speedGate = response;
+    final change = playback.setSessionSpeed(session.id, 1.5);
+    expect(session.speed, 1.5);
+
+    NativePlaybackSnapshot snapshot(double speed) => NativePlaybackSnapshot(
+      sessionId: session.id,
+      playing: false,
+      playWhenReady: false,
+      processingState: 'ready',
+      position: Duration.zero,
+      bufferedPosition: Duration.zero,
+      volume: 1,
+      speed: speed,
+      boostGain: 1,
+      channelSwapEnabled: false,
+    );
+
+    playback.applyNativeSnapshot(
+      snapshot(1),
+      hasLibraryTrack: (_) => false,
+    );
+    expect(session.speed, 1.5);
+
+    response.complete(
+      NativeSuccess<NativePlaybackSnapshot>(snapshot(1.5)),
+    );
+    await change;
+    expect(session.speed, 1.5);
+
+    playback.applyNativeSnapshot(snapshot(1), hasLibraryTrack: (_) => false);
+    expect(session.speed, 1.5);
+    playback.applyNativeSnapshot(snapshot(1.5), hasLibraryTrack: (_) => false);
+    expect(session.pendingSpeed, isNull);
+    playback.applyNativeSnapshot(snapshot(2), hasLibraryTrack: (_) => false);
+    expect(session.speed, 2);
+  });
+
   test(
     'loading playback intent can be paused from the spinner control',
     () async {

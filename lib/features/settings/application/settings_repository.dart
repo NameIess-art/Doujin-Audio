@@ -40,6 +40,7 @@ class SettingsRepository {
   bool hapticFeedbackEnabled = true;
   bool showLocalLibrary = true;
   bool showAsmrOne = true;
+  WorkNameDisplay workNameDisplay = WorkNameDisplay.workTitle;
   StartupPage startupPage = StartupPage.library;
   bool portraitLockEnabled = false;
   CoverImageResolution coverImageResolution = CoverImageResolution.balanced;
@@ -62,7 +63,6 @@ class SettingsRepository {
   InterruptionResumeBehavior interruptionResumeBehavior =
       InterruptionResumeBehavior.resume;
   SleepModeAutoTrigger sleepModeAutoTrigger = SleepModeAutoTrigger.manual;
-  bool allowDuplicateWorks = false;
   bool reduceAnimations = false;
   final AudioStateSlice<SettingsState> slice = AudioStateSlice<SettingsState>(
     SettingsState(),
@@ -98,6 +98,10 @@ class SettingsRepository {
           hapticFeedbackEnabled;
       showLocalLibrary = playback['showLocalLibrary'] as bool? ?? true;
       showAsmrOne = playback['showAsmrOne'] as bool? ?? true;
+      workNameDisplay = WorkNameDisplay.values.firstWhere(
+        (value) => value.name == playback['workNameDisplay'],
+        orElse: () => WorkNameDisplay.workTitle,
+      );
       if (!showLocalLibrary && !showAsmrOne) {
         showLocalLibrary = true;
       }
@@ -159,7 +163,6 @@ class SettingsRepository {
         (value) => value.name == playback['sleepModeAutoTrigger'],
         orElse: () => SleepModeAutoTrigger.manual,
       );
-      allowDuplicateWorks = playback['allowDuplicateWorks'] as bool? ?? false;
       reduceAnimations = playback['reduceAnimations'] as bool? ?? false;
       dlsiteMetadataLanguage = ContentLanguagePreference.fromName(
         playback['dlsiteMetadataLanguage'],
@@ -237,6 +240,7 @@ class SettingsRepository {
       'hapticFeedbackEnabled': hapticFeedbackEnabled,
       'showLocalLibrary': showLocalLibrary,
       'showAsmrOne': showAsmrOne,
+      'workNameDisplay': workNameDisplay.name,
       'coverImageResolution': coverImageResolution.name,
       'coverImageDisplayMode': coverImageDisplayMode.name,
       'preferEmbeddedCover': preferEmbeddedCover,
@@ -266,7 +270,6 @@ class SettingsRepository {
       'audioFocusStrategy': audioFocusStrategy.name,
       'transientAudioFocusLossBehavior': transientAudioFocusLossBehavior.name,
       'interruptionResumeBehavior': interruptionResumeBehavior.name,
-      'allowDuplicateWorks': allowDuplicateWorks,
       'reduceAnimations': reduceAnimations,
       'sleepModeAutoTrigger': sleepModeAutoTrigger.name,
     });
@@ -568,6 +571,11 @@ class SettingsRepository {
         update: () => coverImageDisplayMode = mode,
       );
 
+  Future<void> setWorkNameDisplay(WorkNameDisplay mode) => _setValue(
+    unchanged: workNameDisplay == mode,
+    update: () => workNameDisplay = mode,
+  );
+
   Future<void> setPreferEmbeddedCover(bool enabled) => _setValue(
     unchanged: preferEmbeddedCover == enabled,
     update: () => preferEmbeddedCover = enabled,
@@ -642,11 +650,6 @@ class SettingsRepository {
     update: () => interruptionResumeBehavior = behavior,
   );
 
-  Future<void> setAllowDuplicateWorks(bool enabled) => _setValue(
-    unchanged: allowDuplicateWorks == enabled,
-    update: () => allowDuplicateWorks = enabled,
-  );
-
   Future<void> setReduceAnimations(bool enabled) => _setValue(
     unchanged: reduceAnimations == enabled,
     update: () => reduceAnimations = enabled,
@@ -694,6 +697,7 @@ class SettingsRepository {
     AppInteractionFeedbackSettings.hapticFeedbackEnabled = true;
     showLocalLibrary = true;
     showAsmrOne = true;
+    workNameDisplay = WorkNameDisplay.workTitle;
     startupPage = StartupPage.library;
     portraitLockEnabled = false;
     coverImageResolution = CoverImageResolution.balanced;
@@ -710,7 +714,6 @@ class SettingsRepository {
     audioFocusStrategy = AudioFocusStrategy.standard;
     transientAudioFocusLossBehavior = TransientAudioFocusLossBehavior.duck;
     interruptionResumeBehavior = InterruptionResumeBehavior.resume;
-    allowDuplicateWorks = false;
     reduceAnimations = false;
     sleepModeAutoTrigger = SleepModeAutoTrigger.manual;
   }
@@ -766,6 +769,7 @@ class SettingsRepository {
         hapticFeedbackEnabled: hapticFeedbackEnabled,
         showLocalLibrary: showLocalLibrary,
         showAsmrOne: showAsmrOne,
+        workNameDisplay: workNameDisplay,
         startupPage: startupPage,
         portraitLockEnabled: portraitLockEnabled,
         coverImageResolution: coverImageResolution,
@@ -785,7 +789,6 @@ class SettingsRepository {
         audioFocusStrategy: audioFocusStrategy,
         transientAudioFocusLossBehavior: transientAudioFocusLossBehavior,
         interruptionResumeBehavior: interruptionResumeBehavior,
-        allowDuplicateWorks: allowDuplicateWorks,
         reduceAnimations: reduceAnimations,
         sleepModeAutoTrigger: sleepModeAutoTrigger,
         isInitialized: isInitialized,

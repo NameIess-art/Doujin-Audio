@@ -143,14 +143,20 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage> {
     final imagePath = image.path.trim();
     final isRemoteImage =
         imagePath.startsWith('http://') || imagePath.startsWith('https://');
+    Widget loadingIndicator(BuildContext _) => const Center(
+      child: SizedBox.square(
+        dimension: 32,
+        child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5),
+      ),
+    );
     if (isRemoteImage) {
       return RetryingNetworkImage(
         url: imagePath,
         fit: BoxFit.contain,
         displayMode: CoverImageDisplayMode.fill,
         useDefaultCacheWidth: false,
-        loadingBuilder: (_) => const SizedBox.expand(),
-        fallbackBuilder: (_) => const SizedBox.expand(),
+        loadingBuilder: loadingIndicator,
+        fallbackBuilder: loadingIndicator,
       );
     }
     return RetryingFileImage(
@@ -158,8 +164,8 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage> {
       fit: BoxFit.contain,
       displayMode: CoverImageDisplayMode.fill,
       useDefaultCacheWidth: false,
-      loadingBuilder: (_) => const SizedBox.expand(),
-      fallbackBuilder: (_) => const SizedBox.expand(),
+      loadingBuilder: loadingIndicator,
+      fallbackBuilder: loadingIndicator,
     );
   }
 

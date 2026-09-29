@@ -44,8 +44,6 @@ typedef PlaybackHistoryUpdater =
       required bool updatePlayedAt,
     });
 
-bool _defaultAllowDuplicateWorks() => false;
-
 /// Owns playback sessions and the platform playback runtime.
 final class PlaybackFacade {
   PlaybackFacade({
@@ -111,7 +109,6 @@ final class PlaybackFacade {
   PlaybackQueueSessionSynchronizer? _synchronizePlaybackQueueSession;
   PlaybackCommandPort? _commandPort;
   PlaybackLoopModeSynchronizer? _synchronizeLoopMode;
-  bool Function() _allowDuplicateWorks = _defaultAllowDuplicateWorks;
   bool _sessionObserversAttached = false;
   final Map<String, String> _retargetedPathAliases = <String, String>{};
   final Random _random = Random();
@@ -217,10 +214,6 @@ final class PlaybackFacade {
     return references;
   }
 
-  void attachSessionDefaults({required bool Function() allowDuplicateWorks}) {
-    _allowDuplicateWorks = allowDuplicateWorks;
-  }
-
   void attachSessionRuntime({
     required void Function(PlaybackSession session) onSessionRegistered,
     void Function(List<PlaybackSession> sessions)? onSessionsRemoved,
@@ -284,7 +277,6 @@ final class PlaybackFacade {
     _synchronizePlaybackQueueSession = null;
     detachCommandPort();
     _synchronizeLoopMode = null;
-    _allowDuplicateWorks = _defaultAllowDuplicateWorks;
   }
 
   void registerSession(PlaybackSession session) {
@@ -913,12 +905,14 @@ final class PlaybackFacade {
     final previous = session.speed;
     final generation = ++session.speedCommandGeneration;
     session.speed = nextSpeed;
+    session.pendingSpeed = nextSpeed;
     _service.markActiveSessionsDirty();
     if (notify) _onSessionSettingsChanged?.call();
     final response = await nativeRepository.setSpeed(session.id, nextSpeed);
     if (!_isCurrentSession(session)) return;
+    if (generation != session.speedCommandGeneration) return;
     if (response.isFailure) {
-      if (generation != session.speedCommandGeneration) return;
+      session.pendingSpeed = null;
       session.speed = previous;
       _service.markActiveSessionsDirty();
       AppLogService.warning(
@@ -926,6 +920,13 @@ final class PlaybackFacade {
       );
       if (notify) _onSessionSettingsChanged?.call();
       return;
+    }
+    final confirmedSpeed = response.valueOrNull?.speed ?? nextSpeed;
+    session.pendingSpeed = confirmedSpeed;
+    if ((session.speed - confirmedSpeed).abs() >= 0.001) {
+      session.speed = confirmedSpeed;
+      _service.markActiveSessionsDirty();
+      if (notify) _onSessionSettingsChanged?.call();
     }
     if (persist) await flushSessionStatePersistence();
   }

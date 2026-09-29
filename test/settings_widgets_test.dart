@@ -10,6 +10,7 @@ import 'package:doujin_audio/core/widgets/mobile_overlay_inset.dart';
 import 'package:doujin_audio/core/widgets/subtitle_window_visual.dart';
 import 'package:doujin_audio/app/state/subtitle_settings_provider.dart';
 import 'package:doujin_audio/features/settings/application/settings_repository.dart';
+import 'package:doujin_audio/features/settings/application/settings_state.dart';
 import 'package:doujin_audio/features/settings/presentation/settings_tab.dart';
 import 'package:doujin_audio/features/data_support/application/storage_usage_service.dart';
 import 'package:doujin_audio/core/platform/file_cache_platform_gateway.dart';
@@ -253,19 +254,9 @@ void main() {
     );
     expect(find.text(i18n.tr('startup_page')), findsOneWidget);
     expect(find.text(i18n.tr('portrait_lock')), findsOneWidget);
-    expect(find.text(i18n.tr('allow_duplicate_works')), findsOneWidget);
+    expect(find.text('允许添加相同作品'), findsNothing);
+    expect(find.byIcon(Icons.copy_all_rounded), findsNothing);
     expect(find.text(i18n.tr('reduce_animations')), findsOneWidget);
-    expect(
-      tester
-          .widget<SwitchListTile>(
-            find.widgetWithText(
-              SwitchListTile,
-              i18n.tr('allow_duplicate_works'),
-            ),
-          )
-          .subtitle,
-      isNull,
-    );
     expect(
       tester
           .widget<SwitchListTile>(
@@ -1176,6 +1167,32 @@ void main() {
       harness.settingsRepository.coverImageResolution,
       CoverImageResolution.ultraHigh,
     );
+  });
+
+  testWidgets('page display switches the local work name', (tester) async {
+    final harness = AppRuntimeWidgetTestFixture();
+    addTearDown(harness.dispose);
+    await tester.pumpWidget(harness.build(const SettingsTab()));
+    await tester.pump();
+
+    await tester.tap(find.text(harness.languageProvider.tr('section_common')));
+    await tester.pumpAndSettle();
+    final title = find.text(harness.languageProvider.tr('work_name_display'));
+    await Scrollable.ensureVisible(tester.element(title), alignment: 0.5);
+    await tester.pumpAndSettle();
+    expect(harness.settings.workNameDisplay, WorkNameDisplay.workTitle);
+
+    await tester.tap(find.byType(DropdownButton<WorkNameDisplay>));
+    await tester.pumpAndSettle();
+    expect(
+      find.text(harness.languageProvider.tr('work_name_display_folderName')),
+      findsOneWidget,
+    );
+    await tester.tap(
+      find.text(harness.languageProvider.tr('work_name_display_folderName')),
+    );
+    await tester.pumpAndSettle();
+    expect(harness.settings.workNameDisplay, WorkNameDisplay.folderName);
   });
 
   testWidgets('appearance changes the global cover display mode', (

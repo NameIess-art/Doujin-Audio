@@ -126,6 +126,8 @@ class PlaybackSession {
   Duration bufferedPosition = Duration.zero;
   double speed = 1.0;
   int speedCommandGeneration = 0;
+  // Ignore older snapshots until native reports the requested speed.
+  double? pendingSpeed;
   AudioEffectsState audioEffects = AudioEffectsState.flat;
   NativeAudioEffects? pendingNativeAudioEffects;
   NativeAudioEffects? confirmedNativeAudioEffects;
@@ -372,7 +374,11 @@ class PlaybackSession {
     if ((volume - snapshot.volume).abs() >= 0.001) {
       volume = snapshot.volume;
     }
-    if ((speed - snapshot.speed).abs() >= 0.001) {
+    if (pendingSpeed != null &&
+        (pendingSpeed! - snapshot.speed).abs() < 0.001) {
+      pendingSpeed = null;
+    }
+    if (pendingSpeed == null && (speed - snapshot.speed).abs() >= 0.001) {
       speed = snapshot.speed;
     }
     if (!hasPendingAudioEffectsSync && snapshot.hasAudioEffectsPayload) {

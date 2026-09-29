@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/app/localization/app_language_en.dart';
+import 'package:doujin_audio/app/localization/app_language_ja.dart';
 import 'package:doujin_audio/app/localization/app_language_zh.dart';
 import 'package:doujin_audio/app/theme/app_styles.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
@@ -256,6 +257,7 @@ void main() {
         releaseDate: detail.releaseDate,
         rating: detail.rating,
       ),
+      voiceActorLabel: appLanguageZh['card_info_voice_actors']!,
       circleLabel: 'Circle',
       tagsLabel: 'Tags',
       releaseDateLabel: 'Release',
@@ -268,7 +270,7 @@ void main() {
             '${line.label}:${line.text}:${line.secondaryLabel}:${line.secondaryText}:${line.lines}',
       ),
       <String>[
-        'CV:Alice，Bob:null:null:1',
+        '声优:Alice，Bob:null:null:1',
         'Circle:Circle:null:null:1',
         'Tags:sleep，voice:null:null:3',
         'Release:2026-07-02:Rating:4:1',
@@ -305,6 +307,7 @@ void main() {
         releaseDate: work.releaseDate,
         rating: work.rating,
       ),
+      voiceActorLabel: appLanguageJa['card_info_voice_actors']!,
       circleLabel: 'Circle',
       tagsLabel: 'Tags',
       releaseDateLabel: 'Release',
@@ -318,7 +321,7 @@ void main() {
             '${line.label}:${line.text}:${line.secondaryLabel}:${line.secondaryText}:${line.lines}',
       ),
       <String>[
-        'CV:Voice A、Voice B:null:null:1',
+        '声優:Voice A、Voice B:null:null:1',
         'Circle:Circle:null:null:1',
         'Tags:ASMR、Sleep:null:null:3',
         'Release:2026-06-09:Rating:4.5:1',
@@ -337,6 +340,7 @@ void main() {
         releaseDate: DateTime(2026, 6, 9),
         rating: 4.5,
       ),
+      voiceActorLabel: appLanguageEn['card_info_voice_actors']!,
       circleLabel: 'Circle label',
       tagsLabel: 'Tags',
       releaseDateLabel: 'Release',
@@ -618,6 +622,7 @@ void main() {
         LibraryLikeMetadataWorkCardContent(
           title: 'Work',
           metadata: const LibraryLikeInfoMetadata(),
+          voiceActorLabel: appLanguageEn['card_info_voice_actors']!,
           circleLabel: 'Circle',
           tagsLabel: 'Tags',
           releaseDateLabel: 'Release',

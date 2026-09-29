@@ -517,6 +517,7 @@ const Map<String, String> appLanguageEn = {
   'allow_video_playback': 'Allow video playback',
   'notification_bar': 'Playback notification controls',
   'section_detail_info': 'Details',
+  'card_info_voice_actors': 'CV',
   'card_info_release_date': 'Release',
   'card_info_rating': 'Rating',
   'card_info_duration': 'Duration',

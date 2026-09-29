@@ -395,6 +395,7 @@ class LibraryLikeInfoMetadata {
 
 List<LibraryLikeInfoLineData> buildLibraryLikeInfoLines({
   required LibraryLikeInfoMetadata metadata,
+  required String voiceActorLabel,
   required String circleLabel,
   required String tagsLabel,
   required String releaseDateLabel,
@@ -405,7 +406,7 @@ List<LibraryLikeInfoLineData> buildLibraryLikeInfoLines({
   if (metadata.voiceActors.isNotEmpty) {
     result.add(
       LibraryLikeInfoLineData(
-        'CV',
+        voiceActorLabel,
         _normalizeLibraryLikeList(metadata.voiceActors).join(listSeparator),
       ),
     );
@@ -739,6 +740,7 @@ class LibraryLikeMetadataWorkCardContent extends StatelessWidget {
     super.key,
     required this.title,
     required this.metadata,
+    required this.voiceActorLabel,
     required this.circleLabel,
     required this.tagsLabel,
     required this.releaseDateLabel,
@@ -759,6 +761,7 @@ class LibraryLikeMetadataWorkCardContent extends StatelessWidget {
 
   final String title;
   final LibraryLikeInfoMetadata metadata;
+  final String voiceActorLabel;
   final String circleLabel;
   final String tagsLabel;
   final String releaseDateLabel;
@@ -784,6 +787,7 @@ class LibraryLikeMetadataWorkCardContent extends StatelessWidget {
           ? const <LibraryLikeInfoLineData>[]
           : buildLibraryLikeInfoLines(
               metadata: metadata,
+              voiceActorLabel: voiceActorLabel,
               circleLabel: circleLabel,
               tagsLabel: tagsLabel,
               releaseDateLabel: releaseDateLabel,

@@ -478,6 +478,7 @@ const Map<String, String> appLanguageJa = {
   'allow_video_playback': '動画の再生を許可',
   'notification_bar': '再生通知コントロール',
   'section_detail_info': '詳細情報',
+  'card_info_voice_actors': '声優',
   'card_info_release_date': '発売',
   'card_info_rating': '評価',
   'card_info_duration': '時間',

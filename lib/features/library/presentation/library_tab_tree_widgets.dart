@@ -1241,6 +1241,7 @@ class _AudioDetailWorkCardContent extends ConsumerWidget {
     return LibraryLikeMetadataWorkCardContent(
       title: title,
       metadata: _audioDetailMetadata(detail),
+      voiceActorLabel: i18n.tr('card_info_voice_actors'),
       circleLabel: i18n.tr('library_category_circles'),
       tagsLabel: i18n.tr('library_category_tags'),
       releaseDateLabel: i18n.tr('card_info_release_date'),
@@ -1278,6 +1279,7 @@ class _SingleAudioFileCardContent extends ConsumerWidget {
         ? const <LibraryLikeInfoLineData>[]
         : buildLibraryLikeInfoLines(
             metadata: _audioDetailMetadata(detail),
+            voiceActorLabel: i18n.tr('card_info_voice_actors'),
             circleLabel: i18n.tr('library_category_circles'),
             tagsLabel: i18n.tr('library_category_tags'),
             releaseDateLabel: i18n.tr('card_info_release_date'),

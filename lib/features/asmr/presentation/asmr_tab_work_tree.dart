@@ -129,6 +129,7 @@ class _AsmrWorkTreeCardState extends ConsumerState<_AsmrWorkTreeCard> {
               child: LibraryLikeMetadataWorkCardContent(
                 title: widget.work.title,
                 metadata: _workMetadata(widget.work),
+                voiceActorLabel: i18n.tr('card_info_voice_actors'),
                 circleLabel: i18n.tr('asmr_circle_label'),
                 tagsLabel: i18n.tr('asmr_tags_label'),
                 releaseDateLabel: i18n.tr('card_info_release_date'),

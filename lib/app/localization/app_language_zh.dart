@@ -476,6 +476,7 @@ const Map<String, String> appLanguageZh = {
   'allow_video_playback': '允许播放视频',
   'notification_bar': '播放通知控制',
   'section_detail_info': '详细信息',
+  'card_info_voice_actors': '声优',
   'card_info_release_date': '发售',
   'card_info_rating': '评分',
   'card_info_duration': '时长',

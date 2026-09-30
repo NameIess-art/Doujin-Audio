@@ -18,29 +18,12 @@ extension NotificationFacadeCovers on NotificationFacade {
     );
   }
 
-  String _notificationTitleForSession(PlaybackSession session) {
-    final trackPath = session.currentTrackPath;
-    final track = trackByPath(trackPath);
-    final artPath = coverPathForTrack(track, trackPath: trackPath);
-    if (artPath == null) {
-      unawaited(playbackCoverPathFutureForTrack(track, trackPath: trackPath));
-    }
-    return track?.displayName ??
-        path.basenameWithoutExtension(session.currentTrackPath);
-  }
-
-  List<String> _notificationOverviewTitles(Iterable<PlaybackSession> sessions) {
-    final uniqueTitles = <String>{};
-    for (final session in sessions) {
-      final title = _notificationTitleForSession(session);
-      if (title.isNotEmpty) uniqueTitles.add(title);
-    }
-    return uniqueTitles.toList(growable: false);
-  }
-
-  String _notificationSummaryText(List<PlaybackSession> sessions) {
-    final titles = _notificationOverviewTitles(sessions);
-    if (titles.isEmpty) return '${sessions.length} active sessions';
+  String _notificationSummaryText(List<String> sessionTitles) {
+    final titles = sessionTitles
+        .where((title) => title.isNotEmpty)
+        .toSet()
+        .toList();
+    if (titles.isEmpty) return '${sessionTitles.length} active sessions';
     if (titles.length == 1) return titles.first;
     if (titles.length == 2) return '${titles[0]} / ${titles[1]}';
     return '${titles.first} +${titles.length - 1}';
@@ -122,16 +105,25 @@ extension NotificationFacadeCovers on NotificationFacade {
   }
 
   bool _isActiveCoverKey(String coverSearchKey) {
+    var active = false;
     for (final session in activeSessions) {
+      final cached = _notificationPresentations[session.id];
+      if (cached != null && cached.trackPath == session.currentTrackPath) {
+        if (cached.coverSearchKey == coverSearchKey) {
+          _notificationPresentations.remove(session.id);
+          active = true;
+        }
+        continue;
+      }
       final track = trackByPath(session.currentTrackPath);
       if (_notificationCoverSearchKey(
             track,
             trackPath: session.currentTrackPath,
           ) ==
           coverSearchKey) {
-        return true;
+        active = true;
       }
     }
-    return false;
+    return active;
   }
 }

@@ -106,17 +106,8 @@ internal class NativePlaybackStatePersistenceCoordinator(
     private var pendingDebounce = false
     private var lastSubmittedSnapshots: List<StoredNativePlaybackSession>? = null
 
-    /**
-     * The snapshot list whose structural payload is actually on disk. Written on
-     * the storage thread, read on the main thread.
-     *
-     * A progress-only write is valid only as an overlay on top of a persisted
-     * structure. Keying off "last submitted" instead would be wrong: a
-     * superseded structural write (dropped by the generation check) would leave
-     * the sessions key stale or absent while progress-only writes kept
-     * succeeding, losing the queue on restore.
-     */
-    @Volatile
+    // Both caches are accessed only on the storage executor. Queue equality and
+    // serialization must not run on the player's application Looper.
     private var persistedStructure: List<StoredNativePlaybackSession>? = null
 
     private val ticker = object : Runnable {
@@ -172,39 +163,24 @@ internal class NativePlaybackStatePersistenceCoordinator(
     fun persistNow() {
         cancelScheduledPersist()
         val snapshots = if (hasSessions()) storedSessions() else emptyList()
-        if (snapshots == lastSubmittedSnapshots) return
-        lastSubmittedSnapshots = snapshots
         val saveGeneration = generation.incrementAndGet()
-        if (snapshots.isEmpty()) {
-            environment.execute {
-                if (saveGeneration == generation.get()) {
-                    environment.clearSessions()
-                    persistedStructure = null
-                }
-            }
-            return
-        }
-
-        // During steady playback only position/playing change, so avoid
-        // re-serialising and rewriting the whole queue every interval.
-        val onDisk = persistedStructure
-        if (onDisk != null &&
-            nativePlaybackSnapshotsDifferOnlyByProgress(onDisk, snapshots)
-        ) {
-            val progress = snapshots.map(StoredNativePlaybackSession::toStoredProgress)
-            environment.execute {
-                if (saveGeneration == generation.get()) {
-                    environment.saveSessionProgress(progress)
-                }
-            }
-            return
-        }
-
         environment.execute {
-            if (saveGeneration == generation.get()) {
+            if (saveGeneration != generation.get() || snapshots == lastSubmittedSnapshots) {
+                return@execute
+            }
+            if (snapshots.isEmpty()) {
+                environment.clearSessions()
+                persistedStructure = null
+            } else if (persistedStructure?.let {
+                    nativePlaybackSnapshotsDifferOnlyByProgress(it, snapshots)
+                } == true
+            ) {
+                environment.saveSessionProgress(snapshots.map(StoredNativePlaybackSession::toStoredProgress))
+            } else {
                 environment.saveSessions(snapshots)
                 persistedStructure = snapshots
             }
+            lastSubmittedSnapshots = snapshots
         }
     }
 

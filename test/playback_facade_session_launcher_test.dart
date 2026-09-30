@@ -378,12 +378,53 @@ void main() {
 
 class _RecordingRepository extends TestPersistenceRepository {
   List<PersistedPlaybackSession> saved = [];
+  final sessionUpsertIds = <String>[];
+  final deletedSessionIds = <String>[];
 
   @override
   Future<List<PersistedPlaybackSession>> loadAllSessions() async => saved;
 
   @override
-  Future<void> saveAllSessions(List<PersistedPlaybackSession> sessions) async {
-    saved = sessions;
+  Future<void> upsertSession(
+    PersistedPlaybackSession session, {
+    bool includeQueue = true,
+    bool includeEffects = true,
+  }) async {
+    sessionUpsertIds.add(session.id);
+    final index = saved.indexWhere((value) => value.id == session.id);
+    if (index < 0) {
+      saved = [...saved, session];
+    } else {
+      final previous = saved[index];
+      saved = [...saved]..[index] = PersistedPlaybackSession(
+        id: session.id,
+        trackPath: session.trackPath,
+        isTemporary: session.isTemporary,
+        retainInNowPlaying: session.retainInNowPlaying,
+        loopModeIndex: session.loopModeIndex,
+        volume: session.volume,
+        speed: session.speed,
+        positionMs: session.positionMs,
+        durationMs: session.durationMs,
+        customQueueTracks: includeQueue
+            ? session.customQueueTracks
+            : previous.customQueueTracks,
+        playbackQueue: includeQueue ? session.playbackQueue : previous.playbackQueue,
+        currentQueueIndex: session.currentQueueIndex,
+        channelSwapEnabled: session.channelSwapEnabled,
+        audioEffects: includeEffects ? session.audioEffects : previous.audioEffects,
+        sortOrder: session.sortOrder,
+        createdAtMs: session.createdAtMs,
+        updatedAtMs: session.updatedAtMs,
+        lastPlayedAtMs: session.lastPlayedAtMs,
+      );
+    }
+  }
+
+  @override
+  Future<void> deleteSessions(List<String> sessionIds) async {
+    deletedSessionIds.addAll(sessionIds);
+    final removed = sessionIds.toSet();
+    saved = saved.where((session) => !removed.contains(session.id)).toList();
   }
 }

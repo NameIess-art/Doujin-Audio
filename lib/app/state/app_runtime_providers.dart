@@ -9,10 +9,10 @@ import 'package:flutter_riverpod/misc.dart' show Override;
 
 import '../application/app_persistence_coordinator.dart';
 import '../application/audio_path_coordinator.dart';
-import '../application/playback_queue_coordinator.dart';
+import '../../features/player/application/playback_queue_coordinator.dart';
 import '../application/app_runtime_lifecycle.dart';
 import '../application/audio_ui_warmup_coordinator.dart';
-import '../application/playback_command_coordinator.dart';
+import '../../features/player/application/playback_command_coordinator.dart';
 import '../application/playback_keep_alive_coordinator.dart';
 import '../../features/library/application/library_facade.dart';
 import '../../features/player/application/notification_facade.dart';

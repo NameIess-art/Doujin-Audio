@@ -66,9 +66,15 @@ void registerWindowsVideoPlaybackTest() {
           volume: 0,
         );
         expect(result.isOk, true, reason: result.errorOrNull);
-        final player = bridge.playerForSession('video')!;
+        expect(bridge.playerForSession('video'), isNull);
         await tester.pumpWidget(surface('video'));
-        await tester.pump();
+        final surfaceDeadline = DateTime.now().add(const Duration(seconds: 15));
+        while (DateTime.now().isBefore(surfaceDeadline) &&
+            find.byType(Video).evaluate().isEmpty) {
+          await tester.pump(const Duration(milliseconds: 50));
+        }
+        expect(find.byType(Video), findsOneWidget);
+        final player = bridge.playerForSession('video')!;
         final controller = tester.widget<Video>(find.byType(Video)).controller;
         final playResult = await bridge.play('video');
         expect(playResult.isOk, true, reason: playResult.errorOrNull);
@@ -103,6 +109,9 @@ void registerWindowsVideoPlaybackTest() {
         expect(bridge.playerForSession('video'), same(player));
         expect(controller.id.value, isNotNull);
 
+        // A paused nonfocused video remains alive while its surface borrows it.
+        await bridge.pause('video');
+
         final autoResult = await bridge.prepareSession(
           sessionId: 'autoVideo',
           uri: file.uri,
@@ -111,15 +120,24 @@ void registerWindowsVideoPlaybackTest() {
           autoPlay: true,
         );
         expect(autoResult.isOk, true, reason: autoResult.errorOrNull);
+        expect(bridge.playerForSession('video'), same(player));
         await tester.pumpWidget(surface('autoVideo'));
         await tester.pump();
-        final autoController = tester.widget<Video>(find.byType(Video)).controller;
+        final autoController = tester
+            .widget<Video>(find.byType(Video))
+            .controller;
         final autoDeadline = DateTime.now().add(const Duration(seconds: 15));
         while (DateTime.now().isBefore(autoDeadline) &&
             (autoController.rect.value?.width ?? 0) <= 0) {
           await tester.pump(const Duration(milliseconds: 100));
         }
         expect(autoController.rect.value?.size, const Size(320, 180));
+        final releaseDeadline = DateTime.now().add(const Duration(seconds: 10));
+        while (DateTime.now().isBefore(releaseDeadline) &&
+            bridge.playerForSession('video') != null) {
+          await tester.pump(const Duration(milliseconds: 50));
+        }
+        expect(bridge.playerForSession('video'), isNull);
       } finally {
         await tester.pumpWidget(const SizedBox.shrink());
         await bridge.dispose();

@@ -25,7 +25,7 @@ final class PersistedUriPermissionCoordinator implements RuntimeBinding {
        _gateway = gateway ?? FileCachePlatformGateway.instance {
     _subscriptions.addAll(<StreamSubscription<Object?>>[
       _library.states.listen((_) => _requestReconcile()),
-      _playback.states.listen((_) => _requestReconcile()),
+      _playback.catalogStates.listen((_) => _requestReconcile()),
       _playback.persistedUriReferenceRevisions.listen(
         (_) => _requestReconcile(),
       ),

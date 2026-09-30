@@ -5,6 +5,7 @@ package com.doujin.audio.player.common
 import com.doujin.audio.player.session.*
 
 import android.content.Context
+import android.net.Uri
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
@@ -115,6 +116,7 @@ internal interface NativePlayerEventCallbacks {
 
 internal class NativePlayerFactory(
     private val context: Context,
+    private val resolveUriToPath: (String) -> String? = { null },
     private val callbacks: NativePlayerEventCallbacks
 ) {
     fun create(
@@ -147,8 +149,15 @@ internal class NativePlayerFactory(
             .setReadTimeoutMs(20_000)
         val defaultDataSourceFactory = DefaultDataSource.Factory(context, httpDataSourceFactory)
         val resolvingDataSourceFactory = ResolvingDataSource.Factory(defaultDataSourceFactory) { dataSpec ->
-            val headers = nativePlaybackRequestHeadersForHost(dataSpec.uri.host)
-            if (headers.isEmpty()) dataSpec else dataSpec.withAdditionalHeaders(headers)
+            // ResolvingDataSource runs on the loader thread, never on the player's
+            // application Looper. SAF filesystem checks belong here.
+            val resolved = if (dataSpec.uri.scheme == "content") {
+                resolveUriToPath(dataSpec.uri.toString())?.let { path ->
+                    java.io.File(path).takeIf { it.exists() && it.canRead() }
+                }?.let { dataSpec.withUri(Uri.fromFile(it)) } ?: dataSpec
+            } else dataSpec
+            val headers = nativePlaybackRequestHeadersForHost(resolved.uri.host)
+            if (headers.isEmpty()) resolved else resolved.withAdditionalHeaders(headers)
         }
         val mediaSourceFactory = DefaultMediaSourceFactory(resolvingDataSourceFactory)
 

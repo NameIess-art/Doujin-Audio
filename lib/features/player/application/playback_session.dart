@@ -7,6 +7,7 @@ import '../domain/audio_effects.dart';
 import '../domain/playback_mode.dart';
 import '../domain/playback_queue.dart';
 import 'native_playback_bridge.dart';
+import 'playback_queue_resolver.dart';
 
 class PlaybackSession {
   static const loadingIndicatorThreshold = Duration(milliseconds: 600);
@@ -27,7 +28,13 @@ class PlaybackSession {
   }) : _customQueueTracks = customQueueTracks == null
            ? null
            : immutableList(customQueueTracks),
-       _playbackQueue = playbackQueue;
+       _playbackQueue = playbackQueue {
+    hasDetachedQueueTrack =
+        playbackQueue != null &&
+        customQueueTracks != null &&
+        customQueueTracks.length == playbackQueue.expandedTracks.length + 1 &&
+        customQueueTracks.isNotEmpty;
+  }
 
   final String id;
   bool isTemporary;
@@ -53,6 +60,7 @@ class PlaybackSession {
   List<MusicTrack>? _customQueueTracks;
   List<MusicTrack>? get customQueueTracks => _customQueueTracks;
   set customQueueTracks(List<MusicTrack>? tracks) {
+    if (identical(_customQueueTracks, tracks)) return;
     _customQueueTracks = tracks == null ? null : immutableList(tracks);
     _queueVersion++;
     _trackPathMap = null;
@@ -95,14 +103,19 @@ class PlaybackSession {
     final normalized = PathMatcher.normalize(trackPath);
     final direct = map[normalized];
     if (direct != null) return direct;
-    if (resolvedPath != null && resolvedPath.isNotEmpty && resolvedPath != trackPath) {
+    if (resolvedPath != null &&
+        resolvedPath.isNotEmpty &&
+        resolvedPath != trackPath) {
       final resolvedNormalized = PathMatcher.normalize(resolvedPath);
       final resolved = map[resolvedNormalized];
       if (resolved != null) return resolved;
     }
     return null;
   }
+
   int currentQueueIndex;
+  // The runtime may retain a removed current occurrence until it advances.
+  bool hasDetachedQueueTrack = false;
   bool get isPlaybackQueue => playbackQueue != null;
   String currentTrackPath;
   String? loadedPath;
@@ -110,6 +123,8 @@ class PlaybackSession {
   SessionLoopMode loopMode;
   SessionLoopMode nonSingleLoopMode;
   double volume;
+  int volumeCommandGeneration = 0;
+  double? pendingVolume;
   bool channelSwapEnabled = false;
   bool _isLoading = false;
   bool _isPlaybackStarting = false;
@@ -121,6 +136,9 @@ class PlaybackSession {
   bool _isAdvancingAfterCompletion = false;
   int? nativePlaybackQueueCacheKey;
   List<Map<String, Object?>>? nativePlaybackQueueCache;
+  int? nativePlaybackQueueScopeCacheKey;
+  PlaybackQueueScope? nativePlaybackQueueScopeCache;
+  Future<List<Map<String, Object?>>>? nativePlaybackQueueFuture;
   Duration lastKnownPosition = Duration.zero;
   Duration? duration;
   Duration bufferedPosition = Duration.zero;
@@ -371,7 +389,11 @@ class PlaybackSession {
       loadedPath = nativePath;
     }
     currentQueueIndex = snapshot.queueIndex;
-    if ((volume - snapshot.volume).abs() >= 0.001) {
+    if (pendingVolume != null &&
+        (pendingVolume! - snapshot.volume).abs() < 0.001) {
+      pendingVolume = null;
+    }
+    if (pendingVolume == null && (volume - snapshot.volume).abs() >= 0.001) {
       volume = snapshot.volume;
     }
     if (pendingSpeed != null &&

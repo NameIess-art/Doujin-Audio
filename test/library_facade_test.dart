@@ -1003,9 +1003,13 @@ void main() {
 
       final beforeRefresh = runtimeGraph.library.library.single;
       var notificationCount = 0;
-      final subscription = runtimeGraph.library.states.listen((_) {
-        notificationCount++;
-      });
+      final subscription = runtimeGraph.library.states
+          .map((state) => state.contentRevision)
+          .distinct()
+          .skip(1)
+          .listen((_) {
+            notificationCount++;
+          });
       addTearDown(subscription.cancel);
 
       runtimeGraph.library.addOrReplaceTracks(<MusicTrack>[
@@ -1021,6 +1025,7 @@ void main() {
           modifiedAt: initialModifiedAt,
         ),
       ], persist: false);
+      await Future<void>.delayed(Duration.zero);
 
       expect(notificationCount, 0);
       expect(runtimeGraph.library.library.single, same(beforeRefresh));
@@ -1119,50 +1124,52 @@ void main() {
       );
     });
 
-    test('content folder exclusion stores the canonical library child path',
-        () async {
-      const libraryRoot =
-          'content://com.android.externalstorage.documents/tree/primary%3AASMR';
-      const childFolder = '$libraryRoot/document/primary%3AASMR%2FWorkA';
-      const syntheticChildFolder = '$libraryRoot::WorkA';
-      const trackPath =
-          'content://com.android.externalstorage.documents/tree/primary%3AASMR/document/primary%3AASMR%2FWorkA%2F01.mp3';
+    test(
+      'content folder exclusion stores the canonical library child path',
+      () async {
+        const libraryRoot =
+            'content://com.android.externalstorage.documents/tree/primary%3AASMR';
+        const childFolder = '$libraryRoot/document/primary%3AASMR%2FWorkA';
+        const syntheticChildFolder = '$libraryRoot::WorkA';
+        const trackPath =
+            'content://com.android.externalstorage.documents/tree/primary%3AASMR/document/primary%3AASMR%2FWorkA%2F01.mp3';
 
-      runtimeGraph.library.addWatchedLibrary(libraryRoot, notify: false);
-      runtimeGraph.library.addWatchedFolder(childFolder, notify: false);
-      runtimeGraph.library.addTracks(<MusicTrack>[
-        MusicTrack(
-          path: trackPath,
-          displayName: '01',
-          groupKey: syntheticChildFolder,
-          groupTitle: 'WorkA',
-          groupSubtitle: syntheticChildFolder,
-          isSingle: false,
-        ),
-      ], notify: false);
+        runtimeGraph.library.addWatchedLibrary(libraryRoot, notify: false);
+        runtimeGraph.library.addWatchedFolder(childFolder, notify: false);
+        runtimeGraph.library.addTracks(<MusicTrack>[
+          MusicTrack(
+            path: trackPath,
+            displayName: '01',
+            groupKey: syntheticChildFolder,
+            groupTitle: 'WorkA',
+            groupSubtitle: syntheticChildFolder,
+            isSingle: false,
+          ),
+        ], notify: false);
 
-      final result = await runtimeGraph.library.removeFolder(childFolder);
+        final result = await runtimeGraph.library.removeFolder(childFolder);
 
-      expect(result, LibraryRemovalKind.libraryFolderRecoverable);
-      expect(
-        runtimeGraph.library.excludedFoldersForLibrary(libraryRoot),
-        <String>[syntheticChildFolder],
-      );
-      expect(
-        runtimeGraph.library
-            .libraryEntriesForLibrary(libraryRoot)
-            .where((entry) => entry.path == syntheticChildFolder),
-        hasLength(1),
-      );
-      expect(
-        runtimeGraph.library
-            .libraryEntriesForLibrary(libraryRoot)
-            .where((entry) => entry.path == syntheticChildFolder)
-            .single
-            .isExcluded,
-        isTrue,
-      );
-    });
+        expect(result, LibraryRemovalKind.libraryFolderRecoverable);
+        expect(
+          runtimeGraph.library.excludedFoldersForLibrary(libraryRoot),
+          <String>[syntheticChildFolder],
+        );
+        expect(
+          runtimeGraph.library
+              .libraryEntriesForLibrary(libraryRoot)
+              .where((entry) => entry.path == syntheticChildFolder),
+          hasLength(1),
+        );
+        expect(
+          runtimeGraph.library
+              .libraryEntriesForLibrary(libraryRoot)
+              .where((entry) => entry.path == syntheticChildFolder)
+              .single
+              .isExcluded,
+          isTrue,
+        );
+      },
+    );
 
     group('unified removal routing', () {
       MusicTrack track({
@@ -1947,7 +1954,14 @@ class _CountingTestPersistenceRepository extends TestPersistenceRepository {
   }
 
   @override
-  Future<void> saveAllSessions(List<PersistedPlaybackSession> sessions) async {}
+  Future<void> upsertSession(
+    PersistedPlaybackSession session, {
+    bool includeQueue = true,
+    bool includeEffects = true,
+  }) async {}
+
+  @override
+  Future<void> deleteSessions(List<String> sessionIds) async {}
 }
 
 class _BlockingDeletionTestPersistenceRepository

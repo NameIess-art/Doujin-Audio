@@ -345,6 +345,16 @@ abstract interface class NativePlaybackBridgeBase {
     NativeAudioEffects effects,
   );
 
+  Future<NativeResult<NativePlaybackSnapshot>> updateQueue(
+    String sessionId, {
+    required List<Map<String, Object?>> queue,
+    int? queueStartIndex,
+    int queueRevision = 0,
+    bool repeatOne = false,
+    bool repeatAll = false,
+    bool shuffle = false,
+  });
+
   Future<NativeResult<NativePlaybackSnapshot>> setFadeMultiplier(
     String sessionId,
     double multiplier,
@@ -713,6 +723,25 @@ class NativePlaybackBridge implements NativePlaybackBridgeBase {
       'effects': effects.toPlatformMap(),
     });
   }
+
+  @override
+  Future<NativeResult<NativePlaybackSnapshot>> updateQueue(
+    String sessionId, {
+    required List<Map<String, Object?>> queue,
+    int? queueStartIndex,
+    int queueRevision = 0,
+    bool repeatOne = false,
+    bool repeatAll = false,
+    bool shuffle = false,
+  }) => _invokeSnapshot(NativePlaybackMethod.updateQueue, {
+    'sessionId': sessionId,
+    'queue': queue,
+    'queueRevision': queueRevision,
+    if (queueStartIndex != null) 'queueStartIndex': queueStartIndex,
+    'repeatOne': repeatOne,
+    'repeatAll': repeatAll,
+    'shuffle': shuffle,
+  });
 
   @override
   Future<NativeResult<NativePlaybackSnapshot>> setFadeMultiplier(

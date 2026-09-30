@@ -1,31 +1,30 @@
 import 'dart:async';
 import 'dart:math';
 
+import 'package:flutter/foundation.dart' show compute;
 import 'package:path/path.dart' as path;
 
-import '../../core/immutable_collections.dart';
-import '../../core/logging/app_log_service.dart';
-import '../../core/media/music_track.dart';
-import '../../core/media/path_matcher.dart';
-import '../../features/asmr/application/asmr_api_service.dart';
-import '../../features/asmr/application/asmr_playback_cache_service.dart';
-import '../../features/library/application/library_facade.dart';
-import '../../features/player/application/native_playback_bridge.dart';
-import '../../features/player/application/native_playback_repository.dart';
-import '../../features/player/application/notification_facade.dart';
-import '../../features/player/application/playback_command_port.dart';
-import '../../features/player/application/playback_command_runner.dart';
-import '../../features/player/application/playback_facade.dart';
-import '../../features/player/application/playback_queue_resolver.dart';
-import '../../features/player/application/playback_session.dart';
-import '../../features/player/application/playback_subtitle_service.dart';
-import '../../features/player/application/timer_facade.dart';
-import '../../features/player/domain/audio_effects.dart';
-import '../../features/player/domain/playback_mode.dart';
-import '../../core/cache/app_cache_service.dart';
-import '../../features/settings/application/settings_repository.dart';
-import 'audio_path_coordinator.dart';
-import 'playback_keep_alive_coordinator.dart';
+import '../../../core/immutable_collections.dart';
+import '../../../core/logging/app_log_service.dart';
+import '../../../core/media/music_track.dart';
+import '../../../core/media/path_matcher.dart';
+import '../../../core/cache/app_cache_service.dart';
+import '../../asmr/domain/asmr_media_sources.dart';
+import '../domain/audio_effects.dart';
+import '../domain/playback_mode.dart';
+import '../domain/playback_library_catalog.dart';
+import '../domain/playback_track_cache.dart';
+import 'native_playback_bridge.dart';
+import 'native_playback_repository.dart';
+import 'notification_facade.dart';
+import 'playback_command_port.dart';
+import 'playback_command_runner.dart';
+import 'playback_facade.dart';
+import 'playback_queue_resolver.dart';
+import 'playback_session.dart';
+import 'playback_subtitle_service.dart' show PlaybackSubtitleService;
+import 'playback_track_resolver.dart';
+import 'timer_facade.dart';
 
 part 'playback_command_scope.dart';
 part 'playback_command_transport.dart';
@@ -43,15 +42,15 @@ typedef PlaybackNotificationSynchronizer =
 final class PlaybackCommandCoordinator
     implements NotificationPlaybackCommands, PlaybackCommandPort {
   PlaybackCommandCoordinator({
-    required LibraryFacade library,
+    required PlaybackLibraryCatalog library,
     required PlaybackFacade playback,
     required TimerFacade timer,
     required NotificationFacade notifications,
-    required SettingsRepository settings,
-    required AudioPathCoordinator audioPaths,
+    required bool Function() asmrPlaybackCacheEnabled,
+    required PlaybackTrackResolver audioPaths,
     required PlaybackSubtitleService subtitles,
-    required PlaybackKeepAliveCoordinator keepAlive,
-    required AsmrPlaybackCacheService asmrPlaybackCacheService,
+    required Future<bool> Function() activateAudioSession,
+    required PlaybackTrackCache asmrPlaybackCacheService,
     required void Function() notifyPlaybackChanged,
     required PlaybackNotificationSynchronizer syncNotificationState,
     Random? random,
@@ -59,24 +58,24 @@ final class PlaybackCommandCoordinator
        _playbackFacade = playback,
        _timerFacade = timer,
        _notificationFacade = notifications,
-       _settingsRepository = settings,
+       _asmrPlaybackCacheEnabled = asmrPlaybackCacheEnabled,
        _audioPathCoordinator = audioPaths,
        _subtitleService = subtitles,
-       _keepAliveCoordinator = keepAlive,
+       _activateAudioSession = activateAudioSession,
        _asmrPlaybackCacheService = asmrPlaybackCacheService,
        _notifyPlaybackChangedCallback = notifyPlaybackChanged,
        _syncNotificationStateCallback = syncNotificationState,
        _random = random ?? Random();
 
-  final LibraryFacade _libraryFacade;
+  final PlaybackLibraryCatalog _libraryFacade;
   final PlaybackFacade _playbackFacade;
   final TimerFacade _timerFacade;
   final NotificationFacade _notificationFacade;
-  final SettingsRepository _settingsRepository;
-  final AudioPathCoordinator _audioPathCoordinator;
+  final bool Function() _asmrPlaybackCacheEnabled;
+  final PlaybackTrackResolver _audioPathCoordinator;
   final PlaybackSubtitleService _subtitleService;
-  final PlaybackKeepAliveCoordinator _keepAliveCoordinator;
-  final AsmrPlaybackCacheService _asmrPlaybackCacheService;
+  final Future<bool> Function() _activateAudioSession;
+  final PlaybackTrackCache _asmrPlaybackCacheService;
   final void Function() _notifyPlaybackChangedCallback;
   final PlaybackNotificationSynchronizer _syncNotificationStateCallback;
   final Random _random;
@@ -88,44 +87,61 @@ final class PlaybackCommandCoordinator
       _playbackFacade.commandRunner;
   bool _isRegisteredSession(PlaybackSession session) =>
       _playbackFacade.isRegisteredSession(session);
-  List<String> get _sortedLibraryTrackPaths =>
-      _libraryFacade.sortedLibraryTrackPaths;
-  Map<String, List<MusicTrack>> get _tracksByGroup =>
-      _libraryFacade.tracksByGroup;
   List<PlaybackSession> get activeSessions => _playbackFacade.activeSessions;
 
-  Future<bool> _activateAudioSessionForPlayback() =>
-      _keepAliveCoordinator.activateAudioSession();
-  void _notifyPlaybackChanged() => _notifyPlaybackChangedCallback();
+  Future<bool> _activateAudioSessionForPlayback() => _activateAudioSession();
+  void _notifyPlaybackChanged([String? sessionId]) {
+    final session = sessionId == null ? null : _sessions[sessionId];
+    if (session != null) _syncActivePlaybackCacheLease(session);
+    _playbackFacade.publishSessionState(sessionId);
+    _notifyPlaybackChangedCallback();
+  }
+
   void _syncNotificationState({bool immediateUnifiedSync = false}) =>
       _syncNotificationStateCallback(
         immediateUnifiedSync: immediateUnifiedSync,
       );
 
-  CachePathLease? _activePlaybackCacheLease;
+  final Map<String, CachePathLease> _activePlaybackCacheLeases = {};
+  final Map<String, String> _activePlaybackCachePaths = {};
+
+  void releaseSessionResources(String sessionId) {
+    _activePlaybackCacheLeases.remove(sessionId)?.release();
+    _activePlaybackCachePaths.remove(sessionId);
+  }
 
   Future<void> dispose() async {
-    _activePlaybackCacheLease?.release();
-    _activePlaybackCacheLease = null;
+    for (final lease in _activePlaybackCacheLeases.values) {
+      lease.release();
+    }
+    _activePlaybackCacheLeases.clear();
+    _activePlaybackCachePaths.clear();
     await _asmrPlaybackCacheService.dispose();
   }
 
-  void _syncActivePlaybackCacheLease() {
-    final activePaths = _sessions.values
-        .where((session) => session.playbackRequested)
-        .map((session) => session.currentTrackPath)
-        .where((path) => path.isNotEmpty && !path.contains('://'))
-        .toSet();
-    _activePlaybackCacheLease?.release();
-    _activePlaybackCacheLease = activePaths.isNotEmpty
-        ? AppCacheService.protectPaths(activePaths)
+  void _syncActivePlaybackCacheLease(PlaybackSession session) {
+    final candidate = session.currentTrackPath;
+    final path =
+        session.playbackRequested &&
+            candidate.isNotEmpty &&
+            !candidate.contains('://')
+        ? candidate
         : null;
+    if (_activePlaybackCachePaths[session.id] == path) return;
+    _activePlaybackCacheLeases.remove(session.id)?.release();
+    _activePlaybackCachePaths.remove(session.id);
+    if (path != null) {
+      _activePlaybackCachePaths[session.id] = path;
+      _activePlaybackCacheLeases[session.id] = AppCacheService.protectPaths({
+        path,
+      });
+    }
   }
 
   String? resolvedPlaybackCoverPathForTrack(
     MusicTrack? track, {
     String? trackPath,
-  }) => _libraryFacade.coverArtworkCacheService.resolvedForPlaybackTrack(
+  }) => _libraryFacade.resolvedPlaybackCoverPathForTrack(
     track,
     trackPath: trackPath,
   );
@@ -249,7 +265,7 @@ final class PlaybackCommandCoordinator
   void handleNativeSnapshot(NativePlaybackSnapshot snapshot) =>
       _handleNativePlaybackSnapshot(snapshot);
 
-  List<Map<String, Object?>> nativePlaybackQueueFor(
+  Future<List<Map<String, Object?>>> nativePlaybackQueueFor(
     PlaybackSession session, {
     required String currentPath,
   }) => _nativePlaybackQueueFor(session, currentPath: currentPath);

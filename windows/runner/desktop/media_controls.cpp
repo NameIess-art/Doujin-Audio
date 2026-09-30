@@ -103,8 +103,11 @@ MediaControls::~MediaControls() {
   if (controls_) { controls_.ButtonPressed(button_token_); controls_.IsEnabled(false); }
 }
 void MediaControls::Clear() {
+  if (!controls_.IsEnabled() && !metadata_ready_) return;
   controls_.IsEnabled(false);
   controls_.DisplayUpdater().ClearAll();
+  metadata_ready_ = false;
+  title_.clear(); subtitle_.clear(); art_path_.clear();
   thumbnail_playing_ = false;
   UpdateThumbnailButtons();
 }
@@ -150,6 +153,8 @@ void MediaControls::UpdateThumbnailButtons() {
   const bool playing = enabled && thumbnail_playing_;
   const bool available[] = {enabled && controls_.IsPreviousEnabled(), enabled,
       enabled && controls_.IsNextEnabled()};
+  const std::array<bool, 4> next_state{playing, available[0], available[1], available[2]};
+  if (thumbnail_added_ && thumbnail_state_ == next_state) return;
   const wchar_t* tips[] = {L"Previous / 上一曲", playing ? L"Pause / 暂停" : L"Play / 播放", L"Next / 下一曲"};
   const UINT ids[] = {kControlId + 1, kControlId, kControlId + 2};
   THUMBBUTTON buttons[3]{};
@@ -163,7 +168,7 @@ void MediaControls::UpdateThumbnailButtons() {
   const auto result = thumbnail_added_
       ? taskbar_->ThumbBarUpdateButtons(window_, 3, buttons)
       : taskbar_->ThumbBarAddButtons(window_, 3, buttons);
-  if (SUCCEEDED(result)) thumbnail_added_ = true;
+  if (SUCCEEDED(result)) { thumbnail_added_ = true; thumbnail_state_ = next_state; }
   for (const auto& button : buttons) if (button.hIcon) DestroyIcon(button.hIcon);
 }
 void MediaControls::Update(const flutter::EncodableMap& payload) {
@@ -187,17 +192,24 @@ void MediaControls::Update(const flutter::EncodableMap& payload) {
       break;
     }
   }
-  controls_.IsEnabled(true);
-  controls_.IsNextEnabled(Flag(*selected,"hasNext"));
-  controls_.IsPreviousEnabled(Flag(*selected,"hasPrevious"));
-  controls_.PlaybackStatus(Flag(*selected,"playing") ? MediaPlaybackStatus::Playing : MediaPlaybackStatus::Paused);
+  if (!controls_.IsEnabled()) controls_.IsEnabled(true);
+  const bool next = Flag(*selected,"hasNext");
+  const bool previous = Flag(*selected,"hasPrevious");
+  if (controls_.IsNextEnabled() != next) controls_.IsNextEnabled(next);
+  if (controls_.IsPreviousEnabled() != previous) controls_.IsPreviousEnabled(previous);
+  const auto status = Flag(*selected,"playing") ? MediaPlaybackStatus::Playing : MediaPlaybackStatus::Paused;
+  if (controls_.PlaybackStatus() != status) controls_.PlaybackStatus(status);
   UpdateThumbnailButtons();
+  const auto title = Text(*selected,"title");
+  const auto subtitle = Text(*selected,"subtitle");
+  const auto art = Text(*selected,"artPath");
+  if (metadata_ready_ && title_ == title && subtitle_ == subtitle && art_path_ == art) return;
   auto updater = controls_.DisplayUpdater();
   updater.Type(MediaPlaybackType::Music);
-  updater.MusicProperties().Title(winrt::to_hstring(Text(*selected,"title")));
-  updater.MusicProperties().Artist(winrt::to_hstring(Text(*selected,"subtitle")));
-  const auto art = Text(*selected,"artPath");
-  if (!art.empty()) {
+  if (!metadata_ready_ || title_ != title) updater.MusicProperties().Title(winrt::to_hstring(title));
+  if (!metadata_ready_ || subtitle_ != subtitle) updater.MusicProperties().Artist(winrt::to_hstring(subtitle));
+  if (!metadata_ready_ || art_path_ != art) {
+    if (!art.empty()) {
     try {
       std::wstring uri = L"file:///";
       for (const auto c : winrt::to_hstring(art)) {
@@ -209,6 +221,8 @@ void MediaControls::Update(const flutter::EncodableMap& payload) {
       updater.Thumbnail(winrt::Windows::Storage::Streams::RandomAccessStreamReference::CreateFromUri(
           winrt::Windows::Foundation::Uri(uri)));
     } catch (const winrt::hresult_error&) { updater.Thumbnail(nullptr); }
-  } else { updater.Thumbnail(nullptr); }
+    } else { updater.Thumbnail(nullptr); }
+  }
   updater.Update();
+  title_ = title; subtitle_ = subtitle; art_path_ = art; metadata_ready_ = true;
 }

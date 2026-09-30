@@ -151,6 +151,24 @@ class NativePlaybackRepository {
     return _bridge.setAudioEffects(sessionId, effects);
   }
 
+  Future<NativeResult<NativePlaybackSnapshot>> updateQueue(
+    String sessionId, {
+    required List<Map<String, Object?>> queue,
+    int? queueStartIndex,
+    int queueRevision = 0,
+    bool repeatOne = false,
+    bool repeatAll = false,
+    bool shuffle = false,
+  }) => _bridge.updateQueue(
+    sessionId,
+    queue: queue,
+    queueStartIndex: queueStartIndex,
+    queueRevision: queueRevision,
+    repeatOne: repeatOne,
+    repeatAll: repeatAll,
+    shuffle: shuffle,
+  );
+
   Future<NativeResult<NativePlaybackSnapshot>> setFadeMultiplier(
     String sessionId,
     double multiplier,
@@ -176,6 +194,16 @@ class NativePlaybackRepository {
     return bridge is WindowsPlaybackBridge
         ? bridge.videoControllerForSession(sessionId)
         : null;
+  }
+
+  void acquireVideoSurface(String sessionId) {
+    final bridge = _bridge;
+    if (bridge is WindowsPlaybackBridge) bridge.acquireVideoSurface(sessionId);
+  }
+
+  void releaseVideoSurface(String sessionId) {
+    final bridge = _bridge;
+    if (bridge is WindowsPlaybackBridge) bridge.releaseVideoSurface(sessionId);
   }
 
   Future<NativeResult<void>> clearAll() => _bridge.clearAll();

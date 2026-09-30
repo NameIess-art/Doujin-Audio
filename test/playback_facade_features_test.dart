@@ -181,6 +181,11 @@ void main() {
       await runtimeGraph.playback.spawnSession(track, autoPlay: false);
       final session = runtimeGraph.playback.activeSessions.single;
 
+      await runtimeGraph.playbackCommands.prepareSession(
+        session,
+        nextPath: track.path,
+        autoPlay: false,
+      );
       await runtimeGraph.playback.setSessionSpeed(session.id, 1.6);
 
       expect(setSpeedCalls, 1);
@@ -254,6 +259,11 @@ void main() {
       );
       await runtimeGraph.playback.spawnSession(track, autoPlay: false);
       final session = runtimeGraph.playback.activeSessions.single;
+      await runtimeGraph.playbackCommands.prepareSession(
+        session,
+        nextPath: track.path,
+        autoPlay: false,
+      );
       session.applyNativeSnapshot(
         NativePlaybackSnapshot(
           sessionId: session.id,
@@ -525,9 +535,11 @@ void main() {
       );
       await runtimeGraph.playback.spawnSession(track, autoPlay: false);
       final session = runtimeGraph.playback.activeSessions.single;
-      for (var i = 0; i < 50 && session.loadedPath == null; i++) {
-        await Future<void>.delayed(const Duration(milliseconds: 10));
-      }
+      await runtimeGraph.playbackCommands.prepareSession(
+        session,
+        nextPath: track.path,
+        autoPlay: false,
+      );
 
       await runtimeGraph.playback.setSessionNoiseReduction(session.id, true);
 
@@ -932,6 +944,11 @@ void main() {
         );
         await runtimeGraph.playback.spawnSession(track, autoPlay: false);
         final session = runtimeGraph.playback.activeSessions.single;
+        await runtimeGraph.playbackCommands.prepareSession(
+          session,
+          nextPath: track.path,
+          autoPlay: false,
+        );
         expect(session.state.playing, isFalse);
 
         await runtimeGraph.playback.setSessionSkipSilence(session.id, true);
@@ -989,7 +1006,7 @@ void main() {
           firstTrack,
           secondTrack,
         ]);
-        await restoredRepository.saveAllSessions(<PersistedPlaybackSession>[
+        await restoredRepository.seedSessions(<PersistedPlaybackSession>[
           PersistedPlaybackSession(
             id: firstSessionId,
             trackPath: 'https://example.com/restored/first.mp3',
@@ -1102,22 +1119,15 @@ void main() {
           notificationService: notificationService,
           persistenceRepository: restoredRepository,
           skipPersistence: false,
-          startRuntime: true,
         );
         addTearDown(restoredGraph.runtime.dispose);
-
-        for (var i = 0; i < 100; i++) {
-          if (restoredGraph.playback.activeSessions.length == 2) {
-            break;
-          }
-          await Future<void>.delayed(const Duration(milliseconds: 20));
-        }
+        await restoredGraph.runtime.start();
 
         final secondSession = restoredGraph.playback.sessionById(
           secondSessionId,
         );
         expect(secondSession, isNotNull);
-        expect(firstDeferredPlayerCreation, isFalse);
+        expect(firstDeferredPlayerCreation, isTrue);
         expect(secondDeferredPlayerCreation, isTrue);
         expect(secondPrepareCalls, 1);
         expect(secondSession!.loadedPath, secondTrack.path);
@@ -1191,7 +1201,7 @@ void main() {
           database: AppDatabase.test(db),
         );
         await databaseRepository.saveAllTracks(<MusicTrack>[restoredTrack]);
-        await databaseRepository.saveAllSessions(<PersistedPlaybackSession>[
+        await databaseRepository.seedSessions(<PersistedPlaybackSession>[
           PersistedPlaybackSession(
             id: restoredSessionId,
             trackPath: 'https://example.com/reloaded.mp3',
@@ -1326,31 +1336,67 @@ void main() {
       );
     });
 
-    test('defers native preparation for a paused session', () async {
-      var prepareCallCount = 0;
-      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(nativePlaybackChannel, (call) async {
-            if (call.method == NativePlaybackMethod.prepareSession) {
-              prepareCallCount++;
-            }
-            return <String, Object?>{'ok': true, 'value': null};
-          });
+    test(
+      'cold paused console settings persist without native preparation',
+      () async {
+        runtimeGraph.playback.configurePersistence(enabled: true);
+        var prepareCallCount = 0;
+        final nativeConfigurationCalls = <String>[];
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(nativePlaybackChannel, (call) async {
+              if (call.method == NativePlaybackMethod.prepareSession) {
+                prepareCallCount++;
+              }
+              if (<String>[
+                NativePlaybackMethod.setVolume,
+                NativePlaybackMethod.setSpeed,
+                NativePlaybackMethod.setAudioEffects,
+              ].contains(call.method)) {
+                nativeConfigurationCalls.add(call.method);
+              }
+              return <String, Object?>{'ok': true, 'value': null};
+            });
 
-      await runtimeGraph.playback.spawnSession(
-        MusicTrack(
-          path: '/music/lazy-session.mp3',
-          displayName: 'Lazy Session',
-          groupKey: '/music',
-          groupTitle: 'Music',
-          groupSubtitle: '',
-          isSingle: true,
-        ),
-        autoPlay: false,
-      );
-      await runtimeGraph.playback.pendingSessionPreparation;
+        await runtimeGraph.playback.spawnSession(
+          MusicTrack(
+            path: '/music/lazy-session.mp3',
+            displayName: 'Lazy Session',
+            groupKey: '/music',
+            groupTitle: 'Music',
+            groupSubtitle: '',
+            isSingle: true,
+          ),
+          autoPlay: false,
+        );
+        await runtimeGraph.playback.pendingSessionPreparation;
+        final session = runtimeGraph.playback.activeSessions.single;
 
-      expect(prepareCallCount, 0);
-    });
+        await runtimeGraph.playback.setSessionVolume(
+          session.id,
+          0.6,
+          persist: false,
+        );
+        await runtimeGraph.playback.setSessionVolume(session.id, 0.6);
+        await runtimeGraph.playback.setSessionSpeed(session.id, 1.5);
+        await runtimeGraph.playback.setSessionSkipSilence(session.id, true);
+        await runtimeGraph.playback.setSessionNoiseReduction(session.id, true);
+        await runtimeGraph.playback.setSessionChannelSwap(session.id, true);
+
+        expect(prepareCallCount, 0);
+        expect(nativeConfigurationCalls, isEmpty);
+        expect(session.loadedPath, isNull);
+        expect(session.state.playing, isFalse);
+        expect(session.isLoading, isFalse);
+        final persisted = (await TestPersistenceRepository(
+          database: AppDatabase.test(db),
+        ).loadAllSessions()).single;
+        expect(persisted.volume, 0.6);
+        expect(persisted.speed, 1.5);
+        expect(persisted.audioEffects.skipSilenceEnabled, isTrue);
+        expect(persisted.audioEffects.noiseReductionEnabled, isTrue);
+        expect(persisted.channelSwapEnabled, isTrue);
+      },
+    );
 
     test('dismissing active playback keeps session playing', () async {
       final nativeCalls = <String>[];
@@ -1386,6 +1432,7 @@ void main() {
       session
         ..loadedPath = session.currentTrackPath
         ..setOptimisticState(playing: true);
+      runtimeGraph.playback.publishSessionState(session.id);
 
       await runtimeGraph.notifications.dismissAfterPauseAll();
 

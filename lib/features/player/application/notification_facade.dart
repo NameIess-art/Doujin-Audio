@@ -91,6 +91,11 @@ final class NotificationFacade {
   late CoverArtworkCacheService _coverArtworkCacheService;
   bool Function() _notificationsEnabledResolver = _alwaysFalse;
   bool _synchronizationAttached = false;
+  final Map<String, _NotificationSessionPresentation>
+  _notificationPresentations = <String, _NotificationSessionPresentation>{};
+  List<Map<String, dynamic>> _lastNotificationItems =
+      const <Map<String, dynamic>>[];
+  String? _lastNotificationMainSessionId;
 
   NotificationCoordinatorService get _notificationStateService => _stateService;
   PlaybackNotificationService get _notificationService => _service;
@@ -291,6 +296,7 @@ final class NotificationFacade {
       ..notificationActionRefreshPending = false;
     _stateService.notificationSubtitleTexts.clear();
     _stateService.notificationSubtitleTrackPaths.clear();
+    _notificationPresentations.clear();
     _subtitleService.clear();
     _coverArtworkCacheService.invalidateAll();
     await _clearUnifiedPlaybackNotificationsOnPlatform();
@@ -356,6 +362,9 @@ final class NotificationFacade {
   }
 
   void detachRuntime() {
+    _notificationPresentations.clear();
+    _lastNotificationItems = const <Map<String, dynamic>>[];
+    _lastNotificationMainSessionId = null;
     _playback = null;
     _resolveSession = _noopSessionResolver;
     _resolveActionSession = _noopActionSession;

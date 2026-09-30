@@ -1,9 +1,8 @@
 import '../../features/library/application/library_facade.dart';
 import '../../features/player/application/notification_facade.dart';
 import '../../features/player/application/playback_facade.dart';
-import '../../features/player/domain/playback_mode.dart';
 import '../../features/settings/application/settings_repository.dart';
-import 'playback_command_coordinator.dart';
+import '../../features/player/application/playback_command_coordinator.dart';
 import 'playback_keep_alive_coordinator.dart';
 import 'runtime_binding.dart';
 
@@ -40,6 +39,7 @@ final class PlaybackRuntimeBinding implements RuntimeBinding {
       },
       onSessionsRemoved: (sessions) {
         for (final session in sessions) {
+          playbackCommands.releaseSessionResources(session.id);
           notifications.clearSessionSubtitle(session.id);
           notifications.clearFocusIfMatches(session.id);
         }
@@ -77,36 +77,7 @@ final class PlaybackRuntimeBinding implements RuntimeBinding {
       playbackCommands.syncPlaybackQueueSession,
     );
     playback.attachCommandPort(playbackCommands);
-    playback.attachLoopModeSynchronizer((session, mode) async {
-      final nativeQueue = playbackCommands.nativePlaybackQueueFor(
-        session,
-        currentPath: session.currentTrackPath,
-      );
-      final result = await playback.nativeRepository.setRepeatOne(
-        session.id,
-        mode == SessionLoopMode.single,
-        queue: nativeQueue,
-        queueStartIndex: playbackCommands.nativePlaybackQueueStartIndexFor(
-          session,
-          currentPath: session.currentTrackPath,
-        ),
-        repeatAll: mode != SessionLoopMode.single && !mode.isOneShot,
-        shuffle: mode.isShuffle,
-      );
-      if (result.isOk) {
-        playback.updateNativeSessionRetainedContentUris(
-          session.id,
-          <Object?>[
-            session.currentTrackPath,
-            for (final item in nativeQueue) ...<Object?>[
-              item['path'],
-              item['uri'],
-              item['artUri'],
-            ],
-          ].whereType<String>(),
-        );
-      }
-    });
+    playback.attachLoopModeSynchronizer(playbackCommands.synchronizeLoopMode);
     final binding = PlaybackRuntimeBinding._(playback);
     _attached[playback] = binding;
     return binding;

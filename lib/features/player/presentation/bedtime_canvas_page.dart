@@ -75,9 +75,11 @@ class _BedtimeCanvasPageState extends ConsumerState<BedtimeCanvasPage>
             ..sort((a, b) => b.lastPlayedAt!.compareTo(a.lastPlayedAt!));
       if (withLastPlayed.isNotEmpty) {
         _targetSessionIds.add(withLastPlayed.first.id);
-      } else if (playback.state.focusedSessionId != null &&
-          playback.sessions.containsKey(playback.state.focusedSessionId)) {
-        _targetSessionIds.add(playback.state.focusedSessionId!);
+      } else if (playback.aggregateState.focusedSessionId != null &&
+          playback.sessions.containsKey(
+            playback.aggregateState.focusedSessionId,
+          )) {
+        _targetSessionIds.add(playback.aggregateState.focusedSessionId!);
       } else if (playback.activeSessions.isNotEmpty) {
         _targetSessionIds.add(playback.activeSessions.first.id);
       }
@@ -114,7 +116,7 @@ class _BedtimeCanvasPageState extends ConsumerState<BedtimeCanvasPage>
 
     final timer = ref.read(timerFacadeProvider);
     final isInitialActive =
-        playback.state.playingSessionCount > 0 ||
+        playback.aggregateState.playingSessionCount > 0 ||
         timer.hasArmedRuntime ||
         timer.state.stopAfterCurrentTrack;
     _updateKeepScreenOnState(isInitialActive);
@@ -240,7 +242,7 @@ class _BedtimeCanvasPageState extends ConsumerState<BedtimeCanvasPage>
     final playback = ref.read(playbackFacadeProvider);
     final timer = ref.read(timerFacadeProvider);
     final isAudioOrTimerActive =
-        playback.state.playingSessionCount > 0 ||
+        playback.aggregateState.playingSessionCount > 0 ||
         timer.hasArmedRuntime ||
         timer.state.stopAfterCurrentTrack;
     if (!isAudioOrTimerActive) {
@@ -297,7 +299,7 @@ class _BedtimeCanvasPageState extends ConsumerState<BedtimeCanvasPage>
       return [mostRecent];
     }
 
-    final focused = playback.state.focusedSessionId;
+    final focused = playback.aggregateState.focusedSessionId;
     if (focused != null && playback.sessions.containsKey(focused)) {
       final session = playback.sessions[focused]!;
       _targetSessionIds.add(session.id);

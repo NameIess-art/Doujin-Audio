@@ -4,7 +4,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../../app/presentation/app_presentation_providers.dart';
 import '../../../../app/state/app_runtime_providers.dart';
 import '../../../../app/theme/app_design_tokens.dart';
 import '../../../../core/widgets/app_bottom_sheet.dart';
@@ -46,13 +45,12 @@ class _PlaybackQueueEditPageState extends ConsumerState<PlaybackQueueEditPage> {
 
   @override
   Widget build(BuildContext context) {
-    final structure = ref.watch(playlistStructureUiProvider);
     final playback = ref.read(playbackFacadeProvider);
-    final session = structure.entries
-        .where((entry) => entry.sessionId == sessionId)
-        .firstOrNull
-        ?.session;
-    final queue = session?.playbackQueue;
+    final queue = ref.watch(
+      playbackSessionProvider(
+        sessionId,
+      ).select((session) => session?.playbackQueue),
+    );
     final i18n = ProviderScope.containerOf(
       context,
       listen: false,

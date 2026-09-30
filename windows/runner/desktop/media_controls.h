@@ -23,6 +23,9 @@ class MediaControls {
   Microsoft::WRL::ComPtr<ITaskbarList3> taskbar_;
   bool thumbnail_added_ = false;
   bool thumbnail_playing_ = false;
+  std::optional<std::array<bool, 4>> thumbnail_state_;
+  bool metadata_ready_ = false;
+  std::string title_, subtitle_, art_path_;
   std::array<bool, 4> hotkeys_{};
   winrt::Windows::Media::SystemMediaTransportControls controls_{nullptr};
   winrt::event_token button_token_{};

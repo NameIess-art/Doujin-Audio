@@ -1,3 +1,56 @@
+// CLI report output is intentional.
+// ignore_for_file: avoid_print
+
+import 'dart:convert';
+
 import 'package:integration_test/integration_test_driver.dart';
 
-Future<void> main() => integrationDriver();
+Future<void> main() => integrationDriver(
+  writeResponseOnFailure: true,
+  responseDataCallback: (data) async {
+    final report = data?['uiPerformance'];
+    await writeResponseData(
+      data,
+      testOutputFilename: report is Map && report['scenario'] == 'playback'
+          ? 'playback_profile_${report['runtime'] == 'Media3' ? 'android' : 'windows'}'
+          : 'integration_response_data',
+    );
+    if (report is! Map || report['scenario'] != 'playback') return;
+    print(
+      'PLAYBACK_BASELINE ${report['baseline']}; '
+      'pre-change profile available=${report['preChangeBaselineAvailable']}',
+    );
+    if (report['measurementStatus'] != 'complete') {
+      print(
+        'PLAYBACK_PROFILE incomplete: execution failed before all stages finished.',
+      );
+      return;
+    }
+    final gates = report['gates'];
+    if (gates is! Map || gates['measurementValid'] != true) {
+      print(
+        'PLAYBACK_PROFILE unverified: a complete Profile-mode frame sample is required.',
+      );
+      return;
+    }
+    print(
+      'PLAYBACK_PROFILE ${gates['allTargetsPassed'] == true ? 'PASS' : 'FAIL'}',
+    );
+    print(
+      'PLAYBACK_BASELINE_BUDGET ${gates['baselineWithinBudget'] == true ? 'PASS' : 'OVER_BUDGET'}',
+    );
+    print(
+      'PLAYBACK_IDLE_INCREMENT ${gates['idleSessionIncrementWithinBudget'] == true ? 'PASS' : 'REGRESSION'}',
+    );
+    print(
+      'PLAYBACK_ALL_STAGE_BUDGET ${gates['allStagesWithinBudget'] == true ? 'PASS' : 'OVER_BUDGET'}',
+    );
+    print(
+      'PLAYBACK_NEXT_FRAME_FEEDBACK ${gates['nextFrameIntentFeedbackObserved'] == true ? 'PASS' : 'FAIL'}',
+    );
+    print(
+      'PLAYBACK_IDLE_60_SECONDS ${gates['idle60SecondsSilent'] == true ? 'PASS' : 'FAIL'}',
+    );
+    print('PLAYBACK_PERFORMANCE_GATES ${jsonEncode(gates)}');
+  },
+);

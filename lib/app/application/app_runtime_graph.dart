@@ -32,6 +32,7 @@ import '../../features/asmr/application/asmr_playback_cache_service.dart';
 import '../../features/library/application/library_facade.dart';
 import '../../features/player/application/notification_facade.dart';
 import '../../features/player/application/playback_facade.dart';
+import '../../features/player/domain/playback_track_cache.dart';
 import '../../features/player/application/playback_subtitle_service.dart';
 import '../../features/player/application/timer_facade.dart';
 import '../../features/settings/application/settings_repository.dart';
@@ -43,7 +44,7 @@ import 'audio_path_coordinator.dart';
 import 'audio_ui_warmup_coordinator.dart';
 import 'library_runtime_binding.dart';
 import 'notification_runtime_binding.dart';
-import 'playback_command_coordinator.dart';
+import '../../features/player/application/playback_command_coordinator.dart';
 import 'playback_keep_alive_coordinator.dart';
 import 'playback_runtime_binding.dart';
 import 'persisted_uri_permission_coordinator.dart';
@@ -85,7 +86,7 @@ AppRuntimeGraph createAppRuntimeGraph({
   required NotificationFacade notifications,
   required SettingsRepository settings,
   AsmrDownloadManager? asmrDownloads,
-  AsmrPlaybackCacheService? asmrPlaybackCacheService,
+  PlaybackTrackCache? asmrPlaybackCacheService,
   FileCachePlatformGateway? fileCacheGateway,
   bool persistenceEnabled = true,
 }) {
@@ -116,6 +117,7 @@ AppRuntimeGraph createAppRuntimeGraph({
     playback.syncPresentationState(
       focusedSessionId: notifications.focusedSessionId,
       coverGeneration: library.coverArtworkCacheService.generation,
+      refreshSessions: false,
     );
     notifications.syncPresentationState(
       activeQueueLength: playback.activeSessions.length,
@@ -142,10 +144,10 @@ AppRuntimeGraph createAppRuntimeGraph({
     playback: playback,
     timer: timer,
     notifications: notifications,
-    settings: settings,
+    asmrPlaybackCacheEnabled: () => settings.asmrPlaybackCacheEnabled,
     audioPaths: audioPaths,
     subtitles: subtitles,
-    keepAlive: keepAlive,
+    activateAudioSession: keepAlive.activateAudioSession,
     asmrPlaybackCacheService:
         asmrPlaybackCacheService ?? AsmrPlaybackCacheService(),
     notifyPlaybackChanged: syncPlaybackState,
@@ -160,7 +162,6 @@ AppRuntimeGraph createAppRuntimeGraph({
       playback: playback,
       notifications: notifications,
       syncLibraryState: syncLibraryState,
-      syncPlaybackState: syncPlaybackState,
       preferEmbeddedCover: () => settings.preferEmbeddedCover,
     ),
     PlaybackRuntimeBinding.attach(

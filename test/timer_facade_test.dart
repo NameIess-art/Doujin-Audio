@@ -248,6 +248,36 @@ void main() {
       await _expectPersistedGeneration(newGeneration);
     });
 
+    test('auto resume preserves a native audio-focus retry', () async {
+      final retryAt = DateTime.now().add(const Duration(seconds: 30));
+      final platform = _ControlledPowerPlatformService()
+        ..autoResumeResult.complete(TimerExecutionResult.executed)
+        ..nativeRuntime.complete(<String, Object?>{
+          'generation': 7,
+          'autoResumeEnabled': true,
+          'autoResumeAtMs': retryAt.millisecondsSinceEpoch,
+          'pausedSessionIds': ['session-a'],
+        });
+      final timerService = TimerService()
+        ..timerGeneration = 7
+        ..autoResumeAt = DateTime.now().subtract(const Duration(seconds: 1))
+        ..pausedByTimerSessionIds.add('session-a');
+      final timer = _createTimer(timerService, platform);
+
+      timer.retryOverdueAutoResume();
+      await platform.nativeRuntimeReadStarted.future;
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      expect(timerService.timerGeneration, 7);
+      expect(
+        timerService.autoResumeAt?.millisecondsSinceEpoch,
+        retryAt.millisecondsSinceEpoch,
+      );
+      expect(timerService.pausedByTimerSessionIds, ['session-a']);
+      expect(timerService.autoResumeTimer?.isActive, true);
+      await _expectPersistedGeneration(7);
+    });
+
     test('expiry ignores a late native runtime', () async {
       final platform = _ControlledPowerPlatformService()
         ..expiryResult.complete(TimerExecutionResult.executed);

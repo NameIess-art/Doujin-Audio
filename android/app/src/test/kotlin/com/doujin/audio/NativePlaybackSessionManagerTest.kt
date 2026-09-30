@@ -8,6 +8,24 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class NativePlaybackSessionManagerTest {
+    @Test
+    fun `progress observes active sessions without retaining idle entries`() {
+        val manager = NativePlaybackSessionManager(::createTestSession)
+        repeat(100) { manager.getOrCreate("idle-$it").snapshot() }
+        assertFalse(manager.hasProgressSessions)
+        assertTrue(manager.progressAnchors().isEmpty())
+        val active = manager.getOrCreate("active")
+        active.lastPlayWhenReady = true
+        active.snapshot()
+        manager.updateProgressSession("active")
+        assertEquals(listOf("active"), manager.progressAnchors().map { it.sessionId })
+        active.lastPlayWhenReady = false
+        active.snapshot()
+        manager.updateProgressSession("active")
+        assertFalse(manager.hasProgressSessions)
+        assertTrue(manager.progressAnchorsMap().isEmpty())
+    }
+
 
     private fun createTestSession(sessionId: String): NativePlaybackSession {
         return NativePlaybackSession(

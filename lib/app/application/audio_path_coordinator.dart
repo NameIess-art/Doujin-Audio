@@ -22,6 +22,7 @@ final class AudioPathCoordinator implements PlaybackTrackResolver {
 
   LibraryFacade get library => _library;
 
+  @override
   MusicTrack? trackByPath(
     String trackPath, {
     bool includeLibraryFallback = true,
@@ -95,6 +96,7 @@ final class AudioPathCoordinator implements PlaybackTrackResolver {
     return const <MusicTrack>[];
   }
 
+  @override
   List<MusicTrack> tracksInSameWork(String trackPath) =>
       _tracksInSameWork(trackPath);
 
@@ -203,6 +205,7 @@ final class AudioPathCoordinator implements PlaybackTrackResolver {
     return tracksInSameWork(session.currentTrackPath);
   }
 
+  @override
   String? workRootForTrack(String trackPath) {
     final track = trackByPath(trackPath);
     if (track == null ||
@@ -234,6 +237,7 @@ final class AudioPathCoordinator implements PlaybackTrackResolver {
     return root == null ? '' : PathDisplay.folderName(root);
   }
 
+  @override
   String workTitleForTrack(MusicTrack track) {
     if (track.isRemoteAsmr) {
       final remoteTitle = track.remoteMetadata?['workTitle'] as String?;

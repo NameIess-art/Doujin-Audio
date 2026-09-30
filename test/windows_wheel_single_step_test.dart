@@ -121,8 +121,11 @@ void main() {
             volume: 1,
             createdAt: DateTime(2026),
             state: const PlayerState(false, ProcessingState.ready),
-          )..speed = 1.0;
+          )
+            ..loadedPath = '/track.mp3'
+            ..speed = 1.0;
 
+          session.loadedPath = session.currentTrackPath;
           fixture.playbackService.registerSession(session);
           fixture.playbackService.syncSlice(
             activeSessions: [session],
@@ -258,6 +261,7 @@ void main() {
             createdAt: DateTime(2026),
             state: const PlayerState(false, ProcessingState.ready),
           );
+          session.loadedPath = session.currentTrackPath;
           fixture.playbackService.registerSession(session);
           fixture.playbackService.syncSlice(
             activeSessions: [session],
@@ -359,8 +363,11 @@ void main() {
           volume: 1,
           createdAt: DateTime(2026),
           state: const PlayerState(false, ProcessingState.ready),
-        )..speed = 1.0;
-        fixture.playbackService.registerSession(session);
+        )
+            ..loadedPath = '/track.mp3'
+            ..speed = 1.0;
+        session.loadedPath = session.currentTrackPath;
+          fixture.playbackService.registerSession(session);
         fixture.playbackService.syncSlice(
           activeSessions: [session],
           playingSessionCount: 0,

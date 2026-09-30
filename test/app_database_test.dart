@@ -837,7 +837,7 @@ void main() {
   );
 
   test('sessions preserve direct playback identity', () async {
-    await repository.saveAllSessions(<PersistedPlaybackSession>[
+    await repository.seedSessions(<PersistedPlaybackSession>[
       PersistedPlaybackSession(
         id: 'direct',
         trackPath: '/tracks/direct.mp3',
@@ -876,7 +876,7 @@ void main() {
       },
     );
 
-    await repository.saveAllSessions(<PersistedPlaybackSession>[
+    await repository.seedSessions(<PersistedPlaybackSession>[
       PersistedPlaybackSession(
         id: 'session_1',
         trackPath: 'https://example.com/track.mp3',
@@ -944,7 +944,7 @@ void main() {
         ],
       );
 
-      await repository.saveAllSessions(<PersistedPlaybackSession>[
+      await repository.seedSessions(<PersistedPlaybackSession>[
         PersistedPlaybackSession(
           id: 'queue_1',
           trackPath: track.path,
@@ -1028,7 +1028,7 @@ void main() {
         ],
       );
 
-      await repository.saveAllSessions(<PersistedPlaybackSession>[
+      await repository.seedSessions(<PersistedPlaybackSession>[
         PersistedPlaybackSession(
           id: 'session_b',
           trackPath: '/library/work-b/01.mp3',
@@ -1118,8 +1118,195 @@ void main() {
     },
   );
 
+  test(
+    'upsertSession preserves unrelated sessions and skipped queue and effects',
+    () async {
+      final first = _playbackSession('a');
+      final second = _playbackSession('b');
+      await repository.seedSessions([first, second]);
+      final beforeA = await _sessionTableRows(db, 'a');
+      final beforeB = await _sessionTableRows(db, 'b');
+      await _forbidSessionWrites(db, 'b', _sessionTables);
+      await _forbidSessionWrites(db, 'a', _sessionTables.skip(2));
+
+      final update = _playbackSession(
+        'a',
+        positionMs: 6400,
+        volume: 0.4,
+        queue: _UnreadQueue(),
+        customTracks: _UnreadTracks(),
+      );
+      await repository.upsertSession(
+        update,
+        includeQueue: false,
+        includeEffects: false,
+      );
+      await repository.upsertSessionPlaybackState(update);
+
+      final afterA = await _sessionTableRows(db, 'a');
+      expect(await _sessionTableRows(db, 'b'), beforeB);
+      for (final table in _sessionTables.skip(2)) {
+        expect(afterA[table], beforeA[table], reason: table);
+      }
+      final restored = (await repository.loadAllSessions()).singleWhere(
+        (session) => session.id == 'a',
+      );
+      expect(restored.positionMs, 6400);
+      expect(restored.volume, 0.4);
+      expect(restored.playbackQueue?.entries.single.tracks, hasLength(2));
+      expect(restored.audioEffects.eqBandLevels, {1000: 2.5});
+    },
+  );
+
+  test(
+    'single session upsert replaces its queue and effects with duplicate positions intact',
+    () async {
+      await repository.upsertSession(_playbackSession('a'));
+      await repository.upsertSession(_playbackSession('b'));
+      final beforeB = await _sessionTableRows(db, 'b');
+      await _forbidSessionWrites(db, 'b', _sessionTables);
+      final replacement = _playbackSession(
+        'a',
+        queue: PlaybackQueueDefinition(
+          name: 'Updated queue',
+          entries: [
+            PlaybackQueueEntry(
+              id: 'replacement',
+              kind: PlaybackQueueEntryKind.track,
+              title: 'Repeated track',
+              tracks: [_playbackTrack('new'), _playbackTrack('new')],
+            ),
+          ],
+        ),
+        effects: AudioEffectsState(
+          eqEnabled: true,
+          eqBandLevels: const {400: -2},
+          noiseReductionEnabled: true,
+        ),
+      );
+      await repository.upsertSession(replacement);
+
+      final restored = (await repository.loadAllSessions()).singleWhere(
+        (session) => session.id == 'a',
+      );
+      expect(restored.playbackQueue?.name, 'Updated queue');
+      expect(restored.playbackQueue?.entries.single.id, 'replacement');
+      expect(
+        restored.playbackQueue?.entries.single.tracks.map(
+          (track) => track.path,
+        ),
+        ['/playback/new.mp3', '/playback/new.mp3'],
+      );
+      expect(restored.currentQueueIndex, 1);
+      expect(restored.audioEffects.eqBandLevels, {400: -2});
+      expect(restored.audioEffects.noiseReductionEnabled, true);
+      expect(await _sessionTableRows(db, 'b'), beforeB);
+    },
+  );
+
+  test(
+    'removed current occurrence survives queue persistence and clears after advance',
+    () async {
+      final repeated = _playbackTrack('repeated');
+      final removed = repeated.copyWith(
+        remoteCoverUrl: 'https://example.com/removed.jpg',
+      );
+      final queue = PlaybackQueueDefinition(
+        name: 'Retained playback',
+        entries: [
+          PlaybackQueueEntry(
+            id: 'remaining',
+            kind: PlaybackQueueEntryKind.track,
+            title: 'Remaining occurrence',
+            tracks: [repeated],
+          ),
+        ],
+      );
+      PersistedPlaybackSession record({required bool detached}) =>
+          PersistedPlaybackSession(
+            id: 'detached',
+            trackPath: repeated.path,
+            loopModeIndex: 1,
+            volume: 1,
+            positionMs: 4200,
+            durationMs: 9000,
+            customQueueTracks: detached ? [removed, repeated] : [repeated],
+            playbackQueue: queue,
+            channelSwapEnabled: false,
+            sortOrder: 0,
+          );
+
+      await repository.upsertSession(record(detached: true));
+      final restored = (await repository.loadAllSessions()).single;
+      expect(restored.customQueueTracks?.map((track) => track.remoteCoverUrl), [
+        'https://example.com/removed.jpg',
+        repeated.remoteCoverUrl,
+      ]);
+      expect(restored.playbackQueue?.entries.single.tracks.length, 1);
+      expect(restored.positionMs, 4200);
+
+      await repository.upsertSession(record(detached: false));
+      final advanced = (await repository.loadAllSessions()).single;
+      expect(advanced.customQueueTracks, isNull);
+      expect(advanced.playbackQueue?.expandedTracks.single.path, repeated.path);
+      expect(
+        await db.query(
+          'playback_queue_entry_tracks',
+          where: 'entry_id = ?',
+          whereArgs: ['__custom_queue__'],
+        ),
+        isEmpty,
+      );
+    },
+  );
+
+  test(
+    'single session upsert rolls back all tables when queue persistence fails',
+    () async {
+      await repository.seedSessions([
+        _playbackSession('a'),
+        _playbackSession('b'),
+      ]);
+      final beforeA = await _sessionTableRows(db, 'a');
+      final beforeB = await _sessionTableRows(db, 'b');
+      await db.execute('''
+      CREATE TEMP TRIGGER reject_queue_write BEFORE INSERT ON playback_queue_entry_tracks
+      WHEN NEW.session_id = 'a'
+      BEGIN SELECT RAISE(ABORT, 'queue persistence failed'); END
+    ''');
+
+      await expectLater(
+        repository.upsertSession(
+          _playbackSession('a', positionMs: 9500, volume: 0.2),
+        ),
+        throwsA(isA<DatabaseException>()),
+      );
+      expect(await _sessionTableRows(db, 'a'), beforeA);
+      expect(await _sessionTableRows(db, 'b'), beforeB);
+    },
+  );
+
+  test(
+    'deleteSessions removes only target session rows and safely ignores unknown ids',
+    () async {
+      await repository.seedSessions([
+        _playbackSession('a'),
+        _playbackSession('b'),
+      ]);
+      final beforeB = await _sessionTableRows(db, 'b');
+      await _forbidSessionWrites(db, 'b', _sessionTables);
+
+      await repository.deleteSessions(['a', 'missing']);
+      await repository.deleteSessions(const []);
+      final deleted = await _sessionTableRows(db, 'a');
+      expect(deleted.values, everyElement(isEmpty));
+      expect(await _sessionTableRows(db, 'b'), beforeB);
+      expect((await repository.loadAllSessions()).single.id, 'b');
+    },
+  );
+
   test('updateSessionOrder only changes session sort order', () async {
-    await repository.saveAllSessions(<PersistedPlaybackSession>[
+    await repository.seedSessions(<PersistedPlaybackSession>[
       PersistedPlaybackSession(
         id: 'session_1',
         trackPath: '/library/a.mp3',
@@ -1190,7 +1377,7 @@ void main() {
         ],
       );
 
-      await repository.saveAllSessions(<PersistedPlaybackSession>[
+      await repository.seedSessions(<PersistedPlaybackSession>[
         PersistedPlaybackSession(
           id: 'queue_1',
           trackPath: firstTrack.path,
@@ -1457,3 +1644,97 @@ AsmrWork _asmrWork(
     isFavorite: isFavorite,
   );
 }
+
+const _sessionTables = [
+  'sessions',
+  'session_playback_state',
+  'session_audio_effects',
+  'session_eq_bands',
+  'playback_queues',
+  'playback_queue_entries',
+  'playback_queue_entry_tracks',
+];
+
+MusicTrack _playbackTrack(String id) => MusicTrack(
+  path: '/playback/$id.mp3',
+  displayName: id,
+  groupKey: '/playback',
+  groupTitle: 'Playback',
+  groupSubtitle: '',
+  isSingle: true,
+);
+
+PersistedPlaybackSession _playbackSession(
+  String id, {
+  int positionMs = 1200,
+  double volume = 0.8,
+  PlaybackQueueDefinition? queue,
+  List<MusicTrack>? customTracks,
+  AudioEffectsState? effects,
+}) => PersistedPlaybackSession(
+  id: id,
+  trackPath: '/playback/$id.mp3',
+  loopModeIndex: 1,
+  volume: volume,
+  speed: 1.2,
+  positionMs: positionMs,
+  durationMs: 10000,
+  customQueueTracks: customTracks,
+  playbackQueue:
+      queue ??
+      PlaybackQueueDefinition(
+        name: 'Queue $id',
+        entries: [
+          PlaybackQueueEntry(
+            id: 'entry_$id',
+            kind: PlaybackQueueEntryKind.track,
+            title: id,
+            tracks: [_playbackTrack(id), _playbackTrack(id)],
+          ),
+        ],
+      ),
+  currentQueueIndex: 1,
+  channelSwapEnabled: true,
+  audioEffects:
+      effects ??
+      AudioEffectsState(
+        eqEnabled: true,
+        eqBandLevels: const {1000: 2.5},
+        panning: 0.3,
+      ),
+  sortOrder: id == 'b' ? 1 : 0,
+  createdAtMs: 1000,
+);
+
+Future<Map<String, List<Map<String, Object?>>>> _sessionTableRows(
+  Database db,
+  String id,
+) async => {
+  for (final table in _sessionTables)
+    table: await db.rawQuery(
+      'SELECT rowid, * FROM $table WHERE ${table == 'sessions' ? 'id' : 'session_id'} = ? ORDER BY rowid',
+      [id],
+    ),
+};
+
+Future<void> _forbidSessionWrites(
+  Database db,
+  String id,
+  Iterable<String> tables,
+) async {
+  for (final table in tables) {
+    final column = table == 'sessions' ? 'id' : 'session_id';
+    for (final operation in ['INSERT', 'UPDATE', 'DELETE']) {
+      final row = operation == 'DELETE' ? 'OLD' : 'NEW';
+      await db.execute('''
+        CREATE TEMP TRIGGER guard_${id}_${table}_$operation BEFORE $operation ON $table
+        WHEN $row.$column = '$id'
+        BEGIN SELECT RAISE(ABORT, 'protected session row'); END
+      ''');
+    }
+  }
+}
+
+class _UnreadQueue extends Fake implements PlaybackQueueDefinition {}
+
+class _UnreadTracks extends Fake implements List<MusicTrack> {}

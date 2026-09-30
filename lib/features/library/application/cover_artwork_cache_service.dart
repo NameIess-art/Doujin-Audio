@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as path;
 
 import '../../../core/media/music_track.dart';
+import '../../../core/state/audio_state_slice.dart';
 import '../../../core/media/audio_detail.dart';
 import '../../../core/logging/app_log_service.dart';
 import '../../../core/media/media_file_support.dart';
@@ -114,6 +115,8 @@ class CoverArtworkCacheService {
   final Map<String, int> _coverKeyRevisions = <String, int>{};
   Future<void>? _folderCoverSelectionsLoadFuture;
   int _generation = 0;
+  final _generationSlice = AudioStateSlice<int>(0);
+  Stream<int> get generationChanges => _generationSlice.stream;
   bool _disposed = false;
   Future<int>? _clearPersistentCacheFuture;
   bool _isClearingPersistentCache = false;
@@ -677,6 +680,7 @@ class CoverArtworkCacheService {
       ]),
     );
     _generation++;
+    _generationSlice.update(_generation);
     _coverKeyRevisions.clear();
     _advanceCoverKeyRevision(normalizedScope);
     _advanceTrackCoverRevisionsInScope(normalizedScope);
@@ -707,6 +711,7 @@ class CoverArtworkCacheService {
       return;
     }
     _generation++;
+    _generationSlice.update(_generation);
     _coverKeyRevisions.clear();
     _manualCoverPathValidityCache.clear();
     _manualCoverValidationFutures.clear();
@@ -746,6 +751,7 @@ class CoverArtworkCacheService {
 
   void invalidateAll() {
     _generation++;
+    _generationSlice.update(_generation);
     _coverKeyRevisions.clear();
     _sourceResolver.invalidateAll();
     _folderCoverFutures.clear();
@@ -1566,6 +1572,7 @@ class CoverArtworkCacheService {
     if (_disposed) return;
     _disposed = true;
     _remoteDownloads.dispose();
+    await _generationSlice.dispose();
     _remoteCoverFutures.clear();
     _resolvedRemoteCoverFutures.clear();
     _resolvedRemoteCovers.clear();

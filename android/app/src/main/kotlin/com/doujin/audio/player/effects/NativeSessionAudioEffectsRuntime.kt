@@ -23,6 +23,8 @@ internal class NativeSessionAudioEffectsRuntime(
     private var equalizer: Equalizer? = null
     private var equalizerSessionId: Int = C.AUDIO_SESSION_ID_UNSET
     private var equalizerCreateFailed = false
+    private var capabilitiesEqualizer: Equalizer? = null
+    private var cachedEqCapabilities: Map<String, Any?> = mapOf("supported" to false)
     private var dynamicsProcessing: DynamicsProcessing? = null
     private var dynamicsProcessingSessionId: Int = C.AUDIO_SESSION_ID_UNSET
 
@@ -77,7 +79,13 @@ internal class NativeSessionAudioEffectsRuntime(
 
     fun snapshot(): Map<String, Any?> = controller.snapshot()
 
-    fun eqCapabilitiesSnapshot(): Map<String, Any?> = buildEqCapabilitiesSnapshot()
+    fun eqCapabilitiesSnapshot(): Map<String, Any?> {
+        if (capabilitiesEqualizer !== equalizer) {
+            capabilitiesEqualizer = equalizer
+            cachedEqCapabilities = buildEqCapabilitiesSnapshot()
+        }
+        return cachedEqCapabilities
+    }
 
     fun release() {
         releaseLoudnessEnhancer()

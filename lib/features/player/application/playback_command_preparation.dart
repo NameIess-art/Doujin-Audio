@@ -49,6 +49,63 @@ class _NativePreparationResult {
   final String? error;
 }
 
+typedef _NativeQueueTrack = ({
+  String path,
+  MusicTrack? track,
+  String? coverPath,
+});
+
+List<Map<String, Object?>> _buildNativePlaybackQueue(
+  List<_NativeQueueTrack> tracks,
+) => List<Map<String, Object?>>.unmodifiable(
+  tracks.map((descriptor) {
+    final track = descriptor.track;
+    final artUri = descriptor.coverPath == null
+        ? track?.remoteCoverUrl
+        : Uri.file(descriptor.coverPath!).toString();
+    final candidates = _candidatePlaybackUris(track);
+    return <String, Object?>{
+      'path': descriptor.path,
+      'uri':
+          PathMatcher.isContentUri(descriptor.path) ||
+              PathMatcher.isRemoteUri(descriptor.path)
+          ? descriptor.path
+          : Uri.file(descriptor.path).toString(),
+      'title':
+          track?.displayName ?? path.basenameWithoutExtension(descriptor.path),
+      if (track != null) 'subtitle': track.groupTitle,
+      if (artUri != null && artUri.isNotEmpty) 'artUri': artUri,
+      if (candidates != null)
+        'candidateUris': candidates
+            .map((uri) => uri.toString())
+            .toList(growable: false),
+    };
+  }),
+);
+
+List<Uri>? _candidatePlaybackUris(MusicTrack? track) {
+  if (track?.isRemoteAsmr != true) return null;
+  final raw = track?.remoteMetadata?['playbackUrls'];
+  if (raw is! List) return null;
+  final candidates = raw
+      .whereType<String>()
+      .map((value) => Uri.tryParse(value.trim()))
+      .whereType<Uri>()
+      .where((uri) => uri.scheme == 'http' || uri.scheme == 'https')
+      .expand<Uri>((uri) {
+        final host = uri.host.toLowerCase();
+        if (!isAsmrApiHost(host)) return <Uri>[uri];
+        return asmrApiDomains.map(
+          (domain) => Uri.parse(
+            domain,
+          ).replace(path: uri.path, query: uri.hasQuery ? uri.query : null),
+        );
+      })
+      .toSet()
+      .toList(growable: false);
+  return candidates.isEmpty ? null : candidates;
+}
+
 extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
   Future<bool> _prepareAndPlay(
     PlaybackSession session, {
@@ -70,7 +127,7 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
       autoPlay: autoPlay,
     );
     final generation = preparation.generation;
-    if (preparation.changed) _notifyPlaybackChanged();
+    if (preparation.changed) _notifyPlaybackChanged(session.id);
 
     var prepared = false;
     String? preparationError;
@@ -192,10 +249,12 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
         );
         _syncNotificationState();
         if (prepared || preparationError != null) {
-          _playbackFacade.scheduleSessionStatePersistence();
+          _playbackFacade.scheduleSessionStatePersistence(
+            sessionId: session.id,
+          );
         }
         if (showLoading || wasLoading) {
-          _notifyPlaybackChanged();
+          _notifyPlaybackChanged(session.id);
         }
       }
     }
@@ -310,8 +369,8 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
     } else if (forceStartAtZero) {
       session.setOptimisticPosition(target.startPosition);
     }
-    _playbackFacade.markSessionStateDirty();
-    _notifyPlaybackChanged();
+    _playbackFacade.markSessionStateDirty(session.id);
+    _notifyPlaybackChanged(session.id);
   }
 
   Future<_NativePreparationResult> _prepareNativeTrackWithRetry(
@@ -335,10 +394,15 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
           );
         }
       }
-      final nativeQueue = _nativePlaybackQueueFor(
+      final nativeQueue = await _nativePlaybackQueueFor(
         session,
         currentPath: target.resolvedPath,
       );
+      if (!_isSessionLoadCurrent(session, generation)) {
+        return const _NativePreparationResult.failure(
+          'Playback preparation was superseded.',
+        );
+      }
       final result = await _nativePlaybackRepository.prepareSession(
         sessionId: session.id,
         isTemporary: session.isTemporary,
@@ -459,39 +523,14 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
     }
   }
 
-  List<Uri>? _candidatePlaybackUrisForTrack(MusicTrack? track) {
-    if (track?.isRemoteAsmr != true) return null;
-    final raw = track?.remoteMetadata?['playbackUrls'];
-    if (raw is! List) return null;
-    final candidates = raw
-        .whereType<String>()
-        .map((value) => Uri.tryParse(value.trim()))
-        .whereType<Uri>()
-        .where((uri) => uri.scheme == 'http' || uri.scheme == 'https')
-        .expand<Uri>((uri) {
-          final host = uri.host.toLowerCase();
-          final isAsmrOne =
-              host == 'api.asmr.one' ||
-              host == 'api.asmr-100.com' ||
-              host == 'api.asmr-200.com' ||
-              host == 'api.asmr-300.com';
-          if (!isAsmrOne) return <Uri>[uri];
-          return AsmrApiService.defaultDomains.map(
-            (domain) => Uri.parse(
-              domain,
-            ).replace(path: uri.path, query: uri.hasQuery ? uri.query : null),
-          );
-        })
-        .toSet()
-        .toList(growable: false);
-    return candidates.isEmpty ? null : candidates;
-  }
+  List<Uri>? _candidatePlaybackUrisForTrack(MusicTrack? track) =>
+      _candidatePlaybackUris(track);
 
   Future<void> _cacheAsmrPlaybackTrack(
     MusicTrack? track, {
     required String playedPath,
   }) async {
-    if (!_settingsRepository.asmrPlaybackCacheEnabled ||
+    if (!_asmrPlaybackCacheEnabled() ||
         track == null ||
         !track.isRemoteAsmr ||
         !PathMatcher.isRemoteUri(track.path) ||
@@ -506,30 +545,51 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
     _playbackFacade.rememberRetargetedPath(track.path, cachedPath);
   }
 
-  List<Map<String, Object?>> _nativePlaybackQueueFor(
+  Future<List<Map<String, Object?>>> _nativePlaybackQueueFor(
     PlaybackSession session, {
     required String currentPath,
-  }) {
+  }) async {
+    final cacheKey = Object.hash(
+      _playbackQueueScopeKey(session, currentPath),
+      _libraryFacade.contentRevision,
+      _libraryFacade.coverGeneration,
+    );
+    final cached = session.nativePlaybackQueueCache;
+    if (session.nativePlaybackQueueCacheKey == cacheKey) {
+      if (cached != null) return cached;
+      final pending = session.nativePlaybackQueueFuture;
+      if (pending != null) return pending;
+    }
+    session.nativePlaybackQueueCacheKey = cacheKey;
+    session.nativePlaybackQueueCache = null;
     final paths = _nativePlaybackQueuePathsFor(
       session,
       currentPath: currentPath,
     );
-    final cacheKey = Object.hash(
-      session.loopMode,
-      session.queueVersion,
-      currentPath,
-      paths.length,
-    );
-    final cached = session.nativePlaybackQueueCache;
-    if (session.nativePlaybackQueueCacheKey == cacheKey && cached != null) {
-      return cached;
+    final descriptors = <_NativeQueueTrack>[];
+    for (final trackPath in paths) {
+      final track = _sessionTrackForPath(session, trackPath);
+      descriptors.add((
+        path: trackPath,
+        track: track,
+        coverPath: resolvedPlaybackCoverPathForTrack(track),
+      ));
     }
-    final queue = List<Map<String, Object?>>.unmodifiable(
-      paths.map((path) => _nativePlaybackQueueItemForSession(session, path)),
-    );
-    session.nativePlaybackQueueCacheKey = cacheKey;
-    session.nativePlaybackQueueCache = queue;
-    return queue;
+    final pending = compute(_buildNativePlaybackQueue, descriptors);
+    session.nativePlaybackQueueFuture = pending;
+    try {
+      final queue = await pending;
+      if (_isRegisteredSession(session) &&
+          session.nativePlaybackQueueCacheKey == cacheKey &&
+          identical(session.nativePlaybackQueueFuture, pending)) {
+        session.nativePlaybackQueueCache = queue;
+      }
+      return queue;
+    } finally {
+      if (identical(session.nativePlaybackQueueFuture, pending)) {
+        session.nativePlaybackQueueFuture = null;
+      }
+    }
   }
 
   int? _nativePlaybackQueueStartIndexFor(
@@ -568,104 +628,76 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
     final resolvedCurrentPath = _playbackFacade.resolveRetargetedPath(
       currentPath,
     );
-    final currentTrack = _audioPathCoordinator.trackByPath(
-      resolvedCurrentPath,
-      includeLibraryFallback: false,
-    );
     final sessionTrack = _sessionTrackForPath(session, resolvedCurrentPath);
+    final cacheKey = _playbackQueueScopeKey(session, resolvedCurrentPath);
+    final cached = session.nativePlaybackQueueScopeCache;
+    if (session.nativePlaybackQueueScopeCacheKey == cacheKey &&
+        cached != null) {
+      return _playbackQueueResolver.repositionScope(
+        cached,
+        currentPath: resolvedCurrentPath,
+        currentQueueIndex: session.currentQueueIndex,
+      );
+    }
     final queueTracks = session.isPlaybackQueue
-        ? (_hasDetachedPlaybackQueueCurrent(session)
+        ? (session.hasDetachedQueueTrack
               ? session.customQueueTracks
               : session.playbackQueue!.expandedTracks)
         : session.customQueueTracks;
-    final scopeTrack = queueTracks?.isNotEmpty == true
-        ? sessionTrack
-        : currentTrack;
-    final crossFolderTrackPaths = session.loopMode.isCrossFolder
-        ? _crossFolderTrackPathsFor(currentTrack)
-        : _sortedLibraryTrackPaths;
-    return _playbackQueueResolver.resolveScope(
+    final hasCustomQueue = queueTracks?.isNotEmpty == true;
+    final crossFolderTrackPaths =
+        !hasCustomQueue && session.loopMode.isCrossFolder
+        ? _crossFolderTrackPathsFor(sessionTrack)
+        : const <String>[];
+    final groupKey = sessionTrack?.groupKey;
+    final scope = _playbackQueueResolver.resolveScope(
       currentPath: resolvedCurrentPath,
-      currentTrack: scopeTrack,
+      currentTrack: sessionTrack,
       loopMode: session.loopMode,
       sortedLibraryTrackPaths: crossFolderTrackPaths,
-      tracksByGroup: _tracksByGroup,
+      tracksByGroup:
+          !hasCustomQueue && groupKey != null && !session.loopMode.isCrossFolder
+          ? {groupKey: _libraryFacade.tracksInGroup(groupKey)}
+          : const {},
       customQueueTracks: queueTracks,
       isPlaybackQueue: session.isPlaybackQueue,
       currentQueueIndex: session.currentQueueIndex,
       trackPath: (track) => _playbackFacade.resolveRetargetedPath(track.path),
       folderKeyForTrack: _folderKeyForTrack,
     );
+    session.nativePlaybackQueueScopeCacheKey = cacheKey;
+    session.nativePlaybackQueueScopeCache = scope;
+    return scope;
+  }
+
+  int _playbackQueueScopeKey(PlaybackSession session, String currentPath) {
+    final track = _sessionTrackForPath(session, currentPath);
+    final hasCustomQueue =
+        session.isPlaybackQueue ||
+        session.customQueueTracks?.isNotEmpty == true;
+    final singleTrackScope =
+        !hasCustomQueue &&
+        (track?.isSingle == true || session.loopMode == SessionLoopMode.single);
+    final crossFolderScope =
+        !singleTrackScope &&
+        (session.loopMode.isCrossFolder || (hasCustomQueue && track == null));
+    final scopeIdentity = singleTrackScope
+        ? currentPath
+        : crossFolderScope
+        ? null
+        : track?.groupKey;
+    return Object.hash(
+      session.queueVersion,
+      singleTrackScope,
+      crossFolderScope,
+      scopeIdentity,
+      hasCustomQueue ? 0 : _libraryFacade.structureRevision,
+      _playbackFacade.retargetRevision,
+    );
   }
 
   bool _hasDetachedPlaybackQueueCurrent(PlaybackSession session) {
-    return _isDetachedPlaybackQueuePath(session, session.currentTrackPath);
-  }
-
-  bool _isDetachedPlaybackQueuePath(PlaybackSession session, String path) {
-    if (!session.isPlaybackQueue || path.isEmpty) return false;
-    final queueContainsPath = session.playbackQueue!.expandedTracks.any(
-      (track) => PathMatcher.equalsNormalized(track.path, path),
-    );
-    if (queueContainsPath) return false;
-    return session.customQueueTracks?.any(
-          (track) => PathMatcher.equalsNormalized(track.path, path),
-        ) ==
-        true;
-  }
-
-  Map<String, Object?> _nativePlaybackQueueItemForSession(
-    PlaybackSession session,
-    String trackPath,
-  ) {
-    final resolvedTrackPath = _playbackFacade.resolveRetargetedPath(trackPath);
-    final track = session.trackForPath(
-          trackPath,
-          resolvedPath: resolvedTrackPath,
-        ) ??
-        _trackForAnyPath(resolvedTrackPath);
-    final subtitle = track?.groupTitle;
-    final coverPath = resolvedPlaybackCoverPathForTrack(track);
-    final artUri = coverPath == null
-        ? track?.remoteCoverUrl
-        : Uri.file(coverPath).toString();
-    final candidateUris = _candidatePlaybackUrisForTrack(track);
-    return <String, Object?>{
-      'path': resolvedTrackPath,
-      'uri':
-          PathMatcher.isContentUri(resolvedTrackPath) ||
-              PathMatcher.isRemoteUri(resolvedTrackPath)
-          ? resolvedTrackPath
-          : Uri.file(resolvedTrackPath).toString(),
-      'title':
-          track?.displayName ??
-          path.basenameWithoutExtension(resolvedTrackPath),
-      // ignore: use_null_aware_elements
-      if (subtitle != null) 'subtitle': subtitle,
-      if (artUri != null && artUri.isNotEmpty) 'artUri': artUri,
-      if (candidateUris != null)
-        'candidateUris': candidateUris
-            .map((uri) => uri.toString())
-            .toList(growable: false),
-    };
-  }
-
-  MusicTrack? _trackForAnyPath(String trackPath) {
-    final resolvedPath = _playbackFacade.resolveRetargetedPath(trackPath);
-    final libraryTrack = _audioPathCoordinator.trackByPath(
-      resolvedPath,
-      includeLibraryFallback: false,
-    );
-    if (libraryTrack != null) {
-      return libraryTrack;
-    }
-    for (final session in _sessions.values) {
-      final track = _sessionTrackForPath(session, resolvedPath);
-      if (track != null) {
-        return track;
-      }
-    }
-    return null;
+    return session.hasDetachedQueueTrack && session.currentQueueIndex == 0;
   }
 
   MusicTrack? _sessionTrackForPath(PlaybackSession session, String trackPath) {
@@ -675,16 +707,14 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
       resolvedPath: resolvedPath,
     );
     if (sessionTrack == null) {
-      final originalPath = _playbackFacade.originalPathForRetargeted(trackPath) ??
+      final originalPath =
+          _playbackFacade.originalPathForRetargeted(trackPath) ??
           _playbackFacade.originalPathForRetargeted(resolvedPath);
       if (originalPath != null) {
         sessionTrack = session.trackForPath(originalPath);
       }
     }
     if (sessionTrack != null) return sessionTrack;
-    return _audioPathCoordinator.trackByPath(
-      resolvedPath,
-      includeLibraryFallback: false,
-    );
+    return _libraryFacade.trackByPath(resolvedPath);
   }
 }

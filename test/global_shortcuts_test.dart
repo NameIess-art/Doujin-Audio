@@ -115,7 +115,9 @@ void main() {
       expect(resumed, isEmpty);
 
       // 2. When card session is focused, space toggles that session
-      await tester.pumpWidget(app(const SizedBox(), focusedCardSessionId: 'primary'));
+      await tester.pumpWidget(
+        app(const SizedBox(), focusedCardSessionId: 'primary'),
+      );
       await tester.pump();
       await tester.sendKeyEvent(LogicalKeyboardKey.space);
       await tester.pump();
@@ -154,7 +156,9 @@ void main() {
       expect(native.seeks, isEmpty);
 
       // 2. With focused audio, plain Right arrow seeks forward 5s (3s -> 8s)
-      await tester.pumpWidget(app(const SizedBox(), focusedCardSessionId: 'primary'));
+      await tester.pumpWidget(
+        app(const SizedBox(), focusedCardSessionId: 'primary'),
+      );
       await tester.pump();
       await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
       await tester.pump(const Duration(milliseconds: 200));
@@ -259,8 +263,11 @@ void main() {
       notifications.registerSessionFocus('primary');
       playback.sessionById('primary')!
         ..duration = const Duration(seconds: 2)
+        ..loadedPath = '/primary.mp3'
         ..volume = 0.02;
-      await tester.pumpWidget(app(const SizedBox(), focusedCardSessionId: 'primary'));
+      await tester.pumpWidget(
+        app(const SizedBox(), focusedCardSessionId: 'primary'),
+      );
       await tester.pump();
       await tester.sendKeyDownEvent(LogicalKeyboardKey.altLeft);
       await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);

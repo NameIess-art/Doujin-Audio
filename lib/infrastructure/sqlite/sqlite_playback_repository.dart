@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart' show compute;
+
 import '../../core/media/music_track.dart';
 import '../../core/persistence/app_database.dart';
 import '../../core/persistence/persistence_records.dart';
@@ -18,10 +20,31 @@ class SqlitePlaybackRepository implements PlaybackPersistenceRepository {
           .map(_sessionFromRecord)
           .toList(growable: false);
   @override
-  Future<void> saveAllSessions(List<PersistedPlaybackSession> sessions) =>
-      _database.saveAllSessions(
-        sessions.map(_sessionToRecord).toList(growable: false),
-      );
+  Future<void> upsertSession(
+    PersistedPlaybackSession session, {
+    bool includeQueue = true,
+    bool includeEffects = true,
+  }) async {
+    final record = includeQueue
+        ? await compute(
+            (input) => _sessionToRecord(input.$1, includeEffects: input.$2),
+            (session, includeEffects),
+          )
+        : _sessionToRecord(
+            session,
+            includeQueue: false,
+            includeEffects: includeEffects,
+          );
+    await _database.upsertSession(
+      record,
+      includeQueue: includeQueue,
+      includeEffects: includeEffects,
+    );
+  }
+
+  @override
+  Future<void> deleteSessions(List<String> sessionIds) =>
+      _database.deleteSessions(sessionIds);
   @override
   Future<void> updateSessionOrder(List<String> sessionIds) =>
       _database.updateSessionOrder(sessionIds);
@@ -32,7 +55,9 @@ class SqlitePlaybackRepository implements PlaybackPersistenceRepository {
   ) => _database.updatePlaybackQueueEntryOrder(sessionId, entryIds);
   @override
   Future<void> upsertSessionPlaybackState(PersistedPlaybackSession session) =>
-      _database.upsertSessionPlaybackState(_sessionToRecord(session));
+      _database.upsertSessionPlaybackState(
+        _sessionToRecord(session, includeQueue: false, includeEffects: false),
+      );
   @override
   Future<void> upsertTracks(List<MusicTrack> tracks) =>
       _database.upsertTracks(tracks);
@@ -49,27 +74,30 @@ class SqlitePlaybackRepository implements PlaybackPersistenceRepository {
       _database.deleteTimeSegmentLabel(id);
 }
 
-PlaybackSessionRecord _sessionToRecord(PersistedPlaybackSession session) =>
-    PlaybackSessionRecord(
-      id: session.id,
-      trackPath: session.trackPath,
-      isTemporary: session.isTemporary,
-      retainInNowPlaying: session.retainInNowPlaying,
-      loopModeIndex: session.loopModeIndex,
-      volume: session.volume,
-      speed: session.speed,
-      positionMs: session.positionMs,
-      durationMs: session.durationMs,
-      customQueueTracks: session.customQueueTracks,
-      playbackQueue: _queueToRecord(session.playbackQueue),
-      currentQueueIndex: session.currentQueueIndex,
-      channelSwapEnabled: session.channelSwapEnabled,
-      audioEffects: _effectsToRecord(session.audioEffects),
-      sortOrder: session.sortOrder,
-      createdAtMs: session.createdAtMs,
-      updatedAtMs: session.updatedAtMs,
-      lastPlayedAtMs: session.lastPlayedAtMs,
-    );
+PlaybackSessionRecord _sessionToRecord(
+  PersistedPlaybackSession session, {
+  bool includeQueue = true,
+  bool includeEffects = true,
+}) => PlaybackSessionRecord(
+  id: session.id,
+  trackPath: session.trackPath,
+  isTemporary: session.isTemporary,
+  retainInNowPlaying: session.retainInNowPlaying,
+  loopModeIndex: session.loopModeIndex,
+  volume: session.volume,
+  speed: session.speed,
+  positionMs: session.positionMs,
+  durationMs: session.durationMs,
+  customQueueTracks: includeQueue ? session.customQueueTracks : null,
+  playbackQueue: includeQueue ? _queueToRecord(session.playbackQueue) : null,
+  currentQueueIndex: session.currentQueueIndex,
+  channelSwapEnabled: session.channelSwapEnabled,
+  audioEffects: includeEffects ? _effectsToRecord(session.audioEffects) : null,
+  sortOrder: session.sortOrder,
+  createdAtMs: session.createdAtMs,
+  updatedAtMs: session.updatedAtMs,
+  lastPlayedAtMs: session.lastPlayedAtMs,
+);
 
 PersistedPlaybackSession _sessionFromRecord(PlaybackSessionRecord record) =>
     PersistedPlaybackSession(

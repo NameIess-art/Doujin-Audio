@@ -74,14 +74,9 @@ class _PlaybackQueueAudioEditPageState
     final paths = ref.read(audioPathCoordinatorProvider);
 
     ref.listen(
-      playlistStructureUiProvider.select((s) {
-        final q = s.entries
-            .where((entry) => entry.sessionId == sessionId)
-            .firstOrNull
-            ?.session
-            .playbackQueue;
-        return q?.entries.length ?? 0;
-      }),
+      playbackSessionProvider(
+        sessionId,
+      ).select((session) => session?.playbackQueue?.entries.length ?? 0),
       (previous, next) {
         if (previous != null && next > previous) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -95,11 +90,11 @@ class _PlaybackQueueAudioEditPageState
       },
     );
 
-    final queue = structure.entries
-        .where((entry) => entry.sessionId == sessionId)
-        .firstOrNull
-        ?.session
-        .playbackQueue;
+    final queue = ref.watch(
+      playbackSessionProvider(
+        sessionId,
+      ).select((session) => session?.playbackQueue),
+    );
     final ordinarySessions = structure.entries
         .where((entry) => !entry.isPlaybackQueue)
         .map((entry) => entry.session)

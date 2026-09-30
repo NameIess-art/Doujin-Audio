@@ -3,6 +3,7 @@ import '../application/audio_state_services.dart';
 import '../application/notification_facade.dart';
 import '../application/playback_facade.dart';
 import '../application/playback_session.dart';
+import '../application/playback_session_snapshot.dart';
 import '../application/playback_subtitle_service.dart';
 import '../application/subtitle_overlay_controller.dart';
 import '../application/timer_facade.dart';
@@ -41,9 +42,24 @@ final notificationFacadeProvider = Provider<NotificationFacade>((ref) {
   );
 });
 
-final playbackStateProvider = StreamProvider<PlaybackStateSliceData>((ref) {
+final playbackStateProvider = StreamProvider<PlaybackAggregateState>((ref) {
   return ref.watch(playbackFacadeProvider).states;
 });
+
+final playbackCatalogProvider = StreamProvider<PlaybackCatalogState>((ref) {
+  return ref.watch(playbackFacadeProvider).catalogStates;
+});
+
+final playbackSessionStateProvider = StreamProvider.autoDispose
+    .family<PlaybackSessionSnapshot?, String>((ref, sessionId) {
+      return ref.watch(playbackFacadeProvider).sessionStates(sessionId);
+    });
+
+final playbackSessionProvider = Provider.autoDispose
+    .family<PlaybackSessionSnapshot?, String>((ref, sessionId) {
+      return ref.watch(playbackSessionStateProvider(sessionId)).value ??
+          ref.read(playbackFacadeProvider).sessionSnapshotById(sessionId);
+    });
 
 final timerStateProvider = StreamProvider<TimerStateSliceData>((ref) {
   return ref.watch(timerFacadeProvider).states;

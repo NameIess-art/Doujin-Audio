@@ -485,12 +485,28 @@ void _writeSessionToBatch(
   _writeSessionDetailsToBatch(batch, session);
 }
 
-void _writeSessionDetailsToBatch(Batch batch, PlaybackSessionRecord session) {
+void _writeSessionDetailsToBatch(
+  Batch batch,
+  PlaybackSessionRecord session, {
+  bool includeQueue = true,
+  bool includeEffects = true,
+  _PlaybackQueueRows? queueRows,
+}) {
   batch.insert(
     'session_playback_state',
     _sessionPlaybackStateRow(session),
     conflictAlgorithm: ConflictAlgorithm.replace,
   );
+  if (includeEffects) _writeSessionAudioEffectsToBatch(batch, session);
+  if (includeQueue) {
+    _writePlaybackQueueToBatch(batch, session, rows: queueRows);
+  }
+}
+
+void _writeSessionAudioEffectsToBatch(
+  Batch batch,
+  PlaybackSessionRecord session,
+) {
   batch.insert(
     'session_audio_effects',
     _sessionAudioEffectsRow(session),
@@ -508,10 +524,19 @@ void _writeSessionDetailsToBatch(Batch batch, PlaybackSessionRecord session) {
       'gain_db': entry.value,
     }, conflictAlgorithm: ConflictAlgorithm.replace);
   }
-  _writePlaybackQueueToBatch(batch, session);
 }
 
-void _writePlaybackQueueToBatch(Batch batch, PlaybackSessionRecord session) {
+typedef _PlaybackQueueRows = ({
+  Map<String, dynamic>? queue,
+  List<Map<String, dynamic>> entries,
+  List<Map<String, dynamic>> tracks,
+});
+
+void _writePlaybackQueueToBatch(
+  Batch batch,
+  PlaybackSessionRecord session, {
+  _PlaybackQueueRows? rows,
+}) {
   batch.delete(
     'playback_queue_entry_tracks',
     where: 'session_id = ?',
@@ -527,13 +552,46 @@ void _writePlaybackQueueToBatch(Batch batch, PlaybackSessionRecord session) {
     where: 'session_id = ?',
     whereArgs: [session.id],
   );
+  final prepared = rows ?? _playbackQueueRows(session);
+  final queue = prepared.queue;
+  if (queue != null) {
+    batch.insert(
+      'playback_queues',
+      queue,
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+  for (final row in prepared.entries) {
+    batch.insert(
+      'playback_queue_entries',
+      row,
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+  for (final row in prepared.tracks) {
+    batch.insert(
+      'playback_queue_entry_tracks',
+      row,
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+}
+
+_PlaybackQueueRows _playbackQueueRows(PlaybackSessionRecord session) {
+  final entries = <Map<String, dynamic>>[];
+  final tracks = <Map<String, dynamic>>[];
   final queue = session.playbackQueue;
-  if (queue == null) {
-    final customTracks = session.customQueueTracks;
-    if (customTracks == null) return;
+  final customTracks = session.customQueueTracks;
+  if (customTracks != null &&
+      (queue == null ||
+          customTracks.length ==
+              queue.entries.fold<int>(
+                    0,
+                    (count, entry) => count + entry.tracks.length,
+                  ) +
+                  1)) {
     for (var i = 0; i < customTracks.length; i++) {
-      batch.insert(
-        'playback_queue_entry_tracks',
+      tracks.add(
         _queueTrackRow(
           sessionId: session.id,
           entryId: '__custom_queue__',
@@ -541,29 +599,27 @@ void _writePlaybackQueueToBatch(Batch batch, PlaybackSessionRecord session) {
           duplicateIndex: i,
           sortOrder: i,
         ),
-        conflictAlgorithm: ConflictAlgorithm.replace,
       );
     }
-    return;
   }
-  batch.insert('playback_queues', {
+  if (queue == null) return (queue: null, entries: entries, tracks: tracks);
+  final queueRow = <String, dynamic>{
     'session_id': session.id,
     'name': queue.name,
     'color_value': queue.colorValue,
-  }, conflictAlgorithm: ConflictAlgorithm.replace);
+  };
   for (var entryIndex = 0; entryIndex < queue.entries.length; entryIndex++) {
     final entry = queue.entries[entryIndex];
-    batch.insert('playback_queue_entries', {
+    entries.add({
       'session_id': session.id,
       'entry_id': entry.id,
       'kind': entry.kind,
       'title': entry.title,
       'work_root_path': entry.workRootPath,
       'sort_order': entryIndex,
-    }, conflictAlgorithm: ConflictAlgorithm.replace);
+    });
     for (var trackIndex = 0; trackIndex < entry.tracks.length; trackIndex++) {
-      batch.insert(
-        'playback_queue_entry_tracks',
+      tracks.add(
         _queueTrackRow(
           sessionId: session.id,
           entryId: entry.id,
@@ -571,10 +627,10 @@ void _writePlaybackQueueToBatch(Batch batch, PlaybackSessionRecord session) {
           duplicateIndex: trackIndex,
           sortOrder: trackIndex,
         ),
-        conflictAlgorithm: ConflictAlgorithm.replace,
       );
     }
   }
+  return (queue: queueRow, entries: entries, tracks: tracks);
 }
 
 Map<String, dynamic> _queueTrackRow({

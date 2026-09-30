@@ -5,7 +5,7 @@ import '../../features/player/application/notification_facade.dart';
 import '../../features/player/application/playback_facade.dart';
 import '../../features/player/application/playback_subtitle_service.dart';
 import '../../features/settings/application/settings_repository.dart';
-import 'playback_command_coordinator.dart';
+import '../../features/player/application/playback_command_coordinator.dart';
 import 'playback_keep_alive_coordinator.dart';
 import 'runtime_binding.dart';
 

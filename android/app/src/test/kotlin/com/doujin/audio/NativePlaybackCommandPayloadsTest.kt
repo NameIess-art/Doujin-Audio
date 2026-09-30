@@ -11,6 +11,25 @@ import org.junit.Test
 
 class NativePlaybackCommandPayloadsTest {
     @Test
+    fun `independent queue update accepts explicit empty queue and defaults modes`() {
+        val args = NativePlaybackCommandPayloads.parseUpdateQueue(mapOf("sessionId" to "main", "queue" to emptyList<Any>()))
+        assertEquals(0L, args.queueRevision)
+        assertEquals(0, args.queueStartIndex)
+        assertFalse(args.repeatOne)
+        assertTrue(args.queue.isEmpty())
+        assertTrue(isSupportedNativePlaybackMethod("updateQueue"))
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun `queue update rejects missing queue instead of silently clearing playback`() {
+        NativePlaybackCommandPayloads.parseUpdateQueue(mapOf("sessionId" to "main"))
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun `queue update rejects negative revisions`() {
+        NativePlaybackCommandPayloads.parseUpdateQueue(mapOf("sessionId" to "main", "queue" to emptyList<Any>(), "queueRevision" to -1))
+    }
+    @Test
     fun `temporary session marker is explicit and normal sessions retain persistence`() {
         assertFalse(NativePlaybackCommandPayloads.parsePrepareSession(validPreparePayload()).isTemporary)
         assertTrue(NativePlaybackCommandPayloads.parsePrepareSession(

@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:doujin_audio/core/errors/native_result.dart';
+import 'package:doujin_audio/features/player/application/native_playback_bridge.dart';
 import 'package:doujin_audio/features/player/application/native_playback_repository.dart';
 import 'package:doujin_audio/features/player/application/windows_playback_bridge.dart';
 import 'package:doujin_audio/features/player/domain/audio_effects.dart';
@@ -8,11 +11,15 @@ import 'package:media_kit/media_kit.dart';
 void main() {
   late WindowsPlaybackBridge bridge;
   late List<_Player> players;
+  void Function(_Player)? configureNextPlayer;
   setUp(() {
     players = [];
+    configureNextPlayer = null;
     bridge = WindowsPlaybackBridge(
       createPlayer: () {
         final platform = _Player();
+        configureNextPlayer?.call(platform);
+        configureNextPlayer = null;
         players.add(platform);
         return Player(platformPlayer: platform);
       },
@@ -30,6 +37,7 @@ void main() {
       uri: Uri.parse('https://example.com/$id.wav'),
       title: id,
       deferPlayerCreation: deferred,
+      autoPlay: !deferred,
       startPosition: position,
     );
     expect(result.isOk, true, reason: result.errorOrNull);
@@ -87,6 +95,31 @@ void main() {
     },
   );
 
+  test('invalid exclusive play leaves other sessions playing', () async {
+    await prepare('one');
+    final result = await bridge.play('missing', exclusive: true);
+    expect(result.errorCodeOrNull, NativeErrorCode.invalidArgument);
+    expect(players.single.state.playing, true);
+    expect(
+      (await bridge.snapshot()).valueOrNull!.sessions.single.playWhenReady,
+      true,
+    );
+  });
+
+  test(
+    'exclusive play reports a failed pause before starting its player',
+    () async {
+      await prepare('one', deferred: true);
+      await prepare('two');
+      players.single.pauseError = StateError('pause failed');
+      final result = await bridge.play('one', exclusive: true);
+      expect(result.errorCodeOrNull, NativeErrorCode.playerError);
+      expect(result.errorOrNull, contains('pause failed'));
+      expect(bridge.playerForSession('one'), isNull);
+      expect(players.single.state.playing, true);
+    },
+  );
+
   test(
     'restore waits for loaded duration before seeking and playing',
     () async {
@@ -118,6 +151,41 @@ void main() {
       await bridge.snapshot();
       expect(players.single.seeks, [const Duration(seconds: 22)]);
       expect(players.single.state.playing, false);
+    },
+  );
+
+  test(
+    'a superseded restore seek cannot autoplay the previous source',
+    () async {
+      await prepare('one', position: const Duration(seconds: 22));
+      final player = players.single;
+      final gate = Completer<void>();
+      final started = Completer<void>();
+      player.seekGate = gate;
+      player.seekStarted = started;
+      addTearDown(() {
+        if (!gate.isCompleted) gate.complete();
+      });
+      player.loaded();
+      await started.future;
+      final replacement = bridge.prepareSession(
+        sessionId: 'one',
+        uri: Uri.parse('https://example.com/replacement.wav'),
+        title: 'replacement',
+        startPosition: const Duration(seconds: 30),
+        autoPlay: true,
+      );
+      gate.complete();
+      expect((await replacement).isOk, true);
+      expect(player.plays, 0);
+      player.loaded();
+      await Future<void>.delayed(Duration.zero);
+      await bridge.setVolume('one', 1);
+      expect(player.seeks, [
+        const Duration(seconds: 22),
+        const Duration(seconds: 30),
+      ]);
+      expect(player.plays, 1);
     },
   );
 
@@ -166,6 +234,7 @@ void main() {
       sessionId: 'one',
       uri: Uri.parse('https://example.com/repeated.wav'),
       title: 'first',
+      autoPlay: true,
       queue: [
         {'uri': 'https://example.com/repeated.wav', 'title': 'first'},
         {'uri': 'https://example.com/repeated.wav', 'title': 'second'},
@@ -182,6 +251,347 @@ void main() {
   });
 
   test(
+    'idle sessions retain data without players or periodic events',
+    () async {
+      final snapshots = <NativePlaybackSnapshot>[];
+      final progress = <NativePlaybackProgressUpdate>[];
+      final snapshotSub = bridge.snapshots.listen(snapshots.add);
+      final progressSub = bridge.progressUpdates.listen(progress.add);
+      addTearDown(snapshotSub.cancel);
+      addTearDown(progressSub.cancel);
+      for (var i = 0; i < 50; i++) {
+        final result = await bridge.prepareSession(
+          sessionId: 'idle-$i',
+          uri: Uri.parse('https://example.com/$i.wav'),
+          title: '$i',
+        );
+        expect(result.isOk, true);
+      }
+      await bridge.setVolume('idle-0', 1.5);
+      await bridge.setSpeed('idle-0', 1.25);
+      await Future<void>.delayed(Duration.zero);
+      final eventCount = snapshots.length;
+      await bridge.setVolume('idle-0', 1.5);
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+      expect(players, isEmpty);
+      expect(progress, isEmpty);
+      expect(snapshots, hasLength(eventCount));
+      expect((await bridge.snapshot()).valueOrNull!.sessions, hasLength(50));
+    },
+  );
+
+  test('one blocked open does not delay another session transport', () async {
+    final gate = Completer<void>();
+    final started = Completer<void>();
+    configureNextPlayer = (player) {
+      player.openGate = gate;
+      player.openStarted = started;
+    };
+    addTearDown(() {
+      if (!gate.isCompleted) gate.complete();
+    });
+    final opening = prepare('one');
+    await started.future;
+    await prepare('two').timeout(const Duration(seconds: 1));
+    expect(
+      (await bridge.pause('two').timeout(const Duration(seconds: 1))).isOk,
+      true,
+    );
+    expect(
+      (await bridge
+              .seek('two', const Duration(seconds: 4))
+              .timeout(const Duration(seconds: 1)))
+          .isOk,
+      true,
+    );
+    expect(players[1].state.playing, false);
+    expect(players[1].seeks, [const Duration(seconds: 4)]);
+    expect(gate.isCompleted, false);
+    gate.complete();
+    await opening;
+  });
+
+  test(
+    'superseded open and pause during open cannot start stale audio',
+    () async {
+      final gate = Completer<void>();
+      final started = Completer<void>();
+      configureNextPlayer = (player) {
+        player.openGate = gate;
+        player.openStarted = started;
+      };
+      addTearDown(() {
+        if (!gate.isCompleted) gate.complete();
+      });
+      final opening = bridge.prepareSession(
+        sessionId: 'one',
+        title: 'old',
+        uri: Uri.parse('https://example.com/old.wav'),
+        autoPlay: true,
+      );
+      await started.future;
+      final latest = bridge.prepareSession(
+        sessionId: 'one',
+        title: 'new',
+        uri: Uri.parse('https://example.com/new.wav'),
+        autoPlay: true,
+      );
+      final pausing = bridge.pause('one', transportCommandId: 7);
+      gate.complete();
+      expect((await opening).isFailure, true);
+      expect((await latest).isOk, true);
+      expect((await pausing).isOk, true);
+      expect(players.single.plays, 0);
+      final snapshot = (await bridge.snapshot()).valueOrNull!.sessions.single;
+      expect(snapshot.title, 'new');
+      expect(snapshot.playWhenReady, false);
+    },
+  );
+
+  test(
+    'pauseAll and clearAll dispatch to all session lanes concurrently',
+    () async {
+      await prepare('one');
+      await prepare('two');
+      final pauseGate = Completer<void>();
+      final pauseStarted = Completer<void>();
+      players[0].pauseGate = pauseGate;
+      players[0].pauseStarted = pauseStarted;
+      addTearDown(() {
+        if (!pauseGate.isCompleted) pauseGate.complete();
+      });
+      final pausing = bridge.pauseAll();
+      await pauseStarted.future;
+      await bridge.setVolume('two', 1).timeout(const Duration(seconds: 1));
+      expect(players[1].state.playing, false);
+      expect(pauseGate.isCompleted, false);
+      pauseGate.complete();
+      expect((await pausing).isOk, true);
+
+      await bridge.play('one');
+      await bridge.play('two');
+      final first = players.lastWhere(
+        (player) =>
+            player.state.playing &&
+            player.state.playlist.medias.first.uri.endsWith('one.wav'),
+      );
+      final second = players.lastWhere(
+        (player) =>
+            player.state.playing &&
+            player.state.playlist.medias.first.uri.endsWith('two.wav'),
+      );
+      final disposeGate = Completer<void>();
+      final firstStarted = Completer<void>();
+      final secondStarted = Completer<void>();
+      first.disposeGate = disposeGate;
+      first.disposeStarted = firstStarted;
+      second.disposeStarted = secondStarted;
+      addTearDown(() {
+        if (!disposeGate.isCompleted) disposeGate.complete();
+      });
+      final clearing = bridge.clearAll();
+      await firstStarted.future;
+      await secondStarted.future.timeout(const Duration(seconds: 1));
+      expect(second.disposed, true);
+      expect((await bridge.snapshot()).valueOrNull!.sessions, isEmpty);
+      expect(disposeGate.isCompleted, false);
+      disposeGate.complete();
+      expect((await clearing).isOk, true);
+    },
+  );
+
+  test('blocked queue edits and disposal stay within their session', () async {
+    await prepare('one');
+    await prepare('two');
+    final first = players[0];
+    final addGate = Completer<void>();
+    final addStarted = Completer<void>();
+    first.addGate = addGate;
+    first.addStarted = addStarted;
+    addTearDown(() {
+      if (!addGate.isCompleted) addGate.complete();
+    });
+    final editing = bridge.updateQueue(
+      'one',
+      queue: [
+        {'uri': 'https://example.com/one.wav', 'title': 'one'},
+        {'uri': 'https://example.com/next.wav', 'title': 'next'},
+      ],
+      queueRevision: 1,
+    );
+    await addStarted.future;
+    expect(
+      (await bridge.pause('two').timeout(const Duration(seconds: 1))).isOk,
+      true,
+    );
+    expect(addGate.isCompleted, false);
+    addGate.complete();
+    expect((await editing).isOk, true);
+
+    final disposeGate = Completer<void>();
+    final disposeStarted = Completer<void>();
+    first.disposeGate = disposeGate;
+    first.disposeStarted = disposeStarted;
+    addTearDown(() {
+      if (!disposeGate.isCompleted) disposeGate.complete();
+    });
+    final removing = bridge.removeSession('one');
+    await disposeStarted.future;
+    expect(
+      (await bridge.play('two').timeout(const Duration(seconds: 1))).isOk,
+      true,
+    );
+    expect(bridge.playerForSession('one'), isNull);
+    expect(disposeGate.isCompleted, false);
+    disposeGate.complete();
+    expect((await removing).isOk, true);
+  });
+
+  test(
+    'removal invalidates an open result before autoplay and emission',
+    () async {
+      final gate = Completer<void>();
+      final started = Completer<void>();
+      configureNextPlayer = (player) {
+        player.openGate = gate;
+        player.openStarted = started;
+      };
+      addTearDown(() {
+        if (!gate.isCompleted) gate.complete();
+      });
+      final snapshots = <NativePlaybackSnapshot>[];
+      final sub = bridge.snapshots.listen(snapshots.add);
+      addTearDown(sub.cancel);
+      final opening = bridge.prepareSession(
+        sessionId: 'one',
+        title: 'one',
+        uri: Uri.parse('https://example.com/one.wav'),
+        autoPlay: true,
+      );
+      await started.future;
+      final removing = bridge.removeSession('one');
+      await prepare('two').timeout(const Duration(seconds: 1));
+      gate.complete();
+      expect((await opening).isFailure, true);
+      expect((await removing).isOk, true);
+      await Future<void>.delayed(Duration.zero);
+      expect(players[0].plays, 0);
+      expect(players[0].disposed, true);
+      expect(
+        snapshots.where((snapshot) => snapshot.sessionId == 'one'),
+        isEmpty,
+      );
+    },
+  );
+
+  test(
+    'paused nonfocused players release while focused players remain',
+    () async {
+      await prepare('one');
+      final first = bridge.playerForSession('one');
+      await bridge.pause('one');
+      expect(bridge.playerForSession('one'), same(first));
+      await prepare('two');
+      await bridge.setVolume(
+        'one',
+        1,
+      ); // Drain only this session's command lane.
+      expect(bridge.playerForSession('one'), isNull);
+      expect(players[0].disposed, true);
+      await bridge.play('one');
+      expect(players, hasLength(3));
+      expect(bridge.playerForSession('one'), isNot(same(first)));
+    },
+  );
+
+  test(
+    'video surface leases defer paused nonfocused player disposal',
+    () async {
+      await prepare('one');
+      bridge.acquireVideoSurface('one');
+      bridge.acquireVideoSurface('one');
+      await bridge.pause('one');
+      await prepare('two');
+      await bridge.setVolume('one', 1);
+      expect(players[0].disposed, false);
+      bridge.releaseVideoSurface('one');
+      await bridge.setVolume('one', 1);
+      expect(players[0].disposed, false);
+      bridge.releaseVideoSurface('one');
+      await bridge.setVolume('one', 1);
+      expect(players[0].disposed, true);
+      expect(bridge.playerForSession('one'), isNull);
+    },
+  );
+
+  test(
+    'structure events deduplicate and carry retained URIs only on edits',
+    () async {
+      final snapshots = <NativePlaybackSnapshot>[];
+      final sub = bridge.snapshots.listen(snapshots.add);
+      addTearDown(sub.cancel);
+      await prepare('one', deferred: true);
+      await Future<void>.delayed(Duration.zero);
+      expect(snapshots.single.hasRetainedUrisPayload, true);
+      final retained =
+          (await bridge.snapshot()).valueOrNull!.sessions.single.retainedUris;
+      expect(
+        (await bridge.snapshot()).valueOrNull!.sessions.single.retainedUris,
+        same(retained),
+      );
+      await bridge.setVolume('one', 2);
+      await Future<void>.delayed(Duration.zero);
+      expect(snapshots.last.hasRetainedUrisPayload, false);
+      final count = snapshots.length;
+      await bridge.setVolume('one', 2);
+      await Future<void>.delayed(Duration.zero);
+      expect(snapshots, hasLength(count));
+      await bridge.updateQueue(
+        'one',
+        queue: [
+          {'uri': 'https://example.com/one.wav', 'title': 'one'},
+          {'uri': 'https://example.com/next.wav', 'title': 'next'},
+        ],
+        queueRevision: 1,
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(snapshots.last.hasRetainedUrisPayload, true);
+      expect(snapshots.last.retainedUris, hasLength(2));
+    },
+  );
+
+  test(
+    'queue edits reuse unchanged entries and invalidate stale revisions',
+    () async {
+      final original = [
+        {'uri': 'https://example.com/one.wav', 'title': 'one'},
+        {'uri': 'https://example.com/two.wav', 'title': 'two'},
+        {'uri': 'https://example.com/three.wav', 'title': 'three'},
+      ];
+      await bridge.prepareSession(
+        sessionId: 'one',
+        title: 'one',
+        uri: Uri.parse('https://example.com/one.wav'),
+        queue: original,
+        autoPlay: true,
+      );
+      final player = players.single;
+      await bridge.updateQueue(
+        'one',
+        queue: [original[0], original[2]],
+        queueRevision: 2,
+      );
+      expect(player.opens, 1);
+      expect(player.removes, 1);
+      expect(player.adds, 0);
+      expect(player.moves, 0);
+      await bridge.updateQueue('one', queue: original, queueRevision: 1);
+      expect(player.state.playlist.medias, hasLength(2));
+      expect(player.adds, 0);
+    },
+  );
+
+  test(
     'retained current media is removed after advancing to an equal URI',
     () async {
       await bridge.prepareSession(
@@ -189,6 +599,7 @@ void main() {
         uri: Uri.parse('https://example.com/shared.wav'),
         title: 'old',
         path: '/old',
+        autoPlay: true,
       );
       await bridge.setRepeatOne(
         'one',
@@ -211,6 +622,53 @@ void main() {
       expect(players.single.state.playlist.medias, hasLength(1));
     },
   );
+
+  test('queue edits can retry after a native add fails midway', () async {
+    final current = {
+      'uri': 'https://example.com/current.wav',
+      'title': 'current',
+    };
+    await bridge.prepareSession(
+      sessionId: 'one',
+      uri: Uri.parse(current['uri']!),
+      title: 'current',
+      autoPlay: true,
+      queue: [
+        current,
+        {'uri': 'https://example.com/old-1.wav'},
+        {'uri': 'https://example.com/old-2.wav'},
+      ],
+    );
+    final player = players.single;
+    player.addError = StateError('add failed');
+    final replacement = [
+      current,
+      {'uri': 'https://example.com/next.wav', 'title': 'next'},
+    ];
+    final failed = await bridge.updateQueue(
+      'one',
+      queue: replacement,
+      queueRevision: 1,
+    );
+    expect(failed.errorCodeOrNull, NativeErrorCode.playerError);
+    final snapshot = (await bridge.snapshot()).valueOrNull!.sessions.single;
+    expect(snapshot.retainedUris, [current['uri']]);
+    expect(snapshot.queueIndex, 0);
+    expect(player.state.playlist.medias, hasLength(1));
+
+    final retried = await bridge.updateQueue(
+      'one',
+      queue: replacement,
+      queueRevision: 1,
+    );
+    expect(retried.isOk, true, reason: retried.errorOrNull);
+    expect(player.state.playlist.medias.map((media) => media.uri), [
+      current['uri'],
+      replacement.last['uri'],
+    ]);
+    expect(player.opens, 1);
+    expect(bridge.playerForSession('one')!.platform, same(player));
+  });
 
   test(
     'repeat modes map to one native queue without a second player',
@@ -267,6 +725,26 @@ void main() {
     await Future<void>.delayed(const Duration(milliseconds: 550));
     expect(players.single.opens, 1);
   });
+
+  test(
+    'queue replacement cancels retries bound to the previous queue',
+    () async {
+      await prepare('one');
+      players.single.emitError('connection reset');
+      await Future<void>.delayed(Duration.zero);
+      await bridge.updateQueue(
+        'one',
+        queue: [
+          {'uri': 'https://example.com/one.wav', 'title': 'one'},
+          {'uri': 'https://example.com/next.wav', 'title': 'next'},
+        ],
+        queueRevision: 1,
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 550));
+      expect(players.single.opens, 1);
+      expect(players.single.state.playlist.medias, hasLength(2));
+    },
+  );
 
   test('device disconnect follows the configured preference', () async {
     final repository = NativePlaybackRepository(bridge: bridge);
@@ -362,11 +840,27 @@ void main() {
 class _Player extends PlatformPlayer {
   _Player() : super(configuration: const PlayerConfiguration());
   void emitError(String error) => errorController.add(error);
-  int opens = 0;
+  int opens = 0, plays = 0, adds = 0, removes = 0, moves = 0;
+  Object? pauseError, addError;
+  Completer<void>? pauseGate, pauseStarted;
+  Completer<void>? openGate,
+      openStarted,
+      addGate,
+      addStarted,
+      seekGate,
+      seekStarted,
+      disposeGate,
+      disposeStarted;
   bool disposed = false;
   final seeks = <Duration>[];
   @override
   Future<void> add(Media media) async {
+    adds++;
+    if (addStarted?.isCompleted == false) addStarted!.complete();
+    await addGate?.future;
+    final error = addError;
+    addError = null;
+    if (error != null) throw error;
     state = state.copyWith(
       playlist: Playlist([
         ...state.playlist.medias,
@@ -377,6 +871,7 @@ class _Player extends PlatformPlayer {
 
   @override
   Future<void> remove(int index) async {
+    removes++;
     final items = [...state.playlist.medias]..removeAt(index);
     state = state.copyWith(
       playlist: Playlist(
@@ -388,15 +883,26 @@ class _Player extends PlatformPlayer {
 
   @override
   Future<void> move(int from, int to) async {
+    moves++;
     final items = [...state.playlist.medias];
     final item = items.removeAt(from);
     items.insert(to, item);
-    state = state.copyWith(playlist: Playlist(items, index: to));
+    final previous = state.playlist.index;
+    final next = previous == from
+        ? to
+        : from < previous && to >= previous
+        ? previous - 1
+        : from > previous && to <= previous
+        ? previous + 1
+        : previous;
+    state = state.copyWith(playlist: Playlist(items, index: next));
   }
 
   @override
   Future<void> open(Playable playable, {bool play = true}) async {
     opens++;
+    if (openStarted?.isCompleted == false) openStarted!.complete();
+    await openGate?.future;
     state = state.copyWith(
       playlist: playable as Playlist,
       playing: play,
@@ -405,6 +911,7 @@ class _Player extends PlatformPlayer {
       duration: Duration.zero,
     );
     playlistController.add(state.playlist);
+    durationController.add(Duration.zero);
   }
 
   void loaded() {
@@ -421,12 +928,16 @@ class _Player extends PlatformPlayer {
 
   @override
   Future<void> play() async {
+    plays++;
     state = state.copyWith(playing: true);
     playingController.add(true);
   }
 
   @override
   Future<void> pause() async {
+    if (pauseStarted?.isCompleted == false) pauseStarted!.complete();
+    await pauseGate?.future;
+    if (pauseError != null) throw pauseError!;
     state = state.copyWith(playing: false);
     playingController.add(false);
   }
@@ -434,6 +945,8 @@ class _Player extends PlatformPlayer {
   @override
   Future<void> seek(Duration position) async {
     seeks.add(position);
+    if (seekStarted?.isCompleted == false) seekStarted!.complete();
+    await seekGate?.future;
     state = state.copyWith(position: position);
     positionController.add(position);
   }
@@ -452,6 +965,8 @@ class _Player extends PlatformPlayer {
   @override
   Future<void> dispose() async {
     disposed = true;
+    if (disposeStarted?.isCompleted == false) disposeStarted!.complete();
+    await disposeGate?.future;
     await super.dispose();
   }
 }

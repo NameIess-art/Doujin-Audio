@@ -16,9 +16,15 @@ extension PlaybackCommandTransport on PlaybackCommandCoordinator {
     bool allowPreparationFallback = true,
   }) async {
     if (!_isRegisteredSession(session)) return false;
+    final preparationGeneration = session.loadGeneration;
+    final previousCommandGeneration = session.playbackCommandGeneration;
     if (shouldStartTriggerCountdown) {
       await _timerFacade.clearTimerPauseForManualPlayback(session.id);
-      if (!_isRegisteredSession(session)) return false;
+      if (!_isRegisteredSession(session) ||
+          session.loadGeneration != preparationGeneration ||
+          session.playbackCommandGeneration != previousCommandGeneration) {
+        return false;
+      }
     }
     final generation = _playbackFacade.nextTransportCommandId();
     final token = _playbackCommandRunner.start(
@@ -26,13 +32,14 @@ extension PlaybackCommandTransport on PlaybackCommandCoordinator {
       generation: generation,
       isCurrent: () =>
           _isRegisteredSession(session) &&
+          session.loadGeneration == preparationGeneration &&
           session.playbackCommandGeneration == generation,
     );
     _notificationFacade.markNotificationsAvailable();
     unawaited(_nativePlaybackRepository.undismissNotifications());
     _notificationFacade.setFocusedSession(session.id);
     session.beginTransportCommand(commandId: generation, playing: true);
-    _notifyPlaybackChanged();
+    _notifyPlaybackChanged(session.id);
 
     unawaited(
       _activateAudioSessionForPlayback().then((activated) {
@@ -71,7 +78,7 @@ extension PlaybackCommandTransport on PlaybackCommandCoordinator {
           );
         }
         session.failTransportCommand(generation);
-        _notifyPlaybackChanged();
+        _notifyPlaybackChanged(session.id);
         return false;
       } else {
         final snapshot = playResult.valueOrNull;
@@ -80,6 +87,7 @@ extension PlaybackCommandTransport on PlaybackCommandCoordinator {
         }
       }
     } catch (e, stackTrace) {
+      if (!_isSessionCommandCurrent(session, token)) return false;
       if (allowPreparationFallback && session.currentTrackPath.isNotEmpty) {
         AppLogService.warning(
           'PlaybackCommandCoordinator.startSession: native play threw exception; '
@@ -95,7 +103,7 @@ extension PlaybackCommandTransport on PlaybackCommandCoordinator {
       }
       if (_isSessionCommandCurrent(session, token)) {
         session.failTransportCommand(generation);
-        _notifyPlaybackChanged();
+        _notifyPlaybackChanged(session.id);
       }
       AppLogService.error(
         'PlaybackCommandCoordinator.startSession error',
@@ -117,6 +125,7 @@ extension PlaybackCommandTransport on PlaybackCommandCoordinator {
 
   Future<bool> _pauseSessionPlayback(PlaybackSession session) async {
     if (!_isRegisteredSession(session)) return false;
+    session.invalidatePreparation();
     final generation = _playbackFacade.nextTransportCommandId();
     final token = _playbackCommandRunner.start(
       sessionId: session.id,
@@ -126,7 +135,7 @@ extension PlaybackCommandTransport on PlaybackCommandCoordinator {
           session.playbackCommandGeneration == generation,
     );
     session.beginTransportCommand(commandId: generation, playing: false);
-    _notifyPlaybackChanged();
+    _notifyPlaybackChanged(session.id);
     try {
       final pauseResult = await _nativePlaybackRepository.pause(
         session.id,
@@ -135,7 +144,7 @@ extension PlaybackCommandTransport on PlaybackCommandCoordinator {
       if (!_isSessionCommandCurrent(session, token)) return false;
       if (!pauseResult.isOk) {
         session.failTransportCommand(generation);
-        _notifyPlaybackChanged();
+        _notifyPlaybackChanged(session.id);
         return false;
       }
       final snapshot = pauseResult.valueOrNull;
@@ -146,7 +155,7 @@ extension PlaybackCommandTransport on PlaybackCommandCoordinator {
     } catch (error, stackTrace) {
       if (_isSessionCommandCurrent(session, token)) {
         session.failTransportCommand(generation);
-        _notifyPlaybackChanged();
+        _notifyPlaybackChanged(session.id);
       }
       AppLogService.error(
         'PlaybackCommandCoordinator.pauseSession error',
@@ -179,7 +188,7 @@ extension PlaybackCommandTransport on PlaybackCommandCoordinator {
       );
       await _pauseSessionPlayback(session);
       _syncNotificationState();
-      _notifyPlaybackChanged();
+      _notifyPlaybackChanged(session.id);
       return;
     }
     final nextTarget = _nextPathFor(session, forward: true);
@@ -215,7 +224,7 @@ extension PlaybackCommandTransport on PlaybackCommandCoordinator {
             preparationGeneration: preparationGeneration,
           );
           _syncNotificationState();
-          _notifyPlaybackChanged();
+          _notifyPlaybackChanged(session.id);
         }
       }
       if (_isRegisteredSession(session) &&

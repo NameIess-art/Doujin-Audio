@@ -34,6 +34,7 @@ import io.flutter.embedding.android.RenderMode
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
+import io.flutter.plugin.common.StandardMethodCodec
 
 open class MainActivity : FlutterFragmentActivity() {
     companion object {
@@ -265,7 +266,9 @@ open class MainActivity : FlutterFragmentActivity() {
         this.nativePlaybackBridge = nativePlaybackBridge
         nativePlaybackMethodChannel = MethodChannel(
             messenger,
-            PlatformChannelNames.NATIVE_PLAYBACK
+            PlatformChannelNames.NATIVE_PLAYBACK,
+            StandardMethodCodec.INSTANCE,
+            messenger.makeBackgroundTaskQueue()
         ).also { it.setMethodCallHandler(nativePlaybackBridge) }
         nativePlaybackEventChannel = EventChannel(
             messenger,

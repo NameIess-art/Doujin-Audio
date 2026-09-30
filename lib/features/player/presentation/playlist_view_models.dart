@@ -435,89 +435,22 @@ double playlistListCacheExtent({
   return (headerHeight + 800).clamp(headerHeight + 4, 1600.0).toDouble();
 }
 
-PlaylistHeaderState playlistHeaderStateFromSlices(
-  PlaybackStateSliceData playbackState,
-  TimerStateSliceData timerState, {
-  required bool hasPlayingAudioSession,
-}) {
-  return PlaylistHeaderState(
-    sessionCount: playbackState.activeSessions.length,
-    playingCount: playbackState.playingSessionCount,
-    hasPlayingAudioSession: hasPlayingAudioSession,
-    timerDuration: timerState.duration,
-    timerRemaining: timerState.remaining,
-    timerActive: timerState.active,
-    autoResumeAt: timerState.autoResumeAt,
-  );
-}
-
-List<PlaybackSessionSnapshot> overlaySessionsFromPlaybackState(
-  PlaybackStateSliceData playbackState,
-) {
-  return PlaybackSessionOverlayList(
-    playbackState.activeSessions
-      .where(
-        (session) =>
-            session.currentTrackPath.isNotEmpty &&
-            (session.isTemporary ||
-                session.retainInNowPlaying ||
-                (session.playbackRequested &&
-                    (session.isLoading ||
-                        session.isPlaybackLoading ||
-                        session.state.processing ==
-                            PlaybackProcessingStatus.loading ||
-                        session.state.processing ==
-                            PlaybackProcessingStatus.buffering ||
-                        session.state.processing ==
-                            PlaybackProcessingStatus.ready))),
-      )
-      .toList(growable: false),
-  );
-}
-
-SessionOrderState sessionOrderStateFromPlaybackState(
-  PlaybackStateSliceData playbackState,
-) {
-  return SessionOrderState(
-    sessionIds: playbackState.activeSessions
-        .map((session) => session.id)
-        .toList(growable: false),
-  );
-}
-
-SessionDetailViewState? sessionDetailViewStateFromPlaybackState(
-  PlaybackStateSliceData playbackState,
-  String sessionId,
-) {
-  for (final session in playbackState.activeSessions) {
-    if (session.id != sessionId) continue;
-    return SessionDetailViewState(
-      sessionId: session.id,
-      trackPath: session.currentTrackPath,
-      loopMode: session.loopMode,
-      isPlaying: session.playbackRequested,
-      isLoading: session.isLoading,
-      isPlaybackLoading: session.isPlaybackLoading && session.playbackRequested,
-      channelSwapEnabled: session.channelSwapEnabled,
-      volume: session.volume,
-      speed: session.speed,
-      audioEffects: session.audioEffects,
-      eqCapabilities: session.eqCapabilities,
-      playbackError: session.playbackError,
-    );
-  }
-  return null;
-}
-
-Map<String, PlaylistSessionCardState>
-playlistSessionCardStatesFromPlaybackState(
-  PlaybackStateSliceData playbackState,
-) {
-  return Map<String, PlaylistSessionCardState>.unmodifiable({
-    for (final session in playbackState.activeSessions)
-      session.id: playlistSessionCardStateFromSession(session),
-  });
-}
+SessionDetailViewState sessionDetailViewStateFromSession(
+  PlaybackSessionSnapshot session,
+) => SessionDetailViewState(
+  sessionId: session.id,
+  trackPath: session.currentTrackPath,
+  loopMode: session.loopMode,
+  isPlaying: session.playbackRequested,
+  isLoading: session.isLoading,
+  isPlaybackLoading: session.isPlaybackLoading && session.playbackRequested,
+  channelSwapEnabled: session.channelSwapEnabled,
+  volume: session.volume,
+  speed: session.speed,
+  audioEffects: session.audioEffects,
+  eqCapabilities: session.eqCapabilities,
+  playbackError: session.playbackError,
+);
 
 PlaylistSessionCardState playlistSessionCardStateFromSession(
   PlaybackSessionSnapshot session,

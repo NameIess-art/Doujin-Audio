@@ -79,6 +79,39 @@ void main() {
     expect(cache.disposeCount, 1);
   });
 
+  test('failed persistence still releases playback runtime on exit', () async {
+    final repository = _FailingPlaybackPersistenceRepository();
+    final library = LibraryFacade.create(databaseRepository: repository);
+    final playback = PlaybackFacade.create(databaseRepository: repository);
+    final cache = _RecordingPlaybackCacheService();
+    final graph = createAppRuntimeGraph(
+      library: library,
+      playback: playback,
+      timer: TimerFacade.create(),
+      notifications: NotificationFacade.create(
+        service: PlaybackNotificationService(),
+      ),
+      settings: SettingsRepository(),
+      asmrPlaybackCacheService: cache,
+    );
+    final session = playback.createTrackSession(
+      MusicTrack(
+        path: '/audio/exit.mp3',
+        displayName: 'Exit',
+        groupKey: '/audio',
+        groupTitle: 'Audio',
+        groupSubtitle: '',
+        isSingle: true,
+      ),
+    );
+
+    await expectLater(graph.runtime.dispose(), throwsStateError);
+
+    expect(playback.sessions, isEmpty);
+    expect(session.isDisposed, true);
+    expect(cache.disposeCount, 1);
+  });
+
   test(
     'production subtitles resolve ASMR tracks from session queues',
     () async {
@@ -329,10 +362,7 @@ void main() {
     expect(startupCallCount, greaterThan(0));
     expect(gateway.recordedCalls.last, <String>{destinationA});
 
-    playback.syncPresentationState(
-      focusedSessionId: null,
-      coverGeneration: 1,
-    );
+    playback.syncPresentationState(focusedSessionId: null, coverGeneration: 1);
     await Future<void>.delayed(Duration.zero);
     expect(gateway.recordedCalls, hasLength(startupCallCount));
 
@@ -407,6 +437,18 @@ final class _RecordingPlaybackCacheService extends AsmrPlaybackCacheService {
   @override
   Future<void> dispose() async {
     disposeCount++;
+  }
+}
+
+final class _FailingPlaybackPersistenceRepository
+    extends TestPersistenceRepository {
+  @override
+  Future<void> upsertSession(
+    PersistedPlaybackSession session, {
+    bool includeQueue = true,
+    bool includeEffects = true,
+  }) async {
+    throw StateError('disk write failed');
   }
 }
 

@@ -480,6 +480,11 @@ final class TimerFacade {
         nativeRuntime == NativeTimerRuntimeLoadResult.stale) {
       return;
     }
+    if (nativeRuntime == NativeTimerRuntimeLoadResult.loaded &&
+        _service.autoResumeAt?.isAfter(DateTime.now()) == true &&
+        _service.pausedByTimerSessionIds.isNotEmpty) {
+      return;
+    }
     resetRuntimeState(restoreFadeMultiplier: false);
     _changed();
     unawaited(saveRuntime());

@@ -1,4 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:doujin_audio/app/presentation/app_presentation_providers.dart';
 import 'package:doujin_audio/features/player/domain/audio_effects.dart';
 import 'package:doujin_audio/features/library/domain/library_node.dart';
 import 'package:doujin_audio/features/library/domain/audio_library_category.dart';
@@ -6,6 +8,11 @@ import 'package:doujin_audio/core/media/music_track.dart';
 import 'package:doujin_audio/features/player/domain/playback_mode.dart';
 import 'package:doujin_audio/features/player/domain/playback_queue.dart';
 import 'package:doujin_audio/features/player/application/playback_session.dart';
+import 'package:doujin_audio/features/player/application/native_playback_bridge.dart';
+import 'package:doujin_audio/features/player/application/playback_facade.dart';
+import 'package:doujin_audio/features/player/application/timer_facade.dart';
+import 'package:doujin_audio/features/player/domain/playback_persistence_repository.dart';
+import 'package:doujin_audio/features/player/presentation/playback_providers.dart';
 import 'package:doujin_audio/features/player/application/playback_session_snapshot.dart';
 import 'package:doujin_audio/app/presentation/screen_view_models.dart';
 import 'package:doujin_audio/features/player/application/audio_state_services.dart';
@@ -50,6 +57,15 @@ void main() {
 
   PlaybackSessionSnapshot snapshot(PlaybackSession value) =>
       PlaybackSessionSnapshot.fromRuntime(value);
+
+  PlaybackSessionService serviceFor(List<PlaybackSession> sessions) {
+    final service = PlaybackSessionService();
+    for (final session in sessions.reversed) {
+      service.registerSession(session);
+    }
+    addTearDown(service.dispose);
+    return service;
+  }
 
   test(
     'library search index caches by revision and reuses matching folder nodes',
@@ -200,8 +216,8 @@ void main() {
 
   test(
     'playlist header state only reflects relevant playback and timer fields',
-    () {
-      final playbackState = PlaybackStateSliceData(
+    () async {
+      const playbackState = PlaybackAggregateState(
         playingSessionCount: 2,
         isInitialized: true,
       );
@@ -211,11 +227,25 @@ void main() {
         active: true,
       );
 
-      final headerState = playlistHeaderStateFromSlices(
-        playbackState,
-        timerState,
-        hasPlayingAudioSession: false,
+      final playback = PlaybackFacade.create(databaseRepository: _Persistence())
+        ..configurePersistence(enabled: false);
+      final timer = TimerFacade.create();
+      addTearDown(playback.dispose);
+      addTearDown(timer.dispose);
+      final container = ProviderContainer.test(
+        overrides: [
+          playbackFacadeProvider.overrideWithValue(playback),
+          timerFacadeProvider.overrideWithValue(timer),
+          playbackStateProvider.overrideWith(
+            (_) => Stream.value(playbackState),
+          ),
+          timerStateProvider.overrideWith((_) => Stream.value(timerState)),
+        ],
       );
+      container.listen(playlistHeaderUiProvider, (_, _) {});
+      await container.read(playbackStateProvider.future);
+      await container.read(timerStateProvider.future);
+      final headerState = container.read(playlistHeaderUiProvider);
 
       expect(headerState.sessionCount, 0);
       expect(headerState.playingCount, 2);
@@ -339,7 +369,7 @@ void main() {
     );
   });
 
-  test('overlay state shows only confirmed playing sessions in both modes', () {
+  test('overlay catalog keeps only playing or retained sessions', () {
     final paused = session(id: 'paused', path: '/tracks/a.mp3');
     final playing = session(
       id: 'playing',
@@ -349,29 +379,17 @@ void main() {
     addTearDown(paused.shutdown);
     addTearDown(playing.shutdown);
 
-    final singlePlaybackOverlay = overlaySessionsFromPlaybackState(
-      PlaybackStateSliceData(
-        activeSessions: [snapshot(paused), snapshot(playing)],
-        playingSessionCount: 1,
-      ),
-    );
-    final multiPlaybackOverlay = overlaySessionsFromPlaybackState(
-      PlaybackStateSliceData(
-        activeSessions: [snapshot(paused), snapshot(playing)],
-        playingSessionCount: 1,
-      ),
-    );
-
-    expect(singlePlaybackOverlay.map((session) => session.id), ['playing']);
-    expect(multiPlaybackOverlay.map((session) => session.id), ['playing']);
+    final service = serviceFor([paused, playing]);
+    expect(service.catalog.state.nowPlayingSessions.map((s) => s.id), [
+      'playing',
+    ]);
 
     paused.retainInNowPlaying = true;
-    expect(
-      overlaySessionsFromPlaybackState(
-        PlaybackStateSliceData(activeSessions: [snapshot(paused)]),
-      ).map((session) => session.id),
-      ['paused'],
-    );
+    service.publishSession(paused);
+    expect(service.catalog.state.nowPlayingSessions.map((s) => s.id), [
+      'paused',
+      'playing',
+    ]);
   });
 
   test('overlay session list ignores progress-only snapshot changes', () {
@@ -393,12 +411,12 @@ void main() {
       final playlist = session(id: 'playlist', path: '/tracks/playlist.mp3');
       addTearDown(direct.shutdown);
       addTearDown(playlist.shutdown);
-      List<PlaybackSessionSnapshot> overlay() =>
-          overlaySessionsFromPlaybackState(
-            PlaybackStateSliceData(
-              activeSessions: [snapshot(direct), snapshot(playlist)],
-            ),
-          );
+      final service = serviceFor([direct, playlist]);
+      List<PlaybackSessionSnapshot> overlay() {
+        service.publishSession(direct);
+        service.publishSession(playlist);
+        return service.catalog.state.nowPlayingSessions;
+      }
 
       direct.beginPreparation(showLoading: true, autoPlay: true);
       playlist.beginPreparation(showLoading: true, autoPlay: true);
@@ -443,44 +461,41 @@ void main() {
     );
     addTearDown(detailSession.shutdown);
 
-    final detailState = sessionDetailViewStateFromPlaybackState(
-      PlaybackStateSliceData(activeSessions: [snapshot(detailSession)]),
-      'detail',
+    final detailState = sessionDetailViewStateFromSession(
+      snapshot(detailSession),
     );
 
-    expect(detailState?.trackPath, '/tracks/detail.mp3');
-    expect(detailState?.isPlaying, isTrue);
-    expect(detailState?.loopMode, SessionLoopMode.folderSequential);
+    expect(detailState.trackPath, '/tracks/detail.mp3');
+    expect(detailState.isPlaying, isTrue);
+    expect(detailState.loopMode, SessionLoopMode.folderSequential);
   });
 
   test('session detail loading follows the current playback intent', () {
     final detailSession = session(id: 'detail', path: '/tracks/detail.mp3');
     addTearDown(detailSession.shutdown);
 
-    SessionDetailViewState? view() => sessionDetailViewStateFromPlaybackState(
-      PlaybackStateSliceData(activeSessions: [snapshot(detailSession)]),
-      'detail',
-    );
+    SessionDetailViewState view() =>
+        sessionDetailViewStateFromSession(snapshot(detailSession));
 
-    expect(view()?.showPauseIcon, isFalse);
+    expect(view().showPauseIcon, isFalse);
 
     detailSession.beginPreparation(showLoading: true, autoPlay: false);
-    expect(view()?.isLoading, isTrue);
-    expect(view()?.isPlaybackLoading, isFalse);
-    expect(view()?.showPauseIcon, isFalse);
+    expect(view().isLoading, isTrue);
+    expect(view().isPlaybackLoading, isFalse);
+    expect(view().showPauseIcon, isFalse);
 
     detailSession.beginPreparation(showLoading: false, autoPlay: true);
-    expect(view()?.isLoading, isTrue);
-    expect(view()?.isPlaybackLoading, isFalse);
-    expect(view()?.showPauseIcon, isTrue);
+    expect(view().isLoading, isTrue);
+    expect(view().isPlaybackLoading, isFalse);
+    expect(view().showPauseIcon, isTrue);
     detailSession.beginLoadingIndicatorThreshold(threshold: Duration.zero);
-    expect(view()?.isPlaybackLoading, isTrue);
-    expect(view()?.showPauseIcon, isTrue);
+    expect(view().isPlaybackLoading, isTrue);
+    expect(view().showPauseIcon, isTrue);
 
     detailSession.beginTransportCommand(commandId: 1, playing: false);
-    expect(view()?.isLoading, isTrue);
-    expect(view()?.isPlaybackLoading, isFalse);
-    expect(view()?.showPauseIcon, isFalse);
+    expect(view().isLoading, isTrue);
+    expect(view().isPlaybackLoading, isFalse);
+    expect(view().showPauseIcon, isFalse);
 
     detailSession.finishPreparation(
       detailSession.loadGeneration,
@@ -488,7 +503,7 @@ void main() {
       autoPlay: true,
       error: 'load failed',
     );
-    expect(view()?.showPauseIcon, isFalse);
+    expect(view().showPauseIcon, isFalse);
   });
 
   test('session detail view state ignores progress-only changes', () {
@@ -499,25 +514,23 @@ void main() {
     )..setOptimisticDuration(const Duration(minutes: 5));
     addTearDown(detailSession.shutdown);
 
-    final originalView = sessionDetailViewStateFromPlaybackState(
-      PlaybackStateSliceData(activeSessions: [snapshot(detailSession)]),
-      'detail',
+    final originalView = sessionDetailViewStateFromSession(
+      snapshot(detailSession),
     );
     detailSession
       ..setOptimisticPosition(const Duration(seconds: 42))
       ..bufferedPosition = const Duration(minutes: 2)
       ..setOptimisticDuration(const Duration(minutes: 6));
 
-    final updatedView = sessionDetailViewStateFromPlaybackState(
-      PlaybackStateSliceData(activeSessions: [snapshot(detailSession)]),
-      'detail',
+    final updatedView = sessionDetailViewStateFromSession(
+      snapshot(detailSession),
     );
     expect(updatedView, originalView);
   });
 
   test(
     'session detail state ignores unrelated session progress-only changes',
-    () {
+    () async {
       final detailSession = session(
         id: 'detail',
         path: '/tracks/detail.mp3',
@@ -531,28 +544,26 @@ void main() {
       addTearDown(detailSession.shutdown);
       addTearDown(otherSession.shutdown);
 
-      final originalState = PlaybackStateSliceData(
-        activeSessions: [snapshot(detailSession), snapshot(otherSession)],
-        coverGeneration: 1,
-      );
-      final originalView = sessionDetailViewStateFromPlaybackState(
-        originalState,
-        'detail',
-      );
-      otherSession
-        ..setOptimisticPosition(const Duration(seconds: 50))
-        ..bufferedPosition = const Duration(minutes: 2)
-        ..setOptimisticDuration(const Duration(minutes: 4));
+      final service = serviceFor([detailSession, otherSession]);
+      final views = <SessionDetailViewState>[];
+      final subscription = service.sessionStates('detail').listen((value) {
+        if (value != null) views.add(sessionDetailViewStateFromSession(value));
+      });
+      addTearDown(subscription.cancel);
+      await Future<void>.delayed(Duration.zero);
+      expect(views, hasLength(1));
 
-      final updatedState = PlaybackStateSliceData(
-        activeSessions: [snapshot(detailSession), snapshot(otherSession)],
-        coverGeneration: 1,
+      service.applyNativeProgress(
+        NativePlaybackProgressUpdate(
+          sessionId: otherSession.id,
+          position: const Duration(seconds: 50),
+          bufferedPosition: const Duration(minutes: 2),
+          duration: const Duration(minutes: 4),
+          nativeElapsedRealtimeMs: 1,
+        ),
       );
-      final updatedView = sessionDetailViewStateFromPlaybackState(
-        updatedState,
-        'detail',
-      );
-      expect(updatedView, originalView);
+      await Future<void>.delayed(Duration.zero);
+      expect(views, hasLength(1));
     },
   );
 
@@ -564,39 +575,36 @@ void main() {
         ..beginTransportCommand(commandId: 1, playing: true);
       addTearDown(detailSession.shutdown);
 
-      final detailState = sessionDetailViewStateFromPlaybackState(
-        PlaybackStateSliceData(activeSessions: [snapshot(detailSession)]),
-        'detail',
+      final detailState = sessionDetailViewStateFromSession(
+        snapshot(detailSession),
       );
-      final cardState = playlistSessionCardStatesFromPlaybackState(
-        PlaybackStateSliceData(activeSessions: [snapshot(detailSession)]),
-      )['detail'];
+      final cardState = playlistSessionCardStateFromSession(
+        snapshot(detailSession),
+      );
 
-      expect(detailState?.isPlaying, isTrue);
-      expect(detailState?.isLoading, isFalse);
-      expect(cardState?.isPlaying, isTrue);
-      expect(cardState?.isLoading, isFalse);
+      expect(detailState.isPlaying, isTrue);
+      expect(detailState.isLoading, isFalse);
+      expect(cardState.isPlaying, isTrue);
+      expect(cardState.isLoading, isFalse);
 
       detailSession.beginLoadingIndicatorThreshold(threshold: Duration.zero);
-      final delayedState = sessionDetailViewStateFromPlaybackState(
-        PlaybackStateSliceData(activeSessions: [snapshot(detailSession)]),
-        'detail',
+      final delayedState = sessionDetailViewStateFromSession(
+        snapshot(detailSession),
       );
-      final delayedCardState = playlistSessionCardStatesFromPlaybackState(
-        PlaybackStateSliceData(activeSessions: [snapshot(detailSession)]),
-      )['detail'];
-      expect(delayedState?.isLoading, isFalse);
-      expect(delayedState?.isPlaybackLoading, isTrue);
-      expect(delayedCardState?.isLoading, isTrue);
+      final delayedCardState = playlistSessionCardStateFromSession(
+        snapshot(detailSession),
+      );
+      expect(delayedState.isLoading, isFalse);
+      expect(delayedState.isPlaybackLoading, isTrue);
+      expect(delayedCardState.isLoading, isTrue);
 
       detailSession
         ..beginTransportCommand(commandId: 2, playing: false)
         ..state = const PlayerState(false, ProcessingState.buffering);
-      final loadingState = sessionDetailViewStateFromPlaybackState(
-        PlaybackStateSliceData(activeSessions: [snapshot(detailSession)]),
-        'detail',
+      final loadingState = sessionDetailViewStateFromSession(
+        snapshot(detailSession),
       );
-      expect(loadingState?.isLoading, isFalse);
+      expect(loadingState.isLoading, isFalse);
     },
   );
 
@@ -604,10 +612,7 @@ void main() {
     final detailSession = session(id: 'detail', path: '/tracks/detail.mp3');
     addTearDown(detailSession.shutdown);
 
-    final original = sessionDetailViewStateFromPlaybackState(
-      PlaybackStateSliceData(activeSessions: [snapshot(detailSession)]),
-      'detail',
-    );
+    final original = sessionDetailViewStateFromSession(snapshot(detailSession));
     detailSession
       ..volume = 0.6
       ..speed = 1.5
@@ -623,19 +628,16 @@ void main() {
         supported: true,
         bands: <EqBandInfo>[const EqBandInfo(frequencyHz: 1000)],
       );
-    final updated = sessionDetailViewStateFromPlaybackState(
-      PlaybackStateSliceData(activeSessions: [snapshot(detailSession)]),
-      'detail',
-    );
+    final updated = sessionDetailViewStateFromSession(snapshot(detailSession));
 
     expect(updated, isNot(original));
-    expect(updated?.volume, 0.6);
-    expect(updated?.speed, 1.5);
-    expect(updated?.channelSwapEnabled, isTrue);
-    expect(updated?.audioEffects.skipSilenceEnabled, isTrue);
-    expect(updated?.audioEffects.eqEnabled, isTrue);
-    expect(updated?.audioEffects.panning, 0.4);
-    expect(updated?.eqCapabilities.supported, isTrue);
+    expect(updated.volume, 0.6);
+    expect(updated.speed, 1.5);
+    expect(updated.channelSwapEnabled, isTrue);
+    expect(updated.audioEffects.skipSilenceEnabled, isTrue);
+    expect(updated.audioEffects.eqEnabled, isTrue);
+    expect(updated.audioEffects.panning, 0.4);
+    expect(updated.eqCapabilities.supported, isTrue);
   });
 
   test('paused playback queue card state tracks queue color changes', () {
@@ -646,22 +648,20 @@ void main() {
       );
     addTearDown(queueSession.shutdown);
 
-    final original = playlistSessionCardStatesFromPlaybackState(
-      PlaybackStateSliceData(activeSessions: [snapshot(queueSession)]),
-    )['queue'];
+    final original = playlistSessionCardStateFromSession(
+      snapshot(queueSession),
+    );
     queueSession.playbackQueue = queueSession.playbackQueue?.copyWith(
       colorValue: 0xFF336699,
     );
-    final updated = playlistSessionCardStatesFromPlaybackState(
-      PlaybackStateSliceData(activeSessions: [snapshot(queueSession)]),
-    )['queue'];
+    final updated = playlistSessionCardStateFromSession(snapshot(queueSession));
 
     expect(queueSession.effectivePlaying, isFalse);
     expect(updated, isNot(original));
-    expect(updated?.queueColorValue, 0xFF336699);
+    expect(updated.queueColorValue, 0xFF336699);
   });
 
-  test('playlist session card state ignores unrelated sessions', () {
+  test('playlist session card state ignores unrelated sessions', () async {
     final focused = session(
       id: 'focused',
       path: '/tracks/focused.mp3',
@@ -671,27 +671,25 @@ void main() {
     addTearDown(focused.shutdown);
     addTearDown(other.shutdown);
 
-    final original = playlistSessionCardStatesFromPlaybackState(
-      PlaybackStateSliceData(
-        activeSessions: [snapshot(focused), snapshot(other)],
-      ),
-    )['focused'];
+    final service = serviceFor([focused, other]);
+    final cards = <PlaylistSessionCardState>[];
+    final subscription = service.sessionStates(focused.id).listen((value) {
+      if (value != null) cards.add(playlistSessionCardStateFromSession(value));
+    });
+    addTearDown(subscription.cancel);
+    await Future<void>.delayed(Duration.zero);
+    final original = cards.single;
     other.volume = 0.25;
-    final unchanged = playlistSessionCardStatesFromPlaybackState(
-      PlaybackStateSliceData(
-        activeSessions: [snapshot(focused), snapshot(other)],
-      ),
-    )['focused'];
+    service.publishSession(other);
+    await Future<void>.delayed(Duration.zero);
+    expect(cards, hasLength(1));
+    expect(cards.single, original);
     focused.loopMode = SessionLoopMode.folderSequential;
-    final changed = playlistSessionCardStatesFromPlaybackState(
-      PlaybackStateSliceData(
-        activeSessions: [snapshot(focused), snapshot(other)],
-      ),
-    )['focused'];
-
-    expect(unchanged, original);
-    expect(changed, isNot(original));
-    expect(changed?.loopMode, SessionLoopMode.folderSequential);
+    service.publishSession(focused);
+    await Future<void>.delayed(Duration.zero);
+    expect(cards, hasLength(2));
+    expect(cards.last, isNot(original));
+    expect(cards.last.loopMode, SessionLoopMode.folderSequential);
   });
 
   test('active track paths compare by set contents', () {
@@ -707,3 +705,5 @@ void main() {
     expect(first.contains('/tracks/b.mp3'), isTrue);
   });
 }
+
+class _Persistence extends Fake implements PlaybackPersistenceRepository {}

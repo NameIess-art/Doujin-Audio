@@ -4,15 +4,13 @@ package com.doujin.audio.player.session
 
 import com.doujin.audio.player.common.NATIVE_PLAYBACK_SPEED_MAX
 import com.doujin.audio.player.common.NATIVE_PLAYBACK_SPEED_MIN
-import com.doujin.audio.player.common.nativePlaybackWakeModeForUris
+import com.doujin.audio.player.common.NativePrepareSessionArguments
+import com.doujin.audio.player.common.NativeRepeatOneArguments
 import com.doujin.audio.player.effects.*
 
-import android.net.Uri
 import android.os.SystemClock
 import androidx.media3.common.audio.AudioProcessor
 import androidx.media3.common.C
-import androidx.media3.common.MediaItem
-import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
@@ -135,7 +133,6 @@ internal class NativePlaybackSession(
     val sessionId: String,
     private val createPlayer: (String, Array<AudioProcessor>) -> ExoPlayer,
     private val logWarn: (String, NativePlaybackSession, RuntimeException) -> Unit,
-    private val resolveUriToPath: ((String) -> String?)? = null,
     private val elapsedRealtimeMs: () -> Long = SystemClock::elapsedRealtime
 ) : NativePlaybackSessionSnapshotSource {
     private val audioEffects = NativeSessionAudioEffectsRuntime { message, error ->
@@ -160,6 +157,8 @@ internal class NativePlaybackSession(
     var repeatAll: Boolean = false
     var shuffleModeEnabled: Boolean = false
     private var queue: List<NativeMediaItemDescriptor> = emptyList()
+    private var queueStructure = NativePlaybackQueue(emptyList())
+    private var currentQueueIndex = 0
     var channelSwapEnabled: Boolean
         get() = audioEffects.channelSwapEnabled
         set(value) {
@@ -207,6 +206,8 @@ internal class NativePlaybackSession(
     var lastPlayWhenReady: Boolean = false
     var lastPlaybackState: String = "idle"
     var transportCommandId: Long = 0L
+    var queueRevision: Long = 0L
+    private var lastPublishedSnapshot: Map<String, Any?>? = null
     @Volatile
     private var progressAnchor = NativePlaybackProgressAnchor(
         sessionId = sessionId,
@@ -244,8 +245,12 @@ internal class NativePlaybackSession(
                 )
             }
         if (!descriptors.isNullOrEmpty()) {
+            if (queue.isEmpty()) {
+                queue = descriptors
+                queueStructure = NativePlaybackQueue(descriptors)
+            }
             p.setMediaItems(
-                descriptors.map(::buildMediaItem),
+                queueStructure.mediaItems,
                 currentQueueIndexFor(descriptors),
                 lastPositionMs
             )
@@ -294,6 +299,46 @@ internal class NativePlaybackSession(
         _player = null
     }
 
+    fun configure(args: NativePrepareSessionArguments) {
+        isTemporary = args.isTemporary
+        applyAudioEffects(args.audioEffects)
+        val queue = args.playbackQueue()
+        configure(
+            descriptor = queue[args.queueStartIndex],
+            queue = queue,
+            queueStartIndex = args.queueStartIndex,
+            startPositionMs = args.startPositionMs,
+            volume = args.volume,
+            speed = args.speed,
+            repeatOne = args.repeatOne,
+            repeatAll = args.repeatAll,
+            shuffleModeEnabled = args.shuffle,
+            autoPlay = false,
+            deferPlayerCreation = args.deferPlayerCreation,
+            preparedQueue = args.preparedQueue
+        )
+    }
+
+    fun setRepeatOne(args: NativeRepeatOneArguments) {
+        lastUsedMs = System.currentTimeMillis()
+        repeatOne = args.repeatOne
+        if (args.queue.isNotEmpty()) {
+            updateQueue(
+                queue = args.queue,
+                queueStartIndex = args.queueStartIndex,
+                repeatOne = args.repeatOne,
+                repeatAll = args.repeatAll,
+                shuffleModeEnabled = args.shuffle,
+                preparedQueue = args.preparedQueue
+            )
+        } else {
+            repeatAll = args.repeatAll
+            shuffleModeEnabled = args.shuffle
+            playerOrNull()?.repeatMode = currentRepeatMode()
+            playerOrNull()?.shuffleModeEnabled = currentShuffleModeEnabled()
+        }
+    }
+
     fun configure(
         descriptor: NativeMediaItemDescriptor,
         queue: List<NativeMediaItemDescriptor>,
@@ -305,9 +350,15 @@ internal class NativePlaybackSession(
         repeatAll: Boolean,
         shuffleModeEnabled: Boolean,
         autoPlay: Boolean,
-        deferPlayerCreation: Boolean = false
+        deferPlayerCreation: Boolean = false,
+        preparedQueue: NativePlaybackQueue? = null
     ) {
-        this.queue = queue.ifEmpty { listOf(descriptor) }
+        val descriptors = queue.ifEmpty { listOf(descriptor) }
+        if (descriptors !== this.queue) {
+            queueStructure = preparedQueue ?: NativePlaybackQueue(descriptors)
+        }
+        this.queue = descriptors
+        currentQueueIndex = queueStartIndex.coerceIn(0, descriptors.lastIndex)
         this.path = descriptor.path
         this.uri = descriptor.uri
         this.title = descriptor.title
@@ -335,7 +386,7 @@ internal class NativePlaybackSession(
             audioProcessors()
         ).also { _player = it }
         p.setMediaItems(
-            this.queue.map(::buildMediaItem),
+            queueStructure.mediaItems,
             queueStartIndex.coerceIn(0, this.queue.lastIndex),
             startPositionMs.coerceAtLeast(0L)
         )
@@ -407,14 +458,7 @@ internal class NativePlaybackSession(
     private fun effectiveSpeed(): Float = temporarySpeed ?: normalizeSpeed(speed)
 
     private fun applyWakeModeToPlayer(player: ExoPlayer) {
-        val uris = buildList {
-            add(uri)
-            queue.forEach { descriptor ->
-                add(descriptor.uri)
-                addAll(descriptor.candidateUris)
-            }
-        }
-        player.setWakeMode(nativePlaybackWakeModeForUris(uris))
+        player.setWakeMode(queueStructure.wakeMode)
     }
 
     private fun applyAudioEffectsToPlayer(player: ExoPlayer) {
@@ -436,11 +480,15 @@ internal class NativePlaybackSession(
         queueStartIndex: Int,
         repeatOne: Boolean,
         repeatAll: Boolean,
-        shuffleModeEnabled: Boolean
+        shuffleModeEnabled: Boolean,
+        preparedQueue: NativePlaybackQueue? = null
     ) {
         if (queue.isEmpty()) return
         val p = _player
-        val currentPositionMs = p?.currentPosition?.coerceAtLeast(0L) ?: lastPositionMs
+        val selected = queue[queueStartIndex.coerceIn(0, queue.lastIndex)]
+        val currentPositionMs = if (selected.path == path) {
+            p?.currentPosition?.coerceAtLeast(0L) ?: lastPositionMs
+        } else 0L
         val shouldResume = p?.let { it.playWhenReady || it.isPlaying } ?: lastPlayWhenReady
         configure(
             descriptor = queue[queueStartIndex.coerceIn(0, queue.lastIndex)],
@@ -452,8 +500,33 @@ internal class NativePlaybackSession(
             repeatOne = repeatOne,
             repeatAll = repeatAll,
             shuffleModeEnabled = shuffleModeEnabled,
-            autoPlay = shouldResume
+            autoPlay = shouldResume,
+            deferPlayerCreation = !hasPlayer(),
+            preparedQueue = preparedQueue
         )
+    }
+
+    fun clearQueue() {
+        releasePlayer()
+        queue = emptyList()
+        queueStructure = NativePlaybackQueue(queue)
+        currentQueueIndex = 0
+        path = null
+        uri = null
+        subtitle = null
+        artUri = null
+        lastPositionMs = 0L
+        lastBufferedPositionMs = 0L
+        lastDurationMs = null
+        lastIsPlaying = false
+        lastPlayWhenReady = false
+        lastPlaybackState = "idle"
+    }
+
+    override fun shouldPublishSnapshot(snapshot: Map<String, Any?>): Boolean {
+        if (snapshot == lastPublishedSnapshot) return false
+        lastPublishedSnapshot = snapshot
+        return true
     }
 
     fun reprepareCurrentMediaItem() {
@@ -506,6 +579,7 @@ internal class NativePlaybackSession(
 
         val updated = descriptor.copy(uri = nextUri)
         queue = descriptors.toMutableList().also { it[currentIndex] = updated }
+        queueStructure = NativePlaybackQueue(queue)
         uri = nextUri
         path = descriptor.path
         title = descriptor.title
@@ -566,22 +640,11 @@ internal class NativePlaybackSession(
             "eqCapabilities" to eqCapabilitiesSnapshot(),
             "queueIndex" to (p?.currentMediaItemIndex ?: currentQueueIndexFor(queue)).coerceAtLeast(0),
             "transportCommandId" to transportCommandId,
+            "queueRevision" to queueRevision,
             "error" to p?.playerError?.message
         )
         if (includeRetainedUris) {
-            result["retainedUris"] = buildList {
-                add(path)
-                add(uri)
-                add(artUri)
-                queue.forEach { descriptor ->
-                    add(descriptor.path)
-                    add(descriptor.uri)
-                    add(descriptor.artUri)
-                }
-            }.filterNotNull()
-                .filter { it.startsWith("content://", ignoreCase = true) }
-                .map { it.substringBefore("::") }
-                .distinct()
+            result["retainedUris"] = queueStructure.retainedUris
         }
         return result
     }
@@ -627,16 +690,7 @@ internal class NativePlaybackSession(
             shuffleModeEnabled = shuffleModeEnabled,
             queueStartIndex = (p?.currentMediaItemIndex ?: currentQueueIndexFor(queue))
                 .coerceAtLeast(0),
-            queue = queue.map { descriptor ->
-                StoredNativePlaybackQueueItem(
-                    path = descriptor.path,
-                    uri = descriptor.uri,
-                    title = descriptor.title,
-                    subtitle = descriptor.subtitle,
-                    artUri = descriptor.artUri,
-                    candidateUris = descriptor.candidateUris
-                )
-            },
+            queue = queueStructure.storedItems,
             channelSwapEnabled = channelSwapEnabled,
             playing = isP,
             playWhenReady = isPWR
@@ -673,37 +727,15 @@ internal class NativePlaybackSession(
     }
 
     fun syncCurrentMediaItemFromPlayer() {
-        val mediaItem = _player?.currentMediaItem ?: return
+        val player = _player ?: return
+        val mediaItem = player.currentMediaItem ?: return
+        currentQueueIndex = player.currentMediaItemIndex.coerceAtLeast(0)
         val metadata = mediaItem.mediaMetadata
         path = mediaItem.mediaId.takeIf { it.isNotBlank() }
         uri = mediaItem.localConfiguration?.uri?.toString() ?: uri
         title = metadata.title?.toString()?.takeIf { it.isNotBlank() } ?: title
         subtitle = metadata.artist?.toString()?.takeIf { it.isNotBlank() }
         artUri = metadata.artworkUri?.toString()
-    }
-
-    private fun buildMediaItem(descriptor: NativeMediaItemDescriptor): MediaItem {
-        val metadataBuilder = MediaMetadata.Builder()
-            .setTitle(descriptor.title)
-            .setArtist(descriptor.subtitle)
-        if (!descriptor.artUri.isNullOrBlank()) {
-            metadataBuilder.setArtworkUri(Uri.parse(descriptor.artUri))
-        }
-        var finalUri = descriptor.uri
-        if (finalUri.startsWith("content://")) {
-            val path = resolveUriToPath?.invoke(finalUri)
-            if (path != null) {
-                val file = java.io.File(path)
-                if (file.exists() && file.canRead()) {
-                    finalUri = Uri.fromFile(file).toString()
-                }
-            }
-        }
-        return MediaItem.Builder()
-            .setMediaId(descriptor.path)
-            .setUri(Uri.parse(finalUri))
-            .setMediaMetadata(metadataBuilder.build())
-            .build()
     }
 
     private fun repeatModeFor(queueSize: Int): Int {
@@ -719,9 +751,7 @@ internal class NativePlaybackSession(
     fun currentShuffleModeEnabled(): Boolean = shuffleModeEnabled && queue.size > 1
 
     private fun currentQueueIndexFor(descriptors: List<NativeMediaItemDescriptor>): Int {
-        val currentPath = path
-        val index = descriptors.indexOfFirst { it.path == currentPath }
-        return if (index >= 0) index else 0
+        return if (descriptors.isEmpty()) 0 else currentQueueIndex.coerceIn(0, descriptors.lastIndex)
     }
 
     fun release() {
@@ -749,6 +779,7 @@ internal interface NativePlaybackSessionSnapshotSource {
     fun currentAudioSessionId(): Int
     fun syncAudioSessionState(audioSessionId: Int)
     fun snapshot(): Map<String, Any?>
+    fun shouldPublishSnapshot(snapshot: Map<String, Any?>): Boolean = true
 }
 
 internal fun publishNativePlaybackSessionState(
@@ -760,6 +791,7 @@ internal fun publishNativePlaybackSessionState(
         session.syncAudioSessionState(audioSessionId)
     }
     val snapshot = session.snapshot()
+    if (!session.shouldPublishSnapshot(snapshot)) return snapshot
     for (listener in listeners) {
         try {
             listener(snapshot)

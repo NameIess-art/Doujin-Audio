@@ -325,16 +325,16 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
   Widget build(BuildContext context) {
     final playback = ref.read(playbackFacadeProvider);
     final paths = ref.read(audioPathCoordinatorProvider);
-    final structure = ref.watch(
-      playbackStateProvider.select((_) {
-        final state = playback.state;
-        return _DetailStructure(
-          state.activeSessions
-              .where((session) => session.id == widget.sessionId)
-              .firstOrNull,
-          state.coverGeneration,
-        );
-      }),
+    final session = ref
+        .watch(
+          playbackSessionProvider(
+            widget.sessionId,
+          ).select((value) => _DetailStructure(value, 0)),
+        )
+        .session;
+    final structure = _DetailStructure(
+      session,
+      ref.watch(coverGenerationProvider),
     );
     ref.watch(
       libraryStateProvider.select((state) => state.value?.contentRevision),

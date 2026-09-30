@@ -4,9 +4,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/app/application/app_persistence_coordinator.dart';
 import 'package:doujin_audio/app/application/audio_path_coordinator.dart';
 import 'package:doujin_audio/app/application/audio_ui_warmup_coordinator.dart';
-import 'package:doujin_audio/app/application/playback_command_coordinator.dart';
+import 'package:doujin_audio/features/player/application/playback_command_coordinator.dart';
 import 'package:doujin_audio/app/application/playback_keep_alive_coordinator.dart';
 import 'package:doujin_audio/core/errors/native_result.dart';
+import 'package:doujin_audio/core/media/music_track.dart';
 import 'package:doujin_audio/core/persistence/app_database.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_playback_cache_service.dart';
 import 'support/test_persistence_repository.dart';
@@ -20,8 +21,13 @@ import 'package:doujin_audio/features/player/application/native_playback_reposit
 import 'package:doujin_audio/features/player/application/notification_facade.dart';
 import 'package:doujin_audio/features/player/application/playback_facade.dart';
 import 'package:doujin_audio/features/player/application/playback_notification_service.dart';
+import 'package:doujin_audio/features/player/application/playback_session.dart';
 import 'package:doujin_audio/features/player/application/playback_subtitle_service.dart';
 import 'package:doujin_audio/features/player/application/timer_facade.dart';
+import 'package:doujin_audio/features/player/domain/audio_effects.dart';
+import 'package:doujin_audio/features/player/domain/playback_mode.dart';
+import 'package:doujin_audio/features/player/domain/playback_persistence_repository.dart';
+import 'package:doujin_audio/features/player/domain/playback_queue.dart';
 import 'package:doujin_audio/features/settings/application/settings_repository.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
@@ -74,10 +80,10 @@ void main() {
       playback: playback,
       timer: timer,
       notifications: notifications,
-      settings: settings,
+      asmrPlaybackCacheEnabled: () => settings.asmrPlaybackCacheEnabled,
       audioPaths: paths,
       subtitles: subtitles,
-      keepAlive: keepAlive,
+      activateAudioSession: keepAlive.activateAudioSession,
       asmrPlaybackCacheService: AsmrPlaybackCacheService(),
       notifyPlaybackChanged: () {},
       syncNotificationState: notifications.syncPlaybackState,
@@ -216,10 +222,10 @@ void main() {
         playback: playback,
         timer: timer,
         notifications: notifications,
-        settings: settings,
+        asmrPlaybackCacheEnabled: () => settings.asmrPlaybackCacheEnabled,
         audioPaths: paths,
         subtitles: subtitles,
-        keepAlive: keepAlive,
+        activateAudioSession: keepAlive.activateAudioSession,
         asmrPlaybackCacheService: AsmrPlaybackCacheService(),
         notifyPlaybackChanged: () {},
         syncNotificationState: notifications.syncPlaybackState,
@@ -295,6 +301,271 @@ void main() {
       expect(settings.slice.state.isInitialized, isFalse);
     },
   );
+
+  test(
+    'failed progress writes retry the latest state without saving another queue',
+    () async {
+      SharedPreferences.setMockInitialValues(const <String, Object>{});
+      final repository = _RecordingPlaybackPersistenceRepository();
+      final playback = PlaybackFacade.create(
+        databaseRepository: repository,
+        nativeRepository: _FakeNativePlaybackRepository(),
+      );
+      addTearDown(playback.dispose);
+      final first = _pausedSession('first');
+      final second = _pausedSession('second')
+        ..playbackQueue = PlaybackQueueDefinition(
+          name: 'Second queue',
+          entries: const <PlaybackQueueEntry>[],
+        )
+        ..audioEffects = AudioEffectsState(noiseReductionEnabled: true);
+      playback
+        ..registerSession(first)
+        ..registerSession(second)
+        ..observeSession(first);
+      await playback.flushSessionStatePersistence();
+      repository.definitionWrites.clear();
+      repository.failNextPlaybackWrite = true;
+      repository.playbackWriteStarted = Completer<void>();
+
+      first.setOptimisticPosition(const Duration(seconds: 6));
+      await Future<void>.delayed(Duration.zero);
+      playback.setBackgroundMode(true);
+      await repository.playbackWriteStarted!.future;
+      await Future<void>.delayed(Duration.zero);
+      // No new bucket is crossed, so only the failed write can retain this ID.
+      first.lastKnownPosition = const Duration(seconds: 12);
+      await playback.flushSessionStatePersistence(sessionId: second.id);
+
+      expect(repository.playbackWrites.map((session) => session.id), <String>[
+        first.id,
+        first.id,
+      ]);
+      expect(repository.playbackWrites.last.positionMs, 12000);
+      expect(repository.definitionWrites, isEmpty);
+      expect(second.playbackQueue?.name, 'Second queue');
+      expect(second.audioEffects.noiseReductionEnabled, isTrue);
+    },
+  );
+
+  test('flush waits for an order write already started by the timer', () async {
+    SharedPreferences.setMockInitialValues(const <String, Object>{});
+    final repository = _RecordingPlaybackPersistenceRepository();
+    final playback = PlaybackFacade.create(
+      databaseRepository: repository,
+      nativeRepository: _FakeNativePlaybackRepository(),
+    );
+    addTearDown(playback.dispose);
+    final session = _pausedSession('ordered');
+    playback.registerSession(session);
+    await playback.flushSessionStatePersistence();
+    repository.definitionWrites.clear();
+    repository.orderWriteStarted = Completer<void>();
+    repository.orderWriteGate = Completer<void>();
+    addTearDown(() {
+      final gate = repository.orderWriteGate!;
+      if (!gate.isCompleted) gate.complete();
+    });
+
+    playback.scheduleSessionOrderPersistence(delay: Duration.zero);
+    await repository.orderWriteStarted!.future;
+    session.volume = 0.7;
+    var flushed = false;
+    final flush = playback.flushSessionStatePersistence().then(
+      (_) => flushed = true,
+    );
+    await Future<void>.delayed(Duration.zero);
+
+    expect(flushed, isFalse);
+    expect(repository.definitionWrites, isEmpty);
+    repository.orderWriteGate!.complete();
+    await flush.timeout(const Duration(seconds: 5));
+
+    expect(repository.orderWrites, <List<String>>[
+      <String>[session.id],
+    ]);
+    expect(repository.definitionWrites.single, (session.id, false, false));
+  });
+
+  test(
+    'an order failure remains pending until a later flush retries it',
+    () async {
+      SharedPreferences.setMockInitialValues(const <String, Object>{});
+      final repository = _RecordingPlaybackPersistenceRepository();
+      final playback = PlaybackFacade.create(
+        databaseRepository: repository,
+        nativeRepository: _FakeNativePlaybackRepository(),
+      );
+      addTearDown(playback.dispose);
+      final session = _pausedSession('retry-order');
+      playback.registerSession(session);
+      await playback.flushSessionStatePersistence();
+      repository.definitionWrites.clear();
+      repository.failNextOrderWrite = true;
+
+      await expectLater(playback.saveSessionOrder(), throwsStateError);
+      await playback.flushSessionStatePersistence(sessionId: session.id);
+
+      expect(repository.orderWrites, <List<String>>[
+        <String>[session.id],
+        <String>[session.id],
+      ]);
+      expect(repository.definitionWrites, isEmpty);
+    },
+  );
+
+  for (final progressOnly in [false, true]) {
+    test(
+      'failed ${progressOnly ? 'progress' : 'definition'} history writes retry without rewriting queues',
+      () async {
+        SharedPreferences.setMockInitialValues(const <String, Object>{});
+        final repository = _RecordingPlaybackPersistenceRepository();
+        final playback = PlaybackFacade.create(
+          databaseRepository: repository,
+          nativeRepository: _FakeNativePlaybackRepository(),
+        );
+        addTearDown(playback.dispose);
+        final first = _pausedSession('history');
+        final second = _pausedSession('unrelated');
+        var track = MusicTrack(
+          path: first.currentTrackPath,
+          displayName: 'Original title',
+          groupKey: '/tracks',
+          groupTitle: 'Tracks',
+          groupSubtitle: '',
+          isSingle: true,
+        );
+        playback.attachPersistenceRuntime(
+          trackByPath: (path) => path == track.path ? track : null,
+          recordPlaybackProgress: () => true,
+          restoreRuntime: (_, {required focusedSessionId}) async {},
+          updatePlaybackHistory:
+              ({
+                required trackPath,
+                required position,
+                required now,
+                required updatePlayedAt,
+              }) {
+                track = track.copyWith(
+                  lastPlayedPosition: position,
+                  lastPlayedAt: updatePlayedAt ? now : track.lastPlayedAt,
+                );
+                return track;
+              },
+          onFocusChanged: (_) {},
+        );
+        playback
+          ..registerSession(first)
+          ..registerSession(second);
+        if (progressOnly) playback.observeSession(first);
+        await playback.flushSessionStatePersistence();
+        repository.definitionWrites.clear();
+        repository.failNextTrackWrite = true;
+
+        if (progressOnly) {
+          repository.trackWriteStarted = Completer<void>();
+          first.setOptimisticPosition(const Duration(seconds: 31));
+          await Future<void>.delayed(Duration.zero);
+          playback.setBackgroundMode(true);
+          await repository.trackWriteStarted!.future;
+          await Future<void>.delayed(Duration.zero);
+        } else {
+          first.lastKnownPosition = const Duration(seconds: 6);
+          await expectLater(
+            playback.flushSessionStatePersistence(sessionId: first.id),
+            throwsStateError,
+          );
+        }
+        final expectedPosition = Duration(seconds: progressOnly ? 31 : 6);
+        expect(track.lastPlayedPosition, expectedPosition);
+        track = track.copyWith(isFavorite: true);
+
+        await playback.flushSessionStatePersistence(sessionId: second.id);
+
+        expect(repository.trackWrites, hasLength(2));
+        expect(repository.trackWrites.last.single.isFavorite, true);
+        expect(
+          repository.trackWrites.last.single.lastPlayedPosition,
+          expectedPosition,
+        );
+        expect(
+          repository.definitionWrites,
+          progressOnly ? isEmpty : [(first.id, false, false)],
+        );
+        expect(repository.playbackWrites, hasLength(progressOnly ? 1 : 0));
+      },
+    );
+  }
+}
+
+PlaybackSession _pausedSession(String id) => PlaybackSession(
+  id: id,
+  currentTrackPath: '/tracks/$id.mp3',
+  loopMode: SessionLoopMode.single,
+  nonSingleLoopMode: SessionLoopMode.folderSequential,
+  volume: 1,
+  createdAt: DateTime(2026),
+  state: const PlayerState(false, ProcessingState.idle),
+);
+
+final class _RecordingPlaybackPersistenceRepository
+    extends TestPersistenceRepository {
+  final definitionWrites = <(String, bool, bool)>[];
+  final playbackWrites = <PersistedPlaybackSession>[];
+  final orderWrites = <List<String>>[];
+  final trackWrites = <List<MusicTrack>>[];
+  Completer<void>? playbackWriteStarted;
+  Completer<void>? orderWriteStarted;
+  Completer<void>? orderWriteGate;
+  Completer<void>? trackWriteStarted;
+  bool failNextPlaybackWrite = false;
+  bool failNextOrderWrite = false;
+  bool failNextTrackWrite = false;
+
+  @override
+  Future<void> upsertSession(
+    PersistedPlaybackSession session, {
+    bool includeQueue = true,
+    bool includeEffects = true,
+  }) async {
+    definitionWrites.add((session.id, includeQueue, includeEffects));
+  }
+
+  @override
+  Future<void> upsertSessionPlaybackState(
+    PersistedPlaybackSession session,
+  ) async {
+    playbackWrites.add(session);
+    final started = playbackWriteStarted;
+    if (started != null && !started.isCompleted) started.complete();
+    if (failNextPlaybackWrite) {
+      failNextPlaybackWrite = false;
+      throw StateError('playback state unavailable');
+    }
+  }
+
+  @override
+  Future<void> updateSessionOrder(List<String> sessionIds) async {
+    orderWrites.add(List<String>.of(sessionIds));
+    final started = orderWriteStarted;
+    if (started != null && !started.isCompleted) started.complete();
+    if (failNextOrderWrite) {
+      failNextOrderWrite = false;
+      throw StateError('session order unavailable');
+    }
+    await orderWriteGate?.future;
+  }
+
+  @override
+  Future<void> upsertTracks(List<MusicTrack> tracks) async {
+    trackWrites.add(List<MusicTrack>.of(tracks));
+    final started = trackWriteStarted;
+    if (started != null && !started.isCompleted) started.complete();
+    if (failNextTrackWrite) {
+      failNextTrackWrite = false;
+      throw StateError('track history unavailable');
+    }
+  }
 }
 
 final class _FailOnceSettingsRepository extends SettingsRepository {

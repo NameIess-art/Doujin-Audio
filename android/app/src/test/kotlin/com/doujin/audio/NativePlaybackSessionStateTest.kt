@@ -179,28 +179,41 @@ class NativePlaybackSessionStateTest {
     }
 
     @Test
-    fun `enabling equalizer for a paused deferred session creates a player`() {
-        assertEquals(
-            true,
-            shouldEnsurePlayerForAudioEffects(
-                effects = NativeAudioEffects(eqEnabled = true),
-                hasPlayer = false
-            )
+    fun `editing effects and queue of a deferred session does not create a player`() {
+        val session = NativePlaybackSession(
+            sessionId = "idle", createPlayer = { _, _ -> error("Idle session created a player") },
+            logWarn = { _, _, _ -> }, elapsedRealtimeMs = { 0L }
         )
-        assertEquals(
-            false,
-            shouldEnsurePlayerForAudioEffects(
-                effects = NativeAudioEffects(eqEnabled = true),
-                hasPlayer = true
-            )
-        )
-        assertEquals(
-            false,
-            shouldEnsurePlayerForAudioEffects(
-                effects = NativeAudioEffects(),
-                hasPlayer = false
-            )
-        )
+        session.applyAudioEffects(NativeAudioEffects(eqEnabled = true, channelSwapEnabled = true))
+        val queue = listOf(NativeMediaItemDescriptor("/a.mp3", "file:///a.mp3", "A", null, null))
+        session.updateQueue(queue, 0, true, false, false)
+        assertEquals(false, session.hasPlayer())
+        assertEquals("/a.mp3", session.snapshot()["path"])
+        assertEquals(true, session.storedSnapshot().eqEnabled)
+        assertEquals(true, session.storedSnapshot().repeatOne)
+        org.junit.Assert.assertSame(session.storedSnapshot().queue, session.storedSnapshot().queue)
+    }
+
+    @Test
+    fun `clearing a deferred queue removes media and progress while preserving settings`() {
+        val session = NativePlaybackSession("idle", { _, _ -> error("Player created") }, { _, _, _ -> }, { 0L })
+        session.updateQueue(listOf(NativeMediaItemDescriptor("/a", "file:///a", "A", null, null)), 0, false, false, false)
+        session.applyVolume(0.4f)
+        session.seekTo(1_000L)
+        session.clearQueue()
+        assertEquals(null, session.snapshot()["path"])
+        assertEquals(0L, session.snapshot()["positionMs"])
+        assertEquals(emptyList<StoredNativePlaybackQueueItem>(), session.storedSnapshot().queue)
+        assertEquals(0.4f, session.volume)
+    }
+
+    @Test
+    fun `deferred queue preserves the selected occurrence of a repeated media path`() {
+        val session = NativePlaybackSession("idle", { _, _ -> error("Player created") }, { _, _, _ -> }, { 0L })
+        val descriptor = NativeMediaItemDescriptor("/a", "file:///a", "A", null, null)
+        session.updateQueue(listOf(descriptor, descriptor), 1, false, false, false)
+        assertEquals(1, session.snapshot()["queueIndex"])
+        assertEquals(1, session.storedSnapshot().queueStartIndex)
     }
 
     @Test

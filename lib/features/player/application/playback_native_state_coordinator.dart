@@ -54,12 +54,13 @@ extension PlaybackNativeStateCoordinator on PlaybackFacade {
         );
       }
       session.reconcilePlaybackState();
+      _service.publishSession(session);
       _onRuntimeStateChanged?.call();
       _onSessionStateChanged?.call();
 
       if (previousPlaying != state.playing ||
           previousProcessing != state.processingState) {
-        scheduleSessionStatePersistence();
+        scheduleSessionStatePersistence(sessionId: session.id);
       }
 
       if (isNewCompletion && shouldAutoAdvanceAfterCompletion) {
@@ -107,8 +108,8 @@ extension PlaybackNativeStateCoordinator on PlaybackFacade {
               preparationGeneration: preparationGeneration,
               error: error.toString(),
             )) {
+          _notifySessionStateChanged(session);
           _onRuntimeStateChanged?.call();
-          _onSessionStateChanged?.call();
         }
         AppLogService.error(
           'PlaybackFacade.sessionCompleted error',
@@ -210,7 +211,7 @@ extension PlaybackNativeStateCoordinator on PlaybackFacade {
   }
 
   Future<void> get pendingSessionPreparation =>
-      _service.sessionPreparationQueue;
+      _service.pendingSessionPreparation;
   bool get hasScheduledSessionStatePersistence =>
       _service.saveSessionStateTimer != null;
   bool get hasScheduledSessionOrderPersistence =>
@@ -226,21 +227,25 @@ extension PlaybackNativeStateCoordinator on PlaybackFacade {
   bool isRegisteredSession(PlaybackSession session) =>
       !session.isDisposed && identical(_service.sessions[session.id], session);
 
-  void markSessionStateDirty() => _service.markActiveSessionsDirty();
+  void markSessionStateDirty([String? sessionId]) {
+    _service.markSessionStateDirty();
+    publishSessionState(sessionId);
+  }
 
   void syncPresentationState({
     required String? focusedSessionId,
     required int coverGeneration,
     bool? isInitialized,
+    bool refreshSessions = true,
   }) {
-    _service.markSessionStateDirty();
-    final current = _service.slice.state;
+    final current = _service.aggregate.state;
     _service.syncSlice(
       activeSessions: _service.activeSessions,
       playingSessionCount: _service.playingSessionCount,
       focusedSessionId: focusedSessionId,
       coverGeneration: coverGeneration,
       isInitialized: isInitialized ?? current.isInitialized,
+      refreshSessions: refreshSessions,
     );
   }
 

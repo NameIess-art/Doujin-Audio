@@ -1,4 +1,5 @@
 import 'package:doujin_audio/app/presentation/app_presentation_providers.dart';
+import 'package:doujin_audio/app/state/subtitle_settings_provider.dart';
 import 'package:doujin_audio/features/library/domain/library_node.dart';
 import 'package:doujin_audio/features/settings/application/settings_state.dart';
 import 'package:flutter/widgets.dart';
@@ -8,6 +9,75 @@ import 'package:flutter_test/flutter_test.dart';
 import 'support/app_runtime_test_fixture.dart';
 
 void main() {
+  testWidgets('global subtitles switch by target state and ignore parameters', (
+    tester,
+  ) async {
+    final fixture = AppRuntimeWidgetTestFixture();
+    addTearDown(fixture.dispose);
+    final sessions = [
+      for (final name in ['A', 'B'])
+        fixture.playback.createTrackSession(
+          testMusicTrack(
+            name: name,
+            path: '/music/$name.mp3',
+            groupKey: '/music',
+            groupTitle: 'Music',
+          ),
+        ),
+    ];
+    for (final session in sessions) {
+      addTearDown(session.shutdown);
+    }
+    sessions.first.setOptimisticState(playing: true);
+    fixture.playback.publishSessionState(sessions.first.id);
+    final subtitleSettings = SubtitleSettingsNotifier(
+      loadState: () async => SubtitleSettingsState(
+        globalSubtitlesMap: {for (final session in sessions) session.id: true},
+      ),
+    );
+    String? selected;
+    var builds = 0;
+    await tester.pumpWidget(
+      fixture.build(
+        Consumer(
+          builder: (context, ref, _) {
+            selected = ref
+                .watch(globalSubtitleOverlaySessionProvider)
+                ?.session
+                .id;
+            builds++;
+            return const SizedBox.shrink();
+          },
+        ),
+        overrides: [
+          subtitleSettingsProvider.overrideWith(() => subtitleSettings),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(selected, sessions.first.id);
+    final initialBuilds = builds;
+    sessions.first.volume = 0.3;
+    fixture.playback.publishSessionState(sessions.first.id);
+    sessions.first.setOptimisticPosition(const Duration(seconds: 3));
+    await tester.pumpAndSettle();
+    expect(builds, initialBuilds);
+
+    sessions.first.setOptimisticState(playing: false);
+    sessions.last.setOptimisticState(playing: true);
+    fixture.playback
+      ..publishSessionState(sessions.first.id)
+      ..publishSessionState(sessions.last.id);
+    await tester.pumpAndSettle();
+    expect(selected, sessions.last.id);
+    expect(fixture.playback.aggregateState.playingSessionCount, 1);
+
+    sessions.last.setOptimisticState(playing: false);
+    fixture.playback.publishSessionState(sessions.last.id);
+    await tester.pumpAndSettle();
+    expect(selected, fixture.playback.catalogState.sessions.first.id);
+  });
+
   testWidgets(
     'scan progress and unrelated details do not re-sort the library',
     (tester) async {

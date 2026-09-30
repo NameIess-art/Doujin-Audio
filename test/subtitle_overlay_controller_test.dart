@@ -2,12 +2,91 @@ import 'dart:async';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:doujin_audio/core/media/subtitle_parser.dart';
 import 'package:doujin_audio/core/platform/subtitle_overlay_platform_service.dart';
 import 'package:doujin_audio/features/player/application/subtitle_overlay_controller.dart';
 import 'package:doujin_audio/features/player/application/playback_session.dart';
+import 'package:doujin_audio/features/player/application/playback_subtitle_service.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  setUp(() => SharedPreferences.setMockInitialValues({}));
+
+  testWidgets(
+    'paused overlay has no polling and follows only its target stream',
+    (tester) async {
+      const channel = MethodChannel('test.subtitle.overlay.events');
+      final calls = <MethodCall>[];
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(channel, (call) async {
+        calls.add(call);
+        return <String, Object?>{'ok': true, 'value': true};
+      });
+      addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
+      final first = _OverlaySession(id: 'a', path: '/music/a.mp3');
+      final second = _OverlaySession(id: 'b', path: '/music/b.mp3');
+      addTearDown(first.positions.close);
+      addTearDown(second.positions.close);
+      final subtitles = _CountingSubtitles();
+      addTearDown(subtitles.dispose);
+      final controller = SubtitleOverlayController(
+        platform: SubtitleOverlayPlatformService(channel: channel),
+      );
+      addTearDown(controller.dispose);
+      var selected = first;
+      controller.attachRuntime(
+        enabled: () => true,
+        session: () => selected,
+        subtitles: () => subtitles,
+        style: () => (
+          fontSize: null,
+          backgroundColor: null,
+          textColor: null,
+          backgroundOpacity: null,
+          fontFamily: null,
+          borderDepth: null,
+        ),
+      );
+      controller.requestRuntimeSync();
+      for (var i = 0; i < 8; i++) {
+        await tester.pump();
+      }
+      expect(first.positions.hasListener, isTrue);
+      expect(second.positions.hasListener, isFalse);
+      final textReads = subtitles.textReads;
+      final platformCalls = calls.length;
+      await tester.pump(const Duration(seconds: 60));
+      expect(subtitles.textReads, textReads);
+      expect(calls.length, platformCalls);
+
+      first.emit(const Duration(seconds: 2));
+      await tester.pump();
+      expect(calls.last.arguments, {'text': 'a:next'});
+      selected = second;
+      controller.requestRuntimeSync();
+      for (var i = 0; i < 8; i++) {
+        await tester.pump();
+      }
+      expect(first.positions.hasListener, isFalse);
+      expect(second.positions.hasListener, isTrue);
+      final switchedCalls = calls.length;
+      first.emit(const Duration(seconds: 3));
+      await tester.pump();
+      expect(calls.length, switchedCalls);
+      second.emit(const Duration(seconds: 2));
+      await tester.pump();
+      expect(calls.last.arguments, {'text': 'b:next'});
+
+      await tester.runAsync(controller.detachRuntime);
+      expect(second.positions.hasListener, isFalse);
+      final stoppedCalls = calls.length;
+      second.emit(const Duration(seconds: 3));
+      await tester.pump(const Duration(seconds: 60));
+      expect(calls.length, stoppedCalls);
+    },
+  );
 
   test('overlay permission is only requested on Android', () {
     expect(shouldRequestSubtitleOverlayPermission(isAndroid: true), isTrue);
@@ -160,10 +239,48 @@ final class _TestTimer implements Timer {
 }
 
 class _OverlaySession implements PlaybackSession {
+  _OverlaySession({this.id = 'session', String path = '/music/track.mp3'})
+    : currentTrackPath = path;
+
   @override
-  String get id => 'session';
+  final String id;
   @override
-  String get currentTrackPath => '/music/track.mp3';
+  final String currentTrackPath;
+  final positions = StreamController<Duration>.broadcast(sync: true);
+  @override
+  Duration position = Duration.zero;
+  @override
+  Stream<Duration> get positionStream => positions.stream;
+
+  void emit(Duration value) {
+    position = value;
+    positions.add(value);
+  }
+
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _CountingSubtitles extends PlaybackSubtitleService {
+  _CountingSubtitles() : super(trackResolver: (_) => null);
+
+  int textReads = 0;
+  @override
+  bool hasResult(String trackPath) => true;
+  @override
+  SubtitleTrack trackSync(String trackPath) =>
+      SubtitleTrack(sourcePath: '$trackPath.lrc', cues: const []);
+  @override
+  Future<SubtitleTrack?> load(String trackPath) async => trackSync(trackPath);
+  @override
+  String textAt(
+    String trackPath,
+    Duration position, {
+    SubtitleTrack? subtitleTrack,
+    bool persistent = false,
+  }) {
+    textReads++;
+    final name = trackPath.contains('/a.') ? 'a' : 'b';
+    return '$name:${position.inSeconds >= 2 ? 'next' : 'first'}';
+  }
 }

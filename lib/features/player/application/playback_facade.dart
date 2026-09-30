@@ -5,7 +5,6 @@ import 'dart:math';
 import '../../../core/errors/native_result.dart';
 import '../../../core/immutable_collections.dart';
 import '../../../core/media/music_track.dart';
-import '../../../core/media/media_file_support.dart';
 import '../../../core/media/path_matcher.dart';
 import '../../../core/media/path_display.dart';
 import '../../../core/logging/app_log_service.dart';
@@ -105,6 +104,8 @@ final class PlaybackFacade {
   PlaybackLoopModeSynchronizer? _synchronizeLoopMode;
   bool _sessionObserversAttached = false;
   final Map<String, String> _retargetedPathAliases = <String, String>{};
+  int _retargetRevision = 0;
+  int get retargetRevision => _retargetRevision;
   final Random _random = Random();
   final Set<String> _deferredVolumeReloadSessionIds = <String>{};
   int _transportCommandSequence = 0;
@@ -116,6 +117,12 @@ final class PlaybackFacade {
   Timer? _savePlaybackStateTimer;
   final Set<String> _pendingPlaybackStateSessionIds = <String>{};
   Future<void>? _sessionPersistenceTail;
+  bool _pendingSessionOrder = false;
+  final Map<String, PersistedPlaybackSession> _persistedSessions = {};
+  final Map<String, int> _persistedQueueVersions = {};
+  final Set<String> _pendingSessionDefinitionIds = {};
+  final Set<String> _pendingDeletedSessionIds = {};
+  final Map<String, MusicTrack> _pendingPlaybackHistoryTracks = {};
 
   static const int foregroundPositionBucketSeconds = 5;
 
@@ -136,8 +143,35 @@ final class PlaybackFacade {
   ];
 
   Stream<String> get sessionActivations => _sessionActivations.stream;
-  PlaybackStateSliceData get state => _service.slice.state;
-  Stream<PlaybackStateSliceData> get states => _service.slice.stream;
+  PlaybackStateSliceData get state => _service.state;
+  PlaybackAggregateState get aggregateState => _service.aggregate.state;
+  Stream<PlaybackAggregateState> get states => _service.aggregate.stream;
+  PlaybackCatalogState get catalogState => _service.catalog.state;
+  Stream<PlaybackCatalogState> get catalogStates => _service.catalog.stream;
+  Stream<PlaybackSessionSnapshot?> sessionStates(String sessionId) =>
+      _service.sessionStates(sessionId);
+
+  void publishSessionState([String? sessionId]) {
+    if (sessionId != null) {
+      final session = _service.sessionById(sessionId);
+      if (session != null) _service.publishSession(session);
+      return;
+    }
+    for (final session in _service.activeSessions) {
+      _service.publishSession(session);
+    }
+  }
+
+  void _notifySessionStateChanged([PlaybackSession? session]) {
+    publishSessionState(session?.id);
+    _onSessionStateChanged?.call();
+  }
+
+  void _notifySessionSettingsChanged(PlaybackSession session) {
+    publishSessionState(session.id);
+    _onSessionSettingsChanged?.call();
+  }
+
   Map<String, PlaybackSession> get sessions =>
       UnmodifiableMapView<String, PlaybackSession>(_service.sessions);
   List<PlaybackSession> get activeSessions =>
@@ -150,28 +184,11 @@ final class PlaybackFacade {
   }
 
   bool hasSession(String sessionId) => _service.sessions.containsKey(sessionId);
-  bool get hasPlayingSession =>
-      _service.sessions.values.any((session) => session.state.playing);
-  bool get hasPlayingAudioSession => _service.sessions.values.any((session) {
-    if (!session.state.playing || session.currentTrackPath.isEmpty) {
-      return false;
-    }
-    final trackPath = session.currentTrackPath;
-    final track =
-        session.trackForPath(trackPath) ??
-        _persistedTrackResolver?.call(trackPath);
-    if (isVideoMediaFile(trackPath)) return false;
-    return track != null ? !track.isVideo : isSupportedMediaFile(trackPath);
-  });
-  bool get hasPlaybackToKeepAlive => _service.sessions.values.any(
-    (session) =>
-        session.state.playing ||
-        session.isLoading ||
-        session.isPlaybackStarting ||
-        session.loadedPath != null,
-  );
+  bool get hasPlayingSession => _service.playingSessionCount > 0;
+  bool get hasPlayingAudioSession => _service.hasPlayingAudioSession;
+  bool get hasPlaybackToKeepAlive => _service.hasPlaybackToKeepAlive;
   bool get hasRetainedPlaybackSession => _service.sessions.isNotEmpty;
-  bool get persistedSessionStateReady => state.isInitialized;
+  bool get persistedSessionStateReady => aggregateState.isInitialized;
   bool get nativeRetainedContentUriInventoryReady =>
       _nativeRetainedContentUriInventoryReady;
   bool get persistedUriReferencesReady =>
@@ -274,6 +291,7 @@ final class PlaybackFacade {
   }
 
   void registerSession(PlaybackSession session) {
+    _pendingDeletedSessionIds.remove(session.id);
     _service.registerSession(session);
     if (_sessionObserversAttached) {
       _bindSessionListeners(session);
@@ -310,7 +328,7 @@ final class PlaybackFacade {
           ..channelSwapEnabled = false
           ..audioEffects = AudioEffectsState.flat;
     registerSession(session);
-    if (!isTemporary) _scheduleNewSessionPersistence();
+    if (!isTemporary) _scheduleNewSessionPersistence(sessionId: session.id);
     return session;
   }
 
@@ -327,7 +345,7 @@ final class PlaybackFacade {
       playbackQueue: PlaybackQueueDefinition(name: name, entries: const []),
     );
     registerSession(session);
-    _scheduleNewSessionPersistence();
+    _scheduleNewSessionPersistence(sessionId: session.id);
     return session;
   }
 
@@ -344,16 +362,32 @@ final class PlaybackFacade {
   }
 
   Future<bool> pauseAllSessions() async {
+    final requestedSessions = <PlaybackSession, (int, int)>{};
+    for (final session in _service.sessions.values) {
+      session.invalidatePreparation();
+      session.failTransportCommand(session.transportCommandId);
+      requestedSessions[session] = (
+        session.loadGeneration,
+        session.playbackCommandGeneration,
+      );
+      _service.publishSession(session);
+    }
     final response = await nativeRepository.pauseAll();
     if (response.isFailure) {
       _logNativeCommandFailure('pauseAllSessions', response);
       return false;
     }
-    for (final session in _service.sessions.values) {
+    for (final entry in requestedSessions.entries) {
+      final session = entry.key;
+      if (!isRegisteredSession(session) ||
+          session.loadGeneration != entry.value.$1 ||
+          session.playbackCommandGeneration != entry.value.$2) {
+        continue;
+      }
       session.confirmPaused();
     }
+    _notifySessionStateChanged();
     _onRuntimeStateChanged?.call();
-    _onSessionStateChanged?.call();
     scheduleSessionStatePersistence();
     return true;
   }
@@ -377,18 +411,23 @@ final class PlaybackFacade {
     final removedSessionIds = <String>[];
     var allSucceeded = true;
     for (final session in candidates) {
-      final response = await nativeRepository.removeSession(session.id);
-      if (response.isOk) {
-        removedSessionIds.add(session.id);
-      } else {
-        allSucceeded = false;
-        _logNativeCommandFailure(
-          'removeSession',
-          response,
-          sessionId: session.id,
-        );
-      }
+      session.invalidatePreparation();
     }
+    await Future.wait(
+      candidates.map((session) async {
+        final response = await nativeRepository.removeSession(session.id);
+        if (response.isOk) {
+          removedSessionIds.add(session.id);
+        } else {
+          allSucceeded = false;
+          _logNativeCommandFailure(
+            'removeSession',
+            response,
+            sessionId: session.id,
+          );
+        }
+      }),
+    );
 
     final removedSessions = _service.removeSessions(removedSessionIds);
     _removeNativeRetainedContentUris(removedSessionIds);
@@ -402,12 +441,22 @@ final class PlaybackFacade {
     if (notify) _onSessionStateChanged?.call();
     _onRuntimeStateChanged?.call();
     if (persist) {
-      _scheduleNewSessionPersistence(respectConfiguration: false);
+      _pendingDeletedSessionIds.addAll(removedSessionIds);
+      _scheduleNewSessionPersistence(
+        sessionId: removedSessionIds.first,
+        respectConfiguration: false,
+      );
     }
     return allSucceeded;
   }
 
   Future<bool> clearAllSessions() async {
+    final requestedSessions = _service.sessions.values.toList(growable: false);
+    for (final session in requestedSessions) {
+      session.invalidatePreparation();
+      session.failTransportCommand(session.transportCommandId);
+      _service.publishSession(session);
+    }
     final response = await nativeRepository.clearAll();
     if (response.isFailure) {
       _logNativeCommandFailure('clearAllSessions', response);
@@ -415,7 +464,7 @@ final class PlaybackFacade {
     }
     _clearNativeRetainedContentUris();
     final removedSessions = _service.removeSessions(
-      _service.sessions.keys.toList(growable: false),
+      requestedSessions.where(isRegisteredSession).map((session) => session.id),
     );
     if (removedSessions.isEmpty) return true;
     for (final session in removedSessions) {
@@ -427,6 +476,9 @@ final class PlaybackFacade {
     _onSessionStateChanged?.call();
     await Future.wait(removedSessions.map((session) => session.shutdown()));
     _onRuntimeStateChanged?.call();
+    _pendingDeletedSessionIds.addAll(
+      removedSessions.map((session) => session.id),
+    );
     _scheduleNewSessionPersistence(respectConfiguration: false);
     return true;
   }
@@ -488,7 +540,7 @@ final class PlaybackFacade {
     if (session == null || session.currentTrackPath.isEmpty) return;
     if (session.playbackError != null) {
       session.lastPlayedAt = DateTime.now();
-      _onSessionStateChanged?.call();
+      _notifySessionStateChanged(session);
       // A native player can keep the failed media item while ExoPlayer is in
       // an error/idle state. Re-preparing the unchanged path is a no-op in the
       // preparation coordinator, so route retries through native recovery when
@@ -548,7 +600,7 @@ final class PlaybackFacade {
       forceStartAtZero: true,
       showLoading: false,
     );
-    scheduleSessionStatePersistence();
+    scheduleSessionStatePersistence(sessionId: session.id);
   }
 
   Future<void> switchSessionQueueTrack(String sessionId, int queueIndex) async {
@@ -568,7 +620,7 @@ final class PlaybackFacade {
       showLoading: false,
       targetQueueIndex: index,
     );
-    scheduleSessionStatePersistence();
+    scheduleSessionStatePersistence(sessionId: session.id);
   }
 
   Future<void> seekSessionToNext(String sessionId) async {
@@ -637,13 +689,12 @@ final class PlaybackFacade {
     if (mode != SessionLoopMode.single) {
       session.nonSingleLoopMode = mode;
     }
-    _service.markActiveSessionsDirty();
-    _onSessionSettingsChanged?.call();
+    _notifySessionSettingsChanged(session);
     final synchronize = _synchronizeLoopMode;
     if (synchronize != null) {
       unawaited(synchronize(session, mode));
     }
-    scheduleSessionStatePersistence();
+    scheduleSessionStatePersistence(sessionId: session.id);
   }
 
   Future<void> toggleSessionSingleLoop(String sessionId) async {
@@ -728,16 +779,18 @@ final class PlaybackFacade {
       PlaybackNativeStateCoordinator(this).nextTransportCommandId();
   bool isRegisteredSession(PlaybackSession session) =>
       PlaybackNativeStateCoordinator(this).isRegisteredSession(session);
-  void markSessionStateDirty() =>
-      PlaybackNativeStateCoordinator(this).markSessionStateDirty();
+  void markSessionStateDirty([String? sessionId]) =>
+      PlaybackNativeStateCoordinator(this).markSessionStateDirty(sessionId);
   void syncPresentationState({
     required String? focusedSessionId,
     required int coverGeneration,
     bool? isInitialized,
+    bool refreshSessions = true,
   }) => PlaybackNativeStateCoordinator(this).syncPresentationState(
     focusedSessionId: focusedSessionId,
     coverGeneration: coverGeneration,
     isInitialized: isInitialized,
+    refreshSessions: refreshSessions,
   );
   Future<void> removeSessionsForTrackPaths(Iterable<String> trackPaths) =>
       PlaybackNativeStateCoordinator(
@@ -786,19 +839,20 @@ final class PlaybackFacade {
   Future<void> saveSessionOrder() =>
       PlaybackSessionPersistenceCoordinator(this).saveSessionOrder();
   void scheduleSessionStatePersistence({
+    String? sessionId,
     Duration delay = const Duration(milliseconds: 220),
   }) => PlaybackSessionPersistenceCoordinator(
     this,
-  ).scheduleSessionStatePersistence(delay: delay);
+  ).scheduleSessionStatePersistence(sessionId: sessionId, delay: delay);
   void scheduleSessionOrderPersistence({
     Duration delay = const Duration(milliseconds: 180),
   }) => PlaybackSessionPersistenceCoordinator(
     this,
   ).scheduleSessionOrderPersistence(delay: delay);
-  Future<void> flushSessionStatePersistence() =>
+  Future<void> flushSessionStatePersistence({String? sessionId}) =>
       PlaybackSessionPersistenceCoordinator(
         this,
-      ).flushSessionStatePersistence();
+      ).flushSessionStatePersistence(sessionId: sessionId);
   void cancelScheduledPersistence() =>
       PlaybackSessionPersistenceCoordinator(this).cancelScheduledPersistence();
 

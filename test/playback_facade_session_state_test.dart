@@ -100,6 +100,7 @@ void main() {
       await library.dispose();
     });
     final first = _session('first')
+      ..loadedPath = '/tracks/first.mp3'
       ..setOptimisticState(playing: true)
       ..beginPreparation(showLoading: true, autoPlay: true);
     final second = _session('second')..setOptimisticState(playing: true);
@@ -181,30 +182,33 @@ void main() {
     expect(runtimeChanges, 3);
   });
 
-  test('native pause failure keeps Flutter playback state unchanged', () async {
-    final library = _createLibraryFacade();
-    final native = _RecordingNativePlaybackRepository()..failPauseAll = true;
-    final playback = PlaybackFacade.create(
-      databaseRepository:
-          library.databaseRepository as PlaybackPersistenceRepository,
-      nativeRepository: native,
-    )..configurePersistence(enabled: false);
-    final session = _session('pause-failure')
-      ..setOptimisticState(playing: true)
-      ..beginPreparation(showLoading: true, autoPlay: true);
-    playback.registerSession(session);
-    addTearDown(() async {
-      await playback.dispose();
-      await library.dispose();
-    });
+  test(
+    'native pause failure keeps playback and cancels old preparation',
+    () async {
+      final library = _createLibraryFacade();
+      final native = _RecordingNativePlaybackRepository()..failPauseAll = true;
+      final playback = PlaybackFacade.create(
+        databaseRepository:
+            library.databaseRepository as PlaybackPersistenceRepository,
+        nativeRepository: native,
+      )..configurePersistence(enabled: false);
+      final session = _session('pause-failure')
+        ..setOptimisticState(playing: true)
+        ..beginPreparation(showLoading: true, autoPlay: true);
+      playback.registerSession(session);
+      addTearDown(() async {
+        await playback.dispose();
+        await library.dispose();
+      });
 
-    final paused = await playback.pauseAllSessions();
+      final paused = await playback.pauseAllSessions();
 
-    expect(paused, isFalse);
-    expect(session.state.playing, isTrue);
-    expect(session.isLoading, isTrue);
-    expect(session.isPlaybackStarting, isTrue);
-  });
+      expect(paused, isFalse);
+      expect(session.state.playing, isTrue);
+      expect(session.isLoading, isFalse);
+      expect(session.isPlaybackStarting, isFalse);
+    },
+  );
 
   test('native volume failure restores the previous session volume', () async {
     final library = _createLibraryFacade();
@@ -214,7 +218,8 @@ void main() {
           library.databaseRepository as PlaybackPersistenceRepository,
       nativeRepository: native,
     )..configurePersistence(enabled: false);
-    final session = _session('volume-failure');
+    final session = _session('volume-failure')
+      ..loadedPath = '/tracks/volume-failure.mp3';
     addTearDown(() async {
       await playback.dispose();
       await library.dispose();
@@ -226,6 +231,141 @@ void main() {
     expect(changed, isFalse);
     expect(session.volume, 1.0);
     expect(native.volumeUpdates, <(double, bool)>[(1.8, true)]);
+  });
+
+  test(
+    'older failed volume command cannot roll back a newer selection',
+    () async {
+      final library = _createLibraryFacade();
+      final native = _RecordingNativePlaybackRepository();
+      final playback = PlaybackFacade.create(
+        databaseRepository:
+            library.databaseRepository as PlaybackPersistenceRepository,
+        nativeRepository: native,
+      )..configurePersistence(enabled: false);
+      final session = _session('volume-race')
+        ..loadedPath = '/tracks/volume-race.mp3';
+      playback.registerSession(session);
+      addTearDown(() async {
+        await playback.dispose();
+        await library.dispose();
+      });
+
+      final firstResponse = Completer<NativeResult<NativePlaybackSnapshot>>();
+      native.volumeGate = firstResponse;
+      final firstChange = playback.setSessionVolume(session.id, 0.7);
+      native.volumeGate = null;
+      await playback.setSessionVolume(session.id, 0.8);
+
+      firstResponse.complete(
+        const NativeFailure<NativePlaybackSnapshot>('older request failed'),
+      );
+      expect(await firstChange, isFalse);
+      expect(native.volumeUpdates, <(double, bool)>[(0.7, true), (0.8, true)]);
+      expect(session.volume, 0.8);
+      expect(session.pendingVolume, 0.8);
+    },
+  );
+
+  test(
+    'older volume commit cannot clear a newer deferred source reload',
+    () async {
+      final library = _createLibraryFacade();
+      final native = _RecordingNativePlaybackRepository();
+      final playback = PlaybackFacade.create(
+        databaseRepository:
+            library.databaseRepository as PlaybackPersistenceRepository,
+        nativeRepository: native,
+      )..configurePersistence(enabled: false);
+      final session = _session('volume-deferred-race')
+        ..loadedPath = '/tracks/volume-deferred-race.mp3';
+      playback.registerSession(session);
+      addTearDown(() async {
+        await playback.dispose();
+        await library.dispose();
+      });
+
+      await playback.setSessionVolume(session.id, 0.7, persist: false);
+      final oldCommitResponse =
+          Completer<NativeResult<NativePlaybackSnapshot>>();
+      native.volumeGate = oldCommitResponse;
+      final oldCommit = playback.setSessionVolume(session.id, 0.7);
+      native.volumeGate = null;
+      await playback.setSessionVolume(session.id, 0.8, persist: false);
+      oldCommitResponse.complete(const NativeSuccess<NativePlaybackSnapshot>());
+      expect(await oldCommit, isTrue);
+      // A matching snapshot clears the pending value, so the final command
+      // depends on retaining the newer preview's deferred source reload.
+      playback.applyNativeSnapshot(
+        NativePlaybackSnapshot(
+          sessionId: session.id,
+          playing: false,
+          playWhenReady: false,
+          processingState: 'ready',
+          position: Duration.zero,
+          bufferedPosition: Duration.zero,
+          volume: 0.8,
+          boostGain: 1,
+          channelSwapEnabled: false,
+        ),
+        hasLibraryTrack: (_) => false,
+      );
+      expect(session.pendingVolume, isNull);
+      await playback.setSessionVolume(session.id, 0.8);
+
+      expect(native.volumeUpdates, <(double, bool)>[
+        (0.7, false),
+        (0.7, true),
+        (0.8, false),
+        (0.8, true),
+      ]);
+      expect(session.volume, 0.8);
+    },
+  );
+
+  test('a stale native snapshot cannot undo a pending volume change', () async {
+    final library = _createLibraryFacade();
+    final native = _RecordingNativePlaybackRepository();
+    final playback = PlaybackFacade.create(
+      databaseRepository:
+          library.databaseRepository as PlaybackPersistenceRepository,
+      nativeRepository: native,
+    )..configurePersistence(enabled: false);
+    final session = _session('volume-snapshot-race')
+      ..loadedPath = '/tracks/volume-snapshot-race.mp3';
+    playback.registerSession(session);
+    addTearDown(() async {
+      await playback.dispose();
+      await library.dispose();
+    });
+
+    final response = Completer<NativeResult<NativePlaybackSnapshot>>();
+    native.volumeGate = response;
+    final change = playback.setSessionVolume(session.id, 0.8);
+    expect(session.volume, 0.8);
+
+    NativePlaybackSnapshot snapshot(double volume) => NativePlaybackSnapshot(
+      sessionId: session.id,
+      playing: false,
+      playWhenReady: false,
+      processingState: 'ready',
+      position: Duration.zero,
+      bufferedPosition: Duration.zero,
+      volume: volume,
+      boostGain: 1,
+      channelSwapEnabled: false,
+    );
+
+    playback.applyNativeSnapshot(snapshot(1), hasLibraryTrack: (_) => false);
+    expect(session.volume, 0.8);
+    response.complete(NativeSuccess<NativePlaybackSnapshot>(snapshot(0.8)));
+    expect(await change, isTrue);
+    playback.applyNativeSnapshot(snapshot(1), hasLibraryTrack: (_) => false);
+    expect(session.volume, 0.8);
+    playback.applyNativeSnapshot(snapshot(0.8), hasLibraryTrack: (_) => false);
+    expect(session.pendingVolume, isNull);
+    playback.applyNativeSnapshot(snapshot(0.6), hasLibraryTrack: (_) => false);
+    expect(session.volume, 0.6);
   });
 
   test('batch removal commits only native successes', () async {
@@ -289,7 +429,7 @@ void main() {
           library.databaseRepository as PlaybackPersistenceRepository,
       nativeRepository: native,
     )..configurePersistence(enabled: false);
-    final session = _session('racing');
+    final session = _session('racing')..loadedPath = '/tracks/racing.mp3';
     var settingsChanges = 0;
     playback.attachSessionRuntime(
       onSessionRegistered: (_) {},
@@ -316,35 +456,39 @@ void main() {
     await library.dispose();
   });
 
-  test('older failed speed command cannot roll back a newer selection', () async {
-    final library = _createLibraryFacade();
-    final native = _RecordingNativePlaybackRepository();
-    final playback = PlaybackFacade.create(
-      databaseRepository:
-          library.databaseRepository as PlaybackPersistenceRepository,
-      nativeRepository: native,
-    )..configurePersistence(enabled: false);
-    final session = _session('speed-race');
-    playback.registerSession(session);
-    addTearDown(() async {
-      await playback.dispose();
-      await library.dispose();
-    });
+  test(
+    'older failed speed command cannot roll back a newer selection',
+    () async {
+      final library = _createLibraryFacade();
+      final native = _RecordingNativePlaybackRepository();
+      final playback = PlaybackFacade.create(
+        databaseRepository:
+            library.databaseRepository as PlaybackPersistenceRepository,
+        nativeRepository: native,
+      )..configurePersistence(enabled: false);
+      final session = _session('speed-race')
+        ..loadedPath = '/tracks/speed-race.mp3';
+      playback.registerSession(session);
+      addTearDown(() async {
+        await playback.dispose();
+        await library.dispose();
+      });
 
-    final firstResponse = Completer<NativeResult<NativePlaybackSnapshot>>();
-    native.speedGate = firstResponse;
-    final firstChange = playback.setSessionSpeed(session.id, 1.25);
-    native.speedGate = null;
-    await playback.setSessionSpeed(session.id, 1.5);
+      final firstResponse = Completer<NativeResult<NativePlaybackSnapshot>>();
+      native.speedGate = firstResponse;
+      final firstChange = playback.setSessionSpeed(session.id, 1.25);
+      native.speedGate = null;
+      await playback.setSessionSpeed(session.id, 1.5);
 
-    firstResponse.complete(
-      const NativeFailure<NativePlaybackSnapshot>('older request failed'),
-    );
-    await firstChange;
+      firstResponse.complete(
+        const NativeFailure<NativePlaybackSnapshot>('older request failed'),
+      );
+      await firstChange;
 
-    expect(native.speedUpdates, <double>[1.25, 1.5]);
-    expect(session.speed, 1.5);
-  });
+      expect(native.speedUpdates, <double>[1.25, 1.5]);
+      expect(session.speed, 1.5);
+    },
+  );
 
   test('a stale native snapshot cannot undo a pending speed change', () async {
     final library = _createLibraryFacade();
@@ -354,7 +498,8 @@ void main() {
           library.databaseRepository as PlaybackPersistenceRepository,
       nativeRepository: native,
     )..configurePersistence(enabled: false);
-    final session = _session('speed-snapshot-race');
+    final session = _session('speed-snapshot-race')
+      ..loadedPath = '/tracks/speed-snapshot-race.mp3';
     playback.registerSession(session);
     addTearDown(() async {
       await playback.dispose();
@@ -379,15 +524,10 @@ void main() {
       channelSwapEnabled: false,
     );
 
-    playback.applyNativeSnapshot(
-      snapshot(1),
-      hasLibraryTrack: (_) => false,
-    );
+    playback.applyNativeSnapshot(snapshot(1), hasLibraryTrack: (_) => false);
     expect(session.speed, 1.5);
 
-    response.complete(
-      NativeSuccess<NativePlaybackSnapshot>(snapshot(1.5)),
-    );
+    response.complete(NativeSuccess<NativePlaybackSnapshot>(snapshot(1.5)));
     await change;
     expect(session.speed, 1.5);
 
@@ -602,30 +742,33 @@ void main() {
     expect(playback.hasSessionAdjacentTrack(session.id, forward: true), isTrue);
   });
 
-  test('seekSession clamps negative positions and positions past duration', () async {
-    final library = _createLibraryFacade();
-    final native = _RecordingNativePlaybackRepository();
-    final playback = PlaybackFacade.create(
-      databaseRepository:
-          library.databaseRepository as PlaybackPersistenceRepository,
-      nativeRepository: native,
-    );
-    final session = _session('clamped-seek')
-      ..duration = const Duration(seconds: 100);
-    playback.registerSession(session);
-    addTearDown(() async {
-      await playback.dispose();
-      await library.dispose();
-    });
+  test(
+    'seekSession clamps negative positions and positions past duration',
+    () async {
+      final library = _createLibraryFacade();
+      final native = _RecordingNativePlaybackRepository();
+      final playback = PlaybackFacade.create(
+        databaseRepository:
+            library.databaseRepository as PlaybackPersistenceRepository,
+        nativeRepository: native,
+      );
+      final session = _session('clamped-seek')
+        ..duration = const Duration(seconds: 100);
+      playback.registerSession(session);
+      addTearDown(() async {
+        await playback.dispose();
+        await library.dispose();
+      });
 
-    await playback.seekSession(session.id, const Duration(seconds: -10));
-    expect(session.position, Duration.zero);
-    expect(native.seekPositions.last, Duration.zero);
+      await playback.seekSession(session.id, const Duration(seconds: -10));
+      expect(session.position, Duration.zero);
+      expect(native.seekPositions.last, Duration.zero);
 
-    await playback.seekSession(session.id, const Duration(seconds: 150));
-    expect(session.position, const Duration(seconds: 100));
-    expect(native.seekPositions.last, const Duration(seconds: 100));
-  });
+      await playback.seekSession(session.id, const Duration(seconds: 150));
+      expect(session.position, const Duration(seconds: 100));
+      expect(native.seekPositions.last, const Duration(seconds: 100));
+    },
+  );
 
   test(
     'rapid seekSession calls coalesce pending seeks and update optimistic position immediately',
@@ -650,17 +793,26 @@ void main() {
       native.seekGate = gate;
 
       // First seek dispatches to native and blocks on gate
-      final firstSeek = playback.seekSession(session.id, const Duration(seconds: 10));
+      final firstSeek = playback.seekSession(
+        session.id,
+        const Duration(seconds: 10),
+      );
       expect(session.position, const Duration(seconds: 10));
       expect(native.seekPositions, <Duration>[const Duration(seconds: 10)]);
 
       // Second rapid seek updates optimistic position immediately, pending native seek is queued
-      final secondSeek = playback.seekSession(session.id, const Duration(seconds: 20));
+      final secondSeek = playback.seekSession(
+        session.id,
+        const Duration(seconds: 20),
+      );
       expect(session.position, const Duration(seconds: 20));
       expect(native.seekPositions, <Duration>[const Duration(seconds: 10)]);
 
       // Third rapid seek updates optimistic position and coalesces into the pending native seek
-      final thirdSeek = playback.seekSession(session.id, const Duration(seconds: 30));
+      final thirdSeek = playback.seekSession(
+        session.id,
+        const Duration(seconds: 30),
+      );
       expect(session.position, const Duration(seconds: 30));
       expect(native.seekPositions, <Duration>[const Duration(seconds: 10)]);
 
@@ -1048,10 +1200,11 @@ void main() {
                 return true;
               },
           pauseSession: (_) async {},
-          startSession: (session, {required shouldStartTriggerCountdown}) async {
-            session.beginTransportCommand(commandId: 1, playing: true);
-            return true;
-          },
+          startSession:
+              (session, {required shouldStartTriggerCountdown}) async {
+                session.beginTransportCommand(commandId: 1, playing: true);
+                return true;
+              },
           resolveAdvance: (_, {required forward}) => null,
           hasAdjacent: (_, {required forward}) => false,
         )
@@ -1421,8 +1574,6 @@ void main() {
     addTearDown(queue.shutdown);
 
     await Future<void>.delayed(const Duration(milliseconds: 10));
-
-    expect(database.sessionSaves, 0);
     expect(database.orderSaves, 0);
     expect(playback.hasScheduledSessionStatePersistence, isFalse);
     expect(playback.hasScheduledSessionOrderPersistence, isFalse);
@@ -1645,11 +1796,22 @@ void main() {
         await playback.dispose();
         await library.dispose();
       });
+      final first = _session('persist-first');
+      final second = _session('persist-second');
+      playback
+        ..registerSession(first)
+        ..registerSession(second);
+      await playback.flushSessionStatePersistence();
+      database.sessionUpserts.clear();
+      database.sessionUpsertOptions.clear();
+      first.volume = 0.7;
       playback
         ..scheduleSessionStatePersistence(
+          sessionId: first.id,
           delay: const Duration(milliseconds: 5),
         )
         ..scheduleSessionStatePersistence(
+          sessionId: first.id,
           delay: const Duration(milliseconds: 5),
         )
         ..scheduleSessionOrderPersistence(
@@ -1657,14 +1819,34 @@ void main() {
         );
 
       await Future<void>.delayed(const Duration(milliseconds: 20));
-      expect(database.sessionSaves, 1);
+      expect(database.sessionUpserts, [first.id]);
+      expect(database.sessionUpsertOptions, [
+        (includeQueue: false, includeEffects: false),
+      ]);
       expect(database.orderSaves, 1);
 
+      first.customQueueTracks = <MusicTrack>[
+        MusicTrack(
+          path: first.currentTrackPath,
+          displayName: 'First',
+          groupKey: '/tracks',
+          groupTitle: 'Tracks',
+          groupSubtitle: '',
+          isSingle: true,
+        ),
+      ];
       playback.scheduleSessionStatePersistence(
+        sessionId: first.id,
         delay: const Duration(minutes: 1),
       );
-      await playback.flushSessionStatePersistence();
-      expect(database.sessionSaves, 2);
+      await playback.flushSessionStatePersistence(sessionId: first.id);
+      expect(database.sessionUpserts, [first.id, first.id]);
+      expect(database.sessionUpsertOptions.last, (
+        includeQueue: true,
+        includeEffects: false,
+      ));
+      await playback.flushSessionStatePersistence(sessionId: first.id);
+      expect(database.sessionUpserts, [first.id, first.id]);
     },
   );
 
@@ -1693,7 +1875,6 @@ void main() {
       });
       playback
         ..registerSession(session)
-        ..observeSession(session)
         ..attachPersistenceRuntime(
           trackByPath: (_) => track,
           recordPlaybackProgress: () => true,
@@ -1710,12 +1891,16 @@ void main() {
               ),
           onFocusChanged: (_) {},
         );
+      await playback.flushSessionStatePersistence(sessionId: session.id);
+      playback.observeSession(session);
+      database.sessionUpserts.clear();
+      database.sessionUpsertOptions.clear();
 
       session.setOptimisticPosition(const Duration(seconds: 6));
       await Future<void>.delayed(const Duration(milliseconds: 900));
 
       expect(database.sessionStateUpserts, 1);
-      expect(database.sessionSaves, 0);
+      expect(database.sessionUpserts, isEmpty);
       expect(database.lastPlaybackState?.id, session.id);
       expect(database.lastPlaybackState?.positionMs, 6000);
       expect(database.trackUpserts, 1);
@@ -1726,7 +1911,7 @@ void main() {
     },
   );
 
-  test('a full session save supersedes a pending position upsert', () async {
+  test('a definition upsert supersedes a pending position upsert', () async {
     final database = _RecordingTestPersistenceRepository();
     final library = LibraryFacade.create(databaseRepository: database);
     final playback = PlaybackFacade.create(
@@ -1748,8 +1933,10 @@ void main() {
       delay: const Duration(milliseconds: 5),
     );
     await Future<void>.delayed(const Duration(milliseconds: 850));
-
-    expect(database.sessionSaves, 1);
+    expect(database.sessionUpserts, [session.id]);
+    expect(database.sessionUpsertOptions, [
+      (includeQueue: true, includeEffects: true),
+    ]);
     expect(database.sessionStateUpserts, 0);
   });
 
@@ -1823,7 +2010,9 @@ void main() {
       queueSession.playbackQueue?.entries.single.tracks.single.displayName,
       'Updated',
     );
-    expect(changeCount, 5);
+    // Adding publishes the definition before synchronization, then its expanded
+    // track snapshots after synchronization.
+    expect(changeCount, 6);
     expect(synchronizeCount, 2);
     expect(addedEntry.id, startsWith('queue_entry_'));
     expect(queueSession.playbackQueue?.entries, hasLength(1));
@@ -1909,7 +2098,9 @@ void main() {
 
 final class _RecordingTestPersistenceRepository
     extends TestPersistenceRepository {
-  int sessionSaves = 0;
+  final sessionUpserts = <String>[];
+  final deletedSessionIds = <String>[];
+  final sessionUpsertOptions = <({bool includeQueue, bool includeEffects})>[];
   int sessionStateUpserts = 0;
   int trackUpserts = 0;
   int orderSaves = 0;
@@ -1917,8 +2108,22 @@ final class _RecordingTestPersistenceRepository
   MusicTrack? lastTrack;
 
   @override
-  Future<void> saveAllSessions(List<PersistedPlaybackSession> sessions) async {
-    sessionSaves++;
+  Future<void> upsertSession(
+    PersistedPlaybackSession session, {
+    bool includeQueue = true,
+    bool includeEffects = true,
+  }) async {
+    sessionUpserts.add(session.id);
+    sessionUpsertOptions.add((
+      includeQueue: includeQueue,
+      includeEffects: includeEffects,
+    ));
+    lastPlaybackState = session;
+  }
+
+  @override
+  Future<void> deleteSessions(List<String> sessionIds) async {
+    deletedSessionIds.addAll(sessionIds);
   }
 
   @override
@@ -2023,6 +2228,7 @@ final class _RecordingNativePlaybackRepository
   bool failClearAll = false;
   final Set<String> failedRemovalSessionIds = <String>{};
   Completer<NativeResult<NativePlaybackSnapshot>>? speedGate;
+  Completer<NativeResult<NativePlaybackSnapshot>>? volumeGate;
   Completer<NativeResult<NativePlaybackSnapshot>>? seekGate;
   int audioEffectsCalls = 0;
   bool failAudioEffects = false;
@@ -2069,6 +2275,8 @@ final class _RecordingNativePlaybackRepository
     bool reloadSource = true,
   }) async {
     volumeUpdates.add((volume, reloadSource));
+    final gate = volumeGate;
+    if (gate != null) return gate.future;
     if (failVolume) {
       return const NativeFailure<NativePlaybackSnapshot>('volume failed');
     }

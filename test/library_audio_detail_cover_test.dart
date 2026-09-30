@@ -639,14 +639,14 @@ void main() {
         );
         final root = result.detail.target.targetPath;
         final renamedCover = PathMatcher.join(root, 'other.jpg');
-        final generation = runtimeGraph.playback.state.coverGeneration;
+        final generation = runtimeGraph.library.coverArtworkCacheService.generation;
         await runtimeGraph.library.setFolderManualCover(root, renamedCover);
 
         expect(queue.playbackQueue!.name, 'My queue');
         expect(queue.playbackQueue!.entries.single.title, 'New');
         expect(queue.playbackQueue!.entries.single.workRootPath, root);
         expect(
-          runtimeGraph.playback.state.coverGeneration,
+          runtimeGraph.library.coverArtworkCacheService.generation,
           greaterThan(generation),
         );
         for (final updated in [
@@ -975,7 +975,7 @@ void main() {
           'folder_cover_selections_v1',
           json.encode(<String, String>{newFolder.path: newCoverPath}),
         );
-        await restoredRepository.saveAllSessions(<PersistedPlaybackSession>[
+        await restoredRepository.seedSessions(<PersistedPlaybackSession>[
           PersistedPlaybackSession(
             id: restoredSessionId,
             trackPath: newTrackPath,

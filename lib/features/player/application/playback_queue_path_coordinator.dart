@@ -1,6 +1,44 @@
 part of 'playback_facade.dart';
 
 extension PlaybackQueuePathCoordinator on PlaybackFacade {
+  void _replacePlaybackQueueEntries(
+    PlaybackSession session,
+    List<PlaybackQueueEntry> entries,
+  ) {
+    final queue = session.playbackQueue!;
+    var oldIndex = session.currentQueueIndex;
+    if (session.hasDetachedQueueTrack) {
+      if (oldIndex == 0) {
+        session.playbackQueue = queue.copyWith(entries: entries);
+        return;
+      }
+      oldIndex -= 1;
+    }
+    PlaybackQueueEntry? currentEntry;
+    var offset = oldIndex;
+    for (final entry in queue.entries) {
+      if (offset >= 0 && offset < entry.tracks.length) {
+        currentEntry = entry;
+        break;
+      }
+      offset -= entry.tracks.length;
+    }
+    var nextIndex = 0;
+    var found = false;
+    for (final entry in entries) {
+      if (entry.id == currentEntry?.id) {
+        nextIndex += offset;
+        found = true;
+        break;
+      }
+      nextIndex += entry.tracks.length;
+    }
+    session.currentQueueIndex = found
+        ? nextIndex + (session.hasDetachedQueueTrack ? 1 : 0)
+        : -1;
+    session.playbackQueue = queue.copyWith(entries: entries);
+  }
+
   Future<void> addTrackToPlaybackQueue(String sessionId, MusicTrack track) {
     return _addPlaybackQueueEntry(
       sessionId,
@@ -39,22 +77,24 @@ extension PlaybackQueuePathCoordinator on PlaybackFacade {
     final session = _service.sessions[sessionId];
     final queue = session?.playbackQueue;
     if (session == null || queue == null) return;
-    final wasEmpty = queue.expandedTracks.isEmpty;
-    session.playbackQueue = queue.copyWith(
-      entries: List<PlaybackQueueEntry>.unmodifiable(<PlaybackQueueEntry>[
+    final shouldSelectFirst =
+        queue.expandedTracks.isEmpty && !session.hasDetachedQueueTrack;
+    _replacePlaybackQueueEntries(
+      session,
+      List<PlaybackQueueEntry>.unmodifiable(<PlaybackQueueEntry>[
         ...queue.entries,
         entry,
       ]),
     );
     _service.markActiveSessionsDirty();
-    _onSessionStateChanged?.call();
-    _scheduleNewSessionPersistence();
+    _notifySessionStateChanged(session);
+    _scheduleNewSessionPersistence(sessionId: session.id);
     await _synchronizePlaybackQueueSession?.call(
       session,
-      selectFirst: wasEmpty,
+      selectFirst: shouldSelectFirst,
     );
     _service.markActiveSessionsDirty();
-    _onSessionStateChanged?.call();
+    _notifySessionStateChanged(session);
     publishSessionActivated(session.id);
   }
 
@@ -69,11 +109,11 @@ extension PlaybackQueuePathCoordinator on PlaybackFacade {
         .where((entry) => entry.id != entryId)
         .toList(growable: false);
     if (entries.length == queue.entries.length) return;
-    session.playbackQueue = queue.copyWith(entries: entries);
+    _replacePlaybackQueueEntries(session, entries);
     await _synchronizePlaybackQueueSession?.call(session, selectFirst: false);
     _service.markActiveSessionsDirty();
-    _onSessionStateChanged?.call();
-    _scheduleNewSessionPersistence();
+    _notifySessionStateChanged(session);
+    _scheduleNewSessionPersistence(sessionId: session.id);
   }
 
   Future<void> reorderPlaybackQueueEntry(
@@ -94,14 +134,12 @@ extension PlaybackQueuePathCoordinator on PlaybackFacade {
     }
     final item = entries.removeAt(oldIndex);
     entries.insert(newIndex, item);
-    session.playbackQueue = queue.copyWith(entries: entries);
+    if (oldIndex == newIndex) return;
+    _replacePlaybackQueueEntries(session, entries);
     _service.markActiveSessionsDirty();
-    _onSessionStateChanged?.call();
+    _notifySessionStateChanged(session);
     await _synchronizePlaybackQueueSession?.call(session, selectFirst: false);
-    await databaseRepository.updatePlaybackQueueEntryOrder(
-      session.id,
-      entries.map((entry) => entry.id).toList(growable: false),
-    );
+    scheduleSessionStatePersistence(sessionId: session.id);
   }
 
   String _nextQueueEntryId() =>
@@ -114,8 +152,8 @@ extension PlaybackQueuePathCoordinator on PlaybackFacade {
     if (session == null || queue == null || trimmed.isEmpty) return false;
     session.playbackQueue = queue.copyWith(name: trimmed);
     _service.markActiveSessionsDirty();
-    scheduleSessionStatePersistence();
-    _onSessionStateChanged?.call();
+    scheduleSessionStatePersistence(sessionId: session.id);
+    _notifySessionStateChanged(session);
     return true;
   }
 
@@ -128,14 +166,15 @@ extension PlaybackQueuePathCoordinator on PlaybackFacade {
       clearColor: colorValue == null,
     );
     _service.markActiveSessionsDirty();
-    scheduleSessionStatePersistence();
-    _onSessionStateChanged?.call();
+    scheduleSessionStatePersistence(sessionId: session.id);
+    _notifySessionStateChanged(session);
     return true;
   }
 
   bool replaceSessionTrackSnapshots(MusicTrack updatedTrack) {
     var changed = false;
     for (final session in _service.sessions.values) {
+      var sessionChanged = false;
       final customQueueTracks = session.customQueueTracks;
       if (customQueueTracks != null) {
         var customQueueChanged = false;
@@ -154,10 +193,17 @@ extension PlaybackQueuePathCoordinator on PlaybackFacade {
         if (customQueueChanged) {
           session.customQueueTracks = List<MusicTrack>.unmodifiable(tracks);
           changed = true;
+          sessionChanged = true;
         }
       }
       final queue = session.playbackQueue;
-      if (queue == null) continue;
+      if (queue == null) {
+        if (sessionChanged) {
+          _notifySessionStateChanged(session);
+          scheduleSessionStatePersistence(sessionId: session.id);
+        }
+        continue;
+      }
       var queueChanged = false;
       final entries = queue.entries
           .map((entry) {
@@ -187,11 +233,17 @@ extension PlaybackQueuePathCoordinator on PlaybackFacade {
             );
           })
           .toList(growable: false);
-      if (!queueChanged) continue;
-      session.playbackQueue = queue.copyWith(
-        entries: List.unmodifiable(entries),
-      );
-      changed = true;
+      if (queueChanged) {
+        session.playbackQueue = queue.copyWith(
+          entries: List.unmodifiable(entries),
+        );
+        sessionChanged = true;
+        changed = true;
+      }
+      if (sessionChanged) {
+        _notifySessionStateChanged(session);
+        scheduleSessionStatePersistence(sessionId: session.id);
+      }
     }
     return changed;
   }
@@ -202,7 +254,9 @@ extension PlaybackQueuePathCoordinator on PlaybackFacade {
     if (PathMatcher.equalsNormalized(normalizedOldPath, normalizedNewPath)) {
       return;
     }
+    if (_retargetedPathAliases[normalizedOldPath] == normalizedNewPath) return;
     _retargetedPathAliases[normalizedOldPath] = normalizedNewPath;
+    _retargetRevision++;
   }
 
   String resolveRetargetedPath(String value) {
@@ -263,12 +317,17 @@ extension PlaybackQueuePathCoordinator on PlaybackFacade {
     }
   }
 
-  void clearRetargetedPaths() => _retargetedPathAliases.clear();
+  void clearRetargetedPaths() {
+    if (_retargetedPathAliases.isEmpty) return;
+    _retargetedPathAliases.clear();
+    _retargetRevision++;
+  }
 
   Future<void> retargetPath(String oldPath, String newPath) async {
     rememberRetargetedPath(oldPath, newPath);
     var changed = false;
-    final sessionsToReload = <PlaybackSession>[];
+    final sessionsToReload =
+        <({PlaybackSession session, int generation, bool autoPlay})>[];
     final sessionsToSyncQueue = <PlaybackSession>[];
     var retargetedTracks = 0;
     MusicTrack retargetTrack(MusicTrack track) {
@@ -322,6 +381,12 @@ extension PlaybackQueuePathCoordinator on PlaybackFacade {
     }
 
     for (final session in _service.sessions.values) {
+      final playbackRequested = session.playbackRequested;
+      final wasPreparing =
+          session.isLoading ||
+          session.isPlaybackStarting ||
+          session.pendingNativeTrackPath != null;
+      final previousQueueVersion = session.queueVersion;
       final previousRetargetedTracks = retargetedTracks;
       final customTracks = session.customQueueTracks;
       if (customTracks != null) {
@@ -368,7 +433,11 @@ extension PlaybackQueuePathCoordinator on PlaybackFacade {
           session.playbackQueue = queue.copyWith(entries: entries);
         }
       }
-      if (PathMatcher.isWithinOrEqual(session.currentTrackPath, oldPath)) {
+      final currentTrackRetargeted = PathMatcher.isWithinOrEqual(
+        session.currentTrackPath,
+        oldPath,
+      );
+      if (currentTrackRetargeted) {
         session.currentTrackPath = PathMatcher.replaceWithinOrEqual(
           session.currentTrackPath,
           oldPath,
@@ -377,12 +446,24 @@ extension PlaybackQueuePathCoordinator on PlaybackFacade {
         changed = true;
       }
       final loadedPath = session.loadedPath;
-      if (loadedPath != null &&
-          PathMatcher.isWithinOrEqual(loadedPath, oldPath)) {
+      final loadedPathRetargeted =
+          loadedPath != null &&
+          PathMatcher.isWithinOrEqual(loadedPath, oldPath);
+      if (!currentTrackRetargeted &&
+          !loadedPathRetargeted &&
+          session.queueVersion == previousQueueVersion) {
+        continue;
+      }
+      session.invalidatePreparation();
+      if (loadedPathRetargeted || (wasPreparing && playbackRequested)) {
         // Keep the old loaded path until the native player is prepared with
         // the new file. This makes the preparation path detect a real source
         // change instead of treating the stale ExoPlayer item as current.
-        sessionsToReload.add(session);
+        sessionsToReload.add((
+          session: session,
+          generation: session.loadGeneration,
+          autoPlay: playbackRequested,
+        ));
         changed = true;
       } else if (loadedPath != null &&
           retargetedTracks != previousRetargetedTracks) {
@@ -391,8 +472,8 @@ extension PlaybackQueuePathCoordinator on PlaybackFacade {
     }
     if (!changed) return;
     _service.markActiveSessionsDirty();
-    _onSessionStateChanged?.call();
-    final current = _service.slice.state;
+    _notifySessionStateChanged();
+    final current = _service.state;
     _service.syncSlice(
       activeSessions: _service.activeSessions,
       playingSessionCount: _service.playingSessionCount,
@@ -401,25 +482,33 @@ extension PlaybackQueuePathCoordinator on PlaybackFacade {
       isInitialized: current.isInitialized,
     );
     final commandPort = _commandPort;
+    final retargetTasks = <Future<void>>[];
     if (commandPort != null) {
-      for (final session in sessionsToReload) {
-        _service.enqueueSessionPreparation(() async {
-          if (!isRegisteredSession(session)) return;
-          await commandPort.prepareSession(
-            session,
-            nextPath: session.currentTrackPath,
-            autoPlay: session.effectivePlaying,
-            showLoading: false,
-            targetQueueIndex: session.currentQueueIndex,
-          );
-        });
+      for (final request in sessionsToReload) {
+        final session = request.session;
+        retargetTasks.add(
+          _service.enqueueSessionPreparation(session.id, () async {
+            if (!isRegisteredSession(session) ||
+                session.loadGeneration != request.generation) {
+              return;
+            }
+            await commandPort.prepareSession(
+              session,
+              nextPath: session.currentTrackPath,
+              autoPlay: request.autoPlay,
+              showLoading: false,
+              targetQueueIndex: session.currentQueueIndex,
+            );
+          }),
+        );
       }
-      await _service.sessionPreparationQueue;
     }
     for (final session in sessionsToSyncQueue) {
       if (!isRegisteredSession(session)) continue;
-      await _synchronizeLoopMode?.call(session, session.loopMode);
+      final task = _synchronizeLoopMode?.call(session, session.loopMode);
+      if (task != null) retargetTasks.add(task);
     }
+    await Future.wait(retargetTasks);
     await savePersistedState();
   }
 
@@ -502,7 +591,7 @@ extension PlaybackQueuePathCoordinator on PlaybackFacade {
       targetQueueIndex: index,
     );
     final current = revision == _directPlayRevision && (prepared ?? true);
-    if (current) scheduleSessionStatePersistence();
+    if (current) scheduleSessionStatePersistence(sessionId: session.id);
     return current;
   }
 
@@ -576,10 +665,14 @@ extension PlaybackQueuePathCoordinator on PlaybackFacade {
     PlaybackSession session, {
     required String nextPath,
   }) {
-    _service.enqueueSessionPreparation(() async {
-      if (!_service.sessions.containsKey(session.id)) return;
+    session.invalidatePreparation();
+    final generation = session.loadGeneration;
+    return _service.enqueueSessionPreparation(session.id, () async {
+      if (!isRegisteredSession(session) ||
+          session.loadGeneration != generation) {
+        return;
+      }
       await _commandPort?.prepareSession(session, nextPath: nextPath);
     });
-    return _service.sessionPreparationQueue;
   }
 }

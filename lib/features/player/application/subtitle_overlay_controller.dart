@@ -38,7 +38,9 @@ final class SubtitleOverlayController {
   bool _runtimeSyncing = false;
   bool _runtimeSyncPending = false;
   int _runtimeGeneration = 0;
-  Timer? _runtimeTimer;
+  StreamSubscription<Duration>? _runtimePositionSubscription;
+  PlaybackSession? _observedRuntimeSession;
+  PlaybackSubtitleService? _observedRuntimeSubtitles;
   String? _runtimeSessionId;
   String? _runtimeTrackPath;
   String? _lastRuntimeText;
@@ -104,28 +106,24 @@ final class SubtitleOverlayController {
       }
       final sessionId = session.id;
       final trackPath = session.currentTrackPath;
-      final canDraw = await canDrawOverlays();
-      if (!_isRuntimeRequestCurrent(generation, sessionId, trackPath)) {
-        return;
-      }
-      if (!canDraw) {
-        await stopRuntime(immediate: true);
-        return;
+      if (!_runtimeRunning) {
+        final canDraw = await canDrawOverlays();
+        if (!_isRuntimeRequestCurrent(generation, sessionId, trackPath)) return;
+        if (!canDraw) {
+          await stopRuntime(immediate: true);
+          return;
+        }
+        final started = await startOverlay();
+        if (!started ||
+            !_isRuntimeRequestCurrent(generation, sessionId, trackPath)) {
+          if (started) await stopOverlay(immediate: true);
+          return;
+        }
+        _runtimeRunning = true;
       }
       await _applyRuntimeStyle();
-      if (!_isRuntimeRequestCurrent(generation, sessionId, trackPath)) {
-        return;
-      }
-      final started = await startOverlay();
-      if (!started ||
-          !_isRuntimeRequestCurrent(generation, sessionId, trackPath)) {
-        if (started) {
-          await stopOverlay(immediate: true);
-        }
-        return;
-      }
-      _runtimeRunning = true;
-      _ensureRuntimeTimer();
+      if (!_isRuntimeRequestCurrent(generation, sessionId, trackPath)) return;
+      _bindRuntimeSession(session);
       _updateRuntimeSession(session);
     } finally {
       _runtimeSyncing = false;
@@ -141,11 +139,15 @@ final class SubtitleOverlayController {
   Future<void> stopRuntime({bool immediate = false}) async {
     _runtimeGeneration++;
     _runtimeSyncPending = false;
-    _runtimeTimer?.cancel();
-    _runtimeTimer = null;
+    final subscription = _runtimePositionSubscription;
+    _runtimePositionSubscription = null;
+    _observedRuntimeSession = null;
+    _observedRuntimeSubtitles?.removeListener(_updateRuntime);
+    _observedRuntimeSubtitles = null;
     _runtimeSessionId = null;
     _runtimeTrackPath = null;
     _lastRuntimeText = null;
+    await subscription?.cancel();
     if (!_runtimeRunning && !immediate) return;
     _runtimeRunning = false;
     await updateSubtitle('');
@@ -164,11 +166,25 @@ final class SubtitleOverlayController {
     );
   }
 
-  void _ensureRuntimeTimer() {
-    _runtimeTimer ??= Timer.periodic(
-      const Duration(milliseconds: 500),
-      (_) => _updateRuntime(),
-    );
+  void _bindRuntimeSession(PlaybackSession session) {
+    if (!identical(_observedRuntimeSession, session)) {
+      unawaited(_runtimePositionSubscription?.cancel());
+      _observedRuntimeSession = session;
+      _runtimePositionSubscription = session.positionStream.listen((position) {
+        if (_runtimeEnabled &&
+            _runtimeRunning &&
+            identical(_observedRuntimeSession, session) &&
+            identical(_runtimeSession?.call(), session)) {
+          _updateRuntimeSession(session, position: position);
+        }
+      });
+    }
+    final subtitles = _runtimeSubtitles!();
+    if (!identical(_observedRuntimeSubtitles, subtitles)) {
+      _observedRuntimeSubtitles?.removeListener(_updateRuntime);
+      _observedRuntimeSubtitles = subtitles;
+      subtitles.addListener(_updateRuntime);
+    }
   }
 
   void _updateRuntime() {
@@ -181,24 +197,46 @@ final class SubtitleOverlayController {
       unawaited(stopRuntime(immediate: true));
       return;
     }
-    _updateRuntimeSession(session);
+    if (!identical(_observedRuntimeSession, session) ||
+        _runtimeTrackPath != session.currentTrackPath) {
+      requestRuntimeSync();
+      return;
+    }
+    _updateRuntimeSession(session, loadIfMissing: false);
   }
 
-  void _updateRuntimeSession(PlaybackSession session) {
+  void _updateRuntimeSession(
+    PlaybackSession session, {
+    Duration? position,
+    bool loadIfMissing = true,
+  }) {
     final subtitles = _runtimeSubtitles!();
     if (_runtimeSessionId != session.id) {
       _runtimeSessionId = session.id;
       _lastRuntimeText = null;
     }
-    if (_runtimeTrackPath != session.currentTrackPath) {
+    final trackChanged = _runtimeTrackPath != session.currentTrackPath;
+    if (trackChanged) {
       final trackPath = session.currentTrackPath;
       _runtimeTrackPath = trackPath;
       _lastRuntimeText = null;
+    }
+    final trackPath = session.currentTrackPath;
+    final subtitleTrack = subtitles.trackSync(trackPath);
+    if (loadIfMissing &&
+        (trackChanged ||
+            subtitleTrack == null &&
+                !subtitles.isLoading(trackPath) &&
+                !subtitles.hasResult(trackPath))) {
       unawaited(() async {
         try {
           await subtitles.load(trackPath);
-          if (_runtimeEnabled && _runtimeTrackPath == trackPath) {
-            _updateRuntime();
+          if (_runtimeEnabled &&
+              _runtimeRunning &&
+              identical(_observedRuntimeSession, session) &&
+              identical(_runtimeSession?.call(), session) &&
+              _runtimeTrackPath == trackPath) {
+            _updateRuntimeSession(session, loadIfMissing: false);
           }
         } catch (error, stackTrace) {
           AppLogService.warning(
@@ -210,16 +248,10 @@ final class SubtitleOverlayController {
       }());
     }
 
-    final subtitleTrack = subtitles.trackSync(session.currentTrackPath);
-    if (subtitleTrack == null &&
-        !subtitles.isLoading(session.currentTrackPath) &&
-        !subtitles.hasResult(session.currentTrackPath)) {
-      unawaited(subtitles.load(session.currentTrackPath));
-    }
     final text =
         subtitles.textAt(
           session.currentTrackPath,
-          session.position,
+          position ?? session.position,
           subtitleTrack: subtitleTrack,
         ) ??
         '';
@@ -292,8 +324,11 @@ final class SubtitleOverlayController {
   Future<void> dispose() async {
     if (_disposed) return;
     _runtimeGeneration++;
-    _runtimeTimer?.cancel();
-    _runtimeTimer = null;
+    final subscription = _runtimePositionSubscription;
+    _runtimePositionSubscription = null;
+    _observedRuntimeSession = null;
+    _observedRuntimeSubtitles?.removeListener(_updateRuntime);
+    _observedRuntimeSubtitles = null;
     _isRuntimeEnabled = null;
     _runtimeSession = null;
     _runtimeSubtitles = null;
@@ -302,6 +337,7 @@ final class SubtitleOverlayController {
     _commandGeneration++;
     _stopTimer?.cancel();
     _stopTimer = null;
+    await subscription?.cancel();
     await _platform.stopOverlay();
   }
 }

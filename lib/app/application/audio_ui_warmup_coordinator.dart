@@ -4,7 +4,7 @@ import '../../core/ui/warmup_scheduler.dart';
 import '../../features/library/application/library_facade.dart';
 import '../../features/player/application/notification_facade.dart';
 import '../../features/player/application/playback_facade.dart';
-import '../../features/player/application/playback_session_snapshot.dart';
+import '../../features/player/application/playback_session.dart';
 import '../../features/player/application/playback_subtitle_service.dart';
 
 final class AudioUiWarmupCoordinator {
@@ -100,10 +100,10 @@ final class AudioUiWarmupCoordinator {
   }
 
   void _scheduleFocusedSessionWarmup(int generation) {
-    final sessions = _playback.state.activeSessions;
+    final sessions = _playback.activeSessions;
     if (sessions.isEmpty) return;
     final focusedId = _notifications.state.focusedSessionId;
-    PlaybackSessionSnapshot? focused;
+    PlaybackSession? focused;
     if (focusedId != null) {
       for (final candidate in sessions) {
         if (candidate.id == focusedId) {

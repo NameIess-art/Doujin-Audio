@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
@@ -20,7 +21,7 @@ import 'package:doujin_audio/features/player/domain/audio_effects.dart';
 import 'windows_video_playback_test.dart';
 
 void main() {
-  IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+  final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
   testWidgets(
     'Windows native channels and real multi-session playback',
     (tester) async {
@@ -52,7 +53,9 @@ void main() {
         });
         await overlay.updateSubtitle('Windows subtitle smoke test');
         await overlay.startOverlay();
-        await overlay.updateSubtitle(List.filled(30, '多行字幕 Windows wrapping').join(' '));
+        await overlay.updateSubtitle(
+          List.filled(30, '多行字幕 Windows wrapping').join(' '),
+        );
         await overlay.updateStyle({'fontSize': 36.0, 'borderDepth': 0.5});
         await overlay.updateSubtitle('Short subtitle');
         await overlay.stopOverlay();
@@ -62,9 +65,10 @@ void main() {
         final hotkeys = await desktop.invokeMapMethod<String, bool>(
           'getHotkeyStatus',
         );
-        expect(hotkeys?.keys, unorderedEquals([
-          'toggle', 'previous', 'next', 'showWindow',
-        ]));
+        expect(
+          hotkeys?.keys,
+          unorderedEquals(['toggle', 'previous', 'next', 'showWindow']),
+        );
         expect(hotkeys?.values, everyElement(isA<bool>()));
         final resumed = Completer<void>();
         await WindowsDesktopService.instance.attach((action) async {
@@ -189,20 +193,57 @@ void main() {
           await WindowsMediaTools.instance.readDuration(track.path),
           const Duration(seconds: 10),
         );
-        final players = [Player(), Player()];
-        for (final player in players) {
-          await (player.platform! as NativePlayer).setProperty('mute', 'yes');
-        }
-        if (const bool.fromEnvironment('WINDOWS_TEST_NULL_AUDIO')) {
-          for (final player in players) {
-            await (player.platform! as NativePlayer).setProperty('ao', 'null');
-          }
-        }
-        var nextPlayer = 0;
+        final players = <Player>[];
         final bridge = WindowsPlaybackBridge(
-          createPlayer: () => players[nextPlayer++],
+          createPlayer: () {
+            final player = Player();
+            players.add(player);
+            final native = player.platform! as NativePlayer;
+            unawaited(native.setProperty('mute', 'yes'));
+            if (const bool.fromEnvironment('WINDOWS_TEST_NULL_AUDIO')) {
+              unawaited(native.setProperty('ao', 'null'));
+            }
+            return player;
+          },
         )..startListening();
+        var idleStructureEvents = 0, idleProgressEvents = 0;
+        final structureSub = bridge.snapshots.listen((snapshot) {
+          if (snapshot.sessionId.startsWith('idle-')) idleStructureEvents++;
+        });
+        final progressSub = bridge.progressUpdates.listen((progress) {
+          if (progress.sessionId.startsWith('idle-')) idleProgressEvents++;
+        });
         try {
+          for (var i = 0; i < 50; i++) {
+            final result = await bridge.prepareSession(
+              sessionId: 'idle-$i',
+              uri: track.uri,
+              title: 'Idle $i',
+              startPosition: const Duration(seconds: 2),
+            );
+            expect(result.isOk, true, reason: result.errorOrNull);
+          }
+          await Future<void>.delayed(Duration.zero);
+          final registeredEvents = idleStructureEvents;
+          final observation = Stopwatch()..start();
+          while (observation.elapsed < const Duration(seconds: 60)) {
+            await Future<void>.delayed(const Duration(seconds: 1));
+            expect(players, isEmpty);
+            expect(idleStructureEvents, registeredEvents);
+            expect(idleProgressEvents, 0);
+          }
+          expect(players, isEmpty);
+          expect(idleStructureEvents, registeredEvents);
+          expect(idleProgressEvents, 0);
+          final idleReport = <String, Object>{
+            'sessionCount': 50,
+            'observationMs': observation.elapsedMilliseconds,
+            'playersCreated': players.length,
+            'structuralEvents': idleStructureEvents - registeredEvents,
+            'progressEvents': idleProgressEvents,
+          };
+          binding.reportData = {'windowsIdlePlayback': idleReport};
+          debugPrint('WINDOWS_IDLE_PLAYBACK ${jsonEncode(idleReport)}');
           for (final id in ['one', 'two']) {
             final result = await bridge.prepareSession(
               sessionId: id,
@@ -229,9 +270,11 @@ void main() {
           var playing = false;
           while (DateTime.now().isBefore(deadline)) {
             final state = (await bridge.snapshot()).valueOrNull!;
-            if (state.sessions.every(
-              (s) => s.playing && s.position > const Duration(seconds: 3),
-            )) {
+            if (state.sessions
+                .where((s) => s.sessionId == 'one' || s.sessionId == 'two')
+                .every(
+                  (s) => s.playing && s.position > const Duration(seconds: 3),
+                )) {
               playing = true;
               break;
             }
@@ -252,6 +295,31 @@ void main() {
             ),
             closeTo(270, 0.01),
           );
+          final editing = bridge.updateQueue(
+            'one',
+            queue: [
+              for (var i = 0; i < 1000; i++)
+                {
+                  'uri': track.uri.toString(),
+                  'path': track.path,
+                  'title': 'Queue $i',
+                },
+            ],
+            queueStartIndex: 0,
+            queueRevision: 1,
+            repeatOne: true,
+          );
+          final pauseStarted = Stopwatch()..start();
+          final pausedOther = await bridge
+              .pause('two')
+              .timeout(const Duration(seconds: 2));
+          expect(pausedOther.isOk, true, reason: pausedOther.errorOrNull);
+          expect(pauseStarted.elapsed, lessThan(const Duration(seconds: 2)));
+          expect((await editing).isOk, true);
+          expect(bridge.playerForSession('one'), same(player));
+          expect(players, hasLength(2));
+          expect(idleStructureEvents, registeredEvents);
+          expect(idleProgressEvents, 0);
           await bridge.setRepeatOne(
             'one',
             true,
@@ -266,10 +334,14 @@ void main() {
           expect(bridge.playerForSession('one'), same(player));
           await bridge.pause('one');
           expect(
-            (await bridge.snapshot()).valueOrNull!.sessions.first.playing,
+            (await bridge.snapshot()).valueOrNull!.sessions
+                .singleWhere((s) => s.sessionId == 'one')
+                .playing,
             false,
           );
         } finally {
+          await structureSub.cancel();
+          await progressSub.cancel();
           await bridge.dispose();
           await directory.delete(recursive: true);
         }

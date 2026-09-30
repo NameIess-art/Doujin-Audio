@@ -231,11 +231,14 @@ void main() {
     tester,
   ) async {
     final calls = <String>[];
+    var overlayVisible = false;
     const channel = MethodChannel('doujin_audio/subtitle_overlay');
     tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, (
       call,
     ) async {
       calls.add(call.method);
+      if (call.method == 'startOverlay') overlayVisible = true;
+      if (call.method == 'stopOverlay') overlayVisible = false;
       return <String, Object?>{'ok': true, 'value': true};
     });
     addTearDown(
@@ -255,7 +258,8 @@ void main() {
         .setGlobalEnabled('orientation_session', true);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 200));
-    expect(calls, contains('startOverlay'));
+    expect(calls.where((method) => method == 'startOverlay'), hasLength(1));
+    expect(overlayVisible, isTrue);
     WidgetsBinding.instance.handleAppLifecycleStateChanged(
       AppLifecycleState.hidden,
     );
@@ -267,7 +271,8 @@ void main() {
     );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 200));
-    expect(calls, contains('startOverlay'));
+    expect(overlayVisible, isTrue);
+    expect(calls, isNot(contains('startOverlay')));
     expect(calls, isNot(contains('stopOverlay')));
     await tester.pumpWidget(const SizedBox.shrink());
     debugDefaultTargetPlatformOverride = null;
@@ -612,6 +617,7 @@ void main() {
         closeTo(initialNavWidth - 56, 0.5),
       );
 
+      harness.playbackService.removeSessions([session.id]);
       harness.playbackService.syncSlice(
         activeSessions: const <PlaybackSession>[],
         playingSessionCount: 0,
@@ -3740,6 +3746,7 @@ void main() {
     final withCard = currentInset();
     expect(withCard, closeTo(withoutCard, 0.1));
 
+    harness.playbackService.removeSessions([session.id]);
     harness.playbackService.syncSlice(
       activeSessions: const <PlaybackSession>[],
       playingSessionCount: 0,

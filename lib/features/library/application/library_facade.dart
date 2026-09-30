@@ -9,6 +9,7 @@ import '../../../core/media/path_matcher.dart';
 import '../../../core/platform/file_cache_platform_gateway.dart';
 import '../../../core/persistence/json_document_store.dart';
 import '../../../core/cache/app_cache_service.dart';
+import '../../player/domain/playback_library_catalog.dart';
 import 'audio_detail_cache_service.dart';
 import 'audio_detail_repository.dart';
 import 'cover_artwork_cache_service.dart';
@@ -39,7 +40,7 @@ export 'library_mutation_coordinator.dart'
         LibraryRemovalKind;
 
 /// Coordinates library services while mutable state stays in [LibraryService].
-final class LibraryFacade implements LibraryCatalog {
+final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
   LibraryFacade({
     required this.databaseRepository,
     required this.detailCacheService,
@@ -173,8 +174,12 @@ final class LibraryFacade implements LibraryCatalog {
   @override
   List<MusicTrack> get library =>
       UnmodifiableListView<MusicTrack>(_service.library);
+  @override
   int get structureRevision => _service.structureRevision;
+  @override
   int get contentRevision => _service.contentRevision;
+  @override
+  int get coverGeneration => coverArtworkCacheService.generation;
   int get scanRevision => _service.scanGenerationSeed;
   bool get persistedUriReferencesReady => state.isInitialized;
   int get persistedUriReferenceRevision => structureRevision;
@@ -438,6 +443,7 @@ final class LibraryFacade implements LibraryCatalog {
     return updated;
   }
 
+  @override
   List<MusicTrack> tracksInGroup(String groupKey, {int? limit}) =>
       List<MusicTrack>.unmodifiable(
         limit == null
@@ -451,6 +457,7 @@ final class LibraryFacade implements LibraryCatalog {
   String? resolvedCoverPathForTrack(MusicTrack? track, {String? trackPath}) =>
       _metadataCoordinator.resolvedCoverForTrack(track, trackPath: trackPath);
 
+  @override
   String? resolvedPlaybackCoverPathForTrack(
     MusicTrack? track, {
     String? trackPath,
@@ -476,6 +483,7 @@ final class LibraryFacade implements LibraryCatalog {
   Future<String?> embeddedCoverPathFutureForFile(String filePath) =>
       _metadataCoordinator.resolveEmbeddedCoverForPath(filePath);
 
+  @override
   Future<String?> playbackCoverPathFutureForTrack(
     MusicTrack? track, {
     String? trackPath,
@@ -945,6 +953,7 @@ final class LibraryFacade implements LibraryCatalog {
     _syncStateSlice(isInitialized: isInitialized);
   }
 
+  @override
   void updateTrackSnapshot(MusicTrack updatedTrack) {
     final currentTrack = _service.libraryByPath[updatedTrack.path];
     if (currentTrack == null) return;

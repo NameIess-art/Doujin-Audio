@@ -37,14 +37,8 @@ class _ActiveSessionCard extends ConsumerWidget {
         : const EdgeInsets.fromLTRB(3, 3, 6, 3);
 
     final view = ref.watch(
-      playbackStateProvider.select((value) {
-        final playbackState = value.value;
-        final currentSession =
-            playbackState?.activeSessions.firstWhere(
-              (candidate) => candidate.id == session.id,
-              orElse: () => session,
-            ) ??
-            session;
+      playbackSessionProvider(session.id).select((value) {
+        final currentSession = value ?? session;
         return (
           playing: currentSession.playbackRequested,
           loading:

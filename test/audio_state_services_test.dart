@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -45,16 +46,43 @@ void main() {
       addTearDown(service.dispose);
       var secondPreparationRan = false;
 
-      service.enqueueSessionPreparation(() async {
+      final failed = service.enqueueSessionPreparation('a', () async {
         throw StateError('injected preparation failure');
       });
-      service.enqueueSessionPreparation(() async {
+      final second = service.enqueueSessionPreparation('a', () async {
         secondPreparationRan = true;
       });
 
-      await service.sessionPreparationQueue;
+      await expectLater(failed, throwsStateError);
+      await second;
 
       expect(secondPreparationRan, isTrue);
+    });
+
+    test('a blocked preparation only serializes its own session', () async {
+      final service = PlaybackSessionService();
+      addTearDown(service.dispose);
+      final blocked = Completer<void>();
+      final started = Completer<void>();
+      final events = <String>[];
+      final first = service.enqueueSessionPreparation('a', () async {
+        started.complete();
+        await blocked.future;
+        events.add('a-first');
+      });
+      await started.future;
+      final second = service.enqueueSessionPreparation('a', () async {
+        events.add('a-second');
+      });
+      await service.enqueueSessionPreparation('b', () async {
+        events.add('b');
+      });
+      expect(events, ['b']);
+
+      blocked.complete();
+      await Future.wait([first, second]);
+      await service.pendingSessionPreparation;
+      expect(events, ['b', 'a-first', 'a-second']);
     });
   });
 
@@ -871,9 +899,8 @@ void main() {
       addTearDown(first.shutdown);
       addTearDown(second.shutdown);
 
-      service.sessions['s1'] = first;
-      service.sessions['s2'] = second;
-      service.sessionOrder.add('s2');
+      service.registerSession(first);
+      service.registerSession(second);
 
       final ordered = service.activeSessions;
       expect(ordered.map((session) => session.id), ['s2', 's1']);
@@ -886,7 +913,7 @@ void main() {
       expect(service.activeSessions.map((session) => session.id), ['s1', 's2']);
     });
 
-    test('syncSlice publishes focused session state', () {
+    test('syncSlice publishes focus without including sessions in aggregate', () {
       final service = PlaybackSessionService();
       addTearDown(service.dispose);
 
@@ -900,6 +927,7 @@ void main() {
         state: const PlayerState(true, ProcessingState.ready),
       );
       addTearDown(session.shutdown);
+      service.registerSession(session);
 
       service.syncSlice(
         activeSessions: [session],
@@ -910,17 +938,14 @@ void main() {
       );
 
       expect(
-        service.slice.state,
-        isA<PlaybackStateSliceData>()
-            .having(
-              (state) => state.activeSessions.single.id,
-              'session id',
-              'focus',
-            )
+        service.aggregate.state,
+        isA<PlaybackAggregateState>()
+            .having((state) => state.sessionCount, 'session count', 1)
             .having((state) => state.playingSessionCount, 'count', 1)
-            .having((state) => state.focusedSessionId, 'focus', 'focus')
-            .having((state) => state.coverGeneration, 'cover gen', 2),
+            .having((state) => state.focusedSessionId, 'focus', 'focus'),
       );
+      expect(service.catalog.state.sessions.single.id, 'focus');
+      expect(service.state.coverGeneration, 2);
     });
   });
 

@@ -22,7 +22,9 @@ final class PlaybackTimeSegmentService {
        _exportLabels = exportLabels,
        _now = now ?? DateTime.now,
        _random = random ?? Random() {
-    _playbackSubscription = _playback.states.listen((_) => _pruneSessions());
+    _playbackSubscription = _playback.catalogStates.listen(
+      (_) => _pruneSessions(),
+    );
   }
 
   final PlaybackPersistenceRepository _database;
@@ -181,7 +183,7 @@ final class PlaybackTimeSegmentService {
   }
 
   void _pruneSessions() {
-    final activeIds = _playback.state.activeSessions
+    final activeIds = _playback.catalogState.sessions
         .map((session) => session.id)
         .toSet();
     for (final sessionId in _positionSubscriptions.keys.toList()) {

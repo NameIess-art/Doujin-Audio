@@ -47,7 +47,14 @@ final class PersistedPlaybackSession {
 
 abstract interface class PlaybackPersistenceRepository {
   Future<List<PersistedPlaybackSession>> loadAllSessions();
-  Future<void> saveAllSessions(List<PersistedPlaybackSession> sessions);
+
+  /// Updates one session, retaining its stored queue or effects when excluded.
+  Future<void> upsertSession(
+    PersistedPlaybackSession session, {
+    bool includeQueue = true,
+    bool includeEffects = true,
+  });
+  Future<void> deleteSessions(List<String> sessionIds);
   Future<void> updateSessionOrder(List<String> sessionIds);
   Future<void> updatePlaybackQueueEntryOrder(
     String sessionId,

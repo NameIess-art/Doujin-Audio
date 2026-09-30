@@ -104,6 +104,55 @@ extension AppDatabaseSessions on AppDatabase {
     });
   }
 
+  Future<void> upsertSession(
+    PlaybackSessionRecord session, {
+    bool includeQueue = true,
+    bool includeEffects = true,
+  }) async {
+    final queueRows = includeQueue
+        ? await compute(_playbackQueueRows, session)
+        : null;
+    await _runDatabaseWrite((db) async {
+      final batch = db.batch();
+      final row = _sessionCoreRow(session, session.sortOrder);
+      batch.insert(
+        'sessions',
+        row,
+        conflictAlgorithm: ConflictAlgorithm.ignore,
+      );
+      batch.update('sessions', row, where: 'id = ?', whereArgs: [session.id]);
+      _writeSessionDetailsToBatch(
+        batch,
+        session,
+        includeQueue: includeQueue,
+        includeEffects: includeEffects,
+        queueRows: queueRows,
+      );
+      await batch.commit(noResult: true);
+    });
+  }
+
+  Future<void> deleteSessions(List<String> sessionIds) async {
+    if (sessionIds.isEmpty) return;
+    await _runDatabaseWrite((db) async {
+      final batch = db.batch();
+      for (final id in sessionIds) {
+        for (final table in const [
+          'playback_queue_entry_tracks',
+          'playback_queue_entries',
+          'playback_queues',
+          'session_eq_bands',
+          'session_audio_effects',
+          'session_playback_state',
+        ]) {
+          batch.delete(table, where: 'session_id = ?', whereArgs: [id]);
+        }
+        batch.delete('sessions', where: 'id = ?', whereArgs: [id]);
+      }
+      await batch.commit(noResult: true);
+    });
+  }
+
   Future<void> updatePlaybackQueueEntryOrder(
     String sessionId,
     List<String> entryIds,

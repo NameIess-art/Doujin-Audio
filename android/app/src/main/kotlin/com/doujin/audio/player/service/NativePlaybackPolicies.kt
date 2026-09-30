@@ -6,7 +6,6 @@ import android.os.Bundle
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import com.doujin.audio.channel.*
-import com.doujin.audio.player.session.NativeAudioEffects
 
 internal fun shouldPublishProgressHeartbeat(
     isScreenOn: Boolean,
@@ -57,19 +56,6 @@ internal fun idlePlaybackSessionIdsToRelease(
     return idleSessionIds
         .filterNot { it == focusedSessionId }
         .toSet()
-}
-
-internal fun shouldEnsurePlayerForAudioEffects(
-    effects: NativeAudioEffects,
-    hasPlayer: Boolean
-): Boolean {
-    if (hasPlayer) return false
-    return effects.skipSilenceEnabled ||
-        effects.noiseReductionEnabled ||
-        effects.eqEnabled ||
-        effects.volumeNormalizationEnabled ||
-        effects.panning != 0f ||
-        effects.channelSwapEnabled
 }
 
 internal fun shouldAutoPlayWithAudioFocus(

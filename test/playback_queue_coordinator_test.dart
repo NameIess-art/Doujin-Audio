@@ -7,7 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/features/player/application/notification_facade.dart';
 import 'package:doujin_audio/features/player/application/native_playback_bridge.dart';
 import 'support/runtime_test_models.dart';
-import 'package:doujin_audio/app/application/playback_queue_coordinator.dart';
+import 'package:doujin_audio/features/player/application/playback_queue_coordinator.dart';
 import 'package:doujin_audio/app/application/audio_path_coordinator.dart';
 import 'package:doujin_audio/core/persistence/app_database.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_playback_cache_service.dart';
@@ -44,6 +44,7 @@ void main() {
     queueCoordinator = PlaybackQueueCoordinator(
       playback: runtimeGraph.playback,
       paths: paths,
+      library: runtimeGraph.library,
     );
     timeSegments = PlaybackTimeSegmentService(
       database: runtimeGraph.playback.databaseRepository,
@@ -60,6 +61,73 @@ void main() {
   });
 
   group('playback queues', () {
+    test(
+      'duplicate occurrences survive reorder and removed-current advance',
+      () async {
+        final updates = <Map<Object?, Object?>>[];
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(nativePlaybackChannel, (call) async {
+              if (call.method == NativePlaybackMethod.updateQueue) {
+                updates.add(call.arguments as Map<Object?, Object?>);
+              }
+              return <String, Object?>{'ok': true, 'value': null};
+            });
+        final repeated = testMusicTrack(
+          name: 'Repeated',
+          path: '/duplicates/a.mp3',
+          groupKey: '/duplicates',
+          groupTitle: 'Duplicates',
+        );
+        final other = testMusicTrack(
+          name: 'Other',
+          path: '/duplicates/b.mp3',
+          groupKey: '/duplicates',
+          groupTitle: 'Duplicates',
+        );
+        runtimeGraph.library.addTracks(
+          [repeated, other],
+          notify: false,
+          persist: false,
+        );
+        final session = runtimeGraph.playback.createPlaybackQueue('Duplicates');
+        await queueCoordinator.addTrack(session.id, repeated);
+        await queueCoordinator.addTrack(session.id, repeated);
+        await queueCoordinator.addTrack(session.id, other);
+        session.currentQueueIndex = 1;
+        session.loadedPath = repeated.path;
+        session.state = const PlayerState(true, ProcessingState.ready);
+        final currentEntryId = session.playbackQueue!.entries[1].id;
+        await runtimeGraph.playback.reorderPlaybackQueueEntry(session.id, 0, 3);
+        expect(session.playbackQueue!.entries.first.id, currentEntryId);
+        expect(session.currentQueueIndex, 0);
+        await runtimeGraph.playback.removePlaybackQueueEntry(
+          session.id,
+          currentEntryId,
+        );
+        expect(session.hasDetachedQueueTrack, isTrue);
+        expect(session.customQueueTracks, hasLength(3));
+        expect(session.currentQueueIndex, 0);
+        expect(updates.last['repeatAll'], isFalse);
+
+        // The decoder advances to a distinct occurrence with the same URI.
+        runtimeGraph.playbackCommands.handleNativeSnapshot(
+          NativePlaybackSnapshot.fromMap({
+            'sessionId': session.id,
+            'path': repeated.path,
+            'queueIndex': 2,
+            'playing': true,
+            'playWhenReady': true,
+            'processingState': 'ready',
+          }),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        expect(session.hasDetachedQueueTrack, isFalse);
+        expect(session.currentQueueIndex, 1);
+        expect(session.customQueueTracks, hasLength(2));
+        expect(session.loadedPath, repeated.path);
+      },
+    );
+
     test('starting an existing session focuses its playback card', () async {
       final activations = <String>[];
       final subscription = runtimeGraph.playback.sessionActivations.listen(
@@ -85,33 +153,36 @@ void main() {
       expect(activations, contains(session.id));
     });
 
-    test('label edits export after persistence and report backup failure', () async {
-      await timeSegments.dispose();
-      final exportedCounts = <int>[];
-      timeSegments = PlaybackTimeSegmentService(
-        database: runtimeGraph.playback.databaseRepository,
-        playback: runtimeGraph.playback,
-        paths: paths,
-        exportLabels: (trackKey) async {
-          final saved = await runtimeGraph.playback.databaseRepository
-              .loadTimeSegmentLabels(trackKey);
-          exportedCounts.add(saved.length);
-          return false;
-        },
-      );
-      final label = timeSegments.buildLabel(
-        trackKey: '/library/labels/01.mp3',
-        name: 'Opening',
-        start: Duration.zero,
-        end: const Duration(seconds: 10),
-        colorValue: 0xFFE57373,
-      );
-      expect(await timeSegments.saveLabel(label), isFalse);
-      expect(await timeSegments.deleteLabel(label), isFalse);
-      expect(exportedCounts, <int>[1, 0]);
-    });
+    test(
+      'label edits export after persistence and report backup failure',
+      () async {
+        await timeSegments.dispose();
+        final exportedCounts = <int>[];
+        timeSegments = PlaybackTimeSegmentService(
+          database: runtimeGraph.playback.databaseRepository,
+          playback: runtimeGraph.playback,
+          paths: paths,
+          exportLabels: (trackKey) async {
+            final saved = await runtimeGraph.playback.databaseRepository
+                .loadTimeSegmentLabels(trackKey);
+            exportedCounts.add(saved.length);
+            return false;
+          },
+        );
+        final label = timeSegments.buildLabel(
+          trackKey: '/library/labels/01.mp3',
+          name: 'Opening',
+          start: Duration.zero,
+          end: const Duration(seconds: 10),
+          colorValue: 0xFFE57373,
+        );
+        expect(await timeSegments.saveLabel(label), isFalse);
+        expect(await timeSegments.deleteLabel(label), isFalse);
+        expect(exportedCounts, <int>[1, 0]);
+      },
+    );
 
-    test('queue edit is visible before native preparation completes', () async {
+    test('cold queue edit is visible without native preparation', () async {
       final prepareResult = Completer<Object?>();
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(nativePlaybackChannel, (call) {
@@ -153,7 +224,7 @@ void main() {
           optimisticSession.currentTrackPath,
           track.path,
         ),
-        isFalse,
+        isTrue,
       );
       expect(prepareResult.isCompleted, isFalse);
 
@@ -434,27 +505,52 @@ void main() {
           persist: false,
         );
 
-        final queueSession = runtimeGraph.playback.createPlaybackQueue('Queue 1');
-        await runtimeGraph.playback.addTrackToPlaybackQueue(queueSession.id, trackA);
-        await runtimeGraph.playback.addTrackToPlaybackQueue(queueSession.id, trackB);
-        await runtimeGraph.playback.addTrackToPlaybackQueue(queueSession.id, trackC);
+        final queueSession = runtimeGraph.playback.createPlaybackQueue(
+          'Queue 1',
+        );
+        await runtimeGraph.playback.addTrackToPlaybackQueue(
+          queueSession.id,
+          trackA,
+        );
+        await runtimeGraph.playback.addTrackToPlaybackQueue(
+          queueSession.id,
+          trackB,
+        );
+        await runtimeGraph.playback.addTrackToPlaybackQueue(
+          queueSession.id,
+          trackC,
+        );
 
         // Switch to Track B (index 1)
         await runtimeGraph.playback.seekSessionToNext(queueSession.id);
 
         final session = runtimeGraph.playback.sessionById(queueSession.id)!;
-        expect(PathMatcher.equalsNormalized(session.currentTrackPath, trackB.path), isTrue);
+        expect(
+          PathMatcher.equalsNormalized(session.currentTrackPath, trackB.path),
+          isTrue,
+        );
         expect(session.currentQueueIndex, 1);
         final prepareCountBefore = preparedPaths.length;
 
         // Now remove Track A (index 0) from the queue
         final entryAId = session.playbackQueue!.entries[0].id;
-        await runtimeGraph.playback.removePlaybackQueueEntry(queueSession.id, entryAId);
+        await runtimeGraph.playback.removePlaybackQueueEntry(
+          queueSession.id,
+          entryAId,
+        );
 
-        final afterSession = runtimeGraph.playback.sessionById(queueSession.id)!;
+        final afterSession = runtimeGraph.playback.sessionById(
+          queueSession.id,
+        )!;
         expect(afterSession.playbackQueue?.entries, hasLength(2));
         // Current track must still be Track B!
-        expect(PathMatcher.equalsNormalized(afterSession.currentTrackPath, trackB.path), isTrue);
+        expect(
+          PathMatcher.equalsNormalized(
+            afterSession.currentTrackPath,
+            trackB.path,
+          ),
+          isTrue,
+        );
         // Its queue index is now 0 (was 1)
         expect(afterSession.currentQueueIndex, 0);
         // No redundant prepareSession was triggered
@@ -531,13 +627,21 @@ void main() {
         );
 
         await runtimeGraph.playback.seekSessionToNext(queueSession.id);
-        final afterAdvance = runtimeGraph.playback.sessionById(queueSession.id)!;
+        final afterAdvance = runtimeGraph.playback.sessionById(
+          queueSession.id,
+        )!;
         expect(
-          PathMatcher.equalsNormalized(afterAdvance.currentTrackPath, tracks[0].path),
+          PathMatcher.equalsNormalized(
+            afterAdvance.currentTrackPath,
+            tracks[0].path,
+          ),
           isTrue,
         );
         expect(afterAdvance.currentQueueIndex, 0);
-        expect(afterAdvance.customQueueTracks, <MusicTrack>[tracks[0], tracks[2]]);
+        expect(afterAdvance.customQueueTracks, <MusicTrack>[
+          tracks[0],
+          tracks[2],
+        ]);
       },
     );
 
@@ -774,7 +878,7 @@ void main() {
       final restoredRepository = TestPersistenceRepository(
         database: AppDatabase.test(db),
       );
-      await restoredRepository.saveAllSessions(<PersistedPlaybackSession>[
+      await restoredRepository.seedSessions(<PersistedPlaybackSession>[
         PersistedPlaybackSession(
           id: sessionId,
           trackPath: 'https://example.com/asmr/01.mp3',
@@ -826,10 +930,11 @@ void main() {
 
       expect(restoredGraph.playback.activeSessions, hasLength(1));
       expect(
-        restoredGraph.audioPaths.trackByPath(
-          'https://example.com/asmr/01.mp3',
-          includeLibraryFallback: false,
-        )
+        restoredGraph.audioPaths
+            .trackByPath(
+              'https://example.com/asmr/01.mp3',
+              includeLibraryFallback: false,
+            )
             ?.toJson(),
         firstTrack.toJson(),
       );

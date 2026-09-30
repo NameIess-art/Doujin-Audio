@@ -17,6 +17,95 @@ import 'package:doujin_audio/features/player/domain/playback_persistence_reposit
 import 'support/test_persistence_repository.dart';
 
 void main() {
+  test(
+    'nonfocused settings and progress reuse notification presentation',
+    () async {
+      final service = _RecordingPlaybackNotificationService();
+      final commands = _NoopNotificationPlaybackCommands();
+      final resolvedPaths = <String>[];
+      final fixture = _createNotificationFixture(
+        service,
+        commands: commands,
+        trackByPath: (trackPath) {
+          resolvedPaths.add(trackPath);
+          return null;
+        },
+      );
+      addTearDown(fixture.dispose);
+      final other = _additionalSession();
+      fixture.playback.registerSession(other);
+      fixture.facade.setFocusedSession(fixture.session.id);
+      fixture.facade.syncPlaybackState(immediateUnifiedSync: true);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      final focusedItem = (service.payloads.single['items'] as List).firstWhere(
+        (item) => item['id'] == fixture.session.id,
+      );
+      resolvedPaths.clear();
+      commands.adjacentSessionIds.clear();
+
+      other.volume = .35;
+      other.speed = 1.4;
+      other.lastKnownPosition = const Duration(seconds: 3);
+      fixture.facade.syncPlaybackState(immediateUnifiedSync: true);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      expect(service.syncCount, 1);
+      expect(resolvedPaths, isEmpty);
+      expect(commands.adjacentSessionIds, isEmpty);
+
+      other.customQueueTracks = const [];
+      fixture.facade.syncPlaybackState(immediateUnifiedSync: true);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(service.syncCount, 1);
+      expect(resolvedPaths, isEmpty);
+      expect(commands.adjacentSessionIds, everyElement(other.id));
+
+      other.currentTrackPath = '/tracks/changed.mp3';
+      fixture.facade.syncPlaybackState(immediateUnifiedSync: true);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(service.syncCount, 2);
+      expect(resolvedPaths, <String>[other.currentTrackPath]);
+      final updatedFocusedItem = (service.payloads.last['items'] as List)
+          .firstWhere((item) => item['id'] == fixture.session.id);
+      expect(identical(updatedFocusedItem, focusedItem), isTrue);
+    },
+  );
+
+  test(
+    'notification membership and focus synchronize without metadata rebuild',
+    () async {
+      final service = _RecordingPlaybackNotificationService();
+      final resolvedPaths = <String>[];
+      final fixture = _createNotificationFixture(
+        service,
+        trackByPath: (trackPath) {
+          resolvedPaths.add(trackPath);
+          return null;
+        },
+      );
+      addTearDown(fixture.dispose);
+      fixture.facade.syncPlaybackState(immediateUnifiedSync: true);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      resolvedPaths.clear();
+      final other = _additionalSession();
+      fixture.playback.registerSession(other);
+      fixture.facade.setFocusedSession(fixture.session.id);
+      fixture.facade.syncPlaybackState(immediateUnifiedSync: true);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(service.syncCount, 2);
+      expect(resolvedPaths, <String>[other.currentTrackPath]);
+      expect((service.payloads.last['items'] as List).length, 2);
+      resolvedPaths.clear();
+
+      fixture.facade.setFocusedSession(other.id);
+      fixture.facade.syncPlaybackState(immediateUnifiedSync: true);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(service.syncCount, 3);
+      expect(service.payloads.last['mainSessionId'], other.id);
+      expect(resolvedPaths, isEmpty);
+    },
+  );
+
   test('notification synchronization coalesces while paused', () async {
     final service = _RecordingPlaybackNotificationService();
     final fixture = _createNotificationFixture(service);
@@ -217,12 +306,13 @@ void main() {
     expect(session.state.playing, isTrue);
     expect(native.pausedSessionIds, <String>[session.id]);
   });
-
 }
 
 _NotificationFixture _createNotificationFixture(
-  PlaybackNotificationService service,
-) {
+  PlaybackNotificationService service, {
+  NotificationPlaybackCommands? commands,
+  NotificationTrackResolver? trackByPath,
+}) {
   final library = _createLibraryFacade();
   final playback = PlaybackFacade.create(
     databaseRepository:
@@ -261,14 +351,24 @@ _NotificationFixture _createNotificationFixture(
     notifyNotificationChanged: () {},
   );
   facade.attachSynchronization(
-    playbackCommands: _NoopNotificationPlaybackCommands(),
+    playbackCommands: commands ?? _NoopNotificationPlaybackCommands(),
     subtitles: PlaybackSubtitleService(trackResolver: (_) => null),
-    trackByPath: (_) => null,
+    trackByPath: trackByPath ?? (_) => null,
     coverArtworkCacheService: library.coverArtworkCacheService,
     notificationsEnabled: () => true,
   );
   return _NotificationFixture(library, playback, facade, stateService, session);
 }
+
+PlaybackSession _additionalSession() => PlaybackSession(
+  id: 'other-notification-session',
+  currentTrackPath: '/tracks/other.mp3',
+  loopMode: SessionLoopMode.folderSequential,
+  nonSingleLoopMode: SessionLoopMode.folderSequential,
+  volume: 1,
+  createdAt: DateTime(2026, 2),
+  state: const PlayerState(true, ProcessingState.ready),
+);
 
 final class _NotificationFixture {
   const _NotificationFixture(
@@ -296,10 +396,12 @@ final class _NotificationFixture {
 final class _RecordingPlaybackNotificationService
     extends PlaybackNotificationService {
   int syncCount = 0;
+  final List<Map<String, dynamic>> payloads = <Map<String, dynamic>>[];
 
   @override
   Future<void> syncUnifiedNotifications(Map<String, dynamic> payload) async {
     syncCount++;
+    payloads.add(payload);
   }
 }
 
@@ -322,8 +424,12 @@ final class _BlockingPlaybackNotificationService
 
 final class _NoopNotificationPlaybackCommands
     implements NotificationPlaybackCommands {
+  final List<String> adjacentSessionIds = <String>[];
   @override
-  bool hasAdjacent(PlaybackSession session, {required bool forward}) => false;
+  bool hasAdjacent(PlaybackSession session, {required bool forward}) {
+    adjacentSessionIds.add(session.id);
+    return false;
+  }
 
   @override
   Future<bool> prepareAndPlay(

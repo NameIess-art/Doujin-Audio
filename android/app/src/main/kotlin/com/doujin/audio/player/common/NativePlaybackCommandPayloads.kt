@@ -27,8 +27,16 @@ internal data class NativePrepareSessionArguments(
     val shuffle: Boolean,
     val candidateUris: List<String>,
     val deferPlayerCreation: Boolean,
-    val isTemporary: Boolean = false
-)
+    val isTemporary: Boolean = false,
+    val preparedQueue: NativePlaybackQueue? = null
+) {
+    fun playbackQueue(): List<NativeMediaItemDescriptor> {
+        if (candidateUris.isEmpty()) return queue
+        return queue.toMutableList().also {
+            it[queueStartIndex] = it[queueStartIndex].withPlaybackCandidateUris(candidateUris)
+        }
+    }
+}
 
 internal data class NativeRepeatOneArguments(
     val sessionId: String,
@@ -36,10 +44,33 @@ internal data class NativeRepeatOneArguments(
     val queue: List<NativeMediaItemDescriptor>,
     val queueStartIndex: Int,
     val repeatAll: Boolean,
+    val shuffle: Boolean,
+    val preparedQueue: NativePlaybackQueue? = null
+)
+
+internal data class NativeUpdateQueueArguments(
+    val sessionId: String,
+    val queue: List<NativeMediaItemDescriptor>,
+    val queueStartIndex: Int,
+    val queueRevision: Long,
+    val repeatOne: Boolean,
+    val repeatAll: Boolean,
     val shuffle: Boolean
 )
 
 internal object NativePlaybackCommandPayloads {
+    fun parseUpdateQueue(raw: Map<String, Any?>): NativeUpdateQueueArguments {
+        val queue = parseQueue(raw.requiredList("queue"))
+        val index = raw.optionalInt("queueStartIndex") ?: 0
+        require(queue.isEmpty() && index == 0 || index in queue.indices) { "Invalid queueStartIndex." }
+        fun mode(key: String): Boolean = if (raw.containsKey(key)) raw.requiredBoolean(key) else false
+        return NativeUpdateQueueArguments(
+            sessionId = raw.requiredString("sessionId"), queue = queue, queueStartIndex = index,
+            queueRevision = if (raw.containsKey("queueRevision")) raw.requiredLong("queueRevision", 0L) else 0L,
+            repeatOne = mode("repeatOne"), repeatAll = mode("repeatAll"), shuffle = mode("shuffle")
+        )
+    }
+
     fun parseRepeatOne(raw: Map<String, Any?>): NativeRepeatOneArguments {
         val queue = parseQueue(raw["queue"])
         val queueStartIndex = raw.optionalInt("queueStartIndex") ?: 0

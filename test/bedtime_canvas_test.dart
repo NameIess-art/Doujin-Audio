@@ -972,11 +972,14 @@ void main() {
     expect(tester.widget<IconButton>(button).onPressed, isNotNull);
 
     session.state = const PlayerState(false, ProcessingState.ready);
+    syncSession(0);
     await tester.tap(button);
     await tester.pump();
     expect(find.byType(BedtimeCanvasPage), findsNothing);
 
     session.state = const PlayerState(true, ProcessingState.ready);
+    syncSession(1);
+    await tester.pump();
     await tester.tap(button);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));

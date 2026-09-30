@@ -16,6 +16,7 @@ internal class PlaybackControlDeliveryCompletion(
     private val onFinish: () -> Unit
 ) {
     private val finished = AtomicBoolean(false)
+    val isFinished: Boolean get() = finished.get()
 
     fun finish(beforeFinish: () -> Unit = {}): Boolean {
         if (!finished.compareAndSet(false, true)) return false
@@ -68,10 +69,12 @@ class UnifiedPlaybackActionReceiver : BroadcastReceiver() {
                     NativePlaybackService.endCommandDelivery()
                 }
             }
+            var executing = false
             fun execute(service: NativePlaybackService) {
-                completion.finish {
-                    service.executeNotificationAction(action, requestedSessionId)
-                }
+                if (executing) return
+                executing = true
+                service.executeNotificationActionAsync(action, requestedSessionId,
+                    shouldExecute = { !completion.isFinished }) { completion.finish() }
             }
             timeout = Runnable { completion.finish() }
             try {

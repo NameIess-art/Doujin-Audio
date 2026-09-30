@@ -17,7 +17,7 @@ class NativePlaybackBridge(
 ) : MethodChannel.MethodCallHandler, EventChannel.StreamHandler {
     private var events: EventChannel.EventSink? = null
     private var listening = false
-    private var disposed = false
+    @Volatile private var disposed = false
     private var attachedService: NativePlaybackService? = null
     private var commandService: NativePlaybackService? = null
     private val listenerId = "flutter-${UUID.randomUUID()}"
@@ -45,14 +45,21 @@ class NativePlaybackBridge(
             )
             return
         }
-        val pendingCall = PendingServiceCall(
-            method = call.method,
-            result = result,
-            requireForegroundBootstrap = command.requireForegroundBootstrap,
-            dispatch = command.dispatch
-        )
-        pendingCalls += pendingCall
-        pendingCall.run()
+        // Codec decoding and large queue validation run on the channel's serial
+        // background TaskQueue. Player and service ownership stays on main.
+        mainHandler.post {
+            if (disposed) {
+                result.success(serviceUnavailable(call.method))
+                return@post
+            }
+            val pendingCall = PendingServiceCall(
+                method = call.method, result = result,
+                requireForegroundBootstrap = command.requireForegroundBootstrap,
+                dispatchAsync = command.dispatchAsync, dispatch = command.dispatch
+            )
+            pendingCalls += pendingCall
+            pendingCall.run()
+        }
     }
 
     override fun onListen(arguments: Any?, eventSink: EventChannel.EventSink?) {
@@ -79,7 +86,6 @@ class NativePlaybackBridge(
         disposed = true
         listening = false
         pendingCalls.toList().forEach(PendingServiceCall::cancel)
-        mainHandler.removeCallbacksAndMessages(null)
         NativePlaybackService.removeControllerListener(listenerId)
         commandService?.clearTemporarySpeeds()
         commandService = null
@@ -122,6 +128,7 @@ class NativePlaybackBridge(
         private val method: String,
         private val result: MethodChannel.Result,
         private val requireForegroundBootstrap: Boolean,
+        private val dispatchAsync: ((NativePlaybackService, (Map<String, Any?>) -> Unit) -> Unit)?,
         private val dispatch: (NativePlaybackService) -> Map<String, Any?>
     ) : Runnable {
         private val startedAtMs = SystemClock.elapsedRealtime()
@@ -147,6 +154,10 @@ class NativePlaybackBridge(
             if (service != null) {
                 commandService = service
                 attachEventListenerIfNeeded(service)
+                if (dispatchAsync != null) {
+                    dispatchAsync.invoke(service, ::complete)
+                    return
+                }
                 val response = try {
                     dispatch(service)
                 } catch (error: IllegalArgumentException) {
@@ -202,6 +213,7 @@ internal fun isSupportedNativePlaybackMethod(method: String): Boolean = method i
     NativePlaybackMethods.SET_TEMPORARY_SPEED,
     NativePlaybackMethods.SET_FADE_MULTIPLIER,
     NativePlaybackMethods.SET_REPEAT_ONE,
+    NativePlaybackMethods.UPDATE_QUEUE,
     NativePlaybackMethods.SET_AUDIO_EFFECTS,
     NativePlaybackMethods.REMOVE_SESSION,
     NativePlaybackMethods.PAUSE_ALL,
@@ -215,6 +227,7 @@ internal fun isSupportedNativePlaybackMethod(method: String): Boolean = method i
 
 internal class ParsedPlaybackCommand(
     val requireForegroundBootstrap: Boolean = false,
+    val dispatchAsync: ((NativePlaybackService, (Map<String, Any?>) -> Unit) -> Unit)? = null,
     val dispatch: (NativePlaybackService) -> Map<String, Any?>
 )
 
@@ -230,7 +243,9 @@ internal fun parsePlaybackCommand(call: MethodCall): ParsedPlaybackCommand {
     return when (call.method) {
         NativePlaybackMethods.PREPARE_SESSION -> {
             val prepared = NativePlaybackCommandPayloads.parsePrepareSession(call.argumentsMap())
-            ParsedPlaybackCommand(requireForegroundBootstrap = prepared.autoPlay) { service ->
+            ParsedPlaybackCommand(requireForegroundBootstrap = prepared.autoPlay,
+                dispatchAsync = { service, complete -> service.prepareSessionAsync(prepared, complete) }
+            ) { service ->
                 service.prepareSession(prepared)
             }
         }
@@ -241,7 +256,9 @@ internal fun parsePlaybackCommand(call: MethodCall): ParsedPlaybackCommand {
                 "transportCommandId must not be negative."
             }
             val exclusive = arguments.requiredBoolean("exclusive")
-            ParsedPlaybackCommand(requireForegroundBootstrap = true) { service ->
+            ParsedPlaybackCommand(requireForegroundBootstrap = true,
+                dispatchAsync = { service, complete -> service.playAsync(sessionId, transportCommandId, exclusive, complete) }
+            ) { service ->
                 service.play(sessionId, transportCommandId, exclusive)
             }
         }
@@ -288,7 +305,15 @@ internal fun parsePlaybackCommand(call: MethodCall): ParsedPlaybackCommand {
         }
         NativePlaybackMethods.SET_REPEAT_ONE -> {
             val repeat = NativePlaybackCommandPayloads.parseRepeatOne(call.argumentsMap())
-            ParsedPlaybackCommand { service -> service.setRepeatOne(repeat) }
+            ParsedPlaybackCommand(dispatchAsync = { service, complete ->
+                service.setRepeatOneAsync(repeat, complete)
+            }) { service -> service.setRepeatOne(repeat) }
+        }
+        NativePlaybackMethods.UPDATE_QUEUE -> {
+            val queue = NativePlaybackCommandPayloads.parseUpdateQueue(call.argumentsMap())
+            ParsedPlaybackCommand(dispatchAsync = { service, complete ->
+                service.updateQueueAsync(queue, complete)
+            }) { service -> service.updateQueue(queue) }
         }
         NativePlaybackMethods.SET_AUDIO_EFFECTS -> {
             val sessionId = arguments.requiredString("sessionId")

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import '../../features/asmr/application/asmr_download_manager.dart';
 import '../../features/library/application/cover_image_cache_policy.dart';
 import '../../features/library/application/library_facade.dart';
@@ -10,7 +12,7 @@ import 'app_persistence_coordinator.dart';
 import 'app_runtime_lifecycle.dart';
 import 'audio_runtime_coordinator.dart';
 import 'audio_ui_warmup_coordinator.dart';
-import 'playback_command_coordinator.dart';
+import '../../features/player/application/playback_command_coordinator.dart';
 import 'playback_keep_alive_coordinator.dart';
 import 'runtime_binding.dart';
 
@@ -122,9 +124,10 @@ final class AppLifecycleBinding implements RuntimeBinding, AppRuntimeLifecycle {
     AppCacheService.scheduleEnforce();
   }
 
-  void _enterBackground() {
+  Future<void> _enterBackground() async {
     _playback.setBackgroundMode(true);
     _keepAlive.enterBackground();
+    await _playback.flushSessionStatePersistence();
   }
 
   Future<void> _resumeForeground() async {
@@ -137,26 +140,38 @@ final class AppLifecycleBinding implements RuntimeBinding, AppRuntimeLifecycle {
   }
 
   Future<void> _disposeRuntime() async {
-    _persistence.dispose();
-    _playback.cancelScheduledPersistence();
-    _library.cancelPendingScanProgressNotification();
-    await _warmup.shutdown();
-    await _keepAlive.shutdown();
+    Object? firstError;
+    StackTrace? firstStackTrace;
+    Future<void> attempt(FutureOr<void> Function() action) async {
+      try {
+        await action();
+      } catch (error, stackTrace) {
+        firstError ??= error;
+        firstStackTrace ??= stackTrace;
+      }
+    }
+
+    await attempt(_playback.flushSessionStatePersistence);
+    await attempt(_persistence.dispose);
+    await attempt(_playback.cancelScheduledPersistence);
+    await attempt(_library.cancelPendingScanProgressNotification);
+    await attempt(_warmup.shutdown);
+    await attempt(_keepAlive.shutdown);
     if (!_bindingsDisposed) {
       _bindingsDisposed = true;
       for (final binding in _bindings.reversed) {
-        await binding.dispose();
+        await attempt(binding.dispose);
       }
     }
-    await _asmrDownloads?.shutdown();
-    await _library.dispose();
-    try {
-      await _playback.dispose();
-    } finally {
-      await _playbackCommands.dispose();
+    await attempt(() => _asmrDownloads?.shutdown());
+    await attempt(_library.dispose);
+    await attempt(_playback.dispose);
+    await attempt(_playbackCommands.dispose);
+    await attempt(_timer.dispose);
+    await attempt(_notifications.dispose);
+    await attempt(_settings.dispose);
+    if (firstError != null) {
+      Error.throwWithStackTrace(firstError!, firstStackTrace!);
     }
-    await _timer.dispose();
-    await _notifications.dispose();
-    await _settings.dispose();
   }
 }

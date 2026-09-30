@@ -21,7 +21,7 @@ void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets(
-    'Android version channel and native playback critical path',
+    'Android native playback isolates concurrent sessions and idles when paused',
     (tester) async {
       await startAppForTest(tester, app.main);
       await enterMainScreen(tester);
@@ -50,22 +50,13 @@ void main() {
         '${Directory.systemTemp.path}${Platform.pathSeparator}'
         'doujin_audio_native_smoke_${DateTime.now().microsecondsSinceEpoch}.wav',
       );
-      await wav.writeAsBytes(_pcmWav(seconds: 30), flush: true);
+      final secondWav = File('${wav.path}.second.wav');
+      await wav.writeAsBytes(_pcmWav(seconds: 60), flush: true);
+      await secondWav.writeAsBytes(_pcmWav(seconds: 60), flush: true);
 
       try {
         await playback.launchQueue(
-          <MusicTrack>[
-            MusicTrack(
-              path: wav.path,
-              displayName: 'Native smoke WAV',
-              groupKey: wav.parent.path,
-              groupTitle: 'Integration test',
-              groupSubtitle: '',
-              isSingle: true,
-              fileSizeBytes: await wav.length(),
-              duration: const Duration(seconds: 30),
-            ),
-          ],
+          <MusicTrack>[await _trackForWav(wav, 'Native smoke WAV')],
           autoPlay: true,
           loopMode: SessionLoopMode.folderSequential,
         );
@@ -89,10 +80,9 @@ void main() {
         await playback.toggleSessionPlayPause(sessionId);
         await _waitFor(
           tester,
-          () =>
-              playback.state.activeSessions
-                  .where((s) => s.id == sessionId)
-                  .every((s) => !s.effectivePlaying),
+          () => playback.state.activeSessions
+              .where((s) => s.id == sessionId)
+              .every((s) => !s.effectivePlaying),
           'native playback did not pause',
         );
         var nativeSession = await _nativeSession(playback, sessionId);
@@ -109,10 +99,9 @@ void main() {
         await playback.toggleSessionPlayPause(sessionId);
         await _waitFor(
           tester,
-          () =>
-              playback.state.activeSessions
-                  .where((s) => s.id == sessionId)
-                  .any((s) => s.effectivePlaying),
+          () => playback.state.activeSessions
+              .where((s) => s.id == sessionId)
+              .any((s) => s.effectivePlaying),
           'native playback did not resume after seek',
         );
         await _waitFor(
@@ -133,16 +122,118 @@ void main() {
         _transitionToResumed(tester);
         await _waitFor(
           tester,
-          () =>
-              playback.state.activeSessions
-                  .where((s) => s.id == sessionId)
-                  .any((s) => s.position > nativeSession.position),
+          () => playback.state.activeSessions
+              .where((s) => s.id == sessionId)
+              .any((s) => s.position > nativeSession.position),
           'playback did not reconcile after foreground resume',
         );
+
+        await playback.launchQueue(
+          <MusicTrack>[await _trackForWav(secondWav, 'Concurrent native WAV')],
+          autoPlay: true,
+          loopMode: SessionLoopMode.folderSequential,
+        );
+        await _waitFor(
+          tester,
+          () =>
+              playback.activeSessions.length == 2 &&
+              playback.activeSessions.every(
+                (session) => session.effectivePlaying,
+              ),
+          'concurrent native sessions did not play together',
+        );
+        final secondSessionId = playback.activeSessions
+            .singleWhere((session) => session.id != sessionId)
+            .id;
+        expect(await playback.setSessionVolume(sessionId, .25), isTrue);
+        expect(await playback.setSessionVolume(secondSessionId, .65), isTrue);
+        expect(
+          (await _nativeSession(playback, sessionId)).volume,
+          closeTo(.25, .001),
+        );
+        expect(
+          (await _nativeSession(playback, secondSessionId)).volume,
+          closeTo(.65, .001),
+        );
+        final beforeOtherPause = await _nativeSession(
+          playback,
+          secondSessionId,
+        );
+        await playback.toggleSessionPlayPause(sessionId);
+        await _waitFor(
+          tester,
+          () async =>
+              !(await _nativeSession(playback, sessionId)).playWhenReady,
+          'first session did not pause independently',
+        );
+        await playback.seekSession(sessionId, const Duration(seconds: 5));
+        expect(
+          (await _nativeSession(playback, sessionId)).position.inMilliseconds,
+          inInclusiveRange(4500, 5500),
+        );
+        await _waitFor(tester, () async {
+          final second = await _nativeSession(playback, secondSessionId);
+          return second.playWhenReady &&
+              second.position >
+                  beforeOtherPause.position + const Duration(milliseconds: 300);
+        }, 'pausing and seeking one session disrupted the other');
+
+        expect(await playback.pauseAllSessions(), isTrue);
+        await _waitFor(tester, () async {
+          final first = await _nativeSession(playback, sessionId);
+          final second = await _nativeSession(playback, secondSessionId);
+          return !first.playWhenReady && !second.playWhenReady;
+        }, 'all native sessions did not pause');
+        await Future<void>.delayed(const Duration(milliseconds: 800));
+        await tester.pump();
+        final firstPaused = await _nativeSession(playback, sessionId);
+        final secondPaused = await _nativeSession(playback, secondSessionId);
+        var progressEvents = 0;
+        var stateEvents = 0;
+        final progressSubscription = playback.nativeRepository.progressUpdates
+            .listen((_) => progressEvents++);
+        final stateSubscription = playback.nativeRepository.snapshots.listen(
+          (_) => stateEvents++,
+        );
+        try {
+          final idleObservation = Stopwatch()..start();
+          while (idleObservation.elapsed < const Duration(seconds: 60)) {
+            await Future<void>.delayed(const Duration(seconds: 1));
+            await tester.pump();
+          }
+          expect(
+            progressEvents,
+            0,
+            reason: 'paused retained sessions emitted periodic progress',
+          );
+          expect(
+            stateEvents,
+            0,
+            reason: 'paused retained sessions emitted periodic state',
+          );
+          expect(
+            (await _nativeSession(playback, sessionId)).position,
+            firstPaused.position,
+          );
+          expect(
+            (await _nativeSession(playback, secondSessionId)).position,
+            secondPaused.position,
+          );
+          debugPrint(
+            'ANDROID_NATIVE_IDLE_OBSERVATION '
+            'durationMs=${idleObservation.elapsedMilliseconds} '
+            'pausedSessions=2 progressEvents=$progressEvents '
+            'stateEvents=$stateEvents',
+          );
+        } finally {
+          await progressSubscription.cancel();
+          await stateSubscription.cancel();
+        }
       } finally {
         _transitionToResumed(tester);
         await playback.clearAllSessions();
         if (await wav.exists()) await wav.delete();
+        if (await secondWav.exists()) await secondWav.delete();
         await tester.pumpWidget(const SizedBox.shrink());
         await tester.pumpAndSettle();
       }
@@ -151,6 +242,17 @@ void main() {
     timeout: const Timeout(Duration(minutes: 3)),
   );
 }
+
+Future<MusicTrack> _trackForWav(File file, String title) async => MusicTrack(
+  path: file.path,
+  displayName: title,
+  groupKey: file.path,
+  groupTitle: 'Integration test',
+  groupSubtitle: '',
+  isSingle: true,
+  fileSizeBytes: await file.length(),
+  duration: const Duration(seconds: 60),
+);
 
 void _transitionToPaused(WidgetTester tester) {
   switch (tester.binding.lifecycleState) {

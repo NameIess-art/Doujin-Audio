@@ -57,7 +57,7 @@ void main() {
         var preparations = 0;
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
             .setMockMethodCallHandler(nativePlaybackChannel, (call) async {
-              if (call.method == NativePlaybackMethod.setRepeatOne) {
+              if (call.method == NativePlaybackMethod.updateQueue) {
                 queues.add(Map<Object?, Object?>.from(call.arguments as Map));
               }
               if (call.method == NativePlaybackMethod.prepareSession) {
@@ -124,6 +124,183 @@ void main() {
 
     test('initial state has no active sessions', () {
       expect(runtimeGraph.playback.activeSessions, isEmpty);
+    });
+
+    test('retarget invalidates an in-flight initial native prepare', () async {
+      final track = testMusicTrack(
+        name: 'Old',
+        path: PathMatcher.normalize('/music/old/01.mp3'),
+        groupKey: '/music/old',
+        groupTitle: 'Old',
+        isSingle: true,
+      );
+      final nextPath = PathMatcher.normalize('/music/new/01.mp3');
+      final session = runtimeGraph.playback.createTrackSession(
+        track,
+        customQueueTracks: [track],
+      );
+      final oldStarted = Completer<void>();
+      final newStarted = Completer<void>();
+      final releaseOld = Completer<void>();
+      final releaseNew = Completer<void>();
+      final preparedPaths = <String>[];
+      final playedPaths = <String?>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(nativePlaybackChannel, (call) async {
+            final arguments = call.arguments as Map<Object?, Object?>?;
+            if (call.method == NativePlaybackMethod.prepareSession) {
+              final sourcePath = arguments!['path'] as String;
+              preparedPaths.add(sourcePath);
+              if (sourcePath == track.path) {
+                oldStarted.complete();
+                await releaseOld.future;
+              } else {
+                newStarted.complete();
+                await releaseNew.future;
+              }
+              return <String, Object?>{
+                'ok': true,
+                'value': <String, Object?>{
+                  'sessionId': session.id,
+                  'path': sourcePath,
+                  'playing': false,
+                  'playWhenReady': false,
+                  'processingState': 'ready',
+                  'positionMs': 0,
+                  'bufferedPositionMs': 0,
+                  'volume': 1.0,
+                  'channelSwap': false,
+                },
+              };
+            }
+            if (call.method == NativePlaybackMethod.play) {
+              playedPaths.add(session.loadedPath);
+            }
+            return <String, Object?>{'ok': true, 'value': null};
+          });
+      addTearDown(() {
+        if (!releaseOld.isCompleted) releaseOld.complete();
+        if (!releaseNew.isCompleted) releaseNew.complete();
+      });
+
+      final oldPrepare = runtimeGraph.playbackCommands.prepareAndPlay(
+        session,
+        nextPath: track.path,
+      );
+      await oldStarted.future;
+      final retarget = runtimeGraph.playback.retargetPath(
+        '/music/old',
+        '/music/new',
+      );
+      await newStarted.future;
+      releaseOld.complete();
+      expect(await oldPrepare, isFalse);
+      expect(session.currentTrackPath, nextPath);
+      expect(session.loadedPath, isNull);
+      expect(playedPaths, isEmpty);
+
+      releaseNew.complete();
+      await retarget;
+      expect(preparedPaths, [track.path, nextPath]);
+      expect(session.currentTrackPath, nextPath);
+      expect(session.loadedPath, nextPath);
+      expect(playedPaths, [nextPath]);
+    });
+
+    test(
+      'retarget leaves a cold paused session without a native player',
+      () async {
+        final track = testMusicTrack(
+          name: 'Paused',
+          path: PathMatcher.normalize('/music/old/paused.mp3'),
+          groupKey: '/music/old',
+          groupTitle: 'Old',
+          isSingle: true,
+        );
+        final session = runtimeGraph.playback.createTrackSession(
+          track,
+          customQueueTracks: [track],
+        );
+        var preparations = 0;
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(nativePlaybackChannel, (call) async {
+              if (call.method == NativePlaybackMethod.prepareSession) {
+                preparations++;
+              }
+              return <String, Object?>{'ok': true, 'value': null};
+            });
+
+        await runtimeGraph.playback.retargetPath('/music/old', '/music/new');
+
+        expect(preparations, 0);
+        expect(session.loadedPath, isNull);
+        expect(session.playbackRequested, isFalse);
+        expect(
+          session.currentTrackPath,
+          PathMatcher.normalize('/music/new/paused.mp3'),
+        );
+      },
+    );
+
+    test('retarget does not await another session preparation', () async {
+      final otherTrack = testMusicTrack(
+        name: 'Other',
+        path: PathMatcher.normalize('/other/loading.mp3'),
+        groupKey: '/other',
+        groupTitle: 'Other',
+        isSingle: true,
+      );
+      final targetTrack = testMusicTrack(
+        name: 'Target',
+        path: PathMatcher.normalize('/music/old/target.mp3'),
+        groupKey: '/music/old',
+        groupTitle: 'Old',
+        isSingle: true,
+      );
+      final target = runtimeGraph.playback.createTrackSession(
+        targetTrack,
+        customQueueTracks: [targetTrack],
+      )..loadedPath = targetTrack.path;
+      final otherStarted = Completer<void>();
+      final targetPrepared = Completer<void>();
+      final releaseOther = Completer<void>();
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(nativePlaybackChannel, (call) async {
+            if (call.method == NativePlaybackMethod.prepareSession) {
+              final arguments = call.arguments as Map<Object?, Object?>;
+              if (arguments['path'] == otherTrack.path) {
+                otherStarted.complete();
+                await releaseOther.future;
+              } else {
+                targetPrepared.complete();
+              }
+            }
+            return <String, Object?>{'ok': true, 'value': null};
+          });
+      addTearDown(() {
+        if (!releaseOther.isCompleted) releaseOther.complete();
+      });
+      await runtimeGraph.playback.spawnSession(otherTrack, autoPlay: true);
+      await otherStarted.future;
+
+      var retargetFinished = false;
+      final retarget = runtimeGraph.playback
+          .retargetPath('/music/old', '/music/new')
+          .then((_) => retargetFinished = true);
+      await targetPrepared.future;
+      await Future<void>.delayed(Duration.zero);
+      try {
+        expect(retargetFinished, isTrue);
+        expect(releaseOther.isCompleted, isFalse);
+        expect(
+          target.loadedPath,
+          PathMatcher.normalize('/music/new/target.mp3'),
+        );
+      } finally {
+        releaseOther.complete();
+        await runtimeGraph.playback.pendingSessionPreparation;
+        await retarget;
+      }
     });
 
     test(
@@ -422,116 +599,119 @@ void main() {
       expect(runtimeGraph.playback.activeSessions, isEmpty);
     });
 
-    test('recovers from unknown native session by re-preparing and playing', () async {
-      var playCallCount = 0;
-      var prepareCallCount = 0;
-      var failNextPlay = false;
-      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(nativePlaybackChannel, (call) async {
-            final arguments = call.arguments as Map<Object?, Object?>?;
-            final sessionId = arguments?['sessionId'] as String? ?? '';
-            final path = arguments?['path'] as String? ?? '';
-            final commandId = arguments?['transportCommandId'] as int?;
-            if (call.method == NativePlaybackMethod.prepareSession) {
-              prepareCallCount++;
-              return <String, Object?>{
-                'ok': true,
-                'value': <String, Object?>{
-                  'sessionId': sessionId,
-                  'path': path,
-                  'uri': arguments?['uri'] as String?,
-                  'playing': false,
-                  'playWhenReady': false,
-                  'processingState': 'ready',
-                  'positionMs': 0,
-                  'bufferedPositionMs': 0,
-                  'durationMs': 1000,
-                  'volume': 1.0,
-                  'channelSwap': false,
-                },
-              };
-            }
-            if (call.method == NativePlaybackMethod.pause) {
-              return <String, Object?>{
-                'ok': true,
-                'value': <String, Object?>{
-                  'sessionId': sessionId,
-                  'path': path,
-                  'uri': arguments?['uri'] as String?,
-                  'playing': false,
-                  'playWhenReady': false,
-                  'processingState': 'ready',
-                  'positionMs': 0,
-                  'bufferedPositionMs': 0,
-                  'durationMs': 1000,
-                  'volume': 1.0,
-                  'channelSwap': false,
-                  'transportCommandId': commandId,
-                },
-              };
-            }
-            if (call.method == NativePlaybackMethod.play) {
-              playCallCount++;
-              if (failNextPlay) {
-                failNextPlay = false;
+    test(
+      'recovers from unknown native session by re-preparing and playing',
+      () async {
+        var playCallCount = 0;
+        var prepareCallCount = 0;
+        var failNextPlay = false;
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(nativePlaybackChannel, (call) async {
+              final arguments = call.arguments as Map<Object?, Object?>?;
+              final sessionId = arguments?['sessionId'] as String? ?? '';
+              final path = arguments?['path'] as String? ?? '';
+              final commandId = arguments?['transportCommandId'] as int?;
+              if (call.method == NativePlaybackMethod.prepareSession) {
+                prepareCallCount++;
                 return <String, Object?>{
-                  'ok': false,
-                  'errorCode': 'unknown_session',
-                  'error': 'Unknown session.',
+                  'ok': true,
+                  'value': <String, Object?>{
+                    'sessionId': sessionId,
+                    'path': path,
+                    'uri': arguments?['uri'] as String?,
+                    'playing': false,
+                    'playWhenReady': false,
+                    'processingState': 'ready',
+                    'positionMs': 0,
+                    'bufferedPositionMs': 0,
+                    'durationMs': 1000,
+                    'volume': 1.0,
+                    'channelSwap': false,
+                  },
                 };
               }
-              return <String, Object?>{
-                'ok': true,
-                'value': <String, Object?>{
-                  'sessionId': sessionId,
-                  'path': path,
-                  'uri': arguments?['uri'] as String?,
-                  'playing': true,
-                  'playWhenReady': true,
-                  'processingState': 'ready',
-                  'positionMs': 0,
-                  'bufferedPositionMs': 0,
-                  'durationMs': 1000,
-                  'volume': 1.0,
-                  'channelSwap': false,
-                  'transportCommandId': commandId,
-                },
-              };
-            }
-            return <String, Object?>{'ok': true, 'value': null};
-          });
+              if (call.method == NativePlaybackMethod.pause) {
+                return <String, Object?>{
+                  'ok': true,
+                  'value': <String, Object?>{
+                    'sessionId': sessionId,
+                    'path': path,
+                    'uri': arguments?['uri'] as String?,
+                    'playing': false,
+                    'playWhenReady': false,
+                    'processingState': 'ready',
+                    'positionMs': 0,
+                    'bufferedPositionMs': 0,
+                    'durationMs': 1000,
+                    'volume': 1.0,
+                    'channelSwap': false,
+                    'transportCommandId': commandId,
+                  },
+                };
+              }
+              if (call.method == NativePlaybackMethod.play) {
+                playCallCount++;
+                if (failNextPlay) {
+                  failNextPlay = false;
+                  return <String, Object?>{
+                    'ok': false,
+                    'errorCode': 'unknown_session',
+                    'error': 'Unknown session.',
+                  };
+                }
+                return <String, Object?>{
+                  'ok': true,
+                  'value': <String, Object?>{
+                    'sessionId': sessionId,
+                    'path': path,
+                    'uri': arguments?['uri'] as String?,
+                    'playing': true,
+                    'playWhenReady': true,
+                    'processingState': 'ready',
+                    'positionMs': 0,
+                    'bufferedPositionMs': 0,
+                    'durationMs': 1000,
+                    'volume': 1.0,
+                    'channelSwap': false,
+                    'transportCommandId': commandId,
+                  },
+                };
+              }
+              return <String, Object?>{'ok': true, 'value': null};
+            });
 
-      final track = MusicTrack(
-        path: '/music/recoverable-track.mp3',
-        displayName: 'Recoverable',
-        groupKey: '/music',
-        groupTitle: 'Music',
-        groupSubtitle: '',
-        isSingle: true,
-      );
+        final track = MusicTrack(
+          path: '/music/recoverable-track.mp3',
+          displayName: 'Recoverable',
+          groupKey: '/music',
+          groupTitle: 'Music',
+          groupSubtitle: '',
+          isSingle: true,
+        );
 
-      await runtimeGraph.playback.spawnSession(track, autoPlay: true);
-      final session = runtimeGraph.playback.activeSessions.single;
-      await runtimeGraph.playback.pendingSessionPreparation;
+        await runtimeGraph.playback.spawnSession(track, autoPlay: true);
+        final session = runtimeGraph.playback.activeSessions.single;
+        await runtimeGraph.playback.pendingSessionPreparation;
 
-      // Pause the session so it is in ready state and not playing
-      await runtimeGraph.playback.toggleSessionPlayPause(session.id);
-      expect(session.effectivePlaying, isFalse);
-      expect(session.state.processingState, ProcessingState.ready);
+        // Pause the session so it is in ready state and not playing
+        await runtimeGraph.playback.toggleSessionPlayPause(session.id);
+        expect(session.effectivePlaying, isFalse);
+        expect(session.state.processingState, ProcessingState.ready);
 
-      final initialPrepareCount = prepareCallCount;
-      final initialPlayCount = playCallCount;
+        final initialPrepareCount = prepareCallCount;
+        final initialPlayCount = playCallCount;
 
-      // Simulate native service restart where native session was lost:
-      // Next play call will fail with unknown_session, triggering re-preparation and successful playback.
-      failNextPlay = true;
-      await runtimeGraph.playback.toggleSessionPlayPause(session.id);
-      await runtimeGraph.playback.pendingSessionPreparation;
+        // Simulate native service restart where native session was lost:
+        // Next play call will fail with unknown_session, triggering re-preparation and successful playback.
+        failNextPlay = true;
+        await runtimeGraph.playback.toggleSessionPlayPause(session.id);
+        await runtimeGraph.playback.pendingSessionPreparation;
 
-      expect(prepareCallCount, initialPrepareCount + 1);
-      expect(playCallCount, initialPlayCount + 2);
-      expect(session.effectivePlaying, isTrue);
-    });
+        expect(prepareCallCount, initialPrepareCount + 1);
+        expect(playCallCount, initialPlayCount + 2);
+        expect(session.effectivePlaying, isTrue);
+      },
+    );
 
     test('playback starts without pausing another active session', () async {
       Map<Object?, Object?>? playArguments;

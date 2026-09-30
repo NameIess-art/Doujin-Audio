@@ -10,8 +10,9 @@ import '../../../core/media/music_track.dart';
 import '../../../core/cache/app_cache_service.dart';
 import '../../../core/logging/app_log_service.dart';
 import '../../../core/media/path_matcher.dart';
+import '../../player/domain/playback_track_cache.dart';
 
-class AsmrPlaybackCacheService {
+class AsmrPlaybackCacheService implements PlaybackTrackCache {
   AsmrPlaybackCacheService({
     HttpClient Function()? httpClientFactory,
     Future<Directory> Function()? temporaryDirectory,
@@ -30,6 +31,7 @@ class AsmrPlaybackCacheService {
   final Set<HttpClient> _activeClients = <HttpClient>{};
   bool _disposed = false;
 
+  @override
   Future<String?> cacheTrack(MusicTrack track, {String? playedPath}) async {
     if (_disposed) return null;
     if (track.remoteMetadataKind != 'asmr.one') return null;
@@ -176,6 +178,7 @@ class AsmrPlaybackCacheService {
     }
   }
 
+  @override
   Future<void> dispose() async {
     if (_disposed) return;
     _disposed = true;

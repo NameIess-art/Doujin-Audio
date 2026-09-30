@@ -9,6 +9,9 @@ extension PlaybackCommandNativeMapper on PlaybackCommandCoordinator {
       );
     }
     final currentSession = _sessions[snapshot.sessionId];
+    final wasDetachedCurrent =
+        currentSession != null &&
+        _hasDetachedPlaybackQueueCurrent(currentSession);
     if (currentSession != null &&
         (currentSession.customQueueTracks?.isNotEmpty == true ||
             currentSession.isPlaybackQueue)) {
@@ -31,14 +34,11 @@ extension PlaybackCommandNativeMapper on PlaybackCommandCoordinator {
     final application = _playbackFacade.applyNativeSnapshot(
       snapshot,
       hasLibraryTrack: (path) =>
-          _audioPathCoordinator.trackByPath(
-            path,
-            includeLibraryFallback: false,
-          ) !=
-          null,
+          currentSession != null &&
+          _sessionTrackForPath(currentSession, path) != null,
     );
     if (!application.applied) return;
-    _syncActivePlaybackCacheLease();
+    _syncActivePlaybackCacheLease(application.session!);
     final normalizedSnapshot = application.snapshot;
     final session = application.session;
     final previousTrackPath = application.previousTrackPath;
@@ -47,47 +47,38 @@ extension PlaybackCommandNativeMapper on PlaybackCommandCoordinator {
     if (session != null &&
         previousTrackPath != null &&
         application.trackChanged) {
-      final leftDetachedPlaybackQueueTrack = _isDetachedPlaybackQueuePath(
-        session,
-        previousTrackPath,
-      );
       _ensureSubtitleTrackLoaded(session.currentTrackPath);
       _refreshNotificationSubtitleForSession(
         session,
         position: session.position,
         syncNotification: false,
       );
-      _playbackFacade.markSessionStateDirty();
+      _playbackFacade.markSessionStateDirty(session.id);
       _syncNotificationState();
       _playbackFacade.scheduleSessionStatePersistence(
+        sessionId: session.id,
         delay: const Duration(milliseconds: 800),
       );
-      _notifyPlaybackChanged();
-      if (leftDetachedPlaybackQueueTrack) {
-        unawaited(_syncPlaybackQueueSession(session));
-      }
+      _notifyPlaybackChanged(snapshot.sessionId);
+    }
+    if (wasDetachedCurrent &&
+        session != null &&
+        session.currentQueueIndex > 0) {
+      unawaited(_syncPlaybackQueueSession(session));
     }
     final trackPath = session?.currentTrackPath;
     if (trackPath != null && normalizedSnapshot.duration != null) {
-      final track = _audioPathCoordinator.trackByPath(
-        trackPath,
-        includeLibraryFallback: false,
-      );
+      final track = _sessionTrackForPath(session!, trackPath);
       if (track != null && track.duration == Duration.zero) {
         final updatedTrack = track.copyWith(
           duration: normalizedSnapshot.duration!,
         );
         _libraryFacade.updateTrackSnapshot(updatedTrack);
-        if (_playbackFacade.replaceSessionTrackSnapshots(updatedTrack)) {
-          _playbackFacade.markSessionStateDirty();
-          _playbackFacade.scheduleSessionStatePersistence(
-            delay: const Duration(milliseconds: 800),
-          );
-        }
+        _playbackFacade.replaceSessionTrackSnapshots(updatedTrack);
       }
     }
     if (application.playbackIntentChanged) {
-      _notifyPlaybackChanged();
+      _notifyPlaybackChanged(snapshot.sessionId);
     }
   }
 }

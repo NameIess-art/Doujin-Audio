@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import '../domain/asmr_models.dart';
+import '../domain/asmr_media_sources.dart';
 
 class AsmrApiService {
   AsmrApiService({HttpClient? httpClient, Uri? baseUri})
@@ -13,9 +14,9 @@ class AsmrApiService {
       // Test doubles and platform clients may not expose socket settings.
     }
     if (baseUri != null) {
-      _candidateDomains = [baseUri.toString(), ...defaultDomains];
+      _candidateDomains = [baseUri.toString(), ...asmrApiDomains];
     } else {
-      _candidateDomains = List.of(defaultDomains);
+      _candidateDomains = List.of(asmrApiDomains);
     }
   }
 
@@ -32,19 +33,9 @@ class AsmrApiService {
     _httpClient.close(force: force);
   }
 
-  static const List<String> defaultDomains = [
-    'https://api.asmr-300.com',
-    'https://api.asmr-200.com',
-    'https://api.asmr-100.com',
-    'https://api.asmr.one',
-  ];
-
   static bool isOfficialMediaUrl(String? value) {
     final host = Uri.tryParse(value?.trim() ?? '')?.host.toLowerCase() ?? '';
-    return host == 'api.asmr.one' ||
-        host == 'api.asmr-100.com' ||
-        host == 'api.asmr-200.com' ||
-        host == 'api.asmr-300.com' ||
+    return isAsmrApiHost(host) ||
         host == 'kiko-play-niptan.one' ||
         host.endsWith('.kiko-play-niptan.one');
   }
@@ -68,7 +59,7 @@ class AsmrApiService {
         segments.any((segment) => segment == '.' || segment == '..')) {
       return const <String>[];
     }
-    return defaultDomains
+    return asmrApiDomains
         .map(
           (domain) => Uri.parse(domain)
               .replace(

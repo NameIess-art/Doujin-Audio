@@ -1,6 +1,75 @@
 part of 'audio_state_services.dart';
 
 @immutable
+class PlaybackAggregateState {
+  const PlaybackAggregateState({
+    this.sessionCount = 0,
+    this.playingSessionCount = 0,
+    this.hasPlayingAudioSession = false,
+    this.hasPlaybackToKeepAlive = false,
+    this.focusedSessionId,
+    this.isInitialized = false,
+  });
+
+  final int sessionCount;
+  final int playingSessionCount;
+  final bool hasPlayingAudioSession;
+  final bool hasPlaybackToKeepAlive;
+  final String? focusedSessionId;
+  final bool isInitialized;
+
+  @override
+  bool operator ==(Object other) =>
+      other is PlaybackAggregateState &&
+      other.sessionCount == sessionCount &&
+      other.playingSessionCount == playingSessionCount &&
+      other.hasPlayingAudioSession == hasPlayingAudioSession &&
+      other.hasPlaybackToKeepAlive == hasPlaybackToKeepAlive &&
+      other.focusedSessionId == focusedSessionId &&
+      other.isInitialized == isInitialized;
+
+  @override
+  int get hashCode => Object.hash(
+    sessionCount,
+    playingSessionCount,
+    hasPlayingAudioSession,
+    hasPlaybackToKeepAlive,
+    focusedSessionId,
+    isInitialized,
+  );
+}
+
+/// Directory snapshots change only when membership or display structure changes.
+@immutable
+class PlaybackCatalogState {
+  PlaybackCatalogState({
+    List<PlaybackSessionSnapshot> sessions = const [],
+    List<PlaybackSessionSnapshot> nowPlayingSessions = const [],
+    this.isInitialized = false,
+  }) : sessions = immutableList(sessions),
+       nowPlayingSessions = immutableList(nowPlayingSessions);
+
+  final List<PlaybackSessionSnapshot> sessions;
+  final List<PlaybackSessionSnapshot> nowPlayingSessions;
+  final bool isInitialized;
+
+  @override
+  bool operator ==(Object other) =>
+      other is PlaybackCatalogState &&
+      listEquals(other.sessions, sessions) &&
+      listEquals(other.nowPlayingSessions, nowPlayingSessions) &&
+      other.isInitialized == isInitialized;
+
+  @override
+  int get hashCode => Object.hash(
+    Object.hashAll(sessions),
+    Object.hashAll(nowPlayingSessions),
+    isInitialized,
+  );
+}
+
+/// An explicitly requested read view; never broadcast for runtime updates.
+@immutable
 class PlaybackStateSliceData {
   PlaybackStateSliceData({
     List<PlaybackSessionSnapshot> activeSessions =

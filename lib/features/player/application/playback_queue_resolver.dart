@@ -38,6 +38,24 @@ class PlaybackAdvanceResult {
 class PlaybackQueueResolver {
   const PlaybackQueueResolver();
 
+  PlaybackQueueScope repositionScope(
+    PlaybackQueueScope scope, {
+    required String currentPath,
+    required int currentQueueIndex,
+  }) => PlaybackQueueScope(
+    paths: scope.paths,
+    queueIndices: scope.queueIndices,
+    currentIndex: _currentIndexForPaths(
+      paths: scope.paths,
+      currentPath: currentPath,
+      currentQueueIndex: currentQueueIndex,
+      useQueueIndex: scope.isPlaybackQueue,
+      queueIndices: scope.queueIndices,
+    ),
+    isPlaybackQueue: scope.isPlaybackQueue,
+    isCustomQueue: scope.isCustomQueue,
+  );
+
   PlaybackQueueScope resolveScope({
     required String currentPath,
     required MusicTrack? currentTrack,

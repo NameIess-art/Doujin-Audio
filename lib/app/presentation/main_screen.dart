@@ -17,7 +17,6 @@ import '../../core/persistence/app_preferences.dart';
 import '../../features/settings/application/permission_status_service.dart';
 import '../../features/settings/application/settings_state.dart';
 import '../../core/logging/app_log_service.dart';
-import '../../features/player/application/playback_facade.dart';
 import '../../features/player/application/notification_facade.dart';
 import '../../features/player/application/playback_session_snapshot.dart';
 import '../../features/player/domain/playback_mode.dart';
@@ -39,7 +38,6 @@ import '../../core/widgets/confirm_action_dialog.dart';
 import '../../core/widgets/mobile_overlay_inset.dart';
 import '../../features/library/presentation/library_tab.dart';
 import '../../features/asmr/presentation/asmr_tab.dart';
-import '../../features/player/application/playback_session.dart';
 import '../../features/player/presentation/bedtime_canvas_page.dart';
 
 import 'mobile_dock_capsule_content.dart';
@@ -222,13 +220,16 @@ class _MainScreenState extends ConsumerState<MainScreen>
       enabled: () =>
           mounted &&
           shouldRunGlobalSubtitleOverlay(appInForeground: _appInForeground),
-      session: () => _globalSubtitleOverlaySession(
-        ref.read(playbackFacadeProvider),
-        ref.read(subtitleSettingsProvider),
-      ),
+      session: () => ref.read(globalSubtitleOverlaySessionProvider)?.session,
       subtitles: () => ref.read(playbackSubtitleServiceProvider),
       style: _globalSubtitleStyle,
     );
+    ref.listenManual(globalSubtitleOverlaySessionProvider, (_, _) {
+      _subtitleOverlay.requestRuntimeSync();
+    });
+    ref.listenManual<SubtitleSettingsState>(subtitleSettingsProvider, (_, _) {
+      _subtitleOverlay.requestRuntimeSync();
+    });
     _notificationFacade = ref.read(notificationFacadeProvider);
     _updateFlow = AppUpdateFlow(
       permissionController: _permissionActionController,
@@ -612,23 +613,6 @@ class _MainScreenState extends ConsumerState<MainScreen>
     });
   }
 
-  PlaybackSession? _globalSubtitleOverlaySession(
-    PlaybackFacade playback,
-    SubtitleSettingsState settings,
-  ) {
-    final candidates = playback.activeSessions
-        .where((session) {
-          return settings.isShowEnabled(session.id) &&
-              settings.isGlobalEnabled(session.id);
-        })
-        .toList(growable: false);
-    if (candidates.isEmpty) return null;
-    return candidates.firstWhere(
-      (session) => session.effectivePlaying || session.isLoading,
-      orElse: () => candidates.first,
-    );
-  }
-
   SubtitleOverlayRuntimeStyle _globalSubtitleStyle() {
     final settings = ref.read(subtitleSettingsProvider);
     final backgroundColor = (settings.backgroundColor ?? Colors.black)
@@ -810,9 +794,6 @@ class _MainScreenState extends ConsumerState<MainScreen>
 
   @override
   Widget build(BuildContext context) {
-    ref.listen<SubtitleSettingsState>(subtitleSettingsProvider, (_, _) {
-      _subtitleOverlay.requestRuntimeSync();
-    });
     final i18n = ProviderScope.containerOf(
       context,
       listen: false,

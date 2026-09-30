@@ -1665,6 +1665,9 @@ void main() {
       state: const PlayerState(false, ProcessingState.ready),
     );
 
+    fixture.playbackService
+      ..registerSession(active)
+      ..registerSession(empty);
     fixture.playbackService.syncSlice(
       activeSessions: [active, empty],
       playingSessionCount: 0,
@@ -1689,7 +1692,6 @@ void main() {
       isTrackActiveProvider('/tracks/active.mp3'),
       (_, next) => activeChanges.add(next),
     );
-    await container.read(playbackStateProvider.future);
     await tester.pump();
     active.state = const PlayerState(true, ProcessingState.ready);
     fixture.playbackService.syncSlice(
@@ -1725,8 +1727,10 @@ void main() {
 
     activeSubscription.close();
     container.dispose();
-    await active.shutdown();
-    await empty.shutdown();
+    await tester.runAsync(() async {
+      await active.shutdown();
+      await empty.shutdown();
+    });
     fixture.dispose();
     await tester.pump();
   });
@@ -2903,14 +2907,19 @@ void main() {
         ],
       );
     addTearDown(session.shutdown);
-    void syncCoverGeneration(int generation) =>
-        fixture.playbackService.syncSlice(
-          activeSessions: [session],
-          playingSessionCount: 0,
-          focusedSessionId: session.id,
-          coverGeneration: generation,
-          isInitialized: true,
-        );
+    void syncCoverGeneration(int generation) {
+      while (coverCache.generation < generation) {
+        coverCache.invalidateAll();
+      }
+      fixture.playbackService.syncSlice(
+        activeSessions: [session],
+        playingSessionCount: 0,
+        focusedSessionId: session.id,
+        coverGeneration: generation,
+        isInitialized: true,
+      );
+    }
+
     Widget card() => fixture.build(
       Center(
         child: SizedBox(
@@ -5920,7 +5929,8 @@ void main() {
         findsNothing,
       );
       expect(
-        tester.getTopLeft(savedCard).dy - tester.getBottomLeft(temporaryCard).dy,
+        tester.getTopLeft(savedCard).dy -
+            tester.getBottomLeft(temporaryCard).dy,
         16.0,
       );
       final temporarySwipe = tester.widget<SwipeRevealCard>(
@@ -6137,7 +6147,7 @@ void main() {
       expect(
         find.byWidgetPredicate(
           (widget) =>
-              widget is KeyedSubtree &&
+              widget is Padding &&
               widget.key == ValueKey(queueSessions.first.id),
         ),
         findsOneWidget,

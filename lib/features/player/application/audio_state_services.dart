@@ -3,6 +3,8 @@ import 'dart:collection';
 
 import 'package:flutter/foundation.dart';
 import '../../../core/immutable_collections.dart';
+import '../../../core/media/music_track.dart';
+import '../../../core/media/media_file_support.dart';
 import '../../../core/logging/app_log_service.dart';
 import '../domain/playback_mode.dart';
 import 'playback_session.dart';

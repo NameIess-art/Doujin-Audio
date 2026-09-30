@@ -286,13 +286,16 @@ final class AppRuntimeWidgetTestFixture {
     DlsiteMetadataService? dlsiteMetadataService,
     AsmrMetadataService? asmrMetadataService,
     NativePlaybackRepository? providedNativePlaybackRepository,
+    TestPersistenceRepository? providedPersistenceRepository,
+    bool persistenceEnabled = false,
     SettingsRepository? providedSettingsRepository,
     LibraryTreeSnapshotBuilder? libraryTreeSnapshotBuilder,
     PowerPlatformService? powerPlatformService,
     void Function(SettingsRepository settingsRepository)?
     configureSettingsRepository,
   }) : notificationService = PlaybackNotificationService(),
-       persistenceRepository = TestPersistenceRepository(),
+       persistenceRepository =
+           providedPersistenceRepository ?? TestPersistenceRepository(),
        nativePlaybackRepository =
            providedNativePlaybackRepository ?? NativePlaybackRepository(),
        libraryService = LibraryService(),
@@ -350,7 +353,7 @@ final class AppRuntimeWidgetTestFixture {
       timer: timer,
       notifications: notifications,
       settings: settingsRepository,
-      persistenceEnabled: false,
+      persistenceEnabled: persistenceEnabled,
     );
   }
 

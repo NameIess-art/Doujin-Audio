@@ -27,9 +27,29 @@ class TestPersistenceRepository extends SqliteLibraryRepository
   @override
   Future<List<PersistedPlaybackSession>> loadAllSessions() =>
       _playback.loadAllSessions();
+  Future<void> seedSessions(List<PersistedPlaybackSession> sessions) async {
+    final previous = await _playback.loadAllSessions();
+    await _playback.deleteSessions(
+      previous.map((session) => session.id).toList(),
+    );
+    for (final session in sessions) {
+      await _playback.upsertSession(session);
+    }
+  }
+
   @override
-  Future<void> saveAllSessions(List<PersistedPlaybackSession> sessions) =>
-      _playback.saveAllSessions(sessions);
+  Future<void> upsertSession(
+    PersistedPlaybackSession session, {
+    bool includeQueue = true,
+    bool includeEffects = true,
+  }) => _playback.upsertSession(
+    session,
+    includeQueue: includeQueue,
+    includeEffects: includeEffects,
+  );
+  @override
+  Future<void> deleteSessions(List<String> sessionIds) =>
+      _playback.deleteSessions(sessionIds);
   @override
   Future<void> updateSessionOrder(List<String> sessionIds) =>
       _playback.updateSessionOrder(sessionIds);

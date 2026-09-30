@@ -23,6 +23,8 @@ import 'package:doujin_audio/features/asmr/presentation/asmr_tab.dart';
 import 'package:doujin_audio/features/data_support/application/data_backup_service.dart';
 import 'package:doujin_audio/features/library/presentation/library_tab.dart';
 import 'package:doujin_audio/features/player/application/native_playback_bridge.dart';
+import 'package:doujin_audio/features/player/application/native_playback_repository.dart';
+import 'package:doujin_audio/features/player/application/windows_playback_bridge.dart';
 import 'package:doujin_audio/features/player/application/playback_session.dart';
 import 'package:doujin_audio/features/player/application/playback_session_snapshot.dart';
 import 'package:doujin_audio/features/player/domain/playback_mode.dart';
@@ -32,8 +34,12 @@ import 'package:doujin_audio/core/persistence/app_preferences.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite/sqflite.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart'
+    show databaseFactoryFfi, sqfliteFfiInit;
+import 'package:media_kit/media_kit.dart' show MediaKit;
 
 import '../test/support/app_runtime_test_fixture.dart';
+import '../test/support/test_persistence_repository.dart';
 
 const _frameBudget = Duration(microseconds: 16667);
 const _scenario = String.fromEnvironment('PERF_SCENARIO', defaultValue: 'core');
@@ -68,6 +74,10 @@ int get _backupByteCount => _backupByteOverride > 0
 
 void main() {
   final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+  if (_scenario == 'playback') {
+    binding.framePolicy =
+        LiveTestWidgetsFlutterBindingFramePolicy.benchmarkLive;
+  }
 
   testWidgets('profile main interaction path', (tester) async {
     expect(
@@ -77,6 +87,7 @@ void main() {
         'asmr-large',
         'backup',
         'detail-compare',
+        'playback',
       },
       contains(_scenario),
       reason: 'Unsupported PERF_SCENARIO=$_scenario',
@@ -84,6 +95,10 @@ void main() {
     SharedPreferences.setMockInitialValues(const <String, Object>{
       AppPreferences.onboardingCompletedKey: true,
     });
+    if (_scenario == 'playback') {
+      await _measureRealPlayback(tester, binding);
+      return;
+    }
     final fixture = AppRuntimeWidgetTestFixture();
     final sessions = _seedRuntime(fixture, trackCount: _libraryItemCount);
     final asmrController = _ProfileAsmrController(
@@ -187,7 +202,505 @@ void main() {
           rounds.every((round) => (round['frameCount'] as int) > 0),
       isTrue,
     );
+    // PERF_SCENARIO changes at build time; playback uses platform semantics only.
+    // ignore: avoid_redundant_argument_values
+  }, semanticsEnabled: _scenario != 'playback');
+}
+
+Future<void> _measureRealPlayback(
+  WidgetTester tester,
+  IntegrationTestWidgetsFlutterBinding binding,
+) async {
+  expect(
+    Platform.isWindows || Platform.isAndroid,
+    true,
+    reason: 'Playback profiling requires the Android or Windows runtime.',
+  );
+  if (Platform.isWindows) {
+    MediaKit.ensureInitialized();
+    sqfliteFfiInit();
+    databaseFactory = databaseFactoryFfi;
+  }
+  final directory = await Directory.systemTemp.createTemp(
+    'doujin_playback_profile_',
+  );
+  final database = await openDatabase(
+    '${directory.path}${Platform.pathSeparator}playback.sqlite',
+  );
+  await AppDatabase.createSchemaForTest(database);
+  final appDatabase = AppDatabase.test(database);
+  AppDatabase.setInstanceForTest(appDatabase);
+  final native = NativePlaybackRepository();
+  final fixture = AppRuntimeWidgetTestFixture(
+    providedNativePlaybackRepository: native,
+    providedPersistenceRepository: TestPersistenceRepository(
+      database: appDatabase,
+    ),
+    persistenceEnabled: true,
+  );
+  addTearDown(() async {
+    await tester.pumpWidget(const SizedBox.shrink());
+    await WidgetsBinding.instance.endOfFrame;
+    await fixture.runtimeGraph.runtime.dispose();
+    fixture.dispose();
+    AppDatabase.setInstanceForTest(null);
+    await database.close();
+    await directory.delete(recursive: true);
+    UiInteractionNavigatorObserver.instance.resetForTest();
   });
+  await fixture.runtimeGraph.runtime.start().timeout(
+    const Duration(seconds: 30),
+  );
+  final tracks = <MusicTrack>[];
+  for (var i = 0; i < 100; i++) {
+    final file = File('${directory.path}${Platform.pathSeparator}音声 $i.wav');
+    await _writeSilentWave(file, seconds: i == 0 ? 120 : 4);
+    tracks.add(
+      MusicTrack(
+        path: file.path,
+        displayName: 'Runtime track $i',
+        groupKey: directory.path,
+        groupTitle: 'Local playback profile',
+        groupSubtitle: '',
+        isSingle: true,
+        duration: Duration(seconds: i == 0 ? 120 : 4),
+      ),
+    );
+  }
+  fixture.library.addTracks(tracks, persist: false);
+  await fixture.library.loadLibraryTree();
+  final asmrController = _ProfileAsmrController(
+    services: createTestAsmrServices(
+      persistenceRepository: fixture.persistenceRepository,
+    ),
+    works: _buildAsmrWorks(100),
+    trackTree: const [],
+  );
+  addTearDown(asmrController.dispose);
+  // Keep the real overlay provider, native event streams and runtime bindings.
+  await tester.pumpWidget(
+    fixture.build(
+      const MainScreen(),
+      navigatorObservers: [UiInteractionNavigatorObserver.instance],
+      overrides: [
+        asmrLibraryControllerProvider.overrideWithValue(asmrController),
+      ],
+    ),
+  );
+  await _switchMainPage(tester, MainDestinationType.library);
+  final rounds = <Map<String, Object>>[];
+  Map<String, Object>? idleObservation;
+  final report = <String, Object>{
+    'scenario': 'playback',
+    'mode': kProfileMode ? 'profile' : (kReleaseMode ? 'release' : 'debug'),
+    'runtime': Platform.isWindows ? 'libmpv' : 'Media3',
+    'media': 'real local PCM WAV',
+    'overlayEnabled': true,
+    'framePolicy': binding.framePolicy.name,
+    'navigationWarmupPasses': 2,
+    'frameTimingDeliveryWaitMs': 2000,
+    'frameSampleWindow': 'Frame build start inside action wall-clock interval',
+    'nativeEventCountsWindow': 'Navigation plus FrameTiming delivery wait',
+    'testForcesSemantics': false,
+    'systemAccessibility':
+        'unchanged; platform accessibility requests remain active',
+    'persistence': 'isolated file SQLite with production incremental writes',
+    'baseline': 'Current version, idle-0, same device and same run',
+    'preChangeBaselineAvailable': false,
+    'frameWorkload': 'Common main page navigation and scrolling',
+    'sessionInteractionWorkload': 'Card play/pause and opening/closing detail',
+    'sessionControlPointer': Platform.isWindows ? 'mouse' : 'touch',
+    'limitations': [
+      'Remote media, network buffering and hardware video decode are not measured',
+      'Process CPU usage and native memory are not measured by frame timings',
+      'Baseline deltas compare navigation only; session interaction frames have separate budget checks',
+    ],
+    'measurementStatus': 'incomplete',
+    'libraryItems': tracks.length,
+    'frameBudgetUs': _frameBudget.inMicroseconds,
+    'rounds': rounds,
+  };
+  binding.reportData = {'uiPerformance': report};
+  for (final (stage, sessionCount, playingCount, queueSize)
+      in <(String, int, int, int)>[
+        ('idle-0', 0, 0, 1),
+        ('idle-1', 1, 0, 1),
+        ('idle-5', 5, 0, 1),
+        ('idle-50', 50, 0, 1),
+        ('playing-2', 5, 2, 1),
+        ('queue-1000', 5, 2, 1000),
+      ]) {
+    debugPrint(
+      'PLAYBACK_STAGE_BEGIN stage=$stage sessions=$sessionCount queueItems=$queueSize',
+    );
+    expect(await fixture.playback.clearAllSessions(), true);
+    for (var i = 0; i < sessionCount; i++) {
+      final queue = i == 0 && queueSize > 1
+          ? List.generate(queueSize, (index) => tracks[index % tracks.length])
+          : [tracks[i % tracks.length]];
+      expect(
+        await fixture.playback.spawnSessionWithQueue(
+          queue,
+          autoPlay: false,
+          loopMode: SessionLoopMode.single,
+        ),
+        true,
+      );
+    }
+    final ids = fixture.playback.sessions.keys.toList();
+    // Profile paused sessions that have really decoded media at least once.
+    for (final id in ids) {
+      await _toggleRuntimeSession(tester, fixture, id, playing: true);
+      await _toggleRuntimeSession(tester, fixture, id, playing: false);
+    }
+    for (final id in ids.take(playingCount)) {
+      await _toggleRuntimeSession(tester, fixture, id, playing: true);
+    }
+    for (var warmup = 0; warmup < 2; warmup++) {
+      await _runRealPlaybackInteractions(tester, fixture);
+    }
+    if (stage == 'idle-50') {
+      debugPrint('PLAYBACK_IDLE_OBSERVATION_BEGIN sessions=${ids.length}');
+      await tester.pump(const Duration(milliseconds: 500));
+      var structuralEvents = 0, progressEvents = 0;
+      final structureSub = native.snapshots.listen((_) => structuralEvents++);
+      final progressSub = native.progressUpdates.listen(
+        (_) => progressEvents++,
+      );
+      final observation = Stopwatch()..start();
+      try {
+        while (observation.elapsed < const Duration(seconds: 60)) {
+          await tester.runAsync(
+            () => Future<void>.delayed(const Duration(seconds: 1)),
+          );
+          await tester.pump();
+        }
+      } finally {
+        await structureSub.cancel();
+        await progressSub.cancel();
+      }
+      idleObservation = {
+        'sessionCount': ids.length,
+        'observationMs': observation.elapsedMilliseconds,
+        'structuralEvents': structuralEvents,
+        'progressEvents': progressEvents,
+        if (Platform.isWindows)
+          'retainedPlayers': ids
+              .where(
+                (id) =>
+                    WindowsPlaybackBridge.instance.playerForSession(id) != null,
+              )
+              .length,
+      };
+      report['idleObservation'] = idleObservation;
+      debugPrint('PLAYBACK_IDLE_PERFORMANCE ${jsonEncode(idleObservation)}');
+    }
+    for (var round = 1; round <= 3; round++) {
+      final timings = <FrameTiming>[];
+      final navigationStarted = DateTime.now().microsecondsSinceEpoch;
+      late int navigationFinished;
+      var structuralEvents = 0, progressEvents = 0;
+      final structureSub = native.snapshots.listen((_) => structuralEvents++);
+      final progressSub = native.progressUpdates.listen(
+        (_) => progressEvents++,
+      );
+      void collect(List<FrameTiming> values) => timings.addAll(values);
+      WidgetsBinding.instance.addTimingsCallback(collect);
+      try {
+        await _runRealPlaybackNavigation(tester);
+        navigationFinished = DateTime.now().microsecondsSinceEpoch;
+        // The engine can deliver FrameTiming in one-second batches. Wait for
+        // delivery, then exclude frames outside this action's clock interval.
+        await Future<void>.delayed(const Duration(seconds: 2));
+      } finally {
+        WidgetsBinding.instance.removeTimingsCallback(collect);
+        await structureSub.cancel();
+        await progressSub.cancel();
+      }
+      timings.retainWhere(
+        (timing) =>
+            _frameStartedWithin(timing, navigationStarted, navigationFinished),
+      );
+      final sessionTimings = <FrameTiming>[];
+      final sessionInteractionsStarted = DateTime.now().microsecondsSinceEpoch;
+      late int sessionInteractionsFinished;
+      void collectSession(List<FrameTiming> values) =>
+          sessionTimings.addAll(values);
+      late Map<String, Object> interactions;
+      if (ids.isNotEmpty) {
+        WidgetsBinding.instance.addTimingsCallback(collectSession);
+      }
+      try {
+        interactions = await _runRealPlaybackSessionInteractions(
+          tester,
+          fixture,
+        );
+        sessionInteractionsFinished = DateTime.now().microsecondsSinceEpoch;
+        if (ids.isNotEmpty) {
+          await Future<void>.delayed(const Duration(seconds: 2));
+        }
+      } finally {
+        if (ids.isNotEmpty) {
+          WidgetsBinding.instance.removeTimingsCallback(collectSession);
+        }
+      }
+      sessionTimings.retainWhere(
+        (timing) => _frameStartedWithin(
+          timing,
+          sessionInteractionsStarted,
+          sessionInteractionsFinished,
+        ),
+      );
+      final result = <String, Object>{
+        ..._summarizeRound(round, timings),
+        ...interactions,
+        'stage': stage,
+        'sessionCount': sessionCount,
+        'playingCount': playingCount,
+        'queueItems': queueSize,
+        'structuralEvents': structuralEvents,
+        'progressEvents': progressEvents,
+        if (ids.isNotEmpty)
+          'sessionInteractionFrames': _summarizeRound(round, sessionTimings),
+        if (Platform.isWindows)
+          'retainedPlayers': ids
+              .where(
+                (id) =>
+                    WindowsPlaybackBridge.instance.playerForSession(id) != null,
+              )
+              .length,
+      };
+      rounds.add(result);
+      debugPrint('PLAYBACK_PERFORMANCE ${jsonEncode(result)}');
+    }
+  }
+  report['measurementStatus'] = 'complete';
+  final gates = _assessPlaybackPerformance(rounds, idleObservation!);
+  report['gates'] = gates;
+  debugPrint('UI_PERFORMANCE ${jsonEncode(report)}');
+  if (kProfileMode) {
+    expect(gates['allTargetsPassed'], true, reason: jsonEncode(gates));
+  }
+}
+
+Future<void> _writeSilentWave(File file, {required int seconds}) async {
+  const rate = 8000;
+  final bytes = ByteData(44 + rate * seconds * 2);
+  void text(int offset, String value) {
+    for (var i = 0; i < value.length; i++) {
+      bytes.setUint8(offset + i, value.codeUnitAt(i));
+    }
+  }
+
+  text(0, 'RIFF');
+  text(8, 'WAVEfmt ');
+  text(36, 'data');
+  bytes.setUint32(4, bytes.lengthInBytes - 8, Endian.little);
+  bytes.setUint32(16, 16, Endian.little);
+  bytes.setUint16(20, 1, Endian.little);
+  bytes.setUint16(22, 1, Endian.little);
+  bytes.setUint32(24, rate, Endian.little);
+  bytes.setUint32(28, rate * 2, Endian.little);
+  bytes.setUint16(32, 2, Endian.little);
+  bytes.setUint16(34, 16, Endian.little);
+  bytes.setUint32(40, bytes.lengthInBytes - 44, Endian.little);
+  await file.writeAsBytes(bytes.buffer.asUint8List());
+}
+
+Future<void> _toggleRuntimeSession(
+  WidgetTester tester,
+  AppRuntimeWidgetTestFixture fixture,
+  String id, {
+  required bool playing,
+}) async {
+  await _pumpUntilComplete(
+    tester,
+    fixture.playback
+        .toggleSessionPlayPause(id)
+        .timeout(const Duration(seconds: 15)),
+  );
+  await _waitForRuntimeSession(tester, fixture, id, playing: playing);
+}
+
+Future<void> _waitForRuntimeSession(
+  WidgetTester tester,
+  AppRuntimeWidgetTestFixture fixture,
+  String id, {
+  required bool playing,
+}) async {
+  final deadline = DateTime.now().add(const Duration(seconds: 15));
+  NativePlaybackSnapshot? nativeSnapshot;
+  final sub = fixture.nativePlaybackRepository.snapshots.listen((snapshot) {
+    if (snapshot.sessionId == id) nativeSnapshot = snapshot;
+  });
+  try {
+    final result = await fixture.nativePlaybackRepository.snapshot();
+    expect(result.isOk, true, reason: result.errorOrNull);
+    nativeSnapshot ??= result.valueOrNull?.sessions
+        .where((snapshot) => snapshot.sessionId == id)
+        .firstOrNull;
+    while (DateTime.now().isBefore(deadline)) {
+      final session = fixture.playback.sessionById(id)!;
+      if (nativeSnapshot?.playing == playing &&
+          nativeSnapshot?.transportCommandId == session.transportCommandId &&
+          session.state.playing == playing &&
+          !session.isLoading &&
+          (!playing || session.position > Duration.zero)) {
+        return;
+      }
+      if (session.playbackError != null || nativeSnapshot?.error != null) {
+        fail(
+          'Native playback failed: ${session.playbackError ?? nativeSnapshot?.error}',
+        );
+      }
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    fail(
+      'Native session $id did not become playing=$playing: '
+      'native=${nativeSnapshot?.playing}, intent=${nativeSnapshot?.playWhenReady}.',
+    );
+  } finally {
+    await sub.cancel();
+  }
+}
+
+Future<Map<String, Object>> _runRealPlaybackInteractions(
+  WidgetTester tester,
+  AppRuntimeWidgetTestFixture fixture,
+) async {
+  await _runRealPlaybackNavigation(tester);
+  return _runRealPlaybackSessionInteractions(tester, fixture);
+}
+
+Future<void> _runRealPlaybackNavigation(WidgetTester tester) async {
+  await _switchMainPage(tester, MainDestinationType.library);
+  await _flingPageList<LibraryTab>(tester);
+  await _switchMainPage(tester, MainDestinationType.playlist);
+  await _flingPageList<PlaylistTab>(tester);
+  await _switchMainPage(tester, MainDestinationType.settings);
+  await _switchMainPage(tester, MainDestinationType.asmrOne);
+  await _flingPageList<AsmrTab>(tester);
+  await _switchMainPage(tester, MainDestinationType.library);
+}
+
+Future<Map<String, Object>> _runRealPlaybackSessionInteractions(
+  WidgetTester tester,
+  AppRuntimeWidgetTestFixture fixture,
+) async {
+  final latency = <String, Object>{};
+  if (fixture.playback.sessions.isEmpty) return latency;
+  await _switchMainPage(tester, MainDestinationType.playlist);
+  final cards = find.byType(SessionListCard);
+  expect(cards, findsWidgets);
+  final visibleControls = find
+      .ancestor(
+        of: find.descendant(
+          of: cards,
+          matching: find.byWidgetPredicate(
+            (widget) =>
+                widget is Icon &&
+                (widget.icon == Icons.play_arrow_rounded ||
+                    widget.icon == Icons.pause_rounded),
+          ),
+        ),
+        matching: find.byType(IconButton),
+      )
+      .hitTestable();
+  for (
+    var frame = 0;
+    frame < 60 && visibleControls.evaluate().isEmpty;
+    frame++
+  ) {
+    await tester.pump(const Duration(milliseconds: 16));
+  }
+  expect(
+    visibleControls,
+    findsWidgets,
+    reason: 'A visible session play/pause button must receive pointer events.',
+  );
+  final card = find.ancestor(of: visibleControls.first, matching: cards);
+  final id = tester.widget<SessionListCard>(card).sessionId;
+  final wasPlaying = fixture.playback.sessionById(id)!.state.playing;
+  if (wasPlaying) {
+    await _toggleRuntimeSession(tester, fixture, id, playing: false);
+  }
+  await WidgetsBinding.instance.endOfFrame;
+  final play = find.descendant(
+    of: find.byWidgetPredicate(
+      (widget) => widget is SessionListCard && widget.sessionId == id,
+    ),
+    matching: find.byIcon(Icons.play_arrow_rounded),
+  );
+  expect(play, findsOneWidget);
+  final button = find.ancestor(of: play, matching: find.byType(IconButton));
+  for (
+    var frame = 0;
+    frame < 60 && button.hitTestable().evaluate().isEmpty;
+    frame++
+  ) {
+    await tester.pump(const Duration(milliseconds: 16));
+  }
+  expect(
+    button.hitTestable(),
+    findsOneWidget,
+    reason: 'The real play button must receive pointer events before timing.',
+  );
+  final buttonElement = button.evaluate().single;
+  final previousCommandId = fixture.playback
+      .sessionById(id)!
+      .transportCommandId;
+  final started = Stopwatch()..start();
+  int? actualPlaybackConfirmedUs;
+  final sub = fixture.nativePlaybackRepository.snapshots.listen((snapshot) {
+    final session = fixture.playback.sessionById(id)!;
+    if (snapshot.sessionId == id &&
+        snapshot.playing &&
+        snapshot.transportCommandId == session.transportCommandId &&
+        session.transportCommandId > previousCommandId) {
+      actualPlaybackConfirmedUs ??= started.elapsedMicroseconds;
+    }
+  });
+  try {
+    await tester.tap(
+      play,
+      kind: Platform.isWindows
+          ? PointerDeviceKind.mouse
+          : PointerDeviceKind.touch,
+    );
+    await WidgetsBinding.instance.endOfFrame;
+    final switcher = tester.widget<AnimatedSwitcher>(
+      find.descendant(
+        of: find.byElementPredicate(
+          (element) => identical(element, buttonElement),
+        ),
+        matching: find.byType(AnimatedSwitcher),
+      ),
+    );
+    latency['nextFrameIntentFeedbackUs'] = started.elapsedMicroseconds;
+    latency['nextFrameIntentFeedbackObserved'] =
+        fixture.playback.sessionById(id)!.playbackRequested &&
+        (switcher.child?.key == const ValueKey<bool>(true) ||
+            switcher.child?.key == const ValueKey<String>('loading'));
+    await _waitForRuntimeSession(tester, fixture, id, playing: true);
+    latency['actualPlaybackConfirmedUs'] =
+        actualPlaybackConfirmedUs ?? started.elapsedMicroseconds;
+    latency['actualPlaybackConfirmationSource'] =
+        actualPlaybackConfirmedUs == null ? 'snapshot' : 'native event';
+  } finally {
+    await sub.cancel();
+  }
+  if (!wasPlaying) {
+    await _toggleRuntimeSession(tester, fixture, id, playing: false);
+  }
+  final navigator = tester.state<NavigatorState>(find.byType(Navigator).first);
+  unawaited(navigator.push(buildSessionDetailRoute(sessionId: id)));
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 350));
+  navigator.pop();
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 350));
+  await _switchMainPage(tester, MainDestinationType.library);
+  return latency;
 }
 
 List<PlaybackSession> _seedRuntime(
@@ -454,27 +967,25 @@ Future<void> _runBackupExport(
   if (await part.exists()) await part.delete();
 }
 
-Future<void> _pumpUntilComplete(
-  WidgetTester tester,
-  Future<void> operation,
-) async {
-  var complete = false;
-  Object? failure;
-  StackTrace? failureStack;
-  final tracked = operation
-      .catchError((Object error, StackTrace stack) {
-        failure = error;
-        failureStack = stack;
-      })
-      .whenComplete(() => complete = true);
-  while (!complete) {
-    await tester.pump(const Duration(milliseconds: 16));
-  }
-  await tracked;
-  if (failure != null) {
-    Error.throwWithStackTrace(failure!, failureStack!);
-  }
-}
+Future<void> _pumpUntilComplete(WidgetTester tester, Future<void> operation) =>
+    TestAsyncUtils.guard(() async {
+      var complete = false;
+      Object? failure;
+      StackTrace? failureStack;
+      final tracked = operation
+          .catchError((Object error, StackTrace stack) {
+            failure = error;
+            failureStack = stack;
+          })
+          .whenComplete(() => complete = true);
+      while (!complete) {
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      await tracked;
+      if (failure != null) {
+        Error.throwWithStackTrace(failure!, failureStack!);
+      }
+    });
 
 final class _BackupProfileFixture {
   _BackupProfileFixture({
@@ -580,7 +1091,11 @@ Future<void> _switchMainPage(
       find.byKey(ValueKey<String>('main_destination_ink_$labelKey')),
     );
   }
+  // Start the transition before advancing its duration. A single delayed pump
+  // starts a newly built transition at the end of that delay.
+  await tester.pump();
   await tester.pump(const Duration(milliseconds: 900));
+  await tester.pump();
 }
 
 Future<void> _switchToAsmr(WidgetTester tester) async {
@@ -641,6 +1156,126 @@ Future<void> _openAndCloseSessionDetail(WidgetTester tester) async {
   }
 }
 
+Map<String, Object> _assessPlaybackPerformance(
+  List<Map<String, Object>> rounds,
+  Map<String, Object> idleObservation,
+) {
+  final absoluteChecks = [
+    for (final round in rounds)
+      for (final (sample, metrics) in <(String, Map<String, Object>)>[
+        ('main navigation', round),
+        if (round['sessionInteractionFrames'] != null)
+          (
+            'session controls and detail',
+            round['sessionInteractionFrames'] as Map<String, Object>,
+          ),
+      ])
+        {
+          'stage': round['stage']!,
+          'round': round['round']!,
+          'sample': sample,
+          'frameCount': metrics['frameCount']!,
+          'uiP95Us': metrics['uiP95Us']!,
+          'rasterP95Us': metrics['rasterP95Us']!,
+          'overBudgetPercent': metrics['overBudgetPercent']!,
+          'passed':
+              (metrics['frameCount'] as int) > 0 &&
+              (metrics['uiP95Us'] as int) <= _frameBudget.inMicroseconds &&
+              (metrics['rasterP95Us'] as int) <= _frameBudget.inMicroseconds &&
+              (metrics['overBudgetPercent'] as num) <= 1,
+        },
+  ];
+  final increments = <Map<String, Object>>[];
+  for (final round in rounds.where(
+    (round) => round['stage'] == 'idle-1' || round['stage'] == 'idle-5',
+  )) {
+    final baseline = rounds
+        .where(
+          (baseline) =>
+              baseline['stage'] == 'idle-0' &&
+              baseline['round'] == round['round'],
+        )
+        .firstOrNull;
+    if (baseline == null) {
+      increments.add({
+        'stage': round['stage']!,
+        'round': round['round']!,
+        'passed': false,
+      });
+      continue;
+    }
+    final uiDelta = (round['uiP95Us'] as int) - (baseline['uiP95Us'] as int);
+    final rasterDelta =
+        (round['rasterP95Us'] as int) - (baseline['rasterP95Us'] as int);
+    increments.add({
+      'stage': round['stage']!,
+      'round': round['round']!,
+      'uiP95DeltaUs': uiDelta,
+      'rasterP95DeltaUs': rasterDelta,
+      'passed': uiDelta <= 1000 && rasterDelta <= 1000,
+    });
+  }
+  const expectedStages = {
+    'idle-0',
+    'idle-1',
+    'idle-5',
+    'idle-50',
+    'playing-2',
+    'queue-1000',
+  };
+  final measurementValid =
+      kProfileMode &&
+      (WidgetsBinding.instance as IntegrationTestWidgetsFlutterBinding)
+              .framePolicy ==
+          LiveTestWidgetsFlutterBindingFramePolicy.benchmarkLive &&
+      rounds.length == 18 &&
+      expectedStages.every(
+        (stage) => rounds.where((round) => round['stage'] == stage).length == 3,
+      ) &&
+      absoluteChecks.length == 33 &&
+      absoluteChecks.every((check) => (check['frameCount'] as int) > 0);
+  final baselineWithinBudget = absoluteChecks
+      .where((check) => check['stage'] == 'idle-0')
+      .every((check) => check['passed'] == true);
+  final allStagesWithinBudget = absoluteChecks.every(
+    (check) => check['passed'] == true,
+  );
+  final idleIncrementWithinBudget =
+      increments.length == 6 &&
+      increments.every((check) => check['passed'] == true);
+  final nextFrameFeedbackObserved = rounds
+      .where((round) => (round['sessionCount'] as int) > 0)
+      .every((round) => round['nextFrameIntentFeedbackObserved'] == true);
+  final idle60SecondsSilent =
+      idleObservation['sessionCount'] == 50 &&
+      (idleObservation['observationMs'] as int) >= 60000 &&
+      idleObservation['structuralEvents'] == 0 &&
+      idleObservation['progressEvents'] == 0 &&
+      (!Platform.isWindows || (idleObservation['retainedPlayers'] as int) <= 1);
+  return {
+    'measurementValid': measurementValid,
+    'baselineWithinBudget': baselineWithinBudget,
+    'allStagesWithinBudget': allStagesWithinBudget,
+    'idleSessionIncrementWithinBudget': idleIncrementWithinBudget,
+    'nextFrameIntentFeedbackObserved': nextFrameFeedbackObserved,
+    'idle60SecondsSilent': idle60SecondsSilent,
+    'allTargetsPassed':
+        measurementValid &&
+        baselineWithinBudget &&
+        allStagesWithinBudget &&
+        idleIncrementWithinBudget &&
+        nextFrameFeedbackObserved &&
+        idle60SecondsSilent,
+    'thresholds': {
+      'p95Us': 16667,
+      'overBudgetPercent': 1,
+      'idleP95DeltaUs': 1000,
+    },
+    'absoluteChecks': absoluteChecks,
+    'idleSessionIncrements': increments,
+  };
+}
+
 Map<String, Object> _summarizeRound(int round, List<FrameTiming> timings) {
   final ui = timings.map((timing) => timing.buildDuration).toList()..sort();
   final raster = timings.map((timing) => timing.rasterDuration).toList()
@@ -662,13 +1297,23 @@ Map<String, Object> _summarizeRound(int round, List<FrameTiming> timings) {
     'round': round,
     'frameCount': timings.length,
     'uiP95Us': _percentile95(ui).inMicroseconds,
+    'uiMaxUs': ui.isEmpty ? 0 : ui.last.inMicroseconds,
     'rasterP95Us': _percentile95(raster).inMicroseconds,
+    'rasterMaxUs': raster.isEmpty ? 0 : raster.last.inMicroseconds,
     'overBudgetFrames': overBudget.where((slow) => slow).length,
     'overBudgetPercent': timings.isEmpty
         ? 0
         : overBudget.where((slow) => slow).length * 100 / timings.length,
     'maxConsecutiveOverBudgetFrames': longestRun,
   };
+}
+
+bool _frameStartedWithin(FrameTiming timing, int startUs, int endUs) {
+  final buildStartWallUs =
+      timing.timestampInMicroseconds(FramePhase.rasterFinishWallTime) -
+      (timing.timestampInMicroseconds(FramePhase.rasterFinish) -
+          timing.timestampInMicroseconds(FramePhase.buildStart));
+  return buildStartWallUs >= startUs && buildStartWallUs <= endUs;
 }
 
 Duration _percentile95(List<Duration> sorted) {

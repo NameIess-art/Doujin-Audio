@@ -16,7 +16,6 @@ final class LibraryRuntimeBinding implements RuntimeBinding {
     required PlaybackFacade playback,
     required NotificationFacade notifications,
     required void Function() syncLibraryState,
-    required void Function() syncPlaybackState,
     bool Function()? preferEmbeddedCover,
   }) {
     final existing = _attached[library];
@@ -25,16 +24,13 @@ final class LibraryRuntimeBinding implements RuntimeBinding {
       unawaited(playback.removeSessionsForTrackPaths(removedPaths));
     });
     library.attachCoverChangeHandler(() {
-      playback.markSessionStateDirty();
       notifications.syncPlaybackState();
       syncLibraryState();
-      syncPlaybackState();
     });
     library.configureCoverArtworkRuntime(
       isActiveCoverKey: notifications.isActiveCoverKey,
       onActiveCoverChanged: () {
         notifications.syncPlaybackState();
-        syncPlaybackState();
       },
       preferEmbeddedCover: preferEmbeddedCover,
     );

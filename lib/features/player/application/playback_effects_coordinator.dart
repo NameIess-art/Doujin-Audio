@@ -14,16 +14,25 @@ extension PlaybackEffectsCoordinator on PlaybackFacade {
       return false;
     }
     final nextVolume = volume.clamp(0.0, PlaybackFacade.maxSessionVolume);
+    final generation = ++session.volumeCommandGeneration;
     final hasDeferredReload = _deferredVolumeReloadSessionIds.contains(
       session.id,
     );
     if ((session.volume - nextVolume).abs() < 0.001) {
-      if (persist && hasDeferredReload) {
+      if ((session.pendingVolume != null || (persist && hasDeferredReload)) &&
+          (session.loadedPath != null || session.effectivePlaying)) {
+        session.pendingVolume = nextVolume;
         final response = await nativeRepository.setVolume(
           session.id,
-          session.volume,
+          nextVolume,
+          reloadSource: persist,
         );
+        if (!isRegisteredSession(session) ||
+            session.volumeCommandGeneration != generation) {
+          return response.isOk;
+        }
         if (response.isFailure) {
+          session.pendingVolume = null;
           _logNativeCommandFailure(
             'setSessionVolume',
             response,
@@ -31,40 +40,55 @@ extension PlaybackEffectsCoordinator on PlaybackFacade {
           );
           return false;
         }
-        if (!isRegisteredSession(session)) return true;
-        _deferredVolumeReloadSessionIds.remove(session.id);
+        final confirmedVolume = response.valueOrNull?.volume ?? nextVolume;
+        session.pendingVolume = confirmedVolume;
+        if ((session.volume - confirmedVolume).abs() >= 0.001) {
+          session.volume = confirmedVolume;
+          if (notify) _notifySessionStateChanged(session);
+        }
       }
-      if (persist) await flushSessionStatePersistence();
+      if (persist) {
+        _deferredVolumeReloadSessionIds.remove(session.id);
+        await flushSessionStatePersistence(sessionId: session.id);
+      }
       return true;
     }
     final previousVolume = session.volume;
     final previouslyDeferred = hasDeferredReload;
     session.volume = nextVolume;
+    session.pendingVolume = nextVolume;
     if (persist) {
       _deferredVolumeReloadSessionIds.remove(session.id);
     } else {
       _deferredVolumeReloadSessionIds.add(session.id);
     }
     if (notify) {
-      _service.markActiveSessionsDirty();
-      _onSessionStateChanged?.call();
+      _notifySessionStateChanged(session);
+    }
+    if (session.loadedPath == null && !session.effectivePlaying) {
+      session.pendingVolume = null;
+      if (persist) await flushSessionStatePersistence(sessionId: session.id);
+      return true;
     }
     final response = await nativeRepository.setVolume(
       session.id,
-      session.volume,
+      nextVolume,
       reloadSource: persist,
     );
-    if (!isRegisteredSession(session)) return response.isOk;
+    if (!isRegisteredSession(session) ||
+        session.volumeCommandGeneration != generation) {
+      return response.isOk;
+    }
     if (response.isFailure) {
       session.volume = previousVolume;
+      session.pendingVolume = null;
       if (previouslyDeferred) {
         _deferredVolumeReloadSessionIds.add(session.id);
       } else {
         _deferredVolumeReloadSessionIds.remove(session.id);
       }
       if (notify) {
-        _service.markActiveSessionsDirty();
-        _onSessionStateChanged?.call();
+        _notifySessionStateChanged(session);
       }
       _logNativeCommandFailure(
         'setSessionVolume',
@@ -73,7 +97,13 @@ extension PlaybackEffectsCoordinator on PlaybackFacade {
       );
       return false;
     }
-    if (persist) await flushSessionStatePersistence();
+    final confirmedVolume = response.valueOrNull?.volume ?? nextVolume;
+    session.pendingVolume = confirmedVolume;
+    if ((session.volume - confirmedVolume).abs() >= 0.001) {
+      session.volume = confirmedVolume;
+      if (notify) _notifySessionStateChanged(session);
+    }
+    if (persist) await flushSessionStatePersistence(sessionId: session.id);
     return true;
   }
 
@@ -91,36 +121,38 @@ extension PlaybackEffectsCoordinator on PlaybackFacade {
     }
     final nextSpeed = nearestPlaybackSpeed(speed);
     if ((session.speed - nextSpeed).abs() < 0.001) {
-      if (persist) await flushSessionStatePersistence();
+      if (persist) await flushSessionStatePersistence(sessionId: session.id);
       return;
     }
     final previous = session.speed;
     final generation = ++session.speedCommandGeneration;
     session.speed = nextSpeed;
     session.pendingSpeed = nextSpeed;
-    _service.markActiveSessionsDirty();
-    if (notify) _onSessionSettingsChanged?.call();
+    if (notify) _notifySessionSettingsChanged(session);
+    if (session.loadedPath == null && !session.effectivePlaying) {
+      session.pendingSpeed = null;
+      if (persist) await flushSessionStatePersistence(sessionId: session.id);
+      return;
+    }
     final response = await nativeRepository.setSpeed(session.id, nextSpeed);
     if (!isRegisteredSession(session)) return;
     if (generation != session.speedCommandGeneration) return;
     if (response.isFailure) {
       session.pendingSpeed = null;
       session.speed = previous;
-      _service.markActiveSessionsDirty();
       AppLogService.warning(
         'PlaybackFacade.setSessionSpeed error: ${response.errorOrNull}',
       );
-      if (notify) _onSessionSettingsChanged?.call();
+      if (notify) _notifySessionSettingsChanged(session);
       return;
     }
     final confirmedSpeed = response.valueOrNull?.speed ?? nextSpeed;
     session.pendingSpeed = confirmedSpeed;
     if ((session.speed - confirmedSpeed).abs() >= 0.001) {
       session.speed = confirmedSpeed;
-      _service.markActiveSessionsDirty();
-      if (notify) _onSessionSettingsChanged?.call();
+      if (notify) _notifySessionSettingsChanged(session);
     }
-    if (persist) await flushSessionStatePersistence();
+    if (persist) await flushSessionStatePersistence(sessionId: session.id);
   }
 
   Future<bool> setSessionTemporarySpeed(String sessionId, double? speed) async {
@@ -159,7 +191,8 @@ extension PlaybackEffectsCoordinator on PlaybackFacade {
     final session = _service.sessions[sessionId];
     if (session == null) return Future<void>.value();
     if (session.channelSwapEnabled == enabled) {
-      return session.audioEffectsSyncFuture ?? flushSessionStatePersistence();
+      return session.audioEffectsSyncFuture ??
+          flushSessionStatePersistence(sessionId: session.id);
     }
     return _queueSessionAudioEffectsSync(
       session,
@@ -245,6 +278,9 @@ extension PlaybackEffectsCoordinator on PlaybackFacade {
     final needsPrepare =
         loadedPath == null ||
         !PathMatcher.equalsNormalized(loadedPath, session.currentTrackPath);
+    if (needsPrepare && !shouldKeepPlaying) {
+      return const NativeSuccess();
+    }
     if (needsPrepare) {
       final commandPort = _commandPort;
       if (commandPort == null) {
@@ -329,8 +365,7 @@ extension PlaybackEffectsCoordinator on PlaybackFacade {
       ..channelSwapEnabled = channelSwapEnabled
       ..audioEffectsSyncRevision += 1
       ..audioEffectsSyncErrorLabel = errorLabel;
-    _service.markActiveSessionsDirty();
-    _onSessionStateChanged?.call();
+    _notifySessionStateChanged(session);
 
     final activeDrain = session.audioEffectsSyncFuture;
     if (activeDrain != null) return activeDrain;
@@ -389,10 +424,9 @@ extension PlaybackEffectsCoordinator on PlaybackFacade {
       session
         ..audioEffects = confirmed.state
         ..channelSwapEnabled = confirmed.channelSwapEnabled;
-      _service.markActiveSessionsDirty();
-      _onSessionStateChanged?.call();
+      _notifySessionStateChanged(session);
 
-      await flushSessionStatePersistence();
+      await flushSessionStatePersistence(sessionId: session.id);
       if (!identical(_service.sessions[session.id], session)) return;
       if (revision != session.audioEffectsSyncRevision) continue;
       session.pendingNativeAudioEffects = null;

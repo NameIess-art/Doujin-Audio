@@ -1,3 +1,5 @@
+import '../state/subtitle_settings_provider.dart';
+import '../../features/player/application/playback_session.dart';
 import '../../features/library/presentation/library_providers.dart';
 import '../../features/player/presentation/playback_providers.dart';
 import '../../features/settings/presentation/settings_providers.dart';
@@ -13,11 +15,51 @@ import '../../features/library/presentation/library_cover_ui_controller.dart';
 import '../../features/library/domain/library_node.dart';
 import '../../features/library/presentation/library_sorting.dart';
 import '../../features/player/presentation/playlist_sorting.dart';
+import '../../features/player/application/audio_state_services.dart';
 import '../../features/settings/application/settings_state.dart';
 import '../state/app_runtime_providers.dart';
 import 'app_interaction_effects_controller.dart';
 import 'audio_ui_controllers.dart';
 import 'screen_view_models.dart';
+
+final globalSubtitleOverlaySessionProvider =
+    Provider.autoDispose<({PlaybackSession session, String trackPath})?>((ref) {
+      final playback = ref.watch(playbackFacadeProvider);
+      final catalog =
+          ref.watch(playbackCatalogProvider).value ?? playback.catalogState;
+      final settings = ref.watch(
+        subtitleSettingsProvider.select(
+          (state) => (state.showSubtitlesMap, state.globalSubtitlesMap),
+        ),
+      );
+      String? selectedId;
+      for (final candidate in catalog.sessions) {
+        final id = candidate.id;
+        if (settings.$1[id] == false || settings.$2[id] != true) continue;
+        final state = ref.watch(
+          playbackSessionProvider(id).select(
+            (session) => (
+              active:
+                  session != null &&
+                  (session.effectivePlaying || session.isLoading),
+              trackPath: session?.currentTrackPath,
+            ),
+          ),
+        );
+        if (state.trackPath == null) continue;
+        selectedId ??= id;
+        if (state.active) {
+          selectedId = id;
+          break;
+        }
+      }
+      final session = selectedId == null
+          ? null
+          : playback.sessionById(selectedId);
+      return session == null
+          ? null
+          : (session: session, trackPath: session.currentTrackPath);
+    });
 
 final mainScreenControllerProvider = Provider<MainScreenController>((ref) {
   final controller = MainScreenController();
@@ -120,8 +162,7 @@ final librarySortedTreeUiProvider = Provider<List<LibraryNode>>((ref) {
   );
   final criterion = ref.watch(
     settingsStateProvider.select(
-      (state) =>
-          state.value?.librarySortCriterion ?? LibrarySortCriterion.name,
+      (state) => state.value?.librarySortCriterion ?? LibrarySortCriterion.name,
     ),
   );
   final ascending = ref.watch(
@@ -134,11 +175,13 @@ final librarySortedTreeUiProvider = Provider<List<LibraryNode>>((ref) {
       (state) => state.value?.libraryGroupByLibrary ?? false,
     ),
   );
-  final pinnedPaths = ref.watch(
-    settingsStateProvider.select(
-      (state) => state.value?.pinnedLibraryPaths ?? const <String>[],
-    ),
-  ).toSet();
+  final pinnedPaths = ref
+      .watch(
+        settingsStateProvider.select(
+          (state) => state.value?.pinnedLibraryPaths ?? const <String>[],
+        ),
+      )
+      .toSet();
   if (criterion == LibrarySortCriterion.voiceActor ||
       criterion == LibrarySortCriterion.releaseDate) {
     ref.watch(libraryDetailRevisionProvider);
@@ -209,104 +252,123 @@ final libraryCoverForTrackProvider = FutureProvider.autoDispose
     });
 
 final playlistHeaderUiProvider = Provider<PlaylistHeaderState>((ref) {
-  ref.watch(playbackStateProvider);
   final playback = ref.watch(playbackFacadeProvider);
-  final playbackState = playback.state;
+  final playbackState =
+      ref.watch(playbackStateProvider).value ?? playback.aggregateState;
   final timerState =
       ref.watch(timerStateProvider).value ??
       ref.watch(timerFacadeProvider).state;
-  return playlistHeaderStateFromSlices(
-    playbackState,
-    timerState,
-    hasPlayingAudioSession: playback.hasPlayingAudioSession,
+  return PlaylistHeaderState(
+    sessionCount: playbackState.sessionCount,
+    playingCount: playbackState.playingSessionCount,
+    hasPlayingAudioSession: playbackState.hasPlayingAudioSession,
+    timerDuration: timerState.duration,
+    timerRemaining: timerState.remaining,
+    timerActive: timerState.active,
+    autoResumeAt: timerState.autoResumeAt,
   );
 });
 
 final playlistStructureUiProvider = Provider<PlaylistStructureState>((ref) {
-  ref.watch(playbackStateProvider);
-  final playbackState = ref.watch(playbackFacadeProvider).state;
-  return playlistStructureStateFromPlaybackState(playbackState);
+  final catalog =
+      ref.watch(playbackCatalogProvider).value ??
+      ref.read(playbackFacadeProvider).catalogState;
+  return playlistStructureStateFromPlaybackState(
+    PlaybackStateSliceData(
+      activeSessions: catalog.sessions,
+      coverGeneration: ref.watch(coverGenerationProvider),
+      isInitialized: catalog.isInitialized,
+    ),
+  );
 });
 
-final playlistSortedEntriesUiProvider =
-    Provider<List<PlaylistStructureEntry>>((ref) {
-      final structureState = ref.watch(playlistStructureUiProvider);
-      final criterion = ref.watch(
-        settingsStateProvider.select(
-          (state) =>
-              state.value?.playlistSortCriterion ?? PlaylistSortCriterion.name,
-        ),
-      );
-      final ascending = ref.watch(
-        settingsStateProvider.select(
-          (state) => state.value?.playlistSortAscending ?? true,
-        ),
-      );
-      final groupByLibrary = ref.watch(
-        settingsStateProvider.select(
-          (state) => state.value?.playlistGroupByLibrary ?? false,
-        ),
-      );
-      final pinnedSessionIds = ref.watch(
+final playlistSortedEntriesUiProvider = Provider<List<PlaylistStructureEntry>>((
+  ref,
+) {
+  final structureState = ref.watch(playlistStructureUiProvider);
+  final criterion = ref.watch(
+    settingsStateProvider.select(
+      (state) =>
+          state.value?.playlistSortCriterion ?? PlaylistSortCriterion.name,
+    ),
+  );
+  final ascending = ref.watch(
+    settingsStateProvider.select(
+      (state) => state.value?.playlistSortAscending ?? true,
+    ),
+  );
+  final groupByLibrary = ref.watch(
+    settingsStateProvider.select(
+      (state) => state.value?.playlistGroupByLibrary ?? false,
+    ),
+  );
+  final pinnedSessionIds = ref
+      .watch(
         settingsStateProvider.select(
           (state) => state.value?.pinnedPlaylistSessionIds ?? const <String>[],
         ),
-      ).toSet();
-      if (criterion == PlaylistSortCriterion.voiceActor ||
-          criterion == PlaylistSortCriterion.releaseDate) {
-        ref.watch(libraryDetailRevisionProvider);
-      }
-      final needsLibraryTrack = groupByLibrary ||
-          criterion == PlaylistSortCriterion.voiceActor ||
-          criterion == PlaylistSortCriterion.releaseDate ||
-          structureState.entries.any(
-            (entry) =>
-                !entry.session.isTemporary &&
-                entry.session.playbackQueue?.name.trim().isNotEmpty != true,
-          );
-      if (needsLibraryTrack) {
-        ref.watch(
-          libraryStateProvider.select((state) => state.value?.contentRevision),
-        );
-      }
-      final library = ref.watch(libraryFacadeProvider);
-      final paths = ref.watch(audioPathCoordinatorProvider);
-
-      final sortedSessions = sortPlaylistSessions(
-        sessions: structureState.entries
-            .map((entry) => entry.session)
-            .toList(growable: false),
-        criterion: criterion,
-        ascending: ascending,
-        groupByLibrary: groupByLibrary,
-        library: library,
-        trackForSession: (session) =>
-            paths.sessionTrackForPath(session.id, session.currentTrackPath),
-        pinnedSessionIds: pinnedSessionIds,
+      )
+      .toSet();
+  if (criterion == PlaylistSortCriterion.voiceActor ||
+      criterion == PlaylistSortCriterion.releaseDate) {
+    ref.watch(libraryDetailRevisionProvider);
+  }
+  final needsLibraryTrack =
+      groupByLibrary ||
+      criterion == PlaylistSortCriterion.voiceActor ||
+      criterion == PlaylistSortCriterion.releaseDate ||
+      structureState.entries.any(
+        (entry) =>
+            !entry.session.isTemporary &&
+            entry.session.playbackQueue?.name.trim().isNotEmpty != true,
       );
-      final entriesBySessionId = <String, PlaylistStructureEntry>{
-        for (final entry in structureState.entries) entry.sessionId: entry,
-      };
-      return sortedSessions
-          .map((session) => entriesBySessionId[session.id])
-          .whereType<PlaylistStructureEntry>()
-          .toList(growable: false);
-    });
+  if (needsLibraryTrack) {
+    ref.watch(
+      libraryStateProvider.select((state) => state.value?.contentRevision),
+    );
+  }
+  final library = ref.watch(libraryFacadeProvider);
+  final paths = ref.watch(audioPathCoordinatorProvider);
+
+  final sortedSessions = sortPlaylistSessions(
+    sessions: structureState.entries
+        .map((entry) => entry.session)
+        .toList(growable: false),
+    criterion: criterion,
+    ascending: ascending,
+    groupByLibrary: groupByLibrary,
+    library: library,
+    trackForSession: (session) =>
+        paths.sessionTrackForPath(session.id, session.currentTrackPath),
+    pinnedSessionIds: pinnedSessionIds,
+  );
+  final entriesBySessionId = <String, PlaylistStructureEntry>{
+    for (final entry in structureState.entries) entry.sessionId: entry,
+  };
+  return sortedSessions
+      .map((session) => entriesBySessionId[session.id])
+      .whereType<PlaylistStructureEntry>()
+      .toList(growable: false);
+});
 
 final playlistSessionCardStateProvider = Provider.autoDispose
     .family<PlaylistSessionCardState?, String>((ref, sessionId) {
-      ref.watch(playbackStateProvider);
-      final session = ref.read(playbackFacadeProvider).sessionSnapshotById(
-        sessionId,
-      );
+      final session = ref.watch(playbackSessionProvider(sessionId));
       return session == null
           ? null
           : playlistSessionCardStateFromSession(session);
     });
 
+final _coverGenerationChangesProvider = StreamProvider<int>((ref) {
+  return ref
+      .watch(libraryFacadeProvider)
+      .coverArtworkCacheService
+      .generationChanges;
+});
+
 final coverGenerationProvider = Provider<int>((ref) {
-  ref.watch(playbackStateProvider);
-  return ref.watch(playbackFacadeProvider).state.coverGeneration;
+  return ref.watch(_coverGenerationChangesProvider).value ??
+      ref.read(libraryFacadeProvider).coverGeneration;
 });
 
 final libraryTrackProvider = Provider.autoDispose.family<MusicTrack?, String>((
@@ -320,10 +382,11 @@ final libraryTrackProvider = Provider.autoDispose.family<MusicTrack?, String>((
 });
 
 final activeTrackPathsProvider = Provider<ActiveTrackPaths>((ref) {
-  ref.watch(playbackStateProvider);
-  final playbackState = ref.watch(playbackFacadeProvider).state;
+  final catalog =
+      ref.watch(playbackCatalogProvider).value ??
+      ref.read(playbackFacadeProvider).catalogState;
   return ActiveTrackPaths(
-    playbackState.activeSessions
+    catalog.sessions
         .map((session) => session.currentTrackPath)
         .where((path) => path.isNotEmpty)
         .toSet(),
@@ -338,21 +401,25 @@ final isTrackActiveProvider = Provider.autoDispose.family<bool, String>((
 });
 
 final mainOverlayUiProvider = Provider<MainOverlayUiState>((ref) {
-  ref.watch(playbackStateProvider);
   final playback = ref.watch(playbackFacadeProvider);
-  final playbackState = playback.state;
+  final playbackState =
+      ref.watch(playbackStateProvider).value ?? playback.aggregateState;
   final fallbackSettings = ref.watch(settingsRepositoryProvider).slice.state;
   final startupReady = ref.watch(
     settingsStateProvider.select(
       (s) => s.value?.isInitialized ?? fallbackSettings.isInitialized,
     ),
   );
-  final overlaySessions = overlaySessionsFromPlaybackState(playbackState);
+  final catalog =
+      ref.watch(playbackCatalogProvider).value ?? playback.catalogState;
+  final overlaySessions = PlaybackSessionOverlayList(
+    catalog.nowPlayingSessions,
+  );
   return MainOverlayUiState(
     overlaySessions: overlaySessions,
     playingSessionCount: playbackState.playingSessionCount,
     hasPlayingAudioSession: playback.hasPlayingAudioSession,
-    activeSessionCount: playbackState.activeSessions.length,
+    activeSessionCount: playbackState.sessionCount,
     isInitialized: playbackState.isInitialized,
     startupReady: startupReady,
   );
@@ -360,21 +427,24 @@ final mainOverlayUiProvider = Provider<MainOverlayUiState>((ref) {
 
 final sessionDetailUiProvider = Provider.autoDispose
     .family<SessionDetailUiState, String>((ref, sessionId) {
-      ref.watch(playbackStateProvider);
-      final playbackState = ref.watch(playbackFacadeProvider).state;
+      final catalog =
+          ref.watch(playbackCatalogProvider).value ??
+          ref.read(playbackFacadeProvider).catalogState;
       return SessionDetailUiState(
-        sessionOrder: sessionOrderStateFromPlaybackState(playbackState),
-        detail: sessionDetailViewStateFromPlaybackState(
-          playbackState,
-          sessionId,
+        sessionOrder: SessionOrderState(
+          sessionIds: catalog.sessions
+              .map((session) => session.id)
+              .toList(growable: false),
         ),
-        coverGeneration: playbackState.coverGeneration,
+        detail: ref.watch(sessionDetailTransportProvider(sessionId)),
+        coverGeneration: ref.watch(coverGenerationProvider),
       );
     });
 
 final sessionDetailTransportProvider = Provider.autoDispose
     .family<SessionDetailViewState?, String>((ref, sessionId) {
-      return ref.watch(
-        sessionDetailUiProvider(sessionId).select((state) => state.detail),
-      );
+      final session = ref.watch(playbackSessionProvider(sessionId));
+      return session == null
+          ? null
+          : sessionDetailViewStateFromSession(session);
     });

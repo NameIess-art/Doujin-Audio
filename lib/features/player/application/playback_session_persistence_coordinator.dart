@@ -21,9 +21,12 @@ extension PlaybackSessionPersistenceCoordinator on PlaybackFacade {
     }
   }
 
-  void _scheduleNewSessionPersistence({bool respectConfiguration = true}) {
+  void _scheduleNewSessionPersistence({
+    String? sessionId,
+    bool respectConfiguration = true,
+  }) {
     if (respectConfiguration && !_persistenceEnabled) return;
-    scheduleSessionStatePersistence();
+    scheduleSessionStatePersistence(sessionId: sessionId);
     scheduleSessionOrderPersistence();
   }
 
@@ -35,6 +38,7 @@ extension PlaybackSessionPersistenceCoordinator on PlaybackFacade {
     required void Function(String? sessionId) onFocusChanged,
   }) {
     _persistedTrackResolver ??= trackByPath;
+    _service.libraryTrackByPath ??= trackByPath;
     _recordPlaybackProgress ??= recordPlaybackProgress;
     _restoreRuntime ??= restoreRuntime;
     _updatePlaybackHistory ??= updatePlaybackHistory;
@@ -111,6 +115,8 @@ extension PlaybackSessionPersistenceCoordinator on PlaybackFacade {
         ..speed = nearestPlaybackSpeed(item.speed)
         ..audioEffects = item.audioEffects;
       _service.sessions[session.id] = session;
+      _persistedSessions[session.id] = item;
+      _persistedQueueVersions[session.id] = session.queueVersion;
       observeSession(session);
       restoredSessions.add(session);
     }
@@ -126,6 +132,7 @@ extension PlaybackSessionPersistenceCoordinator on PlaybackFacade {
       ..clear()
       ..addAll(orderedIds);
     _service.markActiveSessionsDirty();
+    publishSessionState();
     final focusedSessionId = orderedIds.firstOrNull;
     _onPersistenceFocusChanged?.call(focusedSessionId);
     await _restoreRuntime?.call(
@@ -137,9 +144,9 @@ extension PlaybackSessionPersistenceCoordinator on PlaybackFacade {
   Future<void> resetPersistedState() async {
     cancelScheduledPersistence();
     final removedSessions = _service.sessions.values.toList(growable: false);
-    _service.sessions.clear();
-    _service.sessionOrder.clear();
-    _service.markActiveSessionsDirty();
+    _service.removeSessions(removedSessions.map((session) => session.id));
+    _persistedSessions.clear();
+    _persistedQueueVersions.clear();
     await Future.wait(removedSessions.map((session) => session.shutdown()));
     try {
       final response = await nativeRepository.clearAll();
@@ -160,7 +167,7 @@ extension PlaybackSessionPersistenceCoordinator on PlaybackFacade {
     PlaybackSession session, {
     required int sortOrder,
     required DateTime now,
-    List<MusicTrack>? tracksToUpdate,
+    bool updateHistory = false,
   }) {
     final positionMs = max(
       0,
@@ -171,7 +178,7 @@ extension PlaybackSessionPersistenceCoordinator on PlaybackFacade {
     );
     final position = Duration(milliseconds: positionMs);
     final track = _persistedTrackResolver?.call(session.currentTrackPath);
-    if (tracksToUpdate != null &&
+    if (updateHistory &&
         track != null &&
         (track.lastPlayedPosition.inSeconds ~/ positionBucketSeconds !=
                 position.inSeconds ~/ positionBucketSeconds ||
@@ -182,7 +189,9 @@ extension PlaybackSessionPersistenceCoordinator on PlaybackFacade {
         now: now,
         updatePlayedAt: session.state.playing,
       );
-      if (updated != null) tracksToUpdate.add(updated);
+      if (updated != null) {
+        _pendingPlaybackHistoryTracks[updated.path] = updated;
+      }
     }
     return PersistedPlaybackSession(
       id: session.id,
@@ -227,36 +236,101 @@ extension PlaybackSessionPersistenceCoordinator on PlaybackFacade {
 
   Future<void> savePersistedState() {
     if (!_persistenceEnabled) return Future<void>.value();
+    _pendingSessionDefinitionIds.addAll(_service.sessions.keys);
+    _service.saveSessionStateTimer?.cancel();
+    _service.saveSessionStateTimer = null;
     _savePlaybackStateTimer?.cancel();
     _savePlaybackStateTimer = null;
     _pendingPlaybackStateSessionIds.clear();
-    return _enqueueSessionPersistence(_savePersistedStateNow);
+    return _enqueueSessionPersistence(_savePendingSessionDefinitions);
   }
 
-  Future<void> _savePersistedStateNow() async {
+  bool _sameSessionDefinition(
+    PersistedPlaybackSession a,
+    PersistedPlaybackSession b,
+  ) =>
+      (
+        a.trackPath,
+        a.isTemporary,
+        a.retainInNowPlaying,
+        a.loopModeIndex,
+        a.volume,
+        a.speed,
+        a.positionMs,
+        a.durationMs,
+        a.currentQueueIndex,
+        a.channelSwapEnabled,
+        a.createdAtMs,
+        a.lastPlayedAtMs,
+      ) ==
+      (
+        b.trackPath,
+        b.isTemporary,
+        b.retainInNowPlaying,
+        b.loopModeIndex,
+        b.volume,
+        b.speed,
+        b.positionMs,
+        b.durationMs,
+        b.currentQueueIndex,
+        b.channelSwapEnabled,
+        b.createdAtMs,
+        b.lastPlayedAtMs,
+      );
+
+  Future<void> _savePendingSessionDefinitions() async {
     if (!_persistenceEnabled) return;
-    final ordered = _service.sessionOrder
-        .map((id) => _service.sessions[id])
-        .whereType<PlaybackSession>()
-        .toList(growable: false);
-    final tracksToUpdate = <MusicTrack>[];
+    final deletedIds = Set<String>.of(_pendingDeletedSessionIds);
+    _pendingDeletedSessionIds.removeAll(deletedIds);
+    final sessionIds = Set<String>.of(_pendingSessionDefinitionIds);
+    _pendingSessionDefinitionIds.removeAll(sessionIds);
     final now = DateTime.now();
-    final payload = ordered
-        .asMap()
-        .entries
-        .map((entry) {
-          return _persistedSessionSnapshot(
-            entry.value,
-            sortOrder: entry.key,
-            now: now,
-            tracksToUpdate: tracksToUpdate,
-          );
-        })
-        .toList(growable: false);
-    if (tracksToUpdate.isNotEmpty) {
-      await databaseRepository.upsertTracks(tracksToUpdate);
+    try {
+      if (deletedIds.isNotEmpty) {
+        await databaseRepository.deleteSessions(deletedIds.toList());
+        for (final id in deletedIds) {
+          _persistedSessions.remove(id);
+          _persistedQueueVersions.remove(id);
+        }
+      }
+      for (final id in sessionIds) {
+        final session = _service.sessions[id];
+        if (session == null) continue;
+        final queueVersion = session.queueVersion;
+        final next = _persistedSessionSnapshot(
+          session,
+          sortOrder: _service.sessionOrder.indexOf(id),
+          now: now,
+        );
+        final previous = _persistedSessions[id];
+        final queueChanged = _persistedQueueVersions[id] != queueVersion;
+        final effectsChanged = previous?.audioEffects != next.audioEffects;
+        if (previous != null &&
+            !queueChanged &&
+            !effectsChanged &&
+            _sameSessionDefinition(previous, next)) {
+          continue;
+        }
+        await databaseRepository.upsertSession(
+          next,
+          includeQueue: queueChanged,
+          includeEffects: effectsChanged,
+        );
+        _persistedSessions[id] = next;
+        _persistedQueueVersions[id] = queueVersion;
+        _persistedSessionSnapshot(
+          session,
+          sortOrder: next.sortOrder,
+          now: now,
+          updateHistory: true,
+        );
+      }
+    } catch (_) {
+      _pendingDeletedSessionIds.addAll(deletedIds);
+      _pendingSessionDefinitionIds.addAll(sessionIds);
+      rethrow;
     }
-    await databaseRepository.saveAllSessions(payload);
+    await _savePendingPlaybackHistory();
   }
 
   Future<void> _savePendingPlaybackStates() async {
@@ -266,43 +340,114 @@ extension PlaybackSessionPersistenceCoordinator on PlaybackFacade {
     final sessionIds = Set<String>.of(_pendingPlaybackStateSessionIds);
     _pendingPlaybackStateSessionIds.removeAll(sessionIds);
     final now = DateTime.now();
-    final tracksToUpdate = <MusicTrack>[];
     final orderedIds = _service.sessionOrder;
-    for (final sessionId in sessionIds) {
-      final session = _service.sessions[sessionId];
-      if (session == null) continue;
-      final sortOrder = orderedIds.indexOf(sessionId);
-      await databaseRepository.upsertSessionPlaybackState(
-        _persistedSessionSnapshot(
+    try {
+      for (final sessionId in sessionIds) {
+        final session = _service.sessions[sessionId];
+        if (session == null) continue;
+        if (_pendingSessionDefinitionIds.contains(sessionId)) continue;
+        final sortOrder = orderedIds.indexOf(sessionId);
+        final next = _persistedSessionSnapshot(
           session,
           sortOrder: sortOrder < 0 ? orderedIds.length : sortOrder,
           now: now,
-          tracksToUpdate: tracksToUpdate,
-        ),
-      );
-    }
-    if (tracksToUpdate.isNotEmpty) {
-      await databaseRepository.upsertTracks(tracksToUpdate);
+          updateHistory: true,
+        );
+        final previous = _persistedSessions[sessionId];
+        if (previous == null ||
+            _persistedQueueVersions[sessionId] != session.queueVersion ||
+            previous.audioEffects != next.audioEffects ||
+            (
+                  previous.trackPath,
+                  previous.isTemporary,
+                  previous.retainInNowPlaying,
+                  previous.loopModeIndex,
+                  previous.createdAtMs,
+                  previous.lastPlayedAtMs,
+                ) !=
+                (
+                  next.trackPath,
+                  next.isTemporary,
+                  next.retainInNowPlaying,
+                  next.loopModeIndex,
+                  next.createdAtMs,
+                  next.lastPlayedAtMs,
+                )) {
+          _pendingSessionDefinitionIds.add(sessionId);
+          continue;
+        }
+        if (_sameSessionDefinition(previous, next)) continue;
+        await databaseRepository.upsertSessionPlaybackState(next);
+        _persistedSessions[sessionId] = next;
+      }
+      if (_pendingSessionDefinitionIds.isNotEmpty) {
+        await _savePendingSessionDefinitions();
+      }
+      await _savePendingPlaybackHistory();
+    } catch (_) {
+      _pendingPlaybackStateSessionIds.addAll(sessionIds);
+      rethrow;
     }
   }
 
-  Future<void> saveSessionOrder() async {
-    if (!_persistenceEnabled) return;
-    await databaseRepository.updateSessionOrder(_service.sessionOrder);
-    await AppPreferences.remove('session_order_v1');
+  Future<void> _savePendingPlaybackHistory() async {
+    if (_pendingPlaybackHistoryTracks.isEmpty) return;
+    final pending = Map<String, MusicTrack>.of(_pendingPlaybackHistoryTracks);
+    final resolver = _persistedTrackResolver;
+    final tracks = <MusicTrack>[
+      for (final entry in pending.entries)
+        if (resolver == null)
+          entry.value
+        else if (resolver(entry.key) case final track?)
+          track.copyWith(
+            lastPlayedPosition: entry.value.lastPlayedPosition,
+            lastPlayedAt: entry.value.lastPlayedAt,
+          ),
+    ];
+    if (tracks.isNotEmpty) await databaseRepository.upsertTracks(tracks);
+    for (final entry in pending.entries) {
+      if (identical(_pendingPlaybackHistoryTracks[entry.key], entry.value)) {
+        _pendingPlaybackHistoryTracks.remove(entry.key);
+      }
+    }
+  }
+
+  Future<void> saveSessionOrder() {
+    if (!_persistenceEnabled) return Future<void>.value();
+    _pendingSessionOrder = true;
+    _service.saveSessionOrderTimer?.cancel();
+    _service.saveSessionOrderTimer = null;
+    return _enqueueSessionPersistence(_savePendingSessionOrder);
+  }
+
+  Future<void> _savePendingSessionOrder() async {
+    if (!_persistenceEnabled || !_pendingSessionOrder) return;
+    _pendingSessionOrder = false;
+    try {
+      await databaseRepository.updateSessionOrder(
+        List<String>.of(_service.sessionOrder),
+      );
+      await AppPreferences.remove('session_order_v1');
+    } catch (_) {
+      _pendingSessionOrder = true;
+      rethrow;
+    }
   }
 
   void scheduleSessionStatePersistence({
+    String? sessionId,
     Duration delay = const Duration(milliseconds: 220),
   }) {
     if (!_persistenceEnabled) return;
-    _savePlaybackStateTimer?.cancel();
-    _savePlaybackStateTimer = null;
-    _pendingPlaybackStateSessionIds.clear();
+    if (sessionId == null) {
+      _pendingSessionDefinitionIds.addAll(_service.sessions.keys);
+    } else {
+      _pendingSessionDefinitionIds.add(sessionId);
+    }
     _service.saveSessionStateTimer?.cancel();
     _service.saveSessionStateTimer = Timer(delay, () {
       _service.saveSessionStateTimer = null;
-      unawaited(savePersistedState());
+      unawaited(_enqueueSessionPersistence(_savePendingSessionDefinitions));
     });
   }
 
@@ -311,7 +456,7 @@ extension PlaybackSessionPersistenceCoordinator on PlaybackFacade {
     Duration delay = const Duration(milliseconds: 800),
   }) {
     if (!_persistenceEnabled ||
-        _service.saveSessionStateTimer != null ||
+        _pendingSessionDefinitionIds.contains(sessionId) ||
         !_service.sessions.containsKey(sessionId)) {
       return;
     }
@@ -327,6 +472,7 @@ extension PlaybackSessionPersistenceCoordinator on PlaybackFacade {
     Duration delay = const Duration(milliseconds: 180),
   }) {
     if (!_persistenceEnabled) return;
+    _pendingSessionOrder = true;
     _service.saveSessionOrderTimer?.cancel();
     _service.saveSessionOrderTimer = Timer(delay, () {
       _service.saveSessionOrderTimer = null;
@@ -334,16 +480,32 @@ extension PlaybackSessionPersistenceCoordinator on PlaybackFacade {
     });
   }
 
-  Future<void> flushSessionStatePersistence() async {
+  Future<void> flushSessionStatePersistence({String? sessionId}) async {
+    if (!_persistenceEnabled) return;
     _service.saveSessionStateTimer?.cancel();
     _service.saveSessionStateTimer = null;
-    await savePersistedState();
+    _service.saveSessionOrderTimer?.cancel();
+    _service.saveSessionOrderTimer = null;
+    if (sessionId == null) {
+      _pendingSessionDefinitionIds.addAll(_service.sessions.keys);
+    } else {
+      _pendingSessionDefinitionIds.add(sessionId);
+    }
+    await _enqueueSessionPersistence(() async {
+      await _savePendingSessionDefinitions();
+      await _savePendingPlaybackStates();
+      await _savePendingSessionOrder();
+    });
   }
 
   void cancelScheduledPersistence() {
     _savePlaybackStateTimer?.cancel();
     _savePlaybackStateTimer = null;
     _pendingPlaybackStateSessionIds.clear();
+    _pendingSessionDefinitionIds.clear();
+    _pendingDeletedSessionIds.clear();
+    _pendingPlaybackHistoryTracks.clear();
+    _pendingSessionOrder = false;
     _service.saveSessionStateTimer?.cancel();
     _service.saveSessionStateTimer = null;
     _service.saveSessionOrderTimer?.cancel();

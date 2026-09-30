@@ -42,9 +42,9 @@ class GlobalShortcuts extends ConsumerWidget {
           TogglePlayPauseIntent: CallbackAction<TogglePlayPauseIntent>(
             onInvoke: (TogglePlayPauseIntent intent) {
               final playback = ref.read(playbackFacadeProvider);
-              final state = ref.read(playbackStateProvider).value;
-              if (state != null && state.activeSessions.isNotEmpty) {
-                playback.toggleSessionPlayPause(state.activeSessions.first.id);
+              final state = ref.read(playbackCatalogProvider).value;
+              if (state != null && state.sessions.isNotEmpty) {
+                playback.toggleSessionPlayPause(state.sessions.first.id);
               }
               return null;
             },
@@ -165,9 +165,8 @@ class GlobalShortcuts extends ConsumerWidget {
                     final statusAsync = ref.watch(windowsHotkeyStatusProvider);
                     return statusAsync.when(
                       loading: () => const LinearProgressIndicator(),
-                      error: (_, _) => Text(
-                        i18n.tr('keyboard_shortcuts_status_error'),
-                      ),
+                      error: (_, _) =>
+                          Text(i18n.tr('keyboard_shortcuts_status_error')),
                       data: (status) => Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [

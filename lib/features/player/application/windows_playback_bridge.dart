@@ -4,6 +4,7 @@ import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 
 import '../../../core/errors/native_result.dart';
+import '../../../core/immutable_collections.dart';
 import '../domain/audio_effects.dart';
 import 'native_playback_bridge.dart';
 
@@ -39,13 +40,36 @@ class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
   final _snapshots = StreamController<NativePlaybackSnapshot>.broadcast();
   final _progress = StreamController<NativePlaybackProgressUpdate>.broadcast();
   final _clock = Stopwatch()..start();
-  Future<void> _serial = Future.value();
+  final _retiring = <Future<void>>{};
   String? _focusedSessionId;
   bool _listening = false;
   bool _pauseOnDisconnect = true;
   bool _disposed = false;
 
   Player? playerForSession(String sessionId) => _sessions[sessionId]?.player;
+  void acquireVideoSurface(String sessionId) {
+    final session = _sessions[sessionId];
+    if (session == null || _disposed) return;
+    session.videoSurfaceCount++;
+    unawaited(
+      _change(sessionId, (current) async {
+        if (current.videoSurfaceCount > 0 && current.player == null) {
+          current.generation++;
+          await _open(current);
+        }
+      }),
+    );
+  }
+
+  void releaseVideoSurface(String sessionId) {
+    final session = _sessions[sessionId];
+    if (session == null || session.videoSurfaceCount == 0) return;
+    session.videoSurfaceCount--;
+    if (session.videoSurfaceCount == 0) {
+      unawaited(_change(sessionId, _releaseIfIdle));
+    }
+  }
+
   VideoController? videoControllerForSession(String sessionId) {
     final session = _sessions[sessionId];
     final player = session?.player;
@@ -63,14 +87,26 @@ class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
   }
 
   Future<void> _playIfIdle(_WindowsPlaybackSession session) async {
-    final player = session.player!;
+    if (!_isCurrent(session) || !session.wantsPlay) return;
+    final player = session.player;
+    if (player == null) return;
+    final generation = session.generation;
     final native = player.platform;
     if (session.videoController != null &&
         native is NativePlayer &&
         !player.state.completed &&
         await native.getProperty('playlist-pos') == '-1') {
+      if (!_isCurrent(session) ||
+          generation != session.generation ||
+          !session.wantsPlay) {
+        return;
+      }
       await player.jump(session.index);
-      await player.play();
+      if (_isCurrent(session) &&
+          generation == session.generation &&
+          session.wantsPlay) {
+        await player.play();
+      }
     }
   }
 
@@ -86,49 +122,124 @@ class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
   Future<void> stopListening() async => _listening = false;
 
   void _emit(_WindowsPlaybackSession session) {
-    if (_listening && !session.opening && !_snapshots.isClosed) {
-      _snapshots.add(session.snapshot);
+    if (!_listening ||
+        session.opening ||
+        session.eventPending ||
+        !_isCurrent(session)) {
+      return;
+    }
+    session.eventPending = true;
+    scheduleMicrotask(() {
+      session.eventPending = false;
+      if (!_listening ||
+          session.opening ||
+          !_isCurrent(session) ||
+          _snapshots.isClosed ||
+          session.queue.isEmpty) {
+        return;
+      }
+      final snapshot = session.snapshot(
+        includeRetainedUris:
+            session.emittedQueueRevision != session.queueRevision,
+      );
+      final key = (
+        snapshot.uri,
+        snapshot.path,
+        snapshot.title,
+        snapshot.subtitle,
+        snapshot.artUri,
+        snapshot.playing,
+        snapshot.playWhenReady,
+        snapshot.processingState,
+        snapshot.duration,
+        snapshot.volume,
+        snapshot.speed,
+        snapshot.audioEffects,
+        snapshot.channelSwapEnabled,
+        snapshot.error,
+        snapshot.queueIndex,
+        snapshot.transportCommandId,
+        session.queueRevision,
+      );
+      if (key == session.lastEventKey) return;
+      session.lastEventKey = key;
+      session.emittedQueueRevision = session.queueRevision;
+      _snapshots.add(snapshot);
+    });
+  }
+
+  bool _isCurrent(_WindowsPlaybackSession session) =>
+      !session.retired && identical(_sessions[session.id], session);
+
+  void _focus(String sessionId) {
+    final previous = _sessions[_focusedSessionId];
+    _focusedSessionId = sessionId;
+    if (previous != null && previous.id != sessionId) {
+      unawaited(_change(previous.id, _releaseIfIdle));
     }
   }
 
-  Future<NativeResult<T>> _run<T>(Future<T?> Function() action) {
-    final result = _serial.then((_) async {
-      try {
-        return NativeSuccess<T>(await action());
-      } on ArgumentError catch (error) {
-        return NativeFailure<T>(
-          error.toString(),
-          code: NativeErrorCode.invalidArgument,
-        );
-      } catch (error) {
-        return NativeFailure<T>(
-          error.toString(),
-          code: NativeErrorCode.playerError,
-        );
-      }
-    });
-    _serial = result.then((_) {});
-    return result;
+  Future<void> _releaseIfIdle(_WindowsPlaybackSession session) async {
+    if (session.wantsPlay ||
+        session.player?.state.playing == true ||
+        session.id == _focusedSessionId ||
+        session.videoSurfaceCount > 0) {
+      return;
+    }
+    await session.releasePlayer();
+  }
+
+  Future<NativeResult<T>> _run<T>(Future<T?> Function() action) async {
+    try {
+      return NativeSuccess<T>(await action());
+    } on ArgumentError catch (error) {
+      return NativeFailure<T>(
+        error.toString(),
+        code: NativeErrorCode.invalidArgument,
+      );
+    } catch (error) {
+      return NativeFailure<T>(
+        error.toString(),
+        code: NativeErrorCode.playerError,
+      );
+    }
   }
 
   Future<NativeResult<NativePlaybackSnapshot>> _change(
     String id,
     Future<void> Function(_WindowsPlaybackSession) action,
-  ) => _run(() async {
+  ) {
     final session = _sessions[id];
-    if (session == null) {
-      throw ArgumentError.value(id, 'sessionId', 'Unknown session');
+    if (session == null || _disposed) {
+      return Future.value(
+        NativeFailure(
+          'Unknown session: $id',
+          code: NativeErrorCode.invalidArgument,
+        ),
+      );
     }
-    try {
-      await action(session);
-      _emit(session);
-      return session.snapshot;
-    } catch (error) {
-      session.error = error.toString();
-      _emit(session);
-      rethrow;
-    }
-  });
+    return session.enqueue(
+      () => _run(() async {
+        if (!_isCurrent(session)) {
+          throw ArgumentError.value(id, 'sessionId', 'Session was removed');
+        }
+        try {
+          await action(session);
+          if (!_isCurrent(session)) {
+            throw ArgumentError.value(id, 'sessionId', 'Session was removed');
+          }
+          _emit(session);
+          return session.snapshot(includeRetainedUris: false);
+        } catch (error) {
+          if (_isCurrent(session) && error is! ArgumentError) {
+            session.error = error.toString();
+            _emit(session);
+          }
+          rethrow;
+        }
+      }),
+    );
+  }
 
   @override
   Future<NativeResult<NativePlaybackSnapshot>> prepareSession({
@@ -151,63 +262,78 @@ class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
     List<Uri>? candidateUris,
     bool deferPlayerCreation = false,
     bool isTemporary = false,
-  }) => _run(() async {
-    if (sessionId.trim().isEmpty || uri.toString().isEmpty) {
-      throw ArgumentError('sessionId and uri are required');
+  }) {
+    try {
+      if (sessionId.trim().isEmpty || uri.toString().isEmpty) {
+        throw ArgumentError('sessionId and uri are required');
+      }
+      if (_disposed) throw ArgumentError('Playback bridge was disposed');
+      final items = queue?.isNotEmpty == true
+          ? queue!
+          : <Map<String, Object?>>[
+              {
+                'uri': uri.toString(),
+                'path': path,
+                'title': title,
+                'subtitle': subtitle,
+                'artUri': artUri?.toString(),
+                'candidateUris': candidateUris
+                    ?.map((u) => u.toString())
+                    .toList(),
+              },
+            ];
+      _validateQueue(items);
+      final session = _sessions.putIfAbsent(
+        sessionId,
+        () => _WindowsPlaybackSession(sessionId),
+      );
+      final generation = ++session.generation;
+      session.wantsPlay = autoPlay;
+      session.cancelRetry();
+      _focus(sessionId);
+      return _change(sessionId, (session) async {
+        if (generation != session.generation) {
+          throw ArgumentError('Playback preparation was superseded');
+        }
+        session.queue = items
+            .map((item) => Map<String, Object?>.from(item))
+            .toList();
+        session.index = (queueStartIndex ?? 0).clamp(0, items.length - 1);
+        session.volume = _finite(volume, 0, 3);
+        session.speed = _finite(speed, 0.25, 3);
+        session.effects =
+            audioEffects ??
+            NativeAudioEffects(
+              state: AudioEffectsState.flat,
+              channelSwapEnabled: false,
+            );
+        session.repeatOne = repeatOne;
+        session.repeatAll = repeatAll;
+        session.shuffle = shuffle;
+        session.position = startPosition < Duration.zero
+            ? Duration.zero
+            : startPosition;
+        session.error = null;
+        session.retryAttempt = 0;
+        session.retryStartedAt = null;
+        session.hasRetainedCurrent = false;
+        session.externalQueueRevision = 0;
+        if (session.wantsPlay || session.player != null) {
+          await _open(session);
+        }
+      });
+    } on ArgumentError catch (error) {
+      return Future.value(
+        NativeFailure(error.toString(), code: NativeErrorCode.invalidArgument),
+      );
     }
-    final items = queue?.isNotEmpty == true
-        ? queue!
-        : <Map<String, Object?>>[
-            {
-              'uri': uri.toString(),
-              'path': path,
-              'title': title,
-              'subtitle': subtitle,
-              'artUri': artUri?.toString(),
-              'candidateUris': candidateUris?.map((u) => u.toString()).toList(),
-            },
-          ];
-    _validateQueue(items);
-    final session = _sessions.putIfAbsent(
-      sessionId,
-      () => _WindowsPlaybackSession(sessionId),
-    );
-    session.queue = items
-        .map((item) => Map<String, Object?>.from(item))
-        .toList();
-    session.index = (queueStartIndex ?? 0).clamp(0, items.length - 1);
-    session.volume = _finite(volume, 0, 3);
-    session.speed = _finite(speed, 0.25, 3);
-    session.effects =
-        audioEffects ??
-        NativeAudioEffects(
-          state: AudioEffectsState.flat,
-          channelSwapEnabled: false,
-        );
-    session.repeatOne = repeatOne;
-    session.repeatAll = repeatAll;
-    session.shuffle = shuffle;
-    session.position = startPosition < Duration.zero
-        ? Duration.zero
-        : startPosition;
-    session.wantsPlay = autoPlay;
-    session.error = null;
-    session.retryAttempt = 0;
-    session.retryStartedAt = null;
-    session.hasRetainedCurrent = false;
-    session.retryTimer?.cancel();
-    if (!deferPlayerCreation || autoPlay || session.player != null) {
-      await _open(session);
-    }
-    _focusedSessionId = sessionId;
-    _emit(session);
-    return session.snapshot;
-  });
+  }
 
   static void _validateQueue(List<Map<String, Object?>> queue) {
-    if (queue.any(
-      (item) => item['uri'] is! String || (item['uri'] as String).isEmpty,
-    )) {
+    if (queue.isEmpty ||
+        queue.any(
+          (item) => item['uri'] is! String || (item['uri'] as String).isEmpty,
+        )) {
       throw ArgumentError('Every queue item requires a nonempty uri');
     }
   }
@@ -217,7 +343,7 @@ class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
     if (session.subscriptions.isEmpty) _subscribe(session, player);
     session.opening = true;
     session.error = null;
-    session.generation++;
+    final generation = session.generation;
     session.pendingStart = session.position > Duration.zero
         ? session.position
         : null;
@@ -226,14 +352,22 @@ class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
         for (var i = 0; i < session.queue.length; i++)
           Media(session.queue[i]['uri'] as String),
       ], index: session.index);
-      session.mediaUris = playlist.medias.map((media) => media.uri).toList();
       await player.open(playlist, play: false);
+      if (!_isCurrent(session) || generation != session.generation) {
+        throw ArgumentError('Playback preparation was superseded');
+      }
       await _applyMode(session);
       await _applyEffects(session);
       await player.setVolume(session.volume * session.fade * 100);
       await player.setRate(session.temporarySpeed ?? session.speed);
-      if (session.wantsPlay && session.pendingStart == null) {
+      if (_isCurrent(session) &&
+          generation == session.generation &&
+          session.wantsPlay &&
+          session.pendingStart == null) {
         await player.play();
+      }
+      if (!_isCurrent(session) || generation != session.generation) {
+        throw ArgumentError('Playback preparation was superseded');
       }
     } finally {
       session.opening = false;
@@ -243,7 +377,12 @@ class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
   void _subscribe(_WindowsPlaybackSession session, Player player) {
     session.subscriptions.addAll([
       player.stream.playlist.listen((playlist) {
-        if (session.opening || playlist.medias.isEmpty) return;
+        if (!_isCurrent(session) ||
+            !identical(session.player, player) ||
+            session.opening ||
+            playlist.medias.isEmpty) {
+          return;
+        }
         final index = playlist.index;
         if (index >= 0 &&
             index < session.queue.length &&
@@ -262,7 +401,6 @@ class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
                   await player.remove(0);
                   current.queue.removeAt(0);
                   current.invalidateRetainedUris();
-                  current.mediaUris.removeAt(0);
                   current.index--;
                 } finally {
                   current.opening = false;
@@ -275,32 +413,46 @@ class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
       }),
       player.stream.playing.listen((_) => _emit(session)),
       player.stream.completed.listen((completed) {
+        if (!_isCurrent(session) || !identical(session.player, player)) return;
         if (completed && !session.opening && session.error == null) {
           session.wantsPlay = false;
         }
         _emit(session);
+        if (completed) unawaited(_change(session.id, _releaseIfIdle));
       }),
       player.stream.buffering.listen((_) => _emit(session)),
       player.stream.duration.listen((duration) {
+        if (!_isCurrent(session) || !identical(session.player, player)) return;
+        session.duration = duration;
         if (duration > Duration.zero && session.pendingStart != null) {
           final generation = session.generation;
           unawaited(
             _change(session.id, (current) async {
               if (generation != current.generation ||
+                  !identical(current.player, player) ||
                   current.pendingStart == null) {
                 return;
               }
               final position = current.pendingStart!;
               current.pendingStart = null;
               await player.seek(position);
-              if (current.wantsPlay) await player.play();
+              if (_isCurrent(current) &&
+                  generation == current.generation &&
+                  current.wantsPlay) {
+                await player.play();
+              }
             }),
           );
         }
         _emit(session);
       }),
       player.stream.position.listen((position) {
-        if (session.opening || session.pendingStart != null) return;
+        if (!_isCurrent(session) ||
+            !identical(session.player, player) ||
+            session.opening ||
+            session.pendingStart != null) {
+          return;
+        }
         if (position > session.position &&
             player.state.playing &&
             session.error == null) {
@@ -308,7 +460,11 @@ class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
           session.retryStartedAt = null;
         }
         session.position = position;
-        if (_listening && !_progress.isClosed) {
+        if (_listening &&
+            !_progress.isClosed &&
+            (player.state.playing || session.wantsPlay) &&
+            position != session.lastProgressPosition) {
+          session.lastProgressPosition = position;
           _progress.add(
             NativePlaybackProgressUpdate(
               sessionId: session.id,
@@ -320,11 +476,14 @@ class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
           );
         }
       }),
-      player.stream.error.listen((error) => _handleError(session, error)),
+      player.stream.error.listen((error) {
+        if (identical(session.player, player)) _handleError(session, error);
+      }),
     ]);
   }
 
   void _handleError(_WindowsPlaybackSession session, String error) {
+    if (!_isCurrent(session)) return;
     session.error = error;
     _emit(session);
     if (!session.wantsPlay || session.retryTimer?.isActive == true) return;
@@ -344,6 +503,7 @@ class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
       return;
     }
     final generation = session.generation;
+    final retryGeneration = session.retryGeneration;
     session.retryAttempt++;
     session.retryTimer = Timer(
       Duration(milliseconds: (500 * session.retryAttempt).clamp(500, 15000)),
@@ -351,10 +511,14 @@ class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
         unawaited(
           _change(session.id, (currentSession) async {
             if (currentSession.generation != generation ||
+                currentSession.retryGeneration != retryGeneration ||
                 !currentSession.wantsPlay) {
               return;
             }
-            if (canFallback) item['uri'] = candidates[next];
+            if (canFallback) {
+              item['uri'] = candidates[next];
+              currentSession.invalidateRetainedUris();
+            }
             await _open(currentSession);
           }),
         );
@@ -389,46 +553,76 @@ class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
     String sessionId, {
     int transportCommandId = 0,
     bool exclusive = false,
-  }) => _change(sessionId, (session) async {
-    if (exclusive) {
-      for (final other in _sessions.values.where((s) => s != session)) {
-        other.wantsPlay = false;
-        await other.player?.pause();
-        _emit(other);
+  }) {
+    final current = _sessions[sessionId];
+    if (current == null || _disposed) {
+      return Future.value(
+        NativeFailure(
+          'Unknown session: $sessionId',
+          code: NativeErrorCode.invalidArgument,
+        ),
+      );
+    }
+    current.wantsPlay = true;
+    current.commandId = transportCommandId;
+    _focus(sessionId);
+    final pausedOthers = exclusive
+        ? Future.wait([
+            for (final other in _sessions.values.toList())
+              if (other.id != sessionId &&
+                  (other.wantsPlay || other.player?.state.playing == true))
+                pause(other.id),
+          ])
+        : Future.value(const <NativeResult<NativePlaybackSnapshot>>[]);
+    return _change(sessionId, (session) async {
+      final results = await pausedOthers;
+      final failure = results.where((result) => result.isFailure).firstOrNull;
+      if (failure != null) throw StateError(failure.errorOrNull!);
+      if (!session.wantsPlay) return;
+      if (session.player == null || session.error != null) {
+        session.retryAttempt = 0;
+        session.generation++;
+        await _open(session);
+      } else if (session.pendingStart == null) {
+        await session.player!.play();
+        await _playIfIdle(session);
       }
-    }
-    session.commandId = transportCommandId;
-    session.wantsPlay = true;
-    _focusedSessionId = sessionId;
-    if (session.player == null || session.error != null) {
-      session.retryAttempt = 0;
-      await _open(session);
-    } else if (session.pendingStart == null) {
-      await session.player!.play();
-      await _playIfIdle(session);
-    }
-  });
+    });
+  }
 
   @override
   Future<NativeResult<NativePlaybackSnapshot>> pause(
     String sessionId, {
     int transportCommandId = 0,
-  }) => _change(sessionId, (session) async {
-    session.commandId = transportCommandId;
-    session.wantsPlay = false;
-    session.retryTimer?.cancel();
-    await session.player?.pause();
-  });
+  }) {
+    final current = _sessions[sessionId];
+    if (current != null) {
+      current.commandId = transportCommandId;
+      current.wantsPlay = false;
+      current.cancelRetry();
+    }
+    return _change(sessionId, (session) async {
+      if (session.wantsPlay) return;
+      await session.player?.pause();
+      await _releaseIfIdle(session);
+    });
+  }
+
   @override
-  Future<NativeResult<NativePlaybackSnapshot>> stop(String sessionId) =>
-      _change(sessionId, (session) async {
-        session.wantsPlay = false;
-        session.retryTimer?.cancel();
-        session.pendingStart = null;
-        await session.player?.pause();
-        await session.player?.seek(Duration.zero);
-        session.position = Duration.zero;
-      });
+  Future<NativeResult<NativePlaybackSnapshot>> stop(String sessionId) {
+    final current = _sessions[sessionId];
+    current?.wantsPlay = false;
+    current?.cancelRetry();
+    return _change(sessionId, (session) async {
+      if (session.wantsPlay) return;
+      session.pendingStart = null;
+      await session.player?.pause();
+      await session.player?.seek(Duration.zero);
+      session.position = Duration.zero;
+      await _releaseIfIdle(session);
+    });
+  }
+
   @override
   Future<NativeResult<NativePlaybackSnapshot>> seek(
     String sessionId,
@@ -474,56 +668,174 @@ class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
     int? queueStartIndex,
     bool repeatAll = false,
     bool shuffle = false,
-  }) => _change(sessionId, (session) async {
-    session.repeatOne = repeatOne;
-    session.repeatAll = repeatAll;
-    session.shuffle = shuffle;
-    if (queue != null && queue.isNotEmpty) {
-      _validateQueue(queue);
-      final previous = session.queue[session.index];
-      final items = queue
-          .map((item) => Map<String, Object?>.from(item))
-          .toList();
-      var index = items.indexWhere(
-        (item) => item['path'] != null
-            ? item['path'] == previous['path']
-            : item['uri'] == previous['uri'],
-      );
-      // A removed current track finishes playing before the new queue advances.
-      if (index < 0) {
-        session.hasRetainedCurrent = true;
-        items.insert(0, previous);
-        index = 0;
-      } else {
-        session.hasRetainedCurrent = false;
-      }
-      session.queue = items;
-      session.index = index;
-      final player = session.player;
-      if (player != null) {
-        // Keep the current decoder alive: rebuilding via open causes an audible gap.
-        session.opening = true;
-        try {
-          final nativeIndex = player.state.playlist.index;
-          for (var i = player.state.playlist.medias.length - 1; i >= 0; i--) {
-            if (i != nativeIndex) await player.remove(i);
-          }
-          for (var i = 0; i < items.length; i++) {
-            if (i != index) await player.add(Media(items[i]['uri'] as String));
-          }
-          if (index != 0) await player.move(0, index);
-          session.mediaUris = items
-              .map((item) => Media(item['uri'] as String).uri)
-              .toList();
-          await _applyMode(session);
-        } finally {
-          session.opening = false;
-        }
-      }
-    } else {
-      await _applyMode(session);
+  }) {
+    final current = _sessions[sessionId];
+    if (queue != null && queue.isNotEmpty && current != null) {
+      current.cancelRetry();
     }
-  });
+    return _change(sessionId, (session) async {
+      session.repeatOne = repeatOne;
+      session.repeatAll = repeatAll;
+      session.shuffle = shuffle;
+      if (queue != null && queue.isNotEmpty) {
+        await _updateQueue(session, queue, queueStartIndex: queueStartIndex);
+      }
+      await _applyMode(session);
+    });
+  }
+
+  @override
+  Future<NativeResult<NativePlaybackSnapshot>> updateQueue(
+    String sessionId, {
+    required List<Map<String, Object?>> queue,
+    int? queueStartIndex,
+    int queueRevision = 0,
+    bool repeatOne = false,
+    bool repeatAll = false,
+    bool shuffle = false,
+  }) {
+    final current = _sessions[sessionId];
+    if (current != null &&
+        (queueRevision == 0 || queueRevision > current.externalQueueRevision)) {
+      current.cancelRetry();
+    }
+    return _change(sessionId, (session) async {
+      if (queueRevision > 0 && queueRevision <= session.externalQueueRevision) {
+        return;
+      }
+      if (queueRevision < 0) {
+        throw ArgumentError('queueRevision must be nonnegative');
+      }
+      await _updateQueue(session, queue, queueStartIndex: queueStartIndex);
+      session.externalQueueRevision = queueRevision;
+      session.repeatOne = repeatOne;
+      session.repeatAll = repeatAll;
+      session.shuffle = shuffle;
+      await _applyMode(session);
+    });
+  }
+
+  static String _queueKey(Map<String, Object?> item) =>
+      (item['path'] ?? item['uri']) as String;
+
+  Future<void> _updateQueue(
+    _WindowsPlaybackSession session,
+    List<Map<String, Object?>> queue, {
+    int? queueStartIndex,
+  }) async {
+    _validateQueue(queue);
+    if (queueStartIndex != null &&
+        (queueStartIndex < 0 || queueStartIndex >= queue.length)) {
+      throw ArgumentError('queueStartIndex is outside the queue');
+    }
+    final previousQueue = session.queue;
+    final previous = previousQueue[session.index];
+    final items = queue.map((item) => Map<String, Object?>.from(item)).toList();
+    final previousKey = _queueKey(previous);
+    var occurrence = previousQueue
+        .take(session.index)
+        .where((item) => _queueKey(item) == previousKey)
+        .length;
+    var index = -1;
+    for (var i = 0; i < items.length; i++) {
+      if (_queueKey(items[i]) == previousKey && occurrence-- == 0) {
+        index = i;
+        break;
+      }
+    }
+    if (queueStartIndex != null &&
+        _queueKey(items[queueStartIndex]) == previousKey) {
+      index = queueStartIndex;
+    }
+    session.hasRetainedCurrent = index < 0;
+    if (index < 0) {
+      // Finish the removed current item with its existing decoder.
+      items.insert(0, Map<String, Object?>.from(previous));
+      index = 0;
+    }
+    final player = session.player;
+    if (player != null) {
+      final currentToken = session.index;
+      final order = List.generate(previousQueue.length, (i) => i);
+      final nativeItems = [...previousQueue];
+      session.opening = true;
+      try {
+        final available = <(String, Object?), List<int>>{};
+        for (var i = 0; i < previousQueue.length; i++) {
+          if (i == session.index) continue;
+          available
+              .putIfAbsent((
+                _queueKey(previousQueue[i]),
+                previousQueue[i]['uri'],
+              ), () => [])
+              .add(i);
+        }
+        final desired = <int?>[
+          for (var i = 0; i < items.length; i++)
+            if (i == index)
+              session.index
+            else if (available[(_queueKey(items[i]), items[i]['uri'])]
+                    ?.isNotEmpty ==
+                true)
+              available[(_queueKey(items[i]), items[i]['uri'])]!.removeAt(0)
+            else
+              null,
+        ];
+        final retained = desired.whereType<int>().toSet();
+        for (var i = order.length - 1; i >= 0; i--) {
+          if (!retained.contains(order[i])) {
+            await player.remove(i);
+            if (!_isCurrent(session)) return;
+            order.removeAt(i);
+            nativeItems.removeAt(i);
+          }
+        }
+        var newToken = -1;
+        for (var i = 0; i < desired.length; i++) {
+          final token = desired[i];
+          var from = token == null ? -1 : order.indexOf(token);
+          if (from < 0) {
+            await player.add(Media(items[i]['uri'] as String));
+            if (!_isCurrent(session)) return;
+            from = order.length;
+            order.add(newToken--);
+            nativeItems.add(items[i]);
+          }
+          if (from != i) {
+            await player.move(from, i);
+            order.insert(i, order.removeAt(from));
+            nativeItems.insert(i, nativeItems.removeAt(from));
+          }
+          if (!_isCurrent(session)) return;
+        }
+      } catch (_) {
+        if (_isCurrent(session)) {
+          // Earlier successful edits remain applied when a later command fails.
+          session.queue = nativeItems;
+          session.index = order.indexOf(currentToken);
+        }
+        rethrow;
+      } finally {
+        session.opening = false;
+      }
+    }
+    session.queue = items;
+    session.index = index;
+    if (player != null &&
+        session.pendingStart != null &&
+        player.state.duration > Duration.zero) {
+      final position = session.pendingStart!;
+      final generation = session.generation;
+      session.pendingStart = null;
+      await player.seek(position);
+      if (_isCurrent(session) &&
+          generation == session.generation &&
+          session.wantsPlay) {
+        await player.play();
+      }
+    }
+  }
+
   @override
   Future<NativeResult<NativePlaybackSnapshot>> setAudioEffects(
     String sessionId,
@@ -541,33 +853,52 @@ class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
     await session.player?.setVolume(session.volume * session.fade * 100);
   });
   @override
-  Future<NativeResult<void>> removeSession(String sessionId) => _run(() async {
-    await _sessions.remove(sessionId)?.dispose();
+  Future<NativeResult<void>> removeSession(String sessionId) {
+    final session = _sessions.remove(sessionId);
+    if (session != null) {
+      session.retired = true;
+      session.wantsPlay = false;
+      session.generation++;
+      session.cancelRetry();
+    }
     if (_focusedSessionId == sessionId) {
       _focusedSessionId = _sessions.keys.firstOrNull;
     }
-  });
+    return _run(() async {
+      if (session == null) return;
+      final retiring = session.enqueue(session.releasePlayer);
+      _retiring.add(retiring);
+      try {
+        await retiring;
+      } finally {
+        _retiring.remove(retiring);
+      }
+    });
+  }
+
   @override
   Future<NativeResult<void>> pauseAll() => _run(() async {
-    for (final session in _sessions.values) {
-      session.wantsPlay = false;
-      session.retryTimer?.cancel();
-      await session.player?.pause();
-      _emit(session);
-    }
+    final results = await Future.wait([
+      for (final session in _sessions.values.toList()) pause(session.id),
+    ]);
+    final failure = results.where((result) => result.isFailure).firstOrNull;
+    if (failure != null) throw StateError(failure.errorOrNull!);
   });
   @override
   Future<NativeResult<void>> clearAll() => _run(() async {
-    for (final session in _sessions.values) {
-      await session.dispose();
-    }
-    _sessions.clear();
-    _focusedSessionId = null;
+    final results = await Future.wait([
+      for (final id in _sessions.keys.toList()) removeSession(id),
+    ]);
+    final failure = results.where((result) => result.isFailure).firstOrNull;
+    if (failure != null) throw StateError(failure.errorOrNull!);
   });
   @override
   Future<NativeResult<NativePlaybackBundleSnapshot>> snapshot() => _run(
     () async => NativePlaybackBundleSnapshot(
-      sessions: _sessions.values.map((s) => s.snapshot).toList(),
+      sessions: _sessions.values
+          .where((s) => s.queue.isNotEmpty)
+          .map((s) => s.snapshot())
+          .toList(),
       focusedSessionId: _focusedSessionId,
     ),
   );
@@ -603,6 +934,7 @@ class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
     _disposed = true;
     _listening = false;
     await clearAll();
+    await Future.wait(_retiring.toList());
     await _snapshots.close();
     await _progress.close();
   }
@@ -614,20 +946,45 @@ class _WindowsPlaybackSession {
   Player? player;
   VideoController? videoController;
   final subscriptions = <StreamSubscription<dynamic>>[];
+  Future<void> serial = Future.value();
+  bool retired = false, eventPending = false;
+  Object? lastEventKey;
+  int queueRevision = 0,
+      externalQueueRevision = 0,
+      emittedQueueRevision = -1,
+      videoSurfaceCount = 0;
+  Duration? lastProgressPosition;
+  Duration? duration;
+
+  Future<T> enqueue<T>(Future<T> Function() action) {
+    final result = serial.then((_) => action());
+    serial = result.then<void>((_) {}, onError: (Object _, StackTrace _) {});
+    return result;
+  }
+
   List<Map<String, Object?>> _queue = [];
   List<String>? _cachedRetainedUris;
 
   List<Map<String, Object?>> get queue => _queue;
   set queue(List<Map<String, Object?>> items) {
+    var retainedChanged = items.length != _queue.length;
+    if (!retainedChanged) {
+      for (var i = 0; i < items.length; i++) {
+        if (items[i]['uri'] != _queue[i]['uri']) {
+          retainedChanged = true;
+          break;
+        }
+      }
+    }
     _queue = items;
-    _cachedRetainedUris = null;
+    if (retainedChanged) invalidateRetainedUris();
   }
 
   void invalidateRetainedUris() {
     _cachedRetainedUris = null;
+    queueRevision++;
   }
 
-  List<String> mediaUris = [];
   int index = 0;
   Duration position = Duration.zero;
   Duration? pendingStart;
@@ -644,11 +1001,16 @@ class _WindowsPlaybackSession {
   );
   String? error;
   bool hasRetainedCurrent = false;
-  int commandId = 0, retryAttempt = 0, generation = 0;
+  int commandId = 0, retryAttempt = 0, generation = 0, retryGeneration = 0;
   Timer? retryTimer;
   Duration? retryStartedAt;
 
-  NativePlaybackSnapshot get snapshot {
+  void cancelRetry() {
+    retryGeneration++;
+    retryTimer?.cancel();
+  }
+
+  NativePlaybackSnapshot snapshot({bool includeRetainedUris = true}) {
     final item = queue[index];
     final state = player?.state;
     return NativePlaybackSnapshot(
@@ -671,7 +1033,7 @@ class _WindowsPlaybackSession {
           : 'ready',
       position: position,
       bufferedPosition: state?.buffer ?? Duration.zero,
-      duration: state?.duration,
+      duration: state?.duration ?? duration,
       volume: volume,
       speed: speed,
       boostGain: volume > 1 ? volume : 1,
@@ -680,21 +1042,31 @@ class _WindowsPlaybackSession {
       eqCapabilities: windowsEqCapabilities,
       error: error,
       queueIndex: index,
-      retainedUris: _cachedRetainedUris ??= queue
-          .map((i) => i['uri'] as String)
-          .toList(growable: false),
-      hasRetainedUrisPayload: true,
+      retainedUris: includeRetainedUris
+          ? (_cachedRetainedUris ??= immutableList(
+              queue.map((i) => i['uri'] as String),
+            ))
+          : const [],
+      hasRetainedUrisPayload: includeRetainedUris,
       transportCommandId: commandId,
     );
   }
 
-  Future<void> dispose() async {
-    retryTimer?.cancel();
+  Future<void> releasePlayer() async {
+    cancelRetry();
+    final current = player;
+    if (current == null) return;
+    duration = current.state.duration;
+    player = null;
+    videoController = null;
+    pendingStart = null;
+    lastProgressPosition = null;
+    generation++;
     for (final subscription in subscriptions) {
       await subscription.cancel();
     }
-    await player?.dispose();
-    videoController = null;
+    subscriptions.clear();
+    await current.dispose();
   }
 }
 

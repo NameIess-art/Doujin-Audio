@@ -26,6 +26,8 @@ void main() {
     );
     addTearDown(facade.dispose);
 
+    final initialScanRevision = facade.scanRevision;
+    final initialStructureRevision = facade.structureRevision;
     final generation = facade.tryBeginScan(source: '/library');
     expect(generation, 1);
     expect(facade.tryBeginScan(source: '/other'), 0);
@@ -61,6 +63,15 @@ void main() {
     expect(facade.state.isScanning, isFalse);
     expect(facade.state.scanGeneration, 0);
     expect(facade.state.scanStage, FolderScanStage.idle);
+    // A completed scan must invalidate directory caches even if no audio changed
+    // and no caller observed the intermediate scanning state.
+    expect(facade.structureRevision, initialStructureRevision);
+    expect(facade.scanRevision, greaterThan(initialScanRevision));
+    final completedScanRevision = facade.scanRevision;
+    final nextGeneration = facade.tryBeginScan(source: '/library');
+    facade.finishScan(nextGeneration);
+    expect(facade.scanRevision, greaterThan(completedScanRevision));
+    expect(facade.structureRevision, initialStructureRevision);
   });
 
   test('facade cancellation invalidates the active generation', () async {

@@ -1408,7 +1408,7 @@ void main() {
     final collectedList = tester.widget<ListView>(
       find.descendant(
         of: find.byKey(const ValueKey(AsmrCategoryType.collected)),
-        matching: find.byKey(const ValueKey<String>('content')),
+        matching: find.byKey(const PageStorageKey(AsmrCategoryType.collected)),
       ),
     );
     final collectedController = collectedList.controller;
@@ -1429,7 +1429,7 @@ void main() {
 
     final collectedListFinder = find.descendant(
       of: find.byKey(const ValueKey(AsmrCategoryType.collected)),
-      matching: find.byKey(const ValueKey<String>('content')),
+      matching: find.byKey(const PageStorageKey(AsmrCategoryType.collected)),
     );
     final pull = await tester.startGesture(tester.getCenter(collectedListFinder));
     await pull.moveBy(const Offset(0, 60));
@@ -1461,7 +1461,9 @@ void main() {
         .widget<ListView>(
           find.descendant(
             of: recommendationView,
-            matching: find.byKey(const ValueKey<String>('content')),
+            matching: find.byKey(
+              const PageStorageKey(AsmrCategoryType.recommendation),
+            ),
           ),
         )
         .controller;
@@ -1475,7 +1477,9 @@ void main() {
         .widget<ListView>(
           find.descendant(
             of: find.byKey(const ValueKey(AsmrCategoryType.collected)),
-            matching: find.byKey(const ValueKey<String>('content')),
+            matching: find.byKey(
+              const PageStorageKey(AsmrCategoryType.collected),
+            ),
           ),
         )
         .controller;
@@ -1601,6 +1605,18 @@ void main() {
   ) async {
     final harness = await _pumpAppShell(tester);
     await _pumpMainScreenAnimations(tester);
+
+    await _swipeToAsmrPage(tester);
+    await _waitForMainPage(tester, 0);
+    final navigationRail = find.byType(NavigationRail);
+    if (navigationRail.evaluate().isNotEmpty) {
+      tester.widget<NavigationRail>(navigationRail).onDestinationSelected!(2);
+    } else {
+      await tester.tap(
+        find.byKey(const ValueKey<String>('main_destination_ink_nav_sessions')),
+      );
+    }
+    await _waitForMainPage(tester, 2);
 
     final mainHeaderTitles = <String>{
       'ASMR.ONE',
@@ -2020,7 +2036,7 @@ void main() {
     );
     final contentList = find.descendant(
       of: searchPage,
-      matching: find.byKey(const ValueKey<String>('content')),
+      matching: find.byKey(const PageStorageKey(AsmrCategoryType.collected)),
     );
     final scrollController = tester.widget<ListView>(contentList).controller!;
     expect(scrollController.position.maxScrollExtent, greaterThan(0));
@@ -2197,7 +2213,7 @@ void main() {
     );
     final contentListFinder = find.descendant(
       of: collectedCategory,
-      matching: find.byKey(const ValueKey('content')),
+      matching: find.byKey(const PageStorageKey(AsmrCategoryType.collected)),
     );
     final contentList = tester.widget<ListView>(contentListFinder);
     final listPadding = contentList.padding!.resolve(TextDirection.ltr);
@@ -2239,7 +2255,7 @@ void main() {
 
     Finder contentList() => find.descendant(
       of: find.byKey(const ValueKey(AsmrCategoryType.collected)),
-      matching: find.byKey(const ValueKey('content')),
+      matching: find.byKey(const PageStorageKey(AsmrCategoryType.collected)),
     );
 
     final scrollController = tester.widget<ListView>(contentList()).controller!;
@@ -3167,6 +3183,8 @@ void main() {
       tester.view.resetPhysicalSize();
     });
     await _pumpAppShell(tester, includePlaybackSession: false);
+    await _swipeToAsmrPage(tester);
+    await _waitForMainPage(tester, 0);
     final libraryState = tester.state(
       find.byType(LibraryTab, skipOffstage: false),
     );

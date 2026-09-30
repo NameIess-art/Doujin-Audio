@@ -3,9 +3,9 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'package:charset/charset.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/logging/app_log_service.dart';
+import '../../../core/media/path_matcher.dart';
 import '../../../core/platform/file_cache_platform_gateway.dart';
 
 enum WorkTextEncoding {
@@ -204,14 +204,56 @@ class WorkTextService {
   WorkTextService({
     FileCachePlatformGateway? platformGateway,
     HttpClient Function()? httpClientFactory,
+    Object Function()? directoryRevision,
   }) : _platformGateway = platformGateway ?? FileCachePlatformGateway.instance,
-       _httpClientFactory = httpClientFactory ?? HttpClient.new;
+       _httpClientFactory = httpClientFactory ?? HttpClient.new,
+       _directoryRevision = directoryRevision;
 
   final FileCachePlatformGateway _platformGateway;
   final HttpClient Function() _httpClientFactory;
+  final Object Function()? _directoryRevision;
+  final _directoryFiles = <String, Future<List<WorkTextFile>>>{};
+  Object? _cachedDirectoryRevision;
 
-  Future<List<WorkTextFile>> findWorkTextFiles(String workFolderPath) async {
-    if (workFolderPath.trim().isEmpty) return const [];
+  Future<List<WorkTextFile>> findWorkTextFiles(String workFolderPath) {
+    if (workFolderPath.trim().isEmpty) return Future.value(const []);
+    final revision = _directoryRevision?.call();
+    if (_cachedDirectoryRevision != revision) {
+      _directoryFiles.clear();
+      _cachedDirectoryRevision = revision;
+    }
+    final key = PathMatcher.equivalenceKey(workFolderPath);
+    final cached = _directoryFiles.remove(key);
+    if (cached != null) {
+      _directoryFiles[key] = cached;
+      return cached;
+    }
+    late final Future<List<WorkTextFile>> request;
+    request = _discoverWorkTextFiles(workFolderPath).then(
+      (files) {
+        // The platform gateway also returns an empty list on scan failure.
+        if (files.isEmpty && identical(_directoryFiles[key], request)) {
+          _directoryFiles.remove(key);
+        }
+        return files;
+      },
+      onError: (Object error, StackTrace stackTrace) {
+        if (identical(_directoryFiles[key], request)) {
+          _directoryFiles.remove(key);
+        }
+        Error.throwWithStackTrace(error, stackTrace);
+      },
+    );
+    _directoryFiles[key] = request;
+    if (_directoryFiles.length > 32) {
+      _directoryFiles.remove(_directoryFiles.keys.first);
+    }
+    return request;
+  }
+
+  Future<List<WorkTextFile>> _discoverWorkTextFiles(
+    String workFolderPath,
+  ) async {
     final rawList = await _platformGateway.discoverWorkTexts(workFolderPath);
     return rawList
         .map((map) {
@@ -294,7 +336,3 @@ class WorkTextService {
     return _platformGateway.readDocumentBytes(file.path);
   }
 }
-
-final workTextServiceProvider = Provider<WorkTextService>((ref) {
-  return WorkTextService();
-});

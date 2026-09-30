@@ -270,10 +270,7 @@ void main() {
         ),
       ),
     );
-    expect(
-      tester.widget<AnimatedSwitcher>(find.byType(AnimatedSwitcher)).duration,
-      Duration.zero,
-    );
+    expect(find.byType(AnimatedSwitcher), findsNothing);
 
     path.complete('cover.png');
     await tester.pump();
@@ -545,6 +542,7 @@ void main() {
             coverContext = context;
             return AsyncCoverImage(
               future: future,
+              duration: const Duration(milliseconds: 180),
               initialPath: 'saved.image',
               imageBuilder: (_, path) => Text(path),
               fallbackBuilder: (_) => const Text('fallback'),

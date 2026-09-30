@@ -357,6 +357,7 @@ class FileCachePlatformGateway {
           error: error,
           stackTrace: stackTrace,
         );
+        return const <Map<String, String>>[];
       }
       texts.sort(
         (a, b) => (a['relativePath'] ?? '').toLowerCase().compareTo(

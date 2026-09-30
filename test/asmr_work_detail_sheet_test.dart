@@ -29,6 +29,77 @@ import 'support/app_runtime_test_fixture.dart';
 
 void main() {
   testWidgets(
+    'ASMR category switching keeps scroll offset and cached empty results',
+    (tester) async {
+      SharedPreferences.setMockInitialValues(const <String, Object>{});
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      await fixture.languageProvider.setLanguage(AppLanguage.zh);
+      final controller = _LoadedTabAsmrController(createTestAsmrServices(), [
+        for (var id = 1; id <= 30; id++) _work(id: id, title: 'Favorite $id'),
+      ]);
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(
+        fixture.build(
+          const AsmrTab(),
+          overrides: [
+            asmrLibraryControllerProvider.overrideWithValue(controller),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('收藏'));
+      await tester.pumpAndSettle();
+      final originalList = tester.widget<ListView>(find.byType(ListView));
+      final scrollController = originalList.controller!;
+      scrollController.jumpTo(400);
+      await tester.pump();
+      await tester.tap(find.text('推荐'));
+      await tester.pump();
+      expect(find.byType(ListView), findsOneWidget);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('收藏'));
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<ListView>(find.byType(ListView)).controller,
+        same(scrollController),
+      );
+      expect(scrollController.offset, closeTo(400, 1));
+      expect(controller.refreshRequests, isEmpty);
+    },
+  );
+
+  testWidgets('hidden ASMR tab waits until visible to refresh its language', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues(const <String, Object>{});
+    final fixture = AppRuntimeWidgetTestFixture();
+    addTearDown(fixture.dispose);
+    await fixture.languageProvider.setLanguage(AppLanguage.zh);
+    final activeTab = ValueNotifier<int>(1);
+    addTearDown(activeTab.dispose);
+    final controller = _LoadedTabAsmrController(createTestAsmrServices(), []);
+    addTearDown(controller.dispose);
+    await tester.pumpWidget(
+      fixture.build(
+        AsmrTab(tabIndex: 2, activeTabIndexListenable: activeTab),
+        overrides: [
+          asmrLibraryControllerProvider.overrideWithValue(controller),
+        ],
+      ),
+    );
+    await tester.pump(const Duration(seconds: 1));
+    await fixture.languageProvider.setLanguage(AppLanguage.en);
+    await tester.pump(const Duration(seconds: 1));
+    expect(controller.refreshRequests, isEmpty);
+    expect(controller.pageLanguage, AppLanguage.zh);
+    activeTab.value = 2;
+    await tester.pumpAndSettle();
+    expect(controller.pageLanguage, AppLanguage.en);
+    expect(controller.refreshRequests, [AsmrCategoryType.collected]);
+  });
+
+  testWidgets(
     'Windows metadata copies with right click only',
     (tester) async {
       SharedPreferences.setMockInitialValues(const <String, Object>{});
@@ -831,6 +902,33 @@ class _TestFavoritesAsmrLibraryController extends AsmrLibraryController {
       operationError: null,
       revision: _revision,
     );
+  }
+}
+
+class _LoadedTabAsmrController extends _TestFavoritesAsmrLibraryController {
+  _LoadedTabAsmrController(super.services, super.initialWorks);
+
+  final refreshRequests = <AsmrCategoryType>[];
+
+  @override
+  bool get initialized => true;
+
+  @override
+  bool hasLoadedCategory(AsmrCategoryType category) => true;
+
+  @override
+  bool setPageLanguage(AppLanguage language) {
+    final changed = pageLanguage != language;
+    super.setPageLanguage(language);
+    return changed;
+  }
+
+  @override
+  Future<void> refreshCategory(
+    AsmrCategoryType category, {
+    String searchQuery = '',
+  }) async {
+    refreshRequests.add(category);
   }
 }
 

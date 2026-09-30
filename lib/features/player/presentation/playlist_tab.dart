@@ -375,6 +375,10 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
       final structure = visibleEntries[index];
       final session = structure.session;
       final isTemporary = session.isTemporary;
+      final endsTemporaryGroup =
+          isTemporary &&
+          index + 1 < visibleEntries.length &&
+          !visibleEntries[index + 1].session.isTemporary;
       final isPinned =
           !isTemporary && pinnedPlaylistSessionIds.contains(session.id);
       final track = paths.sessionTrackForPath(session.id, structure.trackPath);
@@ -432,8 +436,9 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                 onOpen: () => _openSessionDetail(context, session.id),
               ),
       );
-      return KeyedSubtree(
+      return Padding(
         key: ValueKey(session.id),
+        padding: EdgeInsets.only(bottom: endsTemporaryGroup ? AppSpacing.md : 0),
         child: child,
       );
     }

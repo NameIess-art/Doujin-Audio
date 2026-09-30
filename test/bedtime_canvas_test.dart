@@ -480,8 +480,15 @@ void main() {
         // After stopping at 0.0, the opacity should be at baseline 0.16
         final textFinder = find.textContaining(':');
         expect(textFinder, findsOneWidget);
-        final textWidget = tester.widget<Text>(textFinder);
-        expect(textWidget.style?.color?.a, closeTo(0.16, 0.01));
+        final breathingFade = find.ancestor(
+          of: textFinder,
+          matching: find.byType(FadeTransition),
+        );
+        expect(breathingFade, findsOneWidget);
+        expect(
+          tester.widget<FadeTransition>(breathingFade).opacity.value,
+          closeTo(0.16, 0.01),
+        );
 
         // Touch the screen (PointerDown) to wake breathing animation
         final center = tester.getCenter(find.byType(BedtimeCanvasPage));
@@ -492,10 +499,13 @@ void main() {
 
         // Advance 2 seconds into breathing animation (tween between 0.16 and 0.42)
         await tester.pump(const Duration(seconds: 2));
-        final textWidgetAfterTouch = tester.widget<Text>(
-          find.textContaining(':'),
+        expect(
+          tester.widget<FadeTransition>(breathingFade).opacity.value,
+          greaterThan(0.18),
         );
-        expect(textWidgetAfterTouch.style?.color?.a, greaterThan(0.18));
+        final clockText = tester.widget<Text>(textFinder);
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(tester.widget<Text>(textFinder), same(clockText));
       },
     );
 

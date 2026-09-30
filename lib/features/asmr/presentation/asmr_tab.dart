@@ -545,7 +545,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
     AsmrLibraryController controller,
     AsmrCategoryType category,
   ) {
-    return controller.worksFor(category).isEmpty ||
+    return !controller.hasLoadedCategory(category) ||
         controller.activeQueryFor(category).isNotEmpty;
   }
 
@@ -604,19 +604,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
       _isSelectionMode = false;
       _selectedWorkIds.clear();
     });
-    final controller = ref.read(asmrLibraryControllerProvider);
-    if (controller != null && controller.worksFor(category).isEmpty) {
-      unawaited(
-        _runAsmrOperation<void>(
-          scope: UiOperationScope.asmrCategory(
-            AsmrOperationKind.refresh,
-            category.name,
-          ),
-          labelKey: 'loading_dot',
-          task: () => controller.refreshCategory(category),
-        ),
-      );
-    }
+    unawaited(_ensureCategoryLoaded(category));
   }
 
   void _enterSelectionMode(AsmrWork work) {
@@ -843,33 +831,20 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
                   topInset: headerContentHeight,
                   bottomInset: bottomInset + 24,
                 ),
-                content: AnimatedSwitcher(
-                  duration: MediaQuery.disableAnimationsOf(context)
-                      ? Duration.zero
-                      : kAppMotionSlow,
-                  switchInCurve: Curves.easeOutCubic,
-                  switchOutCurve: Curves.easeInCubic,
-                  layoutBuilder: (currentChild, previousChildren) {
-                    return Stack(
-                      fit: StackFit.expand,
-                      children: [...previousChildren, ?currentChild],
-                    );
-                  },
-                  child: _AsmrCategoryList(
-                    key: ValueKey(_selectedCategory),
-                    isActive: _isActive,
-                    category: _selectedCategory,
-                    isLoadPending: !_activationCompleted,
-                    scrollController: _scrollController,
-                    searchQuery: '',
-                    topInset: headerContentHeight,
-                    bottomInset: bottomInset,
-                    onRefresh: _refreshCategoryWithFeedback,
-                    isSelectionMode: _isSelectionMode,
-                    selectedWorkIds: _selectedWorkIds,
-                    onEnterSelectionMode: _enterSelectionMode,
-                    onToggleSelection: _toggleWorkSelection,
-                  ),
+                content: _AsmrCategoryList(
+                  key: ValueKey(_selectedCategory),
+                  isActive: _isActive,
+                  category: _selectedCategory,
+                  isLoadPending: !_activationCompleted,
+                  scrollController: _scrollController,
+                  searchQuery: '',
+                  topInset: headerContentHeight,
+                  bottomInset: bottomInset,
+                  onRefresh: _refreshCategoryWithFeedback,
+                  isSelectionMode: _isSelectionMode,
+                  selectedWorkIds: _selectedWorkIds,
+                  onEnterSelectionMode: _enterSelectionMode,
+                  onToggleSelection: _toggleWorkSelection,
                 ),
               ),
             ),
@@ -971,6 +946,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
   }
 
   void _schedulePageLanguageSync(AppLanguage language) {
+    if (!_isActive) return;
     final controller = ref.read(asmrLibraryControllerProvider);
     if (controller == null ||
         !controller.initialized ||
@@ -982,6 +958,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted || _pendingPageLanguageSync != language) return;
       _pendingPageLanguageSync = null;
+      if (!_isActive) return;
       final changed = controller.setPageLanguage(language);
       if (changed && mounted) {
         await _runCategoryRefresh(_selectedCategory);

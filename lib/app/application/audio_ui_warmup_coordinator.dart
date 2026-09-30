@@ -38,18 +38,6 @@ final class AudioUiWarmupCoordinator {
     _syncPauseState();
   }
 
-  Future<bool> waitForContinuousIdle(Duration quietWindow) async {
-    while (!_disposed) {
-      while (_pausedForInteraction && !_disposed) {
-        await Future<void>.delayed(const Duration(milliseconds: 40));
-      }
-      if (_disposed) return false;
-      await Future<void>.delayed(quietWindow);
-      if (!_pausedForInteraction) return true;
-    }
-    return false;
-  }
-
   void schedule({required int currentPageIndex, bool immediate = false}) {
     if (_disposed) return;
     final generation = ++_generation;
@@ -72,56 +60,6 @@ final class AudioUiWarmupCoordinator {
     });
   }
 
-  void scheduleSessionDetailNeighbors({required String currentSessionId}) {
-    _scheduleSessionDetailCovers(
-      currentSessionId: currentSessionId,
-      includeCurrent: false,
-    );
-  }
-
-  void scheduleSessionDetailCovers({required String currentSessionId}) {
-    _scheduleSessionDetailCovers(
-      currentSessionId: currentSessionId,
-      includeCurrent: true,
-    );
-  }
-
-  void _scheduleSessionDetailCovers({
-    required String currentSessionId,
-    required bool includeCurrent,
-  }) {
-    if (_disposed) return;
-    final generation = ++_generation;
-    _deferredTimer?.cancel();
-    _deferredTimer = Timer(const Duration(milliseconds: 140), () {
-      _deferredTimer = null;
-      if (_disposed || generation != _generation) return;
-      _scheduler.beginGeneration(
-        generation,
-        cooldown: const Duration(milliseconds: 120),
-      );
-      final sessions = _playback.state.activeSessions;
-      if (includeCurrent) {
-        final currentIndex = sessions.indexWhere(
-          (session) => session.id == currentSessionId,
-        );
-        if (currentIndex >= 0) {
-          _scheduleCover(
-            trackPath: sessions[currentIndex].currentTrackPath,
-            generation: generation,
-            priority: 0,
-          );
-        }
-      }
-      _scheduleNeighborSessionCovers(
-        sessions,
-        currentSessionId,
-        generation,
-        priorityOffset: includeCurrent ? 1 : 0,
-      );
-    });
-  }
-
   void enterBackground() {
     _pausedForLifecycle = true;
     _deferredTimer?.cancel();
@@ -135,8 +73,6 @@ final class AudioUiWarmupCoordinator {
     _pausedForLifecycle = false;
     _syncPauseState();
   }
-
-  Future<void> waitUntilIdle() => _scheduler.idle;
 
   Future<void> shutdown() async {
     if (_disposed) return;
@@ -188,32 +124,6 @@ final class AudioUiWarmupCoordinator {
       coverPriority: 0,
       subtitlePriority: 1,
     );
-  }
-
-  void _scheduleNeighborSessionCovers(
-    List<PlaybackSessionSnapshot> sessions,
-    String currentSessionId,
-    int generation, {
-    int priorityOffset = 0,
-  }) {
-    if (sessions.length < 2) return;
-    final currentIndex = sessions.indexWhere(
-      (session) => session.id == currentSessionId,
-    );
-    if (currentIndex < 0) return;
-
-    final neighborIndexes = <int>{
-      (currentIndex - 1 + sessions.length) % sessions.length,
-      (currentIndex + 1) % sessions.length,
-    };
-    var priority = priorityOffset;
-    for (final index in neighborIndexes) {
-      _scheduleCover(
-        trackPath: sessions[index].currentTrackPath,
-        generation: generation,
-        priority: priority++,
-      );
-    }
   }
 
   void _scheduleCover({

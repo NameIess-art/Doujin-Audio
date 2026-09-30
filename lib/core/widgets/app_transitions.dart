@@ -14,6 +14,7 @@ typedef _PageTransitionBuilder = Widget Function(BuildContext, Widget);
 // transition to display, without moving header state out of its page.
 class _AppPageMotionScope extends InheritedWidget {
   const _AppPageMotionScope({
+    super.key,
     required this.contentBuilder,
     required this.headerBuilder,
     required super.child,
@@ -62,6 +63,7 @@ class AppPageHeaderTransition extends StatelessWidget {
 
 Widget _buildCoveringPageTransition({
   required BuildContext context,
+  required GlobalKey contentKey,
   required Animation<double> animation,
   required Animation<double> secondaryAnimation,
   required Widget child,
@@ -69,6 +71,7 @@ Widget _buildCoveringPageTransition({
 }) {
   if (MediaQuery.disableAnimationsOf(context)) return child;
   final motionScope = _AppPageMotionScope(
+    key: contentKey,
     contentBuilder: (context, content) => RepaintBoundary(child: content),
     headerBuilder: (context, header) => !fadeHeader
         ? header
@@ -105,6 +108,7 @@ Widget _buildGradientReveal({
   required bool forward,
   required Widget child,
 }) {
+  if (progress >= 1) return child;
   const feather = 0.12;
   final edge = Curves.easeOutCubic.transform(progress) * (1 + feather);
   final begin = forward ? edge - feather : 1 - edge;
@@ -555,8 +559,7 @@ class AppFadeThroughIndexedStack extends StatefulWidget {
     this.duration = const Duration(milliseconds: 350),
     this.onTransitionCompleted,
   }) : itemCount = children.length,
-       itemBuilder = null,
-       preloadUnvisited = false;
+       itemBuilder = null;
 
   AppFadeThroughIndexedStack.lazy({
     super.key,
@@ -567,16 +570,13 @@ class AppFadeThroughIndexedStack extends StatefulWidget {
     this.separateHeader = false,
     this.duration = const Duration(milliseconds: 350),
     this.onTransitionCompleted,
-    bool? preloadUnvisited,
-  }) : children = List<Widget>.filled(itemCount, const SizedBox.shrink()),
-       preloadUnvisited = preloadUnvisited ?? true;
+  }) : children = List<Widget>.filled(itemCount, const SizedBox.shrink());
 
   final ValueListenable<int> indexListenable;
   int get index => indexListenable.value;
   final List<Widget> children;
   final int itemCount;
   final IndexedWidgetBuilder? itemBuilder;
-  final bool preloadUnvisited;
   final AppIndexedStackTransitionStyle style;
   final bool separateHeader;
   final Duration duration;
@@ -599,9 +599,8 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
   int _transitionDirection = 1;
   bool _isAnimating = false;
   late List<Widget?> _lazyChildren;
-  late Set<int> _requestedLazyChildren;
+  late List<GlobalKey> _pageKeys;
   final Object _lazyTransitionInteraction = Object();
-  int _preloadEpoch = 0;
 
   bool get _isLazy => widget.itemBuilder != null;
   int get _itemCount => widget.itemCount;
@@ -612,7 +611,7 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
     _currentIndex = _safeIndex(widget.indexListenable.value);
     _targetIndex = _currentIndex;
     _lazyChildren = List<Widget?>.filled(_itemCount, null);
-    _requestedLazyChildren = <int>{if (_itemCount > 0) _currentIndex};
+    _pageKeys = List<GlobalKey>.generate(_itemCount, (_) => GlobalKey());
     _controller = AnimationController(
       vsync: this,
       duration: widget.duration,
@@ -620,7 +619,6 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
     )..addStatusListener(_handleStatusChanged);
     _controller.value = 1;
     widget.indexListenable.addListener(_handleIndexChanged);
-    _scheduleIdlePreload();
   }
 
   @override
@@ -643,12 +641,31 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
   }
 
   void _resetLazyChildren() {
-    _preloadEpoch++;
-    _lazyChildren = List<Widget?>.filled(_itemCount, null);
-    _requestedLazyChildren = <int>{
-      if (_itemCount > 0) _safeIndex(widget.indexListenable.value),
-    };
-    _scheduleIdlePreload();
+    final previousKeys = _pageKeys;
+    final previousChildren = _lazyChildren;
+    _lazyChildren = List<Widget?>.generate(
+      _itemCount,
+      (index) =>
+          _isLazy &&
+              index < previousChildren.length &&
+              previousChildren[index] != null
+          ? widget.itemBuilder!(context, index)
+          : null,
+    );
+    _pageKeys = List<GlobalKey>.generate(
+      _itemCount,
+      (index) =>
+          index < previousKeys.length ? previousKeys[index] : GlobalKey(),
+    );
+    _controller.stop();
+    _isAnimating = false;
+    _currentIndex = _safeIndex(widget.indexListenable.value);
+    _targetIndex = _currentIndex;
+    _controller.value = 1;
+    UiInteractionCoordinator.instance.cancelInteraction(
+      _lazyTransitionInteraction,
+    );
+    widget.onTransitionCompleted?.call(_currentIndex);
   }
 
   int _safeIndex(int index) {
@@ -660,8 +677,6 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
     if (!mounted || _itemCount == 0) return;
     final nextIndex = _safeIndex(widget.indexListenable.value);
     if (nextIndex == _targetIndex) return;
-    _preloadEpoch++;
-    _requestedLazyChildren.add(nextIndex);
     UiInteractionCoordinator.instance.beginInteraction(
       _lazyTransitionInteraction,
     );
@@ -678,7 +693,6 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
       UiInteractionCoordinator.instance.endInteraction(
         _lazyTransitionInteraction,
       );
-      _scheduleIdlePreload();
       return;
     }
 
@@ -696,7 +710,6 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
       UiInteractionCoordinator.instance.endInteraction(
         _lazyTransitionInteraction,
       );
-      _scheduleIdlePreload();
       return;
     }
 
@@ -721,40 +734,13 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
     UiInteractionCoordinator.instance.endInteraction(
       _lazyTransitionInteraction,
     );
-    _scheduleIdlePreload();
-  }
-
-  void _scheduleIdlePreload() {
-    if (!_isLazy || !widget.preloadUnvisited || _itemCount < 2) return;
-    final epoch = _preloadEpoch;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || epoch != _preloadEpoch) return;
-      final coordinator = UiInteractionCoordinator.instance;
-      final generation = coordinator.generation;
-      for (var index = 0; index < _itemCount; index++) {
-        if (_requestedLazyChildren.contains(index)) continue;
-        coordinator.scheduleAfterIdle(
-          key: 'lazy_indexed_stack_${identityHashCode(this)}_$index',
-          generation: generation,
-          priority: 50 + index,
-          group: 'lazy_indexed_stack_${identityHashCode(this)}',
-          task: () async {
-            if (!mounted ||
-                epoch != _preloadEpoch ||
-                generation != coordinator.generation ||
-                _requestedLazyChildren.contains(index)) {
-              return;
-            }
-            setState(() => _requestedLazyChildren.add(index));
-          },
-        );
-      }
-    });
   }
 
   Widget _childAt(int index) {
     if (!_isLazy) return widget.children[index];
-    if (!_requestedLazyChildren.contains(index)) {
+    if (_lazyChildren[index] == null &&
+        index != _currentIndex &&
+        index != _targetIndex) {
       return const SizedBox.shrink();
     }
     return _lazyChildren[index] ??= widget.itemBuilder!(context, index);
@@ -798,7 +784,7 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
         widget.duration == Duration.zero) {
       return KeyedSubtree(
         key: ValueKey<String>('app_indexed_page_$index'),
-        child: RepaintBoundary(child: page),
+        child: RepaintBoundary(key: _pageKeys[index], child: page),
       );
     }
     if (widget.style == AppIndexedStackTransitionStyle.gradient) {
@@ -807,16 +793,10 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
         animation: incoming
             ? _controller
             : const AlwaysStoppedAnimation<double>(1),
-        child: RepaintBoundary(child: page),
+        child: RepaintBoundary(key: _pageKeys[index], child: page),
         builder: (context, child) {
           if (!incoming || !_isAnimating) {
-            return ShaderMask(
-              blendMode: BlendMode.dstIn,
-              shaderCallback: (bounds) => const LinearGradient(
-                colors: [Colors.white, Colors.white],
-              ).createShader(bounds),
-              child: child,
-            );
+            return child!;
           }
           return _buildGradientReveal(
             progress: _controller.value,
@@ -831,7 +811,7 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
       animation: outgoing || incoming
           ? _controller
           : const AlwaysStoppedAnimation<double>(1),
-      child: RepaintBoundary(child: page),
+      child: RepaintBoundary(key: _pageKeys[index], child: page),
       builder: (context, child) {
         final rawProgress = _isAnimating ? _controller.value : 1.0;
         final progress = Curves.easeOutCubic.transform(rawProgress);
@@ -890,7 +870,10 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
     if (_itemCount == 0) return const SizedBox.shrink();
     final paintOrder = <int>[
       for (var index = 0; index < _itemCount; index++)
-        if (index != _currentIndex && index != _targetIndex) index,
+        if (index != _currentIndex &&
+            index != _targetIndex &&
+            (!_isLazy || _lazyChildren[index] != null))
+          index,
       _currentIndex,
       if (_isAnimating && _targetIndex != _currentIndex) _targetIndex,
     ];
@@ -933,6 +916,7 @@ class AppPageTransitionsBuilder extends PageTransitionsBuilder {
   ) {
     return _buildCoveringPageTransition(
       context: context,
+      contentKey: GlobalObjectKey(route),
       animation: animation,
       secondaryAnimation: secondaryAnimation,
       child: child,
@@ -947,6 +931,7 @@ PageRouteBuilder<T> buildAppPageRoute<T>({
   bool fadeHeader = true,
 }) {
   final reducedMotion = MediaQuery.disableAnimationsOf(context);
+  final contentKey = GlobalKey();
   return PageRouteBuilder<T>(
     settings: settings,
     transitionDuration: reducedMotion ? Duration.zero : kAppMotionSlow,
@@ -955,6 +940,7 @@ PageRouteBuilder<T> buildAppPageRoute<T>({
     transitionsBuilder: (context, animation, secondaryAnimation, routedChild) {
       return _buildCoveringPageTransition(
         context: context,
+        contentKey: contentKey,
         animation: animation,
         secondaryAnimation: secondaryAnimation,
         child: routedChild,

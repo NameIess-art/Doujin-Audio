@@ -175,6 +175,7 @@ final class LibraryFacade implements LibraryCatalog {
       UnmodifiableListView<MusicTrack>(_service.library);
   int get structureRevision => _service.structureRevision;
   int get contentRevision => _service.contentRevision;
+  int get scanRevision => _service.scanGenerationSeed;
   bool get persistedUriReferencesReady => state.isInitialized;
   int get persistedUriReferenceRevision => structureRevision;
   Set<String> get persistedContentUris => <String>{

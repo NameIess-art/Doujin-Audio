@@ -61,7 +61,6 @@ class _TimerTabState extends ConsumerState<TimerTab>
   bool _showCompactDetail = false;
   bool _draftInitialized = false;
   String? _lastSyncedDraftKey;
-  int _lastTimerHash = 0;
   Future<_TimerReliabilityStatus>? _reliabilityStatusFuture;
 
   void _setLocalState(VoidCallback fn) => setState(fn);

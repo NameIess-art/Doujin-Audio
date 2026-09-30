@@ -94,9 +94,9 @@ void registerAsmrRemoteCatalogTests({
     );
   });
 
-  test('ASMR category marks first load attempt before empty state', () async {
+  test('ASMR empty category stays loaded until invalidated', () async {
     await resetPrefs();
-    final api = _FakeAsmrApiService();
+    final api = _FakeAsmrApiService(recommendationWorks: const <AsmrWork>[]);
     final controller = createTestAsmrController(
       preferencesStore: preferences,
       apiService: api,
@@ -110,6 +110,7 @@ void registerAsmrRemoteCatalogTests({
       controller.categoryViewState(AsmrCategoryType.release).hasAttemptedLoad,
       isFalse,
     );
+    expect(controller.hasLoadedCategory(AsmrCategoryType.release), isFalse);
 
     await controller.refreshCategory(AsmrCategoryType.release);
 
@@ -117,6 +118,11 @@ void registerAsmrRemoteCatalogTests({
       controller.categoryViewState(AsmrCategoryType.release).hasAttemptedLoad,
       isTrue,
     );
+    expect(controller.hasLoadedCategory(AsmrCategoryType.release), isTrue);
+    expect(controller.worksFor(AsmrCategoryType.release), isEmpty);
+
+    controller.setPageLanguage(AppLanguage.zh);
+    expect(controller.hasLoadedCategory(AsmrCategoryType.release), isFalse);
   });
 
   test('ASMR category retries transient handshake failures', () async {

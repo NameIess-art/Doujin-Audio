@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -13,14 +14,18 @@ class _FakeFileCacheGateway extends Fake implements FileCachePlatformGateway {
   _FakeFileCacheGateway({
     this.discoverResult = const [],
     this.readResult,
+    this.discover,
   });
 
   final List<Map<String, String>> discoverResult;
   final Uint8List? readResult;
+  final Future<List<Map<String, String>>> Function(String)? discover;
+  int discoverCalls = 0;
 
   @override
   Future<List<Map<String, String>>> discoverWorkTexts(String folderPath) async {
-    return discoverResult;
+    discoverCalls++;
+    return discover == null ? discoverResult : await discover!(folderPath);
   }
 
   @override
@@ -108,6 +113,89 @@ void main() {
   });
 
   group('WorkTextService', () {
+    test(
+      'shares pending and completed scans for equivalent Windows paths',
+      () async {
+        final result = Completer<List<Map<String, String>>>();
+        final gateway = _FakeFileCacheGateway(discover: (_) => result.future);
+        final service = WorkTextService(platformGateway: gateway);
+        final first = service.findWorkTextFiles(r'E:\作品\RJ 123');
+        final second = service.findWorkTextFiles('e:/作品/RJ 123/');
+        expect(gateway.discoverCalls, 1);
+        result.complete([
+          {
+            'name': '台本.txt',
+            'relativePath': '台本.txt',
+            'path': r'E:\作品\RJ 123\台本.txt',
+          },
+        ]);
+        final files = await first;
+        expect(await second, same(files));
+        expect(await service.findWorkTextFiles(r'E:\作品\RJ 123'), same(files));
+        expect(gateway.discoverCalls, 1);
+      },
+    );
+
+    test(
+      'revision changes replace pending scans without restoring stale data',
+      () async {
+        var revision = 0;
+        final stale = Completer<List<Map<String, String>>>();
+        final current = Completer<List<Map<String, String>>>();
+        var scan = 0;
+        final gateway = _FakeFileCacheGateway(
+          discover: (_) => scan++ == 0 ? stale.future : current.future,
+        );
+        final service = WorkTextService(
+          platformGateway: gateway,
+          directoryRevision: () => revision,
+        );
+        final first = service.findWorkTextFiles('content://library/work');
+        revision++;
+        final second = service.findWorkTextFiles('content://library/work');
+        current.complete([
+          {
+            'name': '新台本.md',
+            'relativePath': '新台本.md',
+            'path': 'content://library/new',
+          },
+        ]);
+        final files = await second;
+        stale.complete([]);
+        await first;
+        expect(
+          await service.findWorkTextFiles('content://library/work'),
+          same(files),
+        );
+        expect(gateway.discoverCalls, 2);
+      },
+    );
+
+    test('failed or empty scans can be retried', () async {
+      var scan = 0;
+      final gateway = _FakeFileCacheGateway(
+        discover: (_) async {
+          if (scan++ == 0) throw const FileSystemException('Access denied');
+          if (scan == 2) return [];
+          return [
+            {
+              'name': '台本.txt',
+              'relativePath': '台本.txt',
+              'path': '/work/台本.txt',
+            },
+          ];
+        },
+      );
+      final service = WorkTextService(platformGateway: gateway);
+      await expectLater(
+        service.findWorkTextFiles('/work'),
+        throwsA(isA<FileSystemException>()),
+      );
+      expect(await service.findWorkTextFiles('/work'), isEmpty);
+      expect(await service.findWorkTextFiles('/work'), hasLength(1));
+      expect(gateway.discoverCalls, 3);
+    });
+
     test('findWorkTextFiles returns mapped WorkTextFile list', () async {
       final gateway = _FakeFileCacheGateway(
         discoverResult: [

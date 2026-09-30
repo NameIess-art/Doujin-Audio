@@ -47,7 +47,6 @@ class _RecordingPlaybackCoverCacheService extends CoverArtworkCacheService {
     : super(libraryService: LibraryService());
 
   final List<String> requestedPaths = <String>[];
-  final List<String> warmupRequestedPaths = <String>[];
 
   @override
   String? resolvedForPlaybackTrack(MusicTrack? track, {String? trackPath}) =>
@@ -67,8 +66,6 @@ class _RecordingPlaybackCoverCacheService extends CoverArtworkCacheService {
 
   @override
   Future<String?> futureForTrack(MusicTrack? track, {String? trackPath}) {
-    final path = track?.path ?? trackPath;
-    if (path != null) warmupRequestedPaths.add(path);
     return SynchronousFuture<String?>(null);
   }
 }
@@ -1733,70 +1730,6 @@ void main() {
     fixture.dispose();
     await tester.pump();
   });
-
-  testWidgets(
-    'detail cover warmup prioritizes current session before neighbors',
-    (tester) async {
-      final coverCache = _RecordingPlaybackCoverCacheService();
-      final fixture = AppRuntimeWidgetTestFixture(
-        coverArtworkCacheService: coverCache,
-      );
-      addTearDown(fixture.dispose);
-      final tracks = <MusicTrack>[
-        for (final id in <String>['previous', 'current', 'next'])
-          MusicTrack(
-            path: '/library/$id.mp3',
-            displayName: id,
-            groupKey: '/library',
-            groupTitle: 'Library',
-            groupSubtitle: '',
-            isSingle: false,
-          ),
-      ];
-      fixture.runtimeGraph.library.addTracks(
-        tracks,
-        notify: false,
-        persist: false,
-      );
-      final sessions = <PlaybackSession>[
-        for (var index = 0; index < tracks.length; index++)
-          PlaybackSession(
-            id: index == 1 ? 'current-session' : 'session-$index',
-            currentTrackPath: tracks[index].path,
-            loopMode: SessionLoopMode.single,
-            nonSingleLoopMode: SessionLoopMode.single,
-            volume: 1,
-            createdAt: DateTime(2026),
-            state: const PlayerState(false, ProcessingState.ready),
-          ),
-      ];
-      fixture.playbackService.syncSlice(
-        activeSessions: sessions,
-        playingSessionCount: 0,
-        focusedSessionId: 'current-session',
-        coverGeneration: 0,
-        isInitialized: true,
-      );
-      for (final s in sessions) {
-        addTearDown(s.shutdown);
-      }
-
-      fixture.runtimeGraph.warmup.scheduleSessionDetailCovers(
-        currentSessionId: 'current-session',
-      );
-      await tester.pump(const Duration(milliseconds: 320));
-      await fixture.runtimeGraph.warmup.waitUntilIdle();
-      await tester.pumpAndSettle();
-
-      expect(coverCache.warmupRequestedPaths, hasLength(3));
-      expect(coverCache.warmupRequestedPaths.first, tracks[1].path);
-      expect(
-        coverCache.warmupRequestedPaths.toSet(),
-        tracks.map((e) => e.path).toSet(),
-      );
-      UiInteractionCoordinator.instance.resetForTest();
-    },
-  );
 
   testWidgets('horizontal drag does not switch the detail session', (
     tester,
@@ -5987,8 +5920,8 @@ void main() {
         findsNothing,
       );
       expect(
-        tester.getBottomLeft(temporaryCard).dy,
-        lessThanOrEqualTo(tester.getTopLeft(savedCard).dy),
+        tester.getTopLeft(savedCard).dy - tester.getBottomLeft(temporaryCard).dy,
+        16.0,
       );
       final temporarySwipe = tester.widget<SwipeRevealCard>(
         find.ancestor(

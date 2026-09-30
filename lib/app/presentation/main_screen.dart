@@ -781,11 +781,6 @@ class _MainScreenState extends ConsumerState<MainScreen>
     final coordinator = UiInteractionCoordinator.instance;
     final generation = _pageSwitchCoordinatorGeneration;
     coordinator.endInteraction(_pageSwitchInteraction);
-    coordinator.scheduleCommit(
-      key: 'main_page_$index',
-      priority: 0,
-      commit: () {},
-    );
     coordinator.scheduleAfterIdle(
       key: 'main_page_warmup_$index',
       generation: generation,

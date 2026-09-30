@@ -251,6 +251,10 @@ class AsmrLibraryController extends ChangeNotifier
 
   bool isLoadingCategory(AsmrCategoryType category) =>
       _category(category).isLoading;
+  bool hasLoadedCategory(AsmrCategoryType category) =>
+      _isRemoteCategory(category)
+      ? _category(category).works != null
+      : _initialized;
   bool isLoadingMoreCategory(AsmrCategoryType category) =>
       _category(category).isLoadingMore;
   bool hasMoreCategory(AsmrCategoryType category) =>
@@ -809,8 +813,10 @@ class AsmrLibraryController extends ChangeNotifier
       final additions = pageResult.works
           .where((work) => existingIds.add(work.id))
           .toList(growable: false);
-      final merged = <AsmrWork>[...?_category(category).works, ...additions];
-      final decorated = immutableList(merged.map(_decorateWork));
+      final decorated = immutableList(<AsmrWork>[
+        ...?_category(category).works,
+        ...additions.map(_decorateWork),
+      ]);
       _commitPresentation(() {
         _category(category).works = decorated;
         _bumpCategoryRevision(category);

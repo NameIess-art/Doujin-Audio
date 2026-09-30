@@ -7,25 +7,7 @@ extension _TimerTabBody on _TimerTabState {
     final timer = ref.read(timerFacadeProvider);
     final timerSlice =
         ref.watch(timerStateProvider).value ?? TimerStateSliceData();
-    // Rebuild only on timer/auto-resume state changes, not playback/persistence events.
-    final timerHash = Object.hash(
-      timerSlice.mode,
-      timerSlice.duration,
-      timerSlice.active,
-      timerSlice.remaining,
-      timerSlice.draftMode,
-      timerSlice.draftDuration,
-      timerSlice.autoResumeEnabled,
-      timerSlice.autoResumeHour,
-      timerSlice.autoResumeMinute,
-      timerSlice.pausedByTimerSessionIds.length,
-    );
-    if (_lastTimerHash != timerHash) {
-      _lastTimerHash = timerHash;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _syncDraftFromState(timerSlice);
-      });
-    }
+    _syncDraftFromState(timerSlice);
     final cs = Theme.of(context).colorScheme;
     final timerConfigured = timerSlice.duration != null;
     final timerActive = timerSlice.active;

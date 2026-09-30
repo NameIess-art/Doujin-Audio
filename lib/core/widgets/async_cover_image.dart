@@ -269,6 +269,12 @@ class _AsyncCoverImageState extends State<AsyncCoverImage> {
       content = widget.fallbackBuilder(context);
     }
 
+    final child = SizedBox.expand(
+      key: ValueKey('$_resolvedPath$_isResolved'),
+      child: content,
+    );
+    if (widget.duration == Duration.zero) return child;
+
     final duration = ScrollActivityGate.isScrollingWithoutDependencyOf(context)
         ? Duration.zero
         : widget.duration;
@@ -280,10 +286,7 @@ class _AsyncCoverImageState extends State<AsyncCoverImage> {
       transitionBuilder: (child, animation) {
         return FadeTransition(opacity: animation, child: child);
       },
-      child: SizedBox.expand(
-        key: ValueKey('$_resolvedPath$_isResolved'),
-        child: content,
-      ),
+      child: child,
     );
   }
 }

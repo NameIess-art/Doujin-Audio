@@ -30,7 +30,6 @@ import 'dlsite_metadata_review_page.dart';
 import 'folder_cover_selector.dart';
 import 'work_text_viewer_page.dart';
 import 'work_detail_page.dart';
-import '../application/work_text_service.dart';
 import '../../../core/widgets/app_transitions.dart';
 
 part 'audio_detail_cover_widgets.dart';

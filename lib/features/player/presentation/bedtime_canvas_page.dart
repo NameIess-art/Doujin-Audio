@@ -425,59 +425,52 @@ class _BedtimeCanvasPageState extends ConsumerState<BedtimeCanvasPage>
             fit: StackFit.expand,
             children: [
               // Main content with gentle breathing animation
-              AnimatedBuilder(
-                animation: _breathingAnimation,
-                builder: (context, _) {
-                  final opacity = _breathingAnimation.value;
-                  return Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        // Clock time display
-                        Text(
-                          timeStr,
-                          style: TextStyle(
-                            color: Colors.white.withValues(alpha: opacity),
-                            fontSize: 68,
-                            fontWeight: FontWeight.w200,
-                            letterSpacing: 2,
-                            fontFeatures: const [FontFeature.tabularFigures()],
+              FadeTransition(
+                opacity: _breathingAnimation,
+                child: Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Clock time display
+                      Text(
+                        timeStr,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 68,
+                          fontWeight: FontWeight.w200,
+                          letterSpacing: 2,
+                          fontFeatures: [FontFeature.tabularFigures()],
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      // Sleep timer / status subtitle
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            timerState.stopAfterCurrentTrack
+                                ? Icons.music_note_rounded
+                                : timerState.active
+                                ? Icons.timer_outlined
+                                : Icons.nights_stay_outlined,
+                            size: 14,
+                            color: Colors.white.withValues(alpha: 0.85),
                           ),
-                        ),
-                        const SizedBox(height: 12),
-                        // Sleep timer / status subtitle
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              timerState.stopAfterCurrentTrack
-                                  ? Icons.music_note_rounded
-                                  : timerState.active
-                                  ? Icons.timer_outlined
-                                  : Icons.nights_stay_outlined,
-                              size: 14,
-                              color: Colors.white.withValues(
-                                alpha: opacity * 0.85,
-                              ),
+                          const SizedBox(width: 6),
+                          Text(
+                            timerText,
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.85),
+                              fontSize: 13,
+                              fontWeight: FontWeight.w400,
+                              letterSpacing: 0.5,
                             ),
-                            const SizedBox(width: 6),
-                            Text(
-                              timerText,
-                              style: TextStyle(
-                                color: Colors.white.withValues(
-                                  alpha: opacity * 0.85,
-                                ),
-                                fontSize: 13,
-                                fontWeight: FontWeight.w400,
-                                letterSpacing: 0.5,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  );
-                },
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
               ),
 
               // Bottom subtle hint

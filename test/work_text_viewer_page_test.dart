@@ -13,6 +13,7 @@ import 'package:doujin_audio/core/widgets/app_edge_fade_mask.dart';
 import 'package:doujin_audio/core/widgets/page_header_inset.dart';
 import 'package:doujin_audio/core/widgets/top_page_header.dart';
 import 'package:doujin_audio/features/library/application/work_text_service.dart';
+import 'package:doujin_audio/features/library/presentation/library_providers.dart';
 import 'package:doujin_audio/features/library/presentation/work_text_viewer_page.dart';
 
 class _FakeFileCacheGateway extends Fake implements FileCachePlatformGateway {

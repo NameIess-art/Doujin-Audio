@@ -20,6 +20,7 @@ import '../../../core/media/path_display.dart';
 import '../../../core/ui/ui_operation_service.dart';
 import '../../../core/ui/visual_settings_providers.dart';
 import '../../../core/ui/undoable_removal_service.dart';
+import '../../../core/ui/ui_interaction_coordinator.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/app_buttons.dart';
 import '../../../core/widgets/app_dialog.dart';
@@ -79,6 +80,9 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
   List<WorkImageItem> _localImageFiles = const [];
   String? _localManualCover;
   bool _loadingLocal = true;
+  int _localLoadRequest = 0;
+  late final String _localFilesCommitKey =
+      'work_detail_files_${identityHashCode(this)}';
 
   // ASMR state
   List<AsmrTrackFile>? _asmrTree;
@@ -101,10 +105,11 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
   }
 
   Future<void> _loadLocalData() async {
+    final request = ++_localLoadRequest;
+    UiInteractionCoordinator.instance.cancelCommit(_localFilesCommitKey);
     final target = _localTarget!;
     final folderPath = target.targetPath;
     final library = ref.read(libraryFacadeProvider);
-    final textService = ref.read(workTextServiceProvider);
 
     setState(() {
       _loadingLocal = true;
@@ -117,24 +122,57 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
       final detailResult = await detailFuture;
       final tree = await treeFuture;
 
-      if (!mounted) return;
+      if (!mounted || request != _localLoadRequest) return;
       setState(() {
         _localDetail = detailResult.detail;
         _localFolderNode = tree;
+        _localManualCover =
+            library.resolvedCoverPathForFolder(folderPath) ??
+            detailResult.detail.cardCoverPath;
         _loadingLocal = false;
       });
 
-      unawaited(() async {
+      // Directory scans and cover discovery should not compete with navigation.
+      UiInteractionCoordinator.instance.scheduleCommit(
+        key: _localFilesCommitKey,
+        commit: () {
+          if (mounted && request == _localLoadRequest) {
+            unawaited(_loadLocalFiles(request, folderPath));
+          }
+        },
+      );
+    } catch (_) {
+      if (!mounted || request != _localLoadRequest) return;
+      setState(() {
+        _loadingLocal = false;
+      });
+    }
+  }
+
+  Future<void> _loadLocalFiles(int request, String folderPath) async {
+    final library = ref.read(libraryFacadeProvider);
+    final textService = ref.read(workTextServiceProvider);
+    final previousCover = _localManualCover;
+    bool isCurrent() => mounted && request == _localLoadRequest;
+
+    await Future.wait<void>([
+      () async {
         try {
           final texts = await textService.findWorkTextFiles(folderPath);
-          final currentCover = await library.coverPathFutureForFolder(
-            folderPath,
-          );
+          if (!isCurrent()) return;
+          setState(() => _localTextFiles = texts);
+        } catch (_) {
+          // Keep the indexed audio and other files available if discovery fails.
+        }
+      }(),
+      () async {
+        try {
           final candidateImages = await library.discoverCoverCandidatesInFolder(
             folderPath,
             includeVideoFrames: false,
             includeEmbeddedCovers: false,
           );
+          if (!isCurrent()) return;
           final imageItems = <WorkImageItem>[];
           for (final imgPath in candidateImages) {
             final name = p.basename(imgPath);
@@ -146,22 +184,32 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
               WorkImageItem(name: name, path: imgPath, relativePath: rel),
             );
           }
-          if (!mounted) return;
-          setState(() {
-            _localTextFiles = texts;
-            _localImageFiles = imageItems;
-            _localManualCover = currentCover;
-          });
+          setState(() => _localImageFiles = imageItems);
         } catch (_) {
-          // Local media loading error handled by outer state.
+          // Text discovery can still complete independently.
         }
-      }());
-    } catch (_) {
-      if (!mounted) return;
-      setState(() {
-        _loadingLocal = false;
-      });
-    }
+      }(),
+      if (previousCover == null || previousCover.trim().isEmpty)
+        () async {
+          try {
+            final currentCover = await library.coverPathFutureForFolder(
+              folderPath,
+            );
+            if (!isCurrent() || _localManualCover != previousCover) return;
+            if (_localManualCover != currentCover) {
+              setState(() => _localManualCover = currentCover);
+            }
+          } catch (_) {
+            // Retain the cover already provided by the library metadata.
+          }
+        }(),
+    ]);
+  }
+
+  @override
+  void dispose() {
+    UiInteractionCoordinator.instance.cancelCommit(_localFilesCommitKey);
+    super.dispose();
   }
 
   Future<void> _loadAsmrData() async {
@@ -208,24 +256,22 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
   // Current entries in directory
   List<WorkEntryItem> _buildCurrentEntries() {
     if (widget.isLocal) {
+      final removalState = ref.read(undoableRemovalStateProvider);
       return buildLocalWorkEntries(
         root: _localFolderNode,
         pathSegments: _currentPathSegments,
         textFiles: _localTextFiles,
         imageFiles: _localImageFiles,
-        isHidden: (track) => ref
-            .read(undoableRemovalStateProvider)
-            .isHidden(libraryRemovalKey(track.path)),
+        isHidden: (track) =>
+            removalState.isHidden(libraryRemovalKey(track.path)),
       );
     } else {
+      final controller = ref.read(asmrLibraryControllerProvider);
       return buildAsmrWorkEntries(
         tree: _asmrTree,
         pathSegments: _currentPathSegments,
         isHidden: (node) =>
-            ref
-                .read(asmrLibraryControllerProvider)
-                ?.isTrackHidden(widget.asmrWork!.id, node) ??
-            false,
+            controller?.isTrackHidden(widget.asmrWork!.id, node) ?? false,
       );
     }
   }

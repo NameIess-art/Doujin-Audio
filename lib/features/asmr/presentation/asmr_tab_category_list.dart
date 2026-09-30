@@ -71,6 +71,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
       <int, _CollapsingAsmrWork>{};
   List<AsmrWork>? _lastFavoritesWorks;
   String? _lastFavoritesQuery;
+  int? _lastFavoritesRevision;
   @override
   void didUpdateWidget(covariant _AsmrCategoryList oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -83,6 +84,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
       _collapsingWorks.clear();
       _lastFavoritesWorks = null;
       _lastFavoritesQuery = null;
+      _lastFavoritesRevision = null;
     }
   }
 
@@ -144,7 +146,8 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
     final reduceMotion = MediaQuery.disableAnimationsOf(context);
 
     if (isFavorites) {
-      if (_lastFavoritesQuery == normalizedSearchQuery &&
+      if (_lastFavoritesRevision != state.revision &&
+          _lastFavoritesQuery == normalizedSearchQuery &&
           _lastFavoritesWorks != null &&
           !state.isLoading &&
           !state.isRefreshing &&
@@ -179,6 +182,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
       }
       _lastFavoritesWorks = works;
       _lastFavoritesQuery = normalizedSearchQuery;
+      _lastFavoritesRevision = state.revision;
     }
 
     final visibleWorks = _collapsingWorks.isEmpty
@@ -313,7 +317,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
                     final rowCount = (visibleWorks.length / columnCount).ceil();
                     final hasLoadMore = state.isLoadingMore || state.hasMore;
                     return ListView.builder(
-                      key: const ValueKey('content'),
+                      key: PageStorageKey(widget.category),
                       controller: widget.scrollController,
                       cacheExtent: 520,
                       physics: AlwaysScrollableScrollPhysics(

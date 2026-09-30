@@ -81,6 +81,56 @@ void main() {
     ),
   );
 
+  for (final materialRoute in [false, true]) {
+    testWidgets(
+      'route reveal preserves page state (material: $materialRoute)',
+      (tester) async {
+        final navigatorKey = GlobalKey<NavigatorState>();
+        await tester.pumpWidget(
+          MaterialApp(
+            navigatorKey: navigatorKey,
+            theme: ThemeData(
+              pageTransitionsTheme: const PageTransitionsTheme(
+                builders: {TargetPlatform.android: AppPageTransitionsBuilder()},
+              ),
+            ),
+            home: const Scaffold(),
+          ),
+        );
+        final navigator = navigatorKey.currentState!;
+        const page = _StateProbe(label: 'route-state');
+        unawaited(
+          navigator.push(
+            materialRoute
+                ? MaterialPageRoute<void>(builder: (_) => page)
+                : buildAppPageRoute<void>(
+                    context: navigator.context,
+                    child: page,
+                  ),
+          ),
+        );
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 60));
+        final state = tester.state<_StateProbeState>(find.byType(_StateProbe));
+        expect(find.byType(ShaderMask), findsOneWidget);
+        await tester.pumpAndSettle();
+        expect(
+          tester.state<_StateProbeState>(find.byType(_StateProbe)),
+          same(state),
+        );
+        expect(find.byType(ShaderMask), findsNothing);
+        navigator.pop();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 60));
+        expect(
+          tester.state<_StateProbeState>(find.byType(_StateProbe)),
+          same(state),
+        );
+        await tester.pumpAndSettle();
+      },
+    );
+  }
+
   testWidgets('route content reveals while headers change in place', (
     tester,
   ) async {
@@ -371,7 +421,7 @@ void main() {
   ) async {
     final index = ValueNotifier<int>(0);
     addTearDown(index.dispose);
-    final firstKey = GlobalKey<_StateProbeState>();
+    const firstKey = ValueKey<String>('gradient-first-state');
     final surface = GlobalKey();
 
     Future<Color> pixelAt(double xFraction) async {
@@ -407,7 +457,7 @@ void main() {
               Container(
                 key: const ValueKey('gradient-old'),
                 color: Colors.red,
-                child: _StateProbe(key: firstKey, label: 'first'),
+                child: const _StateProbe(key: firstKey, label: 'first'),
               ),
               const ColoredBox(
                 key: ValueKey('gradient-new'),
@@ -418,14 +468,15 @@ void main() {
         ),
       ),
     );
-    final originalState = firstKey.currentState;
+    final originalState = tester.state<_StateProbeState>(find.byKey(firstKey));
+    expect(find.byType(ShaderMask), findsNothing);
 
     index.value = 1;
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 60));
     expect(await pixelAt(0.1), const Color(0xff2196f3));
     expect(await pixelAt(0.9), const Color(0xfff44336));
-    expect(find.byType(ShaderMask), findsNWidgets(2));
+    expect(find.byType(ShaderMask), findsOneWidget);
     expect(find.byKey(const ValueKey('gradient-old')), findsOneWidget);
     expect(find.byKey(const ValueKey('gradient-new')), findsOneWidget);
     expect(
@@ -436,19 +487,22 @@ void main() {
       findsNothing,
     );
     await tester.pumpAndSettle();
-    expect(find.byType(ShaderMask), findsNWidgets(2));
+    expect(find.byType(ShaderMask), findsNothing);
 
     index.value = 0;
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 60));
     expect(await pixelAt(0.1), const Color(0xff2196f3));
     expect(await pixelAt(0.9), const Color(0xfff44336));
-    expect(find.byType(ShaderMask), findsNWidgets(2));
+    expect(find.byType(ShaderMask), findsOneWidget);
     expect(find.byKey(const ValueKey('gradient-old')), findsOneWidget);
     expect(find.byKey(const ValueKey('gradient-new')), findsOneWidget);
     await tester.pumpAndSettle();
-    expect(find.byType(ShaderMask), findsNWidgets(2));
-    expect(firstKey.currentState, same(originalState));
+    expect(find.byType(ShaderMask), findsNothing);
+    expect(
+      tester.state<_StateProbeState>(find.byKey(firstKey)),
+      same(originalState),
+    );
   });
 
   testWidgets(
@@ -534,13 +588,7 @@ void main() {
       addTearDown(index.dispose);
       final coordinator = UiInteractionCoordinator.instance;
       coordinator.resetForTest();
-      coordinator.beginGeneration();
-      final interaction = Object();
-      coordinator.beginInteraction(interaction);
-      addTearDown(() {
-        coordinator.cancelInteraction(interaction);
-        coordinator.resetForTest();
-      });
+      addTearDown(coordinator.resetForTest);
       final buildCounts = <int>[0, 0, 0];
 
       await tester.pumpWidget(
@@ -549,7 +597,6 @@ void main() {
             body: AppFadeThroughIndexedStack.lazy(
               indexListenable: index,
               itemCount: 3,
-              preloadUnvisited: false,
               itemBuilder: (context, itemIndex) {
                 buildCounts[itemIndex]++;
                 return Text('lazy-$itemIndex');
@@ -558,23 +605,81 @@ void main() {
           ),
         ),
       );
-      await tester.pump();
-
+      await tester.pump(const Duration(seconds: 1));
       expect(buildCounts, <int>[1, 0, 0]);
+      expect(_paintOrder(tester), [const ValueKey('app_indexed_page_0')]);
       index.value = 1;
       await tester.pump();
       expect(buildCounts, <int>[1, 1, 0]);
 
-      coordinator.beginGeneration();
-      coordinator.finishInteractionsForTest();
       await tester.pumpAndSettle();
       expect(buildCounts[2], 0);
+      expect(_paintOrder(tester), [
+        const ValueKey('app_indexed_page_0'),
+        const ValueKey('app_indexed_page_1'),
+      ]);
 
       index.value = 0;
       await tester.pumpAndSettle();
       expect(buildCounts, <int>[1, 1, 0]);
     },
   );
+
+  testWidgets('lazy stack keeps remaining states when its page count changes', (
+    tester,
+  ) async {
+    final index = ValueNotifier<int>(0);
+    final count = ValueNotifier<int>(3);
+    addTearDown(index.dispose);
+    addTearDown(count.dispose);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ValueListenableBuilder<int>(
+          valueListenable: count,
+          builder: (context, itemCount, _) => AppFadeThroughIndexedStack.lazy(
+            indexListenable: index,
+            itemCount: itemCount,
+            style: AppIndexedStackTransitionStyle.gradient,
+            itemBuilder: (_, itemIndex) =>
+                _StateProbe(label: 'page-$itemIndex'),
+          ),
+        ),
+      ),
+    );
+    final firstState = tester.state<_StateProbeState>(find.byType(_StateProbe));
+    index.value = 1;
+    await tester.pumpAndSettle();
+    final secondState = tester.state<_StateProbeState>(
+      find.byType(_StateProbe),
+    );
+    index.value = 2;
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+    count.value = 2;
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(find.text('page-1'), findsOneWidget);
+    expect(
+      tester.state<_StateProbeState>(find.byType(_StateProbe)),
+      same(secondState),
+    );
+    index.value = 0;
+    await tester.pumpAndSettle();
+    expect(
+      tester.state<_StateProbeState>(find.byType(_StateProbe)),
+      same(firstState),
+    );
+    count.value = 3;
+    await tester.pump();
+    expect(
+      tester.state<_StateProbeState>(find.byType(_StateProbe)),
+      same(firstState),
+    );
+    count.value = 0;
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(find.byType(_StateProbe), findsNothing);
+  });
 
   testWidgets('lower indexes slide in from the left', (tester) async {
     final index = ValueNotifier<int>(2);

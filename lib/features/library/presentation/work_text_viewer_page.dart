@@ -10,6 +10,7 @@ import '../../../core/widgets/page_header_inset.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/top_page_header.dart';
 import '../application/work_text_service.dart';
+import 'library_providers.dart';
 
 class WorkTextViewerPage extends ConsumerStatefulWidget {
   const WorkTextViewerPage({

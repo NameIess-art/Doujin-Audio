@@ -41,6 +41,9 @@ List<WorkEntryItem> buildLocalWorkEntries({
   required bool Function(MusicTrack) isHidden,
 }) {
   final currentRel = pathSegments.join('/');
+  final currentSegments = currentRel.isEmpty
+      ? const <String>[]
+      : currentRel.split('/');
   final entries = <WorkEntryItem>[];
   final visibleFolderPaths = <String>{};
 
@@ -100,9 +103,6 @@ List<WorkEntryItem> buildLocalWorkEntries({
         .split('/')
         .where((segment) => segment.trim().isNotEmpty)
         .toList(growable: false);
-    final currentSegments = currentRel.isEmpty
-        ? const <String>[]
-        : currentRel.split('/');
     if (fileSegments.length <= currentSegments.length + 1) return;
     for (var index = 0; index < currentSegments.length; index++) {
       if (fileSegments[index] != currentSegments[index]) return;
@@ -120,15 +120,9 @@ List<WorkEntryItem> buildLocalWorkEntries({
     );
   }
 
-  for (final text in textFiles) {
-    addFileParentFolder(text.relativePath);
-  }
-  for (final image in imageFiles) {
-    addFileParentFolder(image.relativePath);
-  }
-
   // 2. Text files in current directory level
   for (final text in textFiles) {
+    addFileParentFolder(text.relativePath);
     final parentRel = _parentRelOf(text.relativePath);
     if (_isSameRelPath(parentRel, currentRel)) {
       entries.add(
@@ -145,6 +139,7 @@ List<WorkEntryItem> buildLocalWorkEntries({
 
   // 3. Image files in current directory level
   for (final img in imageFiles) {
+    addFileParentFolder(img.relativePath);
     final parentRel = _parentRelOf(img.relativePath);
     if (_isSameRelPath(parentRel, currentRel)) {
       entries.add(
@@ -161,12 +156,6 @@ List<WorkEntryItem> buildLocalWorkEntries({
 
   // Natural sort: folders first, then files
   entries.sort((a, b) {
-    if (a.type == WorkEntryType.folder && b.type != WorkEntryType.folder) {
-      return -1;
-    }
-    if (a.type != WorkEntryType.folder && b.type == WorkEntryType.folder) {
-      return 1;
-    }
     return compareNaturalTreeEntries(
       leftIsFolder: a.type == WorkEntryType.folder,
       leftName: a.name,
@@ -260,12 +249,6 @@ List<WorkEntryItem> buildAsmrWorkEntries({
 
   // Folders first, then natural sort
   entries.sort((a, b) {
-    if (a.type == WorkEntryType.folder && b.type != WorkEntryType.folder) {
-      return -1;
-    }
-    if (a.type != WorkEntryType.folder && b.type == WorkEntryType.folder) {
-      return 1;
-    }
     return compareNaturalTreeEntries(
       leftIsFolder: a.type == WorkEntryType.folder,
       leftName: a.name,

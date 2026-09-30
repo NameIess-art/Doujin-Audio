@@ -923,6 +923,7 @@ void registerAsmrControllerStateTests({
     await controller.initialize(defaultLanguage: AsmrContentLanguage.en);
     await controller.refreshCategory(AsmrCategoryType.release);
     expect(controller.worksFor(AsmrCategoryType.release), hasLength(40));
+    final firstPage = controller.worksFor(AsmrCategoryType.release);
 
     final interactionSource = Object();
     coordinator.beginInteraction(interactionSource);
@@ -933,6 +934,10 @@ void registerAsmrControllerStateTests({
     coordinator.finishInteractionsForTest();
 
     expect(controller.worksFor(AsmrCategoryType.release), hasLength(80));
+    expect(
+      controller.worksFor(AsmrCategoryType.release).first,
+      same(firstPage.first),
+    );
     expect(controller.isLoadingMoreCategory(AsmrCategoryType.release), isFalse);
   });
 

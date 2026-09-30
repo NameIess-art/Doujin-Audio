@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 import 'dart:io';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
@@ -47,8 +48,17 @@ final class CoverArtworkSourceResolver {
   bool get _isClearingPersistentCache => _isClearing();
   final Future<List<String>> Function(String rootPath, bool recursive)?
   _filesystemImageScanner;
-  final Map<String, Future<List<String>>> _folderImageIndexFutures =
-      <String, Future<List<String>>>{};
+  final Map<
+    ({String rootPath, bool recursive}),
+    Future<List<CoverImageReference>>
+  >
+  _folderImageIndexFutures = HashMap(
+    equals: (first, second) =>
+        first.recursive == second.recursive &&
+        PathMatcher.equalsNormalized(first.rootPath, second.rootPath),
+    hashCode: (key) =>
+        Object.hash(PathMatcher.equivalenceKey(key.rootPath), key.recursive),
+  );
   final Map<String, String> _folderImageSourceByDisplayKey = <String, String>{};
   final Map<String, String> _folderImageDisplayBySourceKey = <String, String>{};
 
@@ -447,9 +457,11 @@ final class CoverArtworkSourceResolver {
       if (candidate.isEmpty) continue;
       final pathKey = PathMatcher.equivalenceKey(candidate);
       if (!seenPaths.add(pathKey)) continue;
-      final contentKey = await localCoverContentKey(candidate);
-      if (contentKey != null) {
-        seenContentKeys.add(contentKey);
+      if (includeEmbeddedCovers) {
+        final contentKey = await localCoverContentKey(candidate);
+        if (contentKey != null) {
+          seenContentKeys.add(contentKey);
+        }
       }
       candidates.add(candidate);
     }
@@ -566,47 +578,57 @@ final class CoverArtworkSourceResolver {
     String folderPath, {
     bool recursive = true,
   }) async {
-    if (PathMatcher.isContentUri(folderPath)) {
-      try {
-        final discovered = await _fileCacheGateway.discoverRootImages(
-          path: folderPath,
-          rootFolder: folderPath,
-          recursive: recursive,
-        );
-        for (final image in discovered) {
-          rememberFolderImageSource(image.displayPath, image.sourcePath);
-        }
-        return List<String>.unmodifiable(
-          discovered.map((image) => image.displayPath),
-        );
-      } on MissingPluginException {
-        return const <String>[];
-      } catch (error, stackTrace) {
-        AppLogService.warning(
-          'Unable to discover content folder images.',
-          error: error,
-          stackTrace: stackTrace,
-        );
-        return const <String>[];
+    final normalizedFolder = PathMatcher.normalize(folderPath);
+    final isContent = PathMatcher.isContentUri(normalizedFolder);
+    final indexRoot = recursive && !isContent
+        ? folderImageIndexRoot(normalizedFolder)
+        : normalizedFolder;
+    final key = (rootPath: indexRoot, recursive: recursive);
+    final lookup = _folderImageIndexFutures.putIfAbsent(key, () {
+      late final Future<List<CoverImageReference>> task;
+      task = buildFolderImageIndex(indexRoot, recursive: recursive)
+          .then((images) {
+            // The SAF gateway also returns an empty list for native failures.
+            if (isContent &&
+                images.isEmpty &&
+                identical(_folderImageIndexFutures[key], task)) {
+              _folderImageIndexFutures.remove(key);
+            }
+            return images;
+          })
+          .catchError((Object error, StackTrace stackTrace) {
+            if (identical(_folderImageIndexFutures[key], task)) {
+              _folderImageIndexFutures.remove(key);
+            }
+            if (error is! MissingPluginException) {
+              AppLogService.warning(
+                'Unable to discover folder cover images.',
+                error: error,
+                stackTrace: stackTrace,
+              );
+            }
+            return const <CoverImageReference>[];
+          });
+      return task;
+    });
+    final indexedImages = await lookup;
+    if (isContent && identical(_folderImageIndexFutures[key], lookup)) {
+      for (final image in indexedImages) {
+        rememberFolderImageSource(image.displayPath, image.sourcePath);
       }
     }
-
-    final normalizedFolder = PathMatcher.normalize(folderPath);
-    if (!recursive) {
-      return buildFolderImageIndex(normalizedFolder, recursive: false);
-    }
-    final indexRoot = folderImageIndexRoot(normalizedFolder);
-    final indexedImages = await _folderImageIndexFutures.putIfAbsent(
-      indexRoot,
-      () => buildFolderImageIndex(indexRoot),
-    );
     return List<String>.unmodifiable(
-      indexedImages.where(
-        (imagePath) => recursive
-            ? PathMatcher.isWithinOrEqual(imagePath, normalizedFolder)
-            : PathMatcher.parentEquivalenceKey(imagePath) ==
-                  PathMatcher.equivalenceKey(normalizedFolder),
-      ),
+      indexedImages
+          .where(
+            (image) =>
+                isContent ||
+                !recursive ||
+                PathMatcher.isWithinOrEqual(
+                  image.displayPath,
+                  normalizedFolder,
+                ),
+          )
+          .map((image) => image.displayPath),
     );
   }
 
@@ -618,36 +640,39 @@ final class CoverArtworkSourceResolver {
     return mostSpecificContainingCoverRoot(roots, folderPath) ?? folderPath;
   }
 
-  Future<List<String>> buildFolderImageIndex(
+  Future<List<CoverImageReference>> buildFolderImageIndex(
     String rootPath, {
     bool recursive = true,
   }) async {
-    try {
-      final scanner = _filesystemImageScanner;
-      final images = scanner == null
-          ? recursive
-                ? await compute(
-                    _scanFilesystemFolderImages,
-                    (rootPath: rootPath, recursive: true),
-                    debugLabel: 'library_folder_cover_index',
-                  )
-                : await _scanFilesystemFolderImages((
-                    rootPath: rootPath,
-                    recursive: false,
-                  ))
-          : await scanner(rootPath, recursive);
-      for (final imagePath in images) {
-        rememberFolderImageSource(imagePath, imagePath);
-      }
-      return List<String>.unmodifiable(images);
-    } catch (error, stackTrace) {
-      AppLogService.warning(
-        'Unable to discover folder cover images.',
-        error: error,
-        stackTrace: stackTrace,
+    if (PathMatcher.isContentUri(rootPath)) {
+      final discovered = await _fileCacheGateway.discoverRootImages(
+        path: rootPath,
+        rootFolder: rootPath,
+        recursive: recursive,
       );
-      return const <String>[];
+      return List<CoverImageReference>.unmodifiable(discovered);
     }
+    final scanner = _filesystemImageScanner;
+    final images = scanner == null
+        ? recursive
+              ? await compute(
+                  _scanFilesystemFolderImages,
+                  (rootPath: rootPath, recursive: true),
+                  debugLabel: 'library_folder_cover_index',
+                )
+              : await _scanFilesystemFolderImages((
+                  rootPath: rootPath,
+                  recursive: false,
+                ))
+        : await scanner(rootPath, recursive);
+    for (final imagePath in images) {
+      rememberFolderImageSource(imagePath, imagePath);
+    }
+    return List<CoverImageReference>.unmodifiable(
+      images.map(
+        (image) => CoverImageReference(displayPath: image, sourcePath: image),
+      ),
+    );
   }
 
   void rememberFolderImageSource(String displayPath, String sourcePath) {
@@ -687,10 +712,11 @@ final class CoverArtworkSourceResolver {
 
   void invalidateFolderImageIndexes(String normalizedScope) {
     final roots = _folderImageIndexFutures.keys.toList(growable: false);
-    for (final root in roots) {
+    for (final key in roots) {
+      final root = key.rootPath;
       if (PathMatcher.isWithinOrEqual(normalizedScope, root) ||
           PathMatcher.isWithinOrEqual(root, normalizedScope)) {
-        _folderImageIndexFutures.remove(root);
+        _folderImageIndexFutures.remove(key);
       }
     }
   }

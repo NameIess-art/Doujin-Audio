@@ -167,18 +167,16 @@ class MobileDockCapsuleContentState extends State<MobileDockCapsuleContent>
               ((expand - 0.25) / 0.5).clamp(0.0, 1.0),
             );
             const compactWidth = kActiveSessionCarouselDockHeight;
-            final targetExpandedWidth =
+            final playbackWidth =
                 compactWidth +
                 (availableWidth - compactWidth * 2).clamp(0.0, availableWidth) *
                     layoutProgress;
-            final playbackWidth = (targetExpandedWidth * appearance).clamp(
-              0.0,
-              availableWidth,
-            );
-            final navigationWidth = (availableWidth - playbackWidth).clamp(
-              0.0,
-              availableWidth,
-            );
+            final playbackOffset = playbackWidth * (1 - appearance);
+            final navigationWidth =
+                (availableWidth - playbackWidth * appearance).clamp(
+                  0.0,
+                  availableWidth,
+                );
             final navigationChild = _buildNavigationChild(
               context,
               focusProgress: focusProgress,
@@ -202,33 +200,24 @@ class MobileDockCapsuleContentState extends State<MobileDockCapsuleContent>
                 if (playbackChild != null)
                   Align(
                     alignment: Alignment.centerRight,
-                    child: RepaintBoundary(
-                      child: SizedBox(
-                        key: const ValueKey<String>('mobile_dock_playback'),
-                        width: playbackWidth,
-                        height: kActiveSessionCarouselDockHeight,
-                        child: SizedBox.expand(
-                          key: widget.mobilePlaybackGeometryKey,
-                          child: ClipRRect(
-                            key: const ValueKey<String>(
-                              'mobile_dock_playback_viewport',
+                    child: Transform.translate(
+                      offset: Offset(playbackOffset, 0),
+                      child: RepaintBoundary(
+                        child: SizedBox(
+                          key: const ValueKey<String>('mobile_dock_playback'),
+                          width: playbackWidth,
+                          height: kActiveSessionCarouselDockHeight,
+                          child: SizedBox.expand(
+                            key: widget.mobilePlaybackGeometryKey,
+                            child: ClipRRect(
+                              key: const ValueKey<String>(
+                                'mobile_dock_playback_viewport',
+                              ),
+                              borderRadius: BorderRadius.circular(
+                                kActiveSessionCarouselDockHeight / 2,
+                              ),
+                              child: playbackChild,
                             ),
-                            borderRadius: BorderRadius.circular(
-                              kActiveSessionCarouselDockHeight / 2,
-                            ),
-                            child: appearance < 1.0
-                                ? Opacity(
-                                    opacity: appearance.clamp(0.0, 1.0),
-                                    child: Transform.scale(
-                                      scale: (0.7 + 0.3 * appearance).clamp(
-                                        0.0,
-                                        1.0,
-                                      ),
-                                      alignment: Alignment.centerRight,
-                                      child: playbackChild,
-                                    ),
-                                  )
-                                : playbackChild,
                           ),
                         ),
                       ),

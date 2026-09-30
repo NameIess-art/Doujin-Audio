@@ -528,7 +528,7 @@ void main() {
   });
 
   testWidgets(
-    'capsule dock smoothly animates circular playback card appearance and disappearance',
+    'capsule dock slides circular playback in and out at a fixed size',
     (tester) async {
       tester.view.devicePixelRatio = 3;
       tester.view.physicalSize = const Size(1080, 2400);
@@ -547,9 +547,13 @@ void main() {
       final playback = find.byKey(
         const ValueKey<String>('mobile_dock_playback'),
       );
+      final cover = find.byKey(
+        const ValueKey<String>('active_session_cover_anim_test_session'),
+      );
 
       expect(playback, findsNothing);
       final initialNavWidth = tester.getSize(navigation).width;
+      final initialNavRect = tester.getRect(navigation);
       expect(initialNavWidth, greaterThan(200));
 
       final session = PlaybackSession(
@@ -579,14 +583,30 @@ void main() {
       // Advance mid-way through appearance animation
       await tester.pump(const Duration(milliseconds: 140));
 
-      final midPlaybackWidth = tester.getSize(playback).width;
       final midNavWidth = tester.getSize(navigation).width;
-      expect(midPlaybackWidth, greaterThan(0));
-      expect(midPlaybackWidth, lessThan(56));
-      expect(midNavWidth + midPlaybackWidth, closeTo(initialNavWidth, 0.5));
+      final midPlaybackRect = tester.getRect(playback);
+      expect(tester.getSize(playback), const Size.square(56));
+      expect(tester.getRect(cover).size, const Size.square(48));
+      expect(midNavWidth, greaterThan(initialNavWidth - 56));
+      expect(midNavWidth, lessThan(initialNavWidth));
+      expect(
+        midPlaybackRect.left,
+        closeTo(tester.getRect(navigation).right, 0.5),
+      );
+      expect(midPlaybackRect.right, greaterThan(initialNavRect.right));
+      expect(midPlaybackRect.right, lessThan(initialNavRect.right + 56));
+      expect(midPlaybackRect.center.dy, initialNavRect.center.dy);
+      expect(
+        find.descendant(of: playback, matching: find.byType(Opacity)),
+        findsNothing,
+      );
 
       await tester.pump(const Duration(milliseconds: 200));
       expect(tester.getSize(playback).width, closeTo(56, 0.1));
+      expect(
+        tester.getRect(playback).right,
+        closeTo(initialNavRect.right, 0.5),
+      );
       expect(
         tester.getSize(navigation).width,
         closeTo(initialNavWidth - 56, 0.5),
@@ -608,11 +628,19 @@ void main() {
       await tester.pump(const Duration(milliseconds: 140));
 
       expect(playback, findsOneWidget);
-      final exitPlaybackWidth = tester.getSize(playback).width;
       final exitNavWidth = tester.getSize(navigation).width;
-      expect(exitPlaybackWidth, greaterThan(0));
-      expect(exitPlaybackWidth, lessThan(56));
-      expect(exitNavWidth + exitPlaybackWidth, closeTo(initialNavWidth, 0.5));
+      final exitPlaybackRect = tester.getRect(playback);
+      expect(tester.getSize(playback), const Size.square(56));
+      expect(tester.getRect(cover).size, const Size.square(48));
+      expect(exitNavWidth, greaterThan(initialNavWidth - 56));
+      expect(exitNavWidth, lessThan(initialNavWidth));
+      expect(
+        exitPlaybackRect.left,
+        closeTo(tester.getRect(navigation).right, 0.5),
+      );
+      expect(exitPlaybackRect.right, greaterThan(initialNavRect.right));
+      expect(exitPlaybackRect.right, lessThan(initialNavRect.right + 56));
+      expect(exitPlaybackRect.center.dy, initialNavRect.center.dy);
 
       await tester.pump(const Duration(milliseconds: 200));
       expect(playback, findsNothing);

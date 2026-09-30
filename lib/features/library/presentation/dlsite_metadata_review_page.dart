@@ -1,3 +1,6 @@
+import 'dlsite_metadata_review_form.dart';
+import 'dlsite_metadata_review_loading.dart';
+import 'dlsite_metadata_review_navigation.dart';
 import 'library_providers.dart';
 import '../../settings/presentation/settings_providers.dart';
 import 'dart:async';
@@ -17,7 +20,6 @@ import '../../../core/ui/visual_settings_providers.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/async_cover_image.dart';
 import '../../../core/widgets/library_like_cards.dart';
-import '../../../core/widgets/shimmer_loading.dart';
 import '../../../core/widgets/page_header_inset.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/top_page_header.dart';
@@ -599,7 +601,7 @@ class _DlsiteMetadataReviewPageState
                             top: 0,
                             left: 0,
                             right: 0,
-                            child: _MetadataReviewSkeleton(
+                            child: MetadataReviewSkeleton(
                               showCover:
                                   widget.detail.target.isLibraryRootFolder,
                             ),
@@ -616,7 +618,7 @@ class _DlsiteMetadataReviewPageState
                             20,
                             bottomInset,
                           ),
-                          child: _DlsiteErrorView(
+                          child: DlsiteReviewErrorView(
                             onRetry: _fetch,
                             onSkip: widget.allowSkip ? _skip : null,
                           ),
@@ -688,96 +690,18 @@ class _DlsiteMetadataReviewPageState
                               ),
                               const SizedBox(height: 12),
                             ],
-                            if (widget.editing)
-                              _ReviewTextField(
-                                key: const ValueKey<String>(
-                                  'metadata_edit_audio_detail_folder_name',
-                                ),
-                                controller: _folderNameController,
-                                label: i18n.tr('audio_detail_folder_name'),
-                              ),
-                            _ReviewTextField(
-                              key: widget.editing
-                                  ? const ValueKey<String>(
-                                      'metadata_edit_audio_detail_work_title',
-                                    )
-                                  : null,
-                              controller: _titleController,
-                              label: i18n.tr('audio_detail_work_title'),
-                            ),
-                            if (widget.editing)
-                              _ReviewTextField(
-                                key: const ValueKey<String>(
-                                  'metadata_edit_audio_detail_rj_code',
-                                ),
-                                controller: _rjCodeController,
-                                label: i18n.tr('audio_detail_rj_code'),
-                              )
-                            else if ((metadata?.rjCode.trim().isNotEmpty ??
-                                false)) ...[
-                              _ReviewInfoLine(
-                                label: i18n.tr('audio_detail_rj_code'),
-                                value: metadata!.rjCode.trim(),
-                              ),
-                              const SizedBox(height: 12),
-                            ],
-                            _ReviewTextField(
-                              key: widget.editing
-                                  ? const ValueKey<String>(
-                                      'metadata_edit_audio_detail_circle_name',
-                                    )
-                                  : null,
-                              controller: _circleController,
-                              label: i18n.tr('audio_detail_circle_name'),
-                            ),
-                            _ReviewTextField(
-                              key: widget.editing
-                                  ? const ValueKey<String>(
-                                      'metadata_edit_audio_detail_voice_actors',
-                                    )
-                                  : null,
-                              controller: _voiceActorsController,
-                              label: i18n.tr('audio_detail_voice_actors'),
-                              hint: i18n.tr('audio_detail_multi_hint'),
-                            ),
-                            _ReviewTextField(
-                              key: widget.editing
-                                  ? const ValueKey<String>(
-                                      'metadata_edit_audio_detail_tags',
-                                    )
-                                  : null,
-                              controller: _tagsController,
-                              label: i18n.tr('audio_detail_tags'),
-                              hint: i18n.tr('audio_detail_multi_hint'),
-                            ),
-                            _ReviewTextField(
-                              key: widget.editing
-                                  ? const ValueKey<String>(
-                                      'metadata_edit_audio_detail_release_date',
-                                    )
-                                  : null,
-                              controller: _releaseDateController,
-                              label: i18n.tr('audio_detail_release_date'),
-                              hint: 'YYYY-MM-DD',
-                            ),
-                            _ReviewTextField(
-                              key: widget.editing
-                                  ? const ValueKey<String>(
-                                      'metadata_edit_card_info_duration',
-                                    )
-                                  : null,
-                              controller: _durationController,
-                              label: i18n.tr('card_info_duration'),
-                              hint: 'HH:MM:SS',
-                            ),
-                            _ReviewTextField(
-                              key: widget.editing
-                                  ? const ValueKey<String>(
-                                      'metadata_edit_audio_detail_rating',
-                                    )
-                                  : null,
-                              controller: _ratingController,
-                              label: i18n.tr('audio_detail_rating'),
+                            DlsiteMetadataReviewForm(
+                              editing: widget.editing,
+                              metadata: metadata,
+                              folderNameController: _folderNameController,
+                              rjCodeController: _rjCodeController,
+                              titleController: _titleController,
+                              circleController: _circleController,
+                              voiceActorsController: _voiceActorsController,
+                              tagsController: _tagsController,
+                              releaseDateController: _releaseDateController,
+                              durationController: _durationController,
+                              ratingController: _ratingController,
                             ),
                           ],
                         ),
@@ -789,7 +713,7 @@ class _DlsiteMetadataReviewPageState
                 left: 16,
                 bottom: 16 + MediaQuery.paddingOf(context).bottom,
                 child: AppPageContentTransition(
-                  child: _ReviewWorkNavigation(
+                  child: ReviewWorkNavigation(
                     skeleton: _loading,
                     batchIndex: widget.batchIndex,
                     batchTotal: widget.batchTotal,
@@ -808,7 +732,7 @@ class _DlsiteMetadataReviewPageState
                 right: 16,
                 bottom: 16 + MediaQuery.paddingOf(context).bottom,
                 child: AppPageContentTransition(
-                  child: _ReviewConfirmButton(
+                  child: ReviewConfirmButton(
                     saving: _saving,
                     onTap: _loading ? null : _apply,
                     label: i18n.tr(widget.editing ? 'save' : 'confirm'),
@@ -853,385 +777,6 @@ class _DlsiteMetadataReviewPageState
                 ),
               ),
             ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _MetadataReviewSkeleton extends StatelessWidget {
-  const _MetadataReviewSkeleton({required this.showCover});
-
-  final bool showCover;
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final fieldCount = (MediaQuery.sizeOf(context).height / 68).ceil();
-    return ShimmerLoader(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (showCover) ...[
-            const AspectRatio(
-              key: ValueKey<String>('dlsite_review_skeleton_cover'),
-              aspectRatio: kStandardCoverAspectRatio,
-              child: ShimmerContainer(borderRadius: 16),
-            ),
-            const SizedBox(
-              height: 56,
-              child: Row(
-                children: [
-                  ShimmerContainer(
-                    key: ValueKey<String>(
-                      'dlsite_review_skeleton_save_cover_label',
-                    ),
-                    width: 150,
-                    height: 14,
-                  ),
-                  Spacer(),
-                  SizedBox(
-                    width: 60,
-                    height: 40,
-                    child: Center(
-                      child: ShimmerContainer(
-                        key: ValueKey<String>(
-                          'dlsite_review_skeleton_save_cover',
-                        ),
-                        width: 52,
-                        height: 32,
-                        borderRadius: 16,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 12),
-          ],
-          for (var index = 0; index < fieldCount; index++)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: Container(
-                key: ValueKey<String>('dlsite_review_skeleton_field_$index'),
-                height: index == 1 ? 44 : 56,
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                alignment: Alignment.centerLeft,
-                decoration: BoxDecoration(
-                  color: cs.surfaceContainerHighest.withValues(alpha: 0.25),
-                  borderRadius: BorderRadius.circular(index == 1 ? 8 : 4),
-                  border: Border.all(color: cs.outlineVariant),
-                ),
-                child: ShimmerContainer(
-                  width: index.isEven ? 140 : 180,
-                  height: 14,
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ReviewWorkNavigation extends StatelessWidget {
-  const _ReviewWorkNavigation({
-    required this.skeleton,
-    required this.batchIndex,
-    required this.batchTotal,
-    required this.canNavigatePrevious,
-    required this.canNavigateNext,
-    required this.saving,
-    required this.previousLabel,
-    required this.nextLabel,
-    required this.onNavigatePrevious,
-    required this.onNavigateNext,
-  });
-
-  final bool skeleton;
-  final int? batchIndex;
-  final int? batchTotal;
-  final bool canNavigatePrevious;
-  final bool canNavigateNext;
-  final bool saving;
-  final String previousLabel;
-  final String nextLabel;
-  final VoidCallback onNavigatePrevious;
-  final VoidCallback onNavigateNext;
-
-  @override
-  Widget build(BuildContext context) {
-    final textTheme = Theme.of(context).textTheme;
-    final labelStyle = textTheme.labelMedium?.copyWith(
-      color: Theme.of(context).colorScheme.onSurface,
-      fontWeight: FontWeight.w700,
-    );
-    final hasProgress = batchIndex != null && batchTotal != null;
-
-    Widget iconPlaceholder() =>
-        const ShimmerContainer(width: 20, height: 20, borderRadius: 10);
-
-    Widget navigationButton({
-      required Key key,
-      required IconData icon,
-      required String tooltip,
-      required VoidCallback? onPressed,
-    }) {
-      return IconButton(
-        key: key,
-        visualDensity: VisualDensity.compact,
-        iconSize: 20,
-        onPressed: skeleton ? null : onPressed,
-        tooltip: tooltip,
-        icon: skeleton ? iconPlaceholder() : Icon(icon),
-      );
-    }
-
-    return HeaderFloatingSurface(
-      key: ValueKey<String>(
-        skeleton
-            ? 'dlsite_review_skeleton_work_navigation'
-            : 'dlsite_review_work_navigation',
-      ),
-      height: 46,
-      radius: 23,
-      padding: const EdgeInsets.symmetric(horizontal: 4),
-      child: ShimmerLoader(
-        enabled: skeleton,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            navigationButton(
-              key: ValueKey<String>(
-                skeleton
-                    ? 'dlsite_review_skeleton_previous_work'
-                    : 'dlsite_review_previous_work',
-              ),
-              icon: Icons.chevron_left_rounded,
-              tooltip: previousLabel,
-              onPressed: !canNavigatePrevious || saving
-                  ? null
-                  : onNavigatePrevious,
-            ),
-            if (hasProgress)
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 4),
-                child: skeleton
-                    ? Stack(
-                        children: [
-                          Opacity(
-                            opacity: 0,
-                            child: Text(
-                              '$batchIndex/$batchTotal',
-                              style: labelStyle,
-                            ),
-                          ),
-                          const Positioned.fill(
-                            child: ShimmerContainer(
-                              height: 14,
-                              borderRadius: 4,
-                            ),
-                          ),
-                        ],
-                      )
-                    : Text('$batchIndex/$batchTotal', style: labelStyle),
-              ),
-            navigationButton(
-              key: ValueKey<String>(
-                skeleton
-                    ? 'dlsite_review_skeleton_next_work'
-                    : 'dlsite_review_next_work',
-              ),
-              icon: Icons.chevron_right_rounded,
-              tooltip: nextLabel,
-              onPressed: !canNavigateNext || saving ? null : onNavigateNext,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _ReviewConfirmButton extends StatelessWidget {
-  const _ReviewConfirmButton({
-    required this.saving,
-    required this.onTap,
-    required this.label,
-  });
-
-  final bool saving;
-  final VoidCallback? onTap;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final labelStyle = TextStyle(
-      color: cs.onPrimary,
-      fontWeight: FontWeight.w700,
-    );
-
-    return HeaderFloatingSurface(
-      key: const ValueKey<String>('dlsite_review_confirm'),
-      height: 46,
-      radius: 23,
-      padding: EdgeInsets.zero,
-      child: Material(
-        color: cs.primary,
-        borderRadius: BorderRadius.circular(23),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(23),
-          onTap: saving ? null : onTap,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (saving)
-                  SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: cs.onPrimary,
-                    ),
-                  )
-                else
-                  Icon(
-                    key: const ValueKey<String>('dlsite_review_confirm_icon'),
-                    Icons.check_rounded,
-                    size: 18,
-                    color: cs.onPrimary,
-                  ),
-                const SizedBox(width: 6),
-                Text(label, style: labelStyle),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _ReviewInfoLine extends StatelessWidget {
-  const _ReviewInfoLine({required this.label, required this.value});
-
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: cs.surfaceContainerHighest.withValues(alpha: 0.55),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: cs.outlineVariant),
-      ),
-      child: Row(
-        children: [
-          Icon(
-            Icons.confirmation_number_rounded,
-            size: 18,
-            color: cs.onSurfaceVariant,
-          ),
-          const SizedBox(width: 8),
-          Text(
-            '$label: ',
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              color: cs.onSurfaceVariant,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          Expanded(
-            child: Text(
-              value,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: cs.onSurface,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ReviewTextField extends StatelessWidget {
-  const _ReviewTextField({
-    super.key,
-    required this.controller,
-    required this.label,
-    this.hint,
-  });
-
-  final TextEditingController controller;
-  final String label;
-  final String? hint;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: TextField(
-        controller: controller,
-        minLines: 1,
-        maxLines: 3,
-        decoration: InputDecoration(
-          labelText: label,
-          hintText: hint,
-          border: const OutlineInputBorder(),
-        ),
-      ),
-    );
-  }
-}
-
-class _DlsiteErrorView extends StatelessWidget {
-  const _DlsiteErrorView({required this.onRetry, this.onSkip});
-
-  final VoidCallback onRetry;
-  final VoidCallback? onSkip;
-
-  @override
-  Widget build(BuildContext context) {
-    final i18n = ProviderScope.containerOf(
-      context,
-      listen: false,
-    ).read(appLanguageProviderInstanceProvider);
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              Icons.cloud_off_rounded,
-              size: 44,
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
-            const SizedBox(height: 12),
-            Text(i18n.tr('dlsite_fetch_failed'), textAlign: TextAlign.center),
-            const SizedBox(height: 16),
-            FilledButton.icon(
-              onPressed: onRetry,
-              icon: const Icon(Icons.refresh_rounded),
-              label: Text(i18n.tr('retry')),
-            ),
-            if (onSkip != null) ...[
-              const SizedBox(height: 8),
-              TextButton(onPressed: onSkip, child: Text(i18n.tr('skip'))),
-            ],
           ],
         ),
       ),

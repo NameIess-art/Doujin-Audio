@@ -1,3 +1,4 @@
+import 'asmr_download_format.dart';
 import 'asmr_providers.dart';
 import 'asmr_theme.dart';
 import 'dart:async';
@@ -42,7 +43,9 @@ class _AsmrDownloadDetailsPageState
         body: Stack(
           children: [
             AppPageContentTransition(
-              child: Center(child: Text(i18n.tr('asmr_download_task_not_found'))),
+              child: Center(
+                child: Text(i18n.tr('asmr_download_task_not_found')),
+              ),
             ),
             Positioned(
               top: 0,
@@ -77,8 +80,9 @@ class _AsmrDownloadDetailsPageState
     });
 
     final defaultHeaderHeight = MediaQuery.paddingOf(context).top + 140.0;
-    final effectiveHeaderHeight =
-        _headerHeight > 0 ? _headerHeight : defaultHeaderHeight;
+    final effectiveHeaderHeight = _headerHeight > 0
+        ? _headerHeight
+        : defaultHeaderHeight;
     final listTopPadding = effectiveHeaderHeight + 8;
 
     return Scaffold(
@@ -90,41 +94,46 @@ class _AsmrDownloadDetailsPageState
             Positioned.fill(
               child: AppPageContentTransition(
                 child: CustomScrollView(
-                physics: const ClampingScrollPhysics(),
-                slivers: [
-                  if (tracks.isEmpty)
-                    SliverFillRemaining(
-                      hasScrollBody: false,
-                      child: Center(
-                        child: Text(i18n.tr('asmr_download_no_files_selected')),
+                  physics: const ClampingScrollPhysics(),
+                  slivers: [
+                    if (tracks.isEmpty)
+                      SliverFillRemaining(
+                        hasScrollBody: false,
+                        child: Center(
+                          child: Text(
+                            i18n.tr('asmr_download_no_files_selected'),
+                          ),
+                        ),
+                      )
+                    else
+                      SliverPadding(
+                        padding: EdgeInsets.fromLTRB(
+                          16,
+                          listTopPadding,
+                          16,
+                          MediaQuery.paddingOf(context).bottom + 16,
+                        ),
+                        sliver: SliverList.builder(
+                          itemCount: tracks.length,
+                          itemBuilder: (context, index) {
+                            return _AsmrDownloadDetailsNodeTile(
+                              node: tracks[index],
+                              depth: 0,
+                              task: task,
+                              i18n: i18n,
+                              onRetryFile: downloadManager == null
+                                  ? null
+                                  : (relativePath) =>
+                                        downloadManager.retryFailedFile(
+                                          widget.workId,
+                                          relativePath,
+                                        ),
+                            );
+                          },
+                        ),
                       ),
-                    )
-                  else
-                    SliverPadding(
-                      padding: EdgeInsets.fromLTRB(
-                        16,
-                        listTopPadding,
-                        16,
-                        MediaQuery.paddingOf(context).bottom + 16,
-                      ),
-                      sliver: SliverList.builder(
-                        itemCount: tracks.length,
-                        itemBuilder: (context, index) {
-                          return _AsmrDownloadDetailsNodeTile(
-                            node: tracks[index],
-                            depth: 0,
-                            task: task,
-                            i18n: i18n,
-                            onRetryFile: downloadManager == null
-                                ? null
-                                : (relativePath) => downloadManager
-                                      .retryFailedFile(widget.workId, relativePath),
-                          );
-                        },
-                      ),
-                    ),
-                ],
-              ),
+                  ],
+                ),
               ),
             ),
             Positioned(
@@ -139,70 +148,60 @@ class _AsmrDownloadDetailsPageState
                   iconColor: AppDesignTokens.of(context).asmrAccent,
                   leading: const BackButton(),
                   title: i18n.tr('asmr_download_details_title'),
-                additionalChild: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-                  child: HeaderFloatingSurface(
-                    key: const ValueKey<String>('asmr_download_work_title'),
-                    height: null,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 9,
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          task.work.title,
-                          maxLines: 3,
-                          overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            color: cs.onSurface,
-                            fontWeight: FontWeight.w700,
-                            height: 1.25,
+                  additionalChild: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                    child: HeaderFloatingSurface(
+                      key: const ValueKey<String>('asmr_download_work_title'),
+                      height: null,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 9,
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            task.work.title,
+                            maxLines: 3,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.bodyMedium
+                                ?.copyWith(
+                                  color: cs.onSurface,
+                                  fontWeight: FontWeight.w700,
+                                  height: 1.25,
+                                ),
                           ),
-                        ),
-                        const SizedBox(height: 8),
-                        Row(
-                          children: [
-                            Icon(
-                              Icons.sd_storage_rounded,
-                              size: 15,
-                              color: cs.onSurfaceVariant,
-                            ),
-                            const SizedBox(width: 6),
-                            Text(
-                              '${_formatBytes(task.totalBytes > 0 && task.downloadedBytes > task.totalBytes ? task.totalBytes : task.downloadedBytes)} / ${_formatBytes(task.totalBytes)}',
-                              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.sd_storage_rounded,
+                                size: 15,
                                 color: cs.onSurfaceVariant,
-                                fontWeight: FontWeight.w600,
                               ),
-                            ),
-                          ],
-                        ),
-                      ],
+                              const SizedBox(width: 6),
+                              Text(
+                                '${formatAsmrDownloadSize(task.totalBytes > 0 && task.downloadedBytes > task.totalBytes ? task.totalBytes : task.downloadedBytes)} / ${formatAsmrDownloadSize(task.totalBytes)}',
+                                style: Theme.of(context).textTheme.bodySmall
+                                    ?.copyWith(
+                                      color: cs.onSurfaceVariant,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
               ),
             ),
-          ),
           ],
         ),
       ),
     );
-  }
-
-  String _formatBytes(int bytes) {
-    if (bytes <= 0) return '0 B';
-    const units = ['B', 'KB', 'MB', 'GB'];
-    var value = bytes.toDouble();
-    var unitIndex = 0;
-    while (value >= 1024 && unitIndex < units.length - 1) {
-      value /= 1024;
-      unitIndex++;
-    }
-    return '${value.toStringAsFixed(value >= 10 ? 0 : 1)} ${units[unitIndex]}';
   }
 }
 
@@ -355,7 +354,7 @@ class _AsmrDownloadDetailsNodeTileState
         child: Row(
           children: [
             Icon(
-              _fileIconFor(widget.node),
+              asmrDownloadFileIcon(widget.node),
               size: 20,
               color: cs.onSurfaceVariant.withValues(alpha: 0.8),
             ),
@@ -391,7 +390,7 @@ class _AsmrDownloadDetailsNodeTileState
                       const SizedBox(width: 12),
                       Text(
                         retryAttempt == null
-                            ? '${_formatBytes(downloaded)} / ${_formatBytes(total)}'
+                            ? '${formatAsmrDownloadSize(downloaded)} / ${formatAsmrDownloadSize(total)}'
                             : widget.i18n.tr('asmr_download_status_retrying', {
                                 'attempt': retryAttempt,
                                 'max': widget.task.automaticFileRetryCount,
@@ -452,44 +451,5 @@ class _AsmrDownloadDetailsNodeTileState
         ),
       ),
     );
-  }
-
-  String _formatBytes(int bytes) {
-    if (bytes <= 0) return '0 B';
-    const units = ['B', 'KB', 'MB', 'GB'];
-    var value = bytes.toDouble();
-    var unitIndex = 0;
-    while (value >= 1024 && unitIndex < units.length - 1) {
-      value /= 1024;
-      unitIndex++;
-    }
-    return '${value.toStringAsFixed(value >= 10 ? 0 : 1)} ${units[unitIndex]}';
-  }
-
-  IconData _fileIconFor(AsmrTrackFile track) {
-    if (track.isSubtitle) {
-      return Icons.subtitles_rounded;
-    }
-    switch (track.resolvedExtension) {
-      case '.jpg':
-      case '.jpeg':
-      case '.png':
-      case '.webp':
-      case '.gif':
-        return Icons.image_rounded;
-      case '.txt':
-      case '.md':
-      case '.json':
-      case '.cue':
-        return Icons.description_rounded;
-      case '.zip':
-      case '.7z':
-      case '.rar':
-        return Icons.archive_rounded;
-      default:
-        return track.isAudio
-            ? Icons.audio_file_rounded
-            : Icons.insert_drive_file_rounded;
-    }
   }
 }

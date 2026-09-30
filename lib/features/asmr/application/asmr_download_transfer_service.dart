@@ -1,83 +1,46 @@
-part of 'asmr_download_manager.dart';
+import 'dart:async';
+import 'dart:io';
+import 'package:path/path.dart' as path;
 
-extension AsmrDownloadTransferService on AsmrDownloadManager {
-  Future<void> _resumeTask(int workId) async {
-    if (_disposed) return;
-    final task = _store[workId];
-    if (task == null ||
-        (task.status != AsmrDownloadTaskStatus.paused &&
-            task.status != AsmrDownloadTaskStatus.failed)) {
-      return;
-    }
-    _enqueueExistingTask(task);
-  }
+import '../domain/asmr_download.dart';
+import '../../../core/cache/app_cache_service.dart';
+import '../../../core/persistence/json_document_store.dart';
+import '../../../core/media/path_matcher.dart';
+import '../../../core/logging/app_log_service.dart';
+import 'asmr_download_models.dart';
+import 'asmr_download_internal_models.dart';
+import 'asmr_download_cleanup.dart';
+import 'asmr_download_planner.dart';
+import 'asmr_download_task_store.dart';
+import 'asmr_download_io.dart';
 
-  Future<bool> _retryFailedFile(int workId, String relativePath) async {
-    if (_disposed) return false;
-    await initialize();
-    if (_disposed) return false;
-    final task = _store[workId];
-    final normalizedPath = relativePath.trim();
-    if (task == null ||
-        normalizedPath.isEmpty ||
-        !task.failedFilePaths.contains(normalizedPath) ||
-        task.manuallyRetryingFilePaths.contains(normalizedPath)) {
-      return false;
-    }
-    final plannedFile = _findPlannedFile(task, normalizedPath);
-    if (plannedFile == null) return false;
-
-    final activeDispatcher = _activeFileRetryDispatchers[workId];
-    final canStartFailedTask =
-        task.status == AsmrDownloadTaskStatus.failed &&
-        !_activeTasks.contains(workId) &&
-        !_queue.contains(workId);
-    if (activeDispatcher == null && !canStartFailedTask) return false;
-
-    final retryAttempts = Map<String, int>.from(task.fileRetryAttempts)
-      ..remove(normalizedPath);
-    final retryingPaths = Set<String>.from(task.manuallyRetryingFilePaths)
-      ..add(normalizedPath);
-    final retryingTask = task.copyWith(
-      fileRetryAttempts: retryAttempts,
-      manuallyRetryingFilePaths: retryingPaths,
-    );
-    _store[workId] = retryingTask;
-    _store.notifyTaskChanged(changedWorkIds: <int>{workId});
-
-    if (activeDispatcher != null) {
-      activeDispatcher(plannedFile);
-    } else {
-      _manualRetryOnlyPaths[workId] = <String>{normalizedPath};
-      _plannedFilesMap[workId] = <_PlannedDownloadFile>[plannedFile];
-      _enqueueExistingTask(retryingTask);
-    }
-    return true;
-  }
-
-  void _enqueueExistingTask(AsmrDownloadTaskSnapshot task) {
-    final workId = task.work.id;
-    _resumingTasks.add(workId);
-    _store[workId] = task.copyWith(
-      status: AsmrDownloadTaskStatus.idle,
-      message: 'queued',
-    );
-    if (!_queue.contains(workId)) {
-      _queue.add(workId);
-    }
-    _store.notifyTaskChanged();
-    _processQueue();
-  }
-
-  Future<_WriteResult> _downloadItem(
-    _PlannedDownloadFile item, {
+class AsmrDownloadTransferService {
+  AsmrDownloadTransferService({
+    required AsmrDownloadTaskStore store,
+    required AsmrDownloadOutputStore outputs,
+    required Duration automaticFileRetryDelay,
+    required this.isDisposed,
+    required this.isPaused,
+    required this.throwIfCancelled,
+  }) : _store = store,
+       _outputs = outputs,
+       _automaticFileRetryDelay = automaticFileRetryDelay;
+  final AsmrDownloadTaskStore _store;
+  final AsmrDownloadOutputStore _outputs;
+  final Duration _automaticFileRetryDelay;
+  final bool Function() isDisposed;
+  final bool Function(int) isPaused;
+  final void Function(int) throwIfCancelled;
+  static const _planner = AsmrDownloadPlanner();
+  Future<DownloadWriteResult> downloadItem(
+    PlannedDownloadFile item, {
     required int workId,
     required AsmrDownloadTaskSnapshot task,
     required String workRootPath,
     required AsmrDownloadConflictPolicy conflictPolicy,
     required HttpClient client,
   }) async {
-    _throwIfCancelled(workId);
+    throwIfCancelled(workId);
     if (item.isCover) {
       return _downloadCoverItem(
         item,
@@ -87,47 +50,55 @@ extension AsmrDownloadTransferService on AsmrDownloadManager {
         client: client,
       );
     }
-    final normalizedRelativePath = _validatedDownloadRelativePath(
+    final normalizedRelativePath = _planner.validatedDownloadRelativePath(
       item.relativePath,
     );
     final preserveExistingJson =
         path.extension(normalizedRelativePath).toLowerCase() == '.json';
     final jsonLocation = preserveExistingJson
-        ? _jsonDownloadLocation(workRootPath, normalizedRelativePath)
+        ? _outputs.jsonDownloadLocation(workRootPath, normalizedRelativePath)
         : null;
     if (jsonLocation != null) {
-      final existingJson = await _jsonDocumentStore.read(jsonLocation);
+      final existingJson = await _outputs.jsonDocuments.read(jsonLocation);
       if (existingJson.status == JsonDocumentReadStatus.found) {
-        return _WriteResult.skipped(bytesDownloaded: item.size);
+        return DownloadWriteResult.skipped(bytesDownloaded: item.size);
       }
     }
 
     File? localTargetFile;
     if (!PathMatcher.isContentUri(workRootPath)) {
       localTargetFile = File(
-        _resolveLocalPathWithin(workRootPath, normalizedRelativePath),
+        _planner.resolveLocalPathWithin(workRootPath, normalizedRelativePath),
       );
       if ((preserveExistingJson ||
               conflictPolicy == AsmrDownloadConflictPolicy.skip) &&
           await localTargetFile.exists()) {
-        return _WriteResult.skipped(bytesDownloaded: item.size);
+        return DownloadWriteResult.skipped(bytesDownloaded: item.size);
       }
       await localTargetFile.parent.create(recursive: true);
     } else {
-      final docPath = _joinFolderPath(workRootPath, normalizedRelativePath);
-      if (await _fileCacheGateway.documentPathExists(docPath)) {
+      final docPath = _planner.joinFolderPath(
+        workRootPath,
+        normalizedRelativePath,
+      );
+      if (await _outputs.gateway.documentPathExists(docPath)) {
         if (preserveExistingJson ||
             conflictPolicy == AsmrDownloadConflictPolicy.skip) {
-          return _WriteResult.skipped(bytesDownloaded: item.size);
+          return DownloadWriteResult.skipped(bytesDownloaded: item.size);
         }
       }
     }
 
     final stagingFile = localTargetFile == null || jsonLocation != null
-        ? await _persistentStagingFile(workRootPath, normalizedRelativePath)
+        ? await _outputs.persistentStagingFile(
+            workRootPath,
+            normalizedRelativePath,
+          )
         : File('${localTargetFile.path}.doujin.part');
     final stagingExisted = await stagingFile.exists();
-    if (!stagingExisted) _createdOutputPaths[workId]?.add(stagingFile.path);
+    if (!stagingExisted) {
+      _outputs.createdOutputPaths[workId]?.add(stagingFile.path);
+    }
     final tempResult = await _downloadToTemporaryFile(
       item,
       workId: workId,
@@ -135,60 +106,60 @@ extension AsmrDownloadTransferService on AsmrDownloadManager {
       stagingFile: stagingFile,
     );
     if (tempResult == null) {
-      return const _WriteResult.failure(bytesDownloaded: 0);
+      return const DownloadWriteResult.failure(bytesDownloaded: 0);
     }
 
     try {
-      _throwIfCancelled(workId);
+      throwIfCancelled(workId);
       if (jsonLocation != null) {
         final parentRelative = path.posix.dirname(normalizedRelativePath);
         if (parentRelative != '.' &&
-            !await _ensureFolderPath(
+            !await _outputs.ensureFolderPath(
               basePath: workRootPath,
               relativePath: parentRelative,
               overwrite: false,
             )) {
-          return _WriteResult.failure(
+          return DownloadWriteResult.failure(
             bytesDownloaded: tempResult.bytesDownloaded,
           );
         }
-        final write = await _jsonDocumentStore.write(
+        final write = await _outputs.jsonDocuments.write(
           location: jsonLocation,
           bytes: await tempResult.file.readAsBytes(),
           mode: JsonDocumentWriteMode.createIfAbsent,
         );
         if (write.status == JsonDocumentWriteStatus.preserved) {
-          return _WriteResult.skipped(
+          return DownloadWriteResult.skipped(
             bytesDownloaded: tempResult.bytesDownloaded,
           );
         }
         if (write.status != JsonDocumentWriteStatus.created) {
-          return _WriteResult.failure(
+          return DownloadWriteResult.failure(
             bytesDownloaded: tempResult.bytesDownloaded,
           );
         }
-        _createdOutputPaths[workId]?.add(
-          _joinFolderPath(workRootPath, normalizedRelativePath),
+        _outputs.createdOutputPaths[workId]?.add(
+          _planner.joinFolderPath(workRootPath, normalizedRelativePath),
         );
-        _recordCreatedJson(
+        _outputs.recordCreatedJson(
           workId,
-          _joinFolderPath(workRootPath, normalizedRelativePath),
+          _planner.joinFolderPath(workRootPath, normalizedRelativePath),
           jsonLocation,
           write,
         );
-        return _WriteResult.success(
+        return DownloadWriteResult.success(
           bytesDownloaded: tempResult.bytesDownloaded,
         );
       }
       if (PathMatcher.isContentUri(workRootPath)) {
-        final targetPath = _joinFolderPath(
+        final targetPath = _planner.joinFolderPath(
           workRootPath,
           normalizedRelativePath,
         );
-        final targetExisted = await _fileCacheGateway.documentPathExists(
+        final targetExisted = await _outputs.gateway.documentPathExists(
           targetPath,
         );
-        final saved = await _fileCacheGateway.copyFileToFolder(
+        final saved = await _outputs.gateway.copyFileToFolder(
           sourcePath: tempResult.file.path,
           folder: workRootPath,
           relativePath: normalizedRelativePath,
@@ -196,17 +167,17 @@ extension AsmrDownloadTransferService on AsmrDownloadManager {
         );
         if (!saved) {
           return conflictPolicy == AsmrDownloadConflictPolicy.skip
-              ? _WriteResult.skipped(
+              ? DownloadWriteResult.skipped(
                   bytesDownloaded: tempResult.bytesDownloaded,
                 )
-              : _WriteResult.failure(
+              : DownloadWriteResult.failure(
                   bytesDownloaded: tempResult.bytesDownloaded,
                 );
         }
         if (!targetExisted) {
-          _createdOutputPaths[workId]?.add(targetPath);
+          _outputs.createdOutputPaths[workId]?.add(targetPath);
         }
-        return _WriteResult.success(
+        return DownloadWriteResult.success(
           bytesDownloaded: tempResult.bytesDownloaded,
         );
       }
@@ -215,7 +186,7 @@ extension AsmrDownloadTransferService on AsmrDownloadManager {
       final targetExisted = await targetFile.exists();
       if (targetExisted) {
         if (conflictPolicy == AsmrDownloadConflictPolicy.skip) {
-          return _WriteResult.skipped(bytesDownloaded: item.size);
+          return DownloadWriteResult.skipped(bytesDownloaded: item.size);
         }
       }
       final committed = await commitLocalDownloadedFile(
@@ -223,18 +194,20 @@ extension AsmrDownloadTransferService on AsmrDownloadManager {
         target: targetFile,
       );
       if (!committed) {
-        return _WriteResult.skipped(
+        return DownloadWriteResult.skipped(
           bytesDownloaded: tempResult.bytesDownloaded,
         );
       }
       if (!targetExisted) {
-        _createdOutputPaths[workId]?.add(targetFile.path);
+        _outputs.createdOutputPaths[workId]?.add(targetFile.path);
       }
-      return _WriteResult.success(bytesDownloaded: tempResult.bytesDownloaded);
+      return DownloadWriteResult.success(
+        bytesDownloaded: tempResult.bytesDownloaded,
+      );
     } finally {
       try {
-        if (_pauseRequested[workId] != true &&
-            !_disposed &&
+        if (!isPaused(workId) &&
+            !isDisposed() &&
             await tempResult.file.exists()) {
           await tempResult.file.delete();
         }
@@ -245,39 +218,41 @@ extension AsmrDownloadTransferService on AsmrDownloadManager {
     }
   }
 
-  Future<_WriteResult> _downloadCoverItem(
-    _PlannedDownloadFile item, {
+  Future<DownloadWriteResult> _downloadCoverItem(
+    PlannedDownloadFile item, {
     required int workId,
     required AsmrDownloadTaskSnapshot task,
     required AsmrDownloadConflictPolicy conflictPolicy,
     required HttpClient client,
   }) async {
-    final knownExtension = _coverUrlExtension(item.url);
+    final knownExtension = _planner.coverUrlExtension(item.url);
     final knownTargetPath = knownExtension == null
         ? task.coverOutputPath
-        : _joinFolderPath(
+        : _planner.joinFolderPath(
             task.workRootPath,
             'cover/${item.coverFileStem!}$knownExtension',
           );
     if (knownTargetPath != null &&
         conflictPolicy == AsmrDownloadConflictPolicy.skip &&
-        await _outputPathExists(knownTargetPath)) {
-      return const _WriteResult.skipped(bytesDownloaded: 0);
+        await _outputs.outputPathExists(knownTargetPath)) {
+      return const DownloadWriteResult.skipped(bytesDownloaded: 0);
     }
-    if (!await _ensureFolderPath(
+    if (!await _outputs.ensureFolderPath(
       basePath: task.workRootPath,
       relativePath: 'cover',
       overwrite: false,
     )) {
-      return const _WriteResult.failure(bytesDownloaded: 0);
+      return const DownloadWriteResult.failure(bytesDownloaded: 0);
     }
 
-    final stagingFile = await _persistentStagingFile(
+    final stagingFile = await _outputs.persistentStagingFile(
       task.workRootPath,
       item.relativePath,
     );
     final stagingExisted = await stagingFile.exists();
-    if (!stagingExisted) _createdOutputPaths[workId]?.add(stagingFile.path);
+    if (!stagingExisted) {
+      _outputs.createdOutputPaths[workId]?.add(stagingFile.path);
+    }
     final tempResult = await _downloadToTemporaryFile(
       item,
       workId: workId,
@@ -285,34 +260,39 @@ extension AsmrDownloadTransferService on AsmrDownloadManager {
       stagingFile: stagingFile,
     );
     if (tempResult == null) {
-      return const _WriteResult.failure(bytesDownloaded: 0);
+      return const DownloadWriteResult.failure(bytesDownloaded: 0);
     }
 
     try {
-      _throwIfCancelled(workId);
+      throwIfCancelled(workId);
       if (tempResult.bytesDownloaded <= 0 ||
           (tempResult.mimeType != null &&
               !tempResult.mimeType!.toLowerCase().startsWith('image/'))) {
-        return const _WriteResult.failure(bytesDownloaded: 0);
+        return const DownloadWriteResult.failure(bytesDownloaded: 0);
       }
-      final extension = _coverExtension(item.url, tempResult.mimeType);
+      final extension = _planner.coverExtension(item.url, tempResult.mimeType);
       final relativePath = 'cover/${item.coverFileStem!}$extension';
-      final targetPath = _joinFolderPath(task.workRootPath, relativePath);
+      final targetPath = _planner.joinFolderPath(
+        task.workRootPath,
+        relativePath,
+      );
       final targetExisted = PathMatcher.isContentUri(task.workRootPath)
-          ? await _fileCacheGateway.documentPathExists(targetPath)
+          ? await _outputs.gateway.documentPathExists(targetPath)
           : await File(targetPath).exists();
       if (targetExisted && conflictPolicy == AsmrDownloadConflictPolicy.skip) {
-        return const _WriteResult.skipped(bytesDownloaded: 0);
+        return const DownloadWriteResult.skipped(bytesDownloaded: 0);
       }
 
       if (PathMatcher.isContentUri(task.workRootPath)) {
-        final saved = await _fileCacheGateway.copyFileToFolder(
+        final saved = await _outputs.gateway.copyFileToFolder(
           sourcePath: tempResult.file.path,
           folder: task.workRootPath,
           relativePath: relativePath,
           overwrite: conflictPolicy == AsmrDownloadConflictPolicy.overwrite,
         );
-        if (!saved) return const _WriteResult.failure(bytesDownloaded: 0);
+        if (!saved) {
+          return const DownloadWriteResult.failure(bytesDownloaded: 0);
+        }
       } else {
         final targetFile = File(targetPath);
         await targetFile.parent.create(recursive: true);
@@ -321,20 +301,20 @@ extension AsmrDownloadTransferService on AsmrDownloadManager {
           target: targetFile,
         );
         if (!committed) {
-          return const _WriteResult.failure(bytesDownloaded: 0);
+          return const DownloadWriteResult.failure(bytesDownloaded: 0);
         }
       }
 
-      if (!targetExisted) _createdOutputPaths[workId]?.add(targetPath);
+      if (!targetExisted) _outputs.createdOutputPaths[workId]?.add(targetPath);
       final currentTask = _store[workId];
       if (currentTask != null) {
         _store[workId] = currentTask.copyWith(coverOutputPath: targetPath);
       }
-      return const _WriteResult.success(bytesDownloaded: 0);
+      return const DownloadWriteResult.success(bytesDownloaded: 0);
     } finally {
       try {
-        if (_pauseRequested[workId] != true &&
-            !_disposed &&
+        if (!isPaused(workId) &&
+            !isDisposed() &&
             await tempResult.file.exists()) {
           await tempResult.file.delete();
         }
@@ -345,35 +325,8 @@ extension AsmrDownloadTransferService on AsmrDownloadManager {
     }
   }
 
-  String _coverExtension(String url, String? mimeType) {
-    final urlExtension = _coverUrlExtension(url);
-    if (urlExtension != null) return urlExtension;
-    return switch (mimeType?.toLowerCase()) {
-      'image/png' => '.png',
-      'image/webp' => '.webp',
-      'image/gif' => '.gif',
-      'image/jpeg' || 'image/jpg' => '.jpg',
-      _ => '.jpg',
-    };
-  }
-
-  String? _coverUrlExtension(String url) {
-    final extension = path
-        .extension(Uri.tryParse(url)?.path ?? '')
-        .toLowerCase();
-    return const <String>{
-          '.jpg',
-          '.jpeg',
-          '.png',
-          '.webp',
-          '.gif',
-        }.contains(extension)
-        ? extension
-        : null;
-  }
-
   Future<_TemporaryDownloadResult?> _downloadToTemporaryFile(
-    _PlannedDownloadFile item, {
+    PlannedDownloadFile item, {
     required int workId,
     required HttpClient client,
     required File stagingFile,
@@ -384,7 +337,7 @@ extension AsmrDownloadTransferService on AsmrDownloadManager {
     var leaseTransferred = false;
     try {
       for (var attempt = 0; ; attempt++) {
-        _throwIfCancelled(workId);
+        throwIfCancelled(workId);
         if (attempt > 0) {
           _setFileRetryAttempt(workId, item.relativePath, null);
         }
@@ -430,15 +383,13 @@ extension AsmrDownloadTransferService on AsmrDownloadManager {
         );
         await Future<void>.delayed(_automaticFileRetryDelay);
       }
-    } on _DownloadCancelled {
+    } on DownloadCancelled {
       rethrow;
     } finally {
       _setFileRetryAttempt(workId, item.relativePath, null);
       if (!leaseTransferred) {
         try {
-          if (_pauseRequested[workId] != true &&
-              !_disposed &&
-              await tempFile.exists()) {
+          if (!isPaused(workId) && !isDisposed() && await tempFile.exists()) {
             await tempFile.delete();
           }
         } catch (_) {
@@ -451,7 +402,7 @@ extension AsmrDownloadTransferService on AsmrDownloadManager {
   }
 
   Future<_TemporaryDownloadAttempt> _downloadToTemporaryFileAttempt(
-    _PlannedDownloadFile item, {
+    PlannedDownloadFile item, {
     required int workId,
     required HttpClient client,
     required File stagingFile,
@@ -472,7 +423,7 @@ extension AsmrDownloadTransferService on AsmrDownloadManager {
             received,
           );
         }
-        await _deleteFileIfPresent(stagingFile);
+        await _outputs.deleteFileIfPresent(stagingFile);
         received = 0;
       }
       if (item.size > 0 && received > item.size) {
@@ -483,7 +434,7 @@ extension AsmrDownloadTransferService on AsmrDownloadManager {
             received,
           );
         }
-        await _deleteFileIfPresent(stagingFile);
+        await _outputs.deleteFileIfPresent(stagingFile);
         received = 0;
       }
       if (item.size > 0 && received == item.size) {
@@ -491,7 +442,7 @@ extension AsmrDownloadTransferService on AsmrDownloadManager {
       }
       const requestTimeout = Duration(seconds: 15);
       const downloadIdleTimeout = Duration(seconds: 30);
-      _throwIfCancelled(workId);
+      throwIfCancelled(workId);
       final uri = Uri.parse(item.url);
       final request = await client.getUrl(uri).timeout(requestTimeout);
       request.headers.set(
@@ -519,7 +470,7 @@ extension AsmrDownloadTransferService on AsmrDownloadManager {
             received,
           );
         }
-        await _deleteFileIfPresent(stagingFile);
+        await _outputs.deleteFileIfPresent(stagingFile);
         return _downloadToTemporaryFileAttempt(
           item,
           workId: workId,
@@ -607,7 +558,7 @@ extension AsmrDownloadTransferService on AsmrDownloadManager {
       );
       try {
         await for (final chunk in response.timeout(downloadIdleTimeout)) {
-          _throwIfCancelled(workId);
+          throwIfCancelled(workId);
           received += chunk.length;
           if (maxBytes != null && received > maxBytes) {
             throw FileSystemException(
@@ -646,12 +597,10 @@ extension AsmrDownloadTransferService on AsmrDownloadManager {
         received,
         mimeType: response.headers.contentType?.mimeType,
       );
-    } on _DownloadCancelled {
+    } on DownloadCancelled {
       rethrow;
     } catch (error, stackTrace) {
-      if (_cancelRequested[workId] == true || _pauseRequested[workId] == true) {
-        throw const _DownloadCancelled();
-      }
+      throwIfCancelled(workId);
       return _TemporaryDownloadAttempt.failure(
         retryable: _isRetryableDownloadError(error),
         error: error,
@@ -674,7 +623,7 @@ extension AsmrDownloadTransferService on AsmrDownloadManager {
   }
 
   void _setFileRetryAttempt(int workId, String relativePath, int? attempt) {
-    if (_disposed) return;
+    if (isDisposed()) return;
     final task = _store[workId];
     if (task == null) return;
     final attempts = Map<String, int>.from(task.fileRetryAttempts);
@@ -687,204 +636,54 @@ extension AsmrDownloadTransferService on AsmrDownloadManager {
     _store[workId] = task.copyWith(fileRetryAttempts: attempts);
     _store.notifyProgressChanged(workId);
   }
+}
 
-  Future<JsonDocumentWriteResult> _writeWorkDetailBackup(
-    AudioDetail detail,
-    JsonDocumentLocation location,
-  ) async {
-    final result = await _jsonDocumentStore.write(
-      location: location,
-      bytes: AsmrDownloadManager._audioDetailJsonCodec.encodeNew(detail),
-      mode: JsonDocumentWriteMode.createIfAbsent,
-    );
-    if (result.status == JsonDocumentWriteStatus.created ||
-        result.status == JsonDocumentWriteStatus.preserved) {
-      return result;
-    }
-    throw FileSystemException(
-      'Unable to write work detail backup.',
-      result.error,
-    );
-  }
+class _TemporaryDownloadResult {
+  const _TemporaryDownloadResult({
+    required this.file,
+    required this.bytesDownloaded,
+    required this.mimeType,
+    required this.cacheLease,
+  });
 
-  void _recordCreatedJson(
-    int workId,
-    String path,
-    JsonDocumentLocation location,
-    JsonDocumentWriteResult result,
-  ) {
-    final revision = result.revision;
-    if (result.status != JsonDocumentWriteStatus.created || revision == null) {
-      return;
-    }
-    _createdJsonDocuments.putIfAbsent(
-      workId,
-      () => <String, _CreatedJsonDocument>{},
-    )[path] = _CreatedJsonDocument(
-      location: location,
-      revision: revision,
-    );
-  }
+  final File file;
+  final int bytesDownloaded;
+  final String? mimeType;
+  final CachePathLease cacheLease;
+}
 
-  Future<bool> _ensureFolderPath({
-    required String basePath,
-    required String relativePath,
-    required bool overwrite,
-  }) async {
-    final normalized = _validatedDownloadRelativePath(relativePath);
+class _TemporaryDownloadAttempt {
+  const _TemporaryDownloadAttempt.success(
+    int bytesDownloaded, {
+    String? mimeType,
+  }) : this._(
+         bytesDownloaded: bytesDownloaded,
+         retryable: false,
+         mimeType: mimeType,
+       );
 
-    if (PathMatcher.isContentUri(basePath)) {
-      return _fileCacheGateway.ensureFolderPath(
-        folder: basePath,
-        relativePath: normalized,
-        overwrite: overwrite,
-      );
-    }
+  const _TemporaryDownloadAttempt.failure({
+    required bool retryable,
+    Object? error,
+    StackTrace? stackTrace,
+  }) : this._(
+         bytesDownloaded: null,
+         retryable: retryable,
+         error: error,
+         stackTrace: stackTrace,
+       );
 
-    final folder = Directory(_resolveLocalPathWithin(basePath, normalized));
-    try {
-      await folder.create(recursive: true);
-      return true;
-    } catch (_) {
-      return false;
-    }
-  }
+  const _TemporaryDownloadAttempt._({
+    required this.bytesDownloaded,
+    required this.retryable,
+    this.mimeType,
+    this.error,
+    this.stackTrace,
+  });
 
-  String _joinFolderPath(String basePath, String relativePath) {
-    final normalizedRelative = _validatedDownloadRelativePath(relativePath);
-    if (PathMatcher.isContentUri(basePath)) {
-      if (basePath.contains('::')) {
-        final prefix = PathMatcher.trimRightSlash(basePath);
-        return '$prefix/$normalizedRelative';
-      }
-      return '${PathMatcher.trimRightSlash(basePath)}::$normalizedRelative';
-    }
-    return _resolveLocalPathWithin(basePath, normalizedRelative);
-  }
-
-  Future<bool> _targetFileExists(
-    String workRootPath,
-    _PlannedDownloadFile item, {
-    String? coverOutputPath,
-  }) async {
-    if (item.isCover) {
-      if (coverOutputPath != null && await _outputPathExists(coverOutputPath)) {
-        return true;
-      }
-      final knownExtension = _coverUrlExtension(item.url);
-      if (knownExtension != null) {
-        final targetPath = _joinFolderPath(
-          workRootPath,
-          'cover/${item.coverFileStem!}$knownExtension',
-        );
-        if (await _outputPathExists(targetPath)) return true;
-      }
-      for (final ext in const ['.jpg', '.png', '.webp', '.jpeg']) {
-        final targetPath = _joinFolderPath(
-          workRootPath,
-          'cover/${item.coverFileStem!}$ext',
-        );
-        if (await _outputPathExists(targetPath)) return true;
-      }
-      return false;
-    }
-    final normalized = _validatedDownloadRelativePath(item.relativePath);
-    final targetPath = _joinFolderPath(workRootPath, normalized);
-    return _outputPathExists(targetPath);
-  }
-
-  JsonDocumentLocation _jsonDownloadLocation(
-    String workRootPath,
-    String relativePath,
-  ) {
-    final parentRelative = path.posix.dirname(relativePath);
-    final folder = parentRelative == '.'
-        ? workRootPath
-        : _joinFolderPath(workRootPath, parentRelative);
-    return JsonDocumentLocation.folderChild(
-      folder: folder,
-      name: path.posix.basename(relativePath),
-    );
-  }
-
-  String _validatedDownloadRelativePath(String relativePath) {
-    final normalized = relativePath.trim().replaceAll('\\', '/');
-    if (normalized.isEmpty ||
-        path.posix.isAbsolute(normalized) ||
-        path.windows.isAbsolute(normalized) ||
-        normalized.startsWith('//') ||
-        RegExp(r'^[A-Za-z]:').hasMatch(normalized)) {
-      throw FormatException('Invalid download path: $relativePath');
-    }
-    final segments = normalized.split('/');
-    if (segments.any(
-      (segment) => segment.isEmpty || segment == '.' || segment == '..',
-    )) {
-      throw FormatException('Invalid download path: $relativePath');
-    }
-    return segments.join('/');
-  }
-
-  String _resolveLocalPathWithin(String basePath, String relativePath) {
-    final normalizedRelative = _validatedDownloadRelativePath(relativePath);
-    final root = path.normalize(path.absolute(basePath));
-    final target = path.normalize(
-      path.absolute(
-        path.join(root, normalizedRelative.replaceAll('/', path.separator)),
-      ),
-    );
-    if (!path.isWithin(root, target)) {
-      throw const FormatException('Download path escapes its destination.');
-    }
-    return target;
-  }
-
-  AudioDetail _buildBackupDetail(AsmrWork work, String workRootPath) {
-    return AudioDetail(
-      target: AudioDetailTarget.libraryRootFolder(workRootPath),
-      rjCode: work.rjCode,
-      workTitle: work.title,
-      circleName: work.circleName,
-      voiceActors: work.voiceActors,
-      tags: work.tags,
-      releaseDate: work.releaseDate,
-      duration: work.duration > Duration.zero ? work.duration : null,
-      salesCount: work.dlCount > 0 ? work.dlCount : null,
-      rating: work.rating > 0 ? work.rating.clamp(0, 5).toDouble() : null,
-      createdAt: DateTime.now(),
-      updatedAt: DateTime.now(),
-    ).normalizedForSave(DateTime.now());
-  }
-
-  String? _downloadUrlFor(AsmrTrackFile node) {
-    final candidates = <String?>[
-      if (<String?>[
-        node.streamUrl,
-        node.downloadUrl,
-        node.lowQualityUrl,
-      ].any(AsmrApiService.isOfficialMediaUrl))
-        ...AsmrApiService.mediaDownloadUrlsForHash(node.hash),
-      node.downloadUrl,
-      node.streamUrl,
-      node.lowQualityUrl,
-    ];
-    for (final candidate in candidates) {
-      final value = candidate?.trim();
-      if (value != null && value.isNotEmpty) {
-        return value;
-      }
-    }
-    return null;
-  }
-
-  Future<File> _persistentStagingFile(
-    String workRootPath,
-    String relativePath,
-  ) async {
-    final root = await _stagingDirectoryProvider();
-    final key = sha256
-        .convert(utf8.encode('$workRootPath|$relativePath'))
-        .toString();
-    return File(path.join(root.path, 'asmr_downloads', '$key.doujin.part'));
-  }
+  final int? bytesDownloaded;
+  final bool retryable;
+  final String? mimeType;
+  final Object? error;
+  final StackTrace? stackTrace;
 }

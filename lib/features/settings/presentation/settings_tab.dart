@@ -1,3 +1,5 @@
+import 'subtitle_window_settings_sheet.dart';
+import 'asmr_download_folder_name_settings_sheet.dart';
 import '../../asmr/presentation/asmr_providers.dart';
 import 'settings_providers.dart';
 import 'dart:async';
@@ -29,12 +31,10 @@ import '../../../core/widgets/confirm_action_dialog.dart';
 import '../../../core/widgets/mobile_overlay_inset.dart';
 import '../../../core/widgets/page_header_inset.dart';
 import '../../../core/widgets/scroll_activity_gate.dart';
-import '../../../core/widgets/subtitle_window_visual.dart';
 import '../../../core/widgets/top_page_header.dart';
 import '../../../core/widgets/unified_dropdown.dart';
 import '../../../core/widgets/app_bottom_sheet.dart';
 import '../../../core/widgets/app_transitions.dart';
-import '../../../app/state/subtitle_settings_provider.dart';
 import '../../data_support/presentation/data_support_settings_controls.dart';
 import '../../data_support/presentation/storage_usage_card.dart';
 import '../../asmr/domain/asmr_download.dart';
@@ -148,7 +148,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
   void _showSubtitleWindowSettings(BuildContext context) {
     AppBottomSheet.show<void>(
       context: context,
-      builder: (_) => const _SubtitleWindowSettingsSheet(),
+      builder: (_) => const SubtitleWindowSettingsSheet(),
     );
   }
 

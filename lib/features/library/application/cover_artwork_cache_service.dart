@@ -442,140 +442,8 @@ class CoverArtworkCacheService {
     return _folderCoverFutures.containsKey(PathMatcher.normalize(folderPath));
   }
 
-  String? coverScopeFolderForTrack(MusicTrack? track, {String? trackPath}) {
-    final pathValue = trackPath ?? track?.path;
-    if (pathValue == null || pathValue.isEmpty) return null;
-    if (PathMatcher.isRemoteUri(pathValue)) return null;
-    if (_isStandaloneAudioTrack(track, trackPath: trackPath)) return null;
-
-    final trackOwnPath = track?.path;
-    final pathOverridesTrack =
-        trackPath != null &&
-        trackOwnPath != null &&
-        !PathMatcher.equalsNormalized(trackPath, trackOwnPath);
-    final groupKey = pathOverridesTrack ? '' : track?.groupKey.trim() ?? '';
-    final watchedFolder =
-        mostSpecificContainingCoverRoot(
-          _libraryService.watchedFolders,
-          pathValue,
-        ) ??
-        (groupKey.isEmpty
-            ? null
-            : mostSpecificContainingCoverRoot(
-                _libraryService.watchedFolders,
-                groupKey,
-              ));
-    if (watchedFolder != null && watchedFolder.isNotEmpty) {
-      return watchedFolder;
-    }
-
-    final watchedLibrary =
-        (groupKey.isEmpty
-            ? null
-            : mostSpecificContainingCoverRoot(
-                _libraryService.watchedLibraries,
-                groupKey,
-              )) ??
-        mostSpecificContainingCoverRoot(
-          _libraryService.watchedLibraries,
-          pathValue,
-        );
-    if (watchedLibrary != null && watchedLibrary.isNotEmpty) {
-      final workScope = groupKey.isEmpty
-          ? null
-          : const LibraryOrganizer().workScopeFolderPath(
-              watchedLibrary,
-              groupKey,
-            );
-      return workScope ?? watchedLibrary;
-    }
-
-    if (groupKey.isNotEmpty) return PathMatcher.normalize(groupKey);
-    final parent = PathMatcher.parentPath(pathValue);
-    if (parent != null && parent.isNotEmpty) return parent;
-
-    final directoryPath = path.dirname(pathValue);
-    if (directoryPath.isEmpty || directoryPath == '.') return null;
-    return directoryPath;
-  }
-
-  String? _enclosingFolderForTrack(MusicTrack? track, {String? trackPath}) {
-    final pathValue = trackPath ?? track?.path;
-    if (pathValue == null || pathValue.isEmpty) return null;
-    if (PathMatcher.isRemoteUri(pathValue)) return null;
-
-    final groupKey = track?.groupKey.trim();
-    if (groupKey != null && groupKey.isNotEmpty) {
-      return PathMatcher.normalize(groupKey);
-    }
-    final parent = PathMatcher.parentPath(pathValue);
-    if (parent != null && parent.isNotEmpty) {
-      return PathMatcher.normalize(parent);
-    }
-    return null;
-  }
-
-  List<String> _candidateFolderScopesForTrack(
-    MusicTrack? track, {
-    String? trackPath,
-  }) {
-    final pathValue = trackPath ?? track?.path;
-    if (pathValue == null || pathValue.isEmpty) return const <String>[];
-    if (PathMatcher.isRemoteUri(pathValue)) return const <String>[];
-
-    final scopes = <String>[];
-    final seen = <String>{};
-    void addScope(String? scope) {
-      final value = scope?.trim();
-      if (value == null || value.isEmpty) return;
-      final normalized = PathMatcher.normalize(value);
-      if (normalized.isEmpty || !seen.add(normalized)) return;
-      scopes.add(normalized);
-    }
-
-    final enclosing = _enclosingFolderForTrack(track, trackPath: pathValue);
-    addScope(enclosing);
-
-    if (enclosing != null) {
-      final roots = <String>[
-        ..._libraryService.watchedFolders,
-        ..._libraryService.watchedLibraries,
-      ];
-      var current = PathMatcher.parentPath(enclosing);
-      while (current != null &&
-          current.isNotEmpty &&
-          current != '.' &&
-          current != path.rootPrefix(current)) {
-        final normalizedCurrent = PathMatcher.normalize(current);
-        addScope(normalizedCurrent);
-        if (roots.any(
-          (r) => PathMatcher.equalsNormalized(r, normalizedCurrent),
-        )) {
-          break;
-        }
-        final parent = PathMatcher.parentPath(current);
-        if (parent == null || parent == current) break;
-        current = parent;
-      }
-    }
-
-    if (track != null && !track.isSingle && track.groupKey.trim().isNotEmpty) {
-      addScope(track.groupKey);
-    }
-
-    if (track != null) {
-      final rootFolder = const LibraryOrganizer().rootPathForTrack(
-        track,
-        _libraryService.watchedFolders,
-        watchedLibraries: _libraryService.watchedLibraries,
-      );
-      addScope(rootFolder);
-    }
-
-    addScope(coverScopeFolderForTrack(track, trackPath: pathValue));
-
-    return List<String>.unmodifiable(scopes);
-  }
+  String? coverScopeFolderForTrack(MusicTrack? track, {String? trackPath}) =>
+      _sourceResolver.coverScopeFolderForTrack(track, trackPath: trackPath);
 
   String? _playbackFallbackFolderScopeForTrack(
     MusicTrack? track, {
@@ -586,7 +454,7 @@ class CoverArtworkCacheService {
     if (pathValue.isEmpty) return null;
     if (PathMatcher.isRemoteUri(pathValue)) return null;
 
-    final candidateScopes = _candidateFolderScopesForTrack(
+    final candidateScopes = _sourceResolver.candidateFolderScopesForTrack(
       track,
       trackPath: trackPath,
     );
@@ -597,7 +465,7 @@ class CoverArtworkCacheService {
     }
 
     if (_isVideoTrack(track, trackPath: trackPath) ||
-        _isStandaloneAudioTrack(track, trackPath: trackPath)) {
+        isStandaloneCoverAudioTrack(track, trackPath: trackPath)) {
       return null;
     }
     return coverScopeFolderForTrack(track, trackPath: trackPath);
@@ -1256,7 +1124,7 @@ class CoverArtworkCacheService {
     MusicTrack? track, {
     String? trackPath,
   }) {
-    final candidateScopes = _candidateFolderScopesForTrack(
+    final candidateScopes = _sourceResolver.candidateFolderScopesForTrack(
       track,
       trackPath: trackPath,
     );
@@ -1274,7 +1142,7 @@ class CoverArtworkCacheService {
     String? trackPath,
   }) async {
     await _ensureFolderCoverSelections();
-    final candidateScopes = _candidateFolderScopesForTrack(
+    final candidateScopes = _sourceResolver.candidateFolderScopesForTrack(
       track,
       trackPath: trackPath,
     );
@@ -1476,7 +1344,7 @@ class CoverArtworkCacheService {
   }
 
   AudioDetailTarget? _cardCoverTargetForTrack(MusicTrack? track) {
-    if (track == null || !_isStandaloneAudioTrack(track)) return null;
+    if (track == null || !isStandaloneCoverAudioTrack(track)) return null;
     return AudioDetailTarget.singleAudioFile(track.path);
   }
 
@@ -1763,14 +1631,6 @@ final class _RemoteCoverFailure {
 
   final int count;
   final DateTime retryAt;
-}
-
-bool _isStandaloneAudioTrack(MusicTrack? track, {String? trackPath}) {
-  final pathValue = trackPath ?? track?.path;
-  final isVideo =
-      track?.isVideo == true ||
-      (pathValue?.isNotEmpty == true && isVideoMediaFile(pathValue!));
-  return track?.isSingle == true && !isVideo;
 }
 
 String? remoteCoverSearchKey(String url) {

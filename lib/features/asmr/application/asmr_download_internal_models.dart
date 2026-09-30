@@ -1,7 +1,8 @@
-part of 'asmr_download_manager.dart';
+import '../../../core/persistence/json_document_store.dart';
+import 'asmr_download_models.dart';
 
-class _PersistedDownloadTask {
-  const _PersistedDownloadTask({
+class PersistedDownloadTask {
+  const PersistedDownloadTask({
     required this.task,
     required this.createdOutputPaths,
     required this.createdJsonDocuments,
@@ -9,11 +10,14 @@ class _PersistedDownloadTask {
 
   final AsmrDownloadTaskSnapshot task;
   final Set<String> createdOutputPaths;
-  final Map<String, _CreatedJsonDocument> createdJsonDocuments;
+  final Map<String, CreatedDownloadJsonDocument> createdJsonDocuments;
 }
 
-final class _CreatedJsonDocument {
-  const _CreatedJsonDocument({required this.location, required this.revision});
+final class CreatedDownloadJsonDocument {
+  const CreatedDownloadJsonDocument({
+    required this.location,
+    required this.revision,
+  });
 
   final JsonDocumentLocation location;
   final String revision;
@@ -23,7 +27,7 @@ final class _CreatedJsonDocument {
     'revision': revision,
   };
 
-  static _CreatedJsonDocument? fromJson(Map<String, Object?> json) {
+  static CreatedDownloadJsonDocument? fromJson(Map<String, Object?> json) {
     final kind = switch (json['locationKind']) {
       'folderChild' => JsonDocumentLocationKind.folderChild,
       'fileSibling' => JsonDocumentLocationKind.fileSibling,
@@ -42,12 +46,12 @@ final class _CreatedJsonDocument {
     final location = kind == JsonDocumentLocationKind.folderChild
         ? JsonDocumentLocation.folderChild(folder: basePath, name: name)
         : JsonDocumentLocation.fileSibling(filePath: basePath, name: name);
-    return _CreatedJsonDocument(location: location, revision: revision);
+    return CreatedDownloadJsonDocument(location: location, revision: revision);
   }
 }
 
-class _PlannedDownloadFile {
-  const _PlannedDownloadFile({
+class PlannedDownloadFile {
+  const PlannedDownloadFile({
     required this.url,
     required this.relativePath,
     required this.size,
@@ -56,7 +60,7 @@ class _PlannedDownloadFile {
        maxBytes = null,
        countsTowardByteProgress = true;
 
-  const _PlannedDownloadFile.cover({
+  const PlannedDownloadFile.cover({
     required this.url,
     required this.relativePath,
     required String this.coverFileStem,
@@ -74,20 +78,20 @@ class _PlannedDownloadFile {
   final bool countsTowardByteProgress;
 }
 
-class _WriteResult {
-  const _WriteResult._({
+class DownloadWriteResult {
+  const DownloadWriteResult._({
     required this.saved,
     required this.skipped,
     required this.bytesDownloaded,
   });
 
-  const _WriteResult.success({required int bytesDownloaded})
+  const DownloadWriteResult.success({required int bytesDownloaded})
     : this._(saved: true, skipped: false, bytesDownloaded: bytesDownloaded);
 
-  const _WriteResult.skipped({required int bytesDownloaded})
+  const DownloadWriteResult.skipped({required int bytesDownloaded})
     : this._(saved: false, skipped: true, bytesDownloaded: bytesDownloaded);
 
-  const _WriteResult.failure({required int bytesDownloaded})
+  const DownloadWriteResult.failure({required int bytesDownloaded})
     : this._(saved: false, skipped: false, bytesDownloaded: bytesDownloaded);
 
   final bool saved;
@@ -95,56 +99,6 @@ class _WriteResult {
   final int bytesDownloaded;
 }
 
-class _TemporaryDownloadResult {
-  const _TemporaryDownloadResult({
-    required this.file,
-    required this.bytesDownloaded,
-    required this.mimeType,
-    required this.cacheLease,
-  });
-
-  final File file;
-  final int bytesDownloaded;
-  final String? mimeType;
-  final CachePathLease cacheLease;
-}
-
-class _TemporaryDownloadAttempt {
-  const _TemporaryDownloadAttempt.success(
-    int bytesDownloaded, {
-    String? mimeType,
-  }) : this._(
-         bytesDownloaded: bytesDownloaded,
-         retryable: false,
-         mimeType: mimeType,
-       );
-
-  const _TemporaryDownloadAttempt.failure({
-    required bool retryable,
-    Object? error,
-    StackTrace? stackTrace,
-  }) : this._(
-         bytesDownloaded: null,
-         retryable: retryable,
-         error: error,
-         stackTrace: stackTrace,
-       );
-
-  const _TemporaryDownloadAttempt._({
-    required this.bytesDownloaded,
-    required this.retryable,
-    this.mimeType,
-    this.error,
-    this.stackTrace,
-  });
-
-  final int? bytesDownloaded;
-  final bool retryable;
-  final String? mimeType;
-  final Object? error;
-  final StackTrace? stackTrace;
-}
-
-class _DownloadCancelled implements Exception {
-  const _DownloadCancelled();
+class DownloadCancelled implements Exception {
+  const DownloadCancelled();
 }

@@ -1,8 +1,9 @@
-part of 'asmr_download_manager.dart';
+import 'dart:io';
+import '../../../core/logging/app_log_service.dart';
+import 'asmr_api_service.dart';
 
 const String _asmrMediaAcceptLanguage = 'zh-CN,zh;q=0.9,en;q=0.8';
 
-@visibleForTesting
 Map<String, String> asmrMediaRequestHeadersForUrl(String url) {
   return AsmrApiService.isOfficialMediaUrl(url)
       ? const <String, String>{
@@ -11,7 +12,6 @@ Map<String, String> asmrMediaRequestHeadersForUrl(String url) {
       : const <String, String>{};
 }
 
-@visibleForTesting
 bool isValidDownloadContentRange(
   String? value, {
   required int expectedStart,
@@ -34,7 +34,6 @@ bool isValidDownloadContentRange(
 typedef LocalFileRename =
     Future<File> Function(File source, String destination);
 
-@visibleForTesting
 Future<bool> commitLocalDownloadedFile({
   required File staging,
   required File target,

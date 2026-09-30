@@ -8,6 +8,7 @@ import com.doujin.audio.player.common.*
 import com.doujin.audio.player.notification.*
 import com.doujin.audio.player.recovery.*
 import com.doujin.audio.player.session.*
+import com.doujin.audio.player.effects.NativePlaybackResumeFade
 import com.doujin.audio.player.video.*
 import com.doujin.audio.storage.*
 
@@ -133,8 +134,22 @@ class NativePlaybackService : MediaSessionService() {
     }
 
     private val sessionManager by lazy { NativePlaybackSessionManager(::createNativePlaybackSession) }
-    private val timerStopAfterCurrentTrackSessionIds = mutableSetOf<String>()
-    private var timerStopAfterCurrentTrackGeneration: Int? = null
+    private val timerExecution by lazy {
+        NativePlaybackTimerExecution(
+            setPauseAtEnd = { id, enabled ->
+                sessionManager.get(id)?.playerOrNull()?.pauseAtEndOfMediaItems = enabled
+            },
+            restoreFade = { id -> sessionManager.get(id)?.applyFadeMultiplier(1f) },
+            onAllTracksFinished = { generation ->
+                PlaybackTimerAlarmScheduler.completeTimerStopAfterCurrentTracks(applicationContext, generation)
+            }
+        )
+    }
+    private val timerResumeFade by lazy {
+        NativePlaybackResumeFade(mainHandler) { id, multiplier ->
+            sessionManager.get(id)?.applyFadeMultiplier(multiplier)
+        }
+    }
     private val fileCacheOperations by lazy { FileCacheOperations(applicationContext) }
     private val stateListeners = ConcurrentHashMap<String, (Map<String, Any?>) -> Unit>()
     private val videoOutputs = NativeVideoOutputRegistry<Player>(
@@ -697,7 +712,8 @@ class NativePlaybackService : MediaSessionService() {
                 { focusRecovery.abandon(reason = "on_destroy") },
                 ::releaseWakeLock,
                 { PlaybackKeepAliveAlarmScheduler.cancel(this) },
-                ::cancelTimerFadeIn,
+                timerResumeFade::cancel,
+                timerExecution::cancel,
                 {
                     if (instance === this) {
                         instance = null
@@ -852,7 +868,7 @@ class NativePlaybackService : MediaSessionService() {
         val needsImmediateRecovery = playerBeforePlay != null &&
             playerBeforePlay.playerError != null
         markPlaybackIntended(sessionId)
-        cancelTimerFadeIn()
+        timerResumeFade.cancel()
         session.applyFadeMultiplier(1f)
         session.applyFocusDuckMultiplier(1f)
         focusSession(sessionId)
@@ -890,7 +906,7 @@ class NativePlaybackService : MediaSessionService() {
         sessionId: String,
         transportCommandId: Long = 0L
     ): Map<String, Any?> {
-        cancelTimerFadeIn()
+        timerResumeFade.cancel()
         val session = sessionManager.get(sessionId) ?: return errorResult("Unknown session.")
         session.lastUsedMs = System.currentTimeMillis()
         if (transportCommandId > 0L) session.transportCommandId = transportCommandId
@@ -905,7 +921,7 @@ class NativePlaybackService : MediaSessionService() {
     }
 
     fun stop(sessionId: String): Map<String, Any?> {
-        cancelTimerFadeIn()
+        timerResumeFade.cancel()
         val session = sessionManager.get(sessionId) ?: return errorResult("Unknown session.")
         session.lastUsedMs = System.currentTimeMillis()
         focusRecovery.removePending(sessionId)
@@ -1032,7 +1048,7 @@ class NativePlaybackService : MediaSessionService() {
     }
 
     fun setFadeMultiplier(sessionId: String, multiplier: Float): Map<String, Any?> {
-        cancelTimerFadeIn()
+        timerResumeFade.cancel()
         val session = sessionManager.get(sessionId) ?: return errorResult("Unknown session.")
         session.applyFadeMultiplier(multiplier)
         return okResult(session.snapshot())
@@ -1262,64 +1278,18 @@ class NativePlaybackService : MediaSessionService() {
             return emptyList()
         }
         focusRecovery.clearTransientLoss()
-        timerStopAfterCurrentTrackSessionIds
-            .apply {
-                clear()
-                addAll(sessionIds)
-            }
-        timerStopAfterCurrentTrackGeneration = generation
         sessionIds.forEach { sessionId ->
             focusRecovery.removePending(sessionId)
             clearPlaybackIntent(sessionId)
-            sessionManager.get(sessionId)?.let { session ->
-                session.playerOrNull()?.pauseAtEndOfMediaItems = true
-                session.applyFadeMultiplier(1f)
-            }
         }
+        timerExecution.arm(sessionIds, generation)
         publishAllSessionStates()
         persistSessionStateNow()
         syncForegroundState()
         return sessionIds
     }
 
-    fun cancelTimerStopAfterCurrentTrack() {
-        timerStopAfterCurrentTrackSessionIds.forEach { sessionId ->
-            sessionManager.get(sessionId)?.playerOrNull()?.pauseAtEndOfMediaItems = false
-        }
-        timerStopAfterCurrentTrackSessionIds.clear()
-        timerStopAfterCurrentTrackGeneration = null
-    }
-
-    private var timerFadeInRunnable: Runnable? = null
-
-    private fun cancelTimerFadeIn() {
-        timerFadeInRunnable?.let { mainHandler.removeCallbacks(it) }
-        timerFadeInRunnable = null
-    }
-
-    private fun startTimerResumeFadeIn(sessionIds: List<String>) {
-        cancelTimerFadeIn()
-        if (sessionIds.isEmpty()) return
-        val durationMs = 10000L
-        val intervalMs = 50L
-        val startTime = SystemClock.uptimeMillis()
-        sessionIds.forEach { sessionManager.get(it)?.applyFadeMultiplier(0f) }
-        val runnable = object : Runnable {
-            override fun run() {
-                val elapsed = SystemClock.uptimeMillis() - startTime
-                if (elapsed >= durationMs) {
-                    sessionIds.forEach { sessionManager.get(it)?.applyFadeMultiplier(1f) }
-                    timerFadeInRunnable = null
-                } else {
-                    val fraction = (elapsed.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f)
-                    sessionIds.forEach { sessionManager.get(it)?.applyFadeMultiplier(fraction) }
-                    mainHandler.postDelayed(this, intervalMs)
-                }
-            }
-        }
-        timerFadeInRunnable = runnable
-        mainHandler.postDelayed(runnable, intervalMs)
-    }
+    fun cancelTimerStopAfterCurrentTrack() = timerExecution.cancel()
 
     internal fun resumeSessionsForTimer(sessionIds: List<String>): NativeTimerResumeResult {
         if (sessionIds.isEmpty()) {
@@ -1356,7 +1326,7 @@ class NativePlaybackService : MediaSessionService() {
             ensureStatePersistenceTicker()
             publishAllSessionStates()
             persistSessionStateNow()
-            startTimerResumeFadeIn(resumedSessionIds)
+            timerResumeFade.start(resumedSessionIds)
         }
         syncForegroundState()
         return NativeTimerResumeResult(resumedSessionIds, audioFocusDenied = false)
@@ -1412,18 +1382,8 @@ class NativePlaybackService : MediaSessionService() {
             focusRecovery.removePending(sessionId)
             clearPlaybackIntent(sessionId)
         }
-        if (!playWhenReady &&
-            reason == Player.PLAY_WHEN_READY_CHANGE_REASON_END_OF_MEDIA_ITEM &&
-            timerStopAfterCurrentTrackSessionIds.remove(sessionId)
-        ) {
-            sessionManager.get(sessionId)?.playerOrNull()?.pauseAtEndOfMediaItems = false
-            if (timerStopAfterCurrentTrackSessionIds.isEmpty()) {
-                PlaybackTimerAlarmScheduler.completeTimerStopAfterCurrentTracks(
-                    applicationContext,
-                    timerStopAfterCurrentTrackGeneration
-                )
-                timerStopAfterCurrentTrackGeneration = null
-            }
+        if (!playWhenReady && reason == Player.PLAY_WHEN_READY_CHANGE_REASON_END_OF_MEDIA_ITEM) {
+            timerExecution.onTrackEnded(sessionId)
         }
         focusRecovery.onPlayWhenReadyChanged(sessionId, playWhenReady, reason)
         logInfo(

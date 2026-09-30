@@ -285,9 +285,7 @@ void main() {
           final listFinder = find.byKey(const ValueKey('subtitle_timeline_list'));
           expect(listFinder, findsOneWidget);
 
-          final timelineView = find.byWidgetPredicate(
-            (widget) => widget.runtimeType.toString() == '_TimelineSubtitleView',
-          );
+          final timelineView = find.byType(TimelineSubtitleView);
           final dynamic state = tester.state(timelineView);
           expect(state.debugFocusedIndex, 0);
 

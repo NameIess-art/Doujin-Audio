@@ -6,22 +6,20 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../app/localization/app_language_provider.dart';
 import '../../../app/state/app_runtime_providers.dart';
 import '../domain/asmr_models.dart';
 import '../application/asmr_download_models.dart';
 import '../application/asmr_download_selection.dart';
 import '../../../core/ui/ui_operation_service.dart';
-import '../../../core/ui/undoable_removal_service.dart';
 import '../../../app/theme/app_design_tokens.dart';
-import '../../../core/widgets/app_bottom_sheet.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/operation_feedback.dart';
-import '../../../core/widgets/shimmer_loading.dart';
 import '../../../core/widgets/page_header_inset.dart';
 import '../../../core/widgets/top_page_header.dart';
-import 'asmr_download_details_page.dart';
+import 'asmr_download_summary_card.dart';
+import 'asmr_download_selection_tree.dart';
+export 'asmr_download_task_page.dart';
 
 class AsmrDownloadPage extends ConsumerStatefulWidget {
   const AsmrDownloadPage({
@@ -72,7 +70,9 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
     try {
       final result = await ref
           .read(uiOperationServiceProvider)
-          .run<({List<AsmrTrackFile> tree, String? destinationRoot, AsmrWork work})>(
+          .run<
+            ({List<AsmrTrackFile> tree, String? destinationRoot, AsmrWork work})
+          >(
             scope: UiOperationScope.asmrDownloadInit,
             labelKey: 'asmr_download_title',
             task: (_) async {
@@ -82,8 +82,9 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
                 if (rjCode == null || rjCode.isEmpty) {
                   throw StateError('No RJ code provided');
                 }
-                final language =
-                    ref.read(appLanguageProviderInstanceProvider).language;
+                final language = ref
+                    .read(appLanguageProviderInstanceProvider)
+                    .language;
                 work = await ref.read(asmrWorkFinderProvider)(
                   rjCode,
                   language: language,
@@ -110,7 +111,8 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
               await downloadManager.initialize();
               final customRoot = widget.customDestinationRoot?.trim();
               final customFolder = widget.customWorkFolderName?.trim();
-              final isCustom = customRoot != null &&
+              final isCustom =
+                  customRoot != null &&
                   customRoot.isNotEmpty &&
                   customFolder != null &&
                   customFolder.isNotEmpty;
@@ -122,7 +124,8 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
                 targetRoot = settings.asmrDownloadDestinationRoot;
               }
 
-              destinationMissing = !isCustom &&
+              destinationMissing =
+                  !isCustom &&
                   targetRoot != null &&
                   targetRoot.trim().isNotEmpty &&
                   !await downloadManager.destinationExists(targetRoot);
@@ -348,8 +351,9 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
     });
 
     final defaultHeaderHeight = MediaQuery.paddingOf(context).top + 140.0;
-    final effectiveHeaderHeight =
-        _headerHeight > 0 ? _headerHeight : defaultHeaderHeight;
+    final effectiveHeaderHeight = _headerHeight > 0
+        ? _headerHeight
+        : defaultHeaderHeight;
     final listTopPadding = effectiveHeaderHeight + 8;
 
     return Scaffold(
@@ -362,125 +366,130 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-            Positioned.fill(
-              child: PlaceholderContentTransition(
-                showPlaceholder: _loading,
-                placeholder: SingleChildScrollView(
-                  padding: EdgeInsets.fromLTRB(
-                    16,
-                    listTopPadding,
-                    16,
-                    listBottomPadding,
-                  ),
-                  child: const OperationSkeletonList(
-                    itemCount: 6,
-                    showHeader: false,
-                  ),
-                ),
-                content: _bootstrapError != null || selection == null
-                  ? Padding(
-                      padding: EdgeInsets.fromLTRB(
-                        16,
-                        listTopPadding,
-                        16,
-                        listBottomPadding,
+                  Positioned.fill(
+                    child: PlaceholderContentTransition(
+                      showPlaceholder: _loading,
+                      placeholder: SingleChildScrollView(
+                        padding: EdgeInsets.fromLTRB(
+                          16,
+                          listTopPadding,
+                          16,
+                          listBottomPadding,
+                        ),
+                        child: const OperationSkeletonList(
+                          itemCount: 6,
+                          showHeader: false,
+                        ),
                       ),
-                      child: OperationStatusBanner(
-                        label: i18n.tr('asmr_detail_load_failed'),
-                        error: _bootstrapError,
-                        onRetry: () {
-                          setState(() {
-                            _loading = true;
-                            _bootstrapError = null;
-                          });
-                          unawaited(_bootstrap());
-                        },
-                      ),
-                    )
-                  : ListView.builder(
-                      key: const ValueKey<String>(
-                        'asmr_download_file_list',
-                      ),
-                      padding: EdgeInsets.fromLTRB(
-                        16,
-                        listTopPadding,
-                        16,
-                        listBottomPadding,
-                      ),
-                      itemCount: selection.rootNodes.length,
-                      itemBuilder: (context, index) {
-                        final node = selection.rootNodes[index];
-                        return Padding(
-                          padding: const EdgeInsets.only(bottom: 2),
-                          child: _AsmrDownloadNodeTile(
-                            node: node,
-                            depth: 0,
-                            selection: selection,
-                            onSelectionChanged: _refreshSelection,
-                          ),
-                        );
-                      },
-                    ),
-              ),
-            ),
-            if (!_loading && _selection != null && _work != null)
-              Positioned(
-                bottom: 16 + bottomInset,
-                right: 16,
-                child: HeaderFloatingSurface(
-                  key: const ValueKey<String>('asmr_download_start_button'),
-                  height: 46,
-                  radius: 23,
-                  padding: EdgeInsets.zero,
-                  child: Material(
-                    color: asmrBlue,
-                    borderRadius: BorderRadius.circular(23),
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(23),
-                      onTap: _starting ? null : _startDownload,
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            if (_starting)
-                              Padding(
-                                padding: const EdgeInsets.only(right: 8),
-                                child: SizedBox(
-                                  width: 18,
-                                  height: 18,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    valueColor: AlwaysStoppedAnimation<Color>(
-                                      onAsmrBlue,
-                                    ),
-                                  ),
-                                ),
-                              )
-                            else
-                              Icon(
-                                Icons.download_rounded,
-                                size: 18,
-                                color: onAsmrBlue,
+                      content: _bootstrapError != null || selection == null
+                          ? Padding(
+                              padding: EdgeInsets.fromLTRB(
+                                16,
+                                listTopPadding,
+                                16,
+                                listBottomPadding,
                               ),
-                            const SizedBox(width: 8),
-                            Text(
-                              i18n.tr('asmr_download_action'),
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .labelLarge
-                                  ?.copyWith(
-                                    color: onAsmrBlue,
-                                    fontWeight: FontWeight.w700,
+                              child: OperationStatusBanner(
+                                label: i18n.tr('asmr_detail_load_failed'),
+                                error: _bootstrapError,
+                                onRetry: () {
+                                  setState(() {
+                                    _loading = true;
+                                    _bootstrapError = null;
+                                  });
+                                  unawaited(_bootstrap());
+                                },
+                              ),
+                            )
+                          : ListView.builder(
+                              key: const ValueKey<String>(
+                                'asmr_download_file_list',
+                              ),
+                              padding: EdgeInsets.fromLTRB(
+                                16,
+                                listTopPadding,
+                                16,
+                                listBottomPadding,
+                              ),
+                              itemCount: selection.rootNodes.length,
+                              itemBuilder: (context, index) {
+                                final node = selection.rootNodes[index];
+                                return Padding(
+                                  padding: const EdgeInsets.only(bottom: 2),
+                                  child: AsmrDownloadNodeTile(
+                                    node: node,
+                                    depth: 0,
+                                    selection: selection,
+                                    onSelectionChanged: _refreshSelection,
                                   ),
+                                );
+                              },
                             ),
-                          ],
+                    ),
+                  ),
+                  if (!_loading && _selection != null && _work != null)
+                    Positioned(
+                      bottom: 16 + bottomInset,
+                      right: 16,
+                      child: HeaderFloatingSurface(
+                        key: const ValueKey<String>(
+                          'asmr_download_start_button',
+                        ),
+                        height: 46,
+                        radius: 23,
+                        padding: EdgeInsets.zero,
+                        child: Material(
+                          color: asmrBlue,
+                          borderRadius: BorderRadius.circular(23),
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(23),
+                            onTap: _starting ? null : _startDownload,
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  if (_starting)
+                                    Padding(
+                                      padding: const EdgeInsets.only(right: 8),
+                                      child: SizedBox(
+                                        width: 18,
+                                        height: 18,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          valueColor:
+                                              AlwaysStoppedAnimation<Color>(
+                                                onAsmrBlue,
+                                              ),
+                                        ),
+                                      ),
+                                    )
+                                  else
+                                    Icon(
+                                      Icons.download_rounded,
+                                      size: 18,
+                                      color: onAsmrBlue,
+                                    ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    i18n.tr('asmr_download_action'),
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .labelLarge
+                                        ?.copyWith(
+                                          color: onAsmrBlue,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                ),
-              ),
                 ],
               ),
             ),
@@ -496,12 +505,14 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
                   iconColor: AppDesignTokens.of(context).asmrAccent,
                   leading: const BackButton(),
                   title: i18n.tr('asmr_download_title'),
-                  titleSuffix: (widget.batchIndex != null &&
+                  titleSuffix:
+                      (widget.batchIndex != null &&
                           widget.batchTotal != null &&
                           widget.batchTotal! > 1)
                       ? Text(
                           '${widget.batchIndex}/${widget.batchTotal}',
-                          style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                          style: Theme.of(context).textTheme.labelMedium
+                              ?.copyWith(
                                 color: Theme.of(context)
                                     .colorScheme
                                     .onSurfaceVariant
@@ -517,7 +528,9 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
                           padding: const EdgeInsets.symmetric(horizontal: 12),
                           child: InkWell(
                             borderRadius: BorderRadius.circular(19),
-                            onTap: (_starting || _loading) ? null : _chooseDestination,
+                            onTap: (_starting || _loading)
+                                ? null
+                                : _chooseDestination,
                             child: Center(
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
@@ -559,13 +572,13 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
                             animation: animation,
                             child: child,
                           ),
-                      child: _DownloadSummaryCard(
+                      child: AsmrDownloadSummaryCard(
                         key: ValueKey(_work == null),
                         work: _work,
                         initialRjCode: widget.initialRjCode,
                         selectedLeafCount: selectedLeafCount,
                         selectedTotalSizeBytes: selectedTotalSizeBytes,
-                        customDestinationRoot: widget.customDestinationRoot,
+
                         customWorkFolderName: widget.customWorkFolderName,
                       ),
                     ),
@@ -577,775 +590,5 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
         ),
       ),
     );
-  }
-}
-
-class AsmrDownloadTaskPage extends ConsumerWidget {
-  const AsmrDownloadTaskPage({super.key});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final state = ref.watch(asmrDownloadTaskIdsProvider).value;
-    final removalState = ref.watch(undoableRemovalStateProvider);
-    final taskIds =
-        (state ??
-                ref.read(asmrDownloadManagerProvider)?.taskIds ??
-                const <int>[])
-            .where(
-              (workId) =>
-                  !removalState.isHidden(_asmrDownloadTaskRemovalKey(workId)),
-            )
-            .toList(growable: false);
-    ref.watch(appLanguageStateProvider);
-    final i18n = ref.read(appLanguageProviderInstanceProvider);
-    final headerHeight = MediaQuery.paddingOf(context).top + 56;
-
-    return Scaffold(
-      backgroundColor: Theme.of(context).colorScheme.surface,
-      body: PageHeaderInset(
-        topInset: headerHeight + 16,
-        child: Stack(
-          children: [
-            AppPageContentTransition(
-              child: taskIds.isEmpty
-                  ?
-              Center(
-                child: Text(
-                  i18n.tr('asmr_download_no_tasks'),
-                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              )
-                  :
-              ListView.builder(
-                padding: EdgeInsets.fromLTRB(
-                  16,
-                  headerHeight + 16,
-                  16,
-                  MediaQuery.paddingOf(context).bottom + 16,
-                ),
-                physics: const ClampingScrollPhysics(),
-                itemCount: taskIds.length,
-                itemBuilder: (context, index) {
-                  return _TaskCard(workId: taskIds[index]);
-                },
-              ),
-            ),
-            Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              child: Theme(
-                data: asmrThemeData(context),
-                child: TopPageHeader(
-                  icon: Icons.download_done_rounded,
-                  iconColor: AppDesignTokens.of(context).asmrAccent,
-                  leading: const BackButton(),
-                  title: i18n.tr('asmr_download_task_title'),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-enum _TaskRemovalAction { removeEntry, deleteDownloaded }
-
-UndoableRemovalKey _asmrDownloadTaskRemovalKey(int workId) =>
-    UndoableRemovalKey('asmr-download-task', '$workId');
-
-Future<void> _stageAsmrDownloadTaskRemoval(
-  BuildContext context,
-  WidgetRef ref, {
-  required AsmrDownloadTaskSnapshot task,
-  required _TaskRemovalAction removalAction,
-}) async {
-  final manager = ref.read(asmrDownloadManagerProvider);
-  if (manager == null) return;
-  final service = ref.read(undoableRemovalServiceProvider);
-  final wasRunning =
-      task.status == AsmrDownloadTaskStatus.idle || task.isActive;
-  await showUndoableRemovalFeedback(
-    context,
-    service: service,
-    action: UndoableRemovalAction(
-      key: _asmrDownloadTaskRemovalKey(task.work.id),
-      prepare: () async {
-        if (wasRunning) await manager.pauseTask(task.work.id);
-        return manager.getTask(task.work.id) != null;
-      },
-      undo: () async {
-        if (wasRunning && manager.getTask(task.work.id) != null) {
-          await manager.resumeTask(task.work.id);
-        }
-      },
-      commit: () => removalAction == _TaskRemovalAction.removeEntry
-          ? manager.cancelTask(task.work.id, deleteDownloaded: false)
-          : manager.deleteTask(task.work.id),
-    ),
-    message: ref
-        .read(appLanguageProviderInstanceProvider)
-        .tr(
-          removalAction == _TaskRemovalAction.removeEntry
-              ? 'asmr_download_task_removed'
-              : 'asmr_download_task_removed_and_deleted',
-        ),
-    batchMessage: (count) => ref.read(appLanguageProviderInstanceProvider).tr(
-      'items_removed_count',
-      {'count': count},
-    ),
-    undoLabel: ref.read(appLanguageProviderInstanceProvider).tr('undo'),
-    failureMessage: ref
-        .read(appLanguageProviderInstanceProvider)
-        .tr('removal_failed'),
-    icon: removalAction == _TaskRemovalAction.removeEntry
-        ? Icons.remove_circle_outline_rounded
-        : Icons.delete_sweep_rounded,
-  );
-}
-
-Future<_TaskRemovalAction?> _showTaskRemovalMenu(
-  BuildContext context, {
-  required String title,
-  required String removeEntryLabel,
-  required String deleteDownloadedLabel,
-}) {
-  return AppBottomSheet.show<_TaskRemovalAction>(
-    context: context,
-    isScrollControlled: false,
-    builder: (sheetContext) {
-      final cs = Theme.of(sheetContext).colorScheme;
-      return SafeArea(
-        top: false,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-                child: Text(
-                  title,
-                  style: Theme.of(sheetContext).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-              ListTile(
-                key: const ValueKey<String>(
-                  'asmr_download_remove_entry_option',
-                ),
-                leading: const Icon(Icons.remove_circle_outline_rounded),
-                title: Text(removeEntryLabel),
-                onTap: () => Navigator.of(
-                  sheetContext,
-                ).pop(_TaskRemovalAction.removeEntry),
-              ),
-              ListTile(
-                key: const ValueKey<String>(
-                  'asmr_download_delete_downloaded_option',
-                ),
-                leading: Icon(Icons.delete_forever_rounded, color: cs.error),
-                title: Text(
-                  deleteDownloadedLabel,
-                  style: TextStyle(color: cs.error),
-                ),
-                onTap: () => Navigator.of(
-                  sheetContext,
-                ).pop(_TaskRemovalAction.deleteDownloaded),
-              ),
-            ],
-          ),
-        ),
-      );
-    },
-  );
-}
-
-class _TaskCard extends ConsumerWidget {
-  const _TaskCard({required this.workId});
-
-  final int workId;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final task = ref.watch(asmrDownloadTaskProvider(workId));
-    if (task == null) return const SizedBox.shrink();
-    final manager = ref.read(asmrDownloadManagerProvider);
-    if (manager == null) return const SizedBox.shrink();
-
-    final cs = Theme.of(context).colorScheme;
-    ref.watch(appLanguageStateProvider);
-    final i18n = ref.read(appLanguageProviderInstanceProvider);
-    final asmrBlue = AppDesignTokens.of(context).asmrAccent;
-    final retryAttempt = task.isActive
-        ? task.fileRetryAttempts.values.fold<int?>(
-            null,
-            (highest, attempt) =>
-                highest == null || attempt > highest ? attempt : highest,
-          )
-        : null;
-
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      clipBehavior: Clip.antiAlias,
-      elevation: 0,
-      color: cs.surfaceContainerHigh,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: InkWell(
-        onTap: () {
-          Navigator.of(context).push(
-            buildAppPageRoute<void>(
-              context: context,
-              child: AsmrDownloadDetailsPage(workId: task.work.id),
-            ),
-          );
-        },
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: Text(
-                      task.work.title,
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w700,
-                        height: 1.3,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  if (task.status != AsmrDownloadTaskStatus.completed &&
-                      task.status != AsmrDownloadTaskStatus.failed)
-                    SizedBox(
-                      width: 32,
-                      height: 32,
-                      child: IconButton(
-                        padding: EdgeInsets.zero,
-                        icon: Icon(
-                          task.status == AsmrDownloadTaskStatus.paused
-                              ? Icons.play_arrow_rounded
-                              : Icons.pause_rounded,
-                        ),
-                        iconSize: 22,
-                        color: cs.onSurfaceVariant.withValues(alpha: 0.8),
-                        tooltip: task.status == AsmrDownloadTaskStatus.paused
-                            ? i18n.tr('resume')
-                            : i18n.tr('pause'),
-                        onPressed: () {
-                          if (task.status == AsmrDownloadTaskStatus.paused) {
-                            manager.resumeTask(task.work.id);
-                          } else {
-                            manager.pauseTask(task.work.id);
-                          }
-                        },
-                      ),
-                    ),
-                  const SizedBox(width: 4),
-                  SizedBox(
-                    width: 32,
-                    height: 32,
-                    child: IconButton(
-                      key: ValueKey<String>(
-                        'asmr_download_remove_task_${task.work.id}',
-                      ),
-                      padding: EdgeInsets.zero,
-                      icon: const Icon(Icons.delete_outline_rounded),
-                      iconSize: 22,
-                      color: cs.error.withValues(alpha: 0.8),
-                      tooltip: i18n.tr('asmr_download_remove_task'),
-                      onPressed: () async {
-                        final action = await _showTaskRemovalMenu(
-                          context,
-                          title: i18n.tr('asmr_download_remove_task'),
-                          removeEntryLabel: i18n.tr(
-                            'asmr_download_remove_entry',
-                          ),
-                          deleteDownloadedLabel: i18n.tr(
-                            'asmr_download_remove_and_delete',
-                          ),
-                        );
-                        if (!context.mounted || action == null) return;
-                        await _stageAsmrDownloadTaskRemoval(
-                          context,
-                          ref,
-                          task: task,
-                          removalAction: action,
-                        );
-                      },
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(4),
-                child: LinearProgressIndicator(
-                  value: task.progress,
-                  minHeight: 6,
-                  color: asmrBlue,
-                  backgroundColor: asmrBlue.withValues(alpha: 0.2),
-                ),
-              ),
-              const SizedBox(height: 12),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    retryAttempt == null
-                        ? _statusText(i18n, task.status)
-                        : i18n.tr('asmr_download_status_retrying', {
-                            'attempt': retryAttempt,
-                            'max': task.automaticFileRetryCount,
-                          }),
-                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                      color: cs.onSurfaceVariant,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  Text(
-                    '${_formatBytes(task.downloadedBytes)} / ${_formatBytes(task.totalBytes)}',
-                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                      color: cs.onSurfaceVariant,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _DownloadSummaryCard extends ConsumerWidget {
-  const _DownloadSummaryCard({
-    super.key,
-    this.work,
-    this.initialRjCode,
-    required this.selectedLeafCount,
-    required this.selectedTotalSizeBytes,
-    this.customDestinationRoot,
-    this.customWorkFolderName,
-  });
-
-  final AsmrWork? work;
-  final String? initialRjCode;
-  final int selectedLeafCount;
-  final int selectedTotalSizeBytes;
-  final String? customDestinationRoot;
-  final String? customWorkFolderName;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final cs = Theme.of(context).colorScheme;
-    final tokens = AppDesignTokens.of(context);
-    final asmrBlue = tokens.asmrAccent;
-    ref.watch(appLanguageStateProvider);
-    final i18n = ref.read(appLanguageProviderInstanceProvider);
-
-    final currentWork = work;
-    if (currentWork == null) {
-      return HeaderFloatingSurface(
-        key: const ValueKey<String>('asmr_download_summary_skeleton'),
-        height: null,
-        radius: 16,
-        padding: const EdgeInsets.all(16),
-        child: ShimmerLoader(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (initialRjCode != null && initialRjCode!.trim().isNotEmpty)
-                Text(
-                  initialRjCode!.trim(),
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w800,
-                      ),
-                )
-              else
-                const ShimmerContainer(width: 200, height: 18),
-              const SizedBox(height: 10),
-              const Row(
-                children: [
-                  ShimmerContainer(width: 16, height: 16, borderRadius: 8),
-                  SizedBox(width: 6),
-                  ShimmerContainer(width: 140, height: 12),
-                ],
-              ),
-              if (customWorkFolderName != null &&
-                  customWorkFolderName!.trim().isNotEmpty) ...[
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Icon(
-                      Icons.folder_outlined,
-                      size: 16,
-                      color: cs.onSurfaceVariant,
-                    ),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: Text(
-                        customWorkFolderName!.trim(),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: cs.onSurfaceVariant,
-                              fontWeight: FontWeight.w500,
-                            ),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ],
-          ),
-        ),
-      );
-    }
-
-    return HeaderFloatingSurface(
-      key: const ValueKey<String>('asmr_download_summary'),
-      height: null,
-      radius: 16,
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            currentWork.title,
-            maxLines: 3,
-            overflow: TextOverflow.ellipsis,
-            style: Theme.of(
-              context,
-            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Icon(
-                Icons.check_circle_outline_rounded,
-                size: 16,
-                color: asmrBlue,
-              ),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  i18n.tr('asmr_download_summary_selected', {
-                    'count': selectedLeafCount,
-                    'size': _formatFileSize(selectedTotalSizeBytes),
-                  }),
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: cs.onSurfaceVariant,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          if (customWorkFolderName != null &&
-              customWorkFolderName!.trim().isNotEmpty) ...[
-            const SizedBox(height: 6),
-            Row(
-              children: [
-                Icon(
-                  Icons.folder_outlined,
-                  size: 16,
-                  color: cs.onSurfaceVariant,
-                ),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    customWorkFolderName!.trim(),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: cs.onSurfaceVariant,
-                          fontWeight: FontWeight.w500,
-                        ),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-class _AsmrDownloadNodeTile extends ConsumerStatefulWidget {
-  const _AsmrDownloadNodeTile({
-    required this.node,
-    required this.depth,
-    required this.selection,
-    required this.onSelectionChanged,
-  });
-
-  final AsmrDownloadSelectionNode node;
-  final int depth;
-  final AsmrDownloadSelectionModel selection;
-  final VoidCallback onSelectionChanged;
-
-  @override
-  ConsumerState<_AsmrDownloadNodeTile> createState() =>
-      _AsmrDownloadNodeTileState();
-}
-
-class _AsmrDownloadNodeTileState extends ConsumerState<_AsmrDownloadNodeTile> {
-  static const double _indentWidth = 14;
-  static const double _folderRowHeight = 44;
-  static const double _fileRowHeight = 46;
-
-  late bool _expanded;
-
-  @override
-  void initState() {
-    super.initState();
-    _expanded = widget.depth == 0;
-  }
-
-  void _toggleSelection(bool? next) {
-    widget.selection.togglePath(widget.node.track.relativePath, next);
-    widget.onSelectionChanged();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final tokens = AppDesignTokens.of(context);
-    final asmrBlue = tokens.asmrAccent;
-    final folderRadius = BorderRadius.circular(tokens.radiusSmall);
-    ref.watch(appLanguageStateProvider);
-    final i18n = ref.read(appLanguageProviderInstanceProvider);
-    final value = widget.selection.stateForPath(widget.node.track.relativePath);
-    final indent = _indentWidth * widget.depth;
-
-    if (widget.node.track.isFolder) {
-      final hasChildren = widget.node.children.isNotEmpty;
-      return Theme(
-        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-        child: ExpansionTile(
-          expansionAnimationStyle: appExpansionAnimationStyle(context),
-          initiallyExpanded: _expanded,
-          minTileHeight: _folderRowHeight,
-          shape: RoundedRectangleBorder(borderRadius: folderRadius),
-          collapsedShape: RoundedRectangleBorder(borderRadius: folderRadius),
-          tilePadding: EdgeInsetsDirectional.only(start: indent, end: 2),
-          childrenPadding: EdgeInsets.zero,
-          onExpansionChanged: (expanded) {
-            setState(() {
-              _expanded = expanded;
-            });
-          },
-          title: Row(
-            children: [
-              _CompactNodeCheckbox(value: value, onChanged: _toggleSelection),
-              const SizedBox(width: 4),
-              Icon(
-                _expanded ? Icons.folder_open_rounded : Icons.folder_rounded,
-                size: 20,
-                color: asmrBlue.withValues(alpha: 0.8),
-              ),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  widget.node.track.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w700,
-                    fontSize: 13,
-                    height: 1.06,
-                    color: cs.onSurface.withValues(alpha: 0.9),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          trailing: hasChildren
-              ? AnimatedRotation(
-                  turns: _expanded ? 0.5 : 0,
-                  duration: const Duration(milliseconds: 180),
-                  curve: Curves.easeOutCubic,
-                  child: Icon(
-                    Icons.expand_more_rounded,
-                    color: cs.onSurfaceVariant,
-                    size: 20,
-                  ),
-                )
-              : const SizedBox(width: 20),
-          children: hasChildren && _expanded
-              ? [
-                  for (final child in widget.node.children)
-                    _AsmrDownloadNodeTile(
-                      node: child,
-                      depth: widget.depth + 1,
-                      selection: widget.selection,
-                      onSelectionChanged: widget.onSelectionChanged,
-                    ),
-                ]
-              : hasChildren
-              ? const <Widget>[]
-              : [
-                  Padding(
-                    padding: EdgeInsetsDirectional.only(
-                      start: indent + _indentWidth + 40,
-                      end: 8,
-                      bottom: 4,
-                    ),
-                    child: Text(
-                      i18n.tr('asmr_download_empty_folder'),
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: cs.onSurfaceVariant,
-                      ),
-                    ),
-                  ),
-                ],
-        ),
-      );
-    }
-
-    return InkWell(
-      onTap: () => _toggleSelection(value == true ? false : true),
-      borderRadius: folderRadius,
-      child: SizedBox(
-        height: _fileRowHeight,
-        child: Padding(
-          padding: EdgeInsetsDirectional.only(start: indent, end: 4),
-          child: Row(
-            children: [
-              _CompactNodeCheckbox(value: value, onChanged: _toggleSelection),
-              const SizedBox(width: 4),
-              Icon(
-                _fileIconFor(widget.node.track),
-                size: 18,
-                color: cs.onSurfaceVariant.withValues(alpha: 0.7),
-              ),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      widget.node.track.title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 13,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 6),
-              Text(
-                _formatFileSize(widget.node.track.size),
-                style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: cs.onSurfaceVariant,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _CompactNodeCheckbox extends StatelessWidget {
-  const _CompactNodeCheckbox({required this.value, required this.onChanged});
-
-  final bool? value;
-  final ValueChanged<bool?> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    final asmrBlue = AppDesignTokens.of(context).asmrAccent;
-    return SizedBox(
-      width: 28,
-      height: 28,
-      child: Checkbox(
-        tristate: true,
-        value: value,
-        onChanged: onChanged,
-        activeColor: asmrBlue,
-        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        visualDensity: VisualDensity.compact,
-      ),
-    );
-  }
-}
-
-String _statusText(AppLanguageProvider i18n, AsmrDownloadTaskStatus status) {
-  switch (status) {
-    case AsmrDownloadTaskStatus.preparing:
-      return i18n.tr('asmr_download_status_preparing');
-    case AsmrDownloadTaskStatus.downloading:
-      return i18n.tr('asmr_download_status_downloading');
-    case AsmrDownloadTaskStatus.paused:
-      return i18n.tr('asmr_download_status_paused');
-    case AsmrDownloadTaskStatus.completed:
-      return i18n.tr('asmr_download_status_completed');
-    case AsmrDownloadTaskStatus.failed:
-      return i18n.tr('asmr_download_status_failed');
-    case AsmrDownloadTaskStatus.idle:
-      return i18n.tr('asmr_download_status_idle');
-  }
-}
-
-String _formatFileSize(int bytes) {
-  if (bytes <= 0) return '0 B';
-  const units = ['B', 'KB', 'MB', 'GB'];
-  var value = bytes.toDouble();
-  var unitIndex = 0;
-  while (value >= 1024 && unitIndex < units.length - 1) {
-    value /= 1024;
-    unitIndex++;
-  }
-  return '${value.toStringAsFixed(value >= 10 ? 0 : 1)} ${units[unitIndex]}';
-}
-
-String _formatBytes(int bytes) => _formatFileSize(bytes);
-
-IconData _fileIconFor(AsmrTrackFile track) {
-  if (track.isSubtitle) {
-    return Icons.subtitles_rounded;
-  }
-  switch (track.resolvedExtension) {
-    case '.jpg':
-    case '.jpeg':
-    case '.png':
-    case '.webp':
-    case '.gif':
-      return Icons.image_rounded;
-    case '.txt':
-    case '.md':
-    case '.json':
-    case '.cue':
-      return Icons.description_rounded;
-    case '.zip':
-    case '.7z':
-    case '.rar':
-      return Icons.archive_rounded;
-    default:
-      return track.isAudio
-          ? Icons.audio_file_rounded
-          : Icons.insert_drive_file_rounded;
   }
 }

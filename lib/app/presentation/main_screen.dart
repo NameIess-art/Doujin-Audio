@@ -42,6 +42,13 @@ import '../../features/asmr/presentation/asmr_tab.dart';
 import '../../features/player/application/playback_session.dart';
 import '../../features/player/presentation/bedtime_canvas_page.dart';
 
+import 'mobile_dock_capsule_content.dart';
+import 'main_destination.dart';
+import 'desktop_main_navigation.dart';
+import 'app_dock_glass_panel.dart';
+export 'main_destination.dart' show MainDestinationType;
+export 'app_dock_glass_panel.dart';
+
 part 'main_screen_notifications.dart';
 part 'main_screen_layout.dart';
 part 'main_screen_widgets.dart';
@@ -49,56 +56,6 @@ part 'main_screen_widgets.dart';
 @visibleForTesting
 bool shouldRunGlobalSubtitleOverlay({required bool appInForeground}) {
   return defaultTargetPlatform == TargetPlatform.windows || !appInForeground;
-}
-
-enum MainDestinationType { library, asmrOne, playlist, settings }
-
-class _MainDestination {
-  const _MainDestination({
-    required this.type,
-    required this.icon,
-    required this.selectedIcon,
-    required this.labelKey,
-  });
-
-  final MainDestinationType type;
-  final IconData icon;
-  final IconData selectedIcon;
-  final String labelKey;
-}
-
-List<_MainDestination> _resolveMainDestinations({
-  required bool showLocalLibrary,
-  required bool showAsmrOne,
-}) {
-  return [
-    if (showAsmrOne)
-      const _MainDestination(
-        type: MainDestinationType.asmrOne,
-        icon: Icons.cloud_outlined,
-        selectedIcon: Icons.cloud_rounded,
-        labelKey: 'show_asmr_one',
-      ),
-    if (showLocalLibrary)
-      const _MainDestination(
-        type: MainDestinationType.library,
-        icon: Icons.library_music_outlined,
-        selectedIcon: Icons.library_music_rounded,
-        labelKey: 'music_library',
-      ),
-    const _MainDestination(
-      type: MainDestinationType.playlist,
-      icon: Icons.featured_play_list_outlined,
-      selectedIcon: Icons.featured_play_list_rounded,
-      labelKey: 'nav_sessions',
-    ),
-    const _MainDestination(
-      type: MainDestinationType.settings,
-      icon: Icons.settings_outlined,
-      selectedIcon: Icons.settings_rounded,
-      labelKey: 'nav_settings',
-    ),
-  ];
 }
 
 class PlaybackDockGeometryController extends ChangeNotifier {
@@ -253,14 +210,6 @@ class _MainScreenState extends ConsumerState<MainScreen>
   Size? _lastRecoveredViewSize;
   FlutterView? _observedView;
   bool _appInForeground = true;
-  bool _globalSubtitleOverlayRunning = false;
-  bool _globalSubtitleOverlaySyncing = false;
-  bool _globalSubtitleOverlaySyncPending = false;
-  int _globalSubtitleOverlayGeneration = 0;
-  Timer? _globalSubtitleOverlayTimer;
-  String? _globalSubtitleOverlaySessionId;
-  String? _globalSubtitleOverlayTrackPath;
-  String? _lastGlobalSubtitleOverlayText;
   Timer? _sleepModeAutoEntryTimer;
   bool _sleepModeAutoEntryTriggeredThisRun = false;
   SleepModeAutoTrigger? _lastSleepModeTrigger;
@@ -269,6 +218,17 @@ class _MainScreenState extends ConsumerState<MainScreen>
   void initState() {
     super.initState();
     _subtitleOverlay = ref.read(subtitleOverlayControllerProvider);
+    _subtitleOverlay.attachRuntime(
+      enabled: () =>
+          mounted &&
+          shouldRunGlobalSubtitleOverlay(appInForeground: _appInForeground),
+      session: () => _globalSubtitleOverlaySession(
+        ref.read(playbackFacadeProvider),
+        ref.read(subtitleSettingsProvider),
+      ),
+      subtitles: () => ref.read(playbackSubtitleServiceProvider),
+      style: _globalSubtitleStyle,
+    );
     _notificationFacade = ref.read(notificationFacadeProvider);
     _updateFlow = AppUpdateFlow(
       permissionController: _permissionActionController,
@@ -341,7 +301,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
       if (!mounted) return;
       _rememberCurrentViewMetrics();
       final warmup = ref.read(audioUiWarmupCoordinatorProvider);
-      _requestGlobalSubtitleOverlaySync();
+      _subtitleOverlay.requestRuntimeSync();
       unawaited(_consumePendingNotificationSession());
       Future.delayed(const Duration(milliseconds: 750), () {
         if (!mounted) return;
@@ -365,7 +325,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
       final settings = ref.read(settingsStateProvider).value;
       final showLocal = settings?.showLocalLibrary ?? true;
       final showAsmr = settings?.showAsmrOne ?? true;
-      final destinations = _resolveMainDestinations(
+      final destinations = resolveMainDestinations(
         showLocalLibrary: showLocal,
         showAsmrOne: showAsmr,
       );
@@ -558,8 +518,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
     _pendingNotificationSessionId = null;
     _pendingNotificationSessionStartedAt = null;
     _pendingNotificationSessionRetryCount = 0;
-    _globalSubtitleOverlayTimer?.cancel();
-    unawaited(_stopGlobalSubtitleOverlay(immediate: true));
+    unawaited(_subtitleOverlay.detachRuntime());
     _permissionActionController.dispose();
     _notificationFacade.setOpenSessionHandler(null);
     _activePageIndex.dispose();
@@ -670,201 +629,21 @@ class _MainScreenState extends ConsumerState<MainScreen>
     );
   }
 
-  void _requestGlobalSubtitleOverlaySync() {
-    _globalSubtitleOverlayGeneration++;
-    unawaited(_syncGlobalSubtitleOverlay());
-  }
-
-  bool _isGlobalSubtitleOverlayRequestCurrent(
-    int generation,
-    String sessionId,
-    String trackPath,
-  ) {
-    if (!mounted ||
-        generation != _globalSubtitleOverlayGeneration ||
-        !shouldRunGlobalSubtitleOverlay(appInForeground: _appInForeground)) {
-      return false;
-    }
-    final session = _globalSubtitleOverlaySession(
-      ref.read(playbackFacadeProvider),
-      ref.read(subtitleSettingsProvider),
-    );
-    return session?.id == sessionId && session?.currentTrackPath == trackPath;
-  }
-
-  Future<void> _syncGlobalSubtitleOverlay() async {
-    if (_globalSubtitleOverlaySyncing) {
-      _globalSubtitleOverlaySyncPending = true;
-      return;
-    }
-    if (!mounted ||
-        !shouldRunGlobalSubtitleOverlay(appInForeground: _appInForeground)) {
-      return;
-    }
-    final generation = _globalSubtitleOverlayGeneration;
-    _globalSubtitleOverlaySyncing = true;
-    try {
-      final playback = ref.read(playbackFacadeProvider);
-      final settings = ref.read(subtitleSettingsProvider);
-      final session = _globalSubtitleOverlaySession(playback, settings);
-      if (session == null) {
-        await _stopGlobalSubtitleOverlay(immediate: true);
-        return;
-      }
-      final sessionId = session.id;
-      final trackPath = session.currentTrackPath;
-      final canDraw = await _subtitleOverlay.canDrawOverlays();
-      if (!_isGlobalSubtitleOverlayRequestCurrent(
-        generation,
-        sessionId,
-        trackPath,
-      )) {
-        return;
-      }
-      if (!canDraw) {
-        await _stopGlobalSubtitleOverlay(immediate: true);
-        return;
-      }
-      await _applyGlobalSubtitleOverlayStyle(settings);
-      if (!_isGlobalSubtitleOverlayRequestCurrent(
-        generation,
-        sessionId,
-        trackPath,
-      )) {
-        return;
-      }
-      final started = await _subtitleOverlay.startOverlay();
-      if (!started ||
-          !_isGlobalSubtitleOverlayRequestCurrent(
-            generation,
-            sessionId,
-            trackPath,
-          )) {
-        if (started) {
-          await _subtitleOverlay.stopOverlay(immediate: true);
-        }
-        return;
-      }
-      _globalSubtitleOverlayRunning = true;
-      _ensureGlobalSubtitleOverlayTimer();
-      _updateGlobalSubtitleOverlayForSession(session);
-    } finally {
-      _globalSubtitleOverlaySyncing = false;
-      if (_globalSubtitleOverlaySyncPending &&
-          mounted &&
-          shouldRunGlobalSubtitleOverlay(appInForeground: _appInForeground)) {
-        _globalSubtitleOverlaySyncPending = false;
-        unawaited(_syncGlobalSubtitleOverlay());
-      } else {
-        _globalSubtitleOverlaySyncPending = false;
-      }
-    }
-  }
-
-  Future<void> _stopGlobalSubtitleOverlay({bool immediate = false}) async {
-    _globalSubtitleOverlayGeneration++;
-    _globalSubtitleOverlaySyncPending = false;
-    _globalSubtitleOverlayTimer?.cancel();
-    _globalSubtitleOverlayTimer = null;
-    _globalSubtitleOverlaySessionId = null;
-    _globalSubtitleOverlayTrackPath = null;
-    _lastGlobalSubtitleOverlayText = null;
-    if (!_globalSubtitleOverlayRunning && !immediate) return;
-    _globalSubtitleOverlayRunning = false;
-    await _subtitleOverlay.updateSubtitle('');
-    await _subtitleOverlay.stopOverlay(immediate: immediate);
-  }
-
-  Future<void> _applyGlobalSubtitleOverlayStyle(
-    SubtitleSettingsState settings,
-  ) {
+  SubtitleOverlayRuntimeStyle _globalSubtitleStyle() {
+    final settings = ref.read(subtitleSettingsProvider);
     final backgroundColor = (settings.backgroundColor ?? Colors.black)
         .withValues(alpha: settings.backgroundOpacity);
     final textColor = settings.fontColor ?? Colors.white;
-    return _subtitleOverlay.updateStyle(
+    String colorValue(Color color) =>
+        '#${color.toARGB32().toRadixString(16).padLeft(8, '0')}';
+    return (
       fontSize: settings.fontSize,
-      backgroundColor: _overlayColorValue(backgroundColor),
-      textColor: _overlayColorValue(textColor),
+      backgroundColor: colorValue(backgroundColor),
+      textColor: colorValue(textColor),
       backgroundOpacity: settings.backgroundOpacity,
       fontFamily: settings.fontFamily,
       borderDepth: settings.borderDepth,
     );
-  }
-
-  String _overlayColorValue(Color color) {
-    return '#${color.toARGB32().toRadixString(16).padLeft(8, '0')}';
-  }
-
-  void _ensureGlobalSubtitleOverlayTimer() {
-    _globalSubtitleOverlayTimer ??= Timer.periodic(
-      const Duration(milliseconds: 500),
-      (_) => _updateGlobalSubtitleOverlay(),
-    );
-  }
-
-  void _updateGlobalSubtitleOverlay() {
-    if (!mounted) return;
-    if (!shouldRunGlobalSubtitleOverlay(appInForeground: _appInForeground)) {
-      unawaited(_stopGlobalSubtitleOverlay(immediate: true));
-      return;
-    }
-    final playback = ref.read(playbackFacadeProvider);
-    final settings = ref.read(subtitleSettingsProvider);
-    final session = _globalSubtitleOverlaySession(playback, settings);
-    if (session == null) {
-      unawaited(_stopGlobalSubtitleOverlay(immediate: true));
-      return;
-    }
-    _updateGlobalSubtitleOverlayForSession(session);
-  }
-
-  void _updateGlobalSubtitleOverlayForSession(PlaybackSession session) {
-    final subtitles = ref.read(playbackSubtitleServiceProvider);
-    if (_globalSubtitleOverlaySessionId != session.id) {
-      _globalSubtitleOverlaySessionId = session.id;
-      _lastGlobalSubtitleOverlayText = null;
-    }
-    if (_globalSubtitleOverlayTrackPath != session.currentTrackPath) {
-      final trackPath = session.currentTrackPath;
-      _globalSubtitleOverlayTrackPath = trackPath;
-      _lastGlobalSubtitleOverlayText = null;
-      unawaited(() async {
-        try {
-          await subtitles.load(trackPath);
-          if (mounted &&
-              _globalSubtitleOverlayTrackPath == trackPath &&
-              shouldRunGlobalSubtitleOverlay(
-                appInForeground: _appInForeground,
-              )) {
-            _updateGlobalSubtitleOverlay();
-          }
-        } catch (error, stackTrace) {
-          AppLogService.warning(
-            'global_subtitle_load_failed',
-            error: error,
-            stackTrace: stackTrace,
-          );
-        }
-      }());
-    }
-
-    final subtitleTrack = subtitles.trackSync(session.currentTrackPath);
-    if (subtitleTrack == null &&
-        !subtitles.isLoading(session.currentTrackPath) &&
-        !subtitles.hasResult(session.currentTrackPath)) {
-      unawaited(subtitles.load(session.currentTrackPath));
-    }
-    final text =
-        subtitles.textAt(
-          session.currentTrackPath,
-          session.position,
-          subtitleTrack: subtitleTrack,
-        ) ??
-        '';
-    if (_lastGlobalSubtitleOverlayText != text) {
-      _lastGlobalSubtitleOverlayText = text;
-      unawaited(_subtitleOverlay.updateSubtitle(text));
-    }
   }
 
   @override
@@ -883,7 +662,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
         state == AppLifecycleState.hidden) {
       _appInForeground = false;
       unawaited(ref.read(audioRuntimeCoordinatorProvider).enterBackground());
-      _requestGlobalSubtitleOverlaySync();
+      _subtitleOverlay.requestRuntimeSync();
       return;
     }
     if (state != AppLifecycleState.resumed) {
@@ -891,9 +670,9 @@ class _MainScreenState extends ConsumerState<MainScreen>
     }
     _appInForeground = true;
     if (shouldRunGlobalSubtitleOverlay(appInForeground: _appInForeground)) {
-      _requestGlobalSubtitleOverlaySync();
+      _subtitleOverlay.requestRuntimeSync();
     } else {
-      unawaited(_stopGlobalSubtitleOverlay(immediate: true));
+      unawaited(_subtitleOverlay.stopRuntime(immediate: true));
     }
     unawaited(_consumePendingNotificationSession());
     unawaited(_permissionActionController.handleAppResumed());
@@ -936,11 +715,11 @@ class _MainScreenState extends ConsumerState<MainScreen>
     }
   }
 
-  List<_MainDestination> _currentDestinations() {
+  List<MainDestination> _currentDestinations() {
     final settings = ref.read(settingsStateProvider).value;
     final showLocal = settings?.showLocalLibrary ?? true;
     final showAsmr = settings?.showAsmrOne ?? true;
-    return _resolveMainDestinations(
+    return resolveMainDestinations(
       showLocalLibrary: showLocal,
       showAsmrOne: showAsmr,
     );
@@ -966,7 +745,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
   Widget _buildMainPage(
     BuildContext context,
     int index,
-    List<_MainDestination> destinations,
+    List<MainDestination> destinations,
   ) {
     if (index < 0 || index >= destinations.length) {
       return const SizedBox.shrink();
@@ -1037,7 +816,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
   @override
   Widget build(BuildContext context) {
     ref.listen<SubtitleSettingsState>(subtitleSettingsProvider, (_, _) {
-      _requestGlobalSubtitleOverlaySync();
+      _subtitleOverlay.requestRuntimeSync();
     });
     final i18n = ProviderScope.containerOf(
       context,
@@ -1117,74 +896,74 @@ class _MainScreenState extends ConsumerState<MainScreen>
       child: AnnotatedRegion<SystemUiOverlayStyle>(
         value: overlayStyle,
         child: Scaffold(
-        extendBody: !isDesktop,
-        resizeToAvoidBottomInset: false,
-        backgroundColor: Theme.of(context).colorScheme.surface,
-        body: Stack(
-          fit: StackFit.expand,
-          children: [
-            _AmbientBackground(tinyMode: isTinyWindow),
-            Column(
-              children: [
-                Expanded(
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          if (isDesktop)
-                            Consumer(
-                              builder: (context, ref, _) {
-                                final overlaySessions = ref.watch(
-                                  mainOverlayUiProvider.select(
-                                    (state) => state.overlaySessions,
-                                  ),
-                                );
-                                return _buildDesktopNavigation(
-                                  context,
-                                  i18n,
-                                  overlaySessions,
-                                );
-                              },
-                            )
-                          else
-                            const SizedBox.shrink(),
-                          Expanded(
-                            child: MobileOverlayInset(
-                              bottomInset: mobileContentInset,
-                              child: _buildBody(isDesktop: isDesktop),
-                            ),
-                          ),
-                        ],
-                      ),
-
-                      if (!isDesktop)
-                        Consumer(
-                          builder: (context, ref, _) {
-                            final overlaySessions = ref.watch(
-                              mainOverlayUiProvider.select(
-                                (state) => state.overlaySessions,
+          extendBody: !isDesktop,
+          resizeToAvoidBottomInset: false,
+          backgroundColor: Theme.of(context).colorScheme.surface,
+          body: Stack(
+            fit: StackFit.expand,
+            children: [
+              _AmbientBackground(tinyMode: isTinyWindow),
+              Column(
+                children: [
+                  Expanded(
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            if (isDesktop)
+                              Consumer(
+                                builder: (context, ref, _) {
+                                  final overlaySessions = ref.watch(
+                                    mainOverlayUiProvider.select(
+                                      (state) => state.overlaySessions,
+                                    ),
+                                  );
+                                  return _buildDesktopNavigation(
+                                    context,
+                                    i18n,
+                                    overlaySessions,
+                                  );
+                                },
+                              )
+                            else
+                              const SizedBox.shrink(),
+                            Expanded(
+                              child: MobileOverlayInset(
+                                bottomInset: mobileContentInset,
+                                child: _buildBody(isDesktop: isDesktop),
                               ),
-                            );
-                            return _buildMobileBottomDock(
-                              context,
-                              i18n: i18n,
-                              overlaySessions: overlaySessions,
-                              tinyMode: isTinyWindow,
-                            );
-                          },
+                            ),
+                          ],
                         ),
-                    ],
+
+                        if (!isDesktop)
+                          Consumer(
+                            builder: (context, ref, _) {
+                              final overlaySessions = ref.watch(
+                                mainOverlayUiProvider.select(
+                                  (state) => state.overlaySessions,
+                                ),
+                              );
+                              return _buildMobileBottomDock(
+                                context,
+                                i18n: i18n,
+                                overlaySessions: overlaySessions,
+                                tinyMode: isTinyWindow,
+                              );
+                            },
+                          ),
+                      ],
+                    ),
                   ),
-                ),
-              ],
-            ),
-            const _GlobalUpdateOperationBanner(),
-          ],
+                ],
+              ),
+              const _GlobalUpdateOperationBanner(),
+            ],
+          ),
         ),
       ),
-    ),
     );
     return MediaQuery.removeViewInsets(
       key: const ValueKey<String>('main_screen_keyboard_inset_boundary'),

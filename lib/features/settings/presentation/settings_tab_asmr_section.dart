@@ -228,7 +228,7 @@ List<Widget> _buildSettingsAsmrSection({
             return ListTile(
               onTap: () => AppBottomSheet.show<void>(
                 context: context,
-                builder: (_) => const _AsmrDownloadFolderNameSettingsSheet(),
+                builder: (_) => const AsmrDownloadFolderNameSettingsSheet(),
               ),
               title: _SettingsTitleBlock(
                 title: i18n.tr('asmr_download_folder_name_setting'),
@@ -236,7 +236,7 @@ List<Widget> _buildSettingsAsmrSection({
                   fields
                       .map(
                         (field) =>
-                            _asmrDownloadFolderNameFieldLabel(i18n, field),
+                            asmrDownloadFolderNameFieldLabel(i18n, field),
                       )
                       .join(' - '),
                   softWrap: true,

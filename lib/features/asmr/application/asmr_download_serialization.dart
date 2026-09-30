@@ -1,9 +1,12 @@
-part of 'asmr_download_manager.dart';
+import '../domain/asmr_download.dart';
+import '../domain/asmr_models.dart';
+import 'asmr_download_models.dart';
+import 'asmr_download_internal_models.dart';
 
-Map<String, Object?> _downloadTaskToJson(
+Map<String, Object?> downloadTaskToJson(
   AsmrDownloadTaskSnapshot task, {
   required Set<String> createdOutputPaths,
-  required Map<String, _CreatedJsonDocument> createdJsonDocuments,
+  required Map<String, CreatedDownloadJsonDocument> createdJsonDocuments,
 }) => <String, Object?>{
   'work': task.work.toJson(),
   'destinationRoot': task.destinationRoot,
@@ -35,7 +38,7 @@ Map<String, Object?> _downloadTaskToJson(
   },
 };
 
-_PersistedDownloadTask _downloadTaskFromJson(Map<String, dynamic> json) {
+PersistedDownloadTask downloadTaskFromJson(Map<String, dynamic> json) {
   final workJson = json['work'];
   if (workJson is! Map<Object?, Object?>) {
     throw const FormatException('Missing download work.');
@@ -49,7 +52,7 @@ _PersistedDownloadTask _downloadTaskFromJson(Map<String, dynamic> json) {
   if (selectedRoots.isEmpty) {
     throw const FormatException('Missing selected download files.');
   }
-  return _PersistedDownloadTask(
+  return PersistedDownloadTask(
     task: AsmrDownloadTaskSnapshot(
       work: work,
       destinationRoot: json['destinationRoot'] as String? ?? '',
@@ -99,14 +102,16 @@ _PersistedDownloadTask _downloadTaskFromJson(Map<String, dynamic> json) {
   );
 }
 
-Map<String, _CreatedJsonDocument> _createdJsonDocumentsFromJson(Object? value) {
+Map<String, CreatedDownloadJsonDocument> _createdJsonDocumentsFromJson(
+  Object? value,
+) {
   if (value is! Map<Object?, Object?>) {
-    return const <String, _CreatedJsonDocument>{};
+    return const <String, CreatedDownloadJsonDocument>{};
   }
-  final result = <String, _CreatedJsonDocument>{};
+  final result = <String, CreatedDownloadJsonDocument>{};
   for (final entry in value.entries) {
     if (entry.key is! String || entry.value is! Map<Object?, Object?>) continue;
-    final decoded = _CreatedJsonDocument.fromJson(
+    final decoded = CreatedDownloadJsonDocument.fromJson(
       Map<String, Object?>.from(entry.value as Map<Object?, Object?>),
     );
     if (decoded != null) result[entry.key as String] = decoded;
@@ -169,49 +174,4 @@ T _enumByName<T extends Enum>(List<T> values, Object? name, T fallback) {
     if (value.name == name) return value;
   }
   return fallback;
-}
-
-extension AsmrDownloadSerialization on AsmrDownloadManager {
-  Map<String, Object?> _persistedTaskToJson(AsmrDownloadTaskSnapshot task) =>
-      _downloadTaskToJson(
-        task,
-        createdOutputPaths:
-            _createdOutputPaths[task.work.id] ?? const <String>{},
-        createdJsonDocuments:
-            _createdJsonDocuments[task.work.id] ??
-            const <String, _CreatedJsonDocument>{},
-      );
-
-  Future<void> _restorePersistedTasksFromPreferences() async {
-    final raw = await AppPreferences.getString(
-      AppPreferences.asmrDownloadTasksKey,
-    );
-    if (_disposed || raw == null || raw.isEmpty) return;
-    try {
-      final decoded = jsonDecode(raw);
-      if (decoded is Map && decoded['tasks'] is List) {
-        for (final value in decoded['tasks'] as List) {
-          if (value is! Map) continue;
-          final restored = _downloadTaskFromJson(
-            Map<String, dynamic>.from(value),
-          );
-          final task = restored.task;
-          _store[task.work.id] = task.copyWith(
-            status: AsmrDownloadTaskStatus.paused,
-            fileRetryAttempts: const <String, int>{},
-            manuallyRetryingFilePaths: const <String>{},
-            message: 'paused',
-          );
-          _createdOutputPaths[task.work.id] = restored.createdOutputPaths;
-          _createdJsonDocuments[task.work.id] = restored.createdJsonDocuments;
-        }
-      }
-    } catch (error, stackTrace) {
-      AppLogService.warning(
-        'asmr_download_restore_failed',
-        error: error,
-        stackTrace: stackTrace,
-      );
-    }
-  }
 }

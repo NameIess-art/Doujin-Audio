@@ -1,4 +1,5 @@
-import '../../../core/widgets/windows_horizontal_wheel_scroll.dart';
+import 'work_detail_breadcrumbs.dart';
+import 'work_detail_actions.dart';
 import 'library_download_actions.dart';
 import 'work_detail_entry_tile.dart';
 import 'work_detail_metadata.dart';
@@ -87,13 +88,6 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
   // Breadcrumb navigation state
   // Path stack: e.g. [] for root, ['EXデータ'] for subfolder
   final List<String> _currentPathSegments = [];
-  final ScrollController _breadcrumbScrollController = ScrollController();
-
-  @override
-  void dispose() {
-    _breadcrumbScrollController.dispose();
-    super.dispose();
-  }
 
   @override
   void initState() {
@@ -194,15 +188,6 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
   void _enterFolder(String folderName) {
     setState(() {
       _currentPathSegments.add(folderName);
-    });
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_breadcrumbScrollController.hasClients) {
-        _breadcrumbScrollController.animateTo(
-          _breadcrumbScrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 200),
-          curve: Curves.easeOut,
-        );
-      }
     });
   }
 
@@ -900,236 +885,37 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
                           onCopy: (value) => _copyText(context, value),
                         ),
 
-                        // Action Buttons Row
-                        if (widget.isLocal) ...[
-                          Row(
-                            children: [
-                              // 补充信息
-                              Expanded(
-                                child: FilledButton.tonalIcon(
-                                  key: const ValueKey<String>(
-                                    'work_detail_fetch_info',
-                                  ),
-                                  onPressed: _handleLocalFetchInfo,
-                                  style: _actionCapsuleStyle(),
-                                  icon: const Icon(
-                                    Icons.cloud_download_rounded,
-                                    size: 18,
-                                  ),
-                                  label: Text(
-                                    i18n.tr('audio_detail_fetch_info'),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              // 下载
-                              Expanded(
-                                child: FilledButton.tonalIcon(
-                                  key: const ValueKey<String>(
-                                    'work_detail_download',
-                                  ),
-                                  onPressed: _handleLocalDownload,
-                                  style: _actionCapsuleStyle(),
-                                  icon: const Icon(
-                                    Icons.download_rounded,
-                                    size: 18,
-                                  ),
-                                  label: Text(
-                                    i18n.tr('download'),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ] else ...[
-                          Row(
-                            children: [
-                              // 下载
-                              Expanded(
-                                child: FilledButton.tonalIcon(
-                                  key: const ValueKey<String>(
-                                    'asmr_work_detail_download',
-                                  ),
-                                  onPressed: _handleAsmrDownload,
-                                  style: _actionCapsuleStyle(),
-                                  icon: const Icon(
-                                    Icons.download_rounded,
-                                    size: 18,
-                                  ),
-                                  label: Text(
-                                    i18n.tr('download'),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              // 收藏 / 取消收藏
-                              Consumer(
-                                builder: (context, ref, _) {
-                                  final controller = ref.watch(
-                                    asmrLibraryControllerProvider,
-                                  );
-                                  final isFav =
-                                      controller?.isFavorite(
-                                        widget.asmrWork!.id,
-                                      ) ??
-                                      widget.asmrWork!.isFavorite;
-                                  return Expanded(
-                                    child: FilledButton.tonalIcon(
-                                      key: const ValueKey<String>(
-                                        'asmr_work_detail_favorite',
-                                      ),
-                                      onPressed: _handleAsmrToggleFavorite,
-                                      style: _actionCapsuleStyle(
-                                        backgroundColor: isFav
-                                            ? asmrBlue.withValues(alpha: 0.2)
-                                            : null,
-                                        foregroundColor: isFav
-                                            ? asmrBlue
-                                            : null,
-                                      ),
-                                      icon: Icon(
-                                        isFav
-                                            ? Icons.favorite_rounded
-                                            : Icons.favorite_border_rounded,
-                                        size: 18,
-                                        color: isFav ? asmrBlue : null,
-                                      ),
-                                      label: Text(
-                                        i18n.tr(
-                                          isFav
-                                              ? 'asmr_unfavorite_action'
-                                              : 'asmr_favorite_action',
-                                        ),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ),
-                                  );
-                                },
-                              ),
-                            ],
-                          ),
-                        ],
+                        Consumer(
+                          builder: (context, ref, _) {
+                            final isFavorite = widget.isAsmr
+                                ? ref
+                                          .watch(asmrLibraryControllerProvider)
+                                          ?.isFavorite(widget.asmrWork!.id) ??
+                                      widget.asmrWork!.isFavorite
+                                : false;
+                            return WorkDetailActions(
+                              i18n: i18n,
+                              isLocal: widget.isLocal,
+                              isFavorite: isFavorite,
+                              accentColor: asmrBlue,
+                              onFetchInfo: _handleLocalFetchInfo,
+                              onDownload: widget.isLocal
+                                  ? _handleLocalDownload
+                                  : _handleAsmrDownload,
+                              onToggleFavorite: _handleAsmrToggleFavorite,
+                            );
+                          },
+                        ),
 
                         const SizedBox(height: 12),
                         const Divider(height: 1),
                         const SizedBox(height: 8),
 
-                        // 3. Navigation Breadcrumb Bar
-                        Row(
-                          children: [
-                            Expanded(
-                              child: WindowsHorizontalWheelScroll(
-                                controller: _breadcrumbScrollController,
-                                builder: (scrollController) =>
-                                    SingleChildScrollView(
-                                      controller: scrollController,
-                                      scrollDirection: Axis.horizontal,
-                                      physics: const BouncingScrollPhysics(
-                                        parent: AlwaysScrollableScrollPhysics(),
-                                      ),
-                                      child: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          InkWell(
-                                            borderRadius: BorderRadius.circular(
-                                              8,
-                                            ),
-                                            onTap: () =>
-                                                _navigateToBreadcrumbIndex(-1),
-                                            child: Padding(
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                    horizontal: 6,
-                                                    vertical: 4,
-                                                  ),
-                                              child: Row(
-                                                mainAxisSize: MainAxisSize.min,
-                                                children: [
-                                                  Icon(
-                                                    Icons.home_rounded,
-                                                    size: 18,
-                                                    color: cs.primary,
-                                                  ),
-                                                  const SizedBox(width: 4),
-                                                  Text(
-                                                    i18n.tr('root_directory'),
-                                                    style: TextStyle(
-                                                      fontWeight:
-                                                          FontWeight.bold,
-                                                      color: cs.primary,
-                                                      fontSize: 13,
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
-                                            ),
-                                          ),
-                                          for (
-                                            var i = 0;
-                                            i < _currentPathSegments.length;
-                                            i++
-                                          ) ...[
-                                            const Text(
-                                              ' > ',
-                                              style: TextStyle(
-                                                color: Colors.grey,
-                                              ),
-                                            ),
-                                            InkWell(
-                                              borderRadius:
-                                                  BorderRadius.circular(8),
-                                              onTap: () =>
-                                                  _navigateToBreadcrumbIndex(i),
-                                              child: Padding(
-                                                padding:
-                                                    const EdgeInsets.symmetric(
-                                                      horizontal: 4,
-                                                      vertical: 4,
-                                                    ),
-                                                child: Text(
-                                                  _currentPathSegments[i],
-                                                  style: TextStyle(
-                                                    fontWeight:
-                                                        i ==
-                                                            _currentPathSegments
-                                                                    .length -
-                                                                1
-                                                        ? FontWeight.bold
-                                                        : FontWeight.normal,
-                                                    color:
-                                                        i ==
-                                                            _currentPathSegments
-                                                                    .length -
-                                                                1
-                                                        ? cs.onSurface
-                                                        : cs.primary,
-                                                    fontSize: 13,
-                                                  ),
-                                                ),
-                                              ),
-                                            ),
-                                          ],
-                                        ],
-                                      ),
-                                    ),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              i18n.tr('items_count', {
-                                'count': currentEntries.length,
-                              }),
-                              style: Theme.of(context).textTheme.bodySmall
-                                  ?.copyWith(color: cs.onSurfaceVariant),
-                            ),
-                          ],
+                        WorkDetailBreadcrumbs(
+                          segments: List.of(_currentPathSegments),
+                          entryCount: currentEntries.length,
+                          i18n: i18n,
+                          onNavigate: _navigateToBreadcrumbIndex,
                         ),
                       ],
                     ),
@@ -1276,21 +1062,6 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
       context,
       i18n.tr('copied_to_clipboard', {'value': value}),
       icon: Icons.content_copy_rounded,
-    );
-  }
-
-  ButtonStyle _actionCapsuleStyle({
-    Color? backgroundColor,
-    Color? foregroundColor,
-  }) {
-    return FilledButton.styleFrom(
-      minimumSize: const Size.fromHeight(46),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      shape: const StadiumBorder(),
-      visualDensity: VisualDensity.standard,
-      textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
-      backgroundColor: backgroundColor,
-      foregroundColor: foregroundColor,
     );
   }
 }

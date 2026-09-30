@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/core/platform/subtitle_overlay_platform_service.dart';
 import 'package:doujin_audio/features/player/application/subtitle_overlay_controller.dart';
+import 'package:doujin_audio/features/player/application/playback_session.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -11,6 +12,50 @@ void main() {
   test('overlay permission is only requested on Android', () {
     expect(shouldRequestSubtitleOverlayPermission(isAndroid: true), isTrue);
     expect(shouldRequestSubtitleOverlayPermission(isAndroid: false), isFalse);
+  });
+
+  test('detached runtime ignores a late overlay permission result', () async {
+    const channel = MethodChannel('test.subtitle.overlay.runtime-race');
+    final entered = Completer<void>();
+    final release = Completer<void>();
+    final calls = <String>[];
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(channel, (call) async {
+      calls.add(call.method);
+      if (call.method == 'canDrawOverlays') {
+        entered.complete();
+        await release.future;
+      }
+      return <String, Object?>{'ok': true, 'value': true};
+    });
+    addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
+    final controller = SubtitleOverlayController(
+      platform: SubtitleOverlayPlatformService(channel: channel),
+    );
+    addTearDown(controller.dispose);
+    controller.attachRuntime(
+      enabled: () => true,
+      session: () => _OverlaySession(),
+      subtitles: () =>
+          throw StateError('Detached runtime must not load subtitles'),
+      style: () => (
+        fontSize: null,
+        backgroundColor: null,
+        textColor: null,
+        backgroundOpacity: null,
+        fontFamily: null,
+        borderDepth: null,
+      ),
+    );
+    controller.requestRuntimeSync();
+    await entered.future;
+    await controller.detachRuntime();
+    release.complete();
+    await Future<void>.delayed(Duration.zero);
+    expect(calls, isNot(contains('startOverlay')));
+    expect(calls, isNot(contains('updateStyle')));
+    expect(calls, contains('stopOverlay'));
   });
 
   test(
@@ -112,4 +157,13 @@ final class _TestTimer implements Timer {
   void cancel() {
     _active = false;
   }
+}
+
+class _OverlaySession implements PlaybackSession {
+  @override
+  String get id => 'session';
+  @override
+  String get currentTrackPath => '/music/track.mp3';
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

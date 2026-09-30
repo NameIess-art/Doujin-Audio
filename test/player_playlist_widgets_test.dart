@@ -575,9 +575,7 @@ void main() {
         subtitleTrack: track,
         initialPosition: Duration(seconds: cueCount),
       );
-      final timeline = find.byWidgetPredicate(
-        (widget) => widget.runtimeType.toString() == '_TimelineSubtitleView',
-      );
+      final timeline = find.byType(TimelineSubtitleView);
       final dynamic state = tester.state(timeline);
       final listFinder = find.byKey(const ValueKey('subtitle_timeline_list'));
       final initialCount = tester

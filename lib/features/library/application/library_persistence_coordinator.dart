@@ -195,4 +195,24 @@ final class LibraryPersistenceCoordinator {
   ) => source.map(
     (key, value) => MapEntry(key, value.toList(growable: false)..sort()),
   );
+  void queueOrPersistEntries(
+    List<LibraryEntry> entries, {
+    required bool persist,
+  }) {
+    if (entries.isEmpty || !persist || !enabled) {
+      return;
+    }
+    if (_service.libraryBatchDepth > 0) {
+      for (final entry in entries) {
+        final key = <String>[
+          PathMatcher.normalize(entry.libraryPath),
+          PathMatcher.normalize(entry.path),
+          entry.kind.dbValue,
+        ].join('\x1F');
+        _service.libraryBatchPersistEntriesByKey[key] = entry;
+      }
+      return;
+    }
+    unawaited(_repository.upsertLibraryEntries(entries));
+  }
 }

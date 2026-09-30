@@ -1,7 +1,36 @@
-part of 'library_tab.dart';
+import 'library_download_actions.dart';
+import 'library_providers.dart';
+import 'library_removal_feedback.dart';
+import '../../player/presentation/playback_providers.dart';
+import '../../settings/presentation/settings_providers.dart';
+import 'dart:async';
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-class _LibrarySelectionIndicator extends StatelessWidget {
-  const _LibrarySelectionIndicator();
+import '../../../app/state/app_runtime_providers.dart';
+import '../../../app/presentation/app_presentation_providers.dart';
+import '../../../core/media/music_track.dart';
+import '../../../core/media/audio_detail.dart';
+import '../../../core/media/search_query_utils.dart';
+import '../../player/application/playback_facade.dart';
+import '../domain/library_node.dart';
+import '../../../core/media/path_matcher.dart';
+import '../../../app/theme/app_design_tokens.dart';
+import '../../../core/widgets/app_feedback.dart';
+import '../../../core/widgets/async_cover_image.dart';
+import '../../../core/widgets/app_transitions.dart';
+import '../../../core/widgets/library_like_cards.dart';
+import '../../../core/widgets/operation_feedback.dart';
+import '../../../core/widgets/search_highlight.dart';
+import '../../../core/widgets/swipe_reveal_card.dart';
+import 'audio_detail_sheet.dart';
+import '../../../app/theme/app_styles.dart';
+
+import 'library_tab_ui_helpers.dart';
+import 'library_card_artwork.dart';
+
+class LibrarySelectionIndicator extends StatelessWidget {
+  const LibrarySelectionIndicator({super.key});
 
   @override
   Widget build(BuildContext context) => Container(
@@ -16,8 +45,8 @@ class _LibrarySelectionIndicator extends StatelessWidget {
   );
 }
 
-class _LibraryPinnedIndicator extends StatelessWidget {
-  const _LibraryPinnedIndicator({this.path});
+class LibraryPinnedIndicator extends StatelessWidget {
+  const LibraryPinnedIndicator({super.key, this.path});
 
   final String? path;
 
@@ -56,8 +85,9 @@ class _LibraryPinnedIndicator extends StatelessWidget {
   }
 }
 
-class _LibraryLeadingIndicators extends StatelessWidget {
-  const _LibraryLeadingIndicators({
+class LibraryLeadingIndicators extends StatelessWidget {
+  const LibraryLeadingIndicators({
+    super.key,
     this.path,
     required this.isSelected,
     required this.isPinned,
@@ -83,13 +113,13 @@ class _LibraryLeadingIndicators extends StatelessWidget {
               Positioned(
                 top: 0,
                 left: 2,
-                child: _LibraryPinnedIndicator(path: path),
+                child: LibraryPinnedIndicator(path: path),
               ),
             if (isSelected)
               const Positioned(
                 bottom: 0,
                 left: 0,
-                child: _LibrarySelectionIndicator(),
+                child: LibrarySelectionIndicator(),
               ),
           ],
         ),
@@ -129,7 +159,7 @@ class LibraryTreeItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (node is FolderNode) {
-      return _FolderNodeWidget(
+      return LibraryFolderNodeWidget(
         folder: node as FolderNode,
         initiallyExpanded: initiallyExpanded,
         onFolderExpansionChanged: onFolderExpansionChanged,
@@ -156,10 +186,9 @@ class LibraryTreeItem extends StatelessWidget {
   }
 }
 
-typedef _LibraryTreeItem = LibraryTreeItem;
-
-class _FolderNodeWidget extends ConsumerStatefulWidget {
-  const _FolderNodeWidget({
+class LibraryFolderNodeWidget extends ConsumerStatefulWidget {
+  const LibraryFolderNodeWidget({
+    super.key,
     required this.folder,
     required this.initiallyExpanded,
     required this.searchQuery,
@@ -185,10 +214,11 @@ class _FolderNodeWidget extends ConsumerStatefulWidget {
   final VoidCallback? onToggleSelect;
 
   @override
-  ConsumerState<_FolderNodeWidget> createState() => _FolderNodeWidgetState();
+  ConsumerState<LibraryFolderNodeWidget> createState() =>
+      _FolderNodeWidgetState();
 }
 
-class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
+class _FolderNodeWidgetState extends ConsumerState<LibraryFolderNodeWidget> {
   static const double _rootFolderTileHeight =
       LibraryLikeCardMetrics.rootTileHeight;
   static const double _childFolderTileHeight = 44;
@@ -213,7 +243,7 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
   }
 
   @override
-  void didUpdateWidget(covariant _FolderNodeWidget oldWidget) {
+  void didUpdateWidget(covariant LibraryFolderNodeWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (!identical(oldWidget.folder, widget.folder)) {
       final retainLoadedChildren =
@@ -330,7 +360,7 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
     final created = await playback.spawnSession(firstTrack);
     if (!context.mounted) return;
     if (created) {
-      _showSessionCreatedSnack(
+      showLibrarySessionCreatedSnack(
         context,
         i18n.tr('session_created', {'name': firstTrack.displayName}),
       );
@@ -393,7 +423,7 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
             LibraryLikeCardMetrics.cardRadius,
           ),
         ),
-        title: _RootFolderCardContent(
+        title: RootFolderCardContent(
           folderPath: folder.path,
           folderName: folder.name,
           folderDuration: folder.totalDuration,
@@ -541,7 +571,7 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
                       (childNode) => Padding(
                         padding: EdgeInsets.zero,
                         child: RepaintBoundary(
-                          child: _LibraryTreeItem(
+                          child: LibraryTreeItem(
                             key: ValueKey(childNode.path),
                             node: childNode,
                             initiallyExpanded:
@@ -735,7 +765,7 @@ class _TrackNodeWidget extends ConsumerWidget {
       );
       if (!context.mounted) return;
       if (created) {
-        _showSessionCreatedSnack(
+        showLibrarySessionCreatedSnack(
           context,
           i18n.tr('session_created', {'name': track.displayName}),
         );
@@ -811,7 +841,7 @@ class _TrackNodeWidget extends ConsumerWidget {
                 ? ListTile(
                     contentPadding: LibraryLikeCardMetrics.rootTilePadding,
                     minTileHeight: _FolderNodeWidgetState._rootFolderTileHeight,
-                    title: _SingleMediaFileCardContent(
+                    title: SingleMediaFileCardContent(
                       track: track,
                       title: track.displayName,
                       detail: singleDetail,
@@ -828,13 +858,13 @@ class _TrackNodeWidget extends ConsumerWidget {
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          _LibraryLeadingIndicators(
+                          LibraryLeadingIndicators(
                             path: track.path,
                             isSelected: isSelected,
                             isPinned: isPinned,
                           ),
                           Expanded(
-                            child: _SingleAudioFileCardContent(
+                            child: SingleAudioFileCardContent(
                               title: track.displayName,
                               detail: singleDetail,
                               detailLoading: isSingleDetailLoading,
@@ -915,7 +945,7 @@ class _TrackNodeWidget extends ConsumerWidget {
                           final created = await playback.spawnSession(track);
                           if (!context.mounted) return;
                           if (created) {
-                            _showSessionCreatedSnack(
+                            showLibrarySessionCreatedSnack(
                               context,
                               i18n.tr('session_created', {
                                 'name': track.displayName,
@@ -948,432 +978,4 @@ class _TrackNodeWidget extends ConsumerWidget {
 
     return UndoableRemovalTransition(hidden: isHidden, child: result);
   }
-}
-
-class _LibraryCoverThumbnail extends ConsumerStatefulWidget {
-  const _LibraryCoverThumbnail({
-    required this.folderPath,
-    this.width = 82,
-    this.duration,
-  });
-
-  final String folderPath;
-  final double width;
-  final Duration? duration;
-
-  @override
-  ConsumerState<_LibraryCoverThumbnail> createState() =>
-      _LibraryCoverThumbnailState();
-}
-
-class _LibraryCoverThumbnailState
-    extends ConsumerState<_LibraryCoverThumbnail> {
-  Future<String?>? _coverPathFuture;
-  String? _lastFolderPath;
-  int _lastCoverGeneration = -1;
-
-  Future<String?> _coverFutureFor(
-    LibraryCoverUiController coverUi,
-    int coverGeneration,
-  ) {
-    if (_lastFolderPath != widget.folderPath ||
-        _lastCoverGeneration != coverGeneration) {
-      _lastFolderPath = widget.folderPath;
-      _lastCoverGeneration = coverGeneration;
-      _coverPathFuture = _deferLibraryCardCoverLookup(
-        isMounted: () => mounted,
-        lookup: () => coverUi.deferredFolderCover(widget.folderPath),
-      );
-    }
-    return _coverPathFuture!;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final coverGeneration = ref.watch(coverGenerationProvider);
-    final resolution = ref.watch(coverImageResolutionProvider);
-    final libraryFacade = ref.read(libraryFacadeProvider);
-    final coverUi = ref.read(libraryCoverUiControllerProvider);
-    final coverPathFuture = _coverFutureFor(coverUi, coverGeneration);
-    final width = widget.width;
-    final height = width / kStandardCoverAspectRatio;
-    final coverCacheWidth = coverCacheWidthForResolution(resolution);
-    return SizedBox(
-      width: width,
-      height: height,
-      child: Stack(
-        children: [
-          SizedBox(
-            width: width,
-            height: height,
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(
-                LibraryLikeCardMetrics.coverRadius,
-              ),
-              child: AsyncLocalCoverImage(
-                future: coverPathFuture,
-                requestKey: widget.folderPath,
-                initialPath: libraryFacade.resolvedCoverPathForFolder(
-                  widget.folderPath,
-                ),
-                retryFutureBuilder: () =>
-                    coverUi.deferredFolderCover(widget.folderPath),
-                seed: widget.folderPath,
-                cacheWidth: coverCacheWidth,
-                useDefaultCacheWidth: false,
-                fit: BoxFit.cover,
-                compact: true,
-                iconSize: 28,
-              ),
-            ),
-          ),
-          if (widget.duration != null && widget.duration! > Duration.zero)
-            Positioned(
-              right: 4,
-              bottom: 4,
-              child: DurationOverlay(duration: widget.duration!),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-class _LibraryTrackCoverThumbnail extends ConsumerStatefulWidget {
-  const _LibraryTrackCoverThumbnail({
-    required this.track,
-    this.width = 82,
-    this.duration,
-  });
-
-  final MusicTrack track;
-  final double width;
-  final Duration? duration;
-
-  @override
-  ConsumerState<_LibraryTrackCoverThumbnail> createState() =>
-      _LibraryTrackCoverThumbnailState();
-}
-
-class _LibraryTrackCoverThumbnailState
-    extends ConsumerState<_LibraryTrackCoverThumbnail> {
-  Future<String?>? _coverPathFuture;
-  String? _lastTrackPath;
-  int _lastCoverGeneration = -1;
-
-  Future<String?> _coverFutureFor(
-    LibraryCoverUiController coverUi,
-    int coverGeneration,
-  ) {
-    if (_lastTrackPath != widget.track.path ||
-        _lastCoverGeneration != coverGeneration) {
-      _lastTrackPath = widget.track.path;
-      _lastCoverGeneration = coverGeneration;
-      _coverPathFuture = _deferLibraryCardCoverLookup(
-        isMounted: () => mounted,
-        lookup: () => coverUi.deferredTrackCover(widget.track),
-      );
-    }
-    return _coverPathFuture!;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final coverGeneration = ref.watch(coverGenerationProvider);
-    final resolution = ref.watch(coverImageResolutionProvider);
-    final libraryFacade = ref.read(libraryFacadeProvider);
-    final coverUi = ref.read(libraryCoverUiControllerProvider);
-    final coverPathFuture = _coverFutureFor(coverUi, coverGeneration);
-    final track = widget.track;
-
-    final width = widget.width;
-    final height = width / kStandardCoverAspectRatio;
-    final coverCacheWidth = coverCacheWidthForResolution(resolution);
-    return Stack(
-      children: [
-        SizedBox(
-          width: width,
-          height: height,
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(
-              LibraryLikeCardMetrics.coverRadius,
-            ),
-            child: AsyncLocalCoverImage(
-              future: coverPathFuture,
-              requestKey: track.path,
-              initialPath: libraryFacade.resolvedCoverPathForTrack(track),
-              retryFutureBuilder: () => coverUi.deferredTrackCover(track),
-              seed: track.displayName,
-              cacheWidth: coverCacheWidth,
-              useDefaultCacheWidth: false,
-              fit: BoxFit.cover,
-              compact: true,
-              iconSize: 28,
-            ),
-          ),
-        ),
-        if (widget.duration != null && widget.duration! > Duration.zero)
-          Positioned(
-            right: 4,
-            bottom: 4,
-            child: DurationOverlay(duration: widget.duration!),
-          ),
-      ],
-    );
-  }
-}
-
-class _RootFolderCardContent extends ConsumerWidget {
-  const _RootFolderCardContent({
-    required this.folderPath,
-    required this.folderName,
-    required this.folderDuration,
-    required this.detail,
-    required this.detailLoading,
-    required this.expanded,
-    required this.hasChildren,
-    required this.onPlay,
-    this.isSelected = false,
-    this.isPinned = false,
-    this.index,
-  });
-
-  final String folderPath;
-  final String folderName;
-  final Duration folderDuration;
-  final AudioDetail? detail;
-  final bool detailLoading;
-  final bool expanded;
-  final bool hasChildren;
-  final VoidCallback onPlay;
-  final bool isSelected;
-  final bool isPinned;
-  final int? index;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final displayMode = ref.watch(
-      settingsStateProvider.select(
-        (state) => state.value?.workNameDisplay ?? WorkNameDisplay.workTitle,
-      ),
-    );
-    final workTitle = detail?.workTitle.trim() ?? '';
-    return _AudioDetailWorkCardContent(
-      title: displayMode == WorkNameDisplay.workTitle && workTitle.isNotEmpty
-          ? workTitle
-          : folderName,
-      detail: detail,
-      detailLoading: detailLoading,
-      expanded: expanded,
-      showExpandIndicator: hasChildren,
-      onPlay: onPlay,
-      index: index,
-      coverBuilder: (coverWidth) {
-        final rj = detail?.rjCode.trim() ?? '';
-        final rjCode = rj.isNotEmpty
-            ? rj
-            : (AudioDetail.findRjCodeInText(folderName) ??
-                  AudioDetail.findRjCodeInText(folderPath) ??
-                  '');
-        return Stack(
-          clipBehavior: Clip.none,
-          children: [
-            _LibraryCoverThumbnail(
-              folderPath: folderPath,
-              width: coverWidth,
-              duration: detail?.duration ?? folderDuration,
-            ),
-            if (rjCode.isNotEmpty)
-              Positioned(
-                left: 4,
-                top: 4,
-                child: RjCodeOverlay(
-                  rjCode: rjCode,
-                  maxWidth: isPinned ? (coverWidth - 32) : (coverWidth - 8),
-                ),
-              ),
-            if (isSelected)
-              const Positioned(
-                left: 4,
-                bottom: 4,
-                child: _LibrarySelectionIndicator(),
-              ),
-            if (isPinned)
-              Positioned(
-                right: 4,
-                top: 4,
-                child: _LibraryPinnedIndicator(path: folderPath),
-              ),
-          ],
-        );
-      },
-    );
-  }
-}
-
-class _AudioDetailWorkCardContent extends ConsumerWidget {
-  const _AudioDetailWorkCardContent({
-    required this.title,
-    required this.detail,
-    required this.detailLoading,
-    required this.coverBuilder,
-    required this.onPlay,
-    this.expanded = false,
-    this.showExpandIndicator = false,
-    this.index,
-  });
-
-  final String title;
-  final AudioDetail? detail;
-  final bool detailLoading;
-  final Widget Function(double coverWidth) coverBuilder;
-  final VoidCallback onPlay;
-  final bool expanded;
-  final bool showExpandIndicator;
-  final int? index;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final i18n = ProviderScope.containerOf(
-      context,
-      listen: false,
-    ).read(appLanguageProviderInstanceProvider);
-    return LibraryLikeMetadataWorkCardContent(
-      title: title,
-      metadata: _audioDetailMetadata(detail),
-      voiceActorLabel: i18n.tr('card_info_voice_actors'),
-      circleLabel: i18n.tr('library_category_circles'),
-      tagsLabel: i18n.tr('library_category_tags'),
-      releaseDateLabel: i18n.tr('card_info_release_date'),
-      ratingLabel: i18n.tr('card_info_rating'),
-      loading: detailLoading || detail == null,
-      coverBuilder: coverBuilder,
-      onPlay: onPlay,
-      expanded: expanded,
-      showExpandIndicator: showExpandIndicator,
-      playTooltip: i18n.tr('play'),
-      enableMarquee: false,
-      enableTitleMarquee: false,
-    );
-  }
-}
-
-class _SingleAudioFileCardContent extends ConsumerWidget {
-  const _SingleAudioFileCardContent({
-    required this.title,
-    required this.detail,
-    required this.detailLoading,
-  });
-
-  final String title;
-  final AudioDetail? detail;
-  final bool detailLoading;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final i18n = ProviderScope.containerOf(
-      context,
-      listen: false,
-    ).read(appLanguageProviderInstanceProvider);
-    final lines = (detailLoading || detail == null)
-        ? const <LibraryLikeInfoLineData>[]
-        : buildLibraryLikeInfoLines(
-            metadata: _audioDetailMetadata(detail),
-            voiceActorLabel: i18n.tr('card_info_voice_actors'),
-            circleLabel: i18n.tr('library_category_circles'),
-            tagsLabel: i18n.tr('library_category_tags'),
-            releaseDateLabel: i18n.tr('card_info_release_date'),
-            ratingLabel: i18n.tr('card_info_rating'),
-          );
-    return LibraryLikeSingleAudioCardContent(
-      title: title,
-      lines: lines,
-      enableMarquee: false,
-      enableTitleMarquee: false,
-    );
-  }
-}
-
-class _SingleMediaFileCardContent extends StatelessWidget {
-  const _SingleMediaFileCardContent({
-    required this.track,
-    required this.title,
-    required this.detail,
-    required this.detailLoading,
-    required this.onPlay,
-    this.isSelected = false,
-    this.isPinned = false,
-    this.index,
-  });
-
-  final MusicTrack track;
-  final String title;
-  final AudioDetail? detail;
-  final bool detailLoading;
-  final VoidCallback onPlay;
-  final bool isSelected;
-  final bool isPinned;
-  final int? index;
-
-  @override
-  Widget build(BuildContext context) {
-    return _AudioDetailWorkCardContent(
-      title: title,
-      detail: detail,
-      detailLoading: detailLoading,
-      onPlay: onPlay,
-      index: index,
-      coverBuilder: (coverWidth) {
-        final rj = detail?.rjCode.trim() ?? '';
-        final rjCode = rj.isNotEmpty
-            ? rj
-            : (AudioDetail.findRjCodeInText(title) ??
-                  AudioDetail.findRjCodeInText(track.path) ??
-                  '');
-        return Stack(
-          clipBehavior: Clip.none,
-          children: [
-            _LibraryTrackCoverThumbnail(
-              track: track,
-              width: coverWidth,
-              duration: detail?.duration ?? track.duration,
-            ),
-            if (rjCode.isNotEmpty)
-              Positioned(
-                left: 4,
-                top: 4,
-                child: RjCodeOverlay(
-                  rjCode: rjCode,
-                  maxWidth: isPinned ? (coverWidth - 32) : (coverWidth - 8),
-                ),
-              ),
-            if (isSelected)
-              const Positioned(
-                left: 4,
-                bottom: 4,
-                child: _LibrarySelectionIndicator(),
-              ),
-            if (isPinned)
-              Positioned(
-                right: 4,
-                top: 4,
-                child: _LibraryPinnedIndicator(path: track.path),
-              ),
-          ],
-        );
-      },
-    );
-  }
-}
-
-LibraryLikeInfoMetadata _audioDetailMetadata(AudioDetail? detail) {
-  final d = detail;
-  if (d == null) return const LibraryLikeInfoMetadata();
-  return LibraryLikeInfoMetadata(
-    voiceActors: d.voiceActors,
-    circleName: d.circleName,
-    tags: d.tags,
-    releaseDate: d.releaseDate,
-    rating: d.rating,
-  );
 }

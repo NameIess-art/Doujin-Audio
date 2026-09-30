@@ -1,3 +1,26 @@
+import 'dart:io';
+import '../localization/app_language_provider.dart';
+import 'windows_runtime_binding.dart';
+import '../../features/asmr/application/asmr_library_controller.dart';
+import '../../features/asmr/application/asmr_api_service.dart';
+import '../../features/asmr/application/asmr_metadata_service.dart';
+import '../../features/asmr/application/asmr_auth_service.dart';
+import '../../features/asmr/application/asmr_remote_catalog_service.dart';
+import '../../features/asmr/application/asmr_account_sync_service.dart';
+import '../../features/asmr/application/asmr_playback_coordinator.dart';
+import '../../features/asmr/application/asmr_preferences.dart';
+import '../../features/asmr/domain/asmr_models.dart';
+import '../../infrastructure/sqlite/sqlite_asmr_repository.dart';
+import '../../infrastructure/sqlite/sqlite_library_repository.dart';
+import '../../infrastructure/sqlite/sqlite_playback_repository.dart';
+import '../../features/player/application/audio_state_services.dart';
+import '../../features/library/application/library_service.dart';
+import '../../features/player/application/native_playback_repository.dart';
+import '../../features/player/application/playback_notification_service.dart';
+import '../../features/player/application/playback_session_launcher.dart';
+import '../../features/settings/application/app_update_service.dart';
+import '../../core/persistence/app_database.dart';
+import '../../core/persistence/json_document_store.dart';
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
@@ -26,6 +49,18 @@ import 'playback_runtime_binding.dart';
 import 'persisted_uri_permission_coordinator.dart';
 import 'runtime_binding.dart';
 import 'timer_runtime_binding.dart';
+
+typedef ProductionAppRuntime = ({
+  AppRuntimeGraph runtimeGraph,
+  AppLanguageProvider appLanguageProvider,
+  AppUpdateService appUpdateService,
+  AsmrDownloadManager asmrDownloadManager,
+  AsmrMetadataService asmrMetadataService,
+  AsmrLibraryController asmrLibraryController,
+  AsmrPlaybackCoordinator asmrPlaybackCoordinator,
+  AsmrApiService asmrApiService,
+  Future<void> Function() initializeRuntimeData,
+});
 
 typedef AppRuntimeGraph = ({
   AudioPathCoordinator audioPaths,
@@ -215,6 +250,102 @@ AppRuntimeGraph createAppRuntimeGraph({
     subtitles: subtitles,
     settings: settings,
     timer: timer,
+  );
+}
+
+ProductionAppRuntime createProductionAppRuntime() {
+  final notificationService = PlaybackNotificationService();
+  final database = AppDatabase.instance;
+  final libraryRepository = SqliteLibraryRepository(database: database);
+  final playbackRepository = SqlitePlaybackRepository(database: database);
+  final asmrRepository = SqliteAsmrRepository(database: database);
+  final nativePlaybackRepository = NativePlaybackRepository();
+  final libraryService = LibraryService();
+  final playbackService = PlaybackSessionService();
+  final timerService = TimerService();
+  final notificationCoordinatorService = NotificationCoordinatorService();
+  final settingsRepository = SettingsRepository();
+  final jsonDocumentStore = DefaultJsonDocumentStore();
+  final asmrDownloadManager = AsmrDownloadManager(
+    jsonDocumentStore: jsonDocumentStore,
+  );
+  final appLanguageProvider = AppLanguageProvider();
+  final appUpdateService = AppUpdateService();
+  final asmrApiService = AsmrApiService();
+  final asmrMetadataService = AsmrMetadataService(apiService: asmrApiService);
+  final libraryFacade = LibraryFacade.create(
+    databaseRepository: libraryRepository,
+    jsonDocumentStore: jsonDocumentStore,
+    service: libraryService,
+    asmrMetadataService: asmrMetadataService,
+  );
+  final playbackFacade = PlaybackFacade.create(
+    databaseRepository: playbackRepository,
+    nativeRepository: nativePlaybackRepository,
+    service: playbackService,
+  );
+  final timerFacade = TimerFacade.create(service: timerService);
+  final notificationFacade = NotificationFacade.create(
+    service: notificationService,
+    stateService: notificationCoordinatorService,
+  );
+  final runtimeGraph = createAppRuntimeGraph(
+    library: libraryFacade,
+    playback: playbackFacade,
+    timer: timerFacade,
+    notifications: notificationFacade,
+    settings: settingsRepository,
+    asmrDownloads: asmrDownloadManager,
+  );
+  final asmrPreferences = AsmrPreferencesStore(repository: asmrRepository);
+  final asmrLibraryController = AsmrLibraryController(
+    preferencesStore: asmrPreferences,
+    remoteCatalogService: AsmrRemoteCatalogService(
+      apiService: asmrApiService,
+      persistenceRepository: asmrRepository,
+    ),
+    accountSyncService: AsmrAccountSyncService(
+      authService: AsmrAuthService(apiService: asmrApiService),
+      apiService: asmrApiService,
+      preferencesStore: asmrPreferences,
+    ),
+  );
+  final asmrPlaybackCoordinator = AsmrPlaybackCoordinator(
+    source: asmrLibraryController,
+    launcher: PlaybackFacadeSessionLauncher(playbackFacade),
+  );
+
+  Future<void> initializeRuntimeData() async {
+    await appLanguageProvider.initialized;
+    await Future.wait<void>([
+      runtimeGraph.runtime.start(),
+      asmrDownloadManager.initialize(),
+      asmrLibraryController.initialize(
+        defaultLanguage: AsmrContentLanguage.fromAppLanguage(
+          appLanguageProvider.language,
+        ),
+      ),
+    ]);
+    if (Platform.isWindows) {
+      await attachWindowsRuntime(
+        runtime: runtimeGraph.runtime,
+        playback: playbackFacade,
+        notifications: notificationFacade,
+        timer: timerFacade,
+      );
+    }
+  }
+
+  return (
+    runtimeGraph: runtimeGraph,
+    appLanguageProvider: appLanguageProvider,
+    appUpdateService: appUpdateService,
+    asmrDownloadManager: asmrDownloadManager,
+    asmrMetadataService: asmrMetadataService,
+    asmrLibraryController: asmrLibraryController,
+    asmrPlaybackCoordinator: asmrPlaybackCoordinator,
+    asmrApiService: asmrApiService,
+    initializeRuntimeData: initializeRuntimeData,
   );
 }
 

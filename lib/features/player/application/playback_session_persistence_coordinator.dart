@@ -1,6 +1,32 @@
 part of 'playback_facade.dart';
 
 extension PlaybackSessionPersistenceCoordinator on PlaybackFacade {
+  int get positionBucketSeconds => _backgroundMode
+      ? PlaybackFacade.backgroundPositionBucketSeconds
+      : PlaybackFacade.foregroundPositionBucketSeconds;
+
+  void setBackgroundMode(bool value) {
+    if (_backgroundMode == value) return;
+    if (value) {
+      _savePlaybackStateTimer?.cancel();
+      _savePlaybackStateTimer = null;
+      if (_pendingPlaybackStateSessionIds.isNotEmpty) {
+        unawaited(_enqueueSessionPersistence(_savePendingPlaybackStates));
+      }
+    }
+    _backgroundMode = value;
+    for (final session in _service.sessions.values) {
+      session.lastPersistedPositionBucket =
+          session.lastKnownPosition.inSeconds ~/ positionBucketSeconds;
+    }
+  }
+
+  void _scheduleNewSessionPersistence({bool respectConfiguration = true}) {
+    if (respectConfiguration && !_persistenceEnabled) return;
+    scheduleSessionStatePersistence();
+    scheduleSessionOrderPersistence();
+  }
+
   void attachPersistenceRuntime({
     required MusicTrack? Function(String trackPath) trackByPath,
     required bool Function() recordPlaybackProgress,

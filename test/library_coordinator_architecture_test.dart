@@ -18,6 +18,7 @@ void main() {
 
   test('library coordinators do not depend on the facade', () {
     const coordinatorFiles = <String>[
+      'library_catalog_write_coordinator.dart',
       'library_persistence_coordinator.dart',
       'library_metadata_coordinator.dart',
       'library_mutation_coordinator.dart',
@@ -37,6 +38,52 @@ void main() {
         reason: fileName,
       );
     }
+  });
+
+  test('facade forwards catalog batches to one write coordinator', () {
+    final source = File(
+      'lib/features/library/application/library_facade.dart',
+    ).readAsStringSync();
+    expect(source, isNot(contains('libraryBatchDepth++')));
+    expect(source, isNot(contains('libraryBatchDepth--')));
+    expect(source, contains('_catalogWrites.endLibraryBatch('));
+    expect(source, contains('_catalogWrites.applyStagedLibraryRefreshChunk('));
+    expect(source, isNot(contains('buildLibraryDerivedSnapshot')));
+  });
+
+  test('refresh planner only reads catalog and returns chunks', () {
+    final source = File(
+      'lib/features/library/application/library_refresh_chunk_planner.dart',
+    ).readAsStringSync();
+    expect(source, contains('required LibraryCatalogReader provider'));
+    expect(
+      source,
+      isNot(
+        contains(
+          RegExp(
+            r'provider\.(?:setScanProgress|record\w*|add\w*|remove\w*|begin\w*|finish\w*)\(',
+          ),
+        ),
+      ),
+    );
+    expect(source, contains('onChunk('));
+  });
+
+  test('scan importer reuses scan lifetime and the catalog state', () {
+    final source = File(
+      'lib/features/library/application/library_scan_importer.dart',
+    ).readAsStringSync();
+    expect(source, contains('required LibraryCatalog provider'));
+    expect(
+      source,
+      isNot(
+        contains(
+          RegExp(
+            r'(?:tryBeginScan|cancelScan|finishScan|rollback|LibraryService)',
+          ),
+        ),
+      ),
+    );
   });
 
   test('startup duration maintenance has no presentation-side trigger', () {

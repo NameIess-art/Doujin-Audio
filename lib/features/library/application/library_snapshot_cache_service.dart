@@ -185,6 +185,25 @@ class LibrarySnapshotCacheService {
 
   AudioLibraryCategorySnapshot? get categorySnapshotSync => _categorySnapshot;
 
+  Future<LibraryDerivedSnapshot> buildDerivedSnapshot() {
+    return AppLogService.measureAsync(
+      'library_derived_snapshot_build',
+      () => compute(
+        buildLibraryDerivedSnapshot,
+        LibraryDerivedSnapshotPayload(
+          tracks: List<MusicTrack>.unmodifiable(_libraryService.library),
+          watchedFolders: List<String>.unmodifiable(
+            _libraryService.watchedFolders,
+          ),
+          watchedLibraries: List<String>.unmodifiable(
+            _libraryService.watchedLibraries,
+          ),
+        ),
+      ),
+      details: <String, Object?>{'tracks': _libraryService.library.length},
+    );
+  }
+
   void adoptCardSnapshot(LibraryTreeSnapshot snapshot) {
     _cacheCardSnapshot(snapshot);
     _cardFuture = null;

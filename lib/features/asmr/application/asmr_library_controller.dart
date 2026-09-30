@@ -1,207 +1,25 @@
 import 'dart:async';
 import 'dart:collection';
-import 'dart:io';
 import 'package:flutter/foundation.dart';
-import 'package:path/path.dart' as path;
 
 import '../../../core/persistence/persisted_state_reloader.dart';
 import '../../../core/immutable_collections.dart';
 import '../domain/asmr_models.dart';
 import '../../../core/media/music_track.dart';
-import '../../../core/media/path_matcher.dart';
 import '../../library/application/work_text_service.dart';
-import 'asmr_api_service.dart';
 import 'asmr_account_sync_service.dart';
 import 'asmr_download_manager.dart';
 import 'asmr_playback_coordinator.dart';
 import 'asmr_preferences.dart';
 import 'asmr_remote_catalog_service.dart';
+import 'asmr_library_view_state.dart';
+import 'asmr_work_content_mapping.dart';
+import 'asmr_work_content_store.dart';
 import '../../../core/app_language.dart';
 import '../../../core/media/search_query_utils.dart';
 
-class AsmrLibraryGlobalViewState {
-  AsmrLibraryGlobalViewState({
-    required this.initialized,
-    required List<AsmrCategoryType> visibleCategories,
-    required this.contentLanguage,
-    required this.contentLanguagePreference,
-    required this.revision,
-  }) : visibleCategories = immutableList(visibleCategories);
-
-  final bool initialized;
-  final List<AsmrCategoryType> visibleCategories;
-  final AsmrContentLanguage contentLanguage;
-  final ContentLanguagePreference contentLanguagePreference;
-  final int revision;
-
-  @override
-  bool operator ==(Object other) {
-    return other is AsmrLibraryGlobalViewState &&
-        initialized == other.initialized &&
-        listEquals(visibleCategories, other.visibleCategories) &&
-        contentLanguage == other.contentLanguage &&
-        contentLanguagePreference == other.contentLanguagePreference &&
-        revision == other.revision;
-  }
-
-  @override
-  int get hashCode => Object.hash(
-    initialized,
-    Object.hashAll(visibleCategories),
-    contentLanguage,
-    contentLanguagePreference,
-    revision,
-  );
-}
-
-class AsmrCategoryViewState {
-  AsmrCategoryViewState({
-    required this.category,
-    required List<AsmrWork> works,
-    required this.isLoading,
-    required this.isLoadingMore,
-    required this.isRefreshing,
-    required this.isStale,
-    required this.hasAttemptedLoad,
-    required this.hasMore,
-    required this.needsLoadMoreRetry,
-    required this.totalCount,
-    required this.activeQuery,
-    required this.lastError,
-    required this.operationError,
-    required this.revision,
-  }) : works = immutableList(works);
-
-  final AsmrCategoryType category;
-  final List<AsmrWork> works;
-  final bool isLoading;
-  final bool isLoadingMore;
-  final bool isRefreshing;
-  final bool isStale;
-  final bool hasAttemptedLoad;
-  final bool hasMore;
-  final bool needsLoadMoreRetry;
-  final int totalCount;
-  final String activeQuery;
-  final Object? lastError;
-  final Object? operationError;
-  final int revision;
-
-  @override
-  bool operator ==(Object other) {
-    return other is AsmrCategoryViewState &&
-        category == other.category &&
-        identical(works, other.works) &&
-        isLoading == other.isLoading &&
-        isLoadingMore == other.isLoadingMore &&
-        isRefreshing == other.isRefreshing &&
-        isStale == other.isStale &&
-        hasAttemptedLoad == other.hasAttemptedLoad &&
-        hasMore == other.hasMore &&
-        needsLoadMoreRetry == other.needsLoadMoreRetry &&
-        totalCount == other.totalCount &&
-        activeQuery == other.activeQuery &&
-        lastError == other.lastError &&
-        operationError == other.operationError &&
-        revision == other.revision;
-  }
-
-  @override
-  int get hashCode => Object.hash(
-    category,
-    identityHashCode(works),
-    isLoading,
-    isLoadingMore,
-    isRefreshing,
-    isStale,
-    hasAttemptedLoad,
-    hasMore,
-    needsLoadMoreRetry,
-    totalCount,
-    activeQuery,
-    lastError,
-    operationError,
-    revision,
-  );
-}
-
-class AsmrTrackTreeViewState {
-  AsmrTrackTreeViewState({
-    required this.workId,
-    required List<AsmrTrackFile>? tree,
-    required List<AsmrTrackFile>? visibleTree,
-    required this.isLoading,
-    required this.isRefreshing,
-    required this.isStale,
-    required this.operationError,
-    required this.revision,
-  }) : tree = tree == null ? null : immutableList(tree),
-       visibleTree = visibleTree == null ? null : immutableList(visibleTree);
-
-  final int workId;
-  final List<AsmrTrackFile>? tree;
-  final List<AsmrTrackFile>? visibleTree;
-  final bool isLoading;
-  final bool isRefreshing;
-  final bool isStale;
-  final Object? operationError;
-  final int revision;
-
-  @override
-  bool operator ==(Object other) {
-    return other is AsmrTrackTreeViewState &&
-        workId == other.workId &&
-        identical(tree, other.tree) &&
-        identical(visibleTree, other.visibleTree) &&
-        isLoading == other.isLoading &&
-        isRefreshing == other.isRefreshing &&
-        isStale == other.isStale &&
-        operationError == other.operationError &&
-        revision == other.revision;
-  }
-
-  @override
-  int get hashCode => Object.hash(
-    workId,
-    identityHashCode(tree),
-    identityHashCode(visibleTree),
-    isLoading,
-    isRefreshing,
-    isStale,
-    operationError,
-    revision,
-  );
-}
-
-class AsmrAuthViewState {
-  const AsmrAuthViewState({
-    required this.isLoggedIn,
-    required this.isRestoring,
-    required this.userName,
-    required this.revision,
-  });
-
-  final bool isLoggedIn;
-  final bool isRestoring;
-  final String userName;
-  final int revision;
-}
-
-class AsmrSyncViewState {
-  const AsmrSyncViewState({
-    required this.phase,
-    required this.lastSyncAt,
-    required this.pendingCount,
-    required this.lastError,
-    required this.revision,
-  });
-
-  final AsmrSyncPhase phase;
-  final DateTime? lastSyncAt;
-  final int pendingCount;
-  final Object? lastError;
-  final int revision;
-}
+export 'asmr_library_view_state.dart';
+export 'asmr_work_content_mapping.dart' show collectAsmrWorkTextFiles;
 
 class _AsmrFilteredWorksCacheKey {
   const _AsmrFilteredWorksCacheKey({
@@ -226,7 +44,6 @@ class _AsmrFilteredWorksCacheKey {
   int get hashCode => Object.hash(category, query, revision);
 }
 
-typedef _AsmrWorkRequestKey = ({int workId, int contentEpoch, int authEpoch});
 typedef _AsmrSyncRequestKey = ({int authEpoch, String token});
 typedef _AsmrCategoryRequestKey = ({
   int authEpoch,
@@ -272,12 +89,13 @@ class AsmrLibraryController extends ChangeNotifier
        _remoteCatalogService = remoteCatalogService,
        _accountSyncService = accountSyncService;
 
-  static const int _detailCacheLimit = 128;
-  static const int _trackCacheLimit = 32;
   static const int _filteredWorksCacheLimit = 24;
   final AsmrPreferencesStore _preferencesStore;
   final AsmrRemoteCatalogService _remoteCatalogService;
   final AsmrAccountSyncService _accountSyncService;
+  late final AsmrWorkContentStore _workContent = AsmrWorkContentStore(
+    onChanged: notifyListeners,
+  );
   final Map<AsmrCategoryType, _AsmrCategoryState> _categories = {
     for (final category in AsmrCategoryType.values)
       category: _AsmrCategoryState(),
@@ -288,20 +106,6 @@ class AsmrLibraryController extends ChangeNotifier
       _categories[category]!;
   final Map<AsmrCategoryType, String> _pendingAuthCategoryRefreshes =
       <AsmrCategoryType, String>{};
-  final LinkedHashMap<int, AsmrWorkDetail> _detailCache = LinkedHashMap();
-  final LinkedHashMap<int, List<AsmrTrackFile>> _trackCache = LinkedHashMap();
-  final LinkedHashMap<int, List<AsmrTrackFile>> _visibleTrackCache =
-      LinkedHashMap();
-  Set<String> _hiddenTracks = <String>{};
-  final Map<int, ({AsmrWork work, List<MusicTrack> tracks})>
-  _playableTrackCache = {};
-  final Set<int> _loadingTrackWorkIds = <int>{};
-  final Map<int, Object> _trackTreeErrors = <int, Object>{};
-  final Map<_AsmrWorkRequestKey, Future<AsmrWorkDetail>> _detailTasks =
-      <_AsmrWorkRequestKey, Future<AsmrWorkDetail>>{};
-  final Map<_AsmrWorkRequestKey, Future<List<AsmrTrackFile>>> _trackTreeTasks =
-      <_AsmrWorkRequestKey, Future<List<AsmrTrackFile>>>{};
-  final Map<int, int> _trackRevisions = <int, int>{};
   final LinkedHashMap<_AsmrFilteredWorksCacheKey, List<AsmrWork>>
   _filteredWorksCache = LinkedHashMap();
 
@@ -351,10 +155,10 @@ class AsmrLibraryController extends ChangeNotifier
     return result;
   }
 
-  _AsmrWorkRequestKey _workRequestKey(int workId) =>
+  AsmrWorkRequestKey _workRequestKey(int workId) =>
       (workId: workId, contentEpoch: _contentEpoch, authEpoch: _authEpoch);
 
-  bool _isWorkRequestCurrent(_AsmrWorkRequestKey key) =>
+  bool _isWorkRequestCurrent(AsmrWorkRequestKey key) =>
       key.contentEpoch == _contentEpoch && key.authEpoch == _authEpoch;
 
   _AsmrCategoryRequestKey _categoryRequestKey(int requestSerial) => (
@@ -412,11 +216,7 @@ class AsmrLibraryController extends ChangeNotifier
   }
 
   void _invalidateRemoteWorkCaches() {
-    _detailCache.clear();
-    _trackCache.clear();
-    _visibleTrackCache.clear();
-    _playableTrackCache.clear();
-    _trackTreeErrors.clear();
+    _workContent.clearCaches(clearErrors: true);
   }
 
   void _applyAccountSnapshot(AsmrAccountSnapshot snapshot) {
@@ -461,8 +261,9 @@ class AsmrLibraryController extends ChangeNotifier
       _category(category).totalCount ?? worksFor(category).length;
   String activeQueryFor(AsmrCategoryType category) =>
       _category(category).query ?? '';
-  bool isTrackTreeLoading(int workId) => _loadingTrackWorkIds.contains(workId);
-  List<AsmrTrackFile>? trackTreeFor(int workId) => _cachedTrackTree(workId);
+  bool isTrackTreeLoading(int workId) => _workContent.isLoading(workId);
+  List<AsmrTrackFile>? trackTreeFor(int workId) =>
+      _workContent.cachedTrackTree(workId);
 
   AsmrLibraryGlobalViewState get globalViewState => AsmrLibraryGlobalViewState(
     initialized: _initialized,
@@ -516,19 +317,8 @@ class AsmrLibraryController extends ChangeNotifier
     );
   }
 
-  AsmrTrackTreeViewState trackTreeViewState(int workId) {
-    final tree = _cachedTrackTree(workId);
-    return AsmrTrackTreeViewState(
-      workId: workId,
-      tree: tree,
-      visibleTree: tree == null ? null : _visibleTrackTreeFor(workId, tree),
-      isLoading: isTrackTreeLoading(workId),
-      isRefreshing: isTrackTreeLoading(workId) && tree != null,
-      isStale: isTrackTreeLoading(workId) && tree != null,
-      operationError: _trackTreeErrors[workId],
-      revision: _trackRevisions[workId] ?? 0,
-    );
-  }
+  AsmrTrackTreeViewState trackTreeViewState(int workId) =>
+      _workContent.trackTreeViewState(workId);
 
   List<AsmrWork> worksFor(AsmrCategoryType category) {
     switch (category) {
@@ -623,9 +413,7 @@ class AsmrLibraryController extends ChangeNotifier
   }) async {
     final hiddenTracks = await _preferencesStore.loadHiddenTracks();
     if (_disposed) return;
-    _hiddenTracks = hiddenTracks;
-    _visibleTrackCache.clear();
-    _playableTrackCache.clear();
+    _workContent.replaceHiddenTracks(hiddenTracks);
     final visibleCategories = await _preferencesStore.loadVisibleCategories();
     if (_disposed) return;
     _visibleCategories = visibleCategories;
@@ -712,11 +500,7 @@ class AsmrLibraryController extends ChangeNotifier
     for (final state in _categories.values) {
       state.works = null;
     }
-    _detailCache.clear();
-    _trackCache.clear();
-    _visibleTrackCache.clear();
-    _playableTrackCache.clear();
-    _trackTreeErrors.clear();
+    _workContent.clearCaches(clearErrors: true);
     _filteredWorksCache.clear();
     await initialize();
     await restoreAsmrAccountSession();
@@ -926,11 +710,8 @@ class AsmrLibraryController extends ChangeNotifier
       _bumpCategoryRevision(entry.key);
     }
     _refreshTasks.clear();
-    _detailCache.clear();
-    _trackCache.clear();
-    _visibleTrackCache.clear();
-    _playableTrackCache.clear();
-    _bumpAllTrackRevisions();
+    _workContent.clearCaches();
+    _workContent.bumpAllTrackRevisions();
     _bumpGlobalRevision();
     notifyListeners();
   }
@@ -1248,25 +1029,18 @@ class AsmrLibraryController extends ChangeNotifier
   }
 
   Future<AsmrWorkDetail> loadWorkDetail(AsmrWork work) {
-    final cached = _detailCache.remove(work.id);
-    if (cached != null) {
-      _detailCache[work.id] = cached;
-      return SynchronousFuture<AsmrWorkDetail>(cached);
-    }
+    final cached = _workContent.cachedDetail(work.id);
+    if (cached != null) return SynchronousFuture<AsmrWorkDetail>(cached);
     final key = _workRequestKey(work.id);
-    final existing = _detailTasks[key];
-    if (existing != null) return existing;
-    late final Future<AsmrWorkDetail> task;
-    task = _loadWorkDetailOnce(work, key).whenComplete(() {
-      if (identical(_detailTasks[key], task)) _detailTasks.remove(key);
-    });
-    _detailTasks[key] = task;
-    return task;
+    return _workContent.requestDetail(
+      key,
+      () => _loadWorkDetailOnce(work, key),
+    );
   }
 
   Future<AsmrWorkDetail> _loadWorkDetailOnce(
     AsmrWork work,
-    _AsmrWorkRequestKey key,
+    AsmrWorkRequestKey key,
   ) async {
     final language = _contentLanguage;
     final detail = await _remoteCatalogService.loadWorkDetail(
@@ -1282,19 +1056,19 @@ class AsmrLibraryController extends ChangeNotifier
       languageEditionLabels: detail.languageEditionLabels,
       userRating: detail.userRating,
     );
-    _storeDetail(merged);
+    _workContent.storeDetail(merged);
     return merged;
   }
 
   bool isTrackHidden(int workId, AsmrTrackFile node) =>
-      _hiddenTracks.contains('$workId:${node.stableKey}');
+      _workContent.hiddenTracks.contains('$workId:${node.stableKey}');
 
   Future<void> setTrackHidden(int workId, AsmrTrackFile node, bool hidden) {
     return _runStateMutation(() async {
       await initializeForVisiblePage();
       final key = '$workId:${node.stableKey}';
-      if (_hiddenTracks.contains(key) == hidden) return;
-      final next = {..._hiddenTracks};
+      if (_workContent.hiddenTracks.contains(key) == hidden) return;
+      final next = {..._workContent.hiddenTracks};
       if (hidden) {
         next.add(key);
       } else {
@@ -1302,10 +1076,7 @@ class AsmrLibraryController extends ChangeNotifier
       }
       await _preferencesStore.saveHiddenTracks(next);
       if (_disposed) return;
-      _hiddenTracks = next;
-      _visibleTrackCache.remove(workId);
-      _playableTrackCache.remove(workId);
-      _bumpTrackRevision(workId);
+      _workContent.replaceHiddenTracks(next, changedWorkId: workId);
       notifyListeners();
     });
   }
@@ -1314,11 +1085,16 @@ class AsmrLibraryController extends ChangeNotifier
   Future<List<MusicTrack>> loadPlayableTracks(AsmrWork work) async {
     await initializeForVisiblePage();
     final tree = await ensureTrackTree(work);
-    final cached = _playableTrackCache[work.id];
-    if (cached != null && identical(cached.work, work)) return cached.tracks;
-    final tracks = List<MusicTrack>.unmodifiable(_flattenTracks(work, tree));
-    _playableTrackCache[work.id] = (work: work, tracks: tracks);
-    return tracks;
+    final cached = _workContent.cachedPlayableTracks(work);
+    if (cached != null) return cached;
+    return _workContent.storePlayableTracks(
+      work,
+      flattenAsmrPlayableTracks(
+        work,
+        tree,
+        hiddenTracks: _workContent.hiddenTracks,
+      ),
+    );
   }
 
   Future<List<WorkTextFile>> findWorkTextFiles(
@@ -1337,10 +1113,15 @@ class AsmrLibraryController extends ChangeNotifier
     AsmrWork work,
     AsmrTrackFile node,
   ) {
-    if (node.isFolder) return _flattenTracks(work, <AsmrTrackFile>[node]);
-    return _flattenTracks(
+    if (node.isFolder) {
+      return flattenAsmrPlayableTracks(work, <AsmrTrackFile>[
+        node,
+      ], hiddenTracks: _workContent.hiddenTracks);
+    }
+    return flattenAsmrPlayableTracks(
       work,
-      _cachedTrackTree(work.id) ?? <AsmrTrackFile>[node],
+      _workContent.cachedTrackTree(work.id) ?? <AsmrTrackFile>[node],
+      hiddenTracks: _workContent.hiddenTracks,
       includeAudioNode: (candidate) => candidate.stableKey == node.stableKey,
     );
   }
@@ -1374,126 +1155,19 @@ class AsmrLibraryController extends ChangeNotifier
     ];
   }
 
-  List<MusicTrack> _flattenTracks(
-    AsmrWork work,
-    Iterable<AsmrTrackFile> roots, {
-    bool Function(AsmrTrackFile node)? includeAudioNode,
-  }) {
-    final result = <MusicTrack>[];
-    final subtitleByStem = <String, AsmrTrackFile>{};
-    final subtitlesByBaseName = <String, List<AsmrTrackFile>>{};
-
-    void indexSubtitles(Iterable<AsmrTrackFile> nodes) {
-      for (final node in nodes) {
-        if (node.isSubtitle) {
-          subtitleByStem.putIfAbsent(node.stemKey, () => node);
-          subtitlesByBaseName
-              .putIfAbsent(node.baseNameStem, () => <AsmrTrackFile>[])
-              .add(node);
-        }
-        if (node.children.isNotEmpty) {
-          indexSubtitles(node.children);
-        }
-      }
-    }
-
-    Map<String, Object?> remoteMetadataForTrack(AsmrTrackFile node) {
-      final metadata = Map<String, Object?>.from(work.toJson());
-      metadata['trackRelativePath'] = node.relativePath;
-      metadata['trackStableKey'] = node.stableKey;
-      metadata['trackDirectoryPath'] = path.dirname(node.relativePath);
-      final subtitle =
-          subtitleByStem[node.stemKey] ??
-          switch (subtitlesByBaseName[node.baseNameStem]) {
-            final List<AsmrTrackFile> matches when matches.length == 1 =>
-              matches.first,
-            _ => null,
-          };
-      final subtitleUrl = (subtitle?.streamUrl ?? subtitle?.downloadUrl ?? '')
-          .trim();
-      if (subtitleUrl.isEmpty) {
-        return metadata;
-      }
-      metadata['subtitleUrl'] = subtitleUrl;
-      metadata['subtitleExtension'] = subtitle!.resolvedExtension;
-      metadata['subtitleSourcePath'] = subtitle.relativePath;
-      metadata['subtitleTitle'] = subtitle.title;
-      return metadata;
-    }
-
-    indexSubtitles(roots);
-
-    void visit(Iterable<AsmrTrackFile> nodes) {
-      for (final node in nodes) {
-        if (node.isAudio) {
-          if (_hiddenTracks.contains('${work.id}:${node.stableKey}')) continue;
-          if (includeAudioNode != null && !includeAudioNode(node)) {
-            continue;
-          }
-          final usesOfficialMedia = <String?>[
-            node.streamUrl,
-            node.downloadUrl,
-            node.lowQualityUrl,
-          ].any(AsmrApiService.isOfficialMediaUrl);
-          final track = node.toMusicTrack(
-            groupTitleOverride: work.title,
-            remoteCoverUrl: work.preferredCoverUrl,
-            remoteMetadataKind: 'asmr.one',
-            remoteMetadata: remoteMetadataForTrack(node),
-            preferredPlaybackUrls: usesOfficialMedia
-                ? AsmrApiService.mediaStreamUrlsForHash(node.hash)
-                : const <String>[],
-          );
-          if (track.path.isNotEmpty) {
-            result.add(track);
-          }
-          continue;
-        }
-        if (node.children.isNotEmpty) {
-          visit(node.children);
-        }
-      }
-    }
-
-    visit(roots);
-    return result;
-  }
-
   Future<List<AsmrTrackFile>> ensureTrackTree(AsmrWork work) {
-    final cached = _cachedTrackTree(work.id);
-    if (cached != null) {
-      return SynchronousFuture<List<AsmrTrackFile>>(cached);
-    }
+    final cached = _workContent.cachedTrackTree(work.id);
+    if (cached != null) return SynchronousFuture<List<AsmrTrackFile>>(cached);
     final key = _workRequestKey(work.id);
-    final existing = _trackTreeTasks[key];
-    if (existing != null) return existing;
-    _trackTreeErrors.remove(work.id);
-    if (!_trackTreeTasks.keys.any((candidate) => candidate.workId == work.id) &&
-        _loadingTrackWorkIds.add(work.id)) {
-      _bumpTrackRevision(work.id);
-      notifyListeners();
-    }
-    late final Future<List<AsmrTrackFile>> task;
-    task = _loadTrackTreeOnce(work, key).whenComplete(() {
-      if (identical(_trackTreeTasks[key], task)) {
-        _trackTreeTasks.remove(key);
-      }
-      if (!_trackTreeTasks.keys.any(
-        (candidate) => candidate.workId == work.id,
-      )) {
-        _loadingTrackWorkIds.remove(work.id);
-        _trimTrackCache();
-        _bumpTrackRevision(work.id);
-        notifyListeners();
-      }
-    });
-    _trackTreeTasks[key] = task;
-    return task;
+    return _workContent.requestTrackTree(
+      key,
+      () => _loadTrackTreeOnce(work, key),
+    );
   }
 
   Future<List<AsmrTrackFile>> _loadTrackTreeOnce(
     AsmrWork work,
-    _AsmrWorkRequestKey key,
+    AsmrWorkRequestKey key,
   ) async {
     try {
       final tree = await _remoteCatalogService.loadTrackTree(
@@ -1501,16 +1175,16 @@ class AsmrLibraryController extends ChangeNotifier
         token: _authSession?.token,
       );
       if (_isWorkRequestCurrent(key)) {
-        _trackTreeErrors.remove(work.id);
-        final sortedTree = _storeTrackTree(work.id, tree);
-        _bumpTrackRevision(work.id);
+        _workContent.clearTrackTreeError(work.id);
+        final sortedTree = _workContent.storeTrackTree(work.id, tree);
+        _workContent.bumpTrackRevision(work.id);
         return sortedTree;
       }
       return ensureTrackTree(work);
     } catch (error) {
       if (_isWorkRequestCurrent(key)) {
-        _trackTreeErrors[work.id] = error;
-        _bumpTrackRevision(work.id);
+        _workContent.setTrackTreeError(work.id, error);
+        _workContent.bumpTrackRevision(work.id);
       }
       rethrow;
     }
@@ -1527,8 +1201,8 @@ class AsmrLibraryController extends ChangeNotifier
     _applyAccountSnapshot(snapshot);
     final shouldFavorite = _favoriteIds.contains(work.id);
     final updatedWork = work.copyWith(isFavorite: shouldFavorite);
-    final cachedDetail = _detailCache.remove(work.id);
-    _storeDetail(
+    final cachedDetail = _workContent.takeDetail(work.id);
+    _workContent.storeDetail(
       cachedDetail == null
           ? AsmrWorkDetail(
               work: updatedWork,
@@ -1618,86 +1292,8 @@ class AsmrLibraryController extends ChangeNotifier
     _filteredWorksCache.removeWhere((key, _) => key.category == category);
   }
 
-  void _bumpTrackRevision(int workId) {
-    _trackRevisions[workId] = (_trackRevisions[workId] ?? 0) + 1;
-  }
-
-  void _bumpAllTrackRevisions() {
-    for (final workId in _trackRevisions.keys.toList(growable: false)) {
-      _bumpTrackRevision(workId);
-    }
-  }
-
   void _bumpGlobalRevision() {
     _globalRevision++;
-  }
-
-  void _storeDetail(AsmrWorkDetail detail) {
-    _detailCache.remove(detail.work.id);
-    _detailCache[detail.work.id] = detail;
-    while (_detailCache.length > _detailCacheLimit) {
-      _detailCache.remove(_detailCache.keys.first);
-    }
-  }
-
-  List<AsmrTrackFile>? _cachedTrackTree(int workId) {
-    final cached = _trackCache.remove(workId);
-    if (cached != null) _trackCache[workId] = cached;
-    return cached;
-  }
-
-  List<AsmrTrackFile> _storeTrackTree(int workId, List<AsmrTrackFile> tree) {
-    final sortedTree = immutableList(sortAsmrTrackTreeNaturally(tree));
-    _trackCache.remove(workId);
-    _trackCache[workId] = sortedTree;
-    _visibleTrackCache.remove(workId);
-    _playableTrackCache.remove(workId);
-    _trimTrackCache();
-    return sortedTree;
-  }
-
-  void _trimTrackCache() {
-    while (_trackCache.length > _trackCacheLimit) {
-      final evictedWorkId = _trackCache.keys.firstWhere(
-        (workId) => !_loadingTrackWorkIds.contains(workId),
-        orElse: () => -1,
-      );
-      if (evictedWorkId < 0) return;
-      _trackCache.remove(evictedWorkId);
-      _visibleTrackCache.remove(evictedWorkId);
-      _playableTrackCache.remove(evictedWorkId);
-    }
-  }
-
-  List<AsmrTrackFile> _visibleTrackTreeFor(
-    int workId,
-    List<AsmrTrackFile> tree,
-  ) {
-    final cached = _visibleTrackCache.remove(workId);
-    if (cached != null) {
-      _visibleTrackCache[workId] = cached;
-      return cached;
-    }
-    List<AsmrTrackFile> filter(List<AsmrTrackFile> nodes) {
-      final result = <AsmrTrackFile>[];
-      for (final node in nodes) {
-        if (node.isFolder) {
-          final children = filter(node.children);
-          if (children.isNotEmpty) result.add(node.withChildren(children));
-        } else if (node.hasBrowsableContent &&
-            !_hiddenTracks.contains('$workId:${node.stableKey}')) {
-          result.add(node);
-        }
-      }
-      return result;
-    }
-
-    final visible = immutableList(filter(tree));
-    _visibleTrackCache[workId] = visible;
-    while (_visibleTrackCache.length > _trackCacheLimit) {
-      _visibleTrackCache.remove(_visibleTrackCache.keys.first);
-    }
-    return visible;
   }
 
   static List<AsmrCategoryType> _sanitizeVisibleCategories(
@@ -1729,71 +1325,4 @@ class AsmrLibraryController extends ChangeNotifier
     _contentEpoch++;
     super.dispose();
   }
-}
-
-List<WorkTextFile> collectAsmrWorkTextFiles(
-  Iterable<AsmrTrackFile> tree, {
-  AsmrDownloadManager? downloadManager,
-  int? workId,
-}) {
-  final result = <WorkTextFile>[];
-  final task = workId != null ? downloadManager?.getTask(workId) : null;
-  final destinationRoot = task?.destinationRoot;
-  final workFolderName = task?.workFolderName;
-
-  void visit(Iterable<AsmrTrackFile> nodes) {
-    for (final node in nodes) {
-      if (node.isFolder) {
-        visit(node.children);
-      } else if (node.isText) {
-        String? localPath;
-        if (destinationRoot != null &&
-            destinationRoot.isNotEmpty &&
-            workFolderName != null &&
-            workFolderName.isNotEmpty &&
-            !PathMatcher.isContentUri(destinationRoot)) {
-          final candidate = path.join(
-            destinationRoot,
-            workFolderName,
-            node.relativePath,
-          );
-          if (File(candidate).existsSync()) {
-            localPath = candidate;
-          }
-        }
-
-        final usesOfficialMedia = <String?>[
-          node.streamUrl,
-          node.downloadUrl,
-          node.lowQualityUrl,
-        ].any(AsmrApiService.isOfficialMediaUrl);
-
-        final urls = <String>[
-          node.downloadUrl ?? '',
-          node.streamUrl ?? '',
-          if (usesOfficialMedia)
-            ...AsmrApiService.mediaDownloadUrlsForHash(node.hash),
-          if (usesOfficialMedia)
-            ...AsmrApiService.mediaStreamUrlsForHash(node.hash),
-        ].where((url) => url.trim().isNotEmpty).toSet().toList(growable: false);
-
-        final resolvedPath = localPath ?? urls.firstOrNull ?? '';
-        if (resolvedPath.isNotEmpty) {
-          result.add(
-            WorkTextFile(
-              name: node.title,
-              relativePath: node.relativePath,
-              path: resolvedPath,
-              fallbackUrls: localPath == null
-                  ? urls.skip(1).toList(growable: false)
-                  : const [],
-            ),
-          );
-        }
-      }
-    }
-  }
-
-  visit(tree);
-  return result;
 }

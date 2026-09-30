@@ -14,6 +14,7 @@ import 'audio_detail_cache_service.dart';
 import 'cover_artwork_cache_service.dart';
 import 'library_entry_editor_service.dart';
 import 'library_persistence_coordinator.dart';
+import 'library_catalog_write_coordinator.dart';
 import 'library_service.dart';
 import 'library_snapshot_cache_service.dart';
 
@@ -54,29 +55,15 @@ final class LibraryMutationCoordinator {
     required this.entryEditorService,
     required LibraryPersistenceCoordinator persistenceCoordinator,
     required CoverArtworkCacheService Function() coverArtwork,
-    required bool Function() isScanning,
+    required LibraryCatalogWriteCoordinator catalogWrites,
     required void Function() cancelScan,
-    required void Function() beginLibraryBatch,
-    required Future<void> Function({bool notify, bool waitForPersistence})
-    endLibraryBatch,
-    required List<String> Function(
-      bool Function(MusicTrack track) predicate, {
-      bool persist,
-    })
-    removeTracksMatching,
-    required void Function(List<MusicTrack> tracks, {bool notify, bool persist})
-    addOrReplaceTracks,
     required Future<void> Function(AudioDetailTarget target) deleteAudioDetail,
     required void Function() syncState,
   }) : _service = service,
        _persistenceCoordinator = persistenceCoordinator,
        _coverArtwork = coverArtwork,
-       _isScanning = isScanning,
+       _catalogWrites = catalogWrites,
        _cancelScan = cancelScan,
-       _beginLibraryBatch = beginLibraryBatch,
-       _endLibraryBatch = endLibraryBatch,
-       _removeTracksMatching = removeTracksMatching,
-       _addOrReplaceTracks = addOrReplaceTracks,
        _deleteAudioDetail = deleteAudioDetail,
        _syncStateSlice = syncState;
 
@@ -87,18 +74,8 @@ final class LibraryMutationCoordinator {
   final LibraryEntryEditorService entryEditorService;
   final LibraryPersistenceCoordinator _persistenceCoordinator;
   final CoverArtworkCacheService Function() _coverArtwork;
-  final bool Function() _isScanning;
+  final LibraryCatalogWriteCoordinator _catalogWrites;
   final void Function() _cancelScan;
-  final void Function() _beginLibraryBatch;
-  final Future<void> Function({bool notify, bool waitForPersistence})
-  _endLibraryBatch;
-  final List<String> Function(
-    bool Function(MusicTrack track) predicate, {
-    bool persist,
-  })
-  _removeTracksMatching;
-  final void Function(List<MusicTrack> tracks, {bool notify, bool persist})
-  _addOrReplaceTracks;
   final Future<void> Function(AudioDetailTarget target) _deleteAudioDetail;
   final void Function() _syncStateSlice;
   void _markStructureChanged() {
@@ -113,7 +90,7 @@ final class LibraryMutationCoordinator {
     final result = _service.clearLibraryExclusions(normalizedLibraryPath);
     if (!result.changed) return;
     if (result.restoredTracks.isNotEmpty) {
-      _addOrReplaceTracks(result.restoredTracks, notify: false);
+      _catalogWrites.addOrReplaceTracks(result.restoredTracks, notify: false);
     } else {
       _syncStateSlice();
     }
@@ -183,7 +160,7 @@ final class LibraryMutationCoordinator {
   }
 
   Future<bool> _removeTrackPermanently(String trackPath) async {
-    final removedPaths = _removeTracksMatching(
+    final removedPaths = _catalogWrites.removeTracksMatching(
       (track) => PathMatcher.equalsNormalized(track.path, trackPath),
       persist: false,
     );
@@ -244,7 +221,7 @@ final class LibraryMutationCoordinator {
     final wasWatched = _service.watchedFolders.any(
       (folder) => PathMatcher.equalsNormalized(folder, normalizedFolderPath),
     );
-    final removedPaths = _removeTracksMatching(
+    final removedPaths = _catalogWrites.removeTracksMatching(
       (track) =>
           PathMatcher.isWithinOrEqual(track.path, normalizedFolderPath) ||
           PathMatcher.isWithinOrEqual(track.groupKey, normalizedFolderPath),
@@ -280,11 +257,11 @@ final class LibraryMutationCoordinator {
   }
 
   Future<bool> _removeLibraryPermanently(String libraryPath) async {
-    if (_isScanning()) _cancelScan();
+    if (_service.isScanning) _cancelScan();
     final normalizedLibraryPath = PathMatcher.normalize(libraryPath);
-    _beginLibraryBatch();
+    _catalogWrites.beginLibraryBatch();
     final removal = _service.removeLibrary(normalizedLibraryPath);
-    final removedTrackPaths = _removeTracksMatching(
+    final removedTrackPaths = _catalogWrites.removeTracksMatching(
       (track) =>
           PathMatcher.isWithinOrEqual(track.path, normalizedLibraryPath) ||
           PathMatcher.isWithinOrEqual(track.groupKey, normalizedLibraryPath),
@@ -299,7 +276,7 @@ final class LibraryMutationCoordinator {
         AudioDetailTarget.libraryRootFolder(folderPath),
     };
     final persistenceTasks = <Future<void>>[
-      _endLibraryBatch(),
+      _catalogWrites.endLibraryBatch(),
       _deleteRemovedLibraryPersistence(normalizedLibraryPath, detailTargets),
     ];
     if (_persistenceCoordinator.enabled) {
@@ -480,13 +457,13 @@ final class LibraryMutationCoordinator {
     if (!_service.isLibraryFolderExplicitlyExcluded(libraryPath, folderPath)) {
       return;
     }
-    _beginLibraryBatch();
-    _removeTracksMatching(
+    _catalogWrites.beginLibraryBatch();
+    _catalogWrites.removeTracksMatching(
       (track) =>
           PathMatcher.isWithinOrEqual(track.path, folderPath) ||
           PathMatcher.isWithinOrEqual(track.groupKey, folderPath),
     );
-    await _endLibraryBatch(waitForPersistence: false);
+    await _catalogWrites.endLibraryBatch(waitForPersistence: false);
   }
 
   Future<void> _removeExcludedTrackFromActiveLibrary(
@@ -497,11 +474,11 @@ final class LibraryMutationCoordinator {
     if (!_service.isLibraryTrackExplicitlyExcluded(libraryPath, trackPath)) {
       return;
     }
-    _beginLibraryBatch();
-    _removeTracksMatching(
+    _catalogWrites.beginLibraryBatch();
+    _catalogWrites.removeTracksMatching(
       (track) => PathMatcher.equalsNormalized(track.path, trackPath),
     );
-    await _endLibraryBatch(waitForPersistence: false);
+    await _catalogWrites.endLibraryBatch(waitForPersistence: false);
   }
 
   Future<void> _restoreExcludedTrack(
@@ -586,9 +563,9 @@ final class LibraryMutationCoordinator {
 
   Future<void> _addRestoredTracks(List<MusicTrack> tracks) async {
     if (tracks.isEmpty) return;
-    _beginLibraryBatch();
-    _addOrReplaceTracks(tracks, notify: false);
-    await _endLibraryBatch(waitForPersistence: false);
+    _catalogWrites.beginLibraryBatch();
+    _catalogWrites.addOrReplaceTracks(tracks, notify: false);
+    await _catalogWrites.endLibraryBatch(waitForPersistence: false);
   }
 
   Future<AudioDetailRenameResult> renameAudioDetailTargetToName(

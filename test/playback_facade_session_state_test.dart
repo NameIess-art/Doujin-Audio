@@ -776,6 +776,54 @@ void main() {
     },
   );
 
+  for (final action in ['remove', 'clear', 'dispose']) {
+    test(
+      '$action releases queued seek waiters before an active native seek returns',
+      () async {
+        final library = _createLibraryFacade();
+        final native = _RecordingNativePlaybackRepository();
+        final playback = PlaybackFacade.create(
+          databaseRepository:
+              library.databaseRepository as PlaybackPersistenceRepository,
+          nativeRepository: native,
+        )..configurePersistence(enabled: false);
+        final session = _session('queued-seek-$action');
+        playback.registerSession(session);
+        final gate = Completer<NativeResult<NativePlaybackSnapshot>>();
+        native.seekGate = gate;
+        var disposed = false;
+        addTearDown(() async {
+          if (!gate.isCompleted) {
+            gate.complete(const NativeSuccess<NativePlaybackSnapshot>());
+          }
+          if (!disposed) await playback.dispose();
+          await library.dispose();
+        });
+        final active = playback.seekSession(
+          session.id,
+          const Duration(seconds: 10),
+        );
+        final queued = playback.seekSession(
+          session.id,
+          const Duration(seconds: 20),
+        );
+        switch (action) {
+          case 'remove':
+            await playback.removeSession(session.id);
+          case 'clear':
+            await playback.clearAllSessions();
+          case 'dispose':
+            await playback.dispose();
+            disposed = true;
+        }
+        await queued.timeout(const Duration(seconds: 1));
+        expect(native.seekPositions, [const Duration(seconds: 10)]);
+        gate.complete(const NativeSuccess<NativePlaybackSnapshot>());
+        await active;
+      },
+    );
+  }
+
   test(
     'playback error retries an existing native source through transport',
     () async {

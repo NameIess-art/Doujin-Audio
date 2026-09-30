@@ -1,327 +1,36 @@
-part of 'library_tab.dart';
+import 'library_download_actions.dart';
+import 'library_providers.dart';
+import 'library_removal_feedback.dart';
+import '../../player/presentation/playback_providers.dart';
+import '../../settings/presentation/settings_providers.dart';
+import 'dart:async';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-final _categoryTermSplitRegex = RegExp(r'[\s,，;；|]+');
+import 'package:flutter/services.dart';
 
-extension _LibrarySearchPageCategoryView on _LibrarySearchPageState {
-  Set<String> get _selectedTermsForCurrentCategory {
-    return switch (_categoryType) {
-      AudioLibraryCategoryType.tags => _selectedTagTerms,
-      AudioLibraryCategoryType.voiceActors => _selectedVoiceActorTerms,
-      AudioLibraryCategoryType.circles => _selectedCircleTerms,
-      AudioLibraryCategoryType.all => const <String>{},
-    };
-  }
+import '../../../app/state/app_runtime_providers.dart';
+import '../../../app/presentation/app_presentation_providers.dart';
+import '../../../core/media/music_track.dart';
+import '../../../core/media/search_query_utils.dart';
+import '../../player/application/playback_facade.dart';
+import '../../../core/persistence/app_preferences.dart';
+import '../application/library_facade.dart';
+import '../domain/audio_library_category.dart';
+import '../domain/library_node.dart';
+import '../../../core/media/path_matcher.dart';
+import '../../../core/widgets/app_feedback.dart';
+import '../../../core/widgets/async_cover_image.dart';
+import '../../../core/widgets/app_transitions.dart';
+import '../../../core/widgets/library_like_cards.dart';
+import '../../../core/widgets/search_highlight.dart';
+import '../../../core/widgets/swipe_reveal_card.dart';
+import '../../../app/theme/app_styles.dart';
 
-  List<String> get _termSearchKeywords {
-    return _termSearchQuery
-        .toLowerCase()
-        .split(_categoryTermSplitRegex)
-        .where((s) => s.isNotEmpty)
-        .toList(growable: false);
-  }
-
-  List<String> _termsForCategory(AudioLibraryCategorySnapshot snapshot) {
-    final terms = switch (_categoryType) {
-      AudioLibraryCategoryType.tags => snapshot.tagTerms,
-      AudioLibraryCategoryType.voiceActors => snapshot.voiceActorTerms,
-      AudioLibraryCategoryType.circles => snapshot.circleTerms,
-      AudioLibraryCategoryType.all => const <String>[],
-    };
-    final keywords = _termSearchKeywords;
-    if (keywords.isEmpty) return terms;
-    return terms.where((term) {
-      final t = term.toLowerCase();
-      return keywords.any((k) => t.contains(k));
-    }).toList();
-  }
-
-  IconData _categoryIcon() {
-    return switch (_categoryType) {
-      AudioLibraryCategoryType.tags => Icons.sell_rounded,
-      AudioLibraryCategoryType.voiceActors => Icons.record_voice_over_rounded,
-      AudioLibraryCategoryType.circles => Icons.groups_rounded,
-      AudioLibraryCategoryType.all => Icons.confirmation_number_rounded,
-    };
-  }
-
-  String _entrySecondaryText(
-    AppLanguageProvider i18n,
-    AudioLibraryCategoryEntry entry,
-  ) {
-    final values = switch (_categoryType) {
-      AudioLibraryCategoryType.tags => entry.tagTerms,
-      AudioLibraryCategoryType.voiceActors => entry.voiceActorTerms,
-      AudioLibraryCategoryType.circles => entry.circleTerms,
-      AudioLibraryCategoryType.all => [
-        if (entry.detail.rjCode.trim().isNotEmpty)
-          entry.detail.rjCode.trim()
-        else
-          i18n.tr('audio_detail_empty'),
-      ],
-    };
-    return values.isEmpty ? i18n.tr('audio_detail_empty') : values.join(', ');
-  }
-
-  String _noTermsText(AppLanguageProvider i18n) {
-    return switch (_categoryType) {
-      AudioLibraryCategoryType.tags => i18n.tr('library_category_no_tags'),
-      AudioLibraryCategoryType.voiceActors => i18n.tr(
-        'library_category_no_voice_actors',
-      ),
-      AudioLibraryCategoryType.circles => i18n.tr(
-        'library_category_no_circles',
-      ),
-      AudioLibraryCategoryType.all => '',
-    };
-  }
-
-  List<AudioLibraryCategoryEntry> _filterCategoryEntries(
-    AudioLibraryCategorySnapshot snapshot, {
-    Set<String> pinnedPaths = const <String>{},
-  }) {
-    final selectedTerms = _selectedTermsForCurrentCategory;
-    final queryTerms = extractSearchTerms(
-      _effectiveSearchQuery,
-    ).map((term) => term.toLowerCase()).toList(growable: false);
-    final termKeywords = _termSearchKeywords;
-    final normalizedSelectedTerms =
-        selectedTerms.map((term) => term.toLowerCase()).toList(growable: false)
-          ..sort();
-    final filterKey = <String>[
-      queryTerms.join('\n'),
-      termKeywords.join('\n'),
-      normalizedSelectedTerms.join('\n'),
-      pinnedPaths.join('\n'),
-    ].join('|');
-    if (identical(snapshot, _lastCategoryFilterSnapshot) &&
-        _categoryType == _lastCategoryFilterType &&
-        filterKey == _lastCategoryFilterKey) {
-      return _lastCategoryFilterResult;
-    }
-
-    final hasTextQuery = queryTerms.isNotEmpty;
-    final hasElementQuery =
-        normalizedSelectedTerms.isNotEmpty || termKeywords.isNotEmpty;
-
-    final filtered = snapshot.entries
-        .where((entry) {
-          final entryTerms = entry.normalizedTermsForCategory(_categoryType);
-          final matchesSelected = normalizedSelectedTerms.every(
-            entryTerms.contains,
-          );
-          final matchesTermKeywords = termKeywords.every(
-            (keyword) => entryTerms.any((term) => term.contains(keyword)),
-          );
-          final matchesElement =
-              hasElementQuery && matchesSelected && matchesTermKeywords;
-          final matchesText =
-              hasTextQuery && queryTerms.every(entry.searchableText.contains);
-
-          if (hasTextQuery && hasElementQuery) {
-            return matchesText && matchesElement;
-          } else if (hasTextQuery) {
-            return matchesText;
-          } else if (hasElementQuery) {
-            return matchesElement;
-          }
-          return true;
-        })
-        .toList(growable: true);
-    final normalizedPinned = pinnedPaths.isEmpty
-        ? const <String>{}
-        : pinnedPaths.map(PathMatcher.normalize).toSet();
-    if (normalizedPinned.isNotEmpty) {
-      filtered.sort((a, b) {
-        final aPinned = normalizedPinned.contains(
-          PathMatcher.normalize(a.path),
-        );
-        final bPinned = normalizedPinned.contains(
-          PathMatcher.normalize(b.path),
-        );
-        if (aPinned != bPinned) return aPinned ? -1 : 1;
-        return 0;
-      });
-    }
-    final result = List<AudioLibraryCategoryEntry>.unmodifiable(filtered);
-    _lastCategoryFilterSnapshot = snapshot;
-    _lastCategoryFilterType = _categoryType;
-    _lastCategoryFilterKey = filterKey;
-    _lastCategoryFilterResult = result;
-    return result;
-  }
-
-  String _termSearchHintText(AppLanguageProvider i18n) {
-    final searchPrefix = i18n.tr('search');
-    return switch (_categoryType) {
-      AudioLibraryCategoryType.tags =>
-        '$searchPrefix${i18n.tr('library_category_tags')}...',
-      AudioLibraryCategoryType.voiceActors =>
-        '$searchPrefix${i18n.tr('library_category_voice_actors')}...',
-      AudioLibraryCategoryType.circles =>
-        '$searchPrefix${i18n.tr('library_category_circles')}...',
-      AudioLibraryCategoryType.all => '$searchPrefix...',
-    };
-  }
-
-  Widget _buildCategoryBody({
-    required LibraryFacade libraryFacade,
-    required AppLanguageProvider i18n,
-    required double topPadding,
-    required double bottomPadding,
-    required double cacheExtent,
-    required int structureRevision,
-    required int detailRevision,
-    Set<String> pinnedPaths = const <String>{},
-  }) {
-    if (_categorySnapshotFuture == null ||
-        _categorySnapshotStructureRevision != structureRevision ||
-        _categorySnapshotDetailRevision != detailRevision) {
-      _categorySnapshotStructureRevision = structureRevision;
-      _categorySnapshotDetailRevision = detailRevision;
-      _categorySnapshotFuture = libraryFacade.audioLibraryCategorySnapshot();
-    }
-    return FutureBuilder<AudioLibraryCategorySnapshot>(
-      key: ValueKey(
-        'category_future_${_categoryType.name}_${structureRevision}_$detailRevision',
-      ),
-      future: _categorySnapshotFuture,
-      initialData: libraryFacade.categorySnapshot,
-      builder: (context, snapshotState) {
-        final snapshot = snapshotState.data;
-        if (snapshot == null) {
-          return PlaceholderContentTransition(
-            showPlaceholder: true,
-            placeholder: _LibraryLoadingSkeleton(
-              bottomInset: bottomPadding,
-              topInset: topPadding,
-            ),
-            content: const SizedBox.shrink(),
-          );
-        }
-
-        final terms = _termsForCategory(snapshot);
-        final entries = _filterCategoryEntries(
-          snapshot,
-          pinnedPaths: pinnedPaths,
-        );
-        Map<String, FolderNode>? foldersByPath;
-        FolderNode? folderForEntry(AudioLibraryCategoryEntry entry) {
-          if (!entry.isFolder) return null;
-          foldersByPath ??= <String, FolderNode>{
-            for (final folder in libraryFacade.libraryCards
-                .whereType<FolderNode>())
-              PathMatcher.normalize(folder.path): folder,
-          };
-          return foldersByPath![PathMatcher.normalize(entry.path)];
-        }
-        final hasTermBox = _categoryType != AudioLibraryCategoryType.all;
-        final itemCount = entries.length + (hasTermBox ? 1 : 0) + 1;
-
-        final highlightTerms = <String>{
-          ...extractSearchTerms(_effectiveSearchQuery),
-          ..._selectedTermsForCurrentCategory,
-          ..._termSearchKeywords,
-        }.where((t) => t.trim().isNotEmpty).toList(growable: false);
-
-        final list = SearchHighlightScope.withTerms(
-          terms: highlightTerms,
-          child: ListView.builder(
-            key: ValueKey('library_category_${_categoryType.name}'),
-            controller: _scrollController,
-            padding: EdgeInsets.fromLTRB(
-              LibraryLikeCardMetrics.listHorizontalPadding,
-              topPadding,
-              LibraryLikeCardMetrics.listHorizontalPadding,
-              bottomPadding,
-            ),
-            cacheExtent: cacheExtent,
-            clipBehavior: Clip.none,
-            physics: const ClampingScrollPhysics(),
-            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-            itemCount: itemCount,
-            itemBuilder: (context, index) {
-              if (hasTermBox && index == 0) {
-                return _LibraryCategoryTermBox(
-                  key: ValueKey(
-                    'library_category_term_box_${_categoryType.name}',
-                  ),
-                  categoryType: _categoryType,
-                  collapseOnMount: _hasSwitchedCategory,
-                  terms: terms,
-                  selectedTerms: _selectedTermsForCurrentCategory,
-                  emptyText: _noTermsText(i18n),
-                  clearLabel: i18n.tr('clear'),
-                  collapseLabel: i18n.tr('collapse'),
-                  expandLabel: i18n.tr('expand'),
-                  searchHintText: _termSearchHintText(i18n),
-                  searchQuery: _termSearchQuery,
-                  onSearchQueryChanged: (val) {
-                    _setLocalState(() => _termSearchQuery = val);
-                  },
-                  onToggle: (term) {
-                    _setLocalState(() {
-                      final selected = _selectedTermsForCurrentCategory;
-                      if (!selected.remove(term)) selected.add(term);
-                    });
-                  },
-                  onClear: () {
-                    _setLocalState(
-                      () => _selectedTermsForCurrentCategory.clear(),
-                    );
-                  },
-                );
-              }
-
-              final entryIndex = index - (hasTermBox ? 1 : 0);
-              if (entryIndex == entries.length) {
-                if (entries.isEmpty) {
-                  return SizedBox(
-                    height: 220,
-                    child: Center(
-                      child: Text(
-                        i18n.tr('library_category_no_matches'),
-                        style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ),
-                  );
-                }
-                return const SizedBox.shrink(key: ValueKey('category_bottom'));
-              }
-
-              final entry = entries[entryIndex];
-              return RepaintBoundary(
-                key: ValueKey('category_${entry.target.targetPath}'),
-                child: _AudioLibraryCategoryEntryCard(
-                  entry: entry,
-                  folder: folderForEntry(entry),
-                  secondaryIcon: _categoryIcon(),
-                  secondaryText: _entrySecondaryText(i18n, entry),
-                  isSelectionMode: _isSelectionMode,
-                  isSelected: _selectedLibraryPaths.contains(
-                    PathMatcher.normalize(entry.path),
-                  ),
-                  onLongPress: () => _enterCategorySelectionMode(entry),
-                  onToggleSelect: () => _toggleCategorySelection(entry),
-                ),
-              );
-            },
-          ),
-        );
-
-        return PlaceholderContentTransition(
-          showPlaceholder: false,
-          placeholder: _LibraryLoadingSkeleton(
-            bottomInset: bottomPadding,
-            topInset: topPadding,
-          ),
-          content: list,
-        );
-      },
-    );
-  }
-}
+import 'library_tab_ui_helpers.dart';
+import 'library_tab_tree_widgets.dart';
+import 'library_card_artwork.dart';
 
 @visibleForTesting
 class LibraryCategoryTermBox extends StatefulWidget {
@@ -361,8 +70,6 @@ class LibraryCategoryTermBox extends StatefulWidget {
   @override
   State<LibraryCategoryTermBox> createState() => _LibraryCategoryTermBoxState();
 }
-
-typedef _LibraryCategoryTermBox = LibraryCategoryTermBox;
 
 class _LibraryCategoryTermBoxState extends State<LibraryCategoryTermBox> {
   static const _searchDebounce = Duration(milliseconds: 180);
@@ -744,8 +451,9 @@ class _LibraryCategoryTermBoxState extends State<LibraryCategoryTermBox> {
   }
 }
 
-class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
-  const _AudioLibraryCategoryEntryCard({
+class AudioLibraryCategoryEntryCard extends ConsumerWidget {
+  const AudioLibraryCategoryEntryCard({
+    super.key,
     required this.entry,
     required this.folder,
     required this.secondaryIcon,
@@ -792,7 +500,7 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
     final created = await playback.spawnSession(track, autoPlay: true);
     if (!context.mounted) return;
     if (created) {
-      _showSessionCreatedSnack(
+      showLibrarySessionCreatedSnack(
         context,
         i18n.tr('session_created', {'name': track.displayName}),
       );
@@ -832,11 +540,11 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
         ? false
         : ref.watch(isTrackActiveProvider(firstTrack.path));
     const cardShape = LibraryLikeCardMetrics.cardShape;
-    const cardHeight = _FolderNodeWidgetState._rootFolderTileHeight;
+    const cardHeight = LibraryLikeCardMetrics.rootTileHeight;
     final folderNode = folder;
 
     if (entry.isFolder && folderNode != null) {
-      return _FolderNodeWidget(
+      return LibraryFolderNodeWidget(
         folder: folderNode,
         initiallyExpanded: false,
         searchQuery: '',
@@ -940,7 +648,7 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
     if (entry.isFolder) {
       return Padding(
         padding: const EdgeInsets.all(AppSpacing.xs),
-        child: _RootFolderCardContent(
+        child: RootFolderCardContent(
           folderPath: entry.path,
           folderName: entry.title,
           folderDuration: folder?.totalDuration ?? Duration.zero,
@@ -962,7 +670,7 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
         return ListTile(
           contentPadding: LibraryLikeCardMetrics.rootTilePadding,
           minTileHeight: cardHeight,
-          title: _SingleMediaFileCardContent(
+          title: SingleMediaFileCardContent(
             track: firstTrack,
             title: entry.title,
             detail: entry.detail,
@@ -980,13 +688,13 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _LibraryLeadingIndicators(
+              LibraryLeadingIndicators(
                 path: entry.path,
                 isSelected: isSelected,
                 isPinned: isPinned,
               ),
               Expanded(
-                child: _SingleAudioFileCardContent(
+                child: SingleAudioFileCardContent(
                   title: entry.title,
                   detail: entry.detail,
                   detailLoading: false,

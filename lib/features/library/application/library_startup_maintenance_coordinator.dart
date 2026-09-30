@@ -1,3 +1,9 @@
+import '../../../core/media/path_matcher.dart';
+import '../domain/library_entry.dart';
+import '../domain/library_persistence_repository.dart';
+import 'library_service.dart';
+import 'library_metadata_coordinator.dart';
+import 'cover_artwork_cache_service.dart';
 import 'dart:async';
 
 import '../../../core/logging/app_log_service.dart';
@@ -26,6 +32,40 @@ final class LibraryStartupMaintenanceCoordinator {
        _migrateCoverCache = migrateCoverCache,
        _migrateAudioDetails = migrateAudioDetails,
        _backfillDurations = backfillDurations;
+
+  factory LibraryStartupMaintenanceCoordinator.forLibrary({
+    required LibraryMaintenanceIdleWaiter waitForUiIdle,
+    required LibraryPersistentImportCleanup cleanupOrphanedImports,
+    required LibraryService libraryService,
+    required LibraryPersistenceRepository repository,
+    required LibraryMetadataCoordinator metadataCoordinator,
+    required CoverArtworkCacheService Function() coverArtwork,
+  }) {
+    late final LibraryStartupMaintenanceCoordinator coordinator;
+    coordinator = LibraryStartupMaintenanceCoordinator(
+      waitForUiIdle: waitForUiIdle,
+      cleanupOrphanedImports: cleanupOrphanedImports,
+      ensureEntries: (epoch) => coordinator._ensureEntriesForLoadedTracks(
+        epoch,
+        libraryService,
+        repository,
+      ),
+      migrateAudioDetails: (epoch) =>
+          coordinator._importAudioDetailDocumentsOnce(
+            epoch,
+            repository,
+            metadataCoordinator,
+          ),
+      migrateCoverCache: (epoch) =>
+          coordinator._migrateCoverCacheOnce(epoch, repository, coverArtwork()),
+      backfillDurations: metadataCoordinator.backfillMissingDurations,
+    );
+    return coordinator;
+  }
+
+  static const _audioDetailDocumentImportKey =
+      'audio_detail_document_read_only_import_v2';
+  static const _coverCacheMigrationKey = 'cover_artwork_cache_migration_v1';
 
   static const _quietWindow = Duration(seconds: 3);
 
@@ -96,4 +136,65 @@ final class LibraryStartupMaintenanceCoordinator {
   }
 
   bool _isCurrent(int epoch) => !_disposed && epoch == _epoch;
+  Future<void> _ensureEntriesForLoadedTracks(
+    int epoch,
+    LibraryService libraryService,
+    LibraryPersistenceRepository repository,
+  ) async {
+    if (!_isCurrent(epoch)) return;
+    final knownLibraries = <String>{
+      ...libraryService.watchedLibraries,
+      ...libraryService.watchedFolders,
+    };
+    if (knownLibraries.isEmpty || libraryService.library.isEmpty) return;
+    final entriesToPersist = <LibraryEntry>[];
+    for (final libraryPath in knownLibraries) {
+      if (libraryService.hasLibraryEntriesForLibrary(libraryPath)) continue;
+      final tracks = libraryService.library
+          .where(
+            (track) =>
+                PathMatcher.isWithinOrEqual(track.path, libraryPath) ||
+                PathMatcher.isWithinOrEqual(track.groupKey, libraryPath),
+          )
+          .toList(growable: false);
+      if (tracks.isEmpty) continue;
+      entriesToPersist.addAll(
+        libraryService.buildLibraryEntries(libraryPath, tracks),
+      );
+    }
+    if (entriesToPersist.isEmpty) return;
+    if (!_isCurrent(epoch)) return;
+    libraryService.replaceLibraryEntries(entriesToPersist);
+    await repository.upsertLibraryEntries(entriesToPersist);
+  }
+
+  Future<void> _importAudioDetailDocumentsOnce(
+    int epoch,
+    LibraryPersistenceRepository repository,
+    LibraryMetadataCoordinator metadataCoordinator,
+  ) async {
+    if (!_isCurrent(epoch)) return;
+    final completed = await repository.loadAppSetting(
+      _audioDetailDocumentImportKey,
+    );
+    if (completed == '1') return;
+    await metadataCoordinator.importBackups();
+    if (!_isCurrent(epoch)) return;
+    await repository.saveAppSetting(_audioDetailDocumentImportKey, '1');
+  }
+
+  Future<void> _migrateCoverCacheOnce(
+    int epoch,
+    LibraryPersistenceRepository repository,
+    CoverArtworkCacheService coverArtwork,
+  ) async {
+    if (!_isCurrent(epoch)) return;
+    final completed = await repository.loadAppSetting(_coverCacheMigrationKey);
+    if (completed == '1') return;
+    await coverArtwork.migrateLegacyCaches(
+      shouldCancel: () => !_isCurrent(epoch),
+    );
+    if (!_isCurrent(epoch)) return;
+    await repository.saveAppSetting(_coverCacheMigrationKey, '1');
+  }
 }

@@ -267,11 +267,7 @@ class _LibraryLikeSkeletonActions extends StatelessWidget {
         child: Padding(
           padding: EdgeInsets.only(left: 8),
           child: Center(
-            child: ShimmerContainer(
-              width: 25,
-              height: 25,
-              borderRadius: 12.5,
-            ),
+            child: ShimmerContainer(width: 25, height: 25, borderRadius: 12.5),
           ),
         ),
       ),
@@ -624,21 +620,30 @@ class LibraryLikeWorkCardContent extends StatelessWidget {
                       ),
                       child: SizedBox(
                         height: infoBlockHeight,
-                        child: Column(
-                          children: [
-                            for (final line in visibleLines)
-                              LibraryLikeDetailInfoLine(
-                                label: line.label,
-                                text: line.text,
-                                secondaryLabel: line.secondaryLabel,
-                                secondaryText: line.secondaryText,
-                                style: infoStyle,
-                                loading: false,
-                                lines: line.lines,
-                                accentColor: accentColor,
-                                enableMarquee: enableMarquee,
+                        child: LayoutBuilder(
+                          builder: (context, infoConstraints) => FittedBox(
+                            fit: BoxFit.scaleDown,
+                            alignment: Alignment.topLeft,
+                            child: SizedBox(
+                              width: infoConstraints.maxWidth,
+                              child: Column(
+                                children: [
+                                  for (final line in visibleLines)
+                                    LibraryLikeDetailInfoLine(
+                                      label: line.label,
+                                      text: line.text,
+                                      secondaryLabel: line.secondaryLabel,
+                                      secondaryText: line.secondaryText,
+                                      style: infoStyle,
+                                      loading: false,
+                                      lines: line.lines,
+                                      accentColor: accentColor,
+                                      enableMarquee: enableMarquee,
+                                    ),
+                                ],
                               ),
-                          ],
+                            ),
+                          ),
                         ),
                       ),
                     ),

@@ -3,6 +3,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'app_feedback.dart';
+import 'swipe_reveal_action_pane.dart';
+import 'unified_popup_menu.dart';
+
+export 'push_pin_off_icon.dart' show PushPinOffIcon, PushPinOffPainter;
 
 /// Card shell whose action pane is revealed by a horizontal swipe.
 ///
@@ -184,74 +188,54 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
   Future<void> _showContextMenu([TapDownDetails? details]) async {
     if (!widget.enabled) return;
     widget.onWillReveal?.call();
-    final overlay =
-        Overlay.of(context).context.findRenderObject()! as RenderBox;
     final box = context.findRenderObject()! as RenderBox;
-    final position = overlay.globalToLocal(
-      details?.globalPosition ??
-          box.localToGlobal(box.size.center(Offset.zero)),
-    );
-    PopupMenuItem<VoidCallback> item(
-      String label,
-      Widget icon,
-      VoidCallback action, {
-      bool destructive = false,
-    }) => PopupMenuItem<VoidCallback>(
-      value: action,
-      height: 40,
-      child: Row(
-        children: [
-          IconTheme(
-            data: IconThemeData(
-              size: 20,
-              color: destructive
-                  ? Theme.of(context).colorScheme.error
-                  : Theme.of(context).colorScheme.primary,
-            ),
-            child: icon,
-          ),
-          const SizedBox(width: 12),
-          Flexible(child: Text(label)),
-        ],
-      ),
-    );
-    final action = await showMenu<VoidCallback>(
+    final action = await showUnifiedContextMenu<VoidCallback>(
       context: context,
-      requestFocus: true,
-      position: RelativeRect.fromSize(position & Size.zero, overlay.size),
-      items: [
+      globalPosition:
+          details?.globalPosition ??
+          box.localToGlobal(box.size.center(Offset.zero)),
+      entries: [
         if (_hasLeadingAction)
-          item(
-            widget.leadingActionLabel ?? widget.leadingActionTooltip ?? '',
-            widget.leadingActionIconWidget ?? Icon(widget.leadingActionIcon),
-            widget.onLeadingAction!,
+          UnifiedMenuEntry.action(
+            value: widget.onLeadingAction!,
+            label:
+                widget.leadingActionLabel ?? widget.leadingActionTooltip ?? '',
+            icon: widget.leadingActionIcon,
+            iconWidget: widget.leadingActionIconWidget,
           ),
         if (_hasSecondaryLeadingAction)
-          item(
-            widget.secondaryLeadingActionLabel ??
+          UnifiedMenuEntry.action(
+            value: widget.onSecondaryLeadingAction!,
+            label:
+                widget.secondaryLeadingActionLabel ??
                 widget.secondaryLeadingActionTooltip ??
                 '',
-            widget.secondaryLeadingActionIconWidget ??
-                Icon(widget.secondaryLeadingActionIcon),
-            widget.onSecondaryLeadingAction!,
+            icon: widget.secondaryLeadingActionIcon,
+            iconWidget: widget.secondaryLeadingActionIconWidget,
           ),
         if (_hasTertiaryAction)
-          item(
-            widget.tertiaryActionLabel ?? widget.tertiaryActionTooltip ?? '',
-            Icon(widget.tertiaryActionIcon),
-            widget.onTertiaryAction!,
+          UnifiedMenuEntry.action(
+            value: widget.onTertiaryAction!,
+            label:
+                widget.tertiaryActionLabel ??
+                widget.tertiaryActionTooltip ??
+                '',
+            icon: widget.tertiaryActionIcon,
           ),
         if (_hasSecondaryAction)
-          item(
-            widget.secondaryActionLabel ?? widget.secondaryActionTooltip ?? '',
-            widget.secondaryActionIconWidget ??
-                Icon(widget.secondaryActionIcon),
-            widget.onSecondaryAction!,
+          UnifiedMenuEntry.action(
+            value: widget.onSecondaryAction!,
+            label:
+                widget.secondaryActionLabel ??
+                widget.secondaryActionTooltip ??
+                '',
+            icon: widget.secondaryActionIcon,
+            iconWidget: widget.secondaryActionIconWidget,
           ),
-        item(
-          widget.actionLabel,
-          Icon(widget.primaryActionIcon),
-          widget.onRemove,
+        UnifiedMenuEntry.action(
+          value: widget.onRemove,
+          label: widget.actionLabel,
+          icon: widget.primaryActionIcon,
           destructive: widget.destructive,
         ),
       ],
@@ -359,46 +343,6 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
     final cs = Theme.of(context).colorScheme;
     final actionWidth = _activeActionWidth;
     final revealProgress = (_revealedWidth / actionWidth).clamp(0.0, 1.0);
-    final effectiveDestructive = _revealedFromStart
-        ? false
-        : widget.destructive;
-    final baseColor =
-        widget.color ??
-        (effectiveDestructive
-            ? Theme.of(context).brightness == Brightness.dark
-                  ? ColorScheme.fromSeed(seedColor: cs.primary).error
-                  : cs.error
-            : cs.primary);
-    final isBgDark =
-        ThemeData.estimateBrightnessForColor(baseColor) == Brightness.dark;
-    final onColor = isBgDark
-        ? const Color(0xFFF8F5F7)
-        : const Color(0xFF211F23);
-    final revealShape = switch (widget.shape) {
-      final OutlinedBorder shape => shape.copyWith(side: BorderSide.none),
-      final ShapeBorder shape => shape,
-    };
-
-    final paneStartColor = Color.lerp(baseColor, onColor, 0.08)!;
-    final paneEndColor = baseColor;
-
-    final accentColor = onColor;
-    final accentContainerOnColor = onColor;
-
-    final tertiaryBg = onColor.withValues(alpha: 0.18);
-    final tertiaryFg = onColor;
-    final secondaryBg = onColor.withValues(alpha: 0.18);
-    final secondaryFg = onColor;
-    final primaryBg = effectiveDestructive
-        ? onColor
-        : onColor.withValues(alpha: 0.3);
-    final primaryFg = effectiveDestructive ? baseColor : onColor;
-    final showVerticalActions =
-        widget.verticalActions &&
-        (_revealedFromStart ? _leadingActionCount > 1 : _actionCount > 1);
-    final leadingActionLabel = _hasSecondaryLeadingAction
-        ? '${widget.leadingActionLabel ?? ''} / ${widget.secondaryLeadingActionLabel ?? ''}'
-        : (widget.leadingActionLabel ?? '');
     final actionLabel = _hasTertiaryAction
         ? [
             widget.tertiaryActionLabel ?? '',
@@ -413,6 +357,53 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
         : _hasSecondaryAction
         ? widget.secondaryActionTooltip ?? widget.removeTooltip
         : widget.removeTooltip;
+    final leadingActions = <SwipeRevealAction>[
+      if (_hasLeadingAction)
+        SwipeRevealAction(
+          icon: widget.leadingActionIcon,
+          iconWidget: widget.leadingActionIconWidget,
+          tooltip: widget.leadingActionTooltip ?? widget.leadingActionLabel,
+          onPressed: widget.onLeadingAction!,
+          primary: true,
+          feedback: AppInteractionFeedbackType.confirmation,
+        ),
+      if (_hasSecondaryLeadingAction)
+        SwipeRevealAction(
+          icon: widget.secondaryLeadingActionIcon,
+          iconWidget: widget.secondaryLeadingActionIconWidget,
+          tooltip:
+              widget.secondaryLeadingActionTooltip ??
+              widget.secondaryLeadingActionLabel,
+          onPressed: widget.onSecondaryLeadingAction!,
+          primary: true,
+          feedback: AppInteractionFeedbackType.confirmation,
+        ),
+    ];
+    final trailingActions = <SwipeRevealAction>[
+      if (_hasTertiaryAction)
+        SwipeRevealAction(
+          icon: widget.tertiaryActionIcon,
+          tooltip: widget.tertiaryActionTooltip ?? widget.tertiaryActionLabel,
+          onPressed: widget.onTertiaryAction!,
+        ),
+      if (_hasSecondaryAction)
+        SwipeRevealAction(
+          icon: widget.secondaryActionIcon,
+          iconWidget: widget.secondaryActionIconWidget,
+          tooltip: widget.secondaryActionTooltip ?? widget.secondaryActionLabel,
+          onPressed: widget.onSecondaryAction!,
+        ),
+      SwipeRevealAction(
+        icon: widget.primaryActionIcon,
+        tooltip: widget.primaryActionTooltip ?? widget.removeTooltip,
+        onPressed: widget.onRemove,
+        primary: true,
+        destructive: widget.destructive,
+        feedback: widget.destructive
+            ? AppInteractionFeedbackType.destructive
+            : AppInteractionFeedbackType.confirmation,
+      ),
+    ];
     Widget buildClosedContent(BuildContext context) {
       final content = ColoredBox(
         color: widget.closedColor ?? cs.surface,
@@ -486,512 +477,19 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
               children: [
                 if (_actionPaneActive)
                   Positioned.fill(
-                    child: DecoratedBox(
-                      decoration: ShapeDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: [paneStartColor, paneEndColor],
-                        ),
-                        shape: revealShape,
-                      ),
-                      child: Stack(
-                        children: [
-                          Align(
-                            alignment: Alignment.centerLeft,
-                            child: Padding(
-                              padding: EdgeInsets.only(
-                                left: 18,
-                                right: showVerticalActions
-                                    ? _actionWidth + 26
-                                    : _hasTertiaryAction
-                                    ? 216
-                                    : _hasSecondaryAction
-                                    ? 158
-                                    : 86,
-                              ),
-                              child: _revealedFromStart || revealProgress == 0
-                                  ? const SizedBox.shrink()
-                                  : AnimatedOpacity(
-                                      opacity: 0.24 + (revealProgress * 0.76),
-                                      duration: const Duration(
-                                        milliseconds: 160,
-                                      ),
-                                      curve: Curves.easeOutCubic,
-                                      child: LayoutBuilder(
-                                        builder: (context, constraints) {
-                                          final compact =
-                                              constraints.maxHeight < 64;
-                                          return Column(
-                                            mainAxisSize: MainAxisSize.min,
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            children: [
-                                              Container(
-                                                padding:
-                                                    const EdgeInsets.symmetric(
-                                                      horizontal: 10,
-                                                      vertical: 5,
-                                                    ),
-                                                decoration: BoxDecoration(
-                                                  color: accentColor.withValues(
-                                                    alpha: 0.12,
-                                                  ),
-                                                  borderRadius:
-                                                      BorderRadius.circular(
-                                                        999,
-                                                      ),
-                                                  border: Border.all(
-                                                    color: accentColor
-                                                        .withValues(
-                                                          alpha: 0.18,
-                                                        ),
-                                                  ),
-                                                ),
-                                                child: Row(
-                                                  mainAxisSize:
-                                                      MainAxisSize.min,
-                                                  children: [
-                                                    Icon(
-                                                      _revealedFromStart
-                                                          ? Icons
-                                                                .swipe_right_rounded
-                                                          : Icons
-                                                                .swipe_left_rounded,
-                                                      size: 14,
-                                                      color: accentColor,
-                                                    ),
-                                                    const SizedBox(width: 4),
-                                                    Text(
-                                                      _revealedFromStart
-                                                          ? leadingActionLabel
-                                                          : actionLabel,
-                                                      style: Theme.of(context)
-                                                          .textTheme
-                                                          .labelMedium
-                                                          ?.copyWith(
-                                                            color: accentColor,
-                                                            fontWeight:
-                                                                FontWeight.w800,
-                                                          ),
-                                                    ),
-                                                  ],
-                                                ),
-                                              ),
-                                              if (!compact &&
-                                                  !_revealedFromStart) ...[
-                                                const SizedBox(height: 8),
-                                                Text(
-                                                  actionTooltip,
-                                                  maxLines: 2,
-                                                  overflow:
-                                                      TextOverflow.ellipsis,
-                                                  style: Theme.of(context)
-                                                      .textTheme
-                                                      .bodySmall
-                                                      ?.copyWith(
-                                                        color:
-                                                            accentContainerOnColor,
-                                                        fontWeight:
-                                                            FontWeight.w600,
-                                                      ),
-                                                ),
-                                              ],
-                                            ],
-                                          );
-                                        },
-                                      ),
-                                    ),
-                            ),
-                          ),
-                          Align(
-                            alignment: _revealedFromStart
-                                ? Alignment.centerLeft
-                                : Alignment.centerRight,
-                            child: Padding(
-                              padding: EdgeInsets.only(
-                                top: showVerticalActions ? 10 : 0,
-                                left: _revealedFromStart
-                                    ? (showVerticalActions ? 10 : 14)
-                                    : 0,
-                                right: _revealedFromStart
-                                    ? 0
-                                    : (showVerticalActions ? 10 : 14),
-                                bottom: showVerticalActions ? 10 : 0,
-                              ),
-                              child: AnimatedScale(
-                                scale: 0.92 + (revealProgress * 0.08),
-                                duration: const Duration(milliseconds: 180),
-                                curve: Curves.easeOutBack,
-                                child: showVerticalActions
-                                    ? SizedBox(
-                                        width: actionWidth - 20,
-                                        child: LayoutBuilder(
-                                          builder: (context, constraints) {
-                                            if (_revealedFromStart) {
-                                              final count = _leadingActionCount;
-                                              final gap = count > 1 ? 6.0 : 0.0;
-                                              final availableHeight =
-                                                  constraints.maxHeight;
-                                              final buttonSize =
-                                                  ((availableHeight -
-                                                              gap *
-                                                                  (count - 1)) /
-                                                          count)
-                                                      .clamp(34.0, 48.0);
-                                              return Column(
-                                                mainAxisAlignment:
-                                                    MainAxisAlignment.center,
-                                                children: [
-                                                  if (_hasLeadingAction) ...[
-                                                    _SwipeRevealActionButton(
-                                                      onPressed: () {
-                                                        AppInteractionFeedback.trigger(
-                                                          AppInteractionFeedbackType
-                                                              .confirmation,
-                                                        );
-                                                        _runActionAfterPaneClose(
-                                                          widget
-                                                              .onLeadingAction,
-                                                        );
-                                                      },
-                                                      backgroundColor:
-                                                          primaryBg,
-                                                      foregroundColor:
-                                                          primaryFg,
-                                                      tooltip:
-                                                          widget
-                                                              .leadingActionTooltip ??
-                                                          widget
-                                                              .leadingActionLabel,
-                                                      icon: widget
-                                                          .leadingActionIcon,
-                                                      iconWidget: widget
-                                                          .leadingActionIconWidget,
-                                                      tonal: true,
-                                                      size: buttonSize,
-                                                    ),
-                                                  ],
-                                                  if (_hasSecondaryLeadingAction) ...[
-                                                    if (_hasLeadingAction)
-                                                      SizedBox(height: gap),
-                                                    _SwipeRevealActionButton(
-                                                      onPressed: () {
-                                                        AppInteractionFeedback.trigger(
-                                                          AppInteractionFeedbackType
-                                                              .confirmation,
-                                                        );
-                                                        _runActionAfterPaneClose(
-                                                          widget
-                                                              .onSecondaryLeadingAction,
-                                                        );
-                                                      },
-                                                      backgroundColor:
-                                                          primaryBg,
-                                                      foregroundColor:
-                                                          primaryFg,
-                                                      tooltip:
-                                                          widget
-                                                              .secondaryLeadingActionTooltip ??
-                                                          widget
-                                                              .secondaryLeadingActionLabel,
-                                                      icon: widget
-                                                          .secondaryLeadingActionIcon,
-                                                      iconWidget: widget
-                                                          .secondaryLeadingActionIconWidget,
-                                                      tonal: true,
-                                                      size: buttonSize,
-                                                    ),
-                                                  ],
-                                                ],
-                                              );
-                                            }
-                                            final gap = _actionCount > 1
-                                                ? 6.0
-                                                : 0.0;
-                                            final availableHeight =
-                                                constraints.maxHeight;
-                                            final buttonSize =
-                                                ((availableHeight -
-                                                            gap *
-                                                                (_actionCount -
-                                                                    1)) /
-                                                        _actionCount)
-                                                    .clamp(34.0, 48.0);
-                                            return Column(
-                                              mainAxisAlignment:
-                                                  MainAxisAlignment.center,
-                                              children: [
-                                                if (_hasTertiaryAction) ...[
-                                                  _SwipeRevealActionButton(
-                                                    onPressed: () {
-                                                      AppInteractionFeedback.trigger(
-                                                        AppInteractionFeedbackType
-                                                            .selection,
-                                                      );
-                                                      _runActionAfterPaneClose(
-                                                        widget.onTertiaryAction,
-                                                      );
-                                                    },
-                                                    backgroundColor: tertiaryBg,
-                                                    foregroundColor: tertiaryFg,
-                                                    tooltip:
-                                                        widget
-                                                            .tertiaryActionTooltip ??
-                                                        widget
-                                                            .tertiaryActionLabel,
-                                                    icon: widget
-                                                        .tertiaryActionIcon,
-                                                    tonal: true,
-                                                    size: buttonSize,
-                                                  ),
-                                                  SizedBox(height: gap),
-                                                ],
-                                                if (_hasSecondaryAction) ...[
-                                                  _SwipeRevealActionButton(
-                                                    onPressed: () {
-                                                      AppInteractionFeedback.trigger(
-                                                        AppInteractionFeedbackType
-                                                            .selection,
-                                                      );
-                                                      _runActionAfterPaneClose(
-                                                        widget
-                                                            .onSecondaryAction,
-                                                      );
-                                                    },
-                                                    backgroundColor:
-                                                        secondaryBg,
-                                                    foregroundColor:
-                                                        secondaryFg,
-                                                    tooltip:
-                                                        widget
-                                                            .secondaryActionTooltip ??
-                                                        widget
-                                                            .secondaryActionLabel,
-                                                    icon: widget
-                                                        .secondaryActionIcon,
-                                                    iconWidget: widget
-                                                        .secondaryActionIconWidget,
-                                                    tonal: true,
-                                                    size: buttonSize,
-                                                  ),
-                                                  SizedBox(height: gap),
-                                                ],
-                                                _SwipeRevealActionButton(
-                                                  onPressed: () {
-                                                    AppInteractionFeedback.trigger(
-                                                      widget.destructive
-                                                          ? AppInteractionFeedbackType
-                                                                .destructive
-                                                          : AppInteractionFeedbackType
-                                                                .confirmation,
-                                                    );
-                                                    _runActionAfterPaneClose(
-                                                      widget.onRemove,
-                                                    );
-                                                  },
-                                                  backgroundColor: primaryBg,
-                                                  foregroundColor: primaryFg,
-                                                  tooltip:
-                                                      widget
-                                                          .primaryActionTooltip ??
-                                                      widget.removeTooltip,
-                                                  icon:
-                                                      widget.primaryActionIcon,
-                                                  tonal: !widget.destructive,
-                                                  size: buttonSize,
-                                                ),
-                                              ],
-                                            );
-                                          },
-                                        ),
-                                      )
-                                    : _revealedFromStart
-                                    ? LayoutBuilder(
-                                        builder: (context, constraints) {
-                                          final buttonSize =
-                                              constraints.maxHeight.isFinite
-                                              ? (constraints.maxHeight - 20)
-                                                    .clamp(34.0, 54.0)
-                                              : 54.0;
-                                          if (_leadingActionCount > 1) {
-                                            return Row(
-                                              mainAxisSize: MainAxisSize.min,
-                                              children: [
-                                                if (_hasLeadingAction) ...[
-                                                  _SwipeRevealActionButton(
-                                                    onPressed: () {
-                                                      AppInteractionFeedback.trigger(
-                                                        AppInteractionFeedbackType
-                                                            .confirmation,
-                                                      );
-                                                      _runActionAfterPaneClose(
-                                                        widget.onLeadingAction,
-                                                      );
-                                                    },
-                                                    backgroundColor: primaryBg,
-                                                    foregroundColor: primaryFg,
-                                                    tooltip:
-                                                        widget
-                                                            .leadingActionTooltip ??
-                                                        widget
-                                                            .leadingActionLabel,
-                                                    icon: widget
-                                                        .leadingActionIcon,
-                                                    iconWidget: widget
-                                                        .leadingActionIconWidget,
-                                                    tonal: true,
-                                                    size: buttonSize,
-                                                  ),
-                                                ],
-                                                if (_hasSecondaryLeadingAction) ...[
-                                                  const SizedBox(width: 8),
-                                                  _SwipeRevealActionButton(
-                                                    onPressed: () {
-                                                      AppInteractionFeedback.trigger(
-                                                        AppInteractionFeedbackType
-                                                            .confirmation,
-                                                      );
-                                                      _runActionAfterPaneClose(
-                                                        widget
-                                                            .onSecondaryLeadingAction,
-                                                      );
-                                                    },
-                                                    backgroundColor: primaryBg,
-                                                    foregroundColor: primaryFg,
-                                                    tooltip:
-                                                        widget
-                                                            .secondaryLeadingActionTooltip ??
-                                                        widget
-                                                            .secondaryLeadingActionLabel,
-                                                    icon: widget
-                                                        .secondaryLeadingActionIcon,
-                                                    iconWidget: widget
-                                                        .secondaryLeadingActionIconWidget,
-                                                    tonal: true,
-                                                    size: buttonSize,
-                                                  ),
-                                                ],
-                                              ],
-                                            );
-                                          }
-                                          return _SwipeRevealActionButton(
-                                            onPressed: () {
-                                              AppInteractionFeedback.trigger(
-                                                AppInteractionFeedbackType
-                                                    .confirmation,
-                                              );
-                                              _runActionAfterPaneClose(
-                                                widget.onLeadingAction,
-                                              );
-                                            },
-                                            backgroundColor: primaryBg,
-                                            foregroundColor: primaryFg,
-                                            tooltip:
-                                                widget.leadingActionTooltip ??
-                                                widget.leadingActionLabel,
-                                            icon: widget.leadingActionIcon,
-                                            iconWidget:
-                                                widget.leadingActionIconWidget,
-                                            tonal: true,
-                                            size: buttonSize,
-                                          );
-                                        },
-                                      )
-                                    : LayoutBuilder(
-                                        builder: (context, constraints) {
-                                          final buttonSize =
-                                              constraints.maxHeight.isFinite
-                                              ? (constraints.maxHeight - 20)
-                                                    .clamp(34.0, 54.0)
-                                              : 54.0;
-                                          return Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              if (_hasTertiaryAction) ...[
-                                                _SwipeRevealActionButton(
-                                                  onPressed: () {
-                                                    AppInteractionFeedback.trigger(
-                                                      AppInteractionFeedbackType
-                                                          .selection,
-                                                    );
-                                                    _runActionAfterPaneClose(
-                                                      widget.onTertiaryAction,
-                                                    );
-                                                  },
-                                                  backgroundColor: tertiaryBg,
-                                                  foregroundColor: tertiaryFg,
-                                                  tooltip:
-                                                      widget
-                                                          .tertiaryActionTooltip ??
-                                                      widget
-                                                          .tertiaryActionLabel,
-                                                  icon:
-                                                      widget.tertiaryActionIcon,
-                                                  tonal: true,
-                                                  size: buttonSize,
-                                                ),
-                                                const SizedBox(width: 8),
-                                              ],
-                                              if (_hasSecondaryAction) ...[
-                                                _SwipeRevealActionButton(
-                                                  onPressed: () {
-                                                    AppInteractionFeedback.trigger(
-                                                      AppInteractionFeedbackType
-                                                          .selection,
-                                                    );
-                                                    _runActionAfterPaneClose(
-                                                      widget.onSecondaryAction,
-                                                    );
-                                                  },
-                                                  backgroundColor: secondaryBg,
-                                                  foregroundColor: secondaryFg,
-                                                  tooltip:
-                                                      widget
-                                                          .secondaryActionTooltip ??
-                                                      widget
-                                                          .secondaryActionLabel,
-                                                  icon: widget
-                                                      .secondaryActionIcon,
-                                                  iconWidget: widget
-                                                      .secondaryActionIconWidget,
-                                                  tonal: true,
-                                                  size: buttonSize,
-                                                ),
-                                                const SizedBox(width: 8),
-                                              ],
-                                              _SwipeRevealActionButton(
-                                                onPressed: () {
-                                                  AppInteractionFeedback.trigger(
-                                                    widget.destructive
-                                                        ? AppInteractionFeedbackType
-                                                              .destructive
-                                                        : AppInteractionFeedbackType
-                                                              .confirmation,
-                                                  );
-                                                  _runActionAfterPaneClose(
-                                                    widget.onRemove,
-                                                  );
-                                                },
-                                                backgroundColor: primaryBg,
-                                                foregroundColor: primaryFg,
-                                                tooltip:
-                                                    widget
-                                                        .primaryActionTooltip ??
-                                                    widget.removeTooltip,
-                                                icon: widget.primaryActionIcon,
-                                                tonal: !widget.destructive,
-                                                size: buttonSize,
-                                              ),
-                                            ],
-                                          );
-                                        },
-                                      ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
+                    child: SwipeRevealActionPane(
+                      actions: _revealedFromStart
+                          ? leadingActions
+                          : trailingActions,
+                      fromStart: _revealedFromStart,
+                      vertical: widget.verticalActions,
+                      width: actionWidth,
+                      progress: revealProgress,
+                      shape: widget.shape,
+                      color: widget.color,
+                      label: actionLabel,
+                      tooltip: actionTooltip,
+                      onAction: _runActionAfterPaneClose,
                     ),
                   ),
                 if (!_actionPaneActive && _revealedWidth == 0)
@@ -1045,141 +543,5 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
     );
 
     return cardWidget;
-  }
-}
-
-class _SwipeRevealActionButton extends StatelessWidget {
-  const _SwipeRevealActionButton({
-    required this.onPressed,
-    required this.backgroundColor,
-    required this.foregroundColor,
-    required this.tooltip,
-    required this.icon,
-    this.iconWidget,
-    this.tonal = false,
-    this.size = 54,
-  });
-
-  final VoidCallback onPressed;
-  final Color backgroundColor;
-  final Color foregroundColor;
-  final String? tooltip;
-  final IconData icon;
-  final Widget? iconWidget;
-  final bool tonal;
-  final double size;
-
-  @override
-  Widget build(BuildContext context) {
-    final style = IconButton.styleFrom(
-      backgroundColor: backgroundColor,
-      foregroundColor: foregroundColor,
-      minimumSize: Size.square(size),
-      maximumSize: Size.square(size),
-      padding: EdgeInsets.zero,
-      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-    );
-    final iconSize = (size * 0.46).clamp(16.0, 22.0);
-    final effectiveIcon = iconWidget != null
-        ? IconTheme.merge(
-            data: IconThemeData(size: iconSize, color: foregroundColor),
-            child: iconWidget!,
-          )
-        : Icon(icon, size: iconSize);
-    return tonal
-        ? IconButton.filledTonal(
-            onPressed: onPressed,
-            style: style,
-            tooltip: tooltip,
-            icon: effectiveIcon,
-          )
-        : IconButton.filled(
-            onPressed: onPressed,
-            style: style,
-            tooltip: tooltip,
-            icon: effectiveIcon,
-          );
-  }
-}
-
-class PushPinOffIcon extends StatelessWidget {
-  const PushPinOffIcon({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    final iconTheme = IconTheme.of(context);
-    final effectiveSize = iconTheme.size ?? 22.0;
-    final effectiveColor =
-        iconTheme.color ?? Theme.of(context).colorScheme.onSurface;
-
-    return RepaintBoundary(
-      child: SizedBox(
-        width: effectiveSize,
-        height: effectiveSize,
-        child: CustomPaint(
-          painter: PushPinOffPainter(
-            iconColor: effectiveColor,
-            size: effectiveSize,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class PushPinOffPainter extends CustomPainter {
-  const PushPinOffPainter({required this.iconColor, required this.size});
-
-  final Color iconColor;
-  final double size;
-
-  @override
-  void paint(Canvas canvas, Size canvasSize) {
-    final rect = Offset.zero & canvasSize;
-    canvas.saveLayer(rect, Paint());
-
-    final textPainter = TextPainter(
-      textDirection: TextDirection.ltr,
-      text: TextSpan(
-        text: String.fromCharCode(Icons.push_pin_rounded.codePoint),
-        style: TextStyle(
-          fontSize: size,
-          fontFamily: Icons.push_pin_rounded.fontFamily,
-          package: Icons.push_pin_rounded.fontPackage,
-          color: iconColor,
-        ),
-      ),
-    )..layout();
-
-    final textOffset = Offset(
-      (canvasSize.width - textPainter.width) / 2,
-      (canvasSize.height - textPainter.height) / 2,
-    );
-    textPainter.paint(canvas, textOffset);
-
-    final scale = size / 24.0;
-    final p1 = Offset(3.5 * scale, 3.5 * scale);
-    final p2 = Offset(20.5 * scale, 20.5 * scale);
-
-    final clearPaint = Paint()
-      ..blendMode = BlendMode.clear
-      ..strokeWidth = 3.2 * scale
-      ..strokeCap = StrokeCap.round
-      ..style = PaintingStyle.stroke;
-    canvas.drawLine(p1, p2, clearPaint);
-
-    final linePaint = Paint()
-      ..color = iconColor
-      ..strokeWidth = 1.8 * scale
-      ..strokeCap = StrokeCap.round
-      ..style = PaintingStyle.stroke;
-    canvas.drawLine(p1, p2, linePaint);
-
-    canvas.restore();
-  }
-
-  @override
-  bool shouldRepaint(covariant PushPinOffPainter oldDelegate) {
-    return oldDelegate.iconColor != iconColor || oldDelegate.size != size;
   }
 }

@@ -1,3 +1,5 @@
+import 'library_catalog.dart';
+import 'library_state_models.dart';
 import '../../../core/immutable_collections.dart';
 
 export '../../../core/platform/library_scan_wire_models.dart';
@@ -47,4 +49,19 @@ class LibraryScanOutcome {
 
   int get addedCount => (details['count'] as int?) ?? 0;
   int get folderCount => (details['folderCount'] as int?) ?? 0;
+}
+
+class LibraryScanMergeContext {
+  LibraryScanMergeContext({
+    required LibraryCatalogReader provider,
+    required String libraryRoot,
+  }) : exclusionMatcher = provider.libraryExclusionMatcherForLibrary(
+         libraryRoot,
+       ),
+       entrySnapshot = provider.libraryEntrySnapshotForLibrary(libraryRoot);
+
+  final LibraryExclusionMatcher exclusionMatcher;
+  final LibraryEntrySnapshot entrySnapshot;
+
+  bool isExcluded(String entityPath) => exclusionMatcher.isExcluded(entityPath);
 }

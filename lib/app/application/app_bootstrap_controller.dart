@@ -56,7 +56,11 @@ class AppBootstrapController extends ChangeNotifier {
   }
 
   Future<void> _performAttempt() async {
-    _setState(const AppBootstrapState.initializing());
+    // The first attempt starts in this phase; notifying here can rebuild an
+    // ancestor while an onboarding gate is mounting the runtime subtree.
+    if (_state.phase != AppBootstrapPhase.initializing) {
+      _setState(const AppBootstrapState.initializing());
+    }
     try {
       await _initializer();
       _setState(const AppBootstrapState.ready());

@@ -1,7 +1,6 @@
+import 'library_tree_list.dart';
 import 'library_providers.dart';
 import 'library_tab_edit.dart';
-import 'library_removal_feedback.dart';
-import '../../player/presentation/playback_providers.dart';
 import '../../settings/presentation/settings_providers.dart';
 import 'dart:async';
 import 'package:flutter/foundation.dart';
@@ -9,211 +8,42 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show ProviderListenable;
 
-import 'package:flutter/services.dart';
-import 'package:lottie/lottie.dart';
-
 import '../../../app/localization/app_language_provider.dart';
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/presentation/app_presentation_providers.dart';
-import '../../../core/media/music_track.dart';
-import '../../../core/media/audio_detail.dart';
-import '../../../core/widgets/rj_code_overlay.dart';
-import '../../../core/media/search_query_utils.dart';
-import '../../player/application/playback_facade.dart';
 import '../../settings/application/settings_state.dart';
-import '../../../core/persistence/app_preferences.dart';
 import '../application/library_facade.dart';
-import '../domain/audio_library_category.dart';
 import '../domain/library_node.dart';
 import '../../../core/media/path_matcher.dart';
-import '../../../core/media/path_display.dart';
-import '../../../core/logging/app_log_service.dart';
 import '../../../core/ui/ui_interaction_coordinator.dart';
 import '../../../core/ui/ui_operation_service.dart';
-import '../../../core/ui/visual_settings_providers.dart';
-import '../../../app/theme/app_design_tokens.dart';
 import '../application/library_scanner_service.dart';
 import '../application/library_catalog.dart';
 import '../application/library_scan_coordinator.dart';
-import 'library_cover_ui_controller.dart';
 import '../../../core/widgets/app_feedback.dart';
-import '../../../core/widgets/async_cover_image.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/app_search_page.dart';
-import '../../../core/widgets/library_like_cards.dart';
-import '../../../core/widgets/duration_overlay.dart';
 import '../../../core/widgets/mobile_overlay_inset.dart';
 import '../../../core/widgets/page_header_inset.dart';
-import '../../../core/widgets/operation_feedback.dart';
 import '../../../core/widgets/scroll_activity_gate.dart';
-import '../../../core/widgets/search_highlight.dart';
 import '../../../core/widgets/sort_options_bottom_sheet.dart';
-import '../../../core/widgets/swipe_reveal_card.dart';
 import '../../../core/widgets/top_page_header.dart';
 import '../../../core/widgets/unified_popup_menu.dart';
 import '../../../core/widgets/glass_refresh_indicator.dart';
-import 'audio_detail_sheet.dart';
-import '../../asmr/presentation/asmr_download_page.dart';
 import 'dlsite_metadata_batch_page.dart';
 import 'library_scan_feedback.dart';
-import '../../../app/presentation/screen_view_models.dart';
 import '../../video_converter/presentation/video_converter_tab.dart';
 import '../../../app/theme/app_styles.dart';
 
-import '../../../core/widgets/app_buttons.dart';
 import '../../../app/presentation/main_tab_state_mixin.dart';
 
-part 'library_tab_ui_helpers.dart';
-part 'library_tab_empty_scan.dart';
-part 'library_tab_tree_widgets.dart';
-part 'library_tab_category_widgets.dart';
-part 'library_search_page.dart';
-
-Future<String?> _deferLibraryCardCoverLookup({
-  required bool Function() isMounted,
-  required Future<String?> Function() lookup,
-}) {
-  final completer = Completer<String?>();
-  WidgetsBinding.instance.addPostFrameCallback((_) {
-    if (!isMounted()) {
-      completer.complete(null);
-      return;
-    }
-    unawaited(
-      lookup().then(completer.complete, onError: completer.completeError),
-    );
-  });
-  return completer.future;
-}
+import 'library_tab_ui_helpers.dart';
+import 'library_tab_empty_scan.dart';
+import 'library_search_page.dart';
+export 'library_tab_tree_widgets.dart' show LibraryTreeItem;
+export 'library_tab_category_widgets.dart' show LibraryCategoryTermBox;
 
 enum _LibraryAddAction { importFolder, importFiles, addLibrary }
-
-class _LoadedLibraryFolder {
-  const _LoadedLibraryFolder({required this.folder, required this.revision});
-
-  final FolderNode folder;
-  final int revision;
-}
-
-class _VisibleLibraryItem {
-  const _VisibleLibraryItem({
-    required this.node,
-    required this.depth,
-    this.revealed = true,
-    this.animateInitialReveal = false,
-    this.isFolderError = false,
-    this.errorFolderPath,
-  });
-
-  final LibraryNode node;
-  final int depth;
-  final bool revealed;
-  final bool animateInitialReveal;
-  final bool isFolderError;
-  final String? errorFolderPath;
-}
-
-class _LibraryBatchSelectionHeader extends StatelessWidget {
-  const _LibraryBatchSelectionHeader({
-    required this.keyPrefix,
-    required this.i18n,
-    required this.selectedCount,
-    required this.onAddToPlaylist,
-    required this.onCompleteMetadata,
-    this.onTogglePin,
-    this.isPinned = false,
-    required this.onRemove,
-    required this.onExit,
-  });
-
-  final String keyPrefix;
-  final AppLanguageProvider i18n;
-  final int selectedCount;
-  final VoidCallback? onAddToPlaylist;
-  final VoidCallback? onCompleteMetadata;
-  final VoidCallback? onTogglePin;
-  final bool isPinned;
-  final VoidCallback? onRemove;
-  final VoidCallback onExit;
-
-  @override
-  Widget build(BuildContext context) {
-    return TopPageHeader(
-      key: ValueKey<String>('${keyPrefix}_batch_selection_header'),
-      icon: Icons.library_music_rounded,
-      topCapsuleTitle: i18n.tr('multi_select'),
-      topCapsuleData: i18n.tr('selected_count', {
-        'count': selectedCount.toString(),
-      }),
-      titleWidget: const SizedBox.shrink(),
-      leading: HeaderActionPill(
-        children: [
-          AppHeaderActionTransition(
-            child: IconButton(
-              key: ValueKey<String>('${keyPrefix}_batch_add_button'),
-              onPressed: onAddToPlaylist,
-              icon: const Icon(Icons.playlist_add_rounded),
-              tooltip: i18n.tr('batch_add_to_playlist'),
-              iconSize: 20,
-              padding: EdgeInsets.zero,
-              constraints: HeaderActionPill.buttonConstraints,
-            ),
-          ),
-          AppHeaderActionTransition(
-            delayIndex: 1,
-            child: IconButton(
-              key: ValueKey<String>(
-                '${keyPrefix}_batch_metadata_action_button',
-              ),
-              onPressed: onCompleteMetadata,
-              icon: const Icon(Icons.library_add_check_rounded),
-              tooltip: i18n.tr('batch_metadata'),
-              iconSize: 20,
-              padding: EdgeInsets.zero,
-              constraints: HeaderActionPill.buttonConstraints,
-            ),
-          ),
-          AppHeaderActionTransition(
-            delayIndex: 2,
-            child: IconButton(
-              key: ValueKey<String>('${keyPrefix}_batch_pin_button'),
-              onPressed: onTogglePin,
-              icon: isPinned
-                  ? const PushPinOffIcon()
-                  : const Icon(Icons.push_pin_rounded),
-              tooltip: i18n.tr(isPinned ? 'unpin_from_top' : 'pin_to_top'),
-              iconSize: 20,
-              padding: EdgeInsets.zero,
-              constraints: HeaderActionPill.buttonConstraints,
-            ),
-          ),
-          AppHeaderActionTransition(
-            delayIndex: 3,
-            child: IconButton(
-              key: ValueKey<String>('${keyPrefix}_batch_remove_button'),
-              onPressed: onRemove,
-              icon: const Icon(Icons.delete_outline_rounded),
-              tooltip: i18n.tr('remove'),
-              iconSize: 20,
-              padding: EdgeInsets.zero,
-              constraints: HeaderActionPill.buttonConstraints,
-            ),
-          ),
-        ],
-      ),
-      trailing: AppHeaderLeadingTransition(
-        child: HeaderFloatingButton(
-          child: IconButton(
-            key: ValueKey<String>('${keyPrefix}_exit_selection_button'),
-            onPressed: onExit,
-            icon: const Icon(Icons.close_rounded),
-            tooltip: i18n.tr('cancel'),
-          ),
-        ),
-      ),
-    ).withAppHeaderTransition();
-  }
-}
 
 class LibraryTab extends ConsumerStatefulWidget {
   const LibraryTab({
@@ -283,24 +113,12 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
   bool _startupRefreshStarted = false;
   bool _startupRefreshWaiting = false;
   bool _initialLibraryContentReady = false;
-  final Set<String> _expandedCardPaths = <String>{};
-  final Set<String> _folderTreeErrorPaths = <String>{};
-  final Map<String, bool> _cardExpansionMotions = <String, bool>{};
-  final Map<String, Timer> _cardExpansionMotionTimers = <String, Timer>{};
-  final Map<String, _LoadedLibraryFolder> _loadedFolderTrees =
-      <String, _LoadedLibraryFolder>{};
-  final Map<String, int> _loadingFolderTreeRevisions = <String, int>{};
-  List<_VisibleLibraryItem> _visibleItemsCache = const <_VisibleLibraryItem>[];
-  List<LibraryNode>? _visibleItemsSource;
-  int? _visibleItemsStructureRevision;
-  int _visibleItemsVersion = 0;
-  int _visibleItemsCacheVersion = -1;
-  int _prunedFolderTreeRevision = -1;
   bool _isSelectionMode = false;
   final Set<String> _selectedLibraryPaths = <String>{};
 
   final ScrollController _scrollController = ScrollController();
-  final GlobalKey<GlassRefreshIndicatorState> _refreshIndicatorKey = GlobalKey();
+  final GlobalKey<GlassRefreshIndicatorState> _refreshIndicatorKey =
+      GlobalKey();
   int? _cardSnapshotRequestRevision;
 
   @override
@@ -316,7 +134,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     Navigator.of(context).push(
       buildAppSearchPageRoute<void>(
         context: context,
-        child: const _LibrarySearchPage(),
+        child: const LibrarySearchPage(),
       ),
     );
   }
@@ -376,253 +194,6 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     );
   }
 
-  void _handleCardExpansionChanged(FolderNode folder, bool expanded) {
-    final folderPath = folder.path;
-    final normalizedPath = PathMatcher.normalize(folderPath);
-    _cardExpansionMotionTimers.remove(normalizedPath)?.cancel();
-    final changed = expanded
-        ? _expandedCardPaths.add(normalizedPath)
-        : _expandedCardPaths.remove(normalizedPath);
-    if (!changed || !mounted) return;
-    final animate = !MediaQuery.disableAnimationsOf(context);
-    setState(() {
-      if (animate) {
-        _cardExpansionMotions[normalizedPath] = expanded;
-      } else {
-        _cardExpansionMotions.remove(normalizedPath);
-      }
-      _visibleItemsVersion++;
-    });
-    if (animate) {
-      _cardExpansionMotionTimers[normalizedPath] = Timer(
-        kAppMotionStandard,
-        () {
-          _cardExpansionMotionTimers.remove(normalizedPath);
-          if (!mounted || _cardExpansionMotions[normalizedPath] != expanded) {
-            return;
-          }
-          setState(() {
-            _cardExpansionMotions.remove(normalizedPath);
-            _visibleItemsVersion++;
-          });
-        },
-      );
-    }
-    if (expanded && folder.depth == 0) {
-      unawaited(_loadExpandedFolderTree(folderPath));
-    }
-  }
-
-  Future<void> _loadExpandedFolderTree(String folderPath) async {
-    final normalizedPath = PathMatcher.normalize(folderPath);
-    final libraryFacade = ref.read(libraryFacadeProvider);
-    final revision = libraryFacade.structureRevision;
-    if (_loadedFolderTrees[normalizedPath]?.revision == revision ||
-        _loadingFolderTreeRevisions[normalizedPath] == revision) {
-      return;
-    }
-    _loadingFolderTreeRevisions[normalizedPath] = revision;
-    try {
-      final folder = await libraryFacade.loadLibraryFolderTree(folderPath);
-      if (!mounted) return;
-      if (folder == null || libraryFacade.structureRevision != revision) {
-        if (_folderTreeErrorPaths.add(normalizedPath)) {
-          setState(() {
-            _visibleItemsVersion++;
-          });
-        }
-        return;
-      }
-      _folderTreeErrorPaths.remove(normalizedPath);
-      setState(() {
-        final previousFolder = _loadedFolderTrees[normalizedPath]?.folder;
-        _loadedFolderTrees[normalizedPath] = _LoadedLibraryFolder(
-          folder: folder,
-          revision: revision,
-        );
-        if (previousFolder != null) {
-          _removeMissingExpandedFolderPaths(previousFolder, folder);
-        }
-        _visibleItemsVersion++;
-      });
-    } catch (e, st) {
-      AppLogService.warning(
-        'Failed to load expanded folder tree: $folderPath',
-        error: e,
-        stackTrace: st,
-      );
-      if (mounted) {
-        if (_folderTreeErrorPaths.add(normalizedPath)) {
-          setState(() {
-            _visibleItemsVersion++;
-          });
-        }
-      }
-    } finally {
-      if (_loadingFolderTreeRevisions[normalizedPath] == revision) {
-        _loadingFolderTreeRevisions.remove(normalizedPath);
-      }
-    }
-  }
-
-  List<_VisibleLibraryItem> _visibleLibraryItems({
-    required List<LibraryNode> tree,
-    required int structureRevision,
-  }) {
-    _pruneFolderTreeCaches(tree, structureRevision);
-    if (identical(_visibleItemsSource, tree) &&
-        _visibleItemsStructureRevision == structureRevision &&
-        _visibleItemsCacheVersion == _visibleItemsVersion) {
-      return _visibleItemsCache;
-    }
-    final result = <_VisibleLibraryItem>[];
-
-    void addNode(
-      LibraryNode node,
-      int depth, {
-      FolderNode? expandedFolder,
-      bool revealed = true,
-      bool animateInitialReveal = false,
-    }) {
-      result.add(
-        _VisibleLibraryItem(
-          node: node,
-          depth: depth,
-          revealed: revealed,
-          animateInitialReveal: animateInitialReveal,
-        ),
-      );
-      if (node is! FolderNode) {
-        return;
-      }
-      final normalizedPath = PathMatcher.normalize(node.path);
-      final expanded = _expandedCardPaths.contains(normalizedPath);
-      final motion = _cardExpansionMotions[normalizedPath];
-      if (!expanded && motion != false) return;
-      final revealChildren = revealed && expanded;
-      final animateChildren =
-          animateInitialReveal || (revealChildren && motion == true);
-      final children = (expandedFolder ?? node).children;
-      if (expanded &&
-          children.isEmpty &&
-          _folderTreeErrorPaths.contains(normalizedPath)) {
-        result.add(
-          _VisibleLibraryItem(
-            node: node,
-            depth: depth + 1,
-            revealed: revealChildren,
-            animateInitialReveal: animateChildren,
-            isFolderError: true,
-            errorFolderPath: node.path,
-          ),
-        );
-      } else {
-        for (final child in children) {
-          addNode(
-            child,
-            depth + 1,
-            revealed: revealChildren,
-            animateInitialReveal: animateChildren,
-          );
-        }
-      }
-    }
-
-    final staleExpandedFolders = <String>[];
-    for (final node in tree) {
-      if (node is! FolderNode) {
-        addNode(node, 0);
-        continue;
-      }
-      final normalizedPath = PathMatcher.normalize(node.path);
-      final loaded = _loadedFolderTrees[normalizedPath];
-      addNode(node, 0, expandedFolder: loaded?.folder);
-      if (_expandedCardPaths.contains(normalizedPath) &&
-          loaded?.revision != structureRevision &&
-          _loadingFolderTreeRevisions[normalizedPath] != structureRevision &&
-          !_folderTreeErrorPaths.contains(normalizedPath)) {
-        staleExpandedFolders.add(node.path);
-      }
-    }
-    if (staleExpandedFolders.isNotEmpty) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        for (final path in staleExpandedFolders) {
-          unawaited(_loadExpandedFolderTree(path));
-        }
-      });
-    }
-    _visibleItemsSource = tree;
-    _visibleItemsStructureRevision = structureRevision;
-    _visibleItemsCacheVersion = _visibleItemsVersion;
-    return _visibleItemsCache = result;
-  }
-
-  void _pruneFolderTreeCaches(List<LibraryNode> tree, int structureRevision) {
-    if (_prunedFolderTreeRevision == structureRevision) return;
-    _prunedFolderTreeRevision = structureRevision;
-    final rootPaths = tree
-        .whereType<FolderNode>()
-        .map((folder) => PathMatcher.normalize(folder.path))
-        .toSet();
-    var changed = false;
-    final removedRootPaths = _loadedFolderTrees.keys
-        .where((path) => !rootPaths.contains(path))
-        .toList(growable: false);
-    for (final path in removedRootPaths) {
-      _loadedFolderTrees.remove(path);
-      changed = true;
-    }
-    _loadingFolderTreeRevisions.removeWhere((path, _) {
-      final remove = !rootPaths.contains(path);
-      changed = changed || remove;
-      return remove;
-    });
-    _folderTreeErrorPaths.removeWhere((path) => !rootPaths.contains(path));
-
-    final previousExpandedCount = _expandedCardPaths.length;
-    _retainCurrentExpandedFolderPaths(rootPaths: rootPaths);
-    changed = changed || _expandedCardPaths.length != previousExpandedCount;
-    if (changed) _visibleItemsVersion++;
-  }
-
-  void _retainCurrentExpandedFolderPaths({Set<String>? rootPaths}) {
-    final validExpandedPaths = <String>{...?rootPaths};
-    void collectFolderPaths(FolderNode folder) {
-      validExpandedPaths.add(PathMatcher.normalize(folder.path));
-      for (final child in folder.children.whereType<FolderNode>()) {
-        collectFolderPaths(child);
-      }
-    }
-
-    for (final loaded in _loadedFolderTrees.values) {
-      collectFolderPaths(loaded.folder);
-    }
-    _expandedCardPaths.retainWhere(validExpandedPaths.contains);
-  }
-
-  void _removeMissingExpandedFolderPaths(
-    FolderNode previousFolder,
-    FolderNode currentFolder,
-  ) {
-    Set<String> collectPaths(FolderNode root) {
-      final paths = <String>{};
-      void collect(FolderNode folder) {
-        paths.add(PathMatcher.normalize(folder.path));
-        for (final child in folder.children.whereType<FolderNode>()) {
-          collect(child);
-        }
-      }
-
-      collect(root);
-      return paths;
-    }
-
-    final currentPaths = collectPaths(currentFolder);
-    final removedPaths = collectPaths(previousFolder)..removeAll(currentPaths);
-    _expandedCardPaths.removeAll(removedPaths);
-  }
-
   Future<void> _openVideoConverterPage() async {
     if (!mounted) return;
     await Navigator.of(context).push(
@@ -655,16 +226,13 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
   }
 
   void _enterSelectionMode(LibraryNode node) {
-    if (!_isSelectableLibraryNode(node)) return;
+    if (!isSelectableLibraryNode(node)) return;
     AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
     setState(() {
       _isSelectionMode = true;
-      _expandedCardPaths.clear();
-      _cardExpansionMotions.clear();
-      _visibleItemsVersion++;
       _selectedLibraryPaths
         ..clear()
-        ..add(_selectionKeyForLibraryNode(node));
+        ..add(selectionKeyForLibraryNode(node));
     });
   }
 
@@ -677,8 +245,8 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
   }
 
   void _toggleLibrarySelection(LibraryNode node) {
-    if (!_isSelectableLibraryNode(node)) return;
-    final key = _selectionKeyForLibraryNode(node);
+    if (!isSelectableLibraryNode(node)) return;
+    final key = selectionKeyForLibraryNode(node);
     AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
     setState(() {
       if (!_selectedLibraryPaths.add(key)) {
@@ -936,9 +504,6 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
       _handleStartupRefreshInteractionChanged,
     );
     _startupRefreshIdleTimer?.cancel();
-    for (final timer in _cardExpansionMotionTimers.values) {
-      timer.cancel();
-    }
     disposeTabState();
     _scanCoordinator.dispose();
     _scrollController.dispose();
@@ -1008,13 +573,9 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     final tree = _isActive
         ? ref.watch(librarySortedTreeUiProvider)
         : ref.read(librarySortedTreeUiProvider);
-    final visibleItems = _visibleLibraryItems(
-      tree: tree,
-      structureRevision: listStateStructureRevision,
-    );
     final selectedSelections = _isSelectionMode
-        ? _selectedLibraryNodeSelections(tree, _selectedLibraryPaths)
-        : const <_LibraryBatchSelection>[];
+        ? selectedLibraryNodeSelections(tree, _selectedLibraryPaths)
+        : const <LibraryBatchSelection>[];
     final bottomInset = MobileOverlayInset.of(context);
 
     final headerControlsFullHeight = this.headerControlsFullHeight;
@@ -1040,85 +601,17 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
         !_initialLibraryContentReady;
     final canPullRefresh = listStateCanPullRefresh;
 
-    Widget buildTopLevelLibraryItem(BuildContext context, int index) {
-      if (index == visibleItems.length) {
-        return const SizedBox.shrink(key: ValueKey('bottom_spacing'));
-      }
-      final item = visibleItems[index];
-      final node = item.node;
-      if (item.isFolderError) {
-        final folderPath = item.errorFolderPath ?? node.path;
-        final errorBanner = Padding(
-          padding: EdgeInsets.only(left: item.depth * 8.0, top: 4, bottom: 8),
-          child: OperationStatusBanner(
-            key: ValueKey<String>('library_folder_error:$folderPath'),
-            label: i18n.tr('operation_failed_retry'),
-            onRetry: () => unawaited(_loadExpandedFolderTree(folderPath)),
-            retryTooltip: i18n.tr('retry'),
-          ),
-        );
-        return KeyedSubtree(
-          key: ValueKey<String>('library_folder_error_subtree:$folderPath'),
-          child: item.depth == 0
-              ? errorBanner
-              : AnimatedTreeReveal(
-                  key: ValueKey<String>(
-                    'library-tree-reveal:error:$folderPath',
-                  ),
-                  visible: item.revealed,
-                  animateInitial: item.animateInitialReveal,
-                  child: errorBanner,
-                ),
-        );
-      }
-      final treeItem = Padding(
-        padding: EdgeInsets.only(left: item.depth * 8.0),
-        child: RepaintBoundary(
-          child: _LibraryTreeItem(
-            node: node,
-            initiallyExpanded:
-                node is FolderNode &&
-                _expandedCardPaths.contains(PathMatcher.normalize(node.path)),
-            onFolderExpansionChanged: _handleCardExpansionChanged,
-            renderChildrenInline: false,
-            index: index,
-            isSelectionMode: item.depth == 0 && _isSelectionMode,
-            isSelected: _selectedLibraryPaths.contains(
-              _selectionKeyForLibraryNode(node),
-            ),
-            onLongPress: item.depth == 0
-                ? () => _enterSelectionMode(node)
-                : null,
-            onToggleSelect: item.depth == 0
-                ? () => _toggleLibrarySelection(node)
-                : null,
-          ),
-        ),
-      );
-      return KeyedSubtree(
-        key: ValueKey(node.path),
-        child: item.depth == 0
-            ? treeItem
-            : AnimatedTreeReveal(
-                key: ValueKey<String>('library-tree-reveal:${node.path}'),
-                visible: item.revealed,
-                animateInitial: item.animateInitialReveal,
-                child: treeItem,
-              ),
-      );
-    }
-
     Widget emptyListBody() {
       final relativeTop = listTopPadding;
       final relativeBottom = listBottomPadding;
 
       if (showLibrarySkeleton) {
-        return _LibraryLoadingSkeleton(
+        return LibraryLoadingSkeleton(
           bottomInset: relativeBottom,
           topInset: relativeTop,
         );
       }
-      return _LibraryEmptyState(
+      return LibraryEmptyState(
         onImportLibrary: _addLibrary,
         onImportFolder: _addFolder,
         onImportFile: _addFiles,
@@ -1165,13 +658,13 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
             AppPageContentTransition(
               child: PlaceholderContentTransition(
                 showPlaceholder: !listStateIsInitialized || showLibrarySkeleton,
-                placeholder: _LibraryLoadingSkeleton(
+                placeholder: LibraryLoadingSkeleton(
                   bottomInset: listBottomPadding,
                   topInset: listTopPadding,
                 ),
                 content: tree.isEmpty
                     ? refreshableEmptyBody()
-                      : GlassRefreshIndicator(
+                    : GlassRefreshIndicator(
                         key: _refreshIndicatorKey,
                         lockChildWhileRefreshing: true,
                         color: Theme.of(context).colorScheme.primary,
@@ -1183,79 +676,32 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                         edgeOffset: listTopPadding,
                         displacement: 32,
                         triggerMode: GlassRefreshIndicatorTriggerMode.anywhere,
-                        child: LayoutBuilder(
-                          builder: (context, constraints) {
-                            final columnCount =
-                                responsiveLibraryCardColumnCount(
-                                  constraints.maxWidth,
-                                );
-                            final rowCount = (visibleItems.length / columnCount)
-                                .ceil();
-                            return ListView.builder(
-                              key: const PageStorageKey<String>('library_list'),
-                              controller: _scrollController,
-                              clipBehavior: Clip.none,
-                              padding: EdgeInsets.fromLTRB(
-                                LibraryLikeCardMetrics.listHorizontalPadding,
-                                listTopPadding,
-                                LibraryLikeCardMetrics.listHorizontalPadding,
-                                listBottomPadding,
-                              ),
-                              cacheExtent: listCacheExtent,
-                              physics: canPullRefresh
-                                  ? AlwaysScrollableScrollPhysics(
-                                      parent: GlassRefreshIndicatorScrollPhysics(
-                                        isIndicatorVisible: () =>
-                                            _refreshIndicatorKey
-                                                .currentState
-                                                ?.isIndicatorVisible ??
-                                            false,
-                                      ),
-                                    )
-                                  : null,
-                              keyboardDismissBehavior:
-                                  ScrollViewKeyboardDismissBehavior.onDrag,
-                              itemCount: rowCount + 1,
-                              itemBuilder: (context, rowIndex) {
-                                if (rowIndex == rowCount) {
-                                  return const SizedBox.shrink(
-                                    key: ValueKey('bottom_spacing'),
-                                  );
-                                }
-                                if (columnCount == 1) {
-                                  return buildTopLevelLibraryItem(
-                                    context,
-                                    rowIndex,
-                                  );
-                                }
-                                return Row(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    for (
-                                      var column = 0;
-                                      column < columnCount;
-                                      column++
-                                    ) ...[
-                                      if (column > 0)
-                                        const SizedBox(
-                                          width: kResponsiveLibraryCardSpacing,
-                                        ),
-                                      Expanded(
-                                        child:
-                                            rowIndex * columnCount + column <
-                                                visibleItems.length
-                                            ? buildTopLevelLibraryItem(
-                                                context,
-                                                rowIndex * columnCount + column,
-                                              )
-                                            : const SizedBox.shrink(),
-                                      ),
-                                    ],
-                                  ],
-                                );
-                              },
-                            );
-                          },
+                        child: LibraryTreeList(
+                          tree: tree,
+                          structureRevision: listStateStructureRevision,
+                          selectedPaths: _selectedLibraryPaths,
+                          isSelectionMode: _isSelectionMode,
+                          scrollController: _scrollController,
+                          i18n: i18n,
+                          topPadding: listTopPadding,
+                          bottomPadding: listBottomPadding,
+                          cacheExtent: listCacheExtent,
+                          physics: canPullRefresh
+                              ? AlwaysScrollableScrollPhysics(
+                                  parent: GlassRefreshIndicatorScrollPhysics(
+                                    isIndicatorVisible: () =>
+                                        _refreshIndicatorKey
+                                            .currentState
+                                            ?.isIndicatorVisible ??
+                                        false,
+                                  ),
+                                )
+                              : null,
+                          loadFolder: libraryFacade.loadLibraryFolderTree,
+                          currentStructureRevision: () =>
+                              libraryFacade.structureRevision,
+                          onLongPress: _enterSelectionMode,
+                          onToggleSelect: _toggleLibrarySelection,
                         ),
                       ),
               ),
@@ -1273,7 +719,13 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                       final scanState = _isActive
                           ? ref.watch(libraryScanUiProvider)
                           : ref.read(libraryScanUiProvider);
-                      return _buildScanProgressCard(i18n, scanState);
+                      return LibraryScanProgressCard(
+                        i18n: i18n,
+                        scanState: scanState,
+                        onCancel: () => _scanCoordinator.cancel(
+                          ref.read(libraryFacadeProvider),
+                        ),
+                      );
                     },
                   ),
                 ),
@@ -1285,13 +737,13 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
               left: 0,
               right: 0,
               child: _isSelectionMode
-                  ? _LibraryBatchSelectionHeader(
+                  ? LibraryBatchSelectionHeader(
                       keyPrefix: 'library',
                       i18n: i18n,
                       selectedCount: selectedSelections.length,
                       onAddToPlaylist: selectedSelections.isEmpty
                           ? null
-                          : () => _addLibraryBatchSelectionsToPlaylist(
+                          : () => addLibraryBatchSelectionsToPlaylist(
                               context: context,
                               ref: ref,
                               selections: selectedSelections,
@@ -1299,7 +751,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                             ),
                       onCompleteMetadata: selectedSelections.isEmpty
                           ? null
-                          : () => _completeLibraryBatchSelectionsMetadata(
+                          : () => completeLibraryBatchSelectionsMetadata(
                               context: context,
                               ref: ref,
                               selections: selectedSelections,
@@ -1307,7 +759,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                             ),
                       onTogglePin: selectedSelections.isEmpty
                           ? null
-                          : () => _toggleLibraryBatchSelectionsPinned(
+                          : () => toggleLibraryBatchSelectionsPinned(
                               context: context,
                               ref: ref,
                               selections: selectedSelections,
@@ -1322,7 +774,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                           ),
                       onRemove: selectedSelections.isEmpty
                           ? null
-                          : () => _removeLibraryBatchSelections(
+                          : () => removeLibraryBatchSelections(
                               context: context,
                               ref: ref,
                               selections: selectedSelections,
@@ -1502,31 +954,4 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
       ],
     );
   }
-}
-
-class _LibraryLoadingSkeleton extends ConsumerWidget {
-  const _LibraryLoadingSkeleton({
-    required this.bottomInset,
-    required this.topInset,
-  });
-
-  final double bottomInset;
-  final double topInset;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return LibrarySkeletonListView(
-      topInset: topInset,
-      bottomInset: bottomInset,
-    );
-  }
-}
-
-void _showSessionCreatedSnack(BuildContext context, String message) {
-  showAppSnackBar(
-    context,
-    message,
-    tone: AppFeedbackTone.success,
-    icon: Icons.queue_music_rounded,
-  );
 }

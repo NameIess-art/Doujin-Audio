@@ -25,6 +25,100 @@ final class PlaybackNativeSnapshotApplication {
 }
 
 extension PlaybackNativeStateCoordinator on PlaybackFacade {
+  void _bindSessionListeners(PlaybackSession session) {
+    final stateSub = session.stateStream.listen((state) {
+      if (!_service.sessions.containsKey(session.id)) return;
+
+      final previousState =
+          session.previousStateBeforeLastStateEvent ?? session.state;
+      session.previousStateBeforeLastStateEvent = null;
+      final previousPlaying = previousState.playing;
+      final previousProcessing = previousState.processingState;
+      session.state = state;
+      final isNewCompletion =
+          previousProcessing != ProcessingState.completed &&
+          state.processingState == ProcessingState.completed;
+      final currentGeneration = session.playbackCommandGeneration;
+      final shouldAutoAdvanceAfterCompletion =
+          isNewCompletion &&
+          !session.loopMode.isOneShot &&
+          !session.isLoading &&
+          !session.isAdvancingAfterCompletion &&
+          session.playbackError == null &&
+          _commandPort?.resolveAdvance(session, forward: true) != null &&
+          session.lastHandledCompletionGeneration != currentGeneration;
+      if (shouldAutoAdvanceAfterCompletion) {
+        session.beginCompletionAdvance(
+          commandGeneration: currentGeneration,
+          markHandled: true,
+        );
+      }
+      session.reconcilePlaybackState();
+      _onRuntimeStateChanged?.call();
+      _onSessionStateChanged?.call();
+
+      if (previousPlaying != state.playing ||
+          previousProcessing != state.processingState) {
+        scheduleSessionStatePersistence();
+      }
+
+      if (isNewCompletion && shouldAutoAdvanceAfterCompletion) {
+        _dispatchSessionCompleted(session.id);
+      }
+    });
+    session.subscriptions.add(stateSub);
+
+    final positionSub = session.positionStream.listen((position) {
+      if (!_service.sessions.containsKey(session.id)) return;
+      session.lastKnownPosition = position;
+      final bucket = position.inSeconds ~/ positionBucketSeconds;
+      if (bucket != session.lastPersistedPositionBucket) {
+        session.lastPersistedPositionBucket = bucket;
+        _scheduleSessionPlaybackStatePersistence(session.id);
+      }
+      _onSessionPositionChanged?.call(session, position);
+    });
+    session.subscriptions.add(positionSub);
+
+    final durationSub = session.durationStream.listen((_) {
+      if (!_service.sessions.containsKey(session.id)) return;
+      _scheduleSessionPlaybackStatePersistence(
+        session.id,
+        delay: const Duration(milliseconds: 1500),
+      );
+      _onSessionDurationChanged?.call(session.id);
+    });
+    session.subscriptions.add(durationSub);
+  }
+
+  void _dispatchSessionCompleted(String sessionId) {
+    final callback = _onSessionCompleted;
+    final session = _service.sessions[sessionId];
+    if (callback == null || session == null) return;
+    final commandGeneration = session.playbackCommandGeneration;
+    final preparationGeneration = session.loadGeneration;
+    unawaited(() async {
+      try {
+        await callback(sessionId);
+      } catch (error, stackTrace) {
+        if (isRegisteredSession(session) &&
+            session.finishCompletionAdvance(
+              commandGeneration: commandGeneration,
+              preparationGeneration: preparationGeneration,
+              error: error.toString(),
+            )) {
+          _onRuntimeStateChanged?.call();
+          _onSessionStateChanged?.call();
+        }
+        AppLogService.error(
+          'PlaybackFacade.sessionCompleted error',
+          error: error,
+          stackTrace: stackTrace,
+        );
+      }
+    }());
+  }
+
   void updateNativeSessionRetainedContentUris(
     String sessionId,
     Iterable<String> retainedUris,

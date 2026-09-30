@@ -1,6 +1,11 @@
+import '../../../core/widgets/windows_horizontal_wheel_scroll.dart';
+import 'library_download_actions.dart';
+import 'work_detail_entry_tile.dart';
+import 'work_detail_metadata.dart';
+import 'work_detail_entries.dart';
+import 'work_detail_header.dart';
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -10,8 +15,6 @@ import '../../../app/presentation/app_presentation_providers.dart';
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/theme/app_design_tokens.dart';
 import '../../../core/media/audio_detail.dart';
-import '../../../core/media/music_track.dart';
-import '../../../core/media/natural_sort.dart';
 import '../../../core/media/path_display.dart';
 import '../../../core/ui/ui_operation_service.dart';
 import '../../../core/ui/visual_settings_providers.dart';
@@ -24,7 +27,6 @@ import '../../../core/widgets/async_cover_image.dart';
 import '../../../core/widgets/mobile_overlay_inset.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/top_page_header.dart';
-import '../../../core/widgets/windows_horizontal_wheel_scroll.dart';
 import '../../asmr/application/asmr_library_controller.dart';
 import '../../asmr/domain/asmr_models.dart';
 import '../../asmr/presentation/asmr_download_page.dart';
@@ -37,45 +39,10 @@ import '../domain/library_node.dart';
 import 'dlsite_metadata_review_page.dart';
 import 'library_providers.dart';
 import 'library_removal_feedback.dart';
-import 'library_tab.dart';
 import 'work_image_viewer_page.dart';
 import 'work_text_viewer_page.dart';
 
 const String workDetailRouteName = '/work-detail';
-const double _workMetadataCapsuleRadius = 14;
-const EdgeInsets _workMetadataCapsulePadding = EdgeInsets.symmetric(
-  horizontal: 10,
-  vertical: 4,
-);
-
-enum _WorkEntryType { folder, audio, text, image }
-
-enum _WorkEntryAction { open, play, add, remove, rename, setCover }
-
-class _WorkEntryItem {
-  const _WorkEntryItem({
-    required this.name,
-    required this.relativePath,
-    required this.type,
-    this.fullPathOrUrl = '',
-    this.duration,
-    this.track,
-    this.asmrNode,
-    this.textFile,
-    this.imageItem,
-  });
-
-  final String name;
-  final String relativePath;
-  final _WorkEntryType type;
-  final String fullPathOrUrl;
-  final Duration? duration;
-  final MusicTrack? track;
-  final AsmrTrackFile? asmrNode;
-  final WorkTextFile? textFile;
-  final WorkImageItem? imageItem;
-}
-
 bool _containsAsmrSubtitle(Iterable<AsmrTrackFile> nodes) {
   for (final node in nodes) {
     if (node.isSubtitle || _containsAsmrSubtitle(node.children)) return true;
@@ -224,8 +191,6 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
     }
   }
 
-  String get _currentRelativePath => _currentPathSegments.join('/');
-
   void _enterFolder(String folderName) {
     setState(() {
       _currentPathSegments.add(folderName);
@@ -256,264 +221,28 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
   }
 
   // Current entries in directory
-  List<_WorkEntryItem> _buildCurrentEntries() {
+  List<WorkEntryItem> _buildCurrentEntries() {
     if (widget.isLocal) {
-      return _buildLocalEntries();
+      return buildLocalWorkEntries(
+        root: _localFolderNode,
+        pathSegments: _currentPathSegments,
+        textFiles: _localTextFiles,
+        imageFiles: _localImageFiles,
+        isHidden: (track) => ref
+            .read(undoableRemovalStateProvider)
+            .isHidden(libraryRemovalKey(track.path)),
+      );
     } else {
-      return _buildAsmrEntries();
-    }
-  }
-
-  List<_WorkEntryItem> _buildLocalEntries() {
-    final currentRel = _currentRelativePath;
-    final entries = <_WorkEntryItem>[];
-    final visibleFolderPaths = <String>{};
-
-    // Find current FolderNode
-    FolderNode? currentFolder = _localFolderNode;
-    if (currentFolder != null && _currentPathSegments.isNotEmpty) {
-      for (final segment in _currentPathSegments) {
-        FolderNode? next;
-        for (final child in currentFolder!.children) {
-          if (child is FolderNode && child.name == segment) {
-            next = child;
-            break;
-          }
-        }
-        currentFolder = next;
-        if (currentFolder == null) break;
-      }
-    }
-
-    // 1. Folders & Tracks from currentFolder
-    if (currentFolder != null) {
-      for (final child in currentFolder.children) {
-        if (child is FolderNode) {
-          final childRel = currentRel.isEmpty
-              ? child.name
-              : '$currentRel/${child.name}';
-          visibleFolderPaths.add(childRel);
-          entries.add(
-            _WorkEntryItem(
-              name: child.name,
-              relativePath: childRel,
-              type: _WorkEntryType.folder,
-              fullPathOrUrl: child.path,
-            ),
-          );
-        } else if (child is TrackNode) {
-          if (ref
-              .read(undoableRemovalStateProvider)
-              .isHidden(libraryRemovalKey(child.track.path))) {
-            continue;
-          }
-          entries.add(
-            _WorkEntryItem(
-              name: child.track.displayName,
-              relativePath: child.track.path,
-              type: _WorkEntryType.audio,
-              fullPathOrUrl: child.track.path,
-              duration: child.track.duration,
-              track: child.track,
-            ),
-          );
-        }
-      }
-    }
-
-    void addFileParentFolder(String fileRelativePath) {
-      final fileSegments = fileRelativePath
-          .replaceAll(r'\', '/')
-          .split('/')
-          .where((segment) => segment.trim().isNotEmpty)
-          .toList(growable: false);
-      final currentSegments = currentRel.isEmpty
-          ? const <String>[]
-          : currentRel.split('/');
-      if (fileSegments.length <= currentSegments.length + 1) return;
-      for (var index = 0; index < currentSegments.length; index++) {
-        if (fileSegments[index] != currentSegments[index]) return;
-      }
-      final childName = fileSegments[currentSegments.length];
-      final childRel = <String>[...currentSegments, childName].join('/');
-      if (!visibleFolderPaths.add(childRel)) return;
-      entries.add(
-        _WorkEntryItem(
-          name: childName,
-          relativePath: childRel,
-          type: _WorkEntryType.folder,
-          fullPathOrUrl: childRel,
-        ),
-      );
-    }
-
-    for (final text in _localTextFiles) {
-      addFileParentFolder(text.relativePath);
-    }
-    for (final image in _localImageFiles) {
-      addFileParentFolder(image.relativePath);
-    }
-
-    // 2. Text files in current directory level
-    for (final text in _localTextFiles) {
-      final parentRel = _parentRelOf(text.relativePath);
-      if (_isSameRelPath(parentRel, currentRel)) {
-        entries.add(
-          _WorkEntryItem(
-            name: text.name,
-            relativePath: text.relativePath,
-            type: _WorkEntryType.text,
-            fullPathOrUrl: text.path,
-            textFile: text,
-          ),
-        );
-      }
-    }
-
-    // 3. Image files in current directory level
-    for (final img in _localImageFiles) {
-      final parentRel = _parentRelOf(img.relativePath);
-      if (_isSameRelPath(parentRel, currentRel)) {
-        entries.add(
-          _WorkEntryItem(
-            name: img.name,
-            relativePath: img.relativePath,
-            type: _WorkEntryType.image,
-            fullPathOrUrl: img.path,
-            imageItem: img,
-          ),
-        );
-      }
-    }
-
-    // Natural sort: folders first, then files
-    entries.sort((a, b) {
-      if (a.type == _WorkEntryType.folder && b.type != _WorkEntryType.folder) {
-        return -1;
-      }
-      if (a.type != _WorkEntryType.folder && b.type == _WorkEntryType.folder) {
-        return 1;
-      }
-      return compareNaturalTreeEntries(
-        leftIsFolder: a.type == _WorkEntryType.folder,
-        leftName: a.name,
-        leftPath: a.relativePath,
-        rightIsFolder: b.type == _WorkEntryType.folder,
-        rightName: b.name,
-        rightPath: b.relativePath,
-      );
-    });
-
-    return entries;
-  }
-
-  List<_WorkEntryItem> _buildAsmrEntries() {
-    final entries = <_WorkEntryItem>[];
-    List<AsmrTrackFile> currentNodes = _asmrTree ?? const [];
-
-    if (_currentPathSegments.isNotEmpty) {
-      for (final segment in _currentPathSegments) {
-        AsmrTrackFile? next;
-        for (final node in currentNodes) {
-          if (node.isFolder && node.title == segment) {
-            next = node;
-            break;
-          }
-        }
-        if (next != null) {
-          currentNodes = next.children;
-        } else {
-          currentNodes = const [];
-          break;
-        }
-      }
-    }
-
-    for (final node in currentNodes) {
-      if (node.isFolder) {
-        entries.add(
-          _WorkEntryItem(
-            name: node.title,
-            relativePath: node.relativePath,
-            type: _WorkEntryType.folder,
-            asmrNode: node,
-          ),
-        );
-      } else if (node.isAudio) {
-        if (ref
+      return buildAsmrWorkEntries(
+        tree: _asmrTree,
+        pathSegments: _currentPathSegments,
+        isHidden: (node) =>
+            ref
                 .read(asmrLibraryControllerProvider)
                 ?.isTrackHidden(widget.asmrWork!.id, node) ??
-            false) {
-          continue;
-        }
-        entries.add(
-          _WorkEntryItem(
-            name: node.displayTitle,
-            relativePath: node.relativePath,
-            type: _WorkEntryType.audio,
-            fullPathOrUrl: node.streamUrl ?? '',
-            duration: node.duration,
-            asmrNode: node,
-          ),
-        );
-      } else if (node.isText) {
-        entries.add(
-          _WorkEntryItem(
-            name: node.title,
-            relativePath: node.relativePath,
-            type: _WorkEntryType.text,
-            asmrNode: node,
-          ),
-        );
-      } else if (node.isImage) {
-        final imgUrl = node.streamUrl ?? node.downloadUrl ?? '';
-        entries.add(
-          _WorkEntryItem(
-            name: node.title,
-            relativePath: node.relativePath,
-            type: _WorkEntryType.image,
-            fullPathOrUrl: imgUrl,
-            asmrNode: node,
-            imageItem: WorkImageItem(
-              name: node.title,
-              path: imgUrl,
-              relativePath: node.relativePath,
-            ),
-          ),
-        );
-      }
-    }
-
-    // Folders first, then natural sort
-    entries.sort((a, b) {
-      if (a.type == _WorkEntryType.folder && b.type != _WorkEntryType.folder) {
-        return -1;
-      }
-      if (a.type != _WorkEntryType.folder && b.type == _WorkEntryType.folder) {
-        return 1;
-      }
-      return compareNaturalTreeEntries(
-        leftIsFolder: a.type == _WorkEntryType.folder,
-        leftName: a.name,
-        leftPath: a.relativePath,
-        rightIsFolder: b.type == _WorkEntryType.folder,
-        rightName: b.name,
-        rightPath: b.relativePath,
+            false,
       );
-    });
-
-    return entries;
-  }
-
-  String _parentRelOf(String relPath) {
-    final normalized = relPath.replaceAll(r'\', '/').trim();
-    final lastSlash = normalized.lastIndexOf('/');
-    if (lastSlash < 0) return '';
-    return normalized.substring(0, lastSlash);
-  }
-
-  bool _isSameRelPath(String a, String b) {
-    return a.replaceAll(r'\', '/').trim() == b.replaceAll(r'\', '/').trim();
+    }
   }
 
   // Set local image as cover
@@ -542,7 +271,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
     }
   }
 
-  Future<bool> _playAudioItem(_WorkEntryItem item) async {
+  Future<bool> _playAudioItem(WorkEntryItem item) async {
     if (widget.isLocal && item.track != null) {
       final playback = ref.read(playbackFacadeProvider);
       final tracks = _localFolderNode?.allTracks ?? [item.track!];
@@ -561,30 +290,30 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
   }
 
   Future<void> _handleEntryAction(
-    _WorkEntryItem item,
-    _WorkEntryAction action,
+    WorkEntryItem item,
+    WorkEntryAction action,
   ) async {
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     try {
       switch (action) {
-        case _WorkEntryAction.open:
+        case WorkEntryAction.open:
           switch (item.type) {
-            case _WorkEntryType.folder:
+            case WorkEntryType.folder:
               _enterFolder(item.name);
-            case _WorkEntryType.text:
+            case WorkEntryType.text:
               await _openTextFile(item);
-            case _WorkEntryType.image:
+            case WorkEntryType.image:
               await _openImageFile(item);
-            case _WorkEntryType.audio:
-              await _handleEntryAction(item, _WorkEntryAction.play);
+            case WorkEntryType.audio:
+              await _handleEntryAction(item, WorkEntryAction.play);
           }
-        case _WorkEntryAction.play:
+        case WorkEntryAction.play:
           final request = ++_playRequest;
           final played = await _playAudioItem(item);
           if (request == _playRequest && !played) {
             throw StateError('Playback could not start.');
           }
-        case _WorkEntryAction.add:
+        case WorkEntryAction.add:
           final added = widget.isLocal && item.track != null
               ? await ref
                     .read(playbackFacadeProvider)
@@ -604,7 +333,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
               ),
             );
           }
-        case _WorkEntryAction.remove:
+        case WorkEntryAction.remove:
           if (widget.isLocal && item.track != null) {
             await stageLibraryRemoval(
               context,
@@ -639,9 +368,9 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
               failureMessage: i18n.tr('removal_failed'),
             );
           }
-        case _WorkEntryAction.rename:
+        case WorkEntryAction.rename:
           await _renameLocalEntry(item);
-        case _WorkEntryAction.setCover:
+        case WorkEntryAction.setCover:
           await _setLocalImageAsCover(item.fullPathOrUrl);
       }
     } catch (_) {
@@ -655,12 +384,12 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
     }
   }
 
-  Future<void> _renameLocalEntry(_WorkEntryItem item) async {
+  Future<void> _renameLocalEntry(WorkEntryItem item) async {
     if (!widget.isLocal || item.fullPathOrUrl.isEmpty) return;
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     var name = PathDisplay.fileName(
       item.fullPathOrUrl,
-      withoutExtension: item.type != _WorkEntryType.folder,
+      withoutExtension: item.type != WorkEntryType.folder,
     );
     final targetName = await showAppDialog<String>(
       context: context,
@@ -697,10 +426,10 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
             libraryRootPath: _localTarget!.targetPath,
             entryPath: oldPath,
             targetName: targetName,
-            isMedia: item.type == _WorkEntryType.audio,
-            isDirectory: item.type == _WorkEntryType.folder,
+            isMedia: item.type == WorkEntryType.audio,
+            isDirectory: item.type == WorkEntryType.folder,
           );
-      if (item.type != _WorkEntryType.folder && _localManualCover == oldPath) {
+      if (item.type != WorkEntryType.folder && _localManualCover == oldPath) {
         await ref
             .read(libraryFacadeProvider)
             .setFolderManualCover(_localTarget!.targetPath, renamedPath);
@@ -717,103 +446,78 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
     }
   }
 
-  List<UnifiedMenuEntry<_WorkEntryAction>> _entryMenuItems(
-    _WorkEntryItem item,
-  ) {
+  List<UnifiedMenuEntry<WorkEntryAction>> _entryMenuItems(WorkEntryItem item) {
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     return switch (item.type) {
-      _WorkEntryType.folder => [
-        UnifiedMenuEntry<_WorkEntryAction>.action(
-          value: _WorkEntryAction.open,
+      WorkEntryType.folder => [
+        UnifiedMenuEntry<WorkEntryAction>.action(
+          value: WorkEntryAction.open,
           icon: Icons.folder_open_rounded,
           label: i18n.tr('open'),
         ),
         if (widget.isLocal)
-          UnifiedMenuEntry<_WorkEntryAction>.action(
-            value: _WorkEntryAction.rename,
+          UnifiedMenuEntry<WorkEntryAction>.action(
+            value: WorkEntryAction.rename,
             icon: Icons.drive_file_rename_outline_rounded,
             label: i18n.tr('rename'),
           ),
       ],
-      _WorkEntryType.audio => [
-        UnifiedMenuEntry<_WorkEntryAction>.action(
-          value: _WorkEntryAction.play,
+      WorkEntryType.audio => [
+        UnifiedMenuEntry<WorkEntryAction>.action(
+          value: WorkEntryAction.play,
           icon: Icons.play_arrow_rounded,
           label: i18n.tr('play'),
         ),
-        UnifiedMenuEntry<_WorkEntryAction>.action(
-          value: _WorkEntryAction.add,
+        UnifiedMenuEntry<WorkEntryAction>.action(
+          value: WorkEntryAction.add,
           icon: Icons.playlist_add_rounded,
           label: i18n.tr('detail_add_to_queue'),
         ),
         if (widget.isLocal)
-          UnifiedMenuEntry<_WorkEntryAction>.action(
-            value: _WorkEntryAction.rename,
+          UnifiedMenuEntry<WorkEntryAction>.action(
+            value: WorkEntryAction.rename,
             icon: Icons.drive_file_rename_outline_rounded,
             label: i18n.tr('rename'),
           ),
-        UnifiedMenuEntry<_WorkEntryAction>.action(
-          value: _WorkEntryAction.remove,
+        UnifiedMenuEntry<WorkEntryAction>.action(
+          value: WorkEntryAction.remove,
           icon: Icons.remove_circle_outline_rounded,
           label: i18n.tr('remove'),
         ),
       ],
-      _WorkEntryType.text => [
-        UnifiedMenuEntry<_WorkEntryAction>.action(
-          value: _WorkEntryAction.open,
+      WorkEntryType.text => [
+        UnifiedMenuEntry<WorkEntryAction>.action(
+          value: WorkEntryAction.open,
           icon: Icons.open_in_new_rounded,
           label: i18n.tr('open'),
         ),
         if (widget.isLocal)
-          UnifiedMenuEntry<_WorkEntryAction>.action(
-            value: _WorkEntryAction.rename,
+          UnifiedMenuEntry<WorkEntryAction>.action(
+            value: WorkEntryAction.rename,
             icon: Icons.drive_file_rename_outline_rounded,
             label: i18n.tr('rename'),
           ),
       ],
-      _WorkEntryType.image => [
-        UnifiedMenuEntry<_WorkEntryAction>.action(
-          value: _WorkEntryAction.open,
+      WorkEntryType.image => [
+        UnifiedMenuEntry<WorkEntryAction>.action(
+          value: WorkEntryAction.open,
           icon: Icons.open_in_new_rounded,
           label: i18n.tr('open'),
         ),
         if (widget.isLocal) ...[
-          UnifiedMenuEntry<_WorkEntryAction>.action(
-            value: _WorkEntryAction.rename,
+          UnifiedMenuEntry<WorkEntryAction>.action(
+            value: WorkEntryAction.rename,
             icon: Icons.drive_file_rename_outline_rounded,
             label: i18n.tr('rename'),
           ),
-          UnifiedMenuEntry<_WorkEntryAction>.action(
-            value: _WorkEntryAction.setCover,
+          UnifiedMenuEntry<WorkEntryAction>.action(
+            value: WorkEntryAction.setCover,
             icon: Icons.photo_size_select_actual_outlined,
             label: i18n.tr('audio_detail_set_cover'),
           ),
         ],
       ],
     };
-  }
-
-  Future<void> _showEntryContextMenu(
-    _WorkEntryItem item,
-    Offset globalPosition,
-  ) async {
-    final overlayState =
-        MobileOverlayInset.menuOverlayOf(context) ?? Overlay.maybeOf(context);
-    final overlayBox = overlayState?.context.findRenderObject() as RenderBox?;
-    if (overlayBox == null || !overlayBox.hasSize) return;
-
-    final localPos = overlayBox.globalToLocal(globalPosition);
-    final position = RelativeRect.fromRect(
-      localPos & Size.zero,
-      Offset.zero & overlayBox.size,
-    );
-
-    final action = await showDockAwareMenu<_WorkEntryAction>(
-      context: context,
-      position: position,
-      entries: _entryMenuItems(item),
-    );
-    if (mounted && action != null) await _handleEntryAction(item, action);
   }
 
   Future<void> _refreshLocalTree() async {
@@ -824,7 +528,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
   }
 
   // Open text file
-  Future<void> _openTextFile(_WorkEntryItem item) async {
+  Future<void> _openTextFile(WorkEntryItem item) async {
     List<WorkTextFile> allTexts = const [];
     if (widget.isLocal) {
       allTexts = _localTextFiles;
@@ -861,7 +565,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
   }
 
   // Open image file
-  Future<void> _openImageFile(_WorkEntryItem item) async {
+  Future<void> _openImageFile(WorkEntryItem item) async {
     List<WorkImageItem> allImages = const [];
     if (widget.isLocal) {
       allImages = _localImageFiles;
@@ -1167,7 +871,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
                 // 1. Collapsible Sticky Header
                 SliverPersistentHeader(
                   pinned: true,
-                  delegate: _WorkDetailHeaderDelegate(
+                  delegate: WorkDetailHeaderDelegate(
                     topSafeArea: topSafeArea,
                     coverMaxHeight: coverMaxHeight,
                     coverMinHeight: coverMinHeight,
@@ -1190,49 +894,11 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        // Voice Actors row
-                        if (displayVoiceActors.isNotEmpty) ...[
-                          Row(
-                            children: [
-                              Icon(
-                                Icons.badge_outlined,
-                                size: 17,
-                                color: cs.onSurfaceVariant,
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: _buildVoiceActorScroller(
-                                  context,
-                                  cs,
-                                  displayVoiceActors,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                        ],
-
-                        // Tags row
-                        if (displayTags.isNotEmpty) ...[
-                          Row(
-                            children: [
-                              Icon(
-                                Icons.local_offer_outlined,
-                                size: 17,
-                                color: cs.onSurfaceVariant,
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: _buildTagScroller(
-                                  context,
-                                  cs,
-                                  displayTags,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 10),
-                        ],
+                        WorkDetailMetadata(
+                          voiceActors: displayVoiceActors,
+                          tags: displayTags,
+                          onCopy: (value) => _copyText(context, value),
+                        ),
 
                         // Action Buttons Row
                         if (widget.isLocal) ...[
@@ -1506,7 +1172,14 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
                     sliver: SliverList(
                       delegate: SliverChildBuilderDelegate((context, index) {
                         final item = currentEntries[index];
-                        return _buildFileEntryTile(context, item, cs, asmrBlue);
+                        return WorkDetailEntryTile(
+                          item: item,
+                          accentColor: widget.isAsmr ? asmrBlue : cs.primary,
+                          menuEntries: _entryMenuItems(item),
+                          moreLabel: i18n.tr('more_actions'),
+                          onAction: (action) =>
+                              _handleEntryAction(item, action),
+                        );
                       }, childCount: currentEntries.length),
                     ),
                   ),
@@ -1606,46 +1279,6 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
     );
   }
 
-  Widget _buildVoiceActorCapsule(
-    BuildContext context,
-    ColorScheme cs,
-    String voiceActor,
-  ) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return Semantics(
-      button: true,
-      label: voiceActor,
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          key: ValueKey<String>('work_detail_voice_actor_$voiceActor'),
-          onTap: () => _copyText(context, voiceActor),
-          borderRadius: BorderRadius.circular(_workMetadataCapsuleRadius),
-          child: Container(
-            padding: _workMetadataCapsulePadding,
-            decoration: BoxDecoration(
-              color: cs.primaryContainer.withValues(
-                alpha: isDark ? 0.34 : 0.56,
-              ),
-              borderRadius: BorderRadius.circular(_workMetadataCapsuleRadius),
-              border: Border.all(
-                color: cs.primary.withValues(alpha: isDark ? 0.28 : 0.20),
-              ),
-            ),
-            child: Text(
-              voiceActor,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: cs.onPrimaryContainer,
-                fontSize: 12,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
   ButtonStyle _actionCapsuleStyle({
     Color? backgroundColor,
     Color? foregroundColor,
@@ -1659,738 +1292,5 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
       backgroundColor: backgroundColor,
       foregroundColor: foregroundColor,
     );
-  }
-
-  Widget _buildTagCapsule(BuildContext context, ColorScheme cs, String tag) {
-    final displayLabel = tag.startsWith('#') ? tag : '#$tag';
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        key: ValueKey<String>('work_detail_tag_$displayLabel'),
-        onTap: () =>
-            _copyText(context, tag.startsWith('#') ? tag.substring(1) : tag),
-        borderRadius: BorderRadius.circular(_workMetadataCapsuleRadius),
-        child: Container(
-          padding: _workMetadataCapsulePadding,
-          decoration: BoxDecoration(
-            color: isDark
-                ? cs.surfaceContainerHighest.withValues(alpha: 0.5)
-                : cs.surfaceContainerHigh.withValues(alpha: 0.6),
-            borderRadius: BorderRadius.circular(_workMetadataCapsuleRadius),
-            border: Border.all(
-              color: cs.outlineVariant.withValues(alpha: isDark ? 0.3 : 0.45),
-            ),
-          ),
-          child: Text(
-            displayLabel,
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w500,
-              color: cs.onSurfaceVariant,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTagScroller(
-    BuildContext context,
-    ColorScheme cs,
-    List<String> tags,
-  ) {
-    return _buildMetadataScroller(
-      context,
-      cs,
-      keyPrefix: 'tag',
-      children: tags
-          .map(
-            (tag) => Padding(
-              padding: const EdgeInsets.only(right: 6),
-              child: _buildTagCapsule(context, cs, tag),
-            ),
-          )
-          .toList(growable: false),
-    );
-  }
-
-  Widget _buildVoiceActorScroller(
-    BuildContext context,
-    ColorScheme cs,
-    List<String> voiceActors,
-  ) {
-    return _buildMetadataScroller(
-      context,
-      cs,
-      keyPrefix: 'voice_actor',
-      children: voiceActors
-          .map(
-            (voiceActor) => Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: _buildVoiceActorCapsule(context, cs, voiceActor),
-            ),
-          )
-          .toList(growable: false),
-    );
-  }
-
-  Widget _buildMetadataScroller(
-    BuildContext context,
-    ColorScheme cs, {
-    required String keyPrefix,
-    required List<Widget> children,
-  }) {
-    return ShaderMask(
-      key: ValueKey<String>('work_detail_${keyPrefix}_edge_fade'),
-      blendMode: BlendMode.dstIn,
-      shaderCallback: (bounds) => const LinearGradient(
-        colors: [
-          Colors.transparent,
-          Colors.black,
-          Colors.black,
-          Colors.transparent,
-        ],
-        stops: [0, 0.06, 0.94, 1],
-      ).createShader(bounds),
-      child: WindowsHorizontalWheelScroll(
-        builder: (scrollController) => SingleChildScrollView(
-          key: ValueKey<String>('work_detail_${keyPrefix}_scroller'),
-          controller: scrollController,
-          scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          child: Row(children: children),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildFileEntryTile(
-    BuildContext context,
-    _WorkEntryItem item,
-    ColorScheme cs,
-    Color asmrBlue,
-  ) {
-    switch (item.type) {
-      case _WorkEntryType.folder:
-        return GestureDetector(
-          onSecondaryTapDown: defaultTargetPlatform == TargetPlatform.windows
-              ? (details) => _showEntryContextMenu(item, details.globalPosition)
-              : null,
-          child: ListTile(
-            dense: true,
-            contentPadding: const EdgeInsets.only(left: 16),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
-            ),
-            leading: const Icon(Icons.folder_rounded, color: Color(0xFFFFA000)),
-            title: Text(
-              item.name,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontWeight: FontWeight.w600),
-            ),
-            trailing: _buildEntryMoreButton(item),
-            onTap: () => _enterFolder(item.name),
-          ),
-        );
-
-      case _WorkEntryType.audio:
-        return GestureDetector(
-          onSecondaryTapDown: defaultTargetPlatform == TargetPlatform.windows
-              ? (details) => _showEntryContextMenu(item, details.globalPosition)
-              : null,
-          child: ListTile(
-            dense: true,
-            contentPadding: const EdgeInsets.only(left: 16),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
-            ),
-            leading: Icon(
-              (item.track?.isVideo ?? item.asmrNode?.isVideo ?? false)
-                  ? Icons.videocam_outlined
-                  : Icons.audiotrack_rounded,
-              color: widget.isAsmr ? asmrBlue : cs.primary,
-            ),
-            title: Text(
-              item.name,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-            trailing: _buildEntryMoreButton(item),
-            onTap: () => _handleEntryAction(item, _WorkEntryAction.play),
-          ),
-        );
-
-      case _WorkEntryType.text:
-        return GestureDetector(
-          onSecondaryTapDown: defaultTargetPlatform == TargetPlatform.windows
-              ? (details) => _showEntryContextMenu(item, details.globalPosition)
-              : null,
-          child: ListTile(
-            dense: true,
-            contentPadding: const EdgeInsets.only(left: 16),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
-            ),
-            leading: Icon(
-              Icons.description_outlined,
-              color: cs.onSurfaceVariant,
-            ),
-            title: Text(
-              item.name,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-            trailing: _buildEntryMoreButton(item),
-            onTap: () => _openTextFile(item),
-          ),
-        );
-
-      case _WorkEntryType.image:
-        return GestureDetector(
-          onSecondaryTapDown: defaultTargetPlatform == TargetPlatform.windows
-              ? (details) => _showEntryContextMenu(item, details.globalPosition)
-              : null,
-          child: ListTile(
-            dense: true,
-            contentPadding: const EdgeInsets.only(left: 16),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
-            ),
-            leading: Icon(Icons.image_outlined, color: cs.onSurfaceVariant),
-            title: Text(
-              item.name,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-            trailing: _buildEntryMoreButton(item),
-            onTap: () => _openImageFile(item),
-          ),
-        );
-    }
-  }
-
-  Widget _buildEntryMoreButton(_WorkEntryItem item) {
-    return SizedBox.square(
-      dimension: 44,
-      child: Builder(
-        builder: (buttonContext) {
-          return IconButton(
-            key: ValueKey<String>('work_entry_more_${item.relativePath}'),
-            padding: EdgeInsets.zero,
-            iconSize: 22,
-            icon: const Icon(Icons.more_vert_rounded),
-            tooltip: ref
-                .read(appLanguageProviderInstanceProvider)
-                .tr('more_actions'),
-            onPressed: () => _showEntryMenuForButton(item, buttonContext),
-          );
-        },
-      ),
-    );
-  }
-
-  Future<void> _showEntryMenuForButton(
-    _WorkEntryItem item,
-    BuildContext buttonContext,
-  ) async {
-    final buttonBox = buttonContext.findRenderObject() as RenderBox?;
-    if (buttonBox == null || !buttonBox.hasSize) return;
-    final overlayState =
-        MobileOverlayInset.menuOverlayOf(context) ?? Overlay.maybeOf(context);
-    final overlayBox = overlayState?.context.findRenderObject() as RenderBox?;
-    if (overlayBox == null || !overlayBox.hasSize) return;
-
-    final buttonOrigin = buttonBox.localToGlobal(
-      Offset.zero,
-      ancestor: overlayBox,
-    );
-    final buttonRect = buttonOrigin & buttonBox.size;
-    final position = RelativeRect.fromRect(
-      buttonRect,
-      Offset.zero & overlayBox.size,
-    );
-
-    final action = await showDockAwareMenu<_WorkEntryAction>(
-      context: context,
-      position: position,
-      entries: _entryMenuItems(item),
-    );
-    if (mounted && action != null) {
-      await _handleEntryAction(item, action);
-    }
-  }
-}
-
-class _DockMenuLayout extends SingleChildLayoutDelegate {
-  _DockMenuLayout(this.position);
-  final RelativeRect position;
-
-  @override
-  BoxConstraints getConstraintsForChild(BoxConstraints constraints) {
-    return BoxConstraints.loose(constraints.biggest);
-  }
-
-  @override
-  Offset getPositionForChild(Size size, Size childSize) {
-    // Right-align to button right edge.
-    double x = size.width - position.right - childSize.width;
-    if (x + childSize.width > size.width - 8) {
-      x = size.width - 8 - childSize.width;
-    }
-    if (x < 8) x = 8;
-
-    // Top-align to button top (covering the button).
-    double y = position.top;
-    if (y + childSize.height > size.height - 8) {
-      y = size.height - 8 - childSize.height;
-    }
-    if (y < 8) y = 8;
-    return Offset(x, y);
-  }
-
-  @override
-  bool shouldRelayout(_DockMenuLayout oldDelegate) =>
-      position != oldDelegate.position;
-}
-
-Future<T?> showDockAwareMenu<T>({
-  required BuildContext context,
-  required RelativeRect position,
-  required List<UnifiedMenuEntry<T>> entries,
-}) async {
-  final overlayState =
-      MobileOverlayInset.menuOverlayOf(context) ?? Overlay.maybeOf(context);
-  if (overlayState == null) return null;
-
-  final completer = Completer<T?>();
-  late OverlayEntry entry;
-
-  entry = OverlayEntry(
-    builder: (_) => _DockMenuOverlay<T>(
-      position: position,
-      entries: entries,
-      themeContext: context,
-      onResult: (value) {
-        if (!completer.isCompleted) completer.complete(value);
-      },
-    ),
-  );
-
-  overlayState.insert(entry);
-  final result = await completer.future;
-  entry.remove();
-  entry.dispose();
-  return result;
-}
-
-class _DockMenuOverlay<T> extends StatefulWidget {
-  const _DockMenuOverlay({
-    required this.position,
-    required this.entries,
-    required this.themeContext,
-    required this.onResult,
-  });
-
-  final RelativeRect position;
-  final List<UnifiedMenuEntry<T>> entries;
-  final BuildContext themeContext;
-  final ValueChanged<T?> onResult;
-
-  @override
-  State<_DockMenuOverlay<T>> createState() => _DockMenuOverlayState<T>();
-}
-
-class _DockMenuOverlayState<T> extends State<_DockMenuOverlay<T>>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-  bool _dismissed = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 160),
-      reverseDuration: const Duration(milliseconds: 100),
-    );
-    _controller.forward(from: 0);
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  Future<void> _dismiss(T? value) async {
-    if (_dismissed) return;
-    _dismissed = true;
-    try {
-      await _controller.reverse();
-    } catch (_) {
-      // Animation controller may be disposed if unmounted.
-    }
-    widget.onResult(value);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(widget.themeContext);
-    final cs = theme.colorScheme;
-    final isDark = theme.brightness == Brightness.dark;
-    final tokens = AppDesignTokens.of(widget.themeContext);
-    final background = isDark ? cs.surfaceBright : cs.surfaceContainerHighest;
-
-    final curved = CurvedAnimation(
-      parent: _controller,
-      curve: Curves.easeOutCubic,
-      reverseCurve: Curves.easeInCubic,
-    );
-
-    return PopScope(
-      canPop: false,
-      onPopInvokedWithResult: (didPop, _) {
-        if (!didPop) _dismiss(null);
-      },
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: () => _dismiss(null),
-            child: const SizedBox.expand(),
-          ),
-          CustomSingleChildLayout(
-            delegate: _DockMenuLayout(widget.position),
-            child: FadeTransition(
-              opacity: curved,
-              child: ScaleTransition(
-                alignment: Alignment.topRight,
-                scale: Tween<double>(begin: 0.96, end: 1).animate(curved),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(tokens.radiusSection),
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: background,
-                      borderRadius: BorderRadius.circular(tokens.radiusSection),
-                      border: Border.all(
-                        color: cs.outlineVariant.withValues(
-                          alpha: tokens.standardBorderAlpha,
-                        ),
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: cs.shadow.withValues(
-                            alpha: isDark ? 0.36 : 0.18,
-                          ),
-                          blurRadius: 30,
-                          offset: const Offset(0, 16),
-                        ),
-                      ],
-                    ),
-                    child: IntrinsicWidth(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 6),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            for (final e in widget.entries)
-                              if (e.divider)
-                                Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                    vertical: 4,
-                                  ),
-                                  child: Divider(
-                                    height: 1,
-                                    thickness: 1,
-                                    color: cs.outlineVariant.withValues(
-                                      alpha: 0.56,
-                                    ),
-                                  ),
-                                )
-                              else
-                                Material(
-                                  color: Colors.transparent,
-                                  child: InkWell(
-                                    onTap: e.enabled && e.value != null
-                                        ? () => _dismiss(e.value)
-                                        : null,
-                                    child: SizedBox(
-                                      height: 40,
-                                      child: Padding(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 12,
-                                        ),
-                                        child: Row(
-                                          children: [
-                                            Icon(
-                                              e.icon,
-                                              size: 18,
-                                              color: cs.onSurface,
-                                            ),
-                                            const SizedBox(width: 10),
-                                            Expanded(
-                                              child: Text(
-                                                e.label,
-                                                maxLines: 1,
-                                                overflow: TextOverflow.ellipsis,
-                                                style: theme.textTheme.bodySmall
-                                                    ?.copyWith(
-                                                      color: cs.onSurface,
-                                                      fontWeight:
-                                                          FontWeight.w700,
-                                                    ),
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Header Delegate: Collapses cover by half, pins RJ | CircleName row permanently
-// ---------------------------------------------------------------------------
-
-class _WorkDetailHeaderDelegate extends SliverPersistentHeaderDelegate {
-  _WorkDetailHeaderDelegate({
-    required this.topSafeArea,
-    required this.coverMaxHeight,
-    required this.coverMinHeight,
-    required this.rjBarHeight,
-    required this.title,
-    required this.rjCode,
-    required this.circleName,
-    required this.coverWidget,
-    required this.accentColor,
-    required this.surfaceColor,
-    required this.onCopyMetadata,
-  });
-
-  final double topSafeArea;
-  final double coverMaxHeight;
-  final double coverMinHeight;
-  final double rjBarHeight;
-  final String title;
-  final String rjCode;
-  final String circleName;
-  final Widget coverWidget;
-  final Color accentColor;
-  final Color surfaceColor;
-  final ValueChanged<String> onCopyMetadata;
-
-  @override
-  double get maxExtent => topSafeArea + coverMaxHeight + rjBarHeight;
-
-  @override
-  double get minExtent => topSafeArea + coverMinHeight + rjBarHeight;
-
-  @override
-  Widget build(
-    BuildContext context,
-    double shrinkOffset,
-    bool overlapsContent,
-  ) {
-    final scrollDelta = maxExtent - minExtent;
-    final progress = scrollDelta <= 0
-        ? 0.0
-        : (shrinkOffset / scrollDelta).clamp(0.0, 1.0);
-
-    final currentCoverHeight =
-        coverMaxHeight -
-        (shrinkOffset).clamp(0.0, coverMaxHeight - coverMinHeight);
-
-    return Material(
-      color: surfaceColor,
-      elevation: progress > 0.8 ? 2.0 : 0.0,
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          // Cover Image area with Gradient and Title
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            height: topSafeArea + currentCoverHeight,
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                coverWidget,
-                // Gradient overlay
-                DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [
-                        Colors.black.withValues(alpha: 0.35),
-                        Colors.transparent,
-                        Colors.black.withValues(alpha: 0.85),
-                      ],
-                      stops: const [0.0, 0.4, 1.0],
-                    ),
-                  ),
-                ),
-                // Work title (max 3 lines) at the bottom of the cover
-                Positioned(
-                  left: 16,
-                  right: 16,
-                  bottom: 10,
-                  child: Text(
-                    title,
-                    maxLines: 3,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: progress > 0.5 ? 15 : 17,
-                      fontWeight: FontWeight.bold,
-                      height: 1.25,
-                      shadows: const [
-                        Shadow(
-                          color: Colors.black87,
-                          blurRadius: 4,
-                          offset: Offset(0, 1),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          // RJXXXX | 社团名 Row (Pinned at the bottom of the header, never collapsed!)
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
-            height: rjBarHeight,
-            child: Container(
-              color: surfaceColor,
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              alignment: Alignment.centerLeft,
-              child: Row(
-                children: [
-                  if (rjCode.isNotEmpty) ...[
-                    Semantics(
-                      button: true,
-                      label: rjCode,
-                      child: InkWell(
-                        key: const ValueKey<String>('work_detail_rj_copy'),
-                        onTap: () => onCopyMetadata(rjCode),
-                        onSecondaryTap:
-                            defaultTargetPlatform == TargetPlatform.windows
-                            ? () => onCopyMetadata(rjCode)
-                            : null,
-                        onLongPress:
-                            defaultTargetPlatform == TargetPlatform.android
-                            ? () => onCopyMetadata(rjCode)
-                            : () {},
-                        borderRadius: BorderRadius.circular(12),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 4,
-                            vertical: 10,
-                          ),
-                          child: Text(
-                            rjCode,
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 13,
-                              color: accentColor,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      '|',
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: Colors.grey.withValues(alpha: 0.6),
-                        fontWeight: FontWeight.w300,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                  ],
-                  Icon(
-                    Icons.storefront_outlined,
-                    size: 14,
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                  const SizedBox(width: 4),
-                  Expanded(
-                    child: Semantics(
-                      button: circleName.isNotEmpty,
-                      label: circleName.isNotEmpty ? circleName : null,
-                      child: InkWell(
-                        key: const ValueKey<String>('work_detail_circle_copy'),
-                        onTap: circleName.isEmpty
-                            ? null
-                            : () => onCopyMetadata(circleName),
-                        onSecondaryTap:
-                            circleName.isEmpty ||
-                                defaultTargetPlatform != TargetPlatform.windows
-                            ? null
-                            : () => onCopyMetadata(circleName),
-                        onLongPress: circleName.isEmpty
-                            ? null
-                            : defaultTargetPlatform == TargetPlatform.android
-                            ? () => onCopyMetadata(circleName)
-                            : () {},
-                        borderRadius: BorderRadius.circular(12),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 10),
-                          child: Text(
-                            circleName.isNotEmpty ? circleName : '--',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.bodyMedium
-                                ?.copyWith(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  @override
-  bool shouldRebuild(covariant _WorkDetailHeaderDelegate oldDelegate) {
-    return oldDelegate.title != title ||
-        oldDelegate.rjCode != rjCode ||
-        oldDelegate.circleName != circleName ||
-        oldDelegate.coverWidget != coverWidget ||
-        oldDelegate.accentColor != accentColor ||
-        oldDelegate.surfaceColor != surfaceColor;
   }
 }

@@ -21,6 +21,7 @@ import 'native_playback_repository.dart';
 import 'native_playback_bridge.dart';
 import 'playback_command_port.dart';
 import 'playback_command_runner.dart';
+import 'playback_seek_dispatcher.dart';
 
 part 'playback_native_state_coordinator.dart';
 part 'playback_session_persistence_coordinator.dart';
@@ -51,7 +52,11 @@ final class PlaybackFacade {
     required this.nativeRepository,
     required this.commandRunner,
     required PlaybackSessionService service,
-  }) : _service = service;
+  }) : _service = service,
+       _seekDispatcher = PlaybackSeekDispatcher(
+         nativeRepository: nativeRepository,
+         service: service,
+       );
 
   factory PlaybackFacade.create({
     required PlaybackPersistenceRepository databaseRepository,
@@ -77,18 +82,7 @@ final class PlaybackFacade {
       StreamController<int>.broadcast(sync: true);
   final Map<String, Set<String>> _nativeRetainedContentUrisBySession =
       <String, Set<String>>{};
-  final Map<
-    String,
-    ({PlaybackSession session, Duration position, int generation})
-  >
-  _pendingNativeSeeks =
-      <
-        String,
-        ({PlaybackSession session, Duration position, int generation})
-      >{};
-  final Map<String, Completer<void>> _pendingNativeSeekCompleters =
-      <String, Completer<void>>{};
-  final Set<String> _activeNativeSeeks = <String>{};
+  final PlaybackSeekDispatcher _seekDispatcher;
   int _nativePersistedUriReferenceRevision = 0;
   bool _nativeRetainedContentUriInventoryReady = false;
   MusicTrack? Function(String trackPath)? _persistedTrackResolver;
@@ -291,72 +285,6 @@ final class PlaybackFacade {
     _bindSessionListeners(session);
   }
 
-  void _bindSessionListeners(PlaybackSession session) {
-    final stateSub = session.stateStream.listen((state) {
-      if (!_service.sessions.containsKey(session.id)) return;
-
-      final previousState =
-          session.previousStateBeforeLastStateEvent ?? session.state;
-      session.previousStateBeforeLastStateEvent = null;
-      final previousPlaying = previousState.playing;
-      final previousProcessing = previousState.processingState;
-      session.state = state;
-      final isNewCompletion =
-          previousProcessing != ProcessingState.completed &&
-          state.processingState == ProcessingState.completed;
-      final currentGeneration = session.playbackCommandGeneration;
-      final shouldAutoAdvanceAfterCompletion =
-          isNewCompletion &&
-          !session.loopMode.isOneShot &&
-          !session.isLoading &&
-          !session.isAdvancingAfterCompletion &&
-          session.playbackError == null &&
-          _commandPort?.resolveAdvance(session, forward: true) != null &&
-          session.lastHandledCompletionGeneration != currentGeneration;
-      if (shouldAutoAdvanceAfterCompletion) {
-        session.beginCompletionAdvance(
-          commandGeneration: currentGeneration,
-          markHandled: true,
-        );
-      }
-      session.reconcilePlaybackState();
-      _onRuntimeStateChanged?.call();
-      _onSessionStateChanged?.call();
-
-      if (previousPlaying != state.playing ||
-          previousProcessing != state.processingState) {
-        scheduleSessionStatePersistence();
-      }
-
-      if (isNewCompletion && shouldAutoAdvanceAfterCompletion) {
-        _dispatchSessionCompleted(session.id);
-      }
-    });
-    session.subscriptions.add(stateSub);
-
-    final positionSub = session.positionStream.listen((position) {
-      if (!_service.sessions.containsKey(session.id)) return;
-      session.lastKnownPosition = position;
-      final bucket = position.inSeconds ~/ positionBucketSeconds;
-      if (bucket != session.lastPersistedPositionBucket) {
-        session.lastPersistedPositionBucket = bucket;
-        _scheduleSessionPlaybackStatePersistence(session.id);
-      }
-      _onSessionPositionChanged?.call(session, position);
-    });
-    session.subscriptions.add(positionSub);
-
-    final durationSub = session.durationStream.listen((_) {
-      if (!_service.sessions.containsKey(session.id)) return;
-      _scheduleSessionPlaybackStatePersistence(
-        session.id,
-        delay: const Duration(milliseconds: 1500),
-      );
-      _onSessionDurationChanged?.call(session.id);
-    });
-    session.subscriptions.add(durationSub);
-  }
-
   PlaybackSession createTrackSession(
     MusicTrack track, {
     SessionLoopMode loopMode = SessionLoopMode.folderSequential,
@@ -406,12 +334,6 @@ final class PlaybackFacade {
   String _nextSessionId() {
     _sessionSeed += 1;
     return 'session_${DateTime.now().microsecondsSinceEpoch}_$_sessionSeed';
-  }
-
-  void _scheduleNewSessionPersistence({bool respectConfiguration = true}) {
-    if (respectConfiguration && !_persistenceEnabled) return;
-    scheduleSessionStatePersistence();
-    scheduleSessionOrderPersistence();
   }
 
   void reorderSessions(int oldIndex, int newIndex) {
@@ -473,9 +395,7 @@ final class PlaybackFacade {
     if (removedSessions.isEmpty) return allSucceeded;
     for (final session in removedSessions) {
       _deferredVolumeReloadSessionIds.remove(session.id);
-      _activeNativeSeeks.remove(session.id);
-      _pendingNativeSeeks.remove(session.id);
-      _pendingNativeSeekCompleters.remove(session.id)?.complete();
+      _seekDispatcher.forgetSession(session.id);
     }
     await Future.wait(removedSessions.map((session) => session.shutdown()));
     _onSessionsRemoved?.call(removedSessions);
@@ -501,6 +421,7 @@ final class PlaybackFacade {
     for (final session in removedSessions) {
       session.cancelPlaybackStart(session.loadGeneration);
       _deferredVolumeReloadSessionIds.remove(session.id);
+      _seekDispatcher.forgetSession(session.id);
     }
     _onSessionsRemoved?.call(removedSessions);
     _onSessionStateChanged?.call();
@@ -542,53 +463,7 @@ final class PlaybackFacade {
     if (!_sessionObserversAttached) {
       _onSessionPositionChanged?.call(session, clamped);
     }
-    await _dispatchNativeSeek(session, clamped, session.loadGeneration);
-  }
-
-  Future<void> _dispatchNativeSeek(
-    PlaybackSession session,
-    Duration position,
-    int generation,
-  ) async {
-    final sessionId = session.id;
-    if (_activeNativeSeeks.contains(sessionId)) {
-      _pendingNativeSeeks[sessionId] = (
-        session: session,
-        position: position,
-        generation: generation,
-      );
-      final completer = _pendingNativeSeekCompleters.putIfAbsent(
-        sessionId,
-        () => Completer<void>(),
-      );
-      return completer.future;
-    }
-    _activeNativeSeeks.add(sessionId);
-    try {
-      await nativeRepository.seek(sessionId, position);
-    } finally {
-      _activeNativeSeeks.remove(sessionId);
-      final pending = _pendingNativeSeeks.remove(sessionId);
-      final completer = _pendingNativeSeekCompleters.remove(sessionId);
-      if (pending != null &&
-          identical(_service.sessions[sessionId], pending.session) &&
-          !pending.session.isDisposed &&
-          pending.session.loadGeneration == pending.generation) {
-        unawaited(
-          _dispatchNativeSeek(
-            pending.session,
-            pending.position,
-            pending.generation,
-          ).whenComplete(() {
-            if (completer != null && !completer.isCompleted) {
-              completer.complete();
-            }
-          }),
-        );
-      } else if (completer != null && !completer.isCompleted) {
-        completer.complete();
-      }
-    }
+    await _seekDispatcher.dispatch(session, clamped, session.loadGeneration);
   }
 
   Future<void> seekSessionByOffset(String sessionId, Duration offset) async {
@@ -741,25 +616,10 @@ final class PlaybackFacade {
   }
 
   /// Bucket width currently used to decide whether a position is worth writing.
-  int get positionBucketSeconds => _backgroundMode
-      ? backgroundPositionBucketSeconds
-      : foregroundPositionBucketSeconds;
-
-  void setBackgroundMode(bool value) {
-    if (_backgroundMode == value) return;
-    if (value) {
-      _savePlaybackStateTimer?.cancel();
-      _savePlaybackStateTimer = null;
-      if (_pendingPlaybackStateSessionIds.isNotEmpty) {
-        unawaited(_enqueueSessionPersistence(_savePendingPlaybackStates));
-      }
-    }
-    _backgroundMode = value;
-    for (final session in _service.sessions.values) {
-      session.lastPersistedPositionBucket =
-          session.lastKnownPosition.inSeconds ~/ positionBucketSeconds;
-    }
-  }
+  int get positionBucketSeconds =>
+      PlaybackSessionPersistenceCoordinator(this).positionBucketSeconds;
+  void setBackgroundMode(bool value) =>
+      PlaybackSessionPersistenceCoordinator(this).setBackgroundMode(value);
 
   bool hasSessionAdjacentTrack(String sessionId, {required bool forward}) {
     final session = _service.sessions[sessionId];
@@ -814,160 +674,25 @@ final class PlaybackFacade {
     double volume, {
     bool persist = true,
     bool notify = true,
-  }) async {
-    final session = _service.sessions[sessionId];
-    if (session == null ||
-        session.isDisposed ||
-        !identical(_service.sessions[session.id], session)) {
-      return false;
-    }
-    final nextVolume = volume.clamp(0.0, maxSessionVolume);
-    final hasDeferredReload = _deferredVolumeReloadSessionIds.contains(
-      session.id,
-    );
-    if ((session.volume - nextVolume).abs() < 0.001) {
-      if (persist && hasDeferredReload) {
-        final response = await nativeRepository.setVolume(
-          session.id,
-          session.volume,
-        );
-        if (response.isFailure) {
-          _logNativeCommandFailure(
-            'setSessionVolume',
-            response,
-            sessionId: session.id,
-          );
-          return false;
-        }
-        if (!_isCurrentSession(session)) return true;
-        _deferredVolumeReloadSessionIds.remove(session.id);
-      }
-      if (persist) await flushSessionStatePersistence();
-      return true;
-    }
-    final previousVolume = session.volume;
-    final previouslyDeferred = hasDeferredReload;
-    session.volume = nextVolume;
-    if (persist) {
-      _deferredVolumeReloadSessionIds.remove(session.id);
-    } else {
-      _deferredVolumeReloadSessionIds.add(session.id);
-    }
-    if (notify) {
-      _service.markActiveSessionsDirty();
-      _onSessionStateChanged?.call();
-    }
-    final response = await nativeRepository.setVolume(
-      session.id,
-      session.volume,
-      reloadSource: persist,
-    );
-    if (!_isCurrentSession(session)) return response.isOk;
-    if (response.isFailure) {
-      session.volume = previousVolume;
-      if (previouslyDeferred) {
-        _deferredVolumeReloadSessionIds.add(session.id);
-      } else {
-        _deferredVolumeReloadSessionIds.remove(session.id);
-      }
-      if (notify) {
-        _service.markActiveSessionsDirty();
-        _onSessionStateChanged?.call();
-      }
-      _logNativeCommandFailure(
-        'setSessionVolume',
-        response,
-        sessionId: session.id,
-      );
-      return false;
-    }
-    if (persist) await flushSessionStatePersistence();
-    return true;
-  }
-
+  }) => PlaybackEffectsCoordinator(
+    this,
+  ).setSessionVolume(sessionId, volume, persist: persist, notify: notify);
   Future<void> setSessionSpeed(
     String sessionId,
     double speed, {
     bool persist = true,
     bool notify = true,
-  }) async {
-    final session = _service.sessions[sessionId];
-    if (session == null ||
-        session.isDisposed ||
-        !identical(_service.sessions[session.id], session)) {
-      return;
-    }
-    final nextSpeed = nearestPlaybackSpeed(speed);
-    if ((session.speed - nextSpeed).abs() < 0.001) {
-      if (persist) await flushSessionStatePersistence();
-      return;
-    }
-    final previous = session.speed;
-    final generation = ++session.speedCommandGeneration;
-    session.speed = nextSpeed;
-    session.pendingSpeed = nextSpeed;
-    _service.markActiveSessionsDirty();
-    if (notify) _onSessionSettingsChanged?.call();
-    final response = await nativeRepository.setSpeed(session.id, nextSpeed);
-    if (!_isCurrentSession(session)) return;
-    if (generation != session.speedCommandGeneration) return;
-    if (response.isFailure) {
-      session.pendingSpeed = null;
-      session.speed = previous;
-      _service.markActiveSessionsDirty();
-      AppLogService.warning(
-        'PlaybackFacade.setSessionSpeed error: ${response.errorOrNull}',
-      );
-      if (notify) _onSessionSettingsChanged?.call();
-      return;
-    }
-    final confirmedSpeed = response.valueOrNull?.speed ?? nextSpeed;
-    session.pendingSpeed = confirmedSpeed;
-    if ((session.speed - confirmedSpeed).abs() >= 0.001) {
-      session.speed = confirmedSpeed;
-      _service.markActiveSessionsDirty();
-      if (notify) _onSessionSettingsChanged?.call();
-    }
-    if (persist) await flushSessionStatePersistence();
-  }
-
-  Future<bool> setSessionTemporarySpeed(String sessionId, double? speed) async {
-    final session = _service.sessions[sessionId];
-    if (session == null ||
-        session.isDisposed ||
-        !identical(_service.sessions[session.id], session)) {
-      return false;
-    }
-    final normalizedSpeed = speed?.clamp(0.25, 3.0).toDouble();
-    final response = await nativeRepository.setTemporarySpeed(
-      session.id,
-      normalizedSpeed,
-    );
-    if (response.isOk) return true;
-    AppLogService.warning(
-      'PlaybackFacade.setSessionTemporarySpeed error: '
-      '${response.errorCodeOrNull} ${response.errorOrNull}',
-    );
-    return false;
-  }
-
-  bool _isCurrentSession(PlaybackSession? session) {
-    return session != null &&
-        !session.isDisposed &&
-        identical(_service.sessions[session.id], session);
-  }
-
-  double nearestPlaybackSpeed(double speed) {
-    return playbackSpeedOptions.reduce((best, candidate) {
-      final bestDistance = (best - speed).abs();
-      final candidateDistance = (candidate - speed).abs();
-      return candidateDistance < bestDistance ? candidate : best;
-    });
-  }
-
-  void clearDeferredVolumeReloads() {
-    _deferredVolumeReloadSessionIds.clear();
-  }
+  }) => PlaybackEffectsCoordinator(
+    this,
+  ).setSessionSpeed(sessionId, speed, persist: persist, notify: notify);
+  Future<bool> setSessionTemporarySpeed(String sessionId, double? speed) =>
+      PlaybackEffectsCoordinator(
+        this,
+      ).setSessionTemporarySpeed(sessionId, speed);
+  double nearestPlaybackSpeed(double speed) =>
+      PlaybackEffectsCoordinator(this).nearestPlaybackSpeed(speed);
+  void clearDeferredVolumeReloads() =>
+      PlaybackEffectsCoordinator(this).clearDeferredVolumeReloads();
 
   Future<void> get pendingSessionPreparation =>
       PlaybackNativeStateCoordinator(this).pendingSessionPreparation;
@@ -1206,12 +931,7 @@ final class PlaybackFacade {
     }
 
     cancelScheduledPersistence();
-    _activeNativeSeeks.clear();
-    _pendingNativeSeeks.clear();
-    for (final completer in _pendingNativeSeekCompleters.values) {
-      if (!completer.isCompleted) completer.complete();
-    }
-    _pendingNativeSeekCompleters.clear();
+    _seekDispatcher.clear();
     final persistenceTail = _sessionPersistenceTail;
     if (persistenceTail != null) {
       await attempt(() => persistenceTail);
@@ -1230,33 +950,5 @@ final class PlaybackFacade {
     if (firstError != null) {
       Error.throwWithStackTrace(firstError!, firstStackTrace!);
     }
-  }
-
-  void _dispatchSessionCompleted(String sessionId) {
-    final callback = _onSessionCompleted;
-    final session = _service.sessions[sessionId];
-    if (callback == null || session == null) return;
-    final commandGeneration = session.playbackCommandGeneration;
-    final preparationGeneration = session.loadGeneration;
-    unawaited(() async {
-      try {
-        await callback(sessionId);
-      } catch (error, stackTrace) {
-        if (isRegisteredSession(session) &&
-            session.finishCompletionAdvance(
-              commandGeneration: commandGeneration,
-              preparationGeneration: preparationGeneration,
-              error: error.toString(),
-            )) {
-          _onRuntimeStateChanged?.call();
-          _onSessionStateChanged?.call();
-        }
-        AppLogService.error(
-          'PlaybackFacade.sessionCompleted error',
-          error: error,
-          stackTrace: stackTrace,
-        );
-      }
-    }());
   }
 }

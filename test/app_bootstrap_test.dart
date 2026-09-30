@@ -191,6 +191,49 @@ void main() {
     },
   );
 
+  testWidgets('leaving onboarding does not notify an ancestor during build', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues(const <String, Object>{});
+    await AppPreferences.init();
+    final runtimeInitialization = Completer<void>();
+    final controller = AppBootstrapController(
+      initializer: () => runtimeInitialization.future,
+    );
+    addTearDown(controller.dispose);
+    final language = AppLanguageProvider();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appLanguageProviderInstanceProvider.overrideWithValue(language),
+        ],
+        child: MaterialApp(
+          builder: (context, child) => ListenableBuilder(
+            listenable: controller,
+            builder: (context, _) => child!,
+          ),
+          home: OnboardingRuntimeGate(
+            showOnboarding: true,
+            runtimeController: controller,
+            child: AppBootstrapGate(
+              controller: controller,
+              disposeController: false,
+              readyBuilder: (_) => const Text('ready'),
+              loadingBuilder: (_) => const Text('loading'),
+              failureBuilder: (_, _) => const Text('failed'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.byType(FilledButton).first);
+    await tester.pump();
+    expect(tester.takeException(), isNull);
+    runtimeInitialization.complete();
+    await tester.pump();
+    expect(find.text('ready'), findsOneWidget);
+  });
+
   testWidgets('existing install waits for the runtime settlement', (
     tester,
   ) async {

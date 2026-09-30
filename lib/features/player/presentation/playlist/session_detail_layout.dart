@@ -1,0 +1,271 @@
+import 'dart:math';
+
+import 'package:flutter/material.dart';
+
+import '../../../../core/widgets/marquee_text.dart';
+import 'playlist_shared_helpers.dart';
+
+class SessionDetailLayout extends StatelessWidget {
+  const SessionDetailLayout({
+    super.key,
+    required this.isLandscape,
+    required this.padding,
+    required this.segmentPanelExpanded,
+    required this.artwork,
+    required this.isVideo,
+    required this.title,
+    required this.sessionId,
+    required this.progress,
+    required this.transport,
+    required this.subtitle,
+    required this.segmentPanelBuilder,
+  });
+
+  final bool isLandscape;
+  final EdgeInsets padding;
+  final bool segmentPanelExpanded;
+  final Widget artwork;
+  final bool isVideo;
+  final String title;
+  final String sessionId;
+  final Widget progress;
+  final Widget transport;
+  final Widget subtitle;
+  final Widget Function(Key key) segmentPanelBuilder;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    if (isLandscape) {
+      return Padding(
+        padding: padding,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            const spacing = 12.0;
+            const progressSpacing = 5.0;
+            const approxProgressBarHeight = 36.0;
+            final availableHeight = constraints.maxHeight;
+            final idealCoverHeight = max(
+              0.0,
+              availableHeight - approxProgressBarHeight - progressSpacing,
+            );
+            // Left side prioritizes filling vertical height: width equals idealCoverHeight
+            // Ensure right side has at least enough width for transport controls if possible
+            final maxLeftWidth = constraints.maxWidth > 500
+                ? max(0.0, constraints.maxWidth - 386)
+                : constraints.maxWidth * 0.5;
+            final leftWidth = min(idealCoverHeight, maxLeftWidth);
+
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                SizedBox(
+                  width: leftWidth,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Expanded(
+                        child: Center(
+                          child: AspectRatio(
+                            aspectRatio: 1.0,
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.only(
+                                topLeft: Radius.circular(
+                                  segmentPanelExpanded ? 19 : 16,
+                                ),
+                                topRight: Radius.circular(
+                                  segmentPanelExpanded ? 19 : 16,
+                                ),
+                                bottomLeft: const Radius.circular(16),
+                                bottomRight: const Radius.circular(16),
+                              ),
+                              child: Stack(
+                                fit: StackFit.expand,
+                                children: [
+                                  artwork,
+                                  if (segmentPanelExpanded)
+                                    Positioned.fill(
+                                      child: segmentPanelBuilder(
+                                        const ValueKey('segments_landscape'),
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: progressSpacing),
+                      RepaintBoundary(child: progress),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: spacing),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.only(
+                          left: 4,
+                          right: 4,
+                          bottom: 8,
+                        ),
+                        child: MarqueeText(
+                          key: ValueKey('title_marquee_$sessionId'),
+                          text: title,
+                          pauseDuration: const Duration(seconds: 1),
+                          style: Theme.of(context).textTheme.titleMedium
+                              ?.copyWith(
+                                color: sessionDetailForeground(
+                                  cs,
+                                  SessionDetailForegroundLevel.strong,
+                                  darkFallback: cs.onSurface,
+                                ),
+                                fontWeight: FontWeight.w700,
+                              ),
+                        ),
+                      ),
+                      Expanded(child: RepaintBoundary(child: subtitle)),
+                      transport,
+                    ],
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+      );
+    }
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final coverHeight = segmentPanelExpanded
+            ? 42.0
+            : (constraints.maxWidth * 3 / 4);
+
+        return Padding(
+          padding: EdgeInsets.only(top: padding.top, bottom: padding.bottom),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 280),
+                curve: Curves.easeInOutCubic,
+                height: coverHeight,
+                width: double.infinity,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(16),
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      if (!segmentPanelExpanded) artwork,
+                      if (!isVideo)
+                        IgnorePointer(
+                          child: Align(
+                            alignment: Alignment.bottomCenter,
+                            child: Container(
+                              height: 42,
+                              width: double.infinity,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                              ),
+                              alignment: Alignment.centerLeft,
+                              decoration: BoxDecoration(
+                                gradient: segmentPanelExpanded
+                                    ? null
+                                    : LinearGradient(
+                                        begin: Alignment.topCenter,
+                                        end: Alignment.bottomCenter,
+                                        colors: [
+                                          Colors.black.withValues(alpha: 0.0),
+                                          Colors.black.withValues(alpha: 0.65),
+                                        ],
+                                      ),
+                                color: segmentPanelExpanded
+                                    ? cs.surfaceContainerHighest.withValues(
+                                        alpha: 0.95,
+                                      )
+                                    : null,
+                              ),
+                              child: MarqueeText(
+                                key: ValueKey('title_marquee_$sessionId'),
+                                text: title,
+                                pauseDuration: const Duration(seconds: 1),
+                                style: Theme.of(context).textTheme.labelLarge
+                                    ?.copyWith(
+                                      color: segmentPanelExpanded
+                                          ? sessionDetailForeground(
+                                              cs,
+                                              SessionDetailForegroundLevel
+                                                  .medium,
+                                              darkFallback: cs.onSurface
+                                                  .withValues(alpha: 0.8),
+                                            )
+                                          : Colors.white.withValues(
+                                              alpha: 0.85,
+                                            ),
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+              Expanded(child: RepaintBoundary(child: subtitle)),
+              Padding(
+                padding: EdgeInsets.symmetric(horizontal: padding.left),
+                child: RepaintBoundary(child: progress),
+              ),
+              Padding(
+                padding: EdgeInsets.symmetric(horizontal: padding.left),
+                child: transport,
+              ),
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 280),
+                switchInCurve: Curves.easeOutCubic,
+                switchOutCurve: Curves.easeInCubic,
+                transitionBuilder: (child, animation) {
+                  return SizeTransition(
+                    sizeFactor: animation,
+                    axisAlignment: -1.0,
+                    child: SlideTransition(
+                      position: Tween<Offset>(
+                        begin: const Offset(0.0, 0.2),
+                        end: Offset.zero,
+                      ).animate(animation),
+                      child: FadeTransition(opacity: animation, child: child),
+                    ),
+                  );
+                },
+                child: segmentPanelExpanded
+                    ? Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: ConstrainedBox(
+                          constraints: BoxConstraints(
+                            maxHeight: max(
+                              220.0,
+                              constraints.maxHeight -
+                                  coverHeight -
+                                  44.0 -
+                                  92.0 -
+                                  50.0,
+                            ),
+                          ),
+                          child: segmentPanelBuilder(
+                            const ValueKey('segments'),
+                          ),
+                        ),
+                      )
+                    : const SizedBox.shrink(key: ValueKey('segments_closed')),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}

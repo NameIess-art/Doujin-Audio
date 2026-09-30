@@ -1,38 +1,56 @@
-part of 'library_tab.dart';
+import 'library_removal_feedback.dart';
+import '../../player/presentation/playback_providers.dart';
+import '../../settings/presentation/settings_providers.dart';
+import 'dart:async';
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-bool _isSelectableLibraryNode(LibraryNode node) =>
+import '../../../app/localization/app_language_provider.dart';
+import '../../../app/state/app_runtime_providers.dart';
+import '../../../core/media/music_track.dart';
+import '../../../core/media/audio_detail.dart';
+import '../domain/audio_library_category.dart';
+import '../domain/library_node.dart';
+import '../../../core/media/path_matcher.dart';
+import '../../../core/widgets/app_feedback.dart';
+import '../../../core/widgets/app_transitions.dart';
+import '../../../core/widgets/swipe_reveal_card.dart';
+import '../../../core/widgets/top_page_header.dart';
+import 'dlsite_metadata_batch_page.dart';
+
+bool isSelectableLibraryNode(LibraryNode node) =>
     node is FolderNode && node.depth == 0 ||
     node is TrackNode && node.track.isSingle;
 
-String _selectionKeyForLibraryNode(LibraryNode node) =>
+String selectionKeyForLibraryNode(LibraryNode node) =>
     PathMatcher.normalize(node.path);
 
-List<_LibraryBatchSelection> _selectedLibraryNodeSelections(
+List<LibraryBatchSelection> selectedLibraryNodeSelections(
   List<LibraryNode> nodes,
   Set<String> selectedPaths,
 ) => nodes
-    .where(_isSelectableLibraryNode)
-    .where((node) => selectedPaths.contains(_selectionKeyForLibraryNode(node)))
-    .map(_LibraryBatchSelection.fromNode)
+    .where(isSelectableLibraryNode)
+    .where((node) => selectedPaths.contains(selectionKeyForLibraryNode(node)))
+    .map(LibraryBatchSelection.fromNode)
     .toList(growable: false);
 
-class _LibraryBatchSelection {
-  const _LibraryBatchSelection({
+class LibraryBatchSelection {
+  const LibraryBatchSelection({
     required this.path,
     required this.firstTrack,
     required this.target,
     required this.removalTarget,
   });
 
-  factory _LibraryBatchSelection.fromNode(LibraryNode node) {
+  factory LibraryBatchSelection.fromNode(LibraryNode node) {
     return switch (node) {
-      FolderNode() => _LibraryBatchSelection(
+      FolderNode() => LibraryBatchSelection(
         path: node.path,
         firstTrack: node.firstTrack,
         target: AudioDetailTarget.libraryRootFolder(node.path),
         removalTarget: LibraryRemovalTarget.folder,
       ),
-      TrackNode() => _LibraryBatchSelection(
+      TrackNode() => LibraryBatchSelection(
         path: node.path,
         firstTrack: node.track,
         target: AudioDetailTarget.singleAudioFile(node.track.path),
@@ -42,9 +60,9 @@ class _LibraryBatchSelection {
     };
   }
 
-  factory _LibraryBatchSelection.fromCategoryEntry(
+  factory LibraryBatchSelection.fromCategoryEntry(
     AudioLibraryCategoryEntry entry,
-  ) => _LibraryBatchSelection(
+  ) => LibraryBatchSelection(
     path: entry.path,
     firstTrack: entry.firstTrack,
     target: entry.target,
@@ -59,10 +77,10 @@ class _LibraryBatchSelection {
   final LibraryRemovalTarget removalTarget;
 }
 
-Future<void> _addLibraryBatchSelectionsToPlaylist({
+Future<void> addLibraryBatchSelectionsToPlaylist({
   required BuildContext context,
   required WidgetRef ref,
-  required List<_LibraryBatchSelection> selections,
+  required List<LibraryBatchSelection> selections,
   required VoidCallback exitSelectionMode,
 }) async {
   final playback = ref.read(playbackFacadeProvider);
@@ -90,10 +108,10 @@ Future<void> _addLibraryBatchSelectionsToPlaylist({
   );
 }
 
-Future<void> _completeLibraryBatchSelectionsMetadata({
+Future<void> completeLibraryBatchSelectionsMetadata({
   required BuildContext context,
   required WidgetRef ref,
-  required List<_LibraryBatchSelection> selections,
+  required List<LibraryBatchSelection> selections,
   required VoidCallback exitSelectionMode,
 }) async {
   final targets = selections.map((selection) => selection.target).toSet();
@@ -111,28 +129,27 @@ Future<void> _completeLibraryBatchSelectionsMetadata({
   );
 }
 
-Future<void> _toggleLibraryBatchSelectionsPinned({
+Future<void> toggleLibraryBatchSelectionsPinned({
   required BuildContext context,
   required WidgetRef ref,
-  required List<_LibraryBatchSelection> selections,
+  required List<LibraryBatchSelection> selections,
   required VoidCallback exitSelectionMode,
 }) async {
   if (selections.isEmpty) return;
   unawaited(
     AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection),
   );
-  final paths =
-      selections.map((selection) => selection.path).toList(growable: false);
+  final paths = selections
+      .map((selection) => selection.path)
+      .toList(growable: false);
   exitSelectionMode();
-  await ref
-      .read(settingsRepositoryProvider)
-      .toggleLibraryPathsPinned(paths);
+  await ref.read(settingsRepositoryProvider).toggleLibraryPathsPinned(paths);
 }
 
-Future<void> _removeLibraryBatchSelections({
+Future<void> removeLibraryBatchSelections({
   required BuildContext context,
   required WidgetRef ref,
-  required List<_LibraryBatchSelection> selections,
+  required List<LibraryBatchSelection> selections,
   required VoidCallback exitSelectionMode,
 }) async {
   exitSelectionMode();
@@ -146,206 +163,132 @@ Future<void> _removeLibraryBatchSelections({
   }
 }
 
-extension _LibraryTabUiHelpers on _LibraryTabState {
-  Widget _buildScanProgressCard(
-    AppLanguageProvider i18n,
-    LibraryScanUiState scanState,
-  ) {
-    final cs = Theme.of(context).colorScheme;
-    final total = scanState.total;
-    final progress = total != null && total > 0
-        ? (scanState.processed / total).clamp(0.0, 1.0)
-        : null;
-    final stageLabel = i18n.tr(switch (scanState.stage) {
-      FolderScanStage.preparing => 'scan_stage_preparing',
-      FolderScanStage.enumerating => 'scan_stage_enumerating',
-      FolderScanStage.merging => 'scan_stage_merging',
-      FolderScanStage.saving => 'scan_stage_saving',
-      FolderScanStage.loadingCovers => 'scan_stage_covers',
-      FolderScanStage.idle => 'scanning_title',
-    });
-    final tokens = AppDesignTokens.of(context);
-    return Semantics(
-      liveRegion: true,
-      container: true,
-      label: stageLabel,
-      child: Card(
-        key: const ValueKey('library_scan_progress_card'),
-        elevation: 4,
-        shadowColor: cs.shadow,
-        color: cs.surfaceContainerHigh,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(tokens.radiusControl),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Row(
-                children: [
-                  SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: cs.primary,
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 180),
-                      child: Text(
-                        stageLabel,
-                        key: ValueKey(scanState.stage),
-                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                  ),
-                  TextButton.icon(
-                    onPressed: () => _scanCoordinator.cancel(
-                      ref.read(libraryFacadeProvider),
-                    ),
-                    icon: Icon(Icons.close_rounded, size: 16, color: cs.error),
-                    label: Text(
-                      i18n.tr('scan_cancel'),
-                      style: TextStyle(color: cs.error, fontSize: 12),
-                    ),
-                  ),
-                ],
+class VisibleLibraryItem {
+  const VisibleLibraryItem({
+    required this.node,
+    required this.depth,
+    this.revealed = true,
+    this.animateInitialReveal = false,
+    this.isFolderError = false,
+    this.errorFolderPath,
+  });
+
+  final LibraryNode node;
+  final int depth;
+  final bool revealed;
+  final bool animateInitialReveal;
+  final bool isFolderError;
+  final String? errorFolderPath;
+}
+
+class LibraryBatchSelectionHeader extends StatelessWidget {
+  const LibraryBatchSelectionHeader({
+    super.key,
+    required this.keyPrefix,
+    required this.i18n,
+    required this.selectedCount,
+    required this.onAddToPlaylist,
+    required this.onCompleteMetadata,
+    this.onTogglePin,
+    this.isPinned = false,
+    required this.onRemove,
+    required this.onExit,
+  });
+
+  final String keyPrefix;
+  final AppLanguageProvider i18n;
+  final int selectedCount;
+  final VoidCallback? onAddToPlaylist;
+  final VoidCallback? onCompleteMetadata;
+  final VoidCallback? onTogglePin;
+  final bool isPinned;
+  final VoidCallback? onRemove;
+  final VoidCallback onExit;
+
+  @override
+  Widget build(BuildContext context) {
+    return TopPageHeader(
+      key: ValueKey<String>('${keyPrefix}_batch_selection_header'),
+      icon: Icons.library_music_rounded,
+      topCapsuleTitle: i18n.tr('multi_select'),
+      topCapsuleData: i18n.tr('selected_count', {
+        'count': selectedCount.toString(),
+      }),
+      titleWidget: const SizedBox.shrink(),
+      leading: HeaderActionPill(
+        children: [
+          AppHeaderActionTransition(
+            child: IconButton(
+              key: ValueKey<String>('${keyPrefix}_batch_add_button'),
+              onPressed: onAddToPlaylist,
+              icon: const Icon(Icons.playlist_add_rounded),
+              tooltip: i18n.tr('batch_add_to_playlist'),
+              iconSize: 20,
+              padding: EdgeInsets.zero,
+              constraints: HeaderActionPill.buttonConstraints,
+            ),
+          ),
+          AppHeaderActionTransition(
+            delayIndex: 1,
+            child: IconButton(
+              key: ValueKey<String>(
+                '${keyPrefix}_batch_metadata_action_button',
               ),
-              if (scanState.source.isNotEmpty) ...[
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Icon(
-                      Icons.folder_open_rounded,
-                      size: 14,
-                      color: cs.onSurfaceVariant,
-                    ),
-                    const SizedBox(width: 6),
-                    Flexible(
-                      child: Text(
-                        scanState.source,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: cs.onSurfaceVariant,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-              const SizedBox(height: 8),
-              LinearProgressIndicator(
-                value: progress,
-                minHeight: 3,
-                borderRadius: BorderRadius.circular(99),
-              ),
-              const SizedBox(height: 6),
-              Align(
-                alignment: AlignmentDirectional.centerStart,
-                child: Text(
-                  total == null
-                      ? i18n.tr('scan_processed', {
-                          'processed': scanState.processed,
-                        })
-                      : i18n.tr('scan_processed_total', {
-                          'processed': scanState.processed,
-                          'total': total,
-                        }),
-                  style: Theme.of(
-                    context,
-                  ).textTheme.labelSmall?.copyWith(color: cs.onSurfaceVariant),
-                ),
-              ),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  _ScanCountChip(
-                    label: i18n.tr('scan_found'),
-                    count: scanState.foundCount,
-                    color: cs.primary,
-                  ),
-                  const SizedBox(width: 8),
-                  _ScanCountChip(
-                    label: i18n.tr('scan_duplicate'),
-                    count: scanState.duplicateCount,
-                    color: cs.tertiary,
-                  ),
-                  const SizedBox(width: 8),
-                  _ScanCountChip(
-                    label: i18n.tr('scan_failure'),
-                    count: scanState.failureCount,
-                    color: cs.error,
-                  ),
-                ],
-              ),
-            ],
+              onPressed: onCompleteMetadata,
+              icon: const Icon(Icons.library_add_check_rounded),
+              tooltip: i18n.tr('batch_metadata'),
+              iconSize: 20,
+              padding: EdgeInsets.zero,
+              constraints: HeaderActionPill.buttonConstraints,
+            ),
+          ),
+          AppHeaderActionTransition(
+            delayIndex: 2,
+            child: IconButton(
+              key: ValueKey<String>('${keyPrefix}_batch_pin_button'),
+              onPressed: onTogglePin,
+              icon: isPinned
+                  ? const PushPinOffIcon()
+                  : const Icon(Icons.push_pin_rounded),
+              tooltip: i18n.tr(isPinned ? 'unpin_from_top' : 'pin_to_top'),
+              iconSize: 20,
+              padding: EdgeInsets.zero,
+              constraints: HeaderActionPill.buttonConstraints,
+            ),
+          ),
+          AppHeaderActionTransition(
+            delayIndex: 3,
+            child: IconButton(
+              key: ValueKey<String>('${keyPrefix}_batch_remove_button'),
+              onPressed: onRemove,
+              icon: const Icon(Icons.delete_outline_rounded),
+              tooltip: i18n.tr('remove'),
+              iconSize: 20,
+              padding: EdgeInsets.zero,
+              constraints: HeaderActionPill.buttonConstraints,
+            ),
+          ),
+        ],
+      ),
+      trailing: AppHeaderLeadingTransition(
+        child: HeaderFloatingButton(
+          child: IconButton(
+            key: ValueKey<String>('${keyPrefix}_exit_selection_button'),
+            onPressed: onExit,
+            icon: const Icon(Icons.close_rounded),
+            tooltip: i18n.tr('cancel'),
           ),
         ),
       ),
-    );
+    ).withAppHeaderTransition();
   }
 }
 
-Future<void> downloadAudioTargetFromAsmr({
-  required BuildContext context,
-  required WidgetRef ref,
-  required AudioDetailTarget target,
-}) async {
-  final i18n = ProviderScope.containerOf(
+void showLibrarySessionCreatedSnack(BuildContext context, String message) {
+  showAppSnackBar(
     context,
-    listen: false,
-  ).read(appLanguageProviderInstanceProvider);
-
-  var detail = ref.read(libraryFacadeProvider).resolvedAudioDetail(target);
-  var rjCode =
-      (detail != null ? AudioDetail.findRjCodeInText(detail.rjCode) : null) ??
-      AudioDetail.findRjCodeInText(
-        PathDisplay.folderName(target.targetPath),
-      ) ??
-      AudioDetail.findRjCodeInText(target.targetPath) ??
-      (detail != null ? AudioDetail.findRjCodeInText(detail.workTitle) : null);
-
-  if (rjCode == null) {
-    try {
-      final loaded =
-          await ref.read(libraryFacadeProvider).loadAudioDetail(target);
-      detail = loaded.detail;
-      rjCode = AudioDetail.findRjCodeInText(detail.rjCode) ??
-          AudioDetail.findRjCodeInText(detail.workTitle);
-    } catch (_) {
-      // Best-effort load.
-    }
-  }
-
-  if (!context.mounted) return;
-
-  if (rjCode == null || rjCode.isEmpty) {
-    showAppSnackBar(
-      context,
-      i18n.tr('audio_detail_missing_rj_for_download'),
-      tone: AppFeedbackTone.warning,
-    );
-    return;
-  }
-
-  final effectiveRjCode = rjCode;
-  final destination = resolveWorkFolderDestination(target);
-
-  await Navigator.of(context).push<void>(
-    buildAppPageRoute<void>(
-      context: context,
-      child: AsmrDownloadPage(
-        initialRjCode: effectiveRjCode,
-        customDestinationRoot: destination.destinationRoot,
-        customWorkFolderName: destination.workFolderName,
-      ),
-    ),
+    message,
+    tone: AppFeedbackTone.success,
+    icon: Icons.queue_music_rounded,
   );
 }

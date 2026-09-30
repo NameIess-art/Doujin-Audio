@@ -329,6 +329,36 @@ void main() {
     );
   });
 
+  testWidgets('six metadata lines fit the fixed work card info block', (
+    tester,
+  ) async {
+    final lines = buildLibraryLikeInfoLines(
+      metadata: LibraryLikeInfoMetadata(
+        voiceActors: const ['Voice'],
+        circleName: 'Circle',
+        tags: List.generate(30, (index) => 'A long tag $index'),
+        releaseDate: DateTime(2026, 6, 9),
+        rating: 4.5,
+      ),
+      voiceActorLabel: 'Voice',
+      circleLabel: 'Circle',
+      tagsLabel: 'Tags',
+      releaseDateLabel: 'Release',
+      ratingLabel: 'Rating',
+    );
+    await tester.pumpWidget(
+      _buildSurface(
+        _buildFeaturedCard(
+          title: 'Work',
+          lines: lines,
+          coverKey: const ValueKey('six-line-cover'),
+        ),
+      ),
+    );
+    expect(lines.fold<int>(0, (total, line) => total + line.lines), 6);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('release date and rating share the final card info row', (
     tester,
   ) async {

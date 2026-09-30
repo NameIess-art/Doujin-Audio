@@ -1,10 +1,7 @@
 import 'dart:async';
 import 'dart:collection';
 
-import 'package:flutter/foundation.dart';
-
 import '../../../core/app_language.dart';
-import '../../../core/logging/app_log_service.dart';
 import '../../../core/media/audio_detail.dart';
 import '../../../core/media/dlsite_metadata.dart';
 import '../../../core/media/music_track.dart';
@@ -20,6 +17,7 @@ import 'dlsite_metadata_service.dart';
 import 'library_snapshot_cache_service.dart';
 import 'library_startup_maintenance_coordinator.dart';
 import 'library_catalog.dart';
+import 'library_catalog_write_coordinator.dart';
 import 'library_entry_editor_service.dart';
 import 'library_scan_models.dart';
 import 'library_metadata_coordinator.dart';
@@ -117,6 +115,15 @@ final class LibraryFacade implements LibraryCatalog {
         repository: databaseRepository,
         service: _service,
       );
+  late final LibraryCatalogWriteCoordinator _catalogWrites =
+      LibraryCatalogWriteCoordinator(
+        service: _service,
+        databaseRepository: databaseRepository,
+        snapshotCacheService: snapshotCacheService,
+        persistenceCoordinator: _persistenceCoordinator,
+        coverArtwork: () => _coverArtworkCacheService,
+        syncState: _syncStateSlice,
+      );
   late final LibraryMetadataCoordinator _metadataCoordinator =
       LibraryMetadataCoordinator(
         databaseRepository: databaseRepository,
@@ -138,12 +145,8 @@ final class LibraryFacade implements LibraryCatalog {
         entryEditorService: entryEditorService,
         persistenceCoordinator: _persistenceCoordinator,
         coverArtwork: () => coverArtworkCacheService,
-        isScanning: () => isScanning,
+        catalogWrites: _catalogWrites,
         cancelScan: cancelScan,
-        beginLibraryBatch: beginLibraryBatch,
-        endLibraryBatch: endLibraryBatch,
-        removeTracksMatching: removeTracksMatching,
-        addOrReplaceTracks: addOrReplaceTracks,
         deleteAudioDetail: _metadataCoordinator.deleteAudioDetail,
         syncState: _syncStateSlice,
       );
@@ -151,22 +154,18 @@ final class LibraryFacade implements LibraryCatalog {
   bool _disposed = false;
   int _scanOperationGeneration = 0;
   bool _interactionPaused = false;
-  void Function(List<String> removedPaths)? _trackRemovalHandler;
   void Function()? _coverChangeHandler;
   late final LibraryStartupMaintenanceCoordinator
-  _startupMaintenanceCoordinator = LibraryStartupMaintenanceCoordinator(
-    waitForUiIdle: _waitForContinuousUiIdle,
-    cleanupOrphanedImports: (retainedPaths) =>
-        AppCacheService.cleanupOrphanedPersistentImports(retainedPaths),
-    migrateCoverCache: _migrateCoverCacheOnce,
-    ensureEntries: _ensureEntriesForLoadedTracks,
-    migrateAudioDetails: _importAudioDetailDocumentsOnce,
-    backfillDurations: _metadataCoordinator.backfillMissingDurations,
-  );
-
-  static const _audioDetailDocumentImportKey =
-      'audio_detail_document_read_only_import_v2';
-  static const _coverCacheMigrationKey = 'cover_artwork_cache_migration_v1';
+  _startupMaintenanceCoordinator =
+      LibraryStartupMaintenanceCoordinator.forLibrary(
+        waitForUiIdle: _waitForContinuousUiIdle,
+        cleanupOrphanedImports: (retainedPaths) =>
+            AppCacheService.cleanupOrphanedPersistentImports(retainedPaths),
+        libraryService: _service,
+        repository: databaseRepository,
+        metadataCoordinator: _metadataCoordinator,
+        coverArtwork: () => coverArtworkCacheService,
+      );
 
   LibraryState get state => _service.slice.state;
   Stream<LibraryState> get states => _service.slice.stream;
@@ -584,41 +583,19 @@ final class LibraryFacade implements LibraryCatalog {
       generation == _service.scanGeneration;
 
   @override
-  void addWatchedFolder(String folderPath, {bool notify = true}) {
-    final changed = _service.addWatchedFolder(
-      folderPath,
-      onPersist: () => unawaited(_persistenceCoordinator.saveWatchedFolders()),
-    );
-    if (changed && notify) _syncStateSlice();
-  }
+  void addWatchedFolder(String folderPath, {bool notify = true}) =>
+      _catalogWrites.addWatchedFolder(folderPath, notify: notify);
 
   @override
-  void addWatchedLibrary(String folderPath, {bool notify = true}) {
-    final changed = _service.addWatchedLibrary(
-      folderPath,
-      onPersist: () =>
-          unawaited(_persistenceCoordinator.saveWatchedLibraries()),
-    );
-    if (changed && notify) _syncStateSlice();
-  }
+  void addWatchedLibrary(String folderPath, {bool notify = true}) =>
+      _catalogWrites.addWatchedLibrary(folderPath, notify: notify);
 
   @override
-  void removeWatchedFolder(String folderPath, {bool notify = true}) {
-    final changed = _service.removeWatchedFolder(
-      folderPath,
-      onPersist: () => unawaited(_persistenceCoordinator.saveWatchedFolders()),
-    );
-    if (changed && notify) _syncStateSlice();
-  }
+  void removeWatchedFolder(String folderPath, {bool notify = true}) =>
+      _catalogWrites.removeWatchedFolder(folderPath, notify: notify);
 
-  void removeWatchedLibrary(String folderPath, {bool notify = true}) {
-    final changed = _service.removeWatchedLibrary(
-      folderPath,
-      onPersist: () =>
-          unawaited(_persistenceCoordinator.saveWatchedLibraries()),
-    );
-    if (changed && notify) _syncStateSlice();
-  }
+  void removeWatchedLibrary(String folderPath, {bool notify = true}) =>
+      _catalogWrites.removeWatchedLibrary(folderPath, notify: notify);
 
   void configurePersistence({required bool enabled}) {
     _persistenceCoordinator.configure(enabled: enabled);
@@ -627,7 +604,7 @@ final class LibraryFacade implements LibraryCatalog {
   void attachTrackRemovalHandler(
     void Function(List<String> removedPaths) handler,
   ) {
-    _trackRemovalHandler ??= handler;
+    _catalogWrites.attachTrackRemovalHandler(handler);
   }
 
   void attachCoverChangeHandler(void Function() handler) {
@@ -635,7 +612,7 @@ final class LibraryFacade implements LibraryCatalog {
   }
 
   void detachRuntimeHandlers() {
-    _trackRemovalHandler = null;
+    _catalogWrites.detachRuntimeHandlers();
     _coverChangeHandler = null;
   }
 
@@ -647,59 +624,24 @@ final class LibraryFacade implements LibraryCatalog {
     bool persist = true,
     LibraryExclusionMatcher? exclusionMatcher,
     LibraryEntrySnapshot? entrySnapshot,
-  }) {
-    var entries = _service.buildLibraryEntries(
-      libraryPath,
-      tracks,
-      folderPaths: folderPaths,
-      exclusionMatcher: exclusionMatcher,
-    );
-    if (entrySnapshot != null) {
-      entries = entries
-          .where(entrySnapshot.entryNeedsRefresh)
-          .toList(growable: false);
-    }
-    if (entries.isEmpty) return;
-    _service.replaceLibraryEntries(entries);
-    entrySnapshot?.remember(entries);
-    _queueOrPersistLibraryEntries(entries, persist: persist);
-  }
+  }) => _catalogWrites.recordLibraryEntriesForTracks(
+    libraryPath,
+    tracks,
+    folderPaths: folderPaths,
+    persist: persist,
+    exclusionMatcher: exclusionMatcher,
+    entrySnapshot: entrySnapshot,
+  );
 
-  void recordEntriesForTracks(List<MusicTrack> tracks, {bool persist = true}) {
-    final entries = <LibraryEntry>[];
-    final tracksByLibrary = <String, List<MusicTrack>>{};
-    for (final track in tracks) {
-      final libraryPath = _service.libraryPathForTrack(track);
-      if (libraryPath == null || libraryPath.isEmpty) continue;
-      tracksByLibrary.putIfAbsent(libraryPath, () => <MusicTrack>[]).add(track);
-    }
-    for (final entry in tracksByLibrary.entries) {
-      entries.addAll(_service.buildLibraryEntries(entry.key, entry.value));
-    }
-    if (entries.isEmpty) return;
-    _service.replaceLibraryEntries(entries);
-    _queueOrPersistLibraryEntries(entries, persist: persist);
-  }
+  void recordEntriesForTracks(List<MusicTrack> tracks, {bool persist = true}) =>
+      _catalogWrites.recordEntriesForTracks(tracks, persist: persist);
 
   @override
   void addTracks(
     List<MusicTrack> tracks, {
     bool notify = true,
     bool persist = true,
-  }) {
-    if (tracks.isEmpty) return;
-    final mutation = _service.addTracks(tracks, persist: persist);
-    if (mutation.tracks.isEmpty) return;
-    recordEntriesForTracks(mutation.tracks, persist: persist);
-    if (mutation.batched) return;
-    _markLibraryStructureChanged();
-    if (persist && _persistenceCoordinator.enabled) {
-      unawaited(databaseRepository.upsertTracks(mutation.tracks));
-      if (mutation.didChangeGroupOrder) {
-        unawaited(_persistenceCoordinator.saveGroupOrder());
-      }
-    }
-  }
+  }) => _catalogWrites.addTracks(tracks, notify: notify, persist: persist);
 
   @override
   void addOrReplaceTracks(
@@ -707,108 +649,44 @@ final class LibraryFacade implements LibraryCatalog {
     bool notify = true,
     bool persist = true,
     bool mergeExistingState = true,
-  }) {
-    if (tracks.isEmpty) return;
-    final mutation = _service.addOrReplaceTracks(
-      tracks,
-      persist: persist,
-      mergeExistingState: mergeExistingState,
-    );
-    if (mutation.tracks.isEmpty) return;
-    recordEntriesForTracks(mutation.tracks, persist: persist);
-    if (mutation.batched) return;
-    _markLibraryStructureChanged();
-    if (persist && _persistenceCoordinator.enabled) {
-      unawaited(databaseRepository.upsertTracks(mutation.tracks));
-      if (mutation.didChangeGroupOrder || mutation.didReplaceGroup) {
-        unawaited(_persistenceCoordinator.saveGroupOrder());
-      }
-    }
-  }
-
-  void _markLibraryStructureChanged() {
-    _coverArtworkCacheService?.invalidateAll();
-    snapshotCacheService.markStructureChanged();
-    _syncStateSlice();
-  }
+  }) => _catalogWrites.addOrReplaceTracks(
+    tracks,
+    notify: notify,
+    persist: persist,
+    mergeExistingState: mergeExistingState,
+  );
 
   List<String> removeTracksMatching(
     bool Function(MusicTrack track) test, {
     bool persist = true,
-  }) {
-    final mutation = _service.removeTracksWhere(test);
-    final removedPaths = mutation.tracks
-        .map((track) => track.path)
-        .toList(growable: false);
-    if (removedPaths.isEmpty) return const <String>[];
-    _trackRemovalHandler?.call(removedPaths);
-    if (persist && _persistenceCoordinator.enabled) {
-      unawaited(databaseRepository.deleteTracks(removedPaths));
-    }
-    if (!mutation.batched) {
-      _markLibraryStructureChanged();
-    }
-    return removedPaths;
-  }
+  }) => _catalogWrites.removeTracksMatching(test, persist: persist);
 
   @override
-  void removeTracksByPath(Iterable<String> trackPaths) {
-    final paths = trackPaths.toSet();
-    if (paths.isEmpty) return;
-    removeTracksMatching((track) => paths.contains(track.path));
-  }
+  void removeTracksByPath(Iterable<String> trackPaths) =>
+      _catalogWrites.removeTracksByPath(trackPaths);
 
   @override
   void removeTracksDeletedFromFolder(
     String folderPath,
     Set<String> scannedPaths,
-  ) {
-    final normalizedFolder = PathMatcher.normalize(folderPath);
-    final scannedPathIndex = PathMembershipIndex(scannedPaths);
-    removeTracksMatching((track) {
-      if (!PathMatcher.isWithinOrEqualNormalized(
-        track.path,
-        normalizedFolder,
-      )) {
-        return false;
-      }
-      return !scannedPathIndex.containsEquivalent(track.path);
-    });
-  }
+  ) => _catalogWrites.removeTracksDeletedFromFolder(folderPath, scannedPaths);
 
   @override
   void removeLibraryEntriesDeletedFromFolder(
     String libraryPath,
     String folderPath,
     Set<String> retainedPaths,
-  ) {
-    final removedPaths = _service.removeLibraryEntriesMissingFromFolderScan(
-      libraryPath,
-      folderPath,
-      retainedPaths,
-    );
-    if (removedPaths.isNotEmpty && _persistenceCoordinator.enabled) {
-      unawaited(
-        databaseRepository.deleteLibraryEntries(libraryPath, removedPaths),
-      );
-    }
-  }
+  ) => _catalogWrites.removeLibraryEntriesDeletedFromFolder(
+    libraryPath,
+    folderPath,
+    retainedPaths,
+  );
 
   @override
   void removeLibraryEntriesByPaths(
     String libraryPath,
     Iterable<String> entryPaths,
-  ) {
-    final removedPaths = _service.removeLibraryEntriesByPaths(
-      libraryPath,
-      entryPaths,
-    );
-    if (removedPaths.isNotEmpty && _persistenceCoordinator.enabled) {
-      unawaited(
-        databaseRepository.deleteLibraryEntries(libraryPath, removedPaths),
-      );
-    }
-  }
+  ) => _catalogWrites.removeLibraryEntriesByPaths(libraryPath, entryPaths);
 
   @override
   void clearLibraryExclusions(String libraryPath) =>
@@ -866,17 +744,11 @@ final class LibraryFacade implements LibraryCatalog {
   );
 
   @override
-  void beginLibraryBatch() {
-    if (_service.libraryBatchDepth == 0) {
-      _service.libraryDerivedGeneration++;
-    }
-    _service.libraryBatchDepth++;
-  }
+  void beginLibraryBatch() => _catalogWrites.beginLibraryBatch();
 
   @override
-  void beginStagedLibraryRefresh() {
-    beginLibraryBatch();
-  }
+  void beginStagedLibraryRefresh() =>
+      _catalogWrites.beginStagedLibraryRefresh();
 
   @override
   int applyStagedLibraryRefreshChunk({
@@ -889,146 +761,32 @@ final class LibraryFacade implements LibraryCatalog {
     Iterable<String> removeTrackPaths = const <String>[],
     Iterable<String> removeEntryPaths = const <String>[],
     bool persist = true,
-  }) {
-    for (final folderPath in removeWatchedFolders) {
-      removeWatchedFolder(folderPath, notify: false);
-    }
-    if (tracks.isNotEmpty || folderPaths.isNotEmpty) {
-      recordLibraryEntriesForTracks(
-        libraryRoot,
-        tracks,
-        folderPaths: folderPaths,
-        persist: persist,
-      );
-    }
-    for (final folderPath in addWatchedFolders) {
-      addWatchedFolder(folderPath, notify: false);
-    }
-    final beforeCount = _service.library.length;
-    if (tracks.isNotEmpty) {
-      addOrReplaceTracks(tracks, notify: false, persist: persist);
-    }
-    final tracksToRemove = removeTrackPaths.toList(growable: false);
-    if (tracksToRemove.isNotEmpty) removeTracksByPath(tracksToRemove);
-    final entriesToRemove = removeEntryPaths.toList(growable: false);
-    if (entriesToRemove.isNotEmpty) {
-      removeLibraryEntriesByPaths(libraryRoot, entriesToRemove);
-    }
-    return _service.library.length - beforeCount;
-  }
+  }) => _catalogWrites.applyStagedLibraryRefreshChunk(
+    sourceFolderPath: sourceFolderPath,
+    libraryRoot: libraryRoot,
+    tracks: tracks,
+    folderPaths: folderPaths,
+    removeWatchedFolders: removeWatchedFolders,
+    addWatchedFolders: addWatchedFolders,
+    removeTrackPaths: removeTrackPaths,
+    removeEntryPaths: removeEntryPaths,
+    persist: persist,
+  );
 
   @override
-  Future<void> finishStagedLibraryRefresh({bool waitForPersistence = false}) {
-    return endLibraryBatch(waitForPersistence: waitForPersistence);
-  }
+  Future<void> finishStagedLibraryRefresh({bool waitForPersistence = false}) =>
+      _catalogWrites.finishStagedLibraryRefresh(
+        waitForPersistence: waitForPersistence,
+      );
 
   @override
   Future<void> endLibraryBatch({
     bool notify = true,
     bool waitForPersistence = true,
-  }) async {
-    if (_service.libraryBatchDepth <= 0) return;
-    _service.libraryBatchDepth--;
-    if (_service.libraryBatchDepth > 0) return;
-
-    final didChangeLibrary = _service.libraryBatchChanged;
-    final entriesToPersist = List<LibraryEntry>.from(
-      _service.libraryBatchPersistEntriesByKey.values,
-    );
-    if (!didChangeLibrary && entriesToPersist.isEmpty) return;
-    final tracksToPersist = List<MusicTrack>.from(
-      _service.libraryBatchPersistTracks,
-    );
-    final didChangeGroupOrder = _service.libraryBatchChangedGroupOrder;
-    _service
-      ..libraryBatchChanged = false
-      ..libraryBatchChangedGroupOrder = false
-      ..libraryBatchPersistTracks.clear()
-      ..libraryBatchPersistEntriesByKey.clear();
-
-    if (didChangeLibrary) {
-      _coverArtworkCacheService?.invalidateAll();
-      _service.syncGroupOrderFromLibrary();
-      final derivedGeneration = ++_service.libraryDerivedGeneration;
-      final derivedSnapshot = await AppLogService.measureAsync(
-        'library_derived_snapshot_build',
-        () => compute(
-          buildLibraryDerivedSnapshot,
-          LibraryDerivedSnapshotPayload(
-            tracks: List<MusicTrack>.unmodifiable(_service.library),
-            watchedFolders: List<String>.unmodifiable(_service.watchedFolders),
-            watchedLibraries: List<String>.unmodifiable(
-              _service.watchedLibraries,
-            ),
-          ),
-        ),
-        details: <String, Object?>{'tracks': _service.library.length},
-      );
-      if (derivedGeneration == _service.libraryDerivedGeneration) {
-        _service
-          ..library = List<MusicTrack>.of(derivedSnapshot.library)
-          ..libraryByPath = Map<String, MusicTrack>.of(
-            derivedSnapshot.libraryByPath,
-          )
-          ..libraryIndexByPath = Map<String, int>.of(
-            derivedSnapshot.libraryIndexByPath,
-          )
-          ..tracksByGroup = Map<String, List<MusicTrack>>.of(
-            derivedSnapshot.tracksByGroup,
-          )
-          ..sortedLibraryTracks = derivedSnapshot.sortedLibraryTracks
-          ..sortedLibraryTrackPaths = derivedSnapshot.sortedLibraryTrackPaths
-          ..markStructureChanged();
-        snapshotCacheService
-          ..markStructureChanged()
-          ..adoptCardSnapshot(derivedSnapshot.cardSnapshot);
-        _syncStateSlice();
-      }
-    }
-
-    final persistenceTasks = <Future<void>>[];
-    if (_persistenceCoordinator.enabled) {
-      if (tracksToPersist.isNotEmpty) {
-        persistenceTasks.add(databaseRepository.upsertTracks(tracksToPersist));
-      }
-      if (entriesToPersist.isNotEmpty) {
-        persistenceTasks.add(
-          databaseRepository.upsertLibraryEntries(entriesToPersist),
-        );
-      }
-      if (didChangeLibrary && didChangeGroupOrder) {
-        persistenceTasks.add(_persistenceCoordinator.saveGroupOrder());
-      }
-    }
-    if (waitForPersistence) {
-      await Future.wait(persistenceTasks);
-    } else {
-      for (final task in persistenceTasks) {
-        unawaited(task);
-      }
-    }
-  }
-
-  void _queueOrPersistLibraryEntries(
-    List<LibraryEntry> entries, {
-    required bool persist,
-  }) {
-    if (entries.isEmpty || !persist || !_persistenceCoordinator.enabled) {
-      return;
-    }
-    if (_service.libraryBatchDepth > 0) {
-      for (final entry in entries) {
-        final key = <String>[
-          PathMatcher.normalize(entry.libraryPath),
-          PathMatcher.normalize(entry.path),
-          entry.kind.dbValue,
-        ].join('\x1F');
-        _service.libraryBatchPersistEntriesByKey[key] = entry;
-      }
-      return;
-    }
-    unawaited(databaseRepository.upsertLibraryEntries(entries));
-  }
+  }) => _catalogWrites.endLibraryBatch(
+    notify: notify,
+    waitForPersistence: waitForPersistence,
+  );
 
   @override
   int tryBeginScan({required String source, bool background = false}) {
@@ -1220,59 +978,6 @@ final class LibraryFacade implements LibraryCatalog {
       await Future<void>.delayed(const Duration(milliseconds: 160));
     }
     return false;
-  }
-
-  Future<void> _ensureEntriesForLoadedTracks(int epoch) async {
-    if (_disposed || !_startupMaintenanceCoordinator.isCurrent(epoch)) return;
-    final knownLibraries = <String>{
-      ..._service.watchedLibraries,
-      ..._service.watchedFolders,
-    };
-    if (knownLibraries.isEmpty || _service.library.isEmpty) return;
-    final entriesToPersist = <LibraryEntry>[];
-    for (final libraryPath in knownLibraries) {
-      if (_service.hasLibraryEntriesForLibrary(libraryPath)) continue;
-      final tracks = _service.library
-          .where(
-            (track) =>
-                PathMatcher.isWithinOrEqual(track.path, libraryPath) ||
-                PathMatcher.isWithinOrEqual(track.groupKey, libraryPath),
-          )
-          .toList(growable: false);
-      if (tracks.isEmpty) continue;
-      entriesToPersist.addAll(
-        _service.buildLibraryEntries(libraryPath, tracks),
-      );
-    }
-    if (entriesToPersist.isEmpty) return;
-    if (_disposed || !_startupMaintenanceCoordinator.isCurrent(epoch)) return;
-    _service.replaceLibraryEntries(entriesToPersist);
-    await databaseRepository.upsertLibraryEntries(entriesToPersist);
-  }
-
-  Future<void> _importAudioDetailDocumentsOnce(int epoch) async {
-    if (_disposed || !_startupMaintenanceCoordinator.isCurrent(epoch)) return;
-    final completed = await databaseRepository.loadAppSetting(
-      _audioDetailDocumentImportKey,
-    );
-    if (completed == '1') return;
-    await importAudioDetailBackups();
-    if (_disposed || !_startupMaintenanceCoordinator.isCurrent(epoch)) return;
-    await databaseRepository.saveAppSetting(_audioDetailDocumentImportKey, '1');
-  }
-
-  Future<void> _migrateCoverCacheOnce(int epoch) async {
-    if (_disposed || !_startupMaintenanceCoordinator.isCurrent(epoch)) return;
-    final completed = await databaseRepository.loadAppSetting(
-      _coverCacheMigrationKey,
-    );
-    if (completed == '1') return;
-    await coverArtworkCacheService.migrateLegacyCaches(
-      shouldCancel: () =>
-          _disposed || !_startupMaintenanceCoordinator.isCurrent(epoch),
-    );
-    if (_disposed || !_startupMaintenanceCoordinator.isCurrent(epoch)) return;
-    await databaseRepository.saveAppSetting(_coverCacheMigrationKey, '1');
   }
 
   void _syncStateSlice({bool? isInitialized}) {

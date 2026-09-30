@@ -1,13 +1,45 @@
-part of 'library_tab.dart';
+import 'library_providers.dart';
+import '../../settings/presentation/settings_providers.dart';
+import 'dart:async';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-class _LibrarySearchPage extends ConsumerStatefulWidget {
-  const _LibrarySearchPage();
+import '../../../app/localization/app_language_provider.dart';
+import '../../../app/state/app_runtime_providers.dart';
+import '../../../app/presentation/app_presentation_providers.dart';
+import '../../../core/media/search_query_utils.dart';
+import '../application/library_facade.dart';
+import '../domain/audio_library_category.dart';
+import '../domain/library_node.dart';
+import '../../../core/media/path_matcher.dart';
+import '../../../core/logging/app_log_service.dart';
+import '../../../core/ui/ui_interaction_coordinator.dart';
+import '../../../core/ui/visual_settings_providers.dart';
+import '../../../core/widgets/app_feedback.dart';
+import '../../../core/widgets/app_transitions.dart';
+import '../../../core/widgets/app_search_page.dart';
+import '../../../core/widgets/library_like_cards.dart';
+import '../../../core/widgets/operation_feedback.dart';
+import '../../../core/widgets/search_highlight.dart';
+import '../../../app/presentation/screen_view_models.dart';
+import '../../../app/theme/app_styles.dart';
+
+import 'library_tab_ui_helpers.dart';
+import 'library_tab_empty_scan.dart';
+import 'library_tab_tree_widgets.dart';
+import 'library_tab_category_widgets.dart';
+
+final _categoryTermSplitRegex = RegExp(r'[\s,，;；|]+');
+
+class LibrarySearchPage extends ConsumerStatefulWidget {
+  const LibrarySearchPage({super.key});
 
   @override
-  ConsumerState<_LibrarySearchPage> createState() => _LibrarySearchPageState();
+  ConsumerState<LibrarySearchPage> createState() => _LibrarySearchPageState();
 }
 
-class _LibrarySearchPageState extends ConsumerState<_LibrarySearchPage> {
+class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
   static const _searchCommitKey = 'library_search_page';
 
   final TextEditingController _controller = TextEditingController();
@@ -33,7 +65,7 @@ class _LibrarySearchPageState extends ConsumerState<_LibrarySearchPage> {
   Object? _visibleSearchError;
   String? _visibleSearchErrorKey;
   final Set<String> _expandedSearchFolderPaths = <String>{};
-  List<_VisibleLibraryItem> _visibleSearchItems = const <_VisibleLibraryItem>[];
+  List<VisibleLibraryItem> _visibleSearchItems = const <VisibleLibraryItem>[];
   List<LibraryNode>? _visibleSearchItemsSource;
   int _visibleSearchItemsVersion = 0;
   int _visibleSearchItemsCacheVersion = -1;
@@ -132,7 +164,7 @@ class _LibrarySearchPageState extends ConsumerState<_LibrarySearchPage> {
   }
 
   void _enterSelectionMode(LibraryNode node) {
-    if (!_isSelectableLibraryNode(node)) return;
+    if (!isSelectableLibraryNode(node)) return;
     AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
     setState(() {
       _isSelectionMode = true;
@@ -140,7 +172,7 @@ class _LibrarySearchPageState extends ConsumerState<_LibrarySearchPage> {
       _visibleSearchItemsVersion++;
       _selectedLibraryPaths
         ..clear()
-        ..add(_selectionKeyForLibraryNode(node));
+        ..add(selectionKeyForLibraryNode(node));
     });
   }
 
@@ -160,8 +192,8 @@ class _LibrarySearchPageState extends ConsumerState<_LibrarySearchPage> {
   }
 
   void _toggleLibrarySelection(LibraryNode node) {
-    if (!_isSelectableLibraryNode(node)) return;
-    _toggleSelectionKey(_selectionKeyForLibraryNode(node));
+    if (!isSelectableLibraryNode(node)) return;
+    _toggleSelectionKey(selectionKeyForLibraryNode(node));
   }
 
   void _toggleCategorySelection(AudioLibraryCategoryEntry entry) {
@@ -178,19 +210,19 @@ class _LibrarySearchPageState extends ConsumerState<_LibrarySearchPage> {
     });
   }
 
-  List<_LibraryBatchSelection> _selectedCategorySelections(
+  List<LibraryBatchSelection> _selectedCategorySelections(
     AudioLibraryCategorySnapshot? snapshot,
   ) => (snapshot?.entries ?? const <AudioLibraryCategoryEntry>[])
       .where(
         (entry) =>
             _selectedLibraryPaths.contains(PathMatcher.normalize(entry.path)),
       )
-      .map(_LibraryBatchSelection.fromCategoryEntry)
+      .map(LibraryBatchSelection.fromCategoryEntry)
       .toList(growable: false);
 
-  Future<List<_LibraryBatchSelection>> _currentSelections() async {
+  Future<List<LibraryBatchSelection>> _currentSelections() async {
     if (_categoryType == AudioLibraryCategoryType.all) {
-      return _selectedLibraryNodeSelections(
+      return selectedLibraryNodeSelections(
         _visibleSearchResult?.tree ?? const <LibraryNode>[],
         _selectedLibraryPaths,
       );
@@ -204,7 +236,7 @@ class _LibrarySearchPageState extends ConsumerState<_LibrarySearchPage> {
   Future<void> _addCurrentSelectionsToPlaylist() async {
     final selections = await _currentSelections();
     if (!mounted) return;
-    await _addLibraryBatchSelectionsToPlaylist(
+    await addLibraryBatchSelectionsToPlaylist(
       context: context,
       ref: ref,
       selections: selections,
@@ -215,7 +247,7 @@ class _LibrarySearchPageState extends ConsumerState<_LibrarySearchPage> {
   Future<void> _completeCurrentSelectionsMetadata() async {
     final selections = await _currentSelections();
     if (!mounted) return;
-    await _completeLibraryBatchSelectionsMetadata(
+    await completeLibraryBatchSelectionsMetadata(
       context: context,
       ref: ref,
       selections: selections,
@@ -229,18 +261,17 @@ class _LibrarySearchPageState extends ConsumerState<_LibrarySearchPage> {
     unawaited(
       AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection),
     );
-    final paths =
-        selections.map((selection) => selection.path).toList(growable: false);
+    final paths = selections
+        .map((selection) => selection.path)
+        .toList(growable: false);
     _exitSelectionMode();
-    await ref
-        .read(settingsRepositoryProvider)
-        .toggleLibraryPathsPinned(paths);
+    await ref.read(settingsRepositoryProvider).toggleLibraryPathsPinned(paths);
   }
 
   Future<void> _removeCurrentSelections() async {
     final selections = await _currentSelections();
     if (!mounted) return;
-    await _removeLibraryBatchSelections(
+    await removeLibraryBatchSelections(
       context: context,
       ref: ref,
       selections: selections,
@@ -417,14 +448,14 @@ class _LibrarySearchPageState extends ConsumerState<_LibrarySearchPage> {
     }
   }
 
-  List<_VisibleLibraryItem> _flattenVisibleSearchTree(List<LibraryNode> tree) {
+  List<VisibleLibraryItem> _flattenVisibleSearchTree(List<LibraryNode> tree) {
     if (identical(_visibleSearchItemsSource, tree) &&
         _visibleSearchItemsCacheVersion == _visibleSearchItemsVersion) {
       return _visibleSearchItems;
     }
-    final result = <_VisibleLibraryItem>[];
+    final result = <VisibleLibraryItem>[];
     void addNode(LibraryNode node, int depth) {
-      result.add(_VisibleLibraryItem(node: node, depth: depth));
+      result.add(VisibleLibraryItem(node: node, depth: depth));
       if (node is! FolderNode ||
           !_expandedSearchFolderPaths.contains(
             PathMatcher.normalize(node.path),
@@ -528,7 +559,7 @@ class _LibrarySearchPageState extends ConsumerState<_LibrarySearchPage> {
               padding: EdgeInsets.only(left: item.depth * 8.0),
               child: RepaintBoundary(
                 key: ValueKey<String>('search_${node.path}'),
-                child: _LibraryTreeItem(
+                child: LibraryTreeItem(
                   node: node,
                   initiallyExpanded:
                       node is FolderNode &&
@@ -540,7 +571,7 @@ class _LibrarySearchPageState extends ConsumerState<_LibrarySearchPage> {
                   searchQuery: _query,
                   isSelectionMode: item.depth == 0 && _isSelectionMode,
                   isSelected: _selectedLibraryPaths.contains(
-                    _selectionKeyForLibraryNode(node),
+                    selectionKeyForLibraryNode(node),
                   ),
                   onLongPress: item.depth == 0
                       ? () => _enterSelectionMode(node)
@@ -557,7 +588,7 @@ class _LibrarySearchPageState extends ConsumerState<_LibrarySearchPage> {
     }
     return PlaceholderContentTransition(
       showPlaceholder: result == null && !hasCurrentError,
-      placeholder: _LibraryLoadingSkeleton(
+      placeholder: LibraryLoadingSkeleton(
         bottomInset: 16,
         topInset: AppSearchPageScaffold.controlsTopInset(context),
       ),
@@ -609,11 +640,13 @@ class _LibrarySearchPageState extends ConsumerState<_LibrarySearchPage> {
               AppPageHeaderMetrics.bottomSpacing
         : AppSearchPageScaffold.controlsTopInset(context);
 
-    final pinnedLibraryPaths = ref.watch(
-      settingsStateProvider.select(
-        (s) => s.value?.pinnedLibraryPaths ?? const <String>[],
-      ),
-    ).toSet();
+    final pinnedLibraryPaths = ref
+        .watch(
+          settingsStateProvider.select(
+            (s) => s.value?.pinnedLibraryPaths ?? const <String>[],
+          ),
+        )
+        .toSet();
 
     final Widget body;
     if (_categoryType == AudioLibraryCategoryType.all) {
@@ -637,7 +670,8 @@ class _LibrarySearchPageState extends ConsumerState<_LibrarySearchPage> {
       );
     }
 
-    final isAllPinned = _selectedLibraryPaths.isNotEmpty &&
+    final isAllPinned =
+        _selectedLibraryPaths.isNotEmpty &&
         _selectedLibraryPaths.every(
           (p) => pinnedLibraryPaths.contains(PathMatcher.normalize(p)),
         );
@@ -659,7 +693,7 @@ class _LibrarySearchPageState extends ConsumerState<_LibrarySearchPage> {
         child: body,
       ),
       controlsOverlay: _isSelectionMode
-          ? _LibraryBatchSelectionHeader(
+          ? LibraryBatchSelectionHeader(
               keyPrefix: 'library_search',
               i18n: i18n,
               selectedCount: _selectedLibraryPaths.length,
@@ -679,6 +713,326 @@ class _LibrarySearchPageState extends ConsumerState<_LibrarySearchPage> {
               onExit: _exitSelectionMode,
             )
           : null,
+    );
+  }
+
+  Set<String> get _selectedTermsForCurrentCategory {
+    return switch (_categoryType) {
+      AudioLibraryCategoryType.tags => _selectedTagTerms,
+      AudioLibraryCategoryType.voiceActors => _selectedVoiceActorTerms,
+      AudioLibraryCategoryType.circles => _selectedCircleTerms,
+      AudioLibraryCategoryType.all => const <String>{},
+    };
+  }
+
+  List<String> get _termSearchKeywords {
+    return _termSearchQuery
+        .toLowerCase()
+        .split(_categoryTermSplitRegex)
+        .where((s) => s.isNotEmpty)
+        .toList(growable: false);
+  }
+
+  List<String> _termsForCategory(AudioLibraryCategorySnapshot snapshot) {
+    final terms = switch (_categoryType) {
+      AudioLibraryCategoryType.tags => snapshot.tagTerms,
+      AudioLibraryCategoryType.voiceActors => snapshot.voiceActorTerms,
+      AudioLibraryCategoryType.circles => snapshot.circleTerms,
+      AudioLibraryCategoryType.all => const <String>[],
+    };
+    final keywords = _termSearchKeywords;
+    if (keywords.isEmpty) return terms;
+    return terms.where((term) {
+      final t = term.toLowerCase();
+      return keywords.any((k) => t.contains(k));
+    }).toList();
+  }
+
+  IconData _categoryIcon() {
+    return switch (_categoryType) {
+      AudioLibraryCategoryType.tags => Icons.sell_rounded,
+      AudioLibraryCategoryType.voiceActors => Icons.record_voice_over_rounded,
+      AudioLibraryCategoryType.circles => Icons.groups_rounded,
+      AudioLibraryCategoryType.all => Icons.confirmation_number_rounded,
+    };
+  }
+
+  String _entrySecondaryText(
+    AppLanguageProvider i18n,
+    AudioLibraryCategoryEntry entry,
+  ) {
+    final values = switch (_categoryType) {
+      AudioLibraryCategoryType.tags => entry.tagTerms,
+      AudioLibraryCategoryType.voiceActors => entry.voiceActorTerms,
+      AudioLibraryCategoryType.circles => entry.circleTerms,
+      AudioLibraryCategoryType.all => [
+        if (entry.detail.rjCode.trim().isNotEmpty)
+          entry.detail.rjCode.trim()
+        else
+          i18n.tr('audio_detail_empty'),
+      ],
+    };
+    return values.isEmpty ? i18n.tr('audio_detail_empty') : values.join(', ');
+  }
+
+  String _noTermsText(AppLanguageProvider i18n) {
+    return switch (_categoryType) {
+      AudioLibraryCategoryType.tags => i18n.tr('library_category_no_tags'),
+      AudioLibraryCategoryType.voiceActors => i18n.tr(
+        'library_category_no_voice_actors',
+      ),
+      AudioLibraryCategoryType.circles => i18n.tr(
+        'library_category_no_circles',
+      ),
+      AudioLibraryCategoryType.all => '',
+    };
+  }
+
+  List<AudioLibraryCategoryEntry> _filterCategoryEntries(
+    AudioLibraryCategorySnapshot snapshot, {
+    Set<String> pinnedPaths = const <String>{},
+  }) {
+    final selectedTerms = _selectedTermsForCurrentCategory;
+    final queryTerms = extractSearchTerms(
+      _effectiveSearchQuery,
+    ).map((term) => term.toLowerCase()).toList(growable: false);
+    final termKeywords = _termSearchKeywords;
+    final normalizedSelectedTerms =
+        selectedTerms.map((term) => term.toLowerCase()).toList(growable: false)
+          ..sort();
+    final filterKey = <String>[
+      queryTerms.join('\n'),
+      termKeywords.join('\n'),
+      normalizedSelectedTerms.join('\n'),
+      pinnedPaths.join('\n'),
+    ].join('|');
+    if (identical(snapshot, _lastCategoryFilterSnapshot) &&
+        _categoryType == _lastCategoryFilterType &&
+        filterKey == _lastCategoryFilterKey) {
+      return _lastCategoryFilterResult;
+    }
+
+    final hasTextQuery = queryTerms.isNotEmpty;
+    final hasElementQuery =
+        normalizedSelectedTerms.isNotEmpty || termKeywords.isNotEmpty;
+
+    final filtered = snapshot.entries
+        .where((entry) {
+          final entryTerms = entry.normalizedTermsForCategory(_categoryType);
+          final matchesSelected = normalizedSelectedTerms.every(
+            entryTerms.contains,
+          );
+          final matchesTermKeywords = termKeywords.every(
+            (keyword) => entryTerms.any((term) => term.contains(keyword)),
+          );
+          final matchesElement =
+              hasElementQuery && matchesSelected && matchesTermKeywords;
+          final matchesText =
+              hasTextQuery && queryTerms.every(entry.searchableText.contains);
+
+          if (hasTextQuery && hasElementQuery) {
+            return matchesText && matchesElement;
+          } else if (hasTextQuery) {
+            return matchesText;
+          } else if (hasElementQuery) {
+            return matchesElement;
+          }
+          return true;
+        })
+        .toList(growable: true);
+    final normalizedPinned = pinnedPaths.isEmpty
+        ? const <String>{}
+        : pinnedPaths.map(PathMatcher.normalize).toSet();
+    if (normalizedPinned.isNotEmpty) {
+      filtered.sort((a, b) {
+        final aPinned = normalizedPinned.contains(
+          PathMatcher.normalize(a.path),
+        );
+        final bPinned = normalizedPinned.contains(
+          PathMatcher.normalize(b.path),
+        );
+        if (aPinned != bPinned) return aPinned ? -1 : 1;
+        return 0;
+      });
+    }
+    final result = List<AudioLibraryCategoryEntry>.unmodifiable(filtered);
+    _lastCategoryFilterSnapshot = snapshot;
+    _lastCategoryFilterType = _categoryType;
+    _lastCategoryFilterKey = filterKey;
+    _lastCategoryFilterResult = result;
+    return result;
+  }
+
+  String _termSearchHintText(AppLanguageProvider i18n) {
+    final searchPrefix = i18n.tr('search');
+    return switch (_categoryType) {
+      AudioLibraryCategoryType.tags =>
+        '$searchPrefix${i18n.tr('library_category_tags')}...',
+      AudioLibraryCategoryType.voiceActors =>
+        '$searchPrefix${i18n.tr('library_category_voice_actors')}...',
+      AudioLibraryCategoryType.circles =>
+        '$searchPrefix${i18n.tr('library_category_circles')}...',
+      AudioLibraryCategoryType.all => '$searchPrefix...',
+    };
+  }
+
+  Widget _buildCategoryBody({
+    required LibraryFacade libraryFacade,
+    required AppLanguageProvider i18n,
+    required double topPadding,
+    required double bottomPadding,
+    required double cacheExtent,
+    required int structureRevision,
+    required int detailRevision,
+    Set<String> pinnedPaths = const <String>{},
+  }) {
+    if (_categorySnapshotFuture == null ||
+        _categorySnapshotStructureRevision != structureRevision ||
+        _categorySnapshotDetailRevision != detailRevision) {
+      _categorySnapshotStructureRevision = structureRevision;
+      _categorySnapshotDetailRevision = detailRevision;
+      _categorySnapshotFuture = libraryFacade.audioLibraryCategorySnapshot();
+    }
+    return FutureBuilder<AudioLibraryCategorySnapshot>(
+      key: ValueKey(
+        'category_future_${_categoryType.name}_${structureRevision}_$detailRevision',
+      ),
+      future: _categorySnapshotFuture,
+      initialData: libraryFacade.categorySnapshot,
+      builder: (context, snapshotState) {
+        final snapshot = snapshotState.data;
+        if (snapshot == null) {
+          return PlaceholderContentTransition(
+            showPlaceholder: true,
+            placeholder: LibraryLoadingSkeleton(
+              bottomInset: bottomPadding,
+              topInset: topPadding,
+            ),
+            content: const SizedBox.shrink(),
+          );
+        }
+
+        final terms = _termsForCategory(snapshot);
+        final entries = _filterCategoryEntries(
+          snapshot,
+          pinnedPaths: pinnedPaths,
+        );
+        Map<String, FolderNode>? foldersByPath;
+        FolderNode? folderForEntry(AudioLibraryCategoryEntry entry) {
+          if (!entry.isFolder) return null;
+          foldersByPath ??= <String, FolderNode>{
+            for (final folder
+                in libraryFacade.libraryCards.whereType<FolderNode>())
+              PathMatcher.normalize(folder.path): folder,
+          };
+          return foldersByPath![PathMatcher.normalize(entry.path)];
+        }
+
+        final hasTermBox = _categoryType != AudioLibraryCategoryType.all;
+        final itemCount = entries.length + (hasTermBox ? 1 : 0) + 1;
+
+        final highlightTerms = <String>{
+          ...extractSearchTerms(_effectiveSearchQuery),
+          ..._selectedTermsForCurrentCategory,
+          ..._termSearchKeywords,
+        }.where((t) => t.trim().isNotEmpty).toList(growable: false);
+
+        final list = SearchHighlightScope.withTerms(
+          terms: highlightTerms,
+          child: ListView.builder(
+            key: ValueKey('library_category_${_categoryType.name}'),
+            controller: _scrollController,
+            padding: EdgeInsets.fromLTRB(
+              LibraryLikeCardMetrics.listHorizontalPadding,
+              topPadding,
+              LibraryLikeCardMetrics.listHorizontalPadding,
+              bottomPadding,
+            ),
+            cacheExtent: cacheExtent,
+            clipBehavior: Clip.none,
+            physics: const ClampingScrollPhysics(),
+            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+            itemCount: itemCount,
+            itemBuilder: (context, index) {
+              if (hasTermBox && index == 0) {
+                return LibraryCategoryTermBox(
+                  key: ValueKey(
+                    'library_category_term_box_${_categoryType.name}',
+                  ),
+                  categoryType: _categoryType,
+                  collapseOnMount: _hasSwitchedCategory,
+                  terms: terms,
+                  selectedTerms: _selectedTermsForCurrentCategory,
+                  emptyText: _noTermsText(i18n),
+                  clearLabel: i18n.tr('clear'),
+                  collapseLabel: i18n.tr('collapse'),
+                  expandLabel: i18n.tr('expand'),
+                  searchHintText: _termSearchHintText(i18n),
+                  searchQuery: _termSearchQuery,
+                  onSearchQueryChanged: (val) {
+                    _setLocalState(() => _termSearchQuery = val);
+                  },
+                  onToggle: (term) {
+                    _setLocalState(() {
+                      final selected = _selectedTermsForCurrentCategory;
+                      if (!selected.remove(term)) selected.add(term);
+                    });
+                  },
+                  onClear: () {
+                    _setLocalState(
+                      () => _selectedTermsForCurrentCategory.clear(),
+                    );
+                  },
+                );
+              }
+
+              final entryIndex = index - (hasTermBox ? 1 : 0);
+              if (entryIndex == entries.length) {
+                if (entries.isEmpty) {
+                  return SizedBox(
+                    height: 220,
+                    child: Center(
+                      child: Text(
+                        i18n.tr('library_category_no_matches'),
+                        style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                  );
+                }
+                return const SizedBox.shrink(key: ValueKey('category_bottom'));
+              }
+
+              final entry = entries[entryIndex];
+              return RepaintBoundary(
+                key: ValueKey('category_${entry.target.targetPath}'),
+                child: AudioLibraryCategoryEntryCard(
+                  entry: entry,
+                  folder: folderForEntry(entry),
+                  secondaryIcon: _categoryIcon(),
+                  secondaryText: _entrySecondaryText(i18n, entry),
+                  isSelectionMode: _isSelectionMode,
+                  isSelected: _selectedLibraryPaths.contains(
+                    PathMatcher.normalize(entry.path),
+                  ),
+                  onLongPress: () => _enterCategorySelectionMode(entry),
+                  onToggleSelect: () => _toggleCategorySelection(entry),
+                ),
+              );
+            },
+          ),
+        );
+
+        return PlaceholderContentTransition(
+          showPlaceholder: false,
+          placeholder: LibraryLoadingSkeleton(
+            bottomInset: bottomPadding,
+            topInset: topPadding,
+          ),
+          content: list,
+        );
+      },
     );
   }
 }

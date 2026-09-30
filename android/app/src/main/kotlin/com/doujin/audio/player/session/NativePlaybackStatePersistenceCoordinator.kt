@@ -9,9 +9,10 @@ internal interface NativePlaybackStatePersistenceEnvironment {
     fun postDelayed(runnable: Runnable, delayMs: Long)
     fun removeCallbacks(runnable: Runnable)
     fun execute(task: () -> Unit)
-    fun saveSessions(sessions: List<StoredNativePlaybackSession>)
-    fun saveSessionProgress(progress: List<StoredNativePlaybackProgress>)
-    fun clearSessions()
+    fun saveSessions(sessions: List<StoredNativePlaybackSession>, revisions: Map<String, Long>)
+    fun saveSessionProgress(progress: List<StoredNativePlaybackProgress>, revisions: Map<String, Long>)
+    fun removeSession(sessionId: String, revision: Long)
+    fun clearSessions(revision: Long)
     fun shutdown()
 }
 
@@ -59,16 +60,20 @@ private class AndroidNativePlaybackStatePersistenceEnvironment(
         executor.execute { task() }
     }
 
-    override fun saveSessions(sessions: List<StoredNativePlaybackSession>) {
-        NativePlaybackStateStore.saveSessions(appContext, sessions)
+    override fun saveSessions(sessions: List<StoredNativePlaybackSession>, revisions: Map<String, Long>) {
+        NativePlaybackStateStore.upsertSessions(appContext, sessions, revisions)
     }
 
-    override fun saveSessionProgress(progress: List<StoredNativePlaybackProgress>) {
-        NativePlaybackStateStore.saveSessionProgress(appContext, progress)
+    override fun saveSessionProgress(progress: List<StoredNativePlaybackProgress>, revisions: Map<String, Long>) {
+        NativePlaybackStateStore.upsertSessionProgress(appContext, progress, revisions)
     }
 
-    override fun clearSessions() {
-        NativePlaybackStateStore.clearSessions(appContext)
+    override fun removeSession(sessionId: String, revision: Long) {
+        NativePlaybackStateStore.removeSession(appContext, sessionId, revision)
+    }
+
+    override fun clearSessions(revision: Long) {
+        NativePlaybackStateStore.clearSessions(appContext, revision)
     }
 
     override fun shutdown() {
@@ -82,7 +87,8 @@ internal class NativePlaybackStatePersistenceCoordinator(
     private val debounceMs: Long,
     private val hasSessions: () -> Boolean,
     private val hasActivePlayback: () -> Boolean,
-    private val storedSessions: () -> List<StoredNativePlaybackSession>
+    private val storedSessions: () -> List<StoredNativePlaybackSession>,
+    private val sessionRevisions: () -> Map<String, Long> = { emptyMap() }
 ) {
     constructor(
         context: Context,
@@ -91,14 +97,16 @@ internal class NativePlaybackStatePersistenceCoordinator(
         debounceMs: Long,
         hasSessions: () -> Boolean,
         hasActivePlayback: () -> Boolean,
-        storedSessions: () -> List<StoredNativePlaybackSession>
+        storedSessions: () -> List<StoredNativePlaybackSession>,
+        sessionRevisions: () -> Map<String, Long>
     ) : this(
         environment = AndroidNativePlaybackStatePersistenceEnvironment(context, mainHandler),
         intervalMs = intervalMs,
         debounceMs = debounceMs,
         hasSessions = hasSessions,
         hasActivePlayback = hasActivePlayback,
-        storedSessions = storedSessions
+        storedSessions = storedSessions,
+        sessionRevisions = sessionRevisions
     )
 
     private val generation = AtomicLong(0L)
@@ -108,7 +116,7 @@ internal class NativePlaybackStatePersistenceCoordinator(
 
     // Both caches are accessed only on the storage executor. Queue equality and
     // serialization must not run on the player's application Looper.
-    private var persistedStructure: List<StoredNativePlaybackSession>? = null
+    private val persistedStructure = mutableMapOf<String, StoredNativePlaybackSession>()
 
     private val ticker = object : Runnable {
         override fun run() {
@@ -163,24 +171,51 @@ internal class NativePlaybackStatePersistenceCoordinator(
     fun persistNow() {
         cancelScheduledPersist()
         val snapshots = if (hasSessions()) storedSessions() else emptyList()
+        val revisions = sessionRevisions()
         val saveGeneration = generation.incrementAndGet()
         environment.execute {
             if (saveGeneration != generation.get() || snapshots == lastSubmittedSnapshots) {
                 return@execute
             }
-            if (snapshots.isEmpty()) {
-                environment.clearSessions()
-                persistedStructure = null
-            } else if (persistedStructure?.let {
-                    nativePlaybackSnapshotsDifferOnlyByProgress(it, snapshots)
+            val previous = lastSubmittedSnapshots.orEmpty().associateBy { it.sessionId }
+            val changed = snapshots.filter { previous[it.sessionId] != it }
+            val (progress, structure) = changed.partition { stored ->
+                persistedStructure[stored.sessionId]?.let {
+                    nativePlaybackSnapshotsDifferOnlyByProgress(listOf(it), listOf(stored))
                 } == true
-            ) {
-                environment.saveSessionProgress(snapshots.map(StoredNativePlaybackSession::toStoredProgress))
-            } else {
-                environment.saveSessions(snapshots)
-                persistedStructure = snapshots
             }
+            if (structure.isNotEmpty()) environment.saveSessions(structure, revisions)
+            if (progress.isNotEmpty()) environment.saveSessionProgress(
+                progress.map(StoredNativePlaybackSession::toStoredProgress), revisions)
+            structure.forEach { persistedStructure[it.sessionId] = it }
             lastSubmittedSnapshots = snapshots
+        }
+    }
+
+    fun persistSession(session: StoredNativePlaybackSession, revision: Long) {
+        environment.execute {
+            environment.saveSessions(listOf(session), mapOf(session.sessionId to revision))
+            persistedStructure.remove(session.sessionId)
+            lastSubmittedSnapshots = lastSubmittedSnapshots?.filterNot { it.sessionId == session.sessionId }
+        }
+    }
+
+    fun removeSession(sessionId: String) {
+        val revision = NativePlaybackStateStore.invalidateSession(sessionId)
+        environment.execute {
+            environment.removeSession(sessionId, revision)
+            persistedStructure.remove(sessionId)
+            lastSubmittedSnapshots = lastSubmittedSnapshots?.filterNot { it.sessionId == sessionId }
+        }
+    }
+
+    fun clearSessions() {
+        generation.incrementAndGet()
+        val revision = NativePlaybackStateStore.invalidateAllSessions()
+        environment.execute {
+            environment.clearSessions(revision)
+            persistedStructure.clear()
+            lastSubmittedSnapshots = null
         }
     }
 

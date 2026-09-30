@@ -55,6 +55,8 @@ final class TimerFacade {
         scheduleAutoResumeTimer: scheduleAutoResumeTimer,
         handleAutoResumeOnPlatform: _handleAutoResumeOnPlatform,
         onRuntimeRestored: () => _onRuntimeRestored(),
+        flushSessionPersistence: (sessionId) =>
+            _flushSessionPersistence(sessionId),
       );
   // Sessions retained for an armed countdown when Windows restarts with players paused.
   final _restoredCountdownSessions = <String>{};
@@ -70,6 +72,8 @@ final class TimerFacade {
   void Function() _onStateChanged = _noop;
   void Function() _onRuntimeRestored = _noop;
   void Function(double multiplier) _applyFadeMultiplier = _noopFade;
+  Future<void> Function(String sessionId) _flushSessionPersistence =
+      _noopSessionPersistence;
 
   TimerStateSliceData get state => _service.slice.state;
   Stream<TimerStateSliceData> get states => _service.slice.stream;
@@ -99,6 +103,7 @@ final class TimerFacade {
     required void Function() onStateChanged,
     required void Function() onRuntimeRestored,
     required void Function(double multiplier) applyFadeMultiplier,
+    Future<void> Function(String sessionId)? flushSessionPersistence,
   }) {
     _hasPlayingSession = hasPlayingSession;
     _sessions = sessions;
@@ -108,6 +113,8 @@ final class TimerFacade {
     _onStateChanged = onStateChanged;
     _onRuntimeRestored = onRuntimeRestored;
     _applyFadeMultiplier = applyFadeMultiplier;
+    _flushSessionPersistence =
+        flushSessionPersistence ?? _noopSessionPersistence;
   }
 
   void detachRuntime() {
@@ -119,6 +126,7 @@ final class TimerFacade {
     _onStateChanged = _noop;
     _onRuntimeRestored = _noop;
     _applyFadeMultiplier = _noopFade;
+    _flushSessionPersistence = _noopSessionPersistence;
   }
 
   void configureTimer(TimerMode mode, Duration duration) {
@@ -653,3 +661,4 @@ void _noopFade(double _) {}
 Iterable<PlaybackSession> _emptySessions() => const <PlaybackSession>[];
 Future<bool> _falseSession(PlaybackSession _) async => false;
 Future<bool> _falseAsync() async => false;
+Future<void> _noopSessionPersistence(String _) async {}

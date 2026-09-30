@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 
 import '../ui/ui_interaction_coordinator.dart';
 
@@ -696,7 +697,10 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
       return;
     }
 
-    final nextCurrent = _isAnimating && _controller.value >= 0.5
+    final nextCurrent =
+        _isAnimating &&
+            _controller.value >= 0.5 &&
+            (!_isLazy || _lazyChildren[_targetIndex] != null)
         ? _targetIndex
         : _currentIndex;
     if (nextIndex == nextCurrent) {
@@ -738,6 +742,11 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
 
   Widget _childAt(int index) {
     if (!_isLazy) return widget.children[index];
+    // Keep first-visit initialization out of the navigation animation. Rapid
+    // switches never instantiate an intermediate page that was not displayed.
+    if (_lazyChildren[index] == null && _isAnimating && index == _targetIndex) {
+      return ColoredBox(color: Theme.of(context).colorScheme.surface);
+    }
     if (_lazyChildren[index] == null &&
         index != _currentIndex &&
         index != _targetIndex) {
@@ -757,7 +766,7 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
   }
 
   Widget _pageHost({required Widget child, required bool visible}) {
-    return Offstage(
+    return _AppPageOffstage(
       offstage: !visible,
       child: TickerMode(
         enabled: visible,
@@ -894,6 +903,27 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
         ),
       ),
     );
+  }
+}
+
+class _AppPageOffstage extends Offstage {
+  const _AppPageOffstage({required super.offstage, required super.child});
+
+  @override
+  RenderOffstage createRenderObject(BuildContext context) =>
+      _RenderAppPageOffstage(offstage: offstage);
+}
+
+class _RenderAppPageOffstage extends RenderOffstage {
+  _RenderAppPageOffstage({required super.offstage});
+
+  @override
+  void performLayout() {
+    // RenderOffstage normally lays out its child even when hidden. Retain the
+    // element tree (scroll, expansion and provider state) without traversing a
+    // cached list on each frame or window resize. Activation lays it out using
+    // the latest constraints before painting or accepting input.
+    if (!offstage) super.performLayout();
   }
 }
 

@@ -3,7 +3,6 @@ package com.doujin.audio.player.session
 import androidx.media3.common.Player
 import com.doujin.audio.player.common.isNativePlaybackNetworkUri
 import com.doujin.audio.player.service.resolveNotificationSessionId
-import com.doujin.audio.player.service.idlePlaybackSessionIdsToRelease
 
 internal class NativePlaybackSessionManager(
     private val sessionFactory: (sessionId: String) -> NativePlaybackSession
@@ -71,14 +70,14 @@ internal class NativePlaybackSessionManager(
     fun activePlaybackSessionIds(): List<String> = sessions.values
         .filter { session ->
             session.playerOrNull()?.let { player ->
-                player.isPlaying || player.playWhenReady
+                player.playbackState != Player.STATE_ENDED && (player.isPlaying || player.playWhenReady)
             } == true
         }
         .map(NativePlaybackSession::sessionId)
 
     fun hasActivePlayback(): Boolean = sessions.values.any {
         val p = it.playerOrNull()
-        p != null && (p.isPlaying || p.playWhenReady)
+        p != null && p.playbackState != Player.STATE_ENDED && (p.isPlaying || p.playWhenReady)
     }
 
     fun hasNetworkPlayback(isIntended: (String) -> Boolean): Boolean = sessions.values.any { session ->
@@ -130,7 +129,7 @@ internal class NativePlaybackSessionManager(
     fun updateProgressSession(sessionId: String) {
         val session = sessions[sessionId] ?: return
         val anchor = session.progressAnchorSnapshot()
-        if (session.lastPlaybackState != "ended" &&
+        if (session.lastPlaybackState != "completed" &&
             shouldIncludeInProgressHeartbeat(anchor.isPlaying, anchor.playWhenReady)
         ) {
             activeProgressSessions[sessionId] = session
@@ -152,8 +151,9 @@ internal class NativePlaybackSessionManager(
     fun evictIdlePlayers(
         isIntended: (String) -> Boolean,
         isFocusPending: (String) -> Boolean,
-        isRecoveryPending: (String) -> Boolean
-    ) {
+        isRecoveryPending: (String) -> Boolean,
+        beforeRelease: (NativePlaybackSession) -> Unit = {}
+    ): List<NativePlaybackSession> {
         val idleSessions = sessions.values
             .filter { session ->
                 val player = session.playerOrNull() ?: return@filter false
@@ -163,14 +163,30 @@ internal class NativePlaybackSessionManager(
                     !isFocusPending(session.sessionId) &&
                     !isRecoveryPending(session.sessionId)
             }
-        val releaseIds = idlePlaybackSessionIdsToRelease(
-            focusedSessionId = focusedSessionId,
-            idleSessionIds = idleSessions.map { it.sessionId }
-        )
         idleSessions
-            .filter { it.sessionId in releaseIds }
-            .sortedBy { it.lastUsedMs }
-            .forEach(NativePlaybackSession::releasePlayer)
+            .forEach { session ->
+                beforeRelease(session)
+                session.releasePlayer()
+            }
+        return idleSessions
+    }
+
+    fun releaseIdleSession(
+        session: NativePlaybackSession,
+        persistence: NativePlaybackStatePersistenceCoordinator,
+        processingState: String = "idle",
+        publish: (NativePlaybackSession) -> Unit
+    ): Map<String, Any?> {
+        session.playerOrNull()?.pause()
+        session.releasePlayer()
+        session.lastIsPlaying = false
+        session.lastPlayWhenReady = false
+        session.lastPlaybackState = processingState
+        val snapshot = session.snapshot()
+        persistence.persistSession(session.storedSnapshot(), session.definitionRevision)
+        publish(session)
+        remove(session.sessionId)
+        return snapshot
     }
 
     fun releaseAll(): List<() -> Unit> {

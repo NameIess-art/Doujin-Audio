@@ -5,6 +5,11 @@ import com.doujin.audio.player.session.NativePlaybackStatePersistenceEnvironment
 import com.doujin.audio.player.session.StoredNativePlaybackProgress
 import com.doujin.audio.player.session.StoredNativePlaybackSession
 import com.doujin.audio.player.session.withProgressOverlay
+import com.doujin.audio.player.session.NativePlaybackStateStore
+import com.doujin.audio.player.session.NativePlaybackSession
+import com.doujin.audio.player.session.NativePlaybackSessionManager
+import com.doujin.audio.player.session.NativeMediaItemDescriptor
+import com.doujin.audio.player.session.mergeNativePlaybackDefinitions
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -54,7 +59,7 @@ class NativePlaybackStatePersistenceCoordinatorTest {
     }
 
     @Test
-    fun `shutdown clears persisted sessions when no sessions remain`() {
+    fun `shutdown without runtime sessions preserves cold recovery definitions`() {
         val environment = FakeStatePersistenceEnvironment()
         val coordinator = coordinator(
             environment,
@@ -65,7 +70,7 @@ class NativePlaybackStatePersistenceCoordinatorTest {
         coordinator.shutdown()
         environment.runBackgroundTasks()
 
-        assertEquals(1, environment.clearCount)
+        assertEquals(0, environment.clearCount)
         assertTrue(environment.savedSessions.isEmpty())
     }
 
@@ -206,6 +211,122 @@ class NativePlaybackStatePersistenceCoordinatorTest {
         assertEquals(0, environment.savedProgress.size)
     }
 
+    @Test
+    fun `retired paused runtime publishes final position then leaves only the other runtime`() {
+        val environment = FakeStatePersistenceEnvironment()
+        val manager = NativePlaybackSessionManager { id -> NativePlaybackSession(id,
+            createPlayer = { _, _ -> error("Cold sessions must not create a player") },
+            logWarn = { _, _, _ -> }, elapsedRealtimeMs = { 1L }) }
+        val paused = manager.getOrCreate("paused")
+        val descriptor = NativeMediaItemDescriptor("/a.mp3", "file:///a.mp3", "A", null, null)
+        paused.configure(descriptor, listOf(descriptor), 0, 22_000L, 1f, 1f,
+            false, false, false, autoPlay = false, deferPlayerCreation = true)
+        manager.getOrCreate("other")
+        val coordinator = coordinator(environment, storedSessions = { manager.storedSnapshots(emptySet()) })
+        val published = mutableListOf<Map<String, Any?>>()
+
+        val response = manager.releaseIdleSession(paused, coordinator) { published += it.snapshot() }
+        coordinator.persistNow()
+        environment.runBackgroundTasks()
+
+        assertEquals("idle", response["processingState"])
+        assertEquals(22_000L, response["positionMs"])
+        assertEquals(listOf(response), published)
+        assertEquals(setOf("other"), manager.sessionIds)
+        assertEquals(setOf("paused", "other"), environment.storedDefinitions.map { it.sessionId }.toSet())
+        assertEquals(22_000L, environment.storedDefinitions.first { it.sessionId == "paused" }.positionMs)
+    }
+
+    @Test
+    fun `writing B runtime keeps the exact paused A definition`() {
+        val environment = FakeStatePersistenceEnvironment()
+        val paused = storedSession(22_000L).copy(sessionId = "A", speed = 1.5f)
+        environment.storedDefinitions = listOf(paused)
+        val active = storedSession(9_000L).copy(sessionId = "B", playing = true, playWhenReady = true)
+        val coordinator = coordinator(environment, storedSessions = { listOf(active) })
+
+        coordinator.persistNow()
+        environment.runBackgroundTasks()
+
+        assertTrue(environment.storedDefinitions.first { it.sessionId == "A" } === paused)
+        assertEquals(listOf("B"), environment.savedSessions.single().map { it.sessionId })
+    }
+
+    @Test
+    fun `natural completion publishes completion once and retires runtime without retaining play intent`() {
+        val environment = FakeStatePersistenceEnvironment()
+        val manager = NativePlaybackSessionManager { id -> NativePlaybackSession(id,
+            createPlayer = { _, _ -> error("Completed session must not allocate a player") },
+            logWarn = { _, _, _ -> }, elapsedRealtimeMs = { 1L }) }
+        val completed = manager.getOrCreate("completed")
+        val descriptor = NativeMediaItemDescriptor("/a.mp3", "file:///a.mp3", "A", null, null)
+        completed.configure(descriptor, listOf(descriptor), 0, 22_000L, 1f, 1f,
+            false, false, false, autoPlay = false, deferPlayerCreation = true)
+        completed.lastPlaybackState = "completed"
+        completed.lastPlayWhenReady = true // Media3 may retain this after STATE_ENDED.
+        completed.snapshot()
+        manager.updateProgressSession(completed.sessionId)
+        assertTrue(manager.progressAnchors().isEmpty())
+        val coordinator = coordinator(environment, storedSessions = { manager.storedSnapshots(emptySet()) })
+        val published = mutableListOf<Map<String, Any?>>()
+
+        val response = manager.releaseIdleSession(completed, coordinator, "completed") { published += it.snapshot() }
+        environment.runBackgroundTasks()
+
+        assertEquals(listOf(response), published)
+        assertEquals("completed", response["processingState"])
+        assertEquals(false, response["playWhenReady"])
+        assertEquals(false, response["playing"])
+        assertEquals(22_000L, response["positionMs"])
+        assertTrue(manager.isEmpty)
+        assertTrue(manager.progressAnchors().isEmpty())
+        assertEquals(false, environment.storedDefinitions.single().playWhenReady)
+        assertEquals(true, environment.storedDefinitions.single().completed)
+        assertEquals(22_000L, environment.storedDefinitions.single().positionMs)
+    }
+
+    @Test
+    fun `late retired write cannot override newer cold selection or resurrect a removed definition`() {
+        val environment = FakeStatePersistenceEnvironment(filterRevisions = true)
+        val old = storedSession(1_000L).copy(sessionId = "retired-race")
+        val coordinator = coordinator(environment, storedSessions = { emptyList() })
+        val oldRevision = NativePlaybackStateStore.sessionRevision(old.sessionId)
+        coordinator.persistSession(old, oldRevision)
+        val newer = old.copy(path = "/new.mp3", uri = "file:///new.mp3", positionMs = 22_000L)
+        NativePlaybackStateStore.invalidateSession(old.sessionId)
+        environment.storedDefinitions = listOf(newer)
+        environment.runBackgroundTasks()
+        assertEquals(listOf(newer), environment.storedDefinitions)
+        assertTrue(environment.savedSessions.isEmpty())
+
+        coordinator.persistSession(old, NativePlaybackStateStore.sessionRevision(old.sessionId))
+        coordinator.removeSession(old.sessionId)
+        environment.runBackgroundTasks()
+        assertTrue(environment.storedDefinitions.isEmpty())
+        assertTrue(environment.savedSessions.isEmpty())
+    }
+
+    @Test
+    fun `new prepare version rejects old runtime progress while B still persists`() {
+        val environment = FakeStatePersistenceEnvironment(filterRevisions = true)
+        val a = storedSession(5_000L).copy(sessionId = "progress-race-A")
+        val b = a.copy(sessionId = "progress-race-B")
+        val revisions = listOf(a, b).associate { it.sessionId to NativePlaybackStateStore.sessionRevision(it.sessionId) }
+        var snapshots = listOf(a, b)
+        val coordinator = NativePlaybackStatePersistenceCoordinator(environment, 10_000L, 800L,
+            { true }, { true }, { snapshots }, { revisions })
+        coordinator.persistNow()
+        environment.runBackgroundTasks()
+        snapshots = listOf(a.copy(positionMs = 6_000L), b.copy(positionMs = 7_000L))
+        coordinator.persistNow()
+        NativePlaybackStateStore.invalidateSession(a.sessionId)
+        environment.runBackgroundTasks()
+
+        assertEquals(listOf(b.sessionId), environment.savedProgress.single().map { it.sessionId })
+        assertEquals(5_000L, environment.storedDefinitions.first { it.sessionId == a.sessionId }.positionMs)
+        assertEquals(7_000L, environment.storedDefinitions.first { it.sessionId == b.sessionId }.positionMs)
+    }
+
     private fun coordinator(
         environment: FakeStatePersistenceEnvironment,
         hasSessions: () -> Boolean = { true },
@@ -221,13 +342,14 @@ class NativePlaybackStatePersistenceCoordinatorTest {
     )
 }
 
-private class FakeStatePersistenceEnvironment : NativePlaybackStatePersistenceEnvironment {
+private class FakeStatePersistenceEnvironment(private val filterRevisions: Boolean = false) : NativePlaybackStatePersistenceEnvironment {
     val delayedTasks = linkedMapOf<Runnable, Long>()
     val backgroundTasks = mutableListOf<() -> Unit>()
     val savedSessions = mutableListOf<List<StoredNativePlaybackSession>>()
     val savedProgress = mutableListOf<List<StoredNativePlaybackProgress>>()
     var clearCount = 0
     var shutdownCalled = false
+    var storedDefinitions = emptyList<StoredNativePlaybackSession>()
 
     override fun postDelayed(runnable: Runnable, delayMs: Long) {
         delayedTasks[runnable] = delayMs
@@ -241,16 +363,28 @@ private class FakeStatePersistenceEnvironment : NativePlaybackStatePersistenceEn
         backgroundTasks += task
     }
 
-    override fun saveSessions(sessions: List<StoredNativePlaybackSession>) {
-        savedSessions += sessions
+    override fun saveSessions(sessions: List<StoredNativePlaybackSession>, revisions: Map<String, Long>) {
+        val accepted = sessions.filter { !filterRevisions || revisions[it.sessionId] == NativePlaybackStateStore.sessionRevision(it.sessionId) }
+        if (accepted.isEmpty()) return
+        savedSessions += accepted
+        storedDefinitions = mergeNativePlaybackDefinitions(storedDefinitions, accepted)
     }
 
-    override fun saveSessionProgress(progress: List<StoredNativePlaybackProgress>) {
-        savedProgress += progress
+    override fun saveSessionProgress(progress: List<StoredNativePlaybackProgress>, revisions: Map<String, Long>) {
+        val accepted = progress.filter { !filterRevisions || revisions[it.sessionId] == NativePlaybackStateStore.sessionRevision(it.sessionId) }
+        if (accepted.isEmpty()) return
+        savedProgress += accepted
+        storedDefinitions = storedDefinitions.map { stored -> stored.withProgressOverlay(accepted.firstOrNull { it.sessionId == stored.sessionId }) }
     }
 
-    override fun clearSessions() {
+    override fun removeSession(sessionId: String, revision: Long) {
+        if (!filterRevisions || revision == NativePlaybackStateStore.sessionRevision(sessionId))
+            storedDefinitions = storedDefinitions.filterNot { it.sessionId == sessionId }
+    }
+
+    override fun clearSessions(revision: Long) {
         clearCount += 1
+        storedDefinitions = storedDefinitions.filter { NativePlaybackStateStore.sessionRevision(it.sessionId) > revision }
     }
 
     override fun shutdown() {

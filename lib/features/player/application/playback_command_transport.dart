@@ -125,17 +125,29 @@ extension PlaybackCommandTransport on PlaybackCommandCoordinator {
 
   Future<bool> _pauseSessionPlayback(PlaybackSession session) async {
     if (!_isRegisteredSession(session)) return false;
+    final hadNativeWork =
+        session.loadedPath != null ||
+        session.pendingNativeTrackPath != null ||
+        session.state.playing;
     session.invalidatePreparation();
+    final preparationGeneration = session.loadGeneration;
     final generation = _playbackFacade.nextTransportCommandId();
     final token = _playbackCommandRunner.start(
       sessionId: session.id,
       generation: generation,
       isCurrent: () =>
           _isRegisteredSession(session) &&
+          session.loadGeneration == preparationGeneration &&
           session.playbackCommandGeneration == generation,
     );
     session.beginTransportCommand(commandId: generation, playing: false);
     _notifyPlaybackChanged(session.id);
+    if (!hadNativeWork) {
+      session.confirmPaused();
+      session.setOptimisticState(processingState: ProcessingState.idle);
+      _notifyPlaybackChanged(session.id);
+      return true;
+    }
     try {
       final pauseResult = await _nativePlaybackRepository.pause(
         session.id,
@@ -151,6 +163,13 @@ extension PlaybackCommandTransport on PlaybackCommandCoordinator {
       if (snapshot != null) {
         _handleNativePlaybackSnapshot(snapshot);
       }
+      session.loadedPath = null;
+      session.confirmPaused();
+      session.setOptimisticState(
+        playing: false,
+        processingState: ProcessingState.idle,
+      );
+      _notifyPlaybackChanged(session.id);
       return true;
     } catch (error, stackTrace) {
       if (_isSessionCommandCurrent(session, token)) {

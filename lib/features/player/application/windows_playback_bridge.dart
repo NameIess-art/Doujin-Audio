@@ -47,33 +47,10 @@ class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
   bool _disposed = false;
 
   Player? playerForSession(String sessionId) => _sessions[sessionId]?.player;
-  void acquireVideoSurface(String sessionId) {
-    final session = _sessions[sessionId];
-    if (session == null || _disposed) return;
-    session.videoSurfaceCount++;
-    unawaited(
-      _change(sessionId, (current) async {
-        if (current.videoSurfaceCount > 0 && current.player == null) {
-          current.generation++;
-          await _open(current);
-        }
-      }),
-    );
-  }
-
-  void releaseVideoSurface(String sessionId) {
-    final session = _sessions[sessionId];
-    if (session == null || session.videoSurfaceCount == 0) return;
-    session.videoSurfaceCount--;
-    if (session.videoSurfaceCount == 0) {
-      unawaited(_change(sessionId, _releaseIfIdle));
-    }
-  }
-
   VideoController? videoControllerForSession(String sessionId) {
     final session = _sessions[sessionId];
     final player = session?.player;
-    if (session == null || player == null) return null;
+    if (session == null || player == null || !session.wantsPlay) return null;
     if (session.videoController == null) {
       session.videoController = VideoController(player);
       unawaited(
@@ -114,8 +91,6 @@ class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
   Stream<NativePlaybackSnapshot> get snapshots => _snapshots.stream;
   @override
   Stream<NativePlaybackProgressUpdate> get progressUpdates => _progress.stream;
-  @override
-  bool get supportsDeferredSessionRegistration => true;
   @override
   void startListening() => _listening = true;
   @override
@@ -172,18 +147,11 @@ class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
       !session.retired && identical(_sessions[session.id], session);
 
   void _focus(String sessionId) {
-    final previous = _sessions[_focusedSessionId];
     _focusedSessionId = sessionId;
-    if (previous != null && previous.id != sessionId) {
-      unawaited(_change(previous.id, _releaseIfIdle));
-    }
   }
 
   Future<void> _releaseIfIdle(_WindowsPlaybackSession session) async {
-    if (session.wantsPlay ||
-        session.player?.state.playing == true ||
-        session.id == _focusedSessionId ||
-        session.videoSurfaceCount > 0) {
+    if (session.wantsPlay) {
       return;
     }
     await session.releasePlayer();
@@ -314,12 +282,15 @@ class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
             ? Duration.zero
             : startPosition;
         session.error = null;
+        session.completed = false;
         session.retryAttempt = 0;
         session.retryStartedAt = null;
         session.hasRetainedCurrent = false;
         session.externalQueueRevision = 0;
-        if (session.wantsPlay || session.player != null) {
+        if (session.wantsPlay) {
           await _open(session);
+        } else {
+          await session.releasePlayer();
         }
       });
     } on ArgumentError catch (error) {
@@ -392,13 +363,18 @@ class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
           session.retryAttempt = 0;
           session.error = null;
           if (session.hasRetainedCurrent && index != 0) {
+            final generation = session.generation;
             unawaited(
               _change(session.id, (current) async {
-                if (!current.hasRetainedCurrent || current.index == 0) return;
+                if (generation != current.generation ||
+                    !current.hasRetainedCurrent ||
+                    current.index == 0) {
+                  return;
+                }
                 current.hasRetainedCurrent = false;
                 current.opening = true;
                 try {
-                  await player.remove(0);
+                  await current.player?.remove(0);
                   current.queue.removeAt(0);
                   current.invalidateRetainedUris();
                   current.index--;
@@ -416,6 +392,7 @@ class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
         if (!_isCurrent(session) || !identical(session.player, player)) return;
         if (completed && !session.opening && session.error == null) {
           session.wantsPlay = false;
+          session.completed = true;
         }
         _emit(session);
         if (completed) unawaited(_change(session.id, _releaseIfIdle));
@@ -579,6 +556,10 @@ class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
       final failure = results.where((result) => result.isFailure).firstOrNull;
       if (failure != null) throw StateError(failure.errorOrNull!);
       if (!session.wantsPlay) return;
+      if (session.completed) {
+        session.position = Duration.zero;
+        session.completed = false;
+      }
       if (session.player == null || session.error != null) {
         session.retryAttempt = 0;
         session.generation++;
@@ -616,6 +597,7 @@ class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
     return _change(sessionId, (session) async {
       if (session.wantsPlay) return;
       session.pendingStart = null;
+      session.completed = false;
       await session.player?.pause();
       await session.player?.seek(Duration.zero);
       session.position = Duration.zero;
@@ -949,10 +931,7 @@ class _WindowsPlaybackSession {
   Future<void> serial = Future.value();
   bool retired = false, eventPending = false;
   Object? lastEventKey;
-  int queueRevision = 0,
-      externalQueueRevision = 0,
-      emittedQueueRevision = -1,
-      videoSurfaceCount = 0;
+  int queueRevision = 0, externalQueueRevision = 0, emittedQueueRevision = -1;
   Duration? lastProgressPosition;
   Duration? duration;
 
@@ -994,6 +973,7 @@ class _WindowsPlaybackSession {
       repeatAll = false,
       shuffle = false,
       wantsPlay = false,
+      completed = false,
       opening = false;
   NativeAudioEffects effects = NativeAudioEffects(
     state: AudioEffectsState.flat,
@@ -1025,7 +1005,9 @@ class _WindowsPlaybackSession {
       processingState: opening || pendingStart != null
           ? 'loading'
           : state == null
-          ? 'idle'
+          ? completed
+                ? 'completed'
+                : 'idle'
           : state.completed
           ? 'completed'
           : state.buffering
@@ -1054,14 +1036,16 @@ class _WindowsPlaybackSession {
 
   Future<void> releasePlayer() async {
     cancelRetry();
+    temporarySpeed = null;
     final current = player;
     if (current == null) return;
-    duration = current.state.duration;
+    if (current.state.duration > Duration.zero) {
+      duration = current.state.duration;
+    }
     player = null;
     videoController = null;
     pendingStart = null;
     lastProgressPosition = null;
-    generation++;
     for (final subscription in subscriptions) {
       await subscription.cancel();
     }

@@ -140,7 +140,6 @@ internal class NativePlaybackSession(
     }
     private var lastSyncedAudioSessionId: Int = C.AUDIO_SESSION_ID_UNSET
     private var _player: ExoPlayer? = null
-    var lastUsedMs: Long = System.currentTimeMillis()
     var path: String? = null
     var uri: String? = null
     var title: String = "Audio"
@@ -153,6 +152,7 @@ internal class NativePlaybackSession(
     var speed: Float = 1f
     private var temporarySpeed: Float? = null
     var isTemporary: Boolean = false
+    var definitionRevision: Long = NativePlaybackStateStore.sessionRevision(sessionId)
     var repeatOne: Boolean = false
     var repeatAll: Boolean = false
     var shuffleModeEnabled: Boolean = false
@@ -283,6 +283,23 @@ internal class NativePlaybackSession(
         lastBufferedPositionMs = maxOf(lastBufferedPositionMs, targetPositionMs)
     }
 
+    fun skipQueue(forward: Boolean) {
+        playerOrNull()?.let { player ->
+            if (forward) player.seekToNextMediaItem() else player.seekToPreviousMediaItem()
+            return
+        }
+        if (queue.isEmpty()) return
+        val index = currentQueueIndexFor(queue)
+        val next = if (!forward && lastPositionMs > 3_000L) index else index + if (forward) 1 else -1
+        val target = if (repeatAll) (next + queue.size) % queue.size else next.coerceIn(0, queue.lastIndex)
+        configure(
+            descriptor = queue[target], queue = queue, queueStartIndex = target,
+            startPositionMs = 0L, volume = volume, speed = speed,
+            repeatOne = repeatOne, repeatAll = repeatAll, shuffleModeEnabled = shuffleModeEnabled,
+            autoPlay = false, deferPlayerCreation = true, preparedQueue = queueStructure
+        )
+    }
+
     fun releasePlayer() {
         _player?.let { p ->
             lastPositionMs = p.currentPosition.coerceAtLeast(0L)
@@ -297,9 +314,11 @@ internal class NativePlaybackSession(
         audioEffects.release()
         lastSyncedAudioSessionId = C.AUDIO_SESSION_ID_UNSET
         _player = null
+        temporarySpeed = null
     }
 
     fun configure(args: NativePrepareSessionArguments) {
+        definitionRevision = args.definitionRevision
         isTemporary = args.isTemporary
         applyAudioEffects(args.audioEffects)
         val queue = args.playbackQueue()
@@ -320,7 +339,6 @@ internal class NativePlaybackSession(
     }
 
     fun setRepeatOne(args: NativeRepeatOneArguments) {
-        lastUsedMs = System.currentTimeMillis()
         repeatOne = args.repeatOne
         if (args.queue.isNotEmpty()) {
             updateQueue(
@@ -693,7 +711,9 @@ internal class NativePlaybackSession(
             queue = queueStructure.storedItems,
             channelSwapEnabled = channelSwapEnabled,
             playing = isP,
-            playWhenReady = isPWR
+            playWhenReady = isPWR,
+            isTemporary = isTemporary,
+            completed = p?.let { it.playbackState == Player.STATE_ENDED } ?: (lastPlaybackState == "completed")
         )
     }
 

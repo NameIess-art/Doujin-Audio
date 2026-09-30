@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+
 import '../../features/library/application/library_facade.dart';
 import '../../features/player/application/notification_facade.dart';
 import '../../features/player/application/playback_facade.dart';
@@ -29,6 +31,9 @@ final class PlaybackRuntimeBinding implements RuntimeBinding {
       restoreRuntime: playbackCommands.restorePersistedRuntime,
       updatePlaybackHistory: library.updatePlaybackHistory,
       onFocusChanged: notifications.setFocusedSession,
+      synchronizePausedRecovery: defaultTargetPlatform == TargetPlatform.android
+          ? playbackCommands.synchronizePausedRecovery
+          : null,
     );
     playback.attachSessionRuntime(
       onSessionRegistered: (session) {

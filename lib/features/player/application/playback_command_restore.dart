@@ -10,92 +10,13 @@ extension PlaybackCommandRestore on PlaybackCommandCoordinator {
         syncUi: false,
       );
       if (initialNativeRuntime == null) return;
-      final nativeSessionIds = initialNativeRuntime.sessions
-          .map((snapshot) => snapshot.sessionId)
-          .toSet();
       if (initialNativeRuntime.focusedSessionId == null &&
           focusedSessionId != null &&
           _sessions.containsKey(focusedSessionId)) {
         _notificationFacade.setFocusedSession(focusedSessionId);
       }
-      final restoredIds = restoredSessions
-          .map((session) => session.id)
-          .toList(growable: false);
-
-      await Future.wait(
-        restoredIds.map((id) async {
-          final session = _sessions[id];
-          if (session == null ||
-              nativeSessionIds.contains(id) ||
-              !_nativePlaybackRepository.supportsDeferredSessionRegistration) {
-            return;
-          }
-          final generation = session.loadGeneration;
-
-          try {
-            final track = _sessionTrackForPath(
-              session,
-              session.currentTrackPath,
-            );
-            if (track == null) return;
-            final uri =
-                track.path.startsWith('content://') ||
-                    PathMatcher.isRemoteUri(track.path)
-                ? Uri.parse(track.path)
-                : Uri.file(track.path);
-            final nativeQueue = await _nativePlaybackQueueFor(
-              session,
-              currentPath: session.currentTrackPath,
-            );
-            if (!_isRegisteredSession(session) ||
-                session.loadGeneration != generation) {
-              return;
-            }
-            final prepareResult = await _nativePlaybackRepository
-                .prepareSession(
-                  sessionId: session.id,
-                  isTemporary: session.isTemporary,
-                  uri: uri,
-                  title: track.displayName,
-                  path: track.path,
-                  subtitle: track.groupTitle,
-                  startPosition: session.lastKnownPosition,
-                  volume: session.volume,
-                  speed: session.speed,
-                  audioEffects: NativeAudioEffects(
-                    state: session.audioEffects,
-                    channelSwapEnabled: session.channelSwapEnabled,
-                  ),
-                  repeatOne: session.loopMode == SessionLoopMode.single,
-                  queue: nativeQueue,
-                  queueStartIndex: _nativePlaybackQueueStartIndexFor(
-                    session,
-                    currentPath: session.currentTrackPath,
-                  ),
-                  repeatAll:
-                      session.loopMode != SessionLoopMode.single &&
-                      !session.loopMode.isOneShot,
-                  shuffle: session.loopMode.isShuffle,
-                  candidateUris: _candidatePlaybackUrisForTrack(track),
-                  deferPlayerCreation: true,
-                );
-            if (!_isRegisteredSession(session) ||
-                session.loadGeneration != generation ||
-                !prepareResult.isOk) {
-              return;
-            }
-            final preparedSnapshot = prepareResult.valueOrNull;
-            if (preparedSnapshot != null) {
-              _handleNativePlaybackSnapshot(preparedSnapshot);
-            }
-            session.loadedPath = track.path;
-          } catch (error, stackTrace) {
-            _logRestoreFailure(error, stackTrace);
-          }
-        }),
-      );
-
-      await _applyNativeRuntimeSnapshot(syncUi: false);
+      // Missing native sessions stay as persisted definitions. Their sources,
+      // queues and players are prepared only when playback is requested.
       _syncNotificationState(immediateUnifiedSync: true);
       if (_sessions.isNotEmpty) _notifyPlaybackChanged();
     } catch (error, stackTrace) {
@@ -126,6 +47,11 @@ extension PlaybackCommandRestore on PlaybackCommandCoordinator {
           'native_playback_unmatched_session_preserved '
           'sessionId=${snapshot.sessionId}',
         );
+        continue;
+      }
+      // Idle native definitions may predate local paused edits. Only a live
+      // playback runtime can replace the persisted definition during reconnect.
+      if (!snapshot.playWhenReady && snapshot.processingState == 'idle') {
         continue;
       }
       _handleNativePlaybackSnapshot(snapshot);

@@ -29,10 +29,8 @@ final class PlaybackKeepAliveCoordinator {
 
   bool get hasPlaybackToKeepAlive => _playback.hasPlaybackToKeepAlive;
 
-  bool get hasRetainedPlaybackSession => _playback.hasRetainedPlaybackSession;
-
   void sync() {
-    if (!hasPlaybackToKeepAlive && !hasRetainedPlaybackSession) {
+    if (!hasPlaybackToKeepAlive) {
       unawaited(deactivateAudioSession());
     }
   }

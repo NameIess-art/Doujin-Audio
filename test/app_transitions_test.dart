@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
@@ -610,7 +611,9 @@ void main() {
       expect(_paintOrder(tester), [const ValueKey('app_indexed_page_0')]);
       index.value = 1;
       await tester.pump();
-      expect(buildCounts, <int>[1, 1, 0]);
+      expect(buildCounts, <int>[1, 0, 0]);
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(buildCounts, <int>[1, 0, 0]);
 
       await tester.pumpAndSettle();
       expect(buildCounts[2], 0);
@@ -624,6 +627,173 @@ void main() {
       expect(buildCounts, <int>[1, 1, 0]);
     },
   );
+
+  testWidgets('lazy stack skips unvisited pages during rapid switching', (
+    tester,
+  ) async {
+    final index = ValueNotifier<int>(0);
+    addTearDown(index.dispose);
+    final created = <int>[];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AppFadeThroughIndexedStack.lazy(
+          indexListenable: index,
+          itemCount: 3,
+          itemBuilder: (_, index) {
+            created.add(index);
+            return _StateProbe(label: 'lazy-$index');
+          },
+        ),
+      ),
+    );
+    index.value = 1;
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+    index.value = 2;
+    await tester.pumpAndSettle();
+    expect(created, [0, 2]);
+    expect(find.text('lazy-2'), findsOneWidget);
+    expect(find.text('lazy-1', skipOffstage: false), findsNothing);
+  });
+
+  testWidgets('cached hidden pages do not layout during switching or resize', (
+    tester,
+  ) async {
+    final index = ValueNotifier<int>(0);
+    final size = ValueNotifier<double>(300);
+    addTearDown(index.dispose);
+    addTearDown(size.dispose);
+    final layouts = <int>[0, 0, 0];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Center(
+          child: ValueListenableBuilder<double>(
+            valueListenable: size,
+            builder: (_, extent, _) => SizedBox(
+              width: extent,
+              height: extent,
+              child: AppFadeThroughIndexedStack.lazy(
+                indexListenable: index,
+                itemCount: 3,
+                itemBuilder: (_, page) => LayoutBuilder(
+                  builder: (_, constraints) {
+                    layouts[page]++;
+                    return Text('page-$page width=${constraints.maxWidth}');
+                  },
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    index.value = 1;
+    await tester.pumpAndSettle();
+    final hiddenLayouts = layouts[0];
+    size.value = 400;
+    await tester.pump();
+    expect(layouts[0], hiddenLayouts);
+    expect(find.text('page-1 width=400.0'), findsOneWidget);
+    index.value = 2;
+    await tester.pumpAndSettle();
+    expect(layouts[0], hiddenLayouts);
+    index.value = 0;
+    await tester.pumpAndSettle();
+    expect(find.text('page-0 width=400.0'), findsOneWidget);
+    expect(layouts[0], greaterThan(hiddenLayouts));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('hidden cached pages pause provider subscriptions until return', (
+    tester,
+  ) async {
+    final index = ValueNotifier<int>(0);
+    final updates = StreamController<int>.broadcast();
+    final valueProvider = StreamProvider<int>((_) => updates.stream);
+    final builds = <int>[0, 0];
+    addTearDown(index.dispose);
+    addTearDown(updates.close);
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp(
+          home: AppFadeThroughIndexedStack.lazy(
+            indexListenable: index,
+            itemCount: 2,
+            itemBuilder: (_, page) => Consumer(
+              builder: (_, ref, _) {
+                builds[page]++;
+                return Text(
+                  'page-$page value=${ref.watch(valueProvider).value}',
+                );
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+    updates.add(1);
+    await tester.pump();
+    index.value = 1;
+    await tester.pumpAndSettle();
+    final hiddenBuilds = builds[0];
+    final activeBuilds = builds[1];
+    updates.add(2);
+    await tester.pump();
+    await tester.pump();
+    expect(builds[0], hiddenBuilds);
+    expect(builds[1], greaterThan(activeBuilds));
+    index.value = 0;
+    await tester.pumpAndSettle();
+    expect(find.text('page-0 value=2'), findsOneWidget);
+  });
+
+  testWidgets('lazy pages preserve scroll and use the latest theme on return', (
+    tester,
+  ) async {
+    final index = ValueNotifier<int>(0);
+    final dark = ValueNotifier<bool>(false);
+    final scroll = ScrollController();
+    addTearDown(index.dispose);
+    addTearDown(dark.dispose);
+    addTearDown(scroll.dispose);
+    await tester.pumpWidget(
+      ValueListenableBuilder<bool>(
+        valueListenable: dark,
+        builder: (_, isDark, _) => MaterialApp(
+          theme: ThemeData(
+            brightness: isDark ? Brightness.dark : Brightness.light,
+          ),
+          home: AppFadeThroughIndexedStack.lazy(
+            indexListenable: index,
+            itemCount: 2,
+            itemBuilder: (_, page) => page == 1
+                ? const Text('second')
+                : Builder(
+                    builder: (context) => ListView.builder(
+                      controller: scroll,
+                      itemExtent: 60,
+                      itemCount: 60,
+                      itemBuilder: (_, row) =>
+                          Text('${Theme.of(context).brightness.name} row-$row'),
+                    ),
+                  ),
+          ),
+        ),
+      ),
+    );
+    scroll.jumpTo(600);
+    await tester.pump();
+    index.value = 1;
+    await tester.pumpAndSettle();
+    dark.value = true;
+    await tester.pumpAndSettle();
+    expect(scroll.offset, 600);
+    index.value = 0;
+    await tester.pumpAndSettle();
+    expect(scroll.offset, 600);
+    expect(find.text('dark row-10'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets('lazy stack keeps remaining states when its page count changes', (
     tester,
@@ -739,7 +909,10 @@ void main() {
           .widgetList<Offstage>(
             find.ancestor(
               of: hidden,
-              matching: find.byType(Offstage, skipOffstage: false),
+              matching: find.byWidgetPredicate(
+                (widget) => widget is Offstage,
+                skipOffstage: false,
+              ),
             ),
           )
           .any((widget) => widget.offstage),

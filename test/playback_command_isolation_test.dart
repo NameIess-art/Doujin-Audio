@@ -20,6 +20,7 @@ import 'package:doujin_audio/features/player/domain/playback_mode.dart';
 import 'package:doujin_audio/features/player/domain/playback_persistence_repository.dart';
 import 'package:doujin_audio/features/player/domain/playback_queue.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
@@ -177,7 +178,74 @@ void main() {
   );
 
   test(
-    'restore registers every paused session lazily without waiting for another session',
+    'paused track selection performs no native preparation or cover work',
+    () async {
+      final session = register('a');
+      session.setOptimisticPosition(const Duration(seconds: 22));
+      expect(
+        await commands.prepareSession(
+          session,
+          nextPath: catalog.tracks.last.path,
+          targetQueueIndex: 1,
+          autoPlay: false,
+        ),
+        true,
+      );
+      expect(native.prepared, isEmpty);
+      expect(native.played, isEmpty);
+      expect(native.paused, isEmpty);
+      expect(catalog.coverReads, 0);
+      expect(session.loadedPath, isNull);
+      expect(session.currentQueueIndex, 1);
+      expect(session.position, Duration.zero);
+      expect(session.playbackRequested, false);
+    },
+  );
+
+  test(
+    'an idle preparation snapshot still starts the requested playback',
+    () async {
+      native.coldPreparation = true;
+      final session = register('a');
+      session.setOptimisticPosition(const Duration(seconds: 22));
+      expect(
+        await commands.prepareSession(
+          session,
+          nextPath: session.currentTrackPath,
+        ),
+        true,
+      );
+      expect(native.prepared, ['a']);
+      expect(native.played, ['a']);
+      expect(native.startPositions, [const Duration(seconds: 22)]);
+      expect(session.playbackRequested, true);
+    },
+  );
+
+  test(
+    'a cold paused session keeps its seek point without starting native work',
+    () async {
+      final session = register('a');
+      session.setOptimisticPosition(const Duration(seconds: 22));
+      expect(await commands.pauseSession(session), true);
+      expect(
+        await commands.prepareSession(
+          session,
+          nextPath: session.currentTrackPath,
+          autoPlay: false,
+        ),
+        true,
+      );
+      expect(native.prepared, isEmpty);
+      expect(native.paused, isEmpty);
+      expect(session.position, const Duration(seconds: 22));
+      expect(session.loadedPath, isNull);
+      expect(playback.hasPlaybackToKeepAlive, false);
+    },
+  );
+
+  test(
+    'restore keeps every paused definition without resolving native queues',
     () async {
       final first = register('a');
       final second = register('b');
@@ -187,12 +255,11 @@ void main() {
         first,
         second,
       ], focusedSessionId: first.id);
-      await native.startedFor('a').future;
-      await native.startedFor('b').future;
-      expect(native.deferred, {'a': true, 'b': true});
+      await restoration;
+      expect(native.prepared, isEmpty);
+      expect(catalog.coverReads, 0);
       expect(native.played, isEmpty);
       release.complete();
-      await restoration;
       expect(first.effectivePlaying, false);
       expect(second.effectivePlaying, false);
     },
@@ -210,6 +277,61 @@ void main() {
       expect(native.paused, isEmpty);
     },
   );
+
+  test('reconnect ignores stale idle native definitions', () async {
+    final session = register('a');
+    session.currentTrackPath = catalog.tracks.last.path;
+    session.volume = 0.35;
+    session.setOptimisticPosition(const Duration(seconds: 22));
+    native.runtimeSnapshots = [
+      NativePlaybackSnapshot(
+        sessionId: session.id,
+        path: catalog.tracks.first.path,
+        playing: false,
+        playWhenReady: false,
+        processingState: 'idle',
+        position: const Duration(seconds: 9),
+        bufferedPosition: Duration.zero,
+        volume: 1,
+        boostGain: 1,
+        channelSwapEnabled: false,
+      ),
+    ];
+
+    await commands.reconcileNativeRuntime();
+
+    expect(session.currentTrackPath, catalog.tracks.last.path);
+    expect(session.position, const Duration(seconds: 22));
+    expect(session.volume, 0.35);
+    expect(session.loadedPath, isNull);
+    expect(native.prepared, isEmpty);
+    expect(catalog.coverReads, 0);
+  });
+
+  test('cold queue replacement resets the previous track progress', () async {
+    final session = register('a', queue: true);
+    session.setOptimisticPosition(const Duration(seconds: 22));
+    session.setOptimisticDuration(const Duration(minutes: 5));
+    session.playbackQueue = session.playbackQueue!.copyWith(
+      entries: [
+        PlaybackQueueEntry(
+          id: 'replacement',
+          kind: PlaybackQueueEntryKind.track,
+          title: 'Replacement',
+          tracks: [catalog.tracks.last],
+        ),
+      ],
+    );
+    session.currentQueueIndex = -1;
+
+    await commands.syncPlaybackQueueSession(session);
+
+    expect(session.currentTrackPath, catalog.tracks.last.path);
+    expect(session.position, Duration.zero);
+    expect(session.duration, catalog.tracks.last.duration);
+    expect(native.prepared, isEmpty);
+    expect(native.queueUpdates, isEmpty);
+  });
 
   test('repeat and shuffle changes reuse the same queue descriptors', () async {
     final session = register('a', queue: true)
@@ -335,6 +457,11 @@ void main() {
       expect(session.playbackQueue!.expandedTracks, isEmpty);
       expect(session.hasDetachedQueueTrack, true);
 
+      await commands.pauseSession(session);
+      session.setOptimisticPosition(const Duration(seconds: 22));
+      expect(session.loadedPath, isNull);
+      native.queueUpdates.clear();
+
       await playback.addTrackToPlaybackQueue(session.id, catalog.tracks[2]);
 
       expect(session.currentTrackPath, originalPath);
@@ -346,10 +473,90 @@ void main() {
       ]);
       expect(native.prepared, isEmpty);
       expect(native.played, isEmpty);
+      expect(native.queueUpdates, isEmpty);
+      expect(session.position, const Duration(seconds: 22));
       expect(
         commands.resolveAdvance(session, forward: true)?.path,
         catalog.tracks[2].path,
       );
+    },
+  );
+  test(
+    'cold recovery stores the current duplicate occurrence without playback',
+    () async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+      final session = register('a', queue: true)
+        ..currentQueueIndex = 1
+        ..volume = 0.4;
+      session.setOptimisticPosition(const Duration(seconds: 22));
+      await commands.synchronizePausedRecovery(session);
+      expect(native.deferredPrepared, ['a']);
+      expect(native.lastPreparedQueueIndex, 1);
+      expect(native.lastPreparedVolume, 0.4);
+      expect(native.startPositions, [const Duration(seconds: 22)]);
+      expect(native.played, isEmpty);
+      expect(session.loadedPath, isNull);
+      final coverReads = catalog.coverReads;
+      session.volume = 0.6;
+      await commands.synchronizePausedRecovery(session);
+      expect(native.lastPreparedVolume, 0.6);
+      expect(catalog.coverReads, coverReads);
+    },
+  );
+
+  test(
+    'empty cold queues remove recovery without registering a stale track',
+    () async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+      final session = register('a', queue: true)
+        ..playbackQueue = PlaybackQueueDefinition(
+          name: 'empty',
+          entries: const [],
+        );
+      await commands.synchronizePausedRecovery(session);
+      expect(native.removed, ['a']);
+      expect(native.prepared, isEmpty);
+      expect(catalog.coverReads, 0);
+    },
+  );
+
+  test(
+    'completed cold recovery restarts from zero without changing its saved progress',
+    () async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+      final session = register('completed', queue: true);
+      session.setOptimisticPosition(const Duration(minutes: 2));
+      session.setOptimisticDuration(const Duration(minutes: 2));
+      session.setOptimisticState(
+        playing: false,
+        processingState: ProcessingState.completed,
+      );
+      await commands.synchronizePausedRecovery(session);
+      expect(native.deferredPrepared, ['completed']);
+      expect(native.startPositions, [Duration.zero]);
+      expect(native.played, isEmpty);
+      expect(session.lastKnownPosition, const Duration(minutes: 2));
+      expect(session.duration, const Duration(minutes: 2));
+      expect(session.state.processingState, ProcessingState.completed);
+      expect(session.loadedPath, isNull);
+    },
+  );
+
+  test(
+    'Windows and playing sessions do not publish cold recovery definitions',
+    () async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+      final session = register('a', queue: true);
+      await commands.synchronizePausedRecovery(session);
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      session.setOptimisticState(playing: true);
+      await commands.synchronizePausedRecovery(session);
+      expect(native.prepared, isEmpty);
+      expect(catalog.coverReads, 0);
     },
   );
 }
@@ -411,12 +618,18 @@ class _Catalog implements PlaybackLibraryCatalog {
 }
 
 class _Native extends NativePlaybackRepository {
+  List<NativePlaybackSnapshot> runtimeSnapshots = [];
   final blocked = <String, Future<void>>{};
   final blockedPlay = <String, Future<void>>{};
   final _started = <String, Completer<void>>{};
   final _playStarted = <String, Completer<void>>{};
-  final deferred = <String, bool>{};
+  bool coldPreparation = false;
+  final startPositions = <Duration>[];
   final prepared = <String>[];
+  final deferredPrepared = <String>[];
+  final removed = <String>[];
+  int? lastPreparedQueueIndex;
+  double? lastPreparedVolume;
   final played = <String>[];
   final paused = <String>[];
   final queueUpdates = <String>[];
@@ -430,15 +643,19 @@ class _Native extends NativePlaybackRepository {
   Completer<void> playStartedFor(String id) =>
       _playStarted.putIfAbsent(id, Completer<void>.new);
   @override
-  bool get supportsDeferredSessionRegistration => true;
-  @override
   Future<void> dispose() async {}
   @override
   Future<NativeResult<void>> undismissNotifications() async =>
       const NativeSuccess();
   @override
+  Future<NativeResult<void>> removeSession(String sessionId) async {
+    removed.add(sessionId);
+    return const NativeSuccess();
+  }
+
+  @override
   Future<NativeResult<NativePlaybackBundleSnapshot>> snapshot() async =>
-      NativeSuccess(NativePlaybackBundleSnapshot(sessions: []));
+      NativeSuccess(NativePlaybackBundleSnapshot(sessions: runtimeSnapshots));
   @override
   Future<NativeResult<NativePlaybackSnapshot>> prepareSession({
     required String sessionId,
@@ -462,12 +679,18 @@ class _Native extends NativePlaybackRepository {
     bool isTemporary = false,
   }) async {
     prepared.add(sessionId);
+    if (deferPlayerCreation) deferredPrepared.add(sessionId);
+    lastPreparedQueueIndex = queueStartIndex;
+    lastPreparedVolume = volume;
     _paths[sessionId] = path ?? uri.toString();
-    deferred[sessionId] = deferPlayerCreation;
+    startPositions.add(startPosition);
     final started = startedFor(sessionId);
     if (!started.isCompleted) started.complete();
     await blocked[sessionId];
-    return NativeSuccess(_snapshot(sessionId));
+    if (deferPlayerCreation) return const NativeSuccess();
+    return NativeSuccess(
+      _snapshot(sessionId, processingState: coldPreparation ? 'idle' : 'ready'),
+    );
   }
 
   @override
@@ -538,12 +761,13 @@ class _Native extends NativePlaybackRepository {
     String id, {
     bool playing = false,
     int? commandId,
+    String processingState = 'ready',
   }) => NativePlaybackSnapshot(
     sessionId: id,
     path: _paths[id],
     playing: playing,
     playWhenReady: playing,
-    processingState: 'ready',
+    processingState: processingState,
     position: Duration.zero,
     bufferedPosition: Duration.zero,
     volume: 1,

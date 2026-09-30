@@ -17,6 +17,40 @@ void main() {
   );
 
   test(
+    'completed runtime preserves final progress without a loaded source',
+    () {
+      final session = createSession()
+        ..loadedPath = '/audio/one.mp3'
+        ..setOptimisticState(playing: true);
+      addTearDown(session.shutdown);
+
+      session.applyNativeSnapshot(
+        NativePlaybackSnapshot(
+          sessionId: session.id,
+          path: session.currentTrackPath,
+          uri: Uri.file(session.currentTrackPath).toString(),
+          playing: false,
+          playWhenReady: false,
+          processingState: 'completed',
+          position: const Duration(seconds: 42),
+          bufferedPosition: const Duration(seconds: 42),
+          duration: const Duration(seconds: 42),
+          volume: 1,
+          boostGain: 1,
+          channelSwapEnabled: false,
+        ),
+      );
+
+      expect(session.loadedPath, isNull);
+      expect(session.currentTrackPath, '/audio/one.mp3');
+      expect(session.position, const Duration(seconds: 42));
+      expect(session.duration, const Duration(seconds: 42));
+      expect(session.state.processingState, ProcessingState.completed);
+      expect(session.playbackRequested, isFalse);
+    },
+  );
+
+  test(
     'preparation generations preserve flags and reject stale completion',
     () async {
       final session = createSession();

@@ -1251,7 +1251,7 @@ Map<String, Object> _assessPlaybackPerformance(
       (idleObservation['observationMs'] as int) >= 60000 &&
       idleObservation['structuralEvents'] == 0 &&
       idleObservation['progressEvents'] == 0 &&
-      (!Platform.isWindows || (idleObservation['retainedPlayers'] as int) <= 1);
+      (!Platform.isWindows || idleObservation['retainedPlayers'] == 0);
   return {
     'measurementValid': measurementValid,
     'baselineWithinBudget': baselineWithinBudget,

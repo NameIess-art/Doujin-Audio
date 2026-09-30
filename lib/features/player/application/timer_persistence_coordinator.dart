@@ -25,6 +25,7 @@ final class TimerPersistenceCoordinator {
     required void Function(DateTime target) scheduleAutoResumeTimer,
     required Future<void> Function(int generation) handleAutoResumeOnPlatform,
     required VoidCallback onRuntimeRestored,
+    required Future<void> Function(String sessionId) flushSessionPersistence,
   }) : _service = service,
        _preferencesLoader = preferencesLoader,
        _restoredCountdownSessions = restoredCountdownSessions,
@@ -34,7 +35,8 @@ final class TimerPersistenceCoordinator {
        _restoreCountdownTimer = restoreCountdownTimer,
        _scheduleAutoResumeTimer = scheduleAutoResumeTimer,
        _handleAutoResumeOnPlatform = handleAutoResumeOnPlatform,
-       _onRuntimeRestored = onRuntimeRestored;
+       _onRuntimeRestored = onRuntimeRestored,
+       _flushSessionPersistence = flushSessionPersistence;
   final TimerService _service;
   final PowerPlatformService powerPlatformService;
   final Future<SharedPreferences> Function() _preferencesLoader;
@@ -47,6 +49,7 @@ final class TimerPersistenceCoordinator {
   final void Function(DateTime target) _scheduleAutoResumeTimer;
   final Future<void> Function(int generation) _handleAutoResumeOnPlatform;
   final VoidCallback _onRuntimeRestored;
+  final Future<void> Function(String sessionId) _flushSessionPersistence;
   bool get _isWindows => defaultTargetPlatform == TargetPlatform.windows;
   static const _settingsKey = 'timer_settings_v1';
   static const _runtimeKey = 'timer_runtime_v1';
@@ -163,6 +166,19 @@ final class TimerPersistenceCoordinator {
   Future<void> syncNativeAlarms() async {
     try {
       final autoResumeAt = _service.autoResumeAt;
+      final generation = _service.timerGeneration;
+      if (defaultTargetPlatform == TargetPlatform.android &&
+          autoResumeAt != null &&
+          autoResumeAt.isAfter(DateTime.now()) &&
+          _service.pausedByTimerSessionIds.isNotEmpty) {
+        for (final id in List<String>.of(_service.pausedByTimerSessionIds)) {
+          await _flushSessionPersistence(id);
+          if (!_isCurrentGeneration(generation) ||
+              _service.autoResumeAt != autoResumeAt) {
+            return;
+          }
+        }
+      }
       await powerPlatformService.syncPlaybackTimerAlarms(
         timerMode: _service.timerMode?.index,
         timerDurationMs: _service.timerDuration?.inMilliseconds,

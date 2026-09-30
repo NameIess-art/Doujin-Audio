@@ -36,6 +36,14 @@ void main() {
     await fixture.dispose(currentGraph: runtimeGraph);
   });
 
+  void markNativePlayingSession(PlaybackSession session) {
+    session.loadedPath = session.currentTrackPath;
+    session.setOptimisticState(
+      playing: true,
+      processingState: ProcessingState.ready,
+    );
+  }
+
   Future<PlaybackSession> addAudioEffectsSession(String trackPath) async {
     final track = MusicTrack(
       path: trackPath,
@@ -54,7 +62,7 @@ void main() {
     final session = runtimeGraph.playback.activeSessions.singleWhere(
       (candidate) => candidate.currentTrackPath == trackPath,
     );
-    session.loadedPath = trackPath;
+    markNativePlayingSession(session);
     return session;
   }
 
@@ -181,11 +189,7 @@ void main() {
       await runtimeGraph.playback.spawnSession(track, autoPlay: false);
       final session = runtimeGraph.playback.activeSessions.single;
 
-      await runtimeGraph.playbackCommands.prepareSession(
-        session,
-        nextPath: track.path,
-        autoPlay: false,
-      );
+      markNativePlayingSession(session);
       await runtimeGraph.playback.setSessionSpeed(session.id, 1.6);
 
       expect(setSpeedCalls, 1);
@@ -259,16 +263,12 @@ void main() {
       );
       await runtimeGraph.playback.spawnSession(track, autoPlay: false);
       final session = runtimeGraph.playback.activeSessions.single;
-      await runtimeGraph.playbackCommands.prepareSession(
-        session,
-        nextPath: track.path,
-        autoPlay: false,
-      );
+      markNativePlayingSession(session);
       session.applyNativeSnapshot(
         NativePlaybackSnapshot(
           sessionId: session.id,
-          playing: false,
-          playWhenReady: false,
+          playing: true,
+          playWhenReady: true,
           processingState: 'ready',
           position: Duration.zero,
           bufferedPosition: Duration.zero,
@@ -535,11 +535,7 @@ void main() {
       );
       await runtimeGraph.playback.spawnSession(track, autoPlay: false);
       final session = runtimeGraph.playback.activeSessions.single;
-      await runtimeGraph.playbackCommands.prepareSession(
-        session,
-        nextPath: track.path,
-        autoPlay: false,
-      );
+      markNativePlayingSession(session);
 
       await runtimeGraph.playback.setSessionNoiseReduction(session.id, true);
 
@@ -635,6 +631,7 @@ void main() {
         );
         await runtimeGraph.playback.spawnSession(track, autoPlay: false);
         final session = runtimeGraph.playback.activeSessions.single;
+        markNativePlayingSession(session);
 
         await runtimeGraph.playback.setSessionSkipSilence(session.id, true);
         await runtimeGraph.playback.setSessionNoiseReduction(session.id, true);
@@ -876,7 +873,7 @@ void main() {
     );
 
     test(
-      'failed paused console updates roll back and stay rolled back after restart',
+      'cold paused console updates persist locally across restart without native playback',
       () async {
         runtimeGraph.playback.configurePersistence(enabled: true);
         SharedPreferences.setMockInitialValues(const <String, Object>{});
@@ -893,34 +890,27 @@ void main() {
         );
         await repository.saveAllTracks(<MusicTrack>[track]);
 
+        final nativePlayerCalls = <String>[];
+        final recoveryDefinitions = <Map<Object?, Object?>>[];
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
             .setMockMethodCallHandler(nativePlaybackChannel, (call) async {
-              final args = call.arguments as Map<Object?, Object?>?;
               switch (call.method) {
                 case NativePlaybackMethod.prepareSession:
-                  final audioEffects =
-                      args!['audioEffects'] as Map<Object?, Object?>;
+                  final args = call.arguments as Map<Object?, Object?>;
+                  if (args['deferPlayerCreation'] == true) {
+                    recoveryDefinitions.add(args);
+                    return <String, Object?>{'ok': true, 'value': null};
+                  }
+                  nativePlayerCalls.add(call.method);
                   return <String, Object?>{
-                    'ok': true,
-                    'value': <String, Object?>{
-                      'sessionId': args['sessionId'] as String,
-                      'uri': track.path,
-                      'path': track.path,
-                      'title': track.displayName,
-                      'playing': false,
-                      'playWhenReady': false,
-                      'processingState': 'ready',
-                      'positionMs': 0,
-                      'bufferedPositionMs': 0,
-                      'durationMs': const Duration(minutes: 3).inMilliseconds,
-                      'volume': 1.0,
-                      'speed': 1.0,
-                      'boostGain': 1.0,
-                      'channelSwap': audioEffects['channelSwapEnabled'] as bool,
-                      'audioEffects': audioEffects,
-                    },
+                    'ok': false,
+                    'error': 'Unknown session.',
                   };
+                case NativePlaybackMethod.setVolume:
+                case NativePlaybackMethod.setSpeed:
                 case NativePlaybackMethod.setAudioEffects:
+                case NativePlaybackMethod.play:
+                  nativePlayerCalls.add(call.method);
                   return <String, Object?>{
                     'ok': false,
                     'error': 'Unknown session.',
@@ -950,15 +940,29 @@ void main() {
           autoPlay: false,
         );
         expect(session.state.playing, isFalse);
+        expect(session.loadedPath, isNull);
 
+        await runtimeGraph.playback.setSessionVolume(session.id, 1.25);
+        await runtimeGraph.playback.setSessionSpeed(session.id, 1.5);
         await runtimeGraph.playback.setSessionSkipSilence(session.id, true);
         await runtimeGraph.playback.setSessionChannelSwap(session.id, true);
 
         final persisted = (await repository.loadAllSessions()).single;
-        expect(persisted.audioEffects.skipSilenceEnabled, isFalse);
-        expect(persisted.channelSwapEnabled, isFalse);
+        expect(nativePlayerCalls, isEmpty);
+        expect(persisted.volume, 1.25);
+        expect(persisted.speed, 1.5);
+        expect(persisted.audioEffects.skipSilenceEnabled, isTrue);
+        expect(persisted.channelSwapEnabled, isTrue);
 
         await runtimeGraph.runtime.dispose();
+        expect(recoveryDefinitions, isNotEmpty);
+        final recovery = recoveryDefinitions.last;
+        expect(recovery['volume'], 1.25);
+        expect(recovery['speed'], 1.5);
+        final recoveryEffects =
+            recovery['audioEffects'] as Map<Object?, Object?>;
+        expect(recoveryEffects['skipSilenceEnabled'], isTrue);
+        expect(recoveryEffects['channelSwapEnabled'], isTrue);
         notificationService = PlaybackNotificationService();
         runtimeGraph = createTestRuntimeGraph(
           notificationService: notificationService,
@@ -972,13 +976,17 @@ void main() {
 
         final restored = runtimeGraph.playback.activeSessions.single;
         expect(restored.state.playing, isFalse);
-        expect(restored.audioEffects.skipSilenceEnabled, isFalse);
-        expect(restored.channelSwapEnabled, isFalse);
+        expect(restored.loadedPath, isNull);
+        expect(restored.volume, 1.25);
+        expect(restored.speed, 1.5);
+        expect(restored.audioEffects.skipSilenceEnabled, isTrue);
+        expect(restored.channelSwapEnabled, isTrue);
+        expect(nativePlayerCalls, isEmpty);
       },
     );
 
     test(
-      'restored sessions register natively without eagerly creating players',
+      'restored paused sessions stay cold until explicitly played',
       () async {
         const firstSessionId = 'restored_first';
         const secondSessionId = 'restored_second';
@@ -1041,14 +1049,15 @@ void main() {
 
         final preparedSessionIds = <String>{};
         var secondPrepareCalls = 0;
-        bool? firstDeferredPlayerCreation;
-        bool? secondDeferredPlayerCreation;
+        final playedSessionIds = <String>[];
+        Map<Object?, Object?>? preparedEffects;
         var setAudioEffectsCalls = 0;
         Map<Object?, Object?>? lastEffects;
 
         Map<String, Object?> snapshotFor(
           String sessionId, {
           Object? audioEffects,
+          bool playing = false,
         }) {
           final track = sessionId == firstSessionId ? firstTrack : secondTrack;
           return <String, Object?>{
@@ -1056,8 +1065,8 @@ void main() {
             'uri': track.path,
             'path': track.path,
             'title': track.displayName,
-            'playing': false,
-            'playWhenReady': false,
+            'playing': playing,
+            'playWhenReady': playing,
             'processingState': 'ready',
             'positionMs': 0,
             'bufferedPositionMs': 0,
@@ -1076,17 +1085,33 @@ void main() {
                 case NativePlaybackMethod.prepareSession:
                   final args = call.arguments as Map<Object?, Object?>;
                   final sessionId = args['sessionId'] as String;
+                  if (args['deferPlayerCreation'] == true) {
+                    return <String, Object?>{'ok': true, 'value': null};
+                  }
                   preparedSessionIds.add(sessionId);
-                  final deferred = args['deferPlayerCreation'] as bool?;
                   if (sessionId == secondSessionId) {
                     secondPrepareCalls++;
-                    secondDeferredPlayerCreation = deferred;
-                  } else {
-                    firstDeferredPlayerCreation = deferred;
                   }
+                  preparedEffects =
+                      args['audioEffects'] as Map<Object?, Object?>;
                   return <String, Object?>{
                     'ok': true,
-                    'value': snapshotFor(sessionId),
+                    'value': snapshotFor(
+                      sessionId,
+                      audioEffects: preparedEffects,
+                    ),
+                  };
+                case NativePlaybackMethod.play:
+                  final args = call.arguments as Map<Object?, Object?>;
+                  final sessionId = args['sessionId'] as String;
+                  playedSessionIds.add(sessionId);
+                  return <String, Object?>{
+                    'ok': true,
+                    'value': snapshotFor(
+                      sessionId,
+                      audioEffects: preparedEffects,
+                      playing: true,
+                    ),
                   };
                 case NativePlaybackMethod.setAudioEffects:
                   final args = call.arguments as Map<Object?, Object?>;
@@ -1127,21 +1152,43 @@ void main() {
           secondSessionId,
         );
         expect(secondSession, isNotNull);
-        expect(firstDeferredPlayerCreation, isTrue);
-        expect(secondDeferredPlayerCreation, isTrue);
-        expect(secondPrepareCalls, 1);
-        expect(secondSession!.loadedPath, secondTrack.path);
+        expect(preparedSessionIds, isEmpty);
+        expect(playedSessionIds, isEmpty);
+        expect(secondPrepareCalls, 0);
+        expect(secondSession!.loadedPath, isNull);
 
         await restoredGraph.playback.setSessionSkipSilence(
           secondSessionId,
           true,
         );
 
-        expect(secondPrepareCalls, 1);
-        expect(setAudioEffectsCalls, greaterThanOrEqualTo(1));
-        expect(lastEffects?['skipSilenceEnabled'], isTrue);
-        expect(secondSession.loadedPath, secondTrack.path);
+        expect(secondPrepareCalls, 0);
+        expect(setAudioEffectsCalls, 0);
+        expect(secondSession.loadedPath, isNull);
         expect(secondSession.audioEffects.skipSilenceEnabled, isTrue);
+
+        final started = await restoredGraph.playbackCommands.prepareSession(
+          secondSession,
+          nextPath: secondTrack.path,
+        );
+        expect(started, isTrue);
+        expect(preparedSessionIds, {secondSessionId});
+        expect(playedSessionIds, [secondSessionId]);
+        expect(secondPrepareCalls, 1);
+        expect(preparedEffects?['skipSilenceEnabled'], isTrue);
+        expect(secondSession.loadedPath, secondTrack.path);
+        expect(
+          restoredGraph.playback.sessionById(firstSessionId)!.loadedPath,
+          isNull,
+        );
+
+        await restoredGraph.playback.setSessionNoiseReduction(
+          secondSessionId,
+          true,
+        );
+        expect(setAudioEffectsCalls, 1);
+        expect(lastEffects?['skipSilenceEnabled'], isTrue);
+        expect(lastEffects?['noiseReductionEnabled'], isTrue);
       },
     );
 
@@ -1247,7 +1294,16 @@ void main() {
           runtimeGraph.playback.activeSessions.single.currentTrackPath,
           restoredTrack.path,
         );
-        expect(preparedPaths, contains(restoredTrack.path));
+        expect(preparedPaths, isEmpty);
+        final restoredSession = runtimeGraph.playback.activeSessions.single;
+        expect(restoredSession.loadedPath, isNull);
+        expect(restoredSession.effectivePlaying, isFalse);
+        final started = await runtimeGraph.playbackCommands.prepareSession(
+          restoredSession,
+          nextPath: restoredTrack.path,
+        );
+        expect(started, isTrue);
+        expect(preparedPaths, [restoredTrack.path]);
       },
     );
   });

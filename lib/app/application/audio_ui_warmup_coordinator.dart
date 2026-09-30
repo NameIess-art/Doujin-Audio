@@ -106,7 +106,7 @@ final class AudioUiWarmupCoordinator {
     PlaybackSession? focused;
     if (focusedId != null) {
       for (final candidate in sessions) {
-        if (candidate.id == focusedId) {
+        if (candidate.id == focusedId && candidate.playbackRequested) {
           focused = candidate;
           break;
         }
@@ -114,10 +114,8 @@ final class AudioUiWarmupCoordinator {
     }
     final session =
         focused ??
-        sessions.firstWhere(
-          (candidate) => candidate.state.playing,
-          orElse: () => sessions.first,
-        );
+        sessions.where((candidate) => candidate.playbackRequested).firstOrNull;
+    if (session == null) return;
     _scheduleTrack(
       trackPath: session.currentTrackPath,
       generation: generation,

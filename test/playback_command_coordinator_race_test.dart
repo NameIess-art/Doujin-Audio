@@ -111,12 +111,16 @@ void main() {
 
         await runtimeGraph.playback.retargetPath('/music/old', '/music/new');
 
-        expect(preparations, hasLength(1));
-        expect(preparations.single['startPositionMs'], 42000);
-        expect(
-          preparations.single['path'],
-          PathMatcher.normalize('/music/new/01.mp3'),
-        );
+        expect(preparations, hasLength(playing ? 1 : 0));
+        if (playing) {
+          expect(preparations.single['startPositionMs'], 42000);
+          expect(
+            preparations.single['path'],
+            PathMatcher.normalize('/music/new/01.mp3'),
+          );
+        } else {
+          expect(session.loadedPath, isNull);
+        }
         expect(session.position, const Duration(seconds: 42));
         expect(session.playbackRequested, playing);
       });
@@ -261,6 +265,7 @@ void main() {
         targetTrack,
         customQueueTracks: [targetTrack],
       )..loadedPath = targetTrack.path;
+      target.setOptimisticState(playing: true);
       final otherStarted = Completer<void>();
       final targetPrepared = Completer<void>();
       final releaseOther = Completer<void>();
@@ -373,7 +378,7 @@ void main() {
     );
 
     test(
-      'runtime restore prepares sessions missing from native snapshot',
+      'runtime restore leaves missing native sessions as cold definitions',
       () async {
         final track = MusicTrack(
           path: '/music/native-missing.mp3',
@@ -431,8 +436,8 @@ void main() {
           focusedSessionId: session.id,
         );
 
-        expect(prepareCalls, 1);
-        expect(session.loadedPath, track.path);
+        expect(prepareCalls, 0);
+        expect(session.loadedPath, isNull);
       },
     );
 
@@ -693,10 +698,11 @@ void main() {
         final session = runtimeGraph.playback.activeSessions.single;
         await runtimeGraph.playback.pendingSessionPreparation;
 
-        // Pause the session so it is in ready state and not playing
-        await runtimeGraph.playback.toggleSessionPlayPause(session.id);
-        expect(session.effectivePlaying, isFalse);
-        expect(session.state.processingState, ProcessingState.ready);
+        // The loaded runtime disappears before the next native play reaches it.
+        // Keep its local loaded marker to exercise unknown-session recovery.
+        session.setOptimisticState(playing: false);
+        session.confirmPaused();
+        expect(session.loadedPath, isNotNull);
 
         final initialPrepareCount = prepareCallCount;
         final initialPlayCount = playCallCount;

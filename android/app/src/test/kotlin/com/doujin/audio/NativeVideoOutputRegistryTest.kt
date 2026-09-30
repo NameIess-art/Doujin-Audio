@@ -2,9 +2,7 @@ package com.doujin.audio
 
 import com.doujin.audio.player.video.NativeVideoOutputBinding
 import com.doujin.audio.player.video.NativeVideoOutputRegistry
-import com.doujin.audio.player.video.shouldRecoverPausedVideoFrame
 
-import androidx.media3.common.Player
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -14,39 +12,22 @@ import org.junit.Test
 
 class NativeVideoOutputRegistryTest {
     @Test
-    fun `paused video frame recovery only runs for an attached current surface awaiting its first frame`() {
-        fun shouldRecover(
-            attached: Boolean = true,
-            awaiting: Boolean = true,
-            current: Boolean = true,
-            playWhenReady: Boolean = false,
-            state: Int = Player.STATE_READY,
-            hasItem: Boolean = true,
-            canSeek: Boolean = true
-        ): Boolean = shouldRecoverPausedVideoFrame(
-            isAttachedToWindow = attached,
-            isAwaitingFirstFrame = awaiting,
-            isCurrentPlayer = current,
-            playWhenReady = playWhenReady,
-            playbackState = state,
-            hasCurrentMediaItem = hasItem,
-            canSeekCurrentMediaItem = canSeek
-        )
-
-        assertTrue(shouldRecover())
-        assertTrue(
-            shouldRecover(state = Player.STATE_BUFFERING)
-        )
-        assertFalse(shouldRecover(attached = false))
-        assertFalse(shouldRecover(awaiting = false))
-        assertFalse(shouldRecover(current = false))
-        assertFalse(shouldRecover(playWhenReady = true))
-        assertFalse(shouldRecover(hasItem = false))
-        assertFalse(shouldRecover(canSeek = false))
-        assertFalse(shouldRecover(state = Player.STATE_IDLE))
-        assertFalse(shouldRecover(state = Player.STATE_ENDED))
+    fun `pausing detaches the video decoder and a later player can rebind the same page`() {
+        var player: FakePlayer? = FakePlayer(playing = true)
+        val output = FakeOutput()
+        val registry = NativeVideoOutputRegistry<FakePlayer>({ player }, FakePlayer::playing)
+        registry.register("session", "owner", output)
+        registry.detachPlayer("session")
+        assertNull(output.player)
+        assertFalse(output.screenKeptOn)
+        player = null
+        registry.refresh("session", "owner")
+        assertNull(output.player)
+        player = FakePlayer(playing = true)
+        registry.refresh("session", "owner")
+        assertSame(player, output.player)
+        assertTrue(output.screenKeptOn)
     }
-
     @Test
     fun `register binds the current player and refresh follows replacement`() {
         val firstPlayer = FakePlayer(playing = true)

@@ -279,8 +279,10 @@ void main() {
         );
         await runtimeGraph.playback.seekSessionToNext(queueSession.id);
 
-        expect(preparedQueueIndexes.last, 1);
         expect(queueSession.currentQueueIndex, 1);
+        expect(preparedQueueIndexes, isEmpty);
+        await runtimeGraph.playback.toggleSessionPlayPause(queueSession.id);
+        expect(preparedQueueIndexes.last, 1);
 
         queueSession.setOptimisticPosition(const Duration(seconds: 5));
         await runtimeGraph.playback.seekSessionToPrev(queueSession.id);
@@ -595,6 +597,7 @@ void main() {
         await runtimeGraph.playback.seekSessionToNext(queueSession.id);
 
         final session = runtimeGraph.playback.sessionById(queueSession.id)!;
+        await runtimeGraph.playback.toggleSessionPlayPause(session.id);
         final currentPath = session.currentTrackPath;
         final currentEntryId = session.playbackQueue!.entries[1].id;
         final prepareCountBefore = preparedPaths.length;

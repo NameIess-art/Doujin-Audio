@@ -414,7 +414,124 @@ void main() {
     },
   );
 
+  test(
+    'an explicit target flush repairs cold recovery for an equal restored definition',
+    () async {
+      SharedPreferences.setMockInitialValues(const {});
+      final repository = _RecordingPlaybackPersistenceRepository();
+      final track = MusicTrack(
+        path: '/tracks/restored.mp3',
+        displayName: 'Restored',
+        groupKey: '/tracks',
+        groupTitle: 'Tracks',
+        groupSubtitle: '',
+        isSingle: true,
+      );
+      repository.restoredSessions = [
+        PersistedPlaybackSession(
+          id: 'restored',
+          trackPath: track.path,
+          loopModeIndex: SessionLoopMode.single.index,
+          volume: 1,
+          positionMs: 22000,
+          durationMs: 0,
+          customQueueTracks: [track],
+          channelSwapEnabled: false,
+          sortOrder: 0,
+          createdAtMs: DateTime(2026).millisecondsSinceEpoch,
+        ),
+      ];
+      final playback = PlaybackFacade.create(
+        databaseRepository: repository,
+        nativeRepository: _FakeNativePlaybackRepository(),
+      );
+      addTearDown(playback.dispose);
+      final recovered = <String>[];
+      final gate = Completer<void>();
+      _attachPausedRecovery(playback, (session) async {
+        recovered.add(session.id);
+        await gate.future;
+      });
+      await playback.loadPersistedState();
+      expect(recovered, isEmpty);
+      var finished = false;
+      final flush = playback
+          .flushSessionStatePersistence(sessionId: 'restored')
+          .then((_) => finished = true);
+      await Future<void>.delayed(Duration.zero);
+      expect(recovered, ['restored']);
+      expect(repository.definitionWrites, isEmpty);
+      expect(finished, false);
+      gate.complete();
+      await flush;
+      expect(
+        playback.sessions['restored']!.position,
+        const Duration(seconds: 22),
+      );
+    },
+  );
+
   for (final progressOnly in [false, true]) {
+    test(
+      'failed cold ${progressOnly ? 'progress' : 'definition'} recovery retries after SQLite commits',
+      () async {
+        SharedPreferences.setMockInitialValues(const {});
+        final repository = _RecordingPlaybackPersistenceRepository();
+        final playback = PlaybackFacade.create(
+          databaseRepository: repository,
+          nativeRepository: _FakeNativePlaybackRepository(),
+        );
+        addTearDown(playback.dispose);
+        final first = _pausedSession('recover-first');
+        final second = _pausedSession('untouched');
+        final recovered = <(String, int, double)>[];
+        var failRecovery = false;
+        final recoveryFailed = Completer<void>();
+        _attachPausedRecovery(playback, (session) async {
+          recovered.add((
+            session.id,
+            session.position.inSeconds,
+            session.volume,
+          ));
+          if (failRecovery) {
+            failRecovery = false;
+            recoveryFailed.complete();
+            throw StateError('recovery file unavailable');
+          }
+        });
+        playback
+          ..registerSession(first)
+          ..registerSession(second);
+        if (progressOnly) playback.observeSession(first);
+        await playback.flushSessionStatePersistence();
+        recovered.clear();
+        repository.definitionWrites.clear();
+        failRecovery = true;
+        if (progressOnly) {
+          first.setOptimisticPosition(const Duration(seconds: 6));
+          await Future<void>.delayed(Duration.zero);
+          playback.setBackgroundMode(true);
+          await recoveryFailed.future;
+          await Future<void>.delayed(Duration.zero);
+        } else {
+          first.volume = 0.7;
+          await expectLater(
+            playback.flushSessionStatePersistence(sessionId: first.id),
+            throwsStateError,
+          );
+        }
+        first.lastKnownPosition = const Duration(seconds: 12);
+        first.volume = 0.5;
+        // A full flush skips B's equal definition while retrying the failed A.
+        await playback.flushSessionStatePersistence();
+        expect(recovered.map((value) => value.$1), [first.id, first.id]);
+        expect(recovered.last, (first.id, 12, 0.5));
+        expect(
+          repository.definitionWrites.every((entry) => entry.$1 == first.id),
+          true,
+        );
+      },
+    );
     test(
       'failed ${progressOnly ? 'progress' : 'definition'} history writes retry without rewriting queues',
       () async {
@@ -498,6 +615,26 @@ void main() {
   }
 }
 
+void _attachPausedRecovery(
+  PlaybackFacade playback,
+  Future<void> Function(PlaybackSession) synchronize,
+) {
+  playback.attachPersistenceRuntime(
+    trackByPath: (_) => null,
+    recordPlaybackProgress: () => true,
+    restoreRuntime: (_, {required focusedSessionId}) async {},
+    updatePlaybackHistory:
+        ({
+          required trackPath,
+          required position,
+          required now,
+          required updatePlayedAt,
+        }) => null,
+    onFocusChanged: (_) {},
+    synchronizePausedRecovery: synchronize,
+  );
+}
+
 PlaybackSession _pausedSession(String id) => PlaybackSession(
   id: id,
   currentTrackPath: '/tracks/$id.mp3',
@@ -510,6 +647,7 @@ PlaybackSession _pausedSession(String id) => PlaybackSession(
 
 final class _RecordingPlaybackPersistenceRepository
     extends TestPersistenceRepository {
+  List<PersistedPlaybackSession> restoredSessions = [];
   final definitionWrites = <(String, bool, bool)>[];
   final playbackWrites = <PersistedPlaybackSession>[];
   final orderWrites = <List<String>>[];
@@ -521,6 +659,10 @@ final class _RecordingPlaybackPersistenceRepository
   bool failNextPlaybackWrite = false;
   bool failNextOrderWrite = false;
   bool failNextTrackWrite = false;
+
+  @override
+  Future<List<PersistedPlaybackSession>> loadAllSessions() async =>
+      restoredSessions;
 
   @override
   Future<void> upsertSession(

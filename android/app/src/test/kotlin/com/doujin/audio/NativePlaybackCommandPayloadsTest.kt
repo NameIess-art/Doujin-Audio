@@ -11,6 +11,61 @@ import org.junit.Test
 
 class NativePlaybackCommandPayloadsTest {
     @Test
+    fun `deferred prepare uses only the background file command even when another service exists`() {
+        val command = parsePlaybackCommand(MethodCall(NativePlaybackMethods.PREPARE_SESSION,
+            validPreparePayload() + ("deferPlayerCreation" to true)))
+        assertFalse(command.canStartService)
+        assertTrue(command.dispatchBackground != null)
+        assertNull(command.dispatchAsync)
+        assertNull(command.sessionId)
+        val stored = NativePlaybackCommandPayloads.parsePrepareSession(
+            validPreparePayload() + ("deferPlayerCreation" to true) + ("startPositionMs" to 22_000L)).storedDefinition()
+        assertEquals(22_000L, stored.positionMs)
+        assertFalse(stored.playing)
+        assertFalse(stored.playWhenReady)
+        assertEquals(1, stored.queue.size)
+    }
+
+    @Test
+    fun `global pause and clear cancel pending starts before command delivery`() {
+        assertTrue(parsePlaybackCommand(MethodCall(NativePlaybackMethods.PAUSE_ALL, null)).cancelAllPendingStarts)
+        assertTrue(parsePlaybackCommand(MethodCall(NativePlaybackMethods.CLEAR_ALL, null)).cancelAllPendingStarts)
+    }
+    @Test
+    fun `cold pause cancels only pending preparation and play for its target without starting service`() {
+        val pause = parsePlaybackCommand(MethodCall(NativePlaybackMethods.PAUSE,
+            mapOf("sessionId" to "A", "transportCommandId" to 2L)))
+        assertEquals("A", pause.cancelPendingStartForSession)
+        assertFalse(pause.canStartService)
+        assertTrue(pause.dispatchInactive != null)
+        assertTrue(isPendingPlaybackStartForSession(NativePlaybackMethods.PREPARE_SESSION, "A", "A"))
+        assertTrue(isPendingPlaybackStartForSession(NativePlaybackMethods.PLAY, "A", "A"))
+        assertFalse(isPendingPlaybackStartForSession(NativePlaybackMethods.PREPARE_SESSION, "B", "A"))
+        assertFalse(isPendingPlaybackStartForSession(NativePlaybackMethods.SET_VOLUME, "A", "A"))
+        assertEquals("A", parsePlaybackCommand(MethodCall(NativePlaybackMethods.PREPARE_SESSION,
+            validPreparePayload() + ("sessionId" to "A"))).sessionId)
+    }
+    @Test
+    fun `inactive snapshot contains no recovery definitions that could overwrite newer Dart state`() {
+        assertEquals(emptyList<Map<String, Any?>>(), inactiveNativePlaybackRuntimeSnapshot["sessions"])
+        assertNull(inactiveNativePlaybackRuntimeSnapshot["focusedSessionId"])
+        val command = parsePlaybackCommand(MethodCall(NativePlaybackMethods.SNAPSHOT, null))
+        assertFalse(command.canStartService)
+        assertTrue(command.dispatchInactive != null)
+    }
+    @Test
+    fun `only actual playback or its explicit preparation may start the native service`() {
+        assertFalse(parsePlaybackCommand(MethodCall(NativePlaybackMethods.SNAPSHOT, null)).canStartService)
+        assertFalse(parsePlaybackCommand(MethodCall(NativePlaybackMethods.SET_VOLUME,
+            mapOf("sessionId" to "main", "volume" to 1.0))).canStartService)
+        assertFalse(parsePlaybackCommand(MethodCall(NativePlaybackMethods.PREPARE_SESSION,
+            validPreparePayload() + ("deferPlayerCreation" to true))).canStartService)
+        assertTrue(parsePlaybackCommand(MethodCall(NativePlaybackMethods.PREPARE_SESSION,
+            validPreparePayload() + ("deferPlayerCreation" to false))).canStartService)
+        assertTrue(parsePlaybackCommand(MethodCall(NativePlaybackMethods.PLAY,
+            mapOf("sessionId" to "main", "transportCommandId" to 1L, "exclusive" to false))).canStartService)
+    }
+    @Test
     fun `independent queue update accepts explicit empty queue and defaults modes`() {
         val args = NativePlaybackCommandPayloads.parseUpdateQueue(mapOf("sessionId" to "main", "queue" to emptyList<Any>()))
         assertEquals(0L, args.queueRevision)

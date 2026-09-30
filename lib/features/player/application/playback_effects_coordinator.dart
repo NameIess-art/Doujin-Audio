@@ -163,6 +163,7 @@ extension PlaybackEffectsCoordinator on PlaybackFacade {
       return false;
     }
     final normalizedSpeed = speed?.clamp(0.25, 3.0).toDouble();
+    if (session.loadedPath == null && !session.effectivePlaying) return true;
     final response = await nativeRepository.setTemporarySpeed(
       session.id,
       normalizedSpeed,

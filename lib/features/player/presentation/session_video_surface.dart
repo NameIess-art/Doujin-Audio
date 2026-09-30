@@ -32,21 +32,19 @@ class _NativeSessionVideoSurfaceState extends State<NativeSessionVideoSurface> {
   @override
   void initState() {
     super.initState();
-    _acquire();
+    _subscribeToRuntime();
   }
 
-  void _acquire() {
+  void _subscribeToRuntime() {
     if (!Platform.isWindows) return;
     _subscription = widget.nativeRepository.snapshots.listen((snapshot) {
       if (mounted && snapshot.sessionId == widget.sessionId) setState(() {});
     });
-    widget.nativeRepository.acquireVideoSurface(widget.sessionId);
   }
 
-  void _release(NativeSessionVideoSurface surface) {
+  void _unsubscribeFromRuntime() {
     unawaited(_subscription?.cancel());
     _subscription = null;
-    surface.nativeRepository.releaseVideoSurface(surface.sessionId);
   }
 
   @override
@@ -54,14 +52,14 @@ class _NativeSessionVideoSurfaceState extends State<NativeSessionVideoSurface> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.sessionId != widget.sessionId ||
         oldWidget.nativeRepository != widget.nativeRepository) {
-      _release(oldWidget);
-      _acquire();
+      _unsubscribeFromRuntime();
+      _subscribeToRuntime();
     }
   }
 
   @override
   void dispose() {
-    _release(widget);
+    _unsubscribeFromRuntime();
     super.dispose();
   }
 

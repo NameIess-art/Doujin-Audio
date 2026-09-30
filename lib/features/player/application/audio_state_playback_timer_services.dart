@@ -134,11 +134,7 @@ class PlaybackSessionService {
           (track != null
               ? !track.isVideo
               : isSupportedMediaFile(session.currentTrackPath)),
-      keepAlive:
-          session.state.playing ||
-          session.isLoading ||
-          session.isPlaybackStarting ||
-          session.loadedPath != null,
+      keepAlive: session.playbackRequested,
     );
     final previous = _contributions[id];
     _playingCount +=

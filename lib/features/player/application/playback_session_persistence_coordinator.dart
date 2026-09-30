@@ -36,6 +36,7 @@ extension PlaybackSessionPersistenceCoordinator on PlaybackFacade {
     required RestoredPlaybackRuntime restoreRuntime,
     required PlaybackHistoryUpdater updatePlaybackHistory,
     required void Function(String? sessionId) onFocusChanged,
+    Future<void> Function(PlaybackSession session)? synchronizePausedRecovery,
   }) {
     _persistedTrackResolver ??= trackByPath;
     _service.libraryTrackByPath ??= trackByPath;
@@ -43,6 +44,7 @@ extension PlaybackSessionPersistenceCoordinator on PlaybackFacade {
     _restoreRuntime ??= restoreRuntime;
     _updatePlaybackHistory ??= updatePlaybackHistory;
     _onPersistenceFocusChanged ??= onFocusChanged;
+    _synchronizePausedRecovery ??= synchronizePausedRecovery;
   }
 
   void configurePersistence({required bool enabled}) {
@@ -278,7 +280,9 @@ extension PlaybackSessionPersistenceCoordinator on PlaybackFacade {
         b.lastPlayedAtMs,
       );
 
-  Future<void> _savePendingSessionDefinitions() async {
+  Future<void> _savePendingSessionDefinitions({
+    String? ensurePausedRecoverySessionId,
+  }) async {
     if (!_persistenceEnabled) return;
     final deletedIds = Set<String>.of(_pendingDeletedSessionIds);
     _pendingDeletedSessionIds.removeAll(deletedIds);
@@ -309,6 +313,9 @@ extension PlaybackSessionPersistenceCoordinator on PlaybackFacade {
             !queueChanged &&
             !effectsChanged &&
             _sameSessionDefinition(previous, next)) {
+          if (id == ensurePausedRecoverySessionId) {
+            await _savePausedRecovery(session);
+          }
           continue;
         }
         await databaseRepository.upsertSession(
@@ -316,6 +323,7 @@ extension PlaybackSessionPersistenceCoordinator on PlaybackFacade {
           includeQueue: queueChanged,
           includeEffects: effectsChanged,
         );
+        await _savePausedRecovery(session);
         _persistedSessions[id] = next;
         _persistedQueueVersions[id] = queueVersion;
         _persistedSessionSnapshot(
@@ -378,6 +386,7 @@ extension PlaybackSessionPersistenceCoordinator on PlaybackFacade {
         }
         if (_sameSessionDefinition(previous, next)) continue;
         await databaseRepository.upsertSessionPlaybackState(next);
+        await _savePausedRecovery(session);
         _persistedSessions[sessionId] = next;
       }
       if (_pendingSessionDefinitionIds.isNotEmpty) {
@@ -387,6 +396,19 @@ extension PlaybackSessionPersistenceCoordinator on PlaybackFacade {
     } catch (_) {
       _pendingPlaybackStateSessionIds.addAll(sessionIds);
       rethrow;
+    }
+  }
+
+  Future<void> _savePausedRecovery(PlaybackSession session) async {
+    final synchronize = _synchronizePausedRecovery;
+    if (synchronize == null) return;
+    if (session.loadedPath == null &&
+        !session.playbackRequested &&
+        !session.effectivePlaying &&
+        !session.isLoading) {
+      // Keep the comparison cache unchanged until both stores commit, so an
+      // existing pending ID also retries a failed native recovery write.
+      await synchronize(session);
     }
   }
 
@@ -492,7 +514,9 @@ extension PlaybackSessionPersistenceCoordinator on PlaybackFacade {
       _pendingSessionDefinitionIds.add(sessionId);
     }
     await _enqueueSessionPersistence(() async {
-      await _savePendingSessionDefinitions();
+      await _savePendingSessionDefinitions(
+        ensurePausedRecoverySessionId: sessionId,
+      );
       await _savePendingPlaybackStates();
       await _savePendingSessionOrder();
     });

@@ -74,11 +74,11 @@ internal class NativeMediaSessionHost(
         }
     }
 
-    fun update(hasSessions: Boolean) {
+    fun update() {
         val nextPlayer = candidate()?.playerOrNull()
         val existing = resources.currentSession
         if (nextPlayer == null) {
-            if (!hasSessions) release("no_media_session_candidate")
+            release("no_media_session_candidate")
             return
         }
         if (existing == null) {
@@ -88,9 +88,9 @@ internal class NativeMediaSessionHost(
         attachPlayer(existing, nextPlayer)
     }
 
-    fun ensurePlayer(session: NativePlaybackSession, hasSessions: Boolean): ExoPlayer {
+    fun ensurePlayer(session: NativePlaybackSession): ExoPlayer {
         val player = session.ensurePlayer()
-        update(hasSessions)
+        update()
         ensure()
         return player
     }

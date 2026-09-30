@@ -140,7 +140,8 @@ void main() {
 
     expect(first.position, const Duration(seconds: 17));
     expect(first.lastPersistedPositionBucket, 3);
-    expect(native.seekPositions, <Duration>[const Duration(seconds: 17)]);
+    expect(native.seekPositions, isEmpty);
+    expect(first.loadedPath, isNull);
     expect(positionChanges, <Duration>[const Duration(seconds: 17)]);
 
     await playback.seekSessionByOffset(first.id, const Duration(seconds: 5));
@@ -149,6 +150,9 @@ void main() {
     await playback.seekSessionByOffset(first.id, const Duration(seconds: -5));
     expect(first.position, const Duration(seconds: 17));
 
+    // Parameter delivery to a newly loaded runtime remains covered separately
+    // from the cold seek behavior after global pause.
+    first.loadedPath = first.currentTrackPath;
     await playback.setSessionVolume(first.id, 1.75, persist: false);
     await playback.setSessionVolume(first.id, 1.75);
     await playback.setSessionSpeed(first.id, 1.6, persist: false);
@@ -728,6 +732,7 @@ void main() {
     await playback.switchSessionQueueTrack(session.id, 1);
     await playback.seekSessionToNext(session.id);
     session.setOptimisticPosition(const Duration(seconds: 5));
+    session.loadedPath = session.currentTrackPath;
     await playback.seekSessionToPrev(session.id);
 
     expect(pauseCount, 1);
@@ -762,11 +767,11 @@ void main() {
 
       await playback.seekSession(session.id, const Duration(seconds: -10));
       expect(session.position, Duration.zero);
-      expect(native.seekPositions.last, Duration.zero);
+      expect(native.seekPositions, isEmpty);
 
       await playback.seekSession(session.id, const Duration(seconds: 150));
       expect(session.position, const Duration(seconds: 100));
-      expect(native.seekPositions.last, const Duration(seconds: 100));
+      expect(native.seekPositions, isEmpty);
     },
   );
 
@@ -781,6 +786,7 @@ void main() {
         nativeRepository: native,
       );
       final session = _session('rapid-seek')
+        ..loadedPath = '/tracks/rapid-seek.mp3'
         ..duration = const Duration(seconds: 100);
       playback.registerSession(session);
       addTearDown(() async {
@@ -841,7 +847,8 @@ void main() {
           library.databaseRepository as PlaybackPersistenceRepository,
       nativeRepository: native,
     )..configurePersistence(enabled: false);
-    final session = _session('seek-then-switch');
+    final session = _session('seek-then-switch')
+      ..loadedPath = '/tracks/seek-then-switch.mp3';
     playback
       ..attachPlaybackCommands(
         prepareSession:
@@ -901,7 +908,8 @@ void main() {
             library.databaseRepository as PlaybackPersistenceRepository,
         nativeRepository: native,
       )..configurePersistence(enabled: false);
-      final oldSession = _session('reused-id');
+      final oldSession = _session('reused-id')
+        ..loadedPath = '/tracks/reused-id.mp3';
       playback.registerSession(oldSession);
       addTearDown(() async {
         await playback.dispose();
@@ -939,7 +947,8 @@ void main() {
               library.databaseRepository as PlaybackPersistenceRepository,
           nativeRepository: native,
         )..configurePersistence(enabled: false);
-        final session = _session('queued-seek-$action');
+        final session = _session('queued-seek-$action')
+          ..loadedPath = '/tracks/queued-seek-$action.mp3';
         playback.registerSession(session);
         final gate = Completer<NativeResult<NativePlaybackSnapshot>>();
         native.seekGate = gate;

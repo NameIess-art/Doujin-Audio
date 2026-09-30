@@ -71,6 +71,25 @@ internal class NativePlaybackForegroundCoordinator(
     private var graceScheduled = false
     private var graceStartedElapsedRealtimeMs = 0L
     private var watchdogScheduled = false
+    private val pendingPlaybackStarts = linkedMapOf<String, Runnable>()
+    val hasPendingPlaybackStarts: Boolean get() = pendingPlaybackStarts.isNotEmpty()
+
+    fun holdPlaybackStart(sessionId: String) {
+        settlePlaybackStart(sessionId)
+        lateinit var expiry: Runnable
+        expiry = Runnable {
+            if (pendingPlaybackStarts[sessionId] !== expiry) return@Runnable
+            pendingPlaybackStarts.remove(sessionId)
+            sync()
+        }
+        pendingPlaybackStarts[sessionId] = expiry
+        cancelGrace()
+        environment.postDelayed(expiry, 5_000L)
+    }
+
+    fun settlePlaybackStart(sessionId: String) {
+        pendingPlaybackStarts.remove(sessionId)?.let(environment::remove)
+    }
 
     private val graceRunnable = Runnable {
         graceScheduled = false
@@ -273,6 +292,8 @@ internal class NativePlaybackForegroundCoordinator(
     }
 
     fun shutdown() {
+        pendingPlaybackStarts.values.forEach(environment::remove)
+        pendingPlaybackStarts.clear()
         cancelGrace()
         stopWatchdog()
         stop(reason = "on_destroy", removeNotification = true)

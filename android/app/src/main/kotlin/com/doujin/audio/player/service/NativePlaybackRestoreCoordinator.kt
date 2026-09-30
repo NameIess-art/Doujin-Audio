@@ -59,10 +59,12 @@ internal class NativePlaybackRestoreCoordinator(
 ) {
     private var generation = 0L
     private var latestAcceptedStartId = 0
+    val latestStartId: Int get() = latestAcceptedStartId
     private var deferredIdleExit: DeferredIdleExit? = null
     private var excludedSessionIds: MutableSet<String>? = null
     private val missingRestoreGenerations = mutableMapOf<String, Long>()
     private val pendingCompletions = linkedSetOf<() -> Unit>()
+    val isRestoring: Boolean get() = excludedSessionIds != null || pendingCompletions.isNotEmpty()
 
     fun acceptStart(startId: Int) {
         latestAcceptedStartId = startId

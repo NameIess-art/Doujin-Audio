@@ -28,8 +28,24 @@ internal data class NativePrepareSessionArguments(
     val candidateUris: List<String>,
     val deferPlayerCreation: Boolean,
     val isTemporary: Boolean = false,
-    val preparedQueue: NativePlaybackQueue? = null
+    val preparedQueue: NativePlaybackQueue? = null,
+    val definitionRevision: Long = 0L
 ) {
+    fun storedDefinition(): StoredNativePlaybackSession {
+        val items = playbackQueue()
+        val current = items[queueStartIndex]
+        return StoredNativePlaybackSession(
+            sessionId, current.uri, current.path, current.title, current.subtitle, current.artUri,
+            startPositionMs, volume, speed, audioEffects.skipSilenceEnabled,
+            audioEffects.noiseReductionEnabled, audioEffects.eqEnabled, audioEffects.eqPresetId,
+            audioEffects.eqBandLevels, audioEffects.volumeNormalizationEnabled, audioEffects.panning,
+            repeatOne, repeatAll, shuffle, queueStartIndex,
+            items.map { StoredNativePlaybackQueueItem(it.path, it.uri, it.title, it.subtitle,
+                it.artUri, it.candidateUris) }, audioEffects.channelSwapEnabled,
+            playing = false, playWhenReady = false, isTemporary = isTemporary
+        )
+    }
+
     fun playbackQueue(): List<NativeMediaItemDescriptor> {
         if (candidateUris.isEmpty()) return queue
         return queue.toMutableList().also {

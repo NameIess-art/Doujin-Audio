@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/foundation.dart';
 import 'package:doujin_audio/features/player/application/timer_facade.dart';
 import 'package:doujin_audio/features/player/application/audio_state_services.dart';
 import 'package:doujin_audio/features/player/application/playback_session.dart';
@@ -15,6 +16,104 @@ void main() {
   });
 
   group('TimerFacade', () {
+    test(
+      'Android auto-resume alarms wait for the paused definitions to flush',
+      () async {
+        debugDefaultTargetPlatformOverride = TargetPlatform.android;
+        addTearDown(() => debugDefaultTargetPlatformOverride = null);
+        final platform = _RecordingPowerPlatformService();
+        final service = TimerService()
+          ..timerGeneration = 7
+          ..autoResumeAt = DateTime.now().add(const Duration(hours: 1))
+          ..pausedByTimerSessionIds.addAll(['a', 'b']);
+        final timer = TimerFacade.create(
+          service: service,
+          powerPlatformService: platform,
+        );
+        addTearDown(timer.dispose);
+        final gate = Completer<void>();
+        final flushed = <String>[];
+        _attachNoopRuntime(
+          timer,
+          flushSessionPersistence: (id) async {
+            flushed.add(id);
+            if (id == 'a') await gate.future;
+          },
+        );
+        final sync = timer.syncNativeAlarms();
+        await Future<void>.delayed(Duration.zero);
+        expect(flushed, ['a']);
+        expect(platform.timerSyncs, isEmpty);
+        gate.complete();
+        await sync;
+        expect(flushed, ['a', 'b']);
+        expect(platform.timerSyncs.single['pausedSessionIds'], ['a', 'b']);
+      },
+    );
+
+    test(
+      'a changed timer invalidates an alarm blocked on cold persistence',
+      () async {
+        debugDefaultTargetPlatformOverride = TargetPlatform.android;
+        addTearDown(() => debugDefaultTargetPlatformOverride = null);
+        final platform = _RecordingPowerPlatformService();
+        final service = TimerService()
+          ..timerGeneration = 7
+          ..autoResumeAt = DateTime.now().add(const Duration(hours: 1))
+          ..pausedByTimerSessionIds.add('a');
+        final timer = TimerFacade.create(
+          service: service,
+          powerPlatformService: platform,
+        );
+        addTearDown(timer.dispose);
+        final gate = Completer<void>();
+        _attachNoopRuntime(timer, flushSessionPersistence: (_) => gate.future);
+        final sync = timer.syncNativeAlarms();
+        await Future<void>.delayed(Duration.zero);
+        timer.configureTimer(TimerMode.trigger, const Duration(minutes: 5));
+        await Future<void>.delayed(Duration.zero);
+        gate.complete();
+        await sync;
+        expect(platform.timerSyncs, isNotEmpty);
+        expect(
+          platform.timerSyncs.every(
+            (value) => value['generation'] == service.timerGeneration,
+          ),
+          true,
+        );
+        expect(
+          platform.timerSyncs.every((value) => value['autoResumeAtMs'] == null),
+          true,
+        );
+        expect(platform.timerSyncs.last['timerMode'], TimerMode.trigger.index);
+      },
+    );
+
+    test(
+      'Windows alarms do not register cold Android recovery definitions',
+      () async {
+        debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+        addTearDown(() => debugDefaultTargetPlatformOverride = null);
+        final platform = _RecordingPowerPlatformService();
+        final service = TimerService()
+          ..autoResumeAt = DateTime.now().add(const Duration(hours: 1))
+          ..pausedByTimerSessionIds.add('a');
+        final timer = TimerFacade.create(
+          service: service,
+          powerPlatformService: platform,
+        );
+        addTearDown(timer.dispose);
+        final flushed = <String>[];
+        _attachNoopRuntime(
+          timer,
+          flushSessionPersistence: (id) async => flushed.add(id),
+        );
+        await timer.syncNativeAlarms();
+        expect(flushed, isEmpty);
+        expect(platform.timerSyncs, hasLength(1));
+      },
+    );
+
     test('owns timer configuration, countdown, and cancellation', () async {
       final timerService = TimerService();
       final timer = TimerFacade.create(service: timerService);
@@ -393,6 +492,7 @@ class _TestSession extends Fake implements PlaybackSession {
 void _attachNoopRuntime(
   TimerFacade timer, {
   List<PlaybackSession> Function()? sessions,
+  Future<void> Function(String sessionId)? flushSessionPersistence,
 }) {
   timer.attachRuntime(
     hasPlayingSession: () => false,
@@ -403,6 +503,7 @@ void _attachNoopRuntime(
     onStateChanged: () {},
     onRuntimeRestored: () {},
     applyFadeMultiplier: (_) {},
+    flushSessionPersistence: flushSessionPersistence,
   );
 }
 
@@ -489,6 +590,8 @@ final class _RecordingPowerPlatformService extends PowerPlatformService {
     timerSyncs.add(<String, Object?>{
       'timerMode': timerMode,
       'pausedSessionIds': List<String>.from(pausedSessionIds),
+      'generation': generation,
+      'autoResumeAtMs': autoResumeAtMs,
     });
   }
 }

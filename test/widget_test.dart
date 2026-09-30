@@ -102,6 +102,125 @@ void main() {
 
   tearDown(UiInteractionCoordinator.instance.resetForTest);
 
+  testWidgets(
+    'main pages lazily retain UI without activating paused playback sessions',
+    (tester) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      _setLogicalTestViewSize(tester, const Size(390, 820));
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+      final playbackCalls = <String>[];
+      final subtitleLoads = <MethodCall>[];
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(nativePlaybackChannel, (call) async {
+        playbackCalls.add(call.method);
+        return <String, Object?>{'ok': true, 'value': null};
+      });
+      messenger.setMockMethodCallHandler(fileCacheChannel, (call) async {
+        if (call.method == FileCacheMethod.resolveTrackSubtitle) {
+          subtitleLoads.add(call);
+        }
+        return <String, Object?>{'ok': true, 'value': null};
+      });
+      addTearDown(() {
+        messenger.setMockMethodCallHandler(nativePlaybackChannel, null);
+        messenger.setMockMethodCallHandler(fileCacheChannel, null);
+      });
+      final sessions = List<PlaybackSession>.generate(12, (index) {
+        final session = PlaybackSession(
+          id: 'cold_page_session_$index',
+          currentTrackPath: 'content://test/audio-$index.mp3',
+          loopMode: SessionLoopMode.single,
+          nonSingleLoopMode: SessionLoopMode.single,
+          volume: 1,
+          createdAt: DateTime(2026, 1, index + 1),
+          state: const PlayerState(false, ProcessingState.idle),
+        );
+        addTearDown(session.shutdown);
+        return session;
+      });
+      final harness = await _pumpAppShell(
+        tester,
+        includePlaybackSession: false,
+        additionalPlaybackSessions: sessions,
+      );
+      final libraryFinder = find.byType(LibraryTab, skipOffstage: false);
+      final asmrFinder = find.byType(AsmrTab, skipOffstage: false);
+      final playlistFinder = find.byType(PlaylistTab, skipOffstage: false);
+      expect(harness.playback.sessions.length, 12);
+      expect(libraryFinder, findsOneWidget);
+      expect(asmrFinder, findsNothing);
+      expect(playlistFinder, findsNothing);
+      final libraryState = tester.state(libraryFinder);
+
+      Future<void> selectPage(String destination) async {
+        final ink = find.byKey(
+          ValueKey<String>('main_destination_ink_$destination'),
+        );
+        tester.widget<InkResponse>(ink).onTap!.call();
+        await tester.pump();
+      }
+
+      await selectPage('show_asmr_one');
+      expect(asmrFinder, findsNothing);
+      await tester.pump(const Duration(milliseconds: 160));
+      expect(asmrFinder, findsNothing);
+      await tester.pump(const Duration(milliseconds: 160));
+      await tester.pump();
+      expect(asmrFinder, findsOneWidget);
+      final asmrState = tester.state(asmrFinder);
+      expect(playlistFinder, findsNothing);
+
+      await selectPage('nav_sessions');
+      expect(playlistFinder, findsNothing);
+      await tester.pump(const Duration(milliseconds: 160));
+      expect(playlistFinder, findsNothing);
+      await tester.pump(const Duration(milliseconds: 160));
+      await tester.pump();
+      expect(playlistFinder, findsOneWidget);
+      final playlistState = tester.state(playlistFinder);
+      await tester.pump(const Duration(milliseconds: 900));
+      await tester.pump();
+      final scrollable = find
+          .descendant(
+            of: find.byKey(const PageStorageKey<String>('playlist_list')),
+            matching: find.byType(Scrollable),
+          )
+          .first;
+      final scrollState = tester.state<ScrollableState>(scrollable);
+      scrollState.position.jumpTo(120);
+      await tester.pump();
+      final offset = scrollState.position.pixels;
+      expect(offset, greaterThan(0));
+      for (final destination in [
+        'music_library',
+        'show_asmr_one',
+        'nav_sessions',
+      ]) {
+        await selectPage(destination);
+        await tester.pump(const Duration(milliseconds: 350));
+        await tester.pump();
+      }
+      expect(tester.state(libraryFinder), same(libraryState));
+      expect(tester.state(asmrFinder), same(asmrState));
+      expect(tester.state(playlistFinder), same(playlistState));
+      expect(scrollState.position.pixels, offset);
+      expect(
+        playbackCalls.where(
+          (method) => {
+            NativePlaybackMethod.prepareSession,
+            NativePlaybackMethod.play,
+          }.contains(method),
+        ),
+        isEmpty,
+      );
+      expect(subtitleLoads, isEmpty);
+      expect(sessions.every((session) => session.loadedPath == null), isTrue);
+      debugDefaultTargetPlatformOverride = null;
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   testWidgets('app shell renders portrait tab navigation', (tester) async {
     final platformCalls = <MethodCall>[];
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
@@ -4918,6 +5037,7 @@ Future<_AppShellHarness> _pumpAppShell(
   double playbackVolume = 1,
   MusicTrack? playbackTrack,
   List<MusicTrack> extraPlaybackTracks = const [],
+  List<PlaybackSession> additionalPlaybackSessions = const [],
   bool waitForStartup = true,
   AsmrDownloadManager? downloads,
   Future<void> Function()? runtimeInitializer,
@@ -4979,6 +5099,10 @@ Future<_AppShellHarness> _pumpAppShell(
       coverGeneration: 0,
       isInitialized: true,
     );
+  }
+
+  for (final session in additionalPlaybackSessions) {
+    playbackService.registerSession(session);
   }
 
   await tester.pumpWidget(

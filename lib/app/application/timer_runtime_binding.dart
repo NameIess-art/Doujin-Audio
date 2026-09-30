@@ -40,6 +40,8 @@ final class TimerRuntimeBinding implements RuntimeBinding {
         syncTimerState();
       },
       applyFadeMultiplier: playback.applyFadeMultiplierToPlayingSessions,
+      flushSessionPersistence: (sessionId) =>
+          playback.flushSessionStatePersistence(sessionId: sessionId),
     );
     final binding = TimerRuntimeBinding._(timer);
     _attached[timer] = binding;

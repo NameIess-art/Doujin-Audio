@@ -42,7 +42,8 @@ internal class NativePlaybackSessionRestorer(
     private val getOrCreateSession: (String) -> NativePlaybackSession,
     private val removeSession: (String) -> Unit,
     private val focusSession: (String) -> Unit,
-    private val logRestoreFailure: (String, Exception) -> Unit
+    private val logRestoreFailure: (String, Exception) -> Unit,
+    private val isStoredSessionCurrent: (StoredNativePlaybackSession) -> Boolean = { true }
 ) {
     private val preparedQueues = Collections.synchronizedMap(
         IdentityHashMap<StoredNativePlaybackSession, NativePlaybackQueue>()
@@ -65,7 +66,10 @@ internal class NativePlaybackSessionRestorer(
     ): List<String> {
         val restoredSessionIds = mutableListOf<String>()
         storedSessions.forEach { stored ->
+            if (!isStoredSessionCurrent(stored)) return@forEach
             val nativeSession = getOrCreateSession(stored.sessionId)
+            nativeSession.definitionRevision = stored.definitionRevision
+            nativeSession.isTemporary = stored.isTemporary
             try {
                 nativeSession.applyAudioEffects(stored.restoredAudioEffects())
                 val prepared = preparedQueues.remove(stored)
@@ -76,7 +80,7 @@ internal class NativePlaybackSessionRestorer(
                     descriptor = queue[queueStartIndex],
                     queue = queue,
                     queueStartIndex = queueStartIndex,
-                    startPositionMs = stored.positionMs,
+                    startPositionMs = if (stored.completed) 0L else stored.positionMs,
                     volume = stored.volume,
                     speed = stored.speed,
                     repeatOne = stored.repeatOne,

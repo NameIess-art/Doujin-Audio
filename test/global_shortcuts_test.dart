@@ -154,6 +154,10 @@ void main() {
       await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
       await tester.pump(const Duration(milliseconds: 200));
       expect(native.seeks, isEmpty);
+      expect(
+        playback.sessionById('primary')!.position,
+        const Duration(seconds: 3),
+      );
 
       // 2. With focused audio, plain Right arrow seeks forward 5s (3s -> 8s)
       await tester.pumpWidget(
@@ -162,17 +166,26 @@ void main() {
       await tester.pump();
       await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
       await tester.pump(const Duration(milliseconds: 200));
-      expect(native.seeks, [('primary', const Duration(seconds: 8))]);
+      expect(
+        playback.sessionById('primary')!.position,
+        const Duration(seconds: 8),
+      );
+      expect(native.seeks, isEmpty);
 
       // 3. Plain Left arrow seeks backward 5s (8s -> 3s)
       await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
       await tester.pump(const Duration(milliseconds: 200));
-      expect(native.seeks.last, ('primary', const Duration(seconds: 3)));
+      expect(
+        playback.sessionById('primary')!.position,
+        const Duration(seconds: 3),
+      );
 
       // 4. Plain Left arrow again seeks backward 5s (3s -> clamped to 0s)
       await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
       await tester.pump(const Duration(milliseconds: 200));
-      expect(native.seeks.last, ('primary', Duration.zero));
+      expect(playback.sessionById('primary')!.position, Duration.zero);
+      expect(playback.sessionById('first')!.position, Duration.zero);
+      expect(native.seeks, isEmpty);
       await tester.pump(const Duration(milliseconds: 200));
     },
     variant: TargetPlatformVariant.only(TargetPlatform.windows),

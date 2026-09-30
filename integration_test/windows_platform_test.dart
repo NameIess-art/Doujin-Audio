@@ -315,6 +315,7 @@ void main() {
               .timeout(const Duration(seconds: 2));
           expect(pausedOther.isOk, true, reason: pausedOther.errorOrNull);
           expect(pauseStarted.elapsed, lessThan(const Duration(seconds: 2)));
+          expect(bridge.playerForSession('two'), isNull);
           expect((await editing).isOk, true);
           expect(bridge.playerForSession('one'), same(player));
           expect(players, hasLength(2));
@@ -339,6 +340,14 @@ void main() {
                 .playing,
             false,
           );
+          expect(bridge.playerForSession('one'), isNull);
+          expect(bridge.playerForSession('two'), isNull);
+          final resumed = await bridge.play('one');
+          expect(resumed.isOk, true, reason: resumed.errorOrNull);
+          expect(bridge.playerForSession('one'), isNot(same(player)));
+          expect(players, hasLength(3));
+          await bridge.pause('one');
+          expect(bridge.playerForSession('one'), isNull);
         } finally {
           await structureSub.cancel();
           await progressSub.cancel();

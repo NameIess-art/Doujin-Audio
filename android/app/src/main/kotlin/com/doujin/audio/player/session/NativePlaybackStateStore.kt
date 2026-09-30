@@ -3,6 +3,8 @@ package com.doujin.audio.player.session
 import android.content.Context
 import org.json.JSONArray
 import org.json.JSONObject
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
 
 /** The subset of [StoredNativePlaybackSession] that changes on every tick. */
 data class StoredNativePlaybackProgress(
@@ -51,7 +53,10 @@ data class StoredNativePlaybackSession(
     val queue: List<StoredNativePlaybackQueueItem>,
     val channelSwapEnabled: Boolean,
     val playing: Boolean,
-    val playWhenReady: Boolean
+    val playWhenReady: Boolean,
+    val definitionRevision: Long = 0L,
+    val isTemporary: Boolean = false,
+    val completed: Boolean = false
 )
 
 data class StoredNativePlaybackQueueItem(
@@ -96,6 +101,89 @@ data class StoredPlaybackBehavior(
 )
 
 object NativePlaybackStateStore {
+    private val revisionSequence = AtomicLong()
+    private val clearedRevision = AtomicLong()
+    private val definitionRevisions = ConcurrentHashMap<String, Long>()
+    private val revisionLock = Any()
+    @PublishedApi internal val timerStateLock = Any()
+    private val temporarySessions = ConcurrentHashMap<String, StoredNativePlaybackSession>()
+
+    // Timer changes never wait for the queue JSON serialization lock.
+    internal inline fun <T> withTimerState(action: () -> T): T = synchronized(timerStateLock, action)
+
+    internal fun saveTemporarySession(session: StoredNativePlaybackSession) {
+        require(session.isTemporary)
+        temporarySessions[session.sessionId] = session.copy(definitionRevision = sessionRevision(session.sessionId))
+    }
+
+    internal fun loadTemporarySessions(): List<StoredNativePlaybackSession> = temporarySessions.values.toList()
+    internal fun removeTemporarySession(sessionId: String) { temporarySessions.remove(sessionId) }
+
+    internal fun sessionRevision(sessionId: String): Long =
+        maxOf(clearedRevision.get(), definitionRevisions[sessionId] ?: 0L)
+
+    internal fun invalidateSession(sessionId: String): Long = synchronized(revisionLock) {
+        revisionSequence.incrementAndGet().also { definitionRevisions[sessionId] = it }
+    }
+
+    internal fun invalidateAllSessions(): Long = synchronized(revisionLock) {
+        revisionSequence.incrementAndGet().also {
+            definitionRevisions.clear()
+            clearedRevision.set(it)
+        }
+    }
+
+    @Synchronized
+    internal fun saveColdSession(context: Context, session: StoredNativePlaybackSession) {
+        invalidateSession(session.sessionId)
+        upsertSessions(context, listOf(session))
+    }
+
+    @Synchronized
+    internal fun upsertSessions(
+        context: Context,
+        sessions: List<StoredNativePlaybackSession>,
+        expectedRevisions: Map<String, Long>? = null
+    ) {
+        val accepted = sessions.filter { expectedRevisions == null ||
+            expectedRevisions[it.sessionId] == sessionRevision(it.sessionId) }
+        accepted.filter { it.isTemporary }.forEach(::saveTemporarySession)
+        val persistent = accepted.filterNot { it.isTemporary }
+        if (persistent.isEmpty()) return
+        persistent.forEach { temporarySessions.remove(it.sessionId) }
+        saveSessions(context, mergeNativePlaybackDefinitions(loadSessions(context), persistent))
+    }
+
+    @Synchronized
+    internal fun upsertSessionProgress(
+        context: Context,
+        progress: List<StoredNativePlaybackProgress>,
+        expectedRevisions: Map<String, Long>
+    ) {
+        val accepted = progress.filter { expectedRevisions[it.sessionId] == sessionRevision(it.sessionId) }
+        if (accepted.isEmpty()) return
+        val merged = loadSessionProgress(context).toMutableMap()
+        accepted.forEach { merged[it.sessionId] = it }
+        saveSessionProgress(context, merged.values.toList())
+    }
+
+    @Synchronized
+    internal fun removeSession(context: Context, sessionId: String, expectedRevision: Long? = null) {
+        if (expectedRevision != null && expectedRevision != sessionRevision(sessionId)) return
+        if (expectedRevision == null) invalidateSession(sessionId)
+        removeTemporarySession(sessionId)
+        val sessions = loadSessions(context)
+        if (sessions.any { it.sessionId == sessionId })
+            saveSessions(context, sessions.filterNot { it.sessionId == sessionId })
+        withTimerState {
+            storePausedSessionIds(context, loadPausedSessionIds(context).filterNot { it == sessionId })
+            storeTimerCandidateSessionIds(context, loadTimerCandidateSessionIds(context).filterNot { it == sessionId })
+            loadTimerRuntimeState(context)?.let { timer ->
+                saveTimerRuntimeState(context, timer.withoutSession(sessionId))
+            }
+        }
+    }
+
     private const val preferencesName = "audio_player_native_playback_state"
     private const val keySessions = "sessions"
 
@@ -148,12 +236,13 @@ object NativePlaybackStateStore {
         }
     }
 
+    @Synchronized
     fun saveSessions(
         context: Context,
         sessions: List<StoredNativePlaybackSession>
     ) {
         val array = JSONArray()
-        sessions.forEach { session ->
+        sessions.filterNot { it.isTemporary }.forEach { session ->
             array.put(
                 JSONObject()
                     .put("sessionId", session.sessionId)
@@ -209,6 +298,7 @@ object NativePlaybackStateStore {
                     .put("channelSwapEnabled", session.channelSwapEnabled)
                     .put("playing", session.playing)
                     .put("playWhenReady", session.playWhenReady)
+                    .put("completed", session.completed)
             )
         }
         context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
@@ -224,6 +314,7 @@ object NativePlaybackStateStore {
      * Persists only the fields that change every tick. Payload is a few dozen
      * bytes per session regardless of queue size.
      */
+    @Synchronized
     fun saveSessionProgress(
         context: Context,
         progress: List<StoredNativePlaybackProgress>
@@ -278,7 +369,15 @@ object NativePlaybackStateStore {
         }
     }
 
-    fun clearSessions(context: Context) {
+    @Synchronized
+    fun clearSessions(context: Context, expectedRevision: Long? = null) {
+        val revision = expectedRevision ?: invalidateAllSessions()
+        val newer = loadSessions(context).filter { sessionRevision(it.sessionId) > revision }
+        temporarySessions.keys.toList().filter { sessionRevision(it) <= revision }.forEach(temporarySessions::remove)
+        if (newer.isNotEmpty()) {
+            saveSessions(context, newer)
+            return
+        }
         context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
             .edit()
             .remove(keySessions)
@@ -286,10 +385,11 @@ object NativePlaybackStateStore {
             .apply()
     }
 
+    @Synchronized
     fun loadSessions(context: Context): List<StoredNativePlaybackSession> {
         val raw = context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
             .getString(keySessions, null)
-            ?: return emptyList()
+            ?: return loadTemporarySessions()
         val progressBySessionId = loadSessionProgress(context)
         return try {
             val array = JSONArray(raw)
@@ -327,54 +427,56 @@ object NativePlaybackStateStore {
                             queue = item.optQueueItems(),
                             channelSwapEnabled = item.optBoolean("channelSwapEnabled", false),
                             playing = item.optBoolean("playing", false),
-                            playWhenReady = item.optBoolean("playWhenReady", false)
+                            playWhenReady = item.optBoolean("playWhenReady", false),
+                            definitionRevision = sessionRevision(sessionId),
+                            completed = item.optBoolean("completed", false)
                         ).withProgressOverlay(progress)
                     )
                 }
-            }
+            } + loadTemporarySessions()
         } catch (_: Exception) {
-            emptyList()
+            loadTemporarySessions()
         }
     }
 
-    fun storePausedSessionIds(context: Context, sessionIds: List<String>) {
+    fun storePausedSessionIds(context: Context, sessionIds: List<String>) = withTimerState {
         context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
             .edit()
             .putStringSet(keyPausedSessionIds, sessionIds.toSet())
             .apply()
     }
 
-    fun loadPausedSessionIds(context: Context): List<String> {
-        return context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
+    fun loadPausedSessionIds(context: Context): List<String> = withTimerState {
+        context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
             .getStringSet(keyPausedSessionIds, emptySet())
             ?.toList()
             ?.sorted()
             ?: emptyList()
     }
 
-    fun clearPausedSessionIds(context: Context) {
+    fun clearPausedSessionIds(context: Context) = withTimerState {
         context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
             .edit()
             .remove(keyPausedSessionIds)
             .apply()
     }
 
-    fun storeTimerCandidateSessionIds(context: Context, sessionIds: List<String>) {
+    fun storeTimerCandidateSessionIds(context: Context, sessionIds: List<String>) = withTimerState {
         context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
             .edit()
             .putStringSet(keyTimerCandidateSessionIds, sessionIds.toSet())
             .apply()
     }
 
-    fun loadTimerCandidateSessionIds(context: Context): List<String> {
-        return context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
+    fun loadTimerCandidateSessionIds(context: Context): List<String> = withTimerState {
+        context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
             .getStringSet(keyTimerCandidateSessionIds, emptySet())
             ?.toList()
             ?.sorted()
             ?: emptyList()
     }
 
-    fun clearTimerCandidateSessionIds(context: Context) {
+    fun clearTimerCandidateSessionIds(context: Context) = withTimerState {
         context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
             .edit()
             .remove(keyTimerCandidateSessionIds)
@@ -384,10 +486,10 @@ object NativePlaybackStateStore {
     fun saveTimerRuntimeState(
         context: Context,
         state: StoredPlaybackTimerRuntimeState
-    ) {
+    ) = withTimerState {
         if (!state.hasRuntime) {
             clearTimerRuntimeState(context)
-            return
+            return@withTimerState
         }
         val encoded = JSONObject()
             .put("timerModeIndex", state.timerModeIndex)
@@ -407,11 +509,11 @@ object NativePlaybackStateStore {
             .apply()
     }
 
-    fun loadTimerRuntimeState(context: Context): StoredPlaybackTimerRuntimeState? {
+    fun loadTimerRuntimeState(context: Context): StoredPlaybackTimerRuntimeState? = withTimerState {
         val raw = context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
             .getString(keyTimerRuntimeState, null)
-            ?: return null
-        return try {
+            ?: return@withTimerState null
+        try {
             val json = JSONObject(raw)
             val pausedSessionIds = buildList {
                 val array = json.optJSONArray("pausedSessionIds") ?: JSONArray()
@@ -440,13 +542,23 @@ object NativePlaybackStateStore {
         }
     }
 
-    fun clearTimerRuntimeState(context: Context) {
+    fun clearTimerRuntimeState(context: Context) = withTimerState {
         context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
             .edit()
             .remove(keyTimerRuntimeState)
             .apply()
     }
 }
+
+internal fun mergeNativePlaybackDefinitions(
+    existing: List<StoredNativePlaybackSession>,
+    updates: List<StoredNativePlaybackSession>
+): List<StoredNativePlaybackSession> = existing.associateByTo(linkedMapOf()) { it.sessionId }.apply {
+    updates.forEach { put(it.sessionId, it) }
+}.values.toList()
+
+internal fun StoredPlaybackTimerRuntimeState.withoutSession(sessionId: String) =
+    copy(pausedSessionIds = pausedSessionIds.filterNot { it == sessionId })
 
 private fun JSONObject.optNullableString(key: String): String? {
     if (!has(key) || isNull(key)) return null

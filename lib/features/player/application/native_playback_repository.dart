@@ -21,9 +21,6 @@ class NativePlaybackRepository {
   Stream<NativePlaybackProgressUpdate> get progressUpdates =>
       _bridge.progressUpdates;
 
-  bool get supportsDeferredSessionRegistration =>
-      _bridge.supportsDeferredSessionRegistration;
-
   void startListening() => _bridge.startListening();
 
   Future<void> stopListening() => _bridge.stopListening();
@@ -194,16 +191,6 @@ class NativePlaybackRepository {
     return bridge is WindowsPlaybackBridge
         ? bridge.videoControllerForSession(sessionId)
         : null;
-  }
-
-  void acquireVideoSurface(String sessionId) {
-    final bridge = _bridge;
-    if (bridge is WindowsPlaybackBridge) bridge.acquireVideoSurface(sessionId);
-  }
-
-  void releaseVideoSurface(String sessionId) {
-    final bridge = _bridge;
-    if (bridge is WindowsPlaybackBridge) bridge.releaseVideoSurface(sessionId);
   }
 
   Future<NativeResult<void>> clearAll() => _bridge.clearAll();

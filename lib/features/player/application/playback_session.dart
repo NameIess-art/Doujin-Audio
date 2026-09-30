@@ -305,6 +305,8 @@ class PlaybackSession {
     if (isDisposed) return false;
     var changed = false;
     if (!state.playing &&
+        !_isLoading &&
+        _pendingPlayingIntent != true &&
         (state.processingState == ProcessingState.idle ||
             state.processingState == ProcessingState.completed)) {
       changed = _isPlaybackStarting;
@@ -321,6 +323,7 @@ class PlaybackSession {
     if (isDisposed) return false;
     final changed = state.playing || _isLoading || _isPlaybackStarting;
     setOptimisticState(playing: false);
+    _pendingPlayingIntent = null;
     _isLoading = false;
     _isPlaybackStarting = false;
     return changed;
@@ -346,6 +349,10 @@ class PlaybackSession {
     final nativeProcessingState = _nativeProcessingState(
       snapshot.processingState,
     );
+    final hasLoadedSource =
+        snapshot.playWhenReady ||
+        (nativeProcessingState != ProcessingState.idle &&
+            nativeProcessingState != ProcessingState.completed);
     final pendingIntent = _pendingPlayingIntent;
     final confirmsPendingIntent = pendingIntent == null
         ? false
@@ -386,7 +393,7 @@ class PlaybackSession {
     final nativePath = snapshot.path ?? _pathFromUri(snapshot.uri);
     if (nativePath != null && nativePath.isNotEmpty) {
       currentTrackPath = nativePath;
-      loadedPath = nativePath;
+      loadedPath = hasLoadedSource ? nativePath : null;
     }
     currentQueueIndex = snapshot.queueIndex;
     if (pendingVolume != null &&
@@ -411,8 +418,11 @@ class PlaybackSession {
     if (!hasPendingAudioEffectsSync && snapshot.hasChannelSwapPayload) {
       channelSwapEnabled = snapshot.channelSwapEnabled;
     }
-    if (snapshot.uri != null && loadedPath == null) {
+    if (snapshot.uri != null && loadedPath == null && hasLoadedSource) {
       loadedPath = currentTrackPath;
+    }
+    if (!hasLoadedSource) {
+      loadedPath = null;
     }
     return true;
   }
@@ -523,6 +533,7 @@ class PlaybackSession {
 
   void resetStreamsForNewTrack({Duration position = Duration.zero}) {
     if (isDisposed) return;
+    _playbackError = null;
     lastKnownPosition = position;
     _positionController.add(position);
     duration = null;

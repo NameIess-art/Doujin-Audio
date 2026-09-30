@@ -39,6 +39,16 @@ void main() {
         expect(isSessionVideoReady(_session(track.path, null), track), isFalse);
       });
 
+      test('paused video does not create a native surface', () {
+        expect(
+          isSessionVideoReady(
+            _session(track.path, track.path, playing: false),
+            track,
+          ),
+          isFalse,
+        );
+      });
+
       test('previous loaded track is not shown during a track switch', () {
         expect(
           isSessionVideoReady(_session(track.path, '${track.path}.old'), track),
@@ -70,7 +80,11 @@ void main() {
   }
 }
 
-PlaybackSessionSnapshot _session(String currentPath, String? loadedPath) {
+PlaybackSessionSnapshot _session(
+  String currentPath,
+  String? loadedPath, {
+  bool playing = true,
+}) {
   return PlaybackSessionSnapshot(
     id: 'video-session',
     createdAt: DateTime(2026),
@@ -87,12 +101,12 @@ PlaybackSessionSnapshot _session(String currentPath, String? loadedPath) {
     speed: 1,
     audioEffects: AudioEffectsState.flat,
     eqCapabilities: EqCapabilities.unsupported,
-    state: const PlaybackStatus(
-      playing: true,
+    state: PlaybackStatus(
+      playing: playing,
       processing: PlaybackProcessingStatus.ready,
     ),
-    effectivePlaying: true,
-    playbackRequested: true,
+    effectivePlaying: playing,
+    playbackRequested: playing,
     isLoading: false,
     isPlaybackLoading: false,
     playbackError: null,

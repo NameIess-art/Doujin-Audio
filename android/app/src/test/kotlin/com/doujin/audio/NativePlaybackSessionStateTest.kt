@@ -17,6 +17,25 @@ import java.nio.ByteOrder
 
 class NativePlaybackSessionStateTest {
     @Test
+    fun `paused notification queue navigation changes only data and preserves duplicate indices`() {
+        val descriptor = NativeMediaItemDescriptor("/same.mp3", "file:///same.mp3", "Audio", null, null)
+        val session = NativePlaybackSession(
+            sessionId = "paused", createPlayer = { _, _ -> error("paused navigation must not create a player") },
+            logWarn = { _, _, _ -> }, elapsedRealtimeMs = { 1_000L }
+        )
+        session.configure(descriptor, listOf(descriptor, descriptor), 0, 9_000L, 1f, 1f,
+            repeatOne = false, repeatAll = true, shuffleModeEnabled = false,
+            autoPlay = false, deferPlayerCreation = true)
+        session.skipQueue(forward = true)
+        assertEquals(1, session.snapshot()["queueIndex"])
+        assertEquals(0L, session.snapshot()["positionMs"])
+        session.skipQueue(forward = true)
+        assertEquals(0, session.snapshot()["queueIndex"])
+        session.skipQueue(forward = false)
+        assertEquals(1, session.snapshot()["queueIndex"])
+        assertNull(session.playerOrNull())
+    }
+    @Test
     fun `reconfiguring a deferred session discards previous media duration and buffer`() {
         val first = NativeMediaItemDescriptor(
             path = "/short.mp3",
@@ -152,6 +171,12 @@ class NativePlaybackSessionStateTest {
         session.applyTemporarySpeed(null)
         session.snapshot()
         assertEquals(1.25f, session.progressAnchorSnapshot().speed, 0.001f)
+
+        session.applyTemporarySpeed(2f)
+        session.releasePlayer()
+        session.snapshot()
+        assertEquals(1.25f, session.progressAnchorSnapshot().speed, 0.001f)
+        assertEquals(1.25f, session.storedSnapshot().speed, 0.001f)
     }
 
     @Test

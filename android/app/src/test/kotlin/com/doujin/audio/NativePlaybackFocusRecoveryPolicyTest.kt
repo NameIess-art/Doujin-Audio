@@ -387,21 +387,4 @@ class NativePlaybackFocusRecoveryPolicyTest {
         )
     }
 
-    @Test
-    fun `releases every idle player except the focused session`() {
-        assertEquals(
-            setOf("session-a", "session-c"),
-            idlePlaybackSessionIdsToRelease(
-                focusedSessionId = "session-b",
-                idleSessionIds = listOf("session-a", "session-b", "session-c")
-            )
-        )
-        assertEquals(
-            setOf("session-a", "session-b"),
-            idlePlaybackSessionIdsToRelease(
-                focusedSessionId = "playing-session",
-                idleSessionIds = listOf("session-a", "session-b")
-            )
-        )
-    }
 }

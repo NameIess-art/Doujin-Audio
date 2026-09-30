@@ -9,6 +9,35 @@ import org.junit.Test
 
 class NativePlaybackForegroundCoordinatorTest {
     @Test
+    fun `two phase preparation lease expires and replacement invalidates its old timeout`() {
+        val environment = FakeForegroundEnvironment()
+        val host = FakeForegroundHost(hasPlaybackToKeepAlive = false)
+        val coordinator = coordinator(host, environment)
+        coordinator.holdPlaybackStart("A")
+        val staleExpiry = environment.tasks.keys.single()
+        coordinator.holdPlaybackStart("A")
+        staleExpiry.run()
+        assertTrue(coordinator.hasPendingPlaybackStarts)
+        environment.runFirst(5_000L)
+        assertFalse(coordinator.hasPendingPlaybackStarts)
+        assertEquals(listOf(10_000L), environment.delays())
+    }
+
+    @Test
+    fun `pause cancels only the target preparation lease and shutdown cancels all leases`() {
+        val environment = FakeForegroundEnvironment()
+        val host = FakeForegroundHost(hasPlaybackToKeepAlive = false)
+        val coordinator = coordinator(host, environment)
+        coordinator.holdPlaybackStart("A")
+        coordinator.holdPlaybackStart("B")
+        coordinator.settlePlaybackStart("A")
+        assertTrue(coordinator.hasPendingPlaybackStarts)
+        assertEquals(listOf(5_000L), environment.delays())
+        coordinator.shutdown()
+        assertFalse(coordinator.hasPendingPlaybackStarts)
+        assertTrue(environment.tasks.isEmpty())
+    }
+    @Test
     fun `start skips unchanged signature and force refresh starts again`() {
         val environment = FakeForegroundEnvironment()
         val host = FakeForegroundHost()

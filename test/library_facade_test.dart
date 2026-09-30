@@ -1681,6 +1681,17 @@ void main() {
       await runtimeGraph.playback.seekSessionToNext(session.id);
 
       expect(session.currentTrackPath, firstPath);
+      expect(preparedQueues, isEmpty);
+      final queue = await runtimeGraph.playbackCommands.nativePlaybackQueueFor(
+        session,
+        currentPath: session.currentTrackPath,
+      );
+      expect(queue.map((item) => item['path']).toSet(), <String>{
+        firstPath,
+        secondPath,
+      });
+      await runtimeGraph.playback.toggleSessionPlayPause(session.id);
+      await runtimeGraph.playback.pendingSessionPreparation;
       expect(preparedQueues, isNotEmpty);
       expect(preparedQueues.last.toSet(), <String>{firstPath, secondPath});
     });

@@ -89,7 +89,7 @@ extension PlaybackCommandQueueSync on PlaybackCommandCoordinator {
         );
     MusicTrack? retainedCurrentTrack;
     if (!selectFirst &&
-        session.loadedPath != null &&
+        (session.loadedPath != null || session.hasDetachedQueueTrack) &&
         previousPath.isNotEmpty &&
         !queueContainsCurrent) {
       for (final track in previousRuntimeTracks ?? const <MusicTrack>[]) {
@@ -155,8 +155,18 @@ extension PlaybackCommandQueueSync on PlaybackCommandCoordinator {
         }
       }
       if (session.loadedPath == null && !wasPlaying) {
+        final trackChanged =
+            !PathMatcher.equalsNormalized(
+              previousPath,
+              tracks[nextIndex].path,
+            ) ||
+            (previousIndex < 0 && retainedCurrentTrack == null);
         session.currentQueueIndex = nextIndex;
         session.currentTrackPath = tracks[nextIndex].path;
+        if (trackChanged || selectFirst) {
+          session.resetStreamsForNewTrack();
+          session.setOptimisticDuration(tracks[nextIndex].duration);
+        }
         _notifyPlaybackChanged(session.id);
         _playbackFacade.scheduleSessionStatePersistence(sessionId: session.id);
         return;

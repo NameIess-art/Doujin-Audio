@@ -49,15 +49,6 @@ internal val playbackRecoveryOffsetsMs = longArrayOf(
 )
 internal const val PLAYBACK_RECOVERY_LOW_FREQUENCY_INTERVAL_MS = 5 * 60 * 1000L
 
-internal fun idlePlaybackSessionIdsToRelease(
-    focusedSessionId: String?,
-    idleSessionIds: Collection<String>
-): Set<String> {
-    return idleSessionIds
-        .filterNot { it == focusedSessionId }
-        .toSet()
-}
-
 internal fun shouldAutoPlayWithAudioFocus(
     autoPlayRequested: Boolean,
     requestAudioFocus: () -> Boolean

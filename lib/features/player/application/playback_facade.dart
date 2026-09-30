@@ -89,6 +89,7 @@ final class PlaybackFacade {
   RestoredPlaybackRuntime? _restoreRuntime;
   PlaybackHistoryUpdater? _updatePlaybackHistory;
   void Function(String? sessionId)? _onPersistenceFocusChanged;
+  Future<void> Function(PlaybackSession session)? _synchronizePausedRecovery;
   void Function(PlaybackSession session)? _onSessionRegistered;
   void Function(List<PlaybackSession> sessions)? _onSessionsRemoved;
   void Function()? _onSessionsReordered;
@@ -187,7 +188,6 @@ final class PlaybackFacade {
   bool get hasPlayingSession => _service.playingSessionCount > 0;
   bool get hasPlayingAudioSession => _service.hasPlayingAudioSession;
   bool get hasPlaybackToKeepAlive => _service.hasPlaybackToKeepAlive;
-  bool get hasRetainedPlaybackSession => _service.sessions.isNotEmpty;
   bool get persistedSessionStateReady => aggregateState.isInitialized;
   bool get nativeRetainedContentUriInventoryReady =>
       _nativeRetainedContentUriInventoryReady;
@@ -276,6 +276,7 @@ final class PlaybackFacade {
     _restoreRuntime = null;
     _updatePlaybackHistory = null;
     _onPersistenceFocusChanged = null;
+    _synchronizePausedRecovery = null;
     _onSessionRegistered = null;
     _onSessionsRemoved = null;
     _onSessionsReordered = null;
@@ -385,6 +386,10 @@ final class PlaybackFacade {
         continue;
       }
       session.confirmPaused();
+      session.loadedPath = null;
+      if (session.state.processingState != ProcessingState.completed) {
+        session.setOptimisticState(processingState: ProcessingState.idle);
+      }
     }
     _notifySessionStateChanged();
     _onRuntimeStateChanged?.call();
@@ -514,6 +519,10 @@ final class PlaybackFacade {
         clamped.inSeconds ~/ positionBucketSeconds;
     if (!_sessionObserversAttached) {
       _onSessionPositionChanged?.call(session, clamped);
+    }
+    if (session.loadedPath == null && !session.playbackRequested) {
+      scheduleSessionStatePersistence(sessionId: session.id);
+      return;
     }
     await _seekDispatcher.dispatch(session, clamped, session.loadGeneration);
   }
@@ -819,12 +828,14 @@ final class PlaybackFacade {
     required RestoredPlaybackRuntime restoreRuntime,
     required PlaybackHistoryUpdater updatePlaybackHistory,
     required void Function(String? sessionId) onFocusChanged,
+    Future<void> Function(PlaybackSession session)? synchronizePausedRecovery,
   }) => PlaybackSessionPersistenceCoordinator(this).attachPersistenceRuntime(
     trackByPath: trackByPath,
     recordPlaybackProgress: recordPlaybackProgress,
     restoreRuntime: restoreRuntime,
     updatePlaybackHistory: updatePlaybackHistory,
     onFocusChanged: onFocusChanged,
+    synchronizePausedRecovery: synchronizePausedRecovery,
   );
   void configurePersistence({required bool enabled}) =>
       PlaybackSessionPersistenceCoordinator(

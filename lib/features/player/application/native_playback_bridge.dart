@@ -267,8 +267,6 @@ abstract interface class NativePlaybackBridgeBase {
 
   Stream<NativePlaybackProgressUpdate> get progressUpdates;
 
-  bool get supportsDeferredSessionRegistration;
-
   void startListening();
 
   Future<void> stopListening();
@@ -416,9 +414,6 @@ class NativePlaybackBridge implements NativePlaybackBridgeBase {
   @override
   Stream<NativePlaybackProgressUpdate> get progressUpdates =>
       _progressUpdatesController.stream;
-
-  @override
-  bool get supportsDeferredSessionRegistration => true;
 
   @override
   void startListening() {

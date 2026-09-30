@@ -9,42 +9,43 @@ import 'package:doujin_audio/features/player/domain/playback_mode.dart';
 import 'package:doujin_audio/features/settings/application/settings_repository.dart';
 
 void main() {
-  test(
-    'reports retained playback without mirroring Android power state',
-    () async {
-      final playback = PlaybackFacade.create(
-        databaseRepository: TestPersistenceRepository(),
-        nativeRepository: _SuccessfulClearNativePlaybackRepository(),
-      );
-      final settings = SettingsRepository();
-      final coordinator = PlaybackKeepAliveCoordinator(
-        playback: playback,
-        settings: settings,
-        enterBackgroundWarmup: () {},
-        resumeForegroundWarmup: () {},
-      );
-      addTearDown(playback.dispose);
-      addTearDown(settings.dispose);
+  test('only requested playback keeps resources alive', () async {
+    final playback = PlaybackFacade.create(
+      databaseRepository: TestPersistenceRepository(),
+      nativeRepository: _SuccessfulClearNativePlaybackRepository(),
+    );
+    final settings = SettingsRepository();
+    final coordinator = PlaybackKeepAliveCoordinator(
+      playback: playback,
+      settings: settings,
+      enterBackgroundWarmup: () {},
+      resumeForegroundWarmup: () {},
+    );
+    addTearDown(playback.dispose);
+    addTearDown(settings.dispose);
 
-      final session = PlaybackSession(
-        id: 'session-a',
-        currentTrackPath: 'track.mp3',
-        loopMode: SessionLoopMode.folderSequential,
-        nonSingleLoopMode: SessionLoopMode.folderSequential,
-        volume: 1,
-        createdAt: DateTime(2026),
-        state: const PlayerState(false, ProcessingState.ready),
-      )..loadedPath = 'track.mp3';
-      playback.registerSession(session);
+    final session = PlaybackSession(
+      id: 'session-a',
+      currentTrackPath: 'track.mp3',
+      loopMode: SessionLoopMode.folderSequential,
+      nonSingleLoopMode: SessionLoopMode.folderSequential,
+      volume: 1,
+      createdAt: DateTime(2026),
+      state: const PlayerState(false, ProcessingState.ready),
+    )..loadedPath = 'track.mp3';
+    playback.registerSession(session);
 
-      expect(coordinator.hasPlaybackToKeepAlive, isTrue);
-      expect(coordinator.hasRetainedPlaybackSession, isTrue);
+    expect(coordinator.hasPlaybackToKeepAlive, isFalse);
+    session.setOptimisticState(playing: true);
+    playback.publishSessionState(session.id);
+    expect(coordinator.hasPlaybackToKeepAlive, isTrue);
+    session.confirmPaused();
+    playback.publishSessionState(session.id);
+    expect(coordinator.hasPlaybackToKeepAlive, isFalse);
 
-      await playback.clearAllSessions();
-      expect(coordinator.hasPlaybackToKeepAlive, isFalse);
-      expect(coordinator.hasRetainedPlaybackSession, isFalse);
-    },
-  );
+    await playback.clearAllSessions();
+    expect(coordinator.hasPlaybackToKeepAlive, isFalse);
+  });
 }
 
 final class _SuccessfulClearNativePlaybackRepository

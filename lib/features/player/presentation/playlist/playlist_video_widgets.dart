@@ -33,6 +33,7 @@ bool isSessionVideoReady(PlaybackSessionSnapshot session, MusicTrack? track) {
   return (defaultTargetPlatform == TargetPlatform.android ||
           defaultTargetPlatform == TargetPlatform.windows) &&
       track?.isVideo == true &&
+      session.effectivePlaying &&
       loadedPath != null &&
       PathMatcher.equalsNormalized(loadedPath, track!.path);
 }

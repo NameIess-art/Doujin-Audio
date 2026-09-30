@@ -1,7 +1,8 @@
 import 'dart:async';
 import 'dart:math';
 
-import 'package:flutter/foundation.dart' show compute;
+import 'package:flutter/foundation.dart'
+    show compute, defaultTargetPlatform, TargetPlatform;
 import 'package:path/path.dart' as path;
 
 import '../../../core/immutable_collections.dart';
@@ -280,6 +281,77 @@ final class PlaybackCommandCoordinator
 
   List<Uri>? candidatePlaybackUrisForTrack(MusicTrack? track) =>
       _candidatePlaybackUrisForTrack(track);
+
+  Future<void> synchronizePausedRecovery(PlaybackSession session) async {
+    bool isCold() =>
+        _isRegisteredSession(session) &&
+        session.loadedPath == null &&
+        !session.playbackRequested &&
+        !session.effectivePlaying &&
+        !session.isLoading;
+    if (defaultTargetPlatform != TargetPlatform.android || !isCold()) return;
+    final currentPath = _playbackFacade.resolveRetargetedPath(
+      session.currentTrackPath,
+    );
+    final queueVersion = session.queueVersion;
+    final generation = session.loadGeneration;
+    final emptyQueue =
+        session.isPlaybackQueue &&
+        session.playbackQueue!.expandedTracks.isEmpty &&
+        !session.hasDetachedQueueTrack;
+    final queue = currentPath.isEmpty || emptyQueue
+        ? const <Map<String, Object?>>[]
+        : await nativePlaybackQueueFor(session, currentPath: currentPath);
+    if (!isCold() ||
+        session.queueVersion != queueVersion ||
+        session.loadGeneration != generation ||
+        _playbackFacade.resolveRetargetedPath(session.currentTrackPath) !=
+            currentPath) {
+      return;
+    }
+    if (queue.isEmpty) {
+      final removed = await _nativePlaybackRepository.removeSession(session.id);
+      if (removed.isFailure) throw StateError(removed.errorOrNull!);
+      return;
+    }
+    final startIndex = nativePlaybackQueueStartIndexFor(
+      session,
+      currentPath: currentPath,
+    );
+    final current = queue[(startIndex ?? 0).clamp(0, queue.length - 1)];
+    final artUri = current['artUri'] as String?;
+    final result = await _nativePlaybackRepository.prepareSession(
+      sessionId: session.id,
+      isTemporary: session.isTemporary,
+      uri: Uri.parse(current['uri'] as String),
+      title: current['title'] as String,
+      path: currentPath,
+      subtitle: current['subtitle'] as String?,
+      artUri: artUri == null ? null : Uri.parse(artUri),
+      startPosition: session.state.processingState == ProcessingState.completed
+          ? Duration.zero
+          : session.lastKnownPosition,
+      volume: session.volume,
+      speed: session.speed,
+      audioEffects: NativeAudioEffects(
+        state: session.audioEffects,
+        channelSwapEnabled: session.channelSwapEnabled,
+      ),
+      repeatOne: session.loopMode == SessionLoopMode.single,
+      queue: queue,
+      queueStartIndex: startIndex,
+      repeatAll:
+          !_hasDetachedPlaybackQueueCurrent(session) &&
+          session.loopMode != SessionLoopMode.single &&
+          !session.loopMode.isOneShot,
+      shuffle: session.loopMode.isShuffle,
+      candidateUris: candidatePlaybackUrisForTrack(
+        sessionTrackForPath(session, currentPath),
+      ),
+      deferPlayerCreation: true,
+    );
+    if (result.isFailure) throw StateError(result.errorOrNull!);
+  }
 
   Future<void> restorePersistedRuntime(
     List<PlaybackSession> restoredSessions, {

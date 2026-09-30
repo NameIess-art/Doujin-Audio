@@ -55,6 +55,13 @@ internal class NativeVideoOutputRegistry<P : Any>(
         entry.output.bindPlayer(null)
     }
 
+    fun detachPlayer(sessionId: String) {
+        val entry = entries[sessionId] ?: return
+        entry.output.setKeepScreenOn(false)
+        entry.output.bindPlayer(null)
+        entry.player = null
+    }
+
     fun clear() {
         entries.values.forEach { entry ->
             entry.output.setKeepScreenOn(false)

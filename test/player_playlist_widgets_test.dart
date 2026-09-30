@@ -4625,7 +4625,8 @@ void main() {
       persist: false,
     );
     final session = fixture.runtimeGraph.playback.createTrackSession(tracks[0])
-      ..isTemporary = true;
+      ..isTemporary = true
+      ..setOptimisticState(playing: true);
     void sync() => fixture.playbackService.syncSlice(
       activeSessions: [session],
       playingSessionCount: 0,

@@ -53,7 +53,14 @@ void main() {
             forceStartAtZero = false,
             showLoading = true,
             targetQueueIndex,
-          }) async => true,
+          }) async {
+            if (autoPlay) {
+              resumed.add(session.id);
+              session.loadedPath = nextPath;
+              session.setOptimisticState(playing: true);
+            }
+            return true;
+          },
       pauseSession: (_) async {},
       startSession: (session, {required shouldStartTriggerCountdown}) async {
         resumed.add(session.id);

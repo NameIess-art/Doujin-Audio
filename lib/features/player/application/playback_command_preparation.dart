@@ -117,6 +117,42 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
     bool shouldStartTriggerCountdown = true,
   }) async {
     if (!_isRegisteredSession(session)) return false;
+    if (!autoPlay) {
+      if (session.loadedPath != null ||
+          session.pendingNativeTrackPath != null ||
+          session.state.playing) {
+        if (!await _pauseSessionPlayback(session)) return false;
+      } else {
+        session.invalidatePreparation();
+      }
+      if (!_isRegisteredSession(session)) return false;
+      final logicalPath = PathMatcher.normalize(nextPath);
+      final trackChanged =
+          !PathMatcher.equalsNormalized(
+            session.currentTrackPath,
+            logicalPath,
+          ) ||
+          (targetQueueIndex != null &&
+              targetQueueIndex != session.currentQueueIndex);
+      session.currentTrackPath = logicalPath;
+      if (targetQueueIndex != null) {
+        session.currentQueueIndex = targetQueueIndex;
+      }
+      session.loadedPath = null;
+      if (trackChanged || forceStartAtZero) {
+        session.resetStreamsForNewTrack();
+        session.setOptimisticDuration(
+          _sessionTrackForPath(session, logicalPath)?.duration,
+        );
+      }
+      session.setOptimisticState(
+        playing: false,
+        processingState: ProcessingState.idle,
+      );
+      _notifyPlaybackChanged(session.id);
+      _playbackFacade.scheduleSessionStatePersistence(sessionId: session.id);
+      return true;
+    }
     final hadDetachedPlaybackQueueCurrent = _hasDetachedPlaybackQueueCurrent(
       session,
     );
@@ -316,14 +352,13 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
     final isInitialLoad = session.loadedPath == null;
     final logicalTrackChanged =
         queueIndexChanged ||
-        (!isInitialLoad &&
-            !PathMatcher.equalsNormalized(
-              _playbackFacade.resolveRetargetedPath(session.loadedPath!),
-              resolvedPath,
-            ));
+        !PathMatcher.equalsNormalized(
+          _playbackFacade.resolveRetargetedPath(session.currentTrackPath),
+          resolvedPath,
+        );
     final startPosition =
         startPositionOverride ??
-        (forceStartAtZero || (!isInitialLoad && logicalTrackChanged)
+        (forceStartAtZero || logicalTrackChanged
             ? Duration.zero
             : session.lastKnownPosition);
     return _PlaybackPreparationTarget(

@@ -1,12 +1,18 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/gestures.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_providers.dart';
 import 'support/asmr_controller_test_fixture.dart';
 import 'package:doujin_audio/app/localization/app_language_provider.dart';
 import 'package:doujin_audio/core/immutable_collections.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
+import 'package:doujin_audio/core/media/cover_image_resolution.dart';
+import 'package:doujin_audio/core/ui/cover_image_retention.dart';
+import 'package:doujin_audio/core/widgets/async_cover_image.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/widgets/swipe_reveal_card.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
@@ -20,6 +26,11 @@ import 'package:doujin_audio/features/asmr/presentation/asmr_download_page.dart'
 import 'package:doujin_audio/features/asmr/presentation/asmr_tab.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_work_detail_sheet.dart';
 import 'package:doujin_audio/features/library/presentation/work_detail_page.dart';
+import 'package:doujin_audio/features/library/application/cover_artwork_cache_service.dart';
+import 'package:doujin_audio/features/library/application/library_service.dart';
+import 'package:doujin_audio/features/player/application/playback_session_snapshot.dart';
+import 'package:doujin_audio/features/player/presentation/active_session_carousel.dart';
+import 'package:doujin_audio/features/player/presentation/playlist_tab.dart';
 import 'package:doujin_audio/features/player/application/playback_session_launcher.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -28,6 +39,208 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'support/app_runtime_test_fixture.dart';
 
 void main() {
+  for (final resolution in CoverImageResolution.values) {
+    testWidgets(
+      'ASMR covers share one cache across all surfaces at ${resolution.name}',
+      (tester) async {
+        SharedPreferences.setMockInitialValues(const <String, Object>{});
+        tester.view.devicePixelRatio = 2;
+        tester.view.physicalSize =
+            defaultTargetPlatform == TargetPlatform.windows
+            ? const Size(2560, 1600)
+            : const Size(1000, 1800);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(releaseRetainedCoverImages);
+        final directory = (await tester.runAsync(
+          () => Directory.systemTemp.createTemp('shared_asmr_cover_'),
+        ))!;
+        final cover = File(
+          '${directory.path}${Platform.pathSeparator}cover.png',
+        );
+        await tester.runAsync(
+          () => cover.writeAsBytes(
+            base64Decode(
+              'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk'
+              '+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+            ),
+          ),
+        );
+        addTearDown(() async {
+          PaintingBinding.instance.imageCache
+            ..clear()
+            ..clearLiveImages();
+          await directory.delete(recursive: true);
+        });
+        var downloads = 0;
+        final cache = CoverArtworkCacheService(
+          libraryService: LibraryService(),
+          remoteCoverDownloader: (_) async {
+            downloads++;
+            return cover.path;
+          },
+        );
+        final fixture = AppRuntimeWidgetTestFixture(
+          coverArtworkCacheService: cache,
+          configureSettingsRepository: (settings) {
+            settings.coverImageResolution = resolution;
+            settings.syncSlice();
+          },
+        );
+        addTearDown(fixture.dispose);
+        await fixture.languageProvider.setLanguage(AppLanguage.zh);
+        const url = 'https://example.com/asmr-cover.png';
+        final work = _work(coverUrl: ' $url ', mainCoverUrl: ' ');
+        final controller = _LoadedTabAsmrController(createTestAsmrServices(), [
+          work,
+        ]);
+        addTearDown(controller.dispose);
+        await tester.runAsync(() => cache.futureForRemoteCover(url));
+
+        Future<Object> imageKey(Finder surface) => tester
+            .widget<RetryingImage>(
+              find
+                  .descendant(of: surface, matching: find.byType(RetryingImage))
+                  .first,
+            )
+            .imageProviderBuilder()
+            .obtainKey(ImageConfiguration.empty);
+
+        await tester.pumpWidget(
+          fixture.build(
+            const AsmrTab(),
+            overrides: [
+              asmrLibraryControllerProvider.overrideWithValue(controller),
+            ],
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('收藏'));
+        await tester.pumpAndSettle();
+        final card = find.byType(AsyncRemoteCoverImage).first;
+        expect(
+          tester.widget<AsyncRemoteCoverImage>(card).initialPath,
+          cover.path,
+        );
+        final sharedKey = await imageKey(card);
+        expect(
+          sharedKey,
+          await resizeFileImageIfNeeded(
+            path: cover.path,
+            cacheWidth: coverCacheWidthForResolution(resolution),
+            useDefaultCacheWidth: false,
+          ).obtainKey(ImageConfiguration.empty),
+        );
+
+        unawaited(
+          showAsmrWorkDetailSheet(tester.element(find.byType(AsmrTab)), work),
+        );
+        await tester.pumpAndSettle();
+        final detail = find.descendant(
+          of: find.byType(WorkDetailPage),
+          matching: find.byType(AsyncRemoteCoverImage),
+        );
+        expect(detail, findsOneWidget);
+        expect(
+          tester.widget<AsyncRemoteCoverImage>(detail).initialPath,
+          cover.path,
+        );
+        expect(await imageKey(detail), sharedKey);
+        Navigator.of(tester.element(find.byType(WorkDetailPage))).pop();
+        await tester.pumpAndSettle();
+
+        final track =
+            testMusicTrack(
+              name: work.title,
+              path: 'https://example.com/track.mp3',
+              groupKey: 'asmr:${work.id}',
+              groupTitle: work.title,
+            ).copyWith(
+              remoteCoverUrl: work.preferredCoverUrl,
+              remoteMetadataKind: 'asmr.one',
+            );
+        final session = fixture.runtimeGraph.playback.createTrackSession(
+          track,
+          customQueueTracks: [track],
+        );
+        addTearDown(session.shutdown);
+        fixture.playbackService.syncSlice(
+          activeSessions: [session],
+          playingSessionCount: 0,
+          focusedSessionId: session.id,
+          coverGeneration: 0,
+          isInitialized: true,
+        );
+        await tester.runAsync(
+          () => fixture.runtimeGraph.library.playbackCoverPathFutureForTrack(
+            track,
+          ),
+        );
+        await tester.pumpWidget(
+          fixture.build(
+            const PlaylistTab(),
+            overrides: [
+              asmrLibraryControllerProvider.overrideWithValue(controller),
+            ],
+          ),
+        );
+        await tester.pumpAndSettle();
+        final playlistCover = find.byType(AsyncLocalCoverImage).first;
+        expect(
+          tester.widget<AsyncLocalCoverImage>(playlistCover).initialPath,
+          cover.path,
+        );
+        expect(await imageKey(playlistCover), sharedKey);
+        unawaited(
+          Navigator.of(
+            tester.element(find.byType(PlaylistTab)),
+          ).push(buildSessionDetailRoute(sessionId: session.id)),
+        );
+        await tester.pumpAndSettle();
+        expect(
+          await imageKey(find.byKey(ValueKey<String>('artwork_${session.id}'))),
+          sharedKey,
+        );
+        expect(
+          await imageKey(
+            find.byKey(
+              const ValueKey<String>('session_detail_background_blur'),
+            ),
+          ),
+          sharedKey,
+        );
+        Navigator.of(
+          tester.element(find.byKey(ValueKey<String>('artwork_${session.id}'))),
+        ).pop();
+        await tester.pumpAndSettle();
+
+        await tester.pumpWidget(
+          fixture.build(
+            ActiveSessionCarousel(
+              sessions: [PlaybackSessionSnapshot.fromRuntime(session)],
+              onOpenSession: (_) {},
+            ),
+            overrides: [
+              asmrLibraryControllerProvider.overrideWithValue(controller),
+            ],
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(
+          await imageKey(find.byType(AsyncLocalCoverImage).first),
+          sharedKey,
+        );
+        expect(downloads, 1);
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump(const Duration(seconds: 6));
+      },
+      variant: const TargetPlatformVariant({
+        TargetPlatform.android,
+        TargetPlatform.windows,
+      }),
+    );
+  }
+
   testWidgets(
     'ASMR category switching keeps scroll offset and cached empty results',
     (tester) async {
@@ -954,6 +1167,8 @@ AsmrWork _work({
   String title = 'Test work',
   List<String> voiceActors = const <String>[],
   List<String> tags = const <String>[],
+  String coverUrl = '',
+  String mainCoverUrl = '',
 }) => AsmrWork(
   id: id,
   title: title,
@@ -961,9 +1176,9 @@ AsmrWork _work({
   sourceId: 'RJ000$id',
   sourceType: 'asmr',
   sourceUrl: '',
-  coverUrl: '',
+  coverUrl: coverUrl,
   thumbnailUrl: '',
-  mainCoverUrl: '',
+  mainCoverUrl: mainCoverUrl,
   releaseDate: null,
   createDate: null,
   duration: Duration.zero,

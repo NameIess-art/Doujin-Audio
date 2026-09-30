@@ -14,6 +14,7 @@ import '../../../../app/state/app_runtime_providers.dart';
 import '../../../../app/state/subtitle_settings_provider.dart';
 import '../../../../app/theme/app_design_tokens.dart';
 import '../../../../core/media/music_track.dart';
+import '../../../../core/ui/visual_settings_providers.dart';
 import '../../../../core/ui/permission_action_controller.dart';
 import '../../../../core/widgets/app_transitions.dart';
 import '../../../../core/widgets/async_cover_image.dart';
@@ -177,6 +178,10 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
     final onVerticalDragCancel = widget.onVerticalDragCancel;
 
     final track = paths.trackByPath(session.currentTrackPath);
+    // ASMR artwork shares its foreground decode, including original quality.
+    final backgroundCacheWidth = track?.isRemoteAsmr == true
+        ? coverCacheWidthForResolution(ref.watch(coverImageResolutionProvider))
+        : _kSessionDetailBackgroundCacheWidth;
     final detailTheme = _detailThemeForSession(context, session, track);
     final cs = detailTheme.colorScheme;
     final blurEnabled = ref.watch(
@@ -275,8 +280,8 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
                                 imageBuilder: (context, coverPath) {
                                   return RetryingFileImage(
                                     path: coverPath,
-                                    cacheWidth:
-                                        _kSessionDetailBackgroundCacheWidth,
+                                    cacheWidth: backgroundCacheWidth,
+                                    useDefaultCacheWidth: false,
                                     fit: BoxFit.cover,
                                     filterQuality: FilterQuality.low,
                                     color: cs.surface.withValues(alpha: 0.45),

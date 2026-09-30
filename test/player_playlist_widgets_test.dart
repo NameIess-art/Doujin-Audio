@@ -1959,7 +1959,8 @@ void main() {
             (widget.decoration! as BoxDecoration).shape == BoxShape.circle;
       }),
     );
-    expect(skeletonTrailingCircles, findsNothing);
+    expect(skeletonTrailingCircles, findsOneWidget);
+    expect(tester.getSize(skeletonTrailingCircles), const Size.square(36));
     expect(
       tester.getTopLeft(skeletonCards.first).dy,
       greaterThanOrEqualTo(tester.getBottomLeft(find.byType(TopPageHeader)).dy),

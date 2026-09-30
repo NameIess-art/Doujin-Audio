@@ -837,9 +837,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
           (_asmrTree != null && _containsAsmrSubtitle(_asmrTree!));
       displayVoiceActors = work.voiceActors;
       displayTags = work.tags;
-      coverPath = work.mainCoverUrl.isNotEmpty
-          ? work.mainCoverUrl
-          : (work.coverUrl.isNotEmpty ? work.coverUrl : work.thumbnailUrl);
+      coverPath = work.preferredCoverUrl;
     }
 
     final topSafeArea = MediaQuery.paddingOf(context).top;

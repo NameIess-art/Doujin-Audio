@@ -124,33 +124,6 @@ void main() {
     expect(coverCacheWidth(), 600);
   });
 
-  test('thumbnail decode width follows displayed pixels', () {
-    expect(
-      coverThumbnailCacheWidth(
-        logicalWidth: 82,
-        devicePixelRatio: 3,
-        resolution: CoverImageResolution.balanced,
-      ),
-      246,
-    );
-    expect(
-      coverThumbnailCacheWidth(
-        logicalWidth: 500,
-        devicePixelRatio: 3,
-        resolution: CoverImageResolution.memorySaver,
-      ),
-      300,
-    );
-    expect(
-      coverThumbnailCacheWidth(
-        logicalWidth: 82,
-        devicePixelRatio: 2,
-        resolution: CoverImageResolution.original,
-      ),
-      164,
-    );
-  });
-
   test('cover cache width follows explicit resolution', () {
     expect(coverCacheWidth(resolution: CoverImageResolution.high), 900);
     expect(coverCacheWidth(resolution: CoverImageResolution.ultraHigh), 1200);

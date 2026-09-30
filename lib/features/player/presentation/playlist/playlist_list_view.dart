@@ -238,32 +238,50 @@ class PlaylistLoadingSkeleton extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Container(
-                          width: 94,
-                          height: 9,
+                          width: switch (index % 4) {
+                            0 => 96.0,
+                            1 => 114.0,
+                            2 => 84.0,
+                            _ => 104.0,
+                          },
+                          height: 11,
                           decoration: BoxDecoration(
                             color: cs.surfaceContainerHigh,
-                            borderRadius: BorderRadius.circular(5),
+                            borderRadius: BorderRadius.circular(4),
                           ),
                         ),
-                        const SizedBox(height: 8),
-                        Container(
-                          width: double.infinity,
-                          height: 13,
-                          decoration: BoxDecoration(
-                            color: cs.surfaceContainerHigh,
-                            borderRadius: BorderRadius.circular(7),
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        Container(
-                          width: 136,
-                          height: 10,
-                          decoration: BoxDecoration(
-                            color: cs.surfaceContainerHigh,
-                            borderRadius: BorderRadius.circular(5),
+                        const SizedBox(height: 4),
+                        FractionallySizedBox(
+                          alignment: Alignment.centerLeft,
+                          widthFactor: switch (index % 4) {
+                            0 => 0.82,
+                            1 => 0.68,
+                            2 => 0.90,
+                            _ => 0.74,
+                          },
+                          child: Container(
+                            height: 14,
+                            decoration: BoxDecoration(
+                              color: cs.surfaceContainerHigh,
+                              borderRadius: BorderRadius.circular(5),
+                            ),
                           ),
                         ),
                       ],
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.xxs),
+                  SizedBox.square(
+                    dimension: 44,
+                    child: Center(
+                      child: Container(
+                        width: 36,
+                        height: 36,
+                        decoration: BoxDecoration(
+                          color: cs.surfaceContainerHigh,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
                     ),
                   ),
                 ],

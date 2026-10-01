@@ -36,7 +36,6 @@ extension PlaybackCommandTransport on PlaybackCommandCoordinator {
           session.playbackCommandGeneration == generation,
     );
     _notificationFacade.markNotificationsAvailable();
-    unawaited(_nativePlaybackRepository.undismissNotifications());
     _notificationFacade.setFocusedSession(session.id);
     session.beginTransportCommand(commandId: generation, playing: true);
     _notifyPlaybackChanged(session.id);

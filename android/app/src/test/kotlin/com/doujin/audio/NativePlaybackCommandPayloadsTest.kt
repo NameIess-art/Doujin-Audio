@@ -172,11 +172,6 @@ class NativePlaybackCommandPayloadsTest {
     }
 
     @Test(expected = IllegalArgumentException::class)
-    fun `foreground command rejects missing enabled flag before service startup`() {
-        parsePlaybackCommand(MethodCall(NativePlaybackMethods.SET_FOREGROUND_ENABLED, emptyMap<String, Any>()))
-    }
-
-    @Test(expected = IllegalArgumentException::class)
     fun `simple playback commands reject volume above amplified range`() {
         parsePlaybackCommand(
             MethodCall(

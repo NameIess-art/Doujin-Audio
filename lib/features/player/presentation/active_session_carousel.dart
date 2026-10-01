@@ -97,6 +97,8 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
     _pageController = PageController(
       initialPage: _loopPageSeed,
       viewportFraction: widget.viewportFraction ?? 0.90,
+      keepPage: false,
+      onAttach: (_) => _pageController.jumpToPage(_pageNotifier.value.round()),
     );
     _pageController.addListener(_handlePageTick);
     _carouselSnapListenable = ref
@@ -111,13 +113,6 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
         _notifyVisibleSessionChanged();
       }
     });
-  }
-
-  @override
-  void didUpdateWidget(covariant ActiveSessionCarousel oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    // Removed dangerous _pageController disposal and recreation
-    // that caused "ScrollController attached to multiple scroll views" crashes.
   }
 
   @override
@@ -170,7 +165,7 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
     if (sessionId == null) return;
     final sessions = _currentSessions;
     final targetIndex = sessions.indexWhere((s) => s.id == sessionId);
-    if (targetIndex < 0 || !_pageController.hasClients) return;
+    if (targetIndex < 0) return;
     _lastCarouselSnapSessionId = sessionId;
     if (_lastVisibleSessionId == sessionId) return;
     _moveToPage(
@@ -203,20 +198,12 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
   }
 
   Future<void> _slideToLeftSession(String leftSessionId) async {
-    if (!mounted || !_pageController.hasClients) {
+    if (!mounted) {
       _removingFocusedSession = false;
       return;
     }
     final targetPage = _pageNotifier.value.round() - 1;
-    if (MediaQuery.disableAnimationsOf(context)) {
-      _pageController.jumpToPage(targetPage);
-    } else {
-      await _pageController.animateToPage(
-        targetPage,
-        duration: const Duration(milliseconds: 350),
-        curve: Curves.easeOutCubic,
-      );
-    }
+    await _moveToPage(targetPage, duration: const Duration(milliseconds: 350));
     if (!mounted) return;
     setState(() {
       _currentSessions = _incomingSessions;
@@ -240,13 +227,17 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
     return currentPage + delta;
   }
 
-  void _moveToPage(int page, {required Duration duration}) {
-    if (!_pageController.hasClients) return;
+  Future<void> _moveToPage(int page, {required Duration duration}) async {
+    if (!_pageController.hasClients) {
+      _pageNotifier.value = page.toDouble();
+      _notifyVisibleSessionChanged();
+      return;
+    }
     if (MediaQuery.disableAnimationsOf(context)) {
       _pageController.jumpToPage(page);
       return;
     }
-    _pageController.animateToPage(
+    await _pageController.animateToPage(
       page,
       duration: duration,
       curve: Curves.easeOutCubic,
@@ -273,13 +264,13 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
     ref.watch(coverGenerationProvider);
     final viewportFraction = _viewportFraction;
     if (_pageController.viewportFraction != viewportFraction) {
-      final oldPage = _pageController.hasClients
-          ? _pageController.page ?? 0.0
-          : 0.0;
       _pageController.dispose();
       _pageController = PageController(
-        initialPage: oldPage.round(),
+        initialPage: _pageNotifier.value.round(),
         viewportFraction: viewportFraction,
+        keepPage: false,
+        onAttach: (_) =>
+            _pageController.jumpToPage(_pageNotifier.value.round()),
       );
       _pageController.addListener(_handlePageTick);
     }
@@ -363,7 +354,7 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
       if (targetIndex >= 0) {
         _lastCarouselSnapSessionId = snapSessionId;
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (!mounted || !_pageController.hasClients) return;
+          if (!mounted) return;
           _moveToPage(
             _pageForSessionIndex(targetIndex, visibleSessions.length),
             duration: const Duration(milliseconds: 350),
@@ -389,7 +380,38 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
           final totalWidth = constraints.maxWidth;
           final circularCover = requestsCircularCover;
           final dockCollapsed = embedded && totalWidth < 160;
-          final pagingLocked = circularCover || dockCollapsed;
+          Widget buildSessionCard(int page) {
+            final sessionIndex = _sessionIndexForPage(
+              page,
+              visibleSessions.length,
+            );
+            final session = visibleSessions[sessionIndex];
+            final track = ref
+                .read(audioPathCoordinatorProvider)
+                .sessionTrackForPath(session.id, session.currentTrackPath);
+            return RepaintBoundary(
+              child: _ActiveSessionCard(
+                session: session,
+                position: sessionIndex,
+                count: visibleSessions.length,
+                coverPathFuture: _sessionCoverFutureForTrack(library, track),
+                compact: compact,
+                embedded: embedded,
+                dockCollapsed: dockCollapsed,
+                circularCover: circularCover,
+                onOpen: () => _openSessionDetail(context, session),
+              ),
+            );
+          }
+
+          // A round dock has no paging surface. Only the capsule animates its
+          // position; session focus replaces the card at that fixed position.
+          if (circularCover || dockCollapsed) {
+            return ValueListenableBuilder<double>(
+              valueListenable: _pageNotifier,
+              builder: (context, page, _) => buildSessionCard(page.round()),
+            );
+          }
           final cardRightInset =
               ((totalWidth * (1.0 - viewportFraction) / 2) + 2.0).clamp(
                 0.0,
@@ -402,8 +424,7 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
             children: [
               Listener(
                 onPointerSignal: (signal) {
-                  if (!pagingLocked &&
-                      signal is PointerScrollEvent &&
+                  if (signal is PointerScrollEvent &&
                       visibleSessions.length > 1) {
                     final currentPage = _pageNotifier.value.round();
                     final delta = signal.scrollDelta.dy > 0
@@ -428,50 +449,20 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
                       PointerDeviceKind.trackpad,
                     },
                   ),
-                  physics: visibleSessions.length == 1 || pagingLocked
+                  physics: visibleSessions.length == 1
                       ? const NeverScrollableScrollPhysics()
                       : const BouncingScrollPhysics(),
                   itemBuilder: (context, index) {
-                    final sessionIndex = _sessionIndexForPage(
-                      index,
-                      visibleSessions.length,
-                    );
-                    final session = visibleSessions[sessionIndex];
-                    final track = ref
-                        .read(audioPathCoordinatorProvider)
-                        .sessionTrackForPath(
-                          session.id,
-                          session.currentTrackPath,
-                        );
-
                     return _ActiveSessionPageTransform(
                       pageListenable: _pageNotifier,
                       index: index,
-                      enabled:
-                          visibleSessions.length > 1 &&
-                          !circularCover &&
-                          !embedded,
-                      child: RepaintBoundary(
-                        child: _ActiveSessionCard(
-                          session: session,
-                          position: sessionIndex,
-                          count: visibleSessions.length,
-                          coverPathFuture: _sessionCoverFutureForTrack(
-                            library,
-                            track,
-                          ),
-                          compact: compact,
-                          embedded: embedded,
-                          dockCollapsed: dockCollapsed,
-                          circularCover: circularCover,
-                          onOpen: () => _openSessionDetail(context, session),
-                        ),
-                      ),
+                      enabled: visibleSessions.length > 1 && !embedded,
+                      child: buildSessionCard(index),
                     );
                   },
                 ),
               ),
-              if (visibleSessions.length > 1 && !compact && !pagingLocked)
+              if (visibleSessions.length > 1 && !compact)
                 Positioned(
                   right: indicatorRight,
                   bottom: indicatorBottom,

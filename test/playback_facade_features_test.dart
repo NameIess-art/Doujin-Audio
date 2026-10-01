@@ -768,8 +768,6 @@ void main() {
                       'audioEffects': lastEffects,
                     },
                   };
-                case NativePlaybackMethod.setForegroundEnabled:
-                  return <String, Object?>{'ok': true, 'value': null};
                 case NativePlaybackMethod.snapshot:
                   return <String, Object?>{
                     'ok': true,
@@ -920,8 +918,6 @@ void main() {
                     'ok': true,
                     'value': <String, Object?>{'sessions': <Object?>[]},
                   };
-                case NativePlaybackMethod.setForegroundEnabled:
-                  return <String, Object?>{'ok': true, 'value': null};
                 default:
                   return <String, Object?>{'ok': true, 'value': null};
               }
@@ -1128,8 +1124,6 @@ void main() {
                     'ok': true,
                     'value': snapshotFor(sessionId, audioEffects: lastEffects),
                   };
-                case NativePlaybackMethod.setForegroundEnabled:
-                  return <String, Object?>{'ok': true, 'value': null};
                 case NativePlaybackMethod.snapshot:
                   return <String, Object?>{
                     'ok': true,
@@ -1224,8 +1218,6 @@ void main() {
                   return <String, Object?>{'ok': true, 'value': null};
                 case NativePlaybackMethod.clearAll:
                   clearAllCalls++;
-                  return <String, Object?>{'ok': true, 'value': null};
-                case NativePlaybackMethod.setForegroundEnabled:
                   return <String, Object?>{'ok': true, 'value': null};
                 case NativePlaybackMethod.snapshot:
                   return <String, Object?>{
@@ -1459,8 +1451,7 @@ void main() {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(nativePlaybackChannel, (call) async {
             nativeCalls.add(call.method);
-            if (call.method == NativePlaybackMethod.prepareSession ||
-                call.method == NativePlaybackMethod.dismissNotifications) {
+            if (call.method == NativePlaybackMethod.prepareSession) {
               return <String, Object?>{'ok': true, 'value': null};
             }
             if (call.method == NativePlaybackMethod.pauseAll) {
@@ -1493,7 +1484,7 @@ void main() {
       await runtimeGraph.notifications.dismissAfterPauseAll();
 
       expect(session.state.playing, isTrue);
-      expect(nativeCalls, contains(NativePlaybackMethod.dismissNotifications));
+      expect(nativeCalls, isNot(contains('dismissNotifications')));
       expect(nativeCalls, isNot(contains(NativePlaybackMethod.pauseAll)));
     });
   });

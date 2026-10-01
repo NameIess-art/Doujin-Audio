@@ -81,10 +81,6 @@ final class AppPersistenceCoordinator implements PersistedStateReloader {
         _timer.loadPersistedState(),
       ]);
       if (!isCurrent()) return;
-      if (!_settings.notificationsEnabled) {
-        await _playback.nativeRepository.setForegroundEnabled(false);
-      }
-
       await _playback.loadPersistedState();
       if (!isCurrent()) return;
       await AppLogService.measureAsync(

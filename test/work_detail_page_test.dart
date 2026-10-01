@@ -1082,12 +1082,14 @@ void main() {
         final viewport = find.byKey(
           const ValueKey<String>('work_image_viewport'),
         );
+        final themeSurface =
+            Theme.of(tester.element(viewport)).colorScheme.surface;
         expect(
           tester
               .widgetList<Scaffold>(
                 find.ancestor(of: viewport, matching: find.byType(Scaffold)),
               )
-              .any((scaffold) => scaffold.backgroundColor == Colors.black),
+              .any((scaffold) => scaffold.backgroundColor == themeSurface),
           isTrue,
         );
         expect(find.byType(ImageFiltered), findsNothing);
@@ -1284,6 +1286,31 @@ void main() {
       );
 
       await tester.pumpWidget(const SizedBox.shrink());
+    });
+
+    testWidgets('empty images viewer uses theme surface background', (
+      tester,
+    ) async {
+      SharedPreferences.setMockInitialValues(const <String, Object>{});
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+
+      await tester.pumpWidget(
+        fixture.build(
+          const WorkImageViewerPage(images: []),
+        ),
+      );
+      await tester.pump();
+
+      final scaffoldFinder = find.descendant(
+        of: find.byType(WorkImageViewerPage),
+        matching: find.byType(Scaffold),
+      );
+      final scaffold = tester.widget<Scaffold>(scaffoldFinder);
+      final themeSurface =
+          Theme.of(tester.element(scaffoldFinder)).colorScheme.surface;
+      expect(scaffold.backgroundColor, themeSurface);
+      expect(scaffold.backgroundColor, isNot(Colors.black));
     });
 
     testWidgets(

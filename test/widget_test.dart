@@ -49,6 +49,7 @@ import 'package:doujin_audio/core/widgets/mobile_overlay_inset.dart';
 import 'package:doujin_audio/core/widgets/swipe_reveal_card.dart';
 import 'package:doujin_audio/core/widgets/top_page_header.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
+import 'package:doujin_audio/core/widgets/app_feedback.dart';
 import 'package:doujin_audio/core/widgets/app_edge_fade_mask.dart';
 import 'package:doujin_audio/app/theme/app_design_tokens.dart';
 import 'package:doujin_audio/app/theme/app_styles.dart';
@@ -162,21 +163,11 @@ void main() {
       }
 
       await selectPage('show_asmr_one');
-      expect(asmrFinder, findsNothing);
-      await tester.pump(const Duration(milliseconds: 160));
-      expect(asmrFinder, findsNothing);
-      await tester.pump(const Duration(milliseconds: 160));
-      await tester.pump();
       expect(asmrFinder, findsOneWidget);
       final asmrState = tester.state(asmrFinder);
       expect(playlistFinder, findsNothing);
 
       await selectPage('nav_sessions');
-      expect(playlistFinder, findsNothing);
-      await tester.pump(const Duration(milliseconds: 160));
-      expect(playlistFinder, findsNothing);
-      await tester.pump(const Duration(milliseconds: 160));
-      await tester.pump();
       expect(playlistFinder, findsOneWidget);
       final playlistState = tester.state(playlistFinder);
       await tester.pump(const Duration(milliseconds: 900));
@@ -198,8 +189,6 @@ void main() {
         'nav_sessions',
       ]) {
         await selectPage(destination);
-        await tester.pump(const Duration(milliseconds: 350));
-        await tester.pump();
       }
       expect(tester.state(libraryFinder), same(libraryState));
       expect(tester.state(asmrFinder), same(asmrState));
@@ -222,6 +211,11 @@ void main() {
   );
 
   testWidgets('app shell renders portrait tab navigation', (tester) async {
+    _setLogicalTestViewSize(tester, const Size(390, 800));
+    final previousHaptics = AppInteractionFeedback.hapticFeedbackEnabled;
+    addTearDown(() {
+      AppInteractionFeedback.hapticFeedbackEnabled = previousHaptics;
+    });
     final platformCalls = <MethodCall>[];
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(SystemChannels.platform, (call) async {
@@ -233,12 +227,16 @@ void main() {
           .setMockMethodCallHandler(SystemChannels.platform, null);
     });
 
-    final harness = await _pumpAppShell(tester);
+    await _pumpAppShell(tester, includePlaybackSession: false);
+    AppInteractionFeedback.hapticFeedbackEnabled = true;
 
     expect(find.byType(MainScreen), findsOneWidget);
-    expect(find.text(harness.language.tr('nav_library')), findsWidgets);
-    expect(find.text(harness.language.tr('nav_sessions')), findsWidgets);
-    expect(find.text(harness.language.tr('nav_settings')), findsWidgets);
+    for (final destination in ['music_library', 'nav_sessions', 'nav_settings']) {
+      expect(
+        find.byKey(ValueKey<String>('main_destination_$destination')),
+        findsOneWidget,
+      );
+    }
     expect(
       find.byWidgetPredicate(
         (widget) =>
@@ -261,7 +259,7 @@ void main() {
             find.byKey(const ValueKey<String>('main_page_stack')),
           )
           .style,
-      AppIndexedStackTransitionStyle.gradient,
+      AppIndexedStackTransitionStyle.none,
     );
     expect(find.byKey(const ValueKey<String>('main_page_fade_1')), findsOne);
     expect(
@@ -291,7 +289,7 @@ void main() {
       isTrue,
     );
     platformCalls.clear();
-    await _tapSettingsDestination(tester);
+    await tester.tap(settingsDestination);
     await _pumpMainScreenAnimations(tester);
 
     expect(find.byKey(const ValueKey<String>('main_page_fade_3')), findsOne);
@@ -304,6 +302,15 @@ void main() {
       findsNothing,
     );
     expect(
+      platformCalls
+          .where((call) => call.method == 'HapticFeedback.vibrate')
+          .map((call) => call.arguments),
+      ['HapticFeedbackType.selectionClick'],
+    );
+    platformCalls.clear();
+    await _tapSettingsDestination(tester);
+    await _pumpMainScreenAnimations(tester);
+    expect(
       platformCalls.where((call) => call.method == 'HapticFeedback.vibrate'),
       isEmpty,
     );
@@ -312,6 +319,17 @@ void main() {
     await tester.drag(mainPageStack, const Offset(600, 0));
     await tester.pump(const Duration(milliseconds: 300));
     expect(tester.widget<AppFadeThroughIndexedStack>(mainPageStack).index, 3);
+
+    AppInteractionFeedback.hapticFeedbackEnabled = false;
+    await tester.tap(
+      find.byKey(const ValueKey<String>('main_destination_ink_nav_sessions')),
+    );
+    await _pumpMainScreenAnimations(tester);
+    expect(tester.widget<AppFadeThroughIndexedStack>(mainPageStack).index, 2);
+    expect(
+      platformCalls.where((call) => call.method == 'HapticFeedback.vibrate'),
+      isEmpty,
+    );
     expect(tester.takeException(), isNull);
   });
 
@@ -530,10 +548,14 @@ void main() {
     final focusedDestination = find.byKey(
       const ValueKey<String>('main_destination_music_library'),
     );
+    final anchorDestination = find.byKey(
+      const ValueKey<String>('main_destination_show_asmr_one'),
+    );
     final trailingDestination = find.byKey(
       const ValueKey<String>('main_destination_nav_settings'),
     );
     final expandedFocusX = tester.getCenter(focusedDestination).dx;
+    final expandedAnchorX = tester.getCenter(anchorDestination).dx;
     final expandedTrailingX = tester.getCenter(trailingDestination).dx;
 
     final collapsedCoverCenter = tester.getCenter(playbackCover);
@@ -548,7 +570,11 @@ void main() {
     await tester.tap(playbackCard);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 50));
-    expect(tester.getCenter(focusedDestination).dx, lessThan(expandedFocusX));
+    expect(tester.getCenter(anchorDestination).dx, lessThan(expandedAnchorX));
+    expect(
+      tester.getCenter(focusedDestination).dx,
+      closeTo(expandedFocusX, 0.1),
+    );
     expect(
       tester.getCenter(trailingDestination).dx,
       closeTo(expandedTrailingX, 0.1),
@@ -651,6 +677,113 @@ void main() {
     );
   });
 
+  testWidgets('capsule icons share the ASMR collapse path for every focus', (
+    tester,
+  ) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    _setLogicalTestViewSize(tester, const Size(390, 820));
+    addTearDown(() => debugDefaultTargetPlatformOverride = null);
+    await _pumpAppShell(tester);
+
+    const destinations = <String, IconData>{
+      'show_asmr_one': Icons.cloud_rounded,
+      'music_library': Icons.library_music_rounded,
+      'nav_sessions': Icons.featured_play_list_rounded,
+      'nav_settings': Icons.settings_rounded,
+    };
+    final navigation = find.byKey(
+      const ValueKey<String>('mobile_dock_navigation'),
+    );
+    List<double> iconPositions() {
+      final left = tester.getRect(navigation).left;
+      return [
+        for (final label in destinations.keys)
+          if (find
+              .byKey(ValueKey('main_destination_$label'))
+              .evaluate()
+              .isNotEmpty)
+            tester
+                    .getCenter(find.byKey(ValueKey('main_destination_$label')))
+                    .dx -
+                left,
+      ]..sort();
+    }
+
+    Future<List<List<double>>> sampleMotion() async {
+      final frames = [iconPositions()];
+      for (var frame = 0; frame < 10; frame++) {
+        await tester.pump(const Duration(milliseconds: 28));
+        frames.add(iconPositions());
+      }
+      return frames;
+    }
+
+    void expectSamePath(
+      List<List<double>> actual,
+      List<List<double>> expected,
+    ) {
+      expect(actual.length, expected.length);
+      for (var frame = 0; frame < actual.length; frame++) {
+        expect(
+          actual[frame],
+          orderedEquals(expected[frame].map((x) => closeTo(x, 0.1))),
+        );
+      }
+    }
+
+    List<List<double>>? asmrCollapse;
+    List<List<double>>? asmrExpand;
+    for (final entry in destinations.entries) {
+      tester
+          .widget<InkResponse>(
+            find.byKey(ValueKey('main_destination_ink_${entry.key}')),
+          )
+          .onTap!();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+      await tester.tap(
+        find.byKey(const ValueKey('active_session_card_orientation_session')),
+      );
+      await tester.pump();
+      final collapse = await sampleMotion();
+      final focused = find.byKey(ValueKey('main_destination_${entry.key}'));
+      expect(tester.widget<Semantics>(focused).properties.selected, isTrue);
+      expect(
+        find.descendant(of: navigation, matching: find.byType(Icon)),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: focused, matching: find.byIcon(entry.value)),
+        findsOneWidget,
+      );
+      expect(
+        tester.getCenter(focused).dx,
+        tester.getRect(navigation).left + 28,
+      );
+      await tester.tap(focused);
+      await tester.pump();
+      // While expansion begins, the remaining icon still belongs to its page.
+      tester
+          .widget<InkResponse>(
+            find.byKey(ValueKey('main_destination_ink_${entry.key}')),
+          )
+          .onTap!();
+      await tester.pump();
+      expect(tester.widget<Semantics>(focused).properties.selected, isTrue);
+      final expand = await sampleMotion();
+      expectSamePath(expand, collapse.reversed.toList());
+      if (asmrCollapse == null) {
+        asmrCollapse = collapse;
+        asmrExpand = expand;
+      } else {
+        expectSamePath(collapse, asmrCollapse);
+        expectSamePath(expand, asmrExpand!);
+      }
+    }
+    debugDefaultTargetPlatformOverride = null;
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets(
     'capsule dock slides circular playback in and out at a fixed size',
     (tester) async {
@@ -671,7 +804,7 @@ void main() {
       final playback = find.byKey(
         const ValueKey<String>('mobile_dock_playback'),
       );
-      final cover = find.byKey(
+      var cover = find.byKey(
         const ValueKey<String>('active_session_cover_anim_test_session'),
       );
 
@@ -690,6 +823,16 @@ void main() {
         state: const PlayerState(true, ProcessingState.ready),
       );
       addTearDown(session.shutdown);
+      final nextSession = PlaybackSession(
+        id: 'anim_next_session',
+        currentTrackPath: '/audio/anim_next.mp3',
+        loopMode: SessionLoopMode.single,
+        nonSingleLoopMode: SessionLoopMode.single,
+        volume: 1,
+        createdAt: DateTime(2026),
+        state: const PlayerState(true, ProcessingState.ready),
+      );
+      addTearDown(nextSession.shutdown);
 
       harness.playbackService.registerSession(session);
       harness.playbackService.syncSlice(
@@ -704,28 +847,53 @@ void main() {
       await tester.pump(const Duration(milliseconds: 16));
       expect(playback, findsOneWidget);
 
-      // Advance mid-way through appearance animation
-      await tester.pump(const Duration(milliseconds: 140));
+      var previousCoverX = tester.getCenter(cover).dx;
+      for (var frame = 0; frame < 18; frame++) {
+        if (frame == 2) {
+          harness.playbackService.registerSession(nextSession);
+          harness.playbackService.syncSlice(
+            activeSessions: <PlaybackSession>[session, nextSession],
+            playingSessionCount: 2,
+            focusedSessionId: nextSession.id,
+            coverGeneration: 0,
+            isInitialized: true,
+          );
+          ProviderScope.containerOf(tester.element(find.byType(MainScreen)))
+              .read(playlistUiControllerProvider)
+              .requestCarouselSnap(nextSession.id);
+          await tester.pump();
+          await tester.pump();
+          cover = find.byKey(
+            const ValueKey<String>('active_session_cover_anim_next_session'),
+          );
+        }
+        await tester.pump(const Duration(milliseconds: 16));
+        final coverRect = tester.getRect(cover);
+        final playbackRect = tester.getRect(playback);
+        expect(tester.getSize(playback), const Size.square(56));
+        expect(coverRect.size, const Size.square(48));
+        expect(coverRect.left, closeTo(playbackRect.left + 4, 0.1));
+        expect(coverRect.center.dx, lessThanOrEqualTo(previousCoverX + 0.1));
+        previousCoverX = coverRect.center.dx;
+        if (frame == 8) {
+          final midNavWidth = tester.getSize(navigation).width;
+          expect(midNavWidth, greaterThan(initialNavWidth - 56));
+          expect(midNavWidth, lessThan(initialNavWidth));
+          expect(
+            playbackRect.left,
+            closeTo(tester.getRect(navigation).right, 0.5),
+          );
+          expect(playbackRect.right, greaterThan(initialNavRect.right));
+          expect(playbackRect.right, lessThan(initialNavRect.right + 56));
+          expect(playbackRect.center.dy, initialNavRect.center.dy);
+        }
+      }
 
-      final midNavWidth = tester.getSize(navigation).width;
-      final midPlaybackRect = tester.getRect(playback);
-      expect(tester.getSize(playback), const Size.square(56));
-      expect(tester.getRect(cover).size, const Size.square(48));
-      expect(midNavWidth, greaterThan(initialNavWidth - 56));
-      expect(midNavWidth, lessThan(initialNavWidth));
-      expect(
-        midPlaybackRect.left,
-        closeTo(tester.getRect(navigation).right, 0.5),
-      );
-      expect(midPlaybackRect.right, greaterThan(initialNavRect.right));
-      expect(midPlaybackRect.right, lessThan(initialNavRect.right + 56));
-      expect(midPlaybackRect.center.dy, initialNavRect.center.dy);
       expect(
         find.descendant(of: playback, matching: find.byType(Opacity)),
         findsNothing,
       );
 
-      await tester.pump(const Duration(milliseconds: 200));
       expect(tester.getSize(playback).width, closeTo(56, 0.1));
       expect(
         tester.getRect(playback).right,
@@ -736,7 +904,7 @@ void main() {
         closeTo(initialNavWidth - 56, 0.5),
       );
 
-      harness.playbackService.removeSessions([session.id]);
+      harness.playbackService.removeSessions([session.id, nextSession.id]);
       harness.playbackService.syncSlice(
         activeSessions: const <PlaybackSession>[],
         playingSessionCount: 0,
@@ -749,29 +917,123 @@ void main() {
       await tester.pump(const Duration(milliseconds: 16));
       expect(playback, findsOneWidget);
 
-      // Advance mid-way through reverse animation
-      await tester.pump(const Duration(milliseconds: 140));
-
-      expect(playback, findsOneWidget);
-      final exitNavWidth = tester.getSize(navigation).width;
-      final exitPlaybackRect = tester.getRect(playback);
-      expect(tester.getSize(playback), const Size.square(56));
-      expect(tester.getRect(cover).size, const Size.square(48));
-      expect(exitNavWidth, greaterThan(initialNavWidth - 56));
-      expect(exitNavWidth, lessThan(initialNavWidth));
-      expect(
-        exitPlaybackRect.left,
-        closeTo(tester.getRect(navigation).right, 0.5),
-      );
-      expect(exitPlaybackRect.right, greaterThan(initialNavRect.right));
-      expect(exitPlaybackRect.right, lessThan(initialNavRect.right + 56));
-      expect(exitPlaybackRect.center.dy, initialNavRect.center.dy);
-
-      await tester.pump(const Duration(milliseconds: 200));
+      previousCoverX = tester.getCenter(cover).dx;
+      for (var frame = 0; frame < 18; frame++) {
+        await tester.pump(const Duration(milliseconds: 16));
+        if (frame == 17) break;
+        final coverRect = tester.getRect(cover);
+        final playbackRect = tester.getRect(playback);
+        expect(tester.getSize(playback), const Size.square(56));
+        expect(coverRect.size, const Size.square(48));
+        expect(coverRect.left, closeTo(playbackRect.left + 4, 0.1));
+        expect(coverRect.center.dx, greaterThanOrEqualTo(previousCoverX - 0.1));
+        previousCoverX = coverRect.center.dx;
+        expect(
+          playbackRect.left,
+          closeTo(tester.getRect(navigation).right, 0.5),
+        );
+        expect(playbackRect.center.dy, initialNavRect.center.dy);
+      }
       expect(playback, findsNothing);
       expect(tester.getSize(navigation).width, closeTo(initialNavWidth, 0.5));
     },
   );
+
+  for (final (platform, size, preparationDelay) in [
+    (TargetPlatform.android, const Size(390, 820), 96),
+    (TargetPlatform.android, const Size(390, 820), 640),
+    (TargetPlatform.android, const Size(1280, 800), 96),
+    (TargetPlatform.android, const Size(1280, 800), 640),
+    (TargetPlatform.windows, const Size(1280, 800), 96),
+    (TargetPlatform.windows, const Size(1280, 800), 640),
+  ]) {
+    testWidgets(
+      'menu playback remains visible between cold preparation and play ($platform, $size, $preparationDelay ms)',
+      (tester) async {
+        debugDefaultTargetPlatformOverride = platform;
+        addTearDown(() => debugDefaultTargetPlatformOverride = null);
+        _setLogicalTestViewSize(tester, size);
+        final harness = await _pumpAppShell(
+          tester,
+          includePlaybackSession: false,
+        );
+        final session = PlaybackSession(
+          id: 'cold_menu_session',
+          currentTrackPath: '/audio/cold_menu.mp3',
+          loopMode: SessionLoopMode.single,
+          nonSingleLoopMode: SessionLoopMode.single,
+          volume: 1,
+          createdAt: DateTime(2026),
+          state: const PlayerState(false, ProcessingState.idle),
+        );
+        addTearDown(session.shutdown);
+        final preparation = session.beginPreparation(
+          showLoading: true,
+          autoPlay: true,
+        );
+        harness.playbackService.registerSession(session);
+        await tester.pump(const Duration(milliseconds: 16));
+        await tester.pump(Duration(milliseconds: preparationDelay));
+        final carousel = find.byType(ActiveSessionCarousel);
+        final carouselState = tester.state(carousel);
+        final cover = find.byKey(
+          const ValueKey<String>('active_session_cover_cold_menu_session'),
+        );
+        var previousX = tester.getCenter(cover).dx;
+        final portrait = size.width < size.height;
+
+        // Native prepare returns paused/idle before play creates its player.
+        // Check preparation both before and after the loading indicator delay.
+        session.finishPreparation(
+          preparation.generation,
+          prepared: true,
+          autoPlay: true,
+        );
+        harness.playbackService.publishSession(session);
+        await tester.pump(const Duration(milliseconds: 16));
+        expect(session.isLoading, false);
+        expect(carousel, findsOneWidget);
+
+        void expectStableCard() {
+          expect(tester.state(carousel), same(carouselState));
+          expect(tester.getSize(cover), const Size.square(48));
+          final x = tester.getCenter(cover).dx;
+          if (portrait) {
+            expect(x, lessThanOrEqualTo(previousX + 0.1));
+          } else {
+            expect(x, closeTo(previousX, 0.1));
+          }
+          previousX = x;
+        }
+
+        expectStableCard();
+        session.beginTransportCommand(commandId: 1, playing: true);
+        expect(session.isPlaybackLoading, false);
+        harness.playbackService.publishSession(session);
+        for (var frame = 0; frame < 8; frame++) {
+          await tester.pump(const Duration(milliseconds: 16));
+          expectStableCard();
+        }
+        for (final processing in [
+          ProcessingState.loading,
+          ProcessingState.buffering,
+          ProcessingState.ready,
+        ]) {
+          session.setOptimisticState(
+            playing: true,
+            processingState: processing,
+          );
+          harness.playbackService.publishSession(session);
+          await tester.pump(const Duration(milliseconds: 16));
+          expectStableCard();
+        }
+        await tester.pump(PlaybackSession.loadingIndicatorThreshold);
+        expectStableCard();
+        debugDefaultTargetPlatformOverride = null;
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
 
   testWidgets('only work detail routes show a bottom playback dock', (
     tester,

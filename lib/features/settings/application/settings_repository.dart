@@ -18,7 +18,6 @@ class SettingsRepository {
   String converterFormat = 'mp3';
   String converterBitrate = '320k';
   String? converterOutputDirectoryPath;
-  bool notificationsEnabled = true;
   bool autoCheckUpdates = false;
   ContentLanguagePreference dlsiteMetadataLanguage =
       ContentLanguagePreference.followPage;
@@ -77,7 +76,6 @@ class SettingsRepository {
       ),
     );
     if (playback != null) {
-      notificationsEnabled = playback['notificationsEnabled'] as bool? ?? true;
       startupPage = StartupPage.values.firstWhere(
         (value) => value.name == playback['startupPage'],
         orElse: () => StartupPage.library,
@@ -228,7 +226,6 @@ class SettingsRepository {
 
   Future<void> persist() {
     return AppPreferences.writeJson(_playbackSettingsKey, <String, Object?>{
-      'notificationsEnabled': notificationsEnabled,
       'startupPage': startupPage.name,
       'portraitLockEnabled': portraitLockEnabled,
       'autoCheckUpdates': autoCheckUpdates,
@@ -675,7 +672,6 @@ class SettingsRepository {
     converterFormat = 'mp3';
     converterBitrate = '320k';
     converterOutputDirectoryPath = null;
-    notificationsEnabled = true;
     autoCheckUpdates = false;
     dlsiteMetadataLanguage = ContentLanguagePreference.followPage;
     librarySortCriterion = LibrarySortCriterion.name;
@@ -739,7 +735,6 @@ class SettingsRepository {
         converterFormat: converterFormat,
         converterBitrate: converterBitrate,
         converterOutputDirectoryPath: converterOutputDirectoryPath,
-        notificationsEnabled: notificationsEnabled,
         autoCheckUpdates: autoCheckUpdates,
         dlsiteMetadataLanguage: dlsiteMetadataLanguage,
         librarySortCriterion: librarySortCriterion,

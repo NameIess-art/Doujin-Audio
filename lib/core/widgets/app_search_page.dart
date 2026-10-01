@@ -8,29 +8,6 @@ import 'app_transitions.dart';
 import 'page_header_inset.dart';
 import 'windows_horizontal_wheel_scroll.dart';
 
-PageRouteBuilder<T> buildAppSearchPageRoute<T>({
-  required BuildContext context,
-  required Widget child,
-  RouteSettings? settings,
-  Duration duration = kAppMotionSlow,
-  Duration reverseDuration = kAppMotionFast,
-}) {
-  final reducedMotion = MediaQuery.disableAnimationsOf(context);
-  return PageRouteBuilder<T>(
-    settings: settings,
-    transitionDuration: reducedMotion ? Duration.zero : duration,
-    reverseTransitionDuration: reducedMotion ? Duration.zero : reverseDuration,
-    pageBuilder: (context, animation, secondaryAnimation) => child,
-    transitionsBuilder: (context, animation, secondaryAnimation, routedChild) {
-      return buildAppFadeTransition(
-        context: context,
-        animation: animation,
-        child: routedChild,
-      );
-    },
-  );
-}
-
 @immutable
 class AppSearchCategory<T> {
   const AppSearchCategory({required this.value, required this.label});

@@ -109,7 +109,6 @@ extension PlaybackSessionPersistenceCoordinator on PlaybackFacade {
       );
       session
         ..lastKnownPosition = restoredPosition
-        ..retainInNowPlaying = item.retainInNowPlaying
         ..setOptimisticDuration(Duration(milliseconds: item.durationMs))
         ..lastPersistedPositionBucket =
             restoredPosition.inSeconds ~/ positionBucketSeconds
@@ -199,8 +198,6 @@ extension PlaybackSessionPersistenceCoordinator on PlaybackFacade {
       id: session.id,
       trackPath: session.currentTrackPath,
       isTemporary: session.isTemporary,
-      retainInNowPlaying:
-          session.retainInNowPlaying || session.playbackRequested,
       loopModeIndex: session.loopMode.index,
       volume: session.volume,
       speed: session.speed,
@@ -254,7 +251,6 @@ extension PlaybackSessionPersistenceCoordinator on PlaybackFacade {
       (
         a.trackPath,
         a.isTemporary,
-        a.retainInNowPlaying,
         a.loopModeIndex,
         a.volume,
         a.speed,
@@ -268,7 +264,6 @@ extension PlaybackSessionPersistenceCoordinator on PlaybackFacade {
       (
         b.trackPath,
         b.isTemporary,
-        b.retainInNowPlaying,
         b.loopModeIndex,
         b.volume,
         b.speed,
@@ -368,7 +363,6 @@ extension PlaybackSessionPersistenceCoordinator on PlaybackFacade {
             (
                   previous.trackPath,
                   previous.isTemporary,
-                  previous.retainInNowPlaying,
                   previous.loopModeIndex,
                   previous.createdAtMs,
                   previous.lastPlayedAtMs,
@@ -376,7 +370,6 @@ extension PlaybackSessionPersistenceCoordinator on PlaybackFacade {
                 (
                   next.trackPath,
                   next.isTemporary,
-                  next.retainInNowPlaying,
                   next.loopModeIndex,
                   next.createdAtMs,
                   next.lastPlayedAtMs,

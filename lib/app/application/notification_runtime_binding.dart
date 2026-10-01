@@ -4,7 +4,6 @@ import '../../features/library/application/library_facade.dart';
 import '../../features/player/application/notification_facade.dart';
 import '../../features/player/application/playback_facade.dart';
 import '../../features/player/application/playback_subtitle_service.dart';
-import '../../features/settings/application/settings_repository.dart';
 import '../../features/player/application/playback_command_coordinator.dart';
 import 'playback_keep_alive_coordinator.dart';
 import 'runtime_binding.dart';
@@ -19,7 +18,6 @@ final class NotificationRuntimeBinding implements RuntimeBinding {
     required LibraryFacade library,
     required PlaybackFacade playback,
     required NotificationFacade notifications,
-    required SettingsRepository settings,
     required PlaybackCommandCoordinator playbackCommands,
     required AudioPathCoordinator audioPaths,
     required PlaybackKeepAliveCoordinator keepAlive,
@@ -29,7 +27,6 @@ final class NotificationRuntimeBinding implements RuntimeBinding {
     final existing = _attached[notifications];
     if (existing != null && !existing._disposed) return existing;
     notifications.attachRuntime(
-      undismissNotifications: playback.nativeRepository.undismissNotifications,
       onNotificationsRestored: () {
         notifications.syncPlaybackState(immediateUnifiedSync: true);
         syncPlaybackState();
@@ -59,8 +56,7 @@ final class NotificationRuntimeBinding implements RuntimeBinding {
           audioPaths.trackByPath(path, includeLibraryFallback: false),
       coverArtworkCacheService: library.coverArtworkCacheService,
       notificationsEnabled: () =>
-          defaultTargetPlatform == TargetPlatform.windows ||
-          settings.notificationsEnabled,
+          defaultTargetPlatform == TargetPlatform.windows,
     );
     final binding = NotificationRuntimeBinding._(notifications);
     _attached[notifications] = binding;

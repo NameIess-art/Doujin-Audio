@@ -12,7 +12,6 @@ import '../../../core/ui/ui_operation_service.dart';
 import '../application/dlsite_metadata_batch_session.dart';
 import '../domain/audio_library_category.dart';
 import '../../../core/widgets/app_transitions.dart';
-import '../../../core/widgets/operation_feedback.dart';
 import '../../../core/widgets/page_header_inset.dart';
 import '../../../core/widgets/top_page_header.dart';
 
@@ -53,7 +52,6 @@ class _DlsiteMetadataBatchPageState
       const <AudioLibraryCategoryEntry>[];
   late DlsiteMetadataBatchScope _scope;
   Object? _error;
-  bool _loading = true;
 
   List<AudioLibraryCategoryEntry> get _anyMissingEntries => _entries
       .where((entry) => entry.detail.hasMissingMetadata)
@@ -81,8 +79,16 @@ class _DlsiteMetadataBatchPageState
     final entries = widget.entries;
     if (entries != null) {
       _entries = entries;
-      _loading = false;
     } else {
+      final cachedSnapshot = ref.read(libraryFacadeProvider).categorySnapshot;
+      if (cachedSnapshot != null) {
+        final initialTargets = widget.initialTargets;
+        _entries = initialTargets == null
+            ? cachedSnapshot.entries
+            : cachedSnapshot.entries
+                .where((entry) => initialTargets.contains(entry.target))
+                .toList(growable: false);
+      }
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) unawaited(_load());
       });
@@ -112,7 +118,6 @@ class _DlsiteMetadataBatchPageState
 
   Future<void> _load() async {
     setState(() {
-      _loading = true;
       _error = null;
     });
     try {
@@ -133,13 +138,11 @@ class _DlsiteMetadataBatchPageState
                 .toList(growable: false);
       setState(() {
         _entries = loadedEntries;
-        _loading = false;
       });
     } catch (error) {
       if (!mounted) return;
       setState(() {
         _error = error;
-        _loading = false;
       });
     }
   }
@@ -188,41 +191,29 @@ class _DlsiteMetadataBatchPageState
           children: [
             Positioned.fill(
               child: AppPageContentTransition(
-                child: PlaceholderContentTransition(
-                  showPlaceholder: _loading,
-                  placeholder: OperationSkeletonList(
-                    itemCount: 5,
-                    padding: EdgeInsets.fromLTRB(
-                      16,
-                      AppPageHeaderMetrics.contentTopInset(context),
-                      16,
-                      24,
-                    ),
-                  ),
-                  content: _error != null
-                      ? _BatchMetadataErrorView(onRetry: _load)
-                      : BatchMetadataSetupView(
-                          scope: _scope,
-                          allCount: _entries.length,
-                          noMetadataCount: _noMetadataEntries.length,
-                          anyMissingCount: _anyMissingEntries.length,
-                          hasRjCodeCount: _hasRjCodeEntries.length,
-                          specificCount: _specificEntries.length,
-                          onScopeChanged: (scope) {
-                            setState(() {
-                              _scope = scope;
-                            });
-                            if (scope == DlsiteMetadataBatchScope.specific &&
-                                _specificEntries.isEmpty) {
-                              _pickSpecific();
-                            }
-                          },
-                          onPickSpecific: _pickSpecific,
-                        ),
-                ),
+                child: _error != null
+                    ? _BatchMetadataErrorView(onRetry: _load)
+                    : BatchMetadataSetupView(
+                        scope: _scope,
+                        allCount: _entries.length,
+                        noMetadataCount: _noMetadataEntries.length,
+                        anyMissingCount: _anyMissingEntries.length,
+                        hasRjCodeCount: _hasRjCodeEntries.length,
+                        specificCount: _specificEntries.length,
+                        onScopeChanged: (scope) {
+                          setState(() {
+                            _scope = scope;
+                          });
+                          if (scope == DlsiteMetadataBatchScope.specific &&
+                              _specificEntries.isEmpty) {
+                            _pickSpecific();
+                          }
+                        },
+                        onPickSpecific: _pickSpecific,
+                      ),
               ),
             ),
-            if (!_loading && _error == null)
+            if (_error == null)
               Positioned(
                 right: 16,
                 bottom: 16 + MediaQuery.paddingOf(context).bottom,

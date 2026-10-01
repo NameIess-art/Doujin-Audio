@@ -13,7 +13,6 @@ class PlatformChannelsTest {
             PlatformChannelNames.FILE_CACHE,
             PlatformChannelNames.NATIVE_PLAYBACK,
             PlatformChannelNames.NATIVE_PLAYBACK_EVENTS,
-            PlatformChannelNames.NOTIFICATIONS,
             PlatformChannelNames.POWER,
             PlatformChannelNames.SUBTITLE_OVERLAY,
             PlatformChannelNames.UPDATE
@@ -64,10 +63,6 @@ class PlatformChannelsTest {
         assertEquals("startFolderScan", FileCacheMethods.START_FOLDER_SCAN)
         assertEquals("cancelFolderScan", FileCacheMethods.CANCEL_FOLDER_SCAN)
         assertEquals("exportFile", FileCacheMethods.EXPORT_FILE)
-        assertEquals(
-            "syncUnifiedPlaybackNotifications",
-            NotificationsMethods.SYNC_UNIFIED_PLAYBACK_NOTIFICATIONS
-        )
         assertEquals("getAppVersion", UpdateMethods.GET_APP_VERSION)
         assertEquals(
             "getBackgroundRunDiagnostics",

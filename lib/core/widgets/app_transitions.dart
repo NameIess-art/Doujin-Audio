@@ -71,59 +71,49 @@ Widget _buildCoveringPageTransition({
   bool fadeHeader = true,
 }) {
   if (MediaQuery.disableAnimationsOf(context)) return child;
-  final motionScope = _AppPageMotionScope(
-    key: contentKey,
-    contentBuilder: (context, content) => RepaintBoundary(child: content),
-    headerBuilder: (context, header) => !fadeHeader
-        ? header
-        : AnimatedBuilder(
-            animation: Listenable.merge([animation, secondaryAnimation]),
-            child: header,
-            builder: (context, header) {
-              final incoming = Curves.easeOutCubic.transform(
-                (animation.value / 0.6).clamp(0.0, 1.0),
-              );
-              final outgoing = Curves.easeOutCubic.transform(
-                (secondaryAnimation.value / 0.6).clamp(0.0, 1.0),
-              );
-              return Opacity(opacity: incoming * (1 - outgoing), child: header);
-            },
-          ),
-    child: child,
+  final position = animation.drive(
+    Tween<Offset>(
+      begin: const Offset(1, 0),
+      end: Offset.zero,
+    ).chain(CurveTween(curve: Curves.easeOutCubic)),
   );
   return ClipRect(
-    child: AnimatedBuilder(
-      animation: animation,
-      child: motionScope,
-      builder: (context, child) => _buildGradientReveal(
-        progress: animation.value,
-        forward: true,
-        child: child!,
+    child: LayoutBuilder(
+      builder: (context, constraints) => SlideTransition(
+        position: position,
+        child: RepaintBoundary(
+          child: _AppPageMotionScope(
+            key: contentKey,
+            contentBuilder: (context, content) =>
+                RepaintBoundary(child: content),
+            headerBuilder: (context, header) => AnimatedBuilder(
+              animation: Listenable.merge([animation, secondaryAnimation]),
+              child: header,
+              builder: (context, header) {
+                final incoming = Curves.easeOutCubic.transform(
+                  (animation.value / 0.6).clamp(0.0, 1.0),
+                );
+                final outgoing = Curves.easeOutCubic.transform(
+                  (secondaryAnimation.value / 0.6).clamp(0.0, 1.0),
+                );
+                // Cancel the page translation in route coordinates, even for
+                // headers narrower than the page, so menus change in place.
+                return Transform.translate(
+                  offset: Offset(-constraints.maxWidth * position.value.dx, 0),
+                  child: fadeHeader
+                      ? Opacity(
+                          opacity: incoming * (1 - outgoing),
+                          child: header,
+                        )
+                      : header,
+                );
+              },
+            ),
+            child: child,
+          ),
+        ),
       ),
     ),
-  );
-}
-
-Widget _buildGradientReveal({
-  required double progress,
-  required bool forward,
-  required Widget child,
-}) {
-  if (progress >= 1) return child;
-  const feather = 0.12;
-  final edge = Curves.easeOutCubic.transform(progress) * (1 + feather);
-  final begin = forward ? edge - feather : 1 - edge;
-  final end = forward ? edge : 1 - edge + feather;
-  return ShaderMask(
-    blendMode: BlendMode.dstIn,
-    shaderCallback: (bounds) => LinearGradient(
-      begin: Alignment(2 * begin - 1, 0),
-      end: Alignment(2 * end - 1, 0),
-      colors: forward
-          ? const [Colors.white, Colors.transparent]
-          : const [Colors.transparent, Colors.white],
-    ).createShader(bounds),
-    child: child,
   );
 }
 
@@ -217,7 +207,7 @@ extension AppHeaderTransitionWidget on Widget {
   Widget withAppHeaderTransition() => AppHeaderTransition(child: this);
 }
 
-enum AppIndexedStackTransitionStyle { none, directional, crossFade, gradient }
+enum AppIndexedStackTransitionStyle { none, directional, crossFade }
 
 class PlaceholderContentTransition extends StatefulWidget {
   const PlaceholderContentTransition({
@@ -796,25 +786,6 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
         child: RepaintBoundary(key: _pageKeys[index], child: page),
       );
     }
-    if (widget.style == AppIndexedStackTransitionStyle.gradient) {
-      return AnimatedBuilder(
-        key: ValueKey<String>('app_indexed_page_$index'),
-        animation: incoming
-            ? _controller
-            : const AlwaysStoppedAnimation<double>(1),
-        child: RepaintBoundary(key: _pageKeys[index], child: page),
-        builder: (context, child) {
-          if (!incoming || !_isAnimating) {
-            return child!;
-          }
-          return _buildGradientReveal(
-            progress: _controller.value,
-            forward: _transitionDirection > 0,
-            child: child!,
-          );
-        },
-      );
-    }
     return AnimatedBuilder(
       key: ValueKey<String>('app_indexed_page_$index'),
       animation: outgoing || incoming
@@ -959,15 +930,17 @@ PageRouteBuilder<T> buildAppPageRoute<T>({
   required Widget child,
   RouteSettings? settings,
   bool fadeHeader = true,
+  Duration duration = kAppMotionSlow,
 }) {
   final reducedMotion = MediaQuery.disableAnimationsOf(context);
   final contentKey = GlobalKey();
   return PageRouteBuilder<T>(
     settings: settings,
-    transitionDuration: reducedMotion ? Duration.zero : kAppMotionSlow,
-    reverseTransitionDuration: reducedMotion ? Duration.zero : kAppMotionSlow,
+    transitionDuration: reducedMotion ? Duration.zero : duration,
+    reverseTransitionDuration: reducedMotion ? Duration.zero : duration,
     pageBuilder: (context, animation, secondaryAnimation) => child,
     transitionsBuilder: (context, animation, secondaryAnimation, routedChild) {
+      if (duration == Duration.zero) return routedChild;
       return _buildCoveringPageTransition(
         context: context,
         contentKey: contentKey,

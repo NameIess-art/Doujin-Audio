@@ -1,6 +1,23 @@
 package com.doujin.audio.player.notification
 
 import com.doujin.audio.player.session.StoredPlaybackTimerRuntimeState
+import java.util.concurrent.atomic.AtomicBoolean
+
+internal class PlaybackControlDeliveryCompletion(
+    private val onFinish: () -> Unit
+) {
+    private val finished = AtomicBoolean(false)
+
+    fun finish(beforeFinish: () -> Unit = {}): Boolean {
+        if (!finished.compareAndSet(false, true)) return false
+        try {
+            beforeFinish()
+        } finally {
+            onFinish()
+        }
+        return true
+    }
+}
 
 internal typealias PlaybackTimerAction = (
     String, StoredPlaybackTimerRuntimeState?, Int?, Int, (String) -> Unit

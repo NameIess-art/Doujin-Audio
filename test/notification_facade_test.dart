@@ -187,12 +187,8 @@ void main() {
       stateService: stateService,
     );
     addTearDown(facade.dispose);
-    var undismissCount = 0;
     var restoredCount = 0;
-    facade.attachRuntime(
-      undismissNotifications: () async => undismissCount++,
-      onNotificationsRestored: () => restoredCount++,
-    );
+    facade.attachRuntime(onNotificationsRestored: () => restoredCount++);
     stateService
       ..notificationsDismissedWhilePaused = true
       ..unifiedNotificationSyncKey = 'stale';
@@ -202,12 +198,10 @@ void main() {
 
     expect(stateService.notificationsDismissedWhilePaused, isFalse);
     expect(stateService.unifiedNotificationSyncKey, isNull);
-    expect(undismissCount, 1);
     expect(restoredCount, 1);
 
     facade.resyncAfterForegroundResume();
     await Future<void>.delayed(Duration.zero);
-    expect(undismissCount, 1);
     expect(restoredCount, 1);
   });
 

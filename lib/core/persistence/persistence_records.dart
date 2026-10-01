@@ -53,7 +53,6 @@ final class PlaybackSessionRecord {
     required this.id,
     required this.trackPath,
     this.isTemporary = false,
-    this.retainInNowPlaying = false,
     required this.loopModeIndex,
     required this.volume,
     this.speed = 1,
@@ -76,7 +75,6 @@ final class PlaybackSessionRecord {
   final String id;
   final String trackPath;
   final bool isTemporary;
-  final bool retainInNowPlaying;
   final int loopModeIndex;
   final double volume;
   final double speed;

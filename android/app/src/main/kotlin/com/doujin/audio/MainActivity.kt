@@ -1,8 +1,6 @@
 package com.doujin.audio
 
 import com.doujin.audio.channel.*
-import com.doujin.audio.player.notification.UnifiedPlaybackNotificationController
-import com.doujin.audio.player.notification.notificationSessionIdFromIntent
 import com.doujin.audio.player.common.*
 import com.doujin.audio.player.service.NativePlaybackService
 import com.doujin.audio.player.video.NativeVideoPlatformViewFactory
@@ -17,7 +15,6 @@ import android.animation.AnimatorSet
 import android.animation.ObjectAnimator
 import android.animation.PropertyValuesHolder
 import android.animation.ValueAnimator
-import android.content.ComponentCallbacks2
 import android.content.Intent
 import android.content.res.Configuration
 import android.graphics.drawable.ColorDrawable
@@ -37,13 +34,6 @@ import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.StandardMethodCodec
 
 open class MainActivity : FlutterFragmentActivity() {
-    companion object {
-        const val notificationSessionIdExtra = "notificationSessionId"
-        const val openSessionFromNotificationAction =
-            "com.doujin.audio.OPEN_SESSION_FROM_NOTIFICATION"
-    }
-
-    private var notificationsMethodChannel: MethodChannel? = null
     private var appLifecycleMethodChannel: MethodChannel? = null
     private var nativePlaybackMethodChannel: MethodChannel? = null
     private var nativePlaybackEventChannel: EventChannel? = null
@@ -56,7 +46,6 @@ open class MainActivity : FlutterFragmentActivity() {
     private var audioPickerCoordinator: AudioPickerCoordinator? = null
     private var videoDisplayMethodChannel: MethodChannel? = null
     private var videoDisplayMethodHandler: VideoDisplayMethodHandler? = null
-    private var pendingNotificationSessionId: String? = null
     private var powerMethodHandler: PowerMethodHandler? = null
     private val subtitleOverlayCoordinator by lazy { SubtitleOverlayCoordinator(this) }
 
@@ -291,12 +280,6 @@ open class MainActivity : FlutterFragmentActivity() {
         ).also { it.setMethodCallHandler(videoDisplayMethodHandler) }
         MethodChannel(messenger, PlatformChannelNames.SUBTITLE_OVERLAY)
             .setMethodCallHandler(SubtitleOverlayMethodHandler(subtitleOverlayCoordinator))
-        notificationsMethodChannel = MethodChannel(messenger, PlatformChannelNames.NOTIFICATIONS)
-        capturePendingNotificationSession(intent)
-        notificationsMethodChannel?.setMethodCallHandler(
-            NotificationsMethodHandler(this) { consumePendingNotificationSessionId() }
-        )
-
         fileCacheMethodChannel?.setMethodCallHandler(null)
         fileCacheMethodHandler?.shutdown()
         fileExportCoordinator?.dispose()
@@ -347,26 +330,6 @@ open class MainActivity : FlutterFragmentActivity() {
         super.onActivityResult(requestCode, resultCode, data)
     }
 
-    override fun onNewIntent(intent: Intent) {
-        super.onNewIntent(intent)
-        setIntent(intent)
-        deliverNotificationSessionIntent(intent)
-    }
-
-    override fun onTrimMemory(level: Int) {
-        super.onTrimMemory(level)
-        if (level >= ComponentCallbacks2.TRIM_MEMORY_BACKGROUND ||
-            level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL
-        ) {
-            UnifiedPlaybackNotificationController.trimArtworkMemory()
-        }
-    }
-
-    override fun onLowMemory() {
-        super.onLowMemory()
-        UnifiedPlaybackNotificationController.trimArtworkMemory()
-    }
-
     override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
         disposeNativePlaybackBridge()
         disposeVideoDisplayChannel()
@@ -376,7 +339,6 @@ open class MainActivity : FlutterFragmentActivity() {
     override fun onDestroy() {
         disposeNativePlaybackBridge()
         disposeVideoDisplayChannel()
-        notificationsMethodChannel = null
         appLifecycleMethodChannel?.setMethodCallHandler(null)
         appLifecycleMethodChannel = null
         fileCacheMethodChannel?.setMethodCallHandler(null)
@@ -404,43 +366,6 @@ open class MainActivity : FlutterFragmentActivity() {
         nativePlaybackEventChannel = null
         nativePlaybackBridge?.dispose()
         nativePlaybackBridge = null
-    }
-
-    private fun capturePendingNotificationSession(intent: Intent?) {
-        pendingNotificationSessionId = extractNotificationSessionId(intent)
-    }
-
-    private fun consumePendingNotificationSessionId(): String? {
-        val sessionId = pendingNotificationSessionId
-        pendingNotificationSessionId = null
-        return sessionId
-    }
-
-    private fun deliverNotificationSessionIntent(intent: Intent?) {
-        val sessionId = extractNotificationSessionId(intent) ?: return
-        val channel = notificationsMethodChannel
-        if (channel == null) {
-            pendingNotificationSessionId = sessionId
-            return
-        }
-        try {
-            channel.invokeMethod(
-                NotificationsMethods.OPEN_SESSION_FROM_NOTIFICATION,
-                mapOf("sessionId" to sessionId)
-            )
-        } catch (_: Exception) {
-            pendingNotificationSessionId = sessionId
-        }
-    }
-
-    private fun extractNotificationSessionId(intent: Intent?): String? {
-        if (intent?.action != openSessionFromNotificationAction) return null
-        val sessionId = try {
-            intent.getStringExtra(notificationSessionIdExtra)
-        } catch (_: RuntimeException) {
-            null
-        }
-        return notificationSessionIdFromIntent(intent.action, sessionId)
     }
 
     private fun disposeVideoDisplayChannel() {

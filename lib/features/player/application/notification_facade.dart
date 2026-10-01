@@ -71,7 +71,6 @@ final class NotificationFacade {
   static const Duration _unifiedNotificationDebounceInterval = Duration(
     milliseconds: 90,
   );
-  Future<void> Function() _undismissNotifications = _noopAsync;
   void Function() _onNotificationsRestored = _noop;
   PlaybackFacade? _playback;
   NotificationSessionResolver _resolveSession = _noopSessionResolver;
@@ -158,17 +157,6 @@ final class NotificationFacade {
       _stateService.notificationSubtitleTrackPaths;
 
   MusicTrack? trackByPath(String trackPath) => _trackByPath(trackPath);
-
-  Future<bool> areNotificationsEnabled() => _service.areNotificationsEnabled();
-
-  Future<bool> openNotificationSettings() =>
-      _service.openNotificationSettings();
-
-  Future<String?> consumePendingNotificationSessionId() =>
-      _service.consumePendingNotificationSessionId();
-
-  void setOpenSessionHandler(void Function(String sessionId)? handler) =>
-      _service.setOpenSessionHandler(handler);
 
   void handleSubtitleTrackLoaded(String trackPath, SubtitleTrack? track) =>
       _handleSubtitleTrackLoaded(trackPath, track);
@@ -312,11 +300,7 @@ final class NotificationFacade {
     _notifyNotificationChanged();
   }
 
-  void attachRuntime({
-    required Future<void> Function() undismissNotifications,
-    required void Function() onNotificationsRestored,
-  }) {
-    _undismissNotifications = undismissNotifications;
+  void attachRuntime({required void Function() onNotificationsRestored}) {
     _onNotificationsRestored = onNotificationsRestored;
   }
 
@@ -526,7 +510,6 @@ final class NotificationFacade {
       return;
     }
     _stateService.notificationsDismissedWhilePaused = true;
-    await playback.nativeRepository.dismissNotifications();
     if (_hasPlaybackToKeepAlive) {
       await _clearUnifiedNotifications();
       _syncKeepAlive();
@@ -567,18 +550,10 @@ final class NotificationFacade {
     _setFocusSessionId(session.id);
   }
 
-  Future<void> restoreAfterSystemClear() async {
-    _stateService.notificationsDismissedWhilePaused = false;
-    _stateService.unifiedNotificationSyncKey = null;
-    await _undismissNotifications();
-    _onNotificationsRestored();
-  }
-
   void resyncAfterForegroundResume() {
     if (!_stateService.notificationsDismissedWhilePaused) return;
     _stateService.notificationsDismissedWhilePaused = false;
     _stateService.unifiedNotificationSyncKey = null;
-    unawaited(_undismissNotifications());
     _onNotificationsRestored();
   }
 

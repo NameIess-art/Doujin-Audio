@@ -271,8 +271,9 @@ class PlaylistLoadingSkeleton extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(width: AppSpacing.xxs),
-                  SizedBox.square(
-                    dimension: 44,
+                  SizedBox(
+                    width: playlistActionContainerWidth,
+                    height: playlistCoverSize,
                     child: Center(
                       child: Container(
                         width: 36,

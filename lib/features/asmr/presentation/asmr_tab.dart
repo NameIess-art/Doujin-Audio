@@ -737,9 +737,10 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
     final searchedCategories = <AsmrCategoryType>{};
     Navigator.of(context)
         .push(
-          buildAppSearchPageRoute<void>(
+          buildAppPageRoute<void>(
             context: context,
             child: _AsmrSearchPage(onSearchRequested: searchedCategories.add),
+            duration: Duration.zero,
           ),
         )
         .whenComplete(() {

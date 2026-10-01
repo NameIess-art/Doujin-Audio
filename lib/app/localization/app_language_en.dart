@@ -515,7 +515,6 @@ const Map<String, String> appLanguageEn = {
   'blur_player_background': 'Blur player background',
   'ui_blur_effect': 'Glass effect',
   'allow_video_playback': 'Allow video playback',
-  'notification_bar': 'Playback notification controls',
   'section_detail_info': 'Details',
   'card_info_voice_actors': 'CV',
   'card_info_release_date': 'Release',
@@ -591,8 +590,6 @@ const Map<String, String> appLanguageEn = {
   'permission_state_recommended': 'Recommended',
   'system_settings_open_failed':
       'Could not open system settings. Adjust this app manually from system app settings.',
-  'permission_notification_description':
-      'Shows background playback status and media controls.',
   'permission_background_description':
       'Reduces the chance of some devices restricting playback while the screen is off.',
   'permission_manage_files_description':
@@ -649,15 +646,6 @@ const Map<String, String> appLanguageEn = {
   'allow_background_run_checking': 'Checking background run status...',
   'allow_background_run_open_failed':
       'Could not open background run settings. Please adjust this app manually in system settings.',
-  'notification_permission_status': 'Notification permission',
-  'notification_permission_ready':
-      'Notification permission is enabled, so background controls can stay visible and screen-off playback is more stable.',
-  'notification_permission_missing':
-      'Notification permission is disabled, so Android may restrict background playback controls and status.',
-  'notification_permission_checking': 'Checking notification permission...',
-  'notification_settings_open_failed':
-      'Could not open notification settings. Please change it manually in system settings.',
-  'open_notification_settings': 'Open notification settings',
   'exact_alarm_permission_ready':
       'Exact alarms are available, which improves long-running background auto-resume reliability.',
   'exact_alarm_permission_missing':
@@ -796,10 +784,6 @@ const Map<String, String> appLanguageEn = {
   'output_directory': 'Output directory',
   'tap_select_output_dir': 'Tap to choose where to save the audio',
   'cancel_conversion': 'Cancel conversion',
-  'notification_permission_title': 'Allow notifications',
-  'notification_permission_message':
-      'Notifications are disabled for this app, so playback controls cannot appear in the notification shade. Enable app notifications and media notifications.',
-  'notification_permission_enabled': 'Notifications are now enabled.',
   'background_play_permission_title': 'Allow background playback',
   'background_play_permission_message':
       'To continue playing audio after the screen turns off, this app needs to be exempt from battery optimization. Open settings now?',
@@ -939,7 +923,7 @@ const Map<String, String> appLanguageEn = {
   'timer_reliability_ready':
       'Background and auto-resume requirements are satisfied.',
   'timer_reliability_missing':
-      'Review notification and background permissions to improve timer reliability.',
+      'Review exact alarm and background permissions to improve timer reliability.',
   'add_playback_queue': 'Create playback queue',
   'default_playback_queue_name': 'Playback queue {number}',
   'edit_playback_queue': 'Edit playback queue',

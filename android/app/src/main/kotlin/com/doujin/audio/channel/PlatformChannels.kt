@@ -6,7 +6,6 @@ internal object PlatformChannelNames {
     const val FILE_CACHE_SCAN_EVENTS = "doujin_audio/file_cache/scan_events"
     const val NATIVE_PLAYBACK = "doujin_audio/native_playback"
     const val NATIVE_PLAYBACK_EVENTS = "doujin_audio/native_playback/events"
-    const val NOTIFICATIONS = "doujin_audio/notifications"
     const val POWER = "doujin_audio/power"
     const val SUBTITLE_OVERLAY = "doujin_audio/subtitle_overlay"
     const val UPDATE = "doujin_audio/update"
@@ -29,10 +28,7 @@ internal object NativePlaybackMethods {
     const val REMOVE_SESSION = "removeSession"
     const val PAUSE_ALL = "pauseAll"
     const val CLEAR_ALL = "clearAll"
-    const val SET_FOREGROUND_ENABLED = "setForegroundEnabled"
     const val SET_PLAYBACK_BEHAVIOR = "setPlaybackBehavior"
-    const val DISMISS_NOTIFICATIONS = "dismissNotifications"
-    const val UNDISMISS_NOTIFICATIONS = "undismissNotifications"
     const val SNAPSHOT = "snapshot"
 }
 
@@ -80,15 +76,6 @@ internal object SubtitleOverlayMethods {
     const val STOP_OVERLAY = "stopOverlay"
     const val UPDATE_STYLE = "updateStyle"
     const val UPDATE_SUBTITLE = "updateSubtitle"
-}
-
-internal object NotificationsMethods {
-    const val ARE_NOTIFICATIONS_ENABLED = "areNotificationsEnabled"
-    const val CLEAR_UNIFIED_PLAYBACK_NOTIFICATIONS = "clearUnifiedPlaybackNotifications"
-    const val CONSUME_PENDING_NOTIFICATION_SESSION_ID = "consumePendingNotificationSessionId"
-    const val OPEN_NOTIFICATION_SETTINGS = "openNotificationSettings"
-    const val OPEN_SESSION_FROM_NOTIFICATION = "openSessionFromNotification"
-    const val SYNC_UNIFIED_PLAYBACK_NOTIFICATIONS = "syncUnifiedPlaybackNotifications"
 }
 
 internal object FileCacheMethods {

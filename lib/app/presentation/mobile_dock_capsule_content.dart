@@ -27,7 +27,7 @@ class MobileDockCapsuleContent extends StatefulWidget {
   final Widget Function(
     BuildContext context, {
     required bool isPlaybackExpanded,
-    required double focusProgress,
+    required double anchorProgress,
     required double stackProgress,
     required double expandedWidth,
     required VoidCallback onCurrentTap,
@@ -156,8 +156,8 @@ class MobileDockCapsuleContentState extends State<MobileDockCapsuleContent>
           builder: (context, _) {
             final appearance = _appearanceCurve.value;
             final expand = _expandController.value;
-            // Move the focused icon first, then gather the others behind it.
-            final focusProgress = Curves.easeInOut.transform(
+            // Move the first icon first, then gather the others behind it.
+            final anchorProgress = Curves.easeInOut.transform(
               (expand / 0.2).clamp(0.0, 1.0),
             );
             final stackProgress = Curves.easeInOut.transform(
@@ -179,7 +179,7 @@ class MobileDockCapsuleContentState extends State<MobileDockCapsuleContent>
                 );
             final navigationChild = _buildNavigationChild(
               context,
-              focusProgress: focusProgress,
+              anchorProgress: anchorProgress,
               stackProgress: stackProgress,
               expandedWidth: availableWidth - compactWidth * appearance,
             );
@@ -233,7 +233,7 @@ class MobileDockCapsuleContentState extends State<MobileDockCapsuleContent>
 
   Widget _buildNavigationChild(
     BuildContext context, {
-    required double focusProgress,
+    required double anchorProgress,
     required double stackProgress,
     required double expandedWidth,
   }) {
@@ -241,7 +241,7 @@ class MobileDockCapsuleContentState extends State<MobileDockCapsuleContent>
       child: widget.buildBottomBar(
         context,
         isPlaybackExpanded: widget.isPlaybackExpanded,
-        focusProgress: focusProgress,
+        anchorProgress: anchorProgress,
         stackProgress: stackProgress,
         expandedWidth: expandedWidth,
         onCurrentTap: widget.onShowDestinations,

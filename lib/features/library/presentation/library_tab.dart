@@ -22,7 +22,6 @@ import '../application/library_catalog.dart';
 import '../application/library_scan_coordinator.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/app_transitions.dart';
-import '../../../core/widgets/app_search_page.dart';
 import '../../../core/widgets/mobile_overlay_inset.dart';
 import '../../../core/widgets/page_header_inset.dart';
 import '../../../core/widgets/scroll_activity_gate.dart';
@@ -132,9 +131,10 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
 
   void _openSearchPage() {
     Navigator.of(context).push(
-      buildAppSearchPageRoute<void>(
+      buildAppPageRoute<void>(
         context: context,
         child: const LibrarySearchPage(),
+        duration: Duration.zero,
       ),
     );
   }

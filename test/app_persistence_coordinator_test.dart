@@ -112,7 +112,7 @@ void main() {
       subtitles: subtitles,
       trackByPath: library.trackByPath,
       coverArtworkCacheService: library.coverArtworkCacheService,
-      notificationsEnabled: () => settings.notificationsEnabled,
+      notificationsEnabled: () => true,
     );
     final coordinator = AppPersistenceCoordinator(
       library: library,
@@ -254,7 +254,7 @@ void main() {
         subtitles: subtitles,
         trackByPath: library.trackByPath,
         coverArtworkCacheService: library.coverArtworkCacheService,
-        notificationsEnabled: () => settings.notificationsEnabled,
+        notificationsEnabled: () => true,
       );
       final coordinator = AppPersistenceCoordinator(
         library: library,

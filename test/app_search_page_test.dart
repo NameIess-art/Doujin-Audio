@@ -1,11 +1,20 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/core/widgets/app_edge_fade_mask.dart';
 import 'package:doujin_audio/core/widgets/app_search_page.dart';
+import 'package:doujin_audio/core/widgets/app_transitions.dart';
 
 void main() {
-  testWidgets('search route fades in and out', (tester) async {
+  testWidgets('search route opens and closes without page animation', (
+    tester,
+  ) async {
     late BuildContext routeContext;
+    final controller = TextEditingController();
+    final focusNode = FocusNode();
+    addTearDown(controller.dispose);
+    addTearDown(focusNode.dispose);
     await tester.pumpWidget(
       MaterialApp(
         home: Builder(
@@ -17,24 +26,64 @@ void main() {
       ),
     );
 
-    final route = buildAppSearchPageRoute<void>(
+    final route = buildAppPageRoute<void>(
       context: routeContext,
-      child: const SizedBox.expand(),
+      duration: Duration.zero,
+      child: AppSearchPageScaffold<int>(
+        controller: controller,
+        focusNode: focusNode,
+        hintText: 'Search audio',
+        categories: const <AppSearchCategory<int>>[
+          AppSearchCategory(value: 0, label: 'All'),
+        ],
+        selectedCategory: 0,
+        onCategorySelected: (_) {},
+        onChanged: (_) {},
+        onSubmitted: (_) {},
+        onCloseOrClear: () => Navigator.of(routeContext).pop(),
+        blurEnabled: false,
+        body: const SizedBox.expand(
+          key: ValueKey<String>('instant_search_body'),
+        ),
+      ),
     );
-    final transition = route.transitionsBuilder(
-      routeContext,
-      const AlwaysStoppedAnimation<double>(0.5),
-      const AlwaysStoppedAnimation<double>(0),
-      const SizedBox.expand(),
-    );
+    expect(route.transitionDuration, Duration.zero);
+    expect(route.reverseTransitionDuration, Duration.zero);
 
-    await tester.pumpWidget(
-      Directionality(textDirection: TextDirection.ltr, child: transition),
+    unawaited(Navigator.of(routeContext).push(route));
+    await tester.pump();
+
+    final page = find.byType(AppSearchPageScaffold<int>);
+    expect(page, findsOneWidget);
+    expect(route.animation!.status, AnimationStatus.completed);
+    expect(
+      tester.getTopLeft(
+        find.byKey(const ValueKey<String>('instant_search_body')),
+      ),
+      Offset.zero,
     );
-    final fade = tester.widget<FadeTransition>(find.byType(FadeTransition));
-    expect(fade.opacity.value, greaterThan(0));
-    expect(fade.opacity.value, lessThan(1));
-    expect(find.byType(SlideTransition), findsNothing);
+    expect(
+      tester.getTopLeft(
+        find.byKey(const ValueKey<String>('app_search_field_shell')),
+      ),
+      const Offset(16, 6),
+    );
+    for (final transitionType in [
+      SlideTransition,
+      FadeTransition,
+      ShaderMask,
+    ]) {
+      expect(
+        find.ancestor(of: page, matching: find.byType(transitionType)),
+        findsNothing,
+      );
+    }
+    expect(find.byType(ShaderMask), findsNothing);
+
+    await tester.tap(find.byKey(const ValueKey<String>('app_search_close')));
+    await tester.pump();
+    expect(page, findsNothing);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets(

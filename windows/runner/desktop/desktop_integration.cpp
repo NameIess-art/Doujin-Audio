@@ -129,8 +129,6 @@ DesktopIntegration::DesktopIntegration(HWND window, flutter::BinaryMessenger* me
       RefreshPower(); media_->Update(args); Success(result);
     }
     else if (name == "clearUnifiedPlaybackNotifications") { media_->Clear(); wake_locks_.erase("playback"); RefreshPower(); Success(result); }
-    else if (name == "areNotificationsEnabled") Success(result,Value(true));
-    else if (name == "consumePendingNotificationSessionId") Success(result);
     else result.NotImplemented();
   });
   add("doujin_audio/app_lifecycle",[this](const auto& call, Result& result) {

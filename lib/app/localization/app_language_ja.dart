@@ -476,7 +476,6 @@ const Map<String, String> appLanguageJa = {
   'blur_player_background': '再生画面の背景ぼかし',
   'ui_blur_effect': '画面のガラス効果',
   'allow_video_playback': '動画の再生を許可',
-  'notification_bar': '再生通知コントロール',
   'section_detail_info': '詳細情報',
   'card_info_voice_actors': '声優',
   'card_info_release_date': '発売',
@@ -550,7 +549,6 @@ const Map<String, String> appLanguageJa = {
   'permission_enabled': '有効',
   'permission_not_enabled': '無効',
   'system_settings_open_failed': 'システム設定を開けませんでした。アプリ設定から手動で変更してください。',
-  'permission_notification_description': 'バックグラウンド再生状態とメディア操作を表示します。',
   'permission_background_description': '画面オフ時に一部端末が再生を制限する可能性を減らします。',
   'permission_manage_files_description':
       'ファイルシステムを直接走査する高度な曲庫スキャンでのみ必要です。通常はシステムのフォルダ選択を推奨します。',
@@ -596,13 +594,6 @@ const Map<String, String> appLanguageJa = {
   'allow_background_run_ready': 'このアプリのバックグラウンド実行は許可されています。画面オフ再生がより安定します。',
   'allow_background_run_checking': 'バックグラウンド実行の状態を確認しています...',
   'allow_background_run_open_failed': 'システム設定を開けませんでした。アプリ設定から手動で変更してください。',
-  'notification_permission_status': '通知権限の状態',
-  'notification_permission_ready': '通知権限は有効です。バックグラウンド操作を表示でき、画面オフ再生がより安定します。',
-  'notification_permission_missing':
-      '通知権限が無効です。システムがバックグラウンド再生通知や操作表示を制限する場合があります。',
-  'notification_permission_checking': '通知権限を確認しています...',
-  'notification_settings_open_failed': '通知設定を開けませんでした。システム設定から手動で変更してください。',
-  'open_notification_settings': '通知設定を開く',
   'exact_alarm_permission_ready': '正確なアラームは利用可能です。長時間バックグラウンド後の自動再開がより安定します。',
   'exact_alarm_permission_missing':
       '正確なアラームが無効です。長時間バックグラウンド後の自動再開が不安定になる場合があります。',
@@ -729,10 +720,6 @@ const Map<String, String> appLanguageJa = {
   'output_directory': '出力先',
   'tap_select_output_dir': '音声の保存先を選択',
   'cancel_conversion': '変換をキャンセル',
-  'notification_permission_title': '通知を許可',
-  'notification_permission_message':
-      'このアプリの通知が無効なため、通知シェードに再生操作を表示できません。アプリ通知とメディア通知を有効にしてください。',
-  'notification_permission_enabled': '通知権限が有効になりました。',
   'background_play_permission_title': 'バックグラウンド再生を許可',
   'background_play_permission_message':
       '画面オフ後も音声を再生し続けるために、アプリを電池制限の対象外に設定してください。設定画面を開きますか？',
@@ -862,7 +849,7 @@ const Map<String, String> appLanguageJa = {
   'open_exact_alarm_settings': '正確なアラーム設定を開く',
   'timer_reliability_checking': 'タイマーのバックグラウンド信頼性を確認しています…',
   'timer_reliability_ready': 'バックグラウンド再開の条件は満たされています',
-  'timer_reliability_missing': '安定性を高めるため、バックグラウンド実行とタイマー関連の権限を確認してください。',
+  'timer_reliability_missing': '正確なアラームとバックグラウンド権限を確認して、タイマーの信頼性を高めてください。',
   'add_playback_queue': '再生キューを作成',
   'default_playback_queue_name': '再生キュー {number}',
   'edit_playback_queue': '再生キューを編集',

@@ -228,9 +228,7 @@ final class _PlaybackIsolationHarness {
       nativePlaybackRepository: native,
       skipPersistence: false,
     );
-    graph.settings
-      ..notificationsEnabled = false
-      ..syncSlice(isInitialized: true);
+    graph.settings.syncSlice(isInitialized: true);
     runtime = AudioRuntimeCoordinator(
       snapshots: native.snapshots,
       progressUpdates: native.progressUpdates,

@@ -208,13 +208,35 @@ void main() {
       native.coldPreparation = true;
       final session = register('a');
       session.setOptimisticPosition(const Duration(seconds: 22));
-      expect(
-        await commands.prepareSession(
-          session,
-          nextPath: session.currentTrackPath,
-        ),
-        true,
+      final overlays = <List<String>>[];
+      final subscription = playback.catalogStates.listen((state) {
+        overlays.add(state.nowPlayingSessions.map((s) => s.id).toList());
+      });
+      addTearDown(subscription.cancel);
+      final prepareRelease = Completer<void>();
+      final playRelease = Completer<void>();
+      native.blocked['a'] = prepareRelease.future;
+      native.blockedPlay['a'] = playRelease.future;
+      final preparation = commands.prepareSession(
+        session,
+        nextPath: session.currentTrackPath,
       );
+      await native.startedFor('a').future;
+      prepareRelease.complete();
+      await native.playStartedFor('a').future;
+      try {
+        expect(session.state.processingState, ProcessingState.idle);
+        expect(session.isLoading, false);
+        expect(session.isPlaybackLoading, false);
+        expect(session.playbackRequested, true);
+        expect(playback.catalogState.nowPlayingSessions.map((s) => s.id), [
+          'a',
+        ]);
+        expect(overlays.skipWhile((ids) => ids.isEmpty), everyElement(['a']));
+      } finally {
+        playRelease.complete();
+        expect(await preparation, true);
+      }
       expect(native.prepared, ['a']);
       expect(native.played, ['a']);
       expect(native.startPositions, [const Duration(seconds: 22)]);
@@ -644,9 +666,6 @@ class _Native extends NativePlaybackRepository {
       _playStarted.putIfAbsent(id, Completer<void>.new);
   @override
   Future<void> dispose() async {}
-  @override
-  Future<NativeResult<void>> undismissNotifications() async =>
-      const NativeSuccess();
   @override
   Future<NativeResult<void>> removeSession(String sessionId) async {
     removed.add(sessionId);

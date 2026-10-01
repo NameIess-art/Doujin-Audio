@@ -5,7 +5,6 @@ import 'package:doujin_audio/app/localization/app_language_provider.dart';
 import 'package:doujin_audio/app/presentation/app_settings_group_card.dart';
 import 'package:doujin_audio/app/state/app_runtime_providers.dart';
 import 'package:doujin_audio/core/widgets/app_settings_action_tile.dart';
-import 'package:doujin_audio/core/platform/notifications_platform_service.dart';
 import 'package:doujin_audio/core/platform/power_platform_service.dart';
 import 'package:doujin_audio/features/settings/presentation/permission_settings_controls.dart';
 import 'package:doujin_audio/features/settings/application/permission_status_service.dart';
@@ -26,9 +25,6 @@ void main() {
               statusService: PermissionStatusService(
                 isAndroidOverride: true,
                 powerService: PowerPlatformService(isAndroidOverride: false),
-                notificationsService: NotificationsPlatformService(
-                  isAndroidOverride: false,
-                ),
                 overlayCheck: () async => false,
                 updateInstallCheck: () async => false,
               ),
@@ -40,7 +36,6 @@ void main() {
     await tester.pumpAndSettle();
 
     final titles = [
-      'notification_permission_status',
       'allow_background_run',
       'manage_files_permission_title',
       'overlay_permission_title',
@@ -60,7 +55,8 @@ void main() {
       );
     }
     expect(find.byType(TextButton), findsNWidgets(titles.length));
-    expect(find.text(language.tr('permission_enabled')), findsNWidgets(3));
+    expect(find.text(language.tr('permission_enabled')), findsNWidgets(2));
+    expect(find.byIcon(Icons.notifications_rounded), findsNothing);
     expect(find.text(language.tr('permission_not_enabled')), findsNWidgets(2));
     final cards = find.byType(Card);
     for (var index = 0; index < titles.length - 1; index++) {
@@ -115,9 +111,7 @@ void main() {
                     ignoringBattery: true,
                     exactAlarms: false,
                   ),
-                  notificationsService: NotificationsPlatformService(
-                    isAndroidOverride: false,
-                  ),
+
                   overlayCheck: () async => false,
                   updateInstallCheck: () async => false,
                 ),

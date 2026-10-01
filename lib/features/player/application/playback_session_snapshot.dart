@@ -32,7 +32,6 @@ class PlaybackSessionSnapshot {
   PlaybackSessionSnapshot({
     required this.id,
     this.isTemporary = false,
-    this.retainInNowPlaying = false,
     required this.createdAt,
     required this.lastPlayedAt,
     required this.currentTrackPath,
@@ -68,7 +67,6 @@ class PlaybackSessionSnapshot {
     return PlaybackSessionSnapshot(
       id: session.id,
       isTemporary: session.isTemporary,
-      retainInNowPlaying: session.retainInNowPlaying,
       createdAt: session.createdAt,
       lastPlayedAt: session.lastPlayedAt,
       currentTrackPath: session.currentTrackPath,
@@ -107,7 +105,6 @@ class PlaybackSessionSnapshot {
   final String id;
   final int queueVersion;
   final bool isTemporary;
-  final bool retainInNowPlaying;
   final DateTime createdAt;
   final DateTime? lastPlayedAt;
   final String currentTrackPath;
@@ -142,7 +139,6 @@ class PlaybackSessionSnapshot {
     return other is PlaybackSessionSnapshot &&
         other.id == id &&
         other.isTemporary == isTemporary &&
-        other.retainInNowPlaying == retainInNowPlaying &&
         other.createdAt == createdAt &&
         other.lastPlayedAt == lastPlayedAt &&
         other.currentTrackPath == currentTrackPath &&
@@ -175,7 +171,6 @@ class PlaybackSessionSnapshot {
   int get hashCode => Object.hashAll(<Object?>[
     id,
     isTemporary,
-    retainInNowPlaying,
     createdAt,
     lastPlayedAt,
     currentTrackPath,

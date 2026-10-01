@@ -98,24 +98,6 @@ internal fun nativePlaybackStartDecision(
     }
 }
 
-internal fun resolveNotificationSessionId(
-    requestedSessionId: String,
-    focusedSessionId: String?,
-    activeSessionIds: Collection<String>,
-    existingSessionIds: Collection<String>,
-    storedActiveSessionIds: Collection<String>,
-    storedSessionIds: Collection<String>
-): String {
-    return requestedSessionId.ifBlank {
-        focusedSessionId
-            ?: activeSessionIds.firstOrNull()
-            ?: existingSessionIds.firstOrNull()
-            ?: storedActiveSessionIds.firstOrNull()
-            ?: storedSessionIds.firstOrNull()
-            ?: ""
-    }
-}
-
 internal fun playWhenReadyReasonName(reason: Int): String {
     return when (reason) {
         Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST -> "user_request"

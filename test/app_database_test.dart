@@ -31,8 +31,8 @@ void main() {
 
   tearDown(() => db.close());
 
-  test('schema starts from version 7', () {
-    expect(AppDatabase.schemaVersion, 7);
+  test('schema starts from version 8', () {
+    expect(AppDatabase.schemaVersion, 8);
   });
 
   test('version 3 migration adds audio detail duration', () async {
@@ -166,7 +166,42 @@ void main() {
     final loaded = (await repository.loadAllSessions()).single;
     expect(loaded.id, 'existing');
     expect(loaded.isTemporary, isFalse);
-    expect(loaded.retainInNowPlaying, isFalse);
+  });
+
+  test('version 8 removes card retention and preserves session data', () async {
+    await repository.seedSessions([
+      _playbackSession('a'),
+      _playbackSession('b'),
+    ]);
+    await db.update(
+      'sessions',
+      {'is_temporary': 1},
+      where: 'id = ?',
+      whereArgs: ['b'],
+    );
+    final beforeA = await _sessionTableRows(db, 'a');
+    final beforeB = await _sessionTableRows(db, 'b');
+    await db.execute(
+      'ALTER TABLE sessions ADD COLUMN retain_in_now_playing INTEGER NOT NULL DEFAULT 0',
+    );
+    await db.update('sessions', {'retain_in_now_playing': 1});
+
+    await AppDatabase.upgradeSchemaForTest(db, 7, 8);
+
+    final columns = await db.rawQuery('PRAGMA table_info(sessions)');
+    expect(
+      columns.map((row) => row['name']),
+      isNot(contains('retain_in_now_playing')),
+    );
+    expect(await _sessionTableRows(db, 'a'), beforeA);
+    expect(await _sessionTableRows(db, 'b'), beforeB);
+    final loaded = await repository.loadAllSessions();
+    expect(loaded.map((session) => session.isTemporary), [false, true]);
+    final indexes = await db.rawQuery('PRAGMA index_list(sessions)');
+    expect(
+      indexes.map((row) => row['name']),
+      contains('idx_sessions_sort_order'),
+    );
   });
 
   test(
@@ -176,7 +211,7 @@ void main() {
       await db.execute('DROP TABLE IF EXISTS playback_queues');
       await db.execute('DROP TABLE IF EXISTS time_segment_labels');
 
-      await AppDatabase.upgradeSchemaForTest(db, 1, 7);
+      await AppDatabase.upgradeSchemaForTest(db, 1, AppDatabase.schemaVersion);
 
       final tables = await db.rawQuery(
         "SELECT name FROM sqlite_master WHERE type = 'table'",
@@ -842,7 +877,6 @@ void main() {
         id: 'direct',
         trackPath: '/tracks/direct.mp3',
         isTemporary: true,
-        retainInNowPlaying: true,
         loopModeIndex: 0,
         volume: 1,
         positionMs: 12000,
@@ -856,7 +890,6 @@ void main() {
     final restored = (await repository.loadAllSessions()).single;
     expect(restored.id, 'direct');
     expect(restored.isTemporary, isTrue);
-    expect(restored.retainInNowPlaying, isTrue);
     expect(restored.positionMs, 12000);
   });
 

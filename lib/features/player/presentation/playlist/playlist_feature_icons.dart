@@ -58,7 +58,7 @@ class SessionFeatureBadgeStack extends StatelessWidget {
     required this.featureIcons,
     required this.color,
     required this.child,
-    this.width = 56,
+    this.width = playlistActionContainerWidth,
     this.height = playlistCoverSize,
   });
 

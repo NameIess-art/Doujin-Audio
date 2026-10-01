@@ -717,35 +717,6 @@ internal class NativePlaybackSession(
         )
     }
 
-    fun foregroundNotificationSignature(): String {
-        val p = _player
-        val playing = p?.isPlaying ?: lastIsPlaying
-        val playWhenReady = p?.playWhenReady ?: lastPlayWhenReady
-        return listOf(
-            sessionId,
-            title,
-            subtitle.orEmpty(),
-            playing,
-            playWhenReady,
-            repeatOne,
-            hasPreviousMediaItem(),
-            hasNextMediaItem()
-        ).joinToString("|")
-    }
-
-    fun hasPreviousMediaItem(): Boolean {
-        val player = _player
-        if (player != null) return player.hasPreviousMediaItem()
-        return currentQueueIndexFor(queue) > 0
-    }
-
-    fun hasNextMediaItem(): Boolean {
-        val player = _player
-        if (player != null) return player.hasNextMediaItem()
-        val currentIndex = currentQueueIndexFor(queue)
-        return queue.isNotEmpty() && currentIndex < queue.lastIndex
-    }
-
     fun syncCurrentMediaItemFromPlayer() {
         val player = _player ?: return
         val mediaItem = player.currentMediaItem ?: return

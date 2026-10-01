@@ -1402,10 +1402,7 @@ void main() {
         carousel(ActiveSessionCarouselPresentation.circularCover),
       );
       await tester.pumpAndSettle();
-      expect(
-        tester.widget<PageView>(find.byType(PageView)).physics,
-        isA<NeverScrollableScrollPhysics>(),
-      );
+      expect(find.byType(PageView), findsNothing);
       expect(
         tester.getSize(
           find.byKey(const ValueKey<String>('active_session_card_circular_1')),
@@ -1474,7 +1471,10 @@ void main() {
         find.byKey(const ValueKey<String>('active_session_card_circular_2')),
         findsOneWidget,
       );
-      await tester.drag(find.byType(PageView), const Offset(300, 0));
+      await tester.drag(
+        find.byKey(const ValueKey<String>('active_session_card_circular_2')),
+        const Offset(300, 0),
+      );
       await tester.pumpAndSettle();
       expect(visibleSessions.last, 'circular_2');
     },
@@ -1890,6 +1890,12 @@ void main() {
       isInitialized: true,
     );
 
+    tester.view.padding = const FakeViewPadding(top: 40);
+    tester.view.viewPadding = const FakeViewPadding(top: 40);
+    addTearDown(() {
+      tester.view.padding = FakeViewPadding.zero;
+      tester.view.viewPadding = FakeViewPadding.zero;
+    });
     await tester.pumpWidget(
       buildAppRuntimeTestApp(
         runtimeGraph: fixture.runtimeGraph,
@@ -1961,16 +1967,21 @@ void main() {
     );
     expect(skeletonTrailingCircles, findsOneWidget);
     expect(tester.getSize(skeletonTrailingCircles), const Size.square(36));
+    final initialSkeletonCardTop = tester.getTopLeft(skeletonCards.first).dy;
     expect(
-      tester.getTopLeft(skeletonCards.first).dy,
+      initialSkeletonCardTop,
       greaterThanOrEqualTo(tester.getBottomLeft(find.byType(TopPageHeader)).dy),
     );
     expect(
       tester.getBottomLeft(skeletonCards.last).dy,
-      greaterThan(tester.getTopLeft(skeletonCards.first).dy),
+      greaterThan(initialSkeletonCardTop),
     );
 
     await tester.pump();
+    expect(
+      tester.getTopLeft(skeletonCards.first).dy,
+      closeTo(initialSkeletonCardTop, 0.01),
+    );
     expect(find.byKey(placeholderKey), findsOneWidget);
     expect(find.byKey(contentKey), findsOneWidget);
 
@@ -1985,6 +1996,166 @@ void main() {
     expect(find.byKey(placeholderKey), findsNothing);
     expect(find.byKey(contentKey), findsOneWidget);
   });
+
+  testWidgets(
+    'playlist first open without view padding renders skeleton flush under header without twitch',
+    (WidgetTester tester) async {
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      fixture.playbackService.syncSlice(
+        activeSessions: const <PlaybackSession>[],
+        playingSessionCount: 0,
+        focusedSessionId: null,
+        coverGeneration: 0,
+        isInitialized: true,
+      );
+
+      await tester.pumpWidget(
+        buildAppRuntimeTestApp(
+          runtimeGraph: fixture.runtimeGraph,
+          persistenceRepository: fixture.persistenceRepository,
+          nativePlaybackRepository: fixture.nativePlaybackRepository,
+          playbackCommandRunner:
+              AppRuntimeWidgetTestFixture.playbackCommandRunner,
+          libraryService: fixture.libraryService,
+          playbackService: fixture.playbackService,
+          timerService: fixture.timerService,
+          notificationCoordinatorService:
+              fixture.notificationCoordinatorService,
+          settingsRepository: fixture.settings,
+          languageProvider: fixture.languageProvider,
+          child: const PlaylistTab(),
+        ),
+      );
+
+      final skeletonCards = find.byWidgetPredicate((widget) {
+        final key = widget.key;
+        return key is ValueKey<String> &&
+            key.value.startsWith('playlist_skeleton_card_');
+      });
+      expect(skeletonCards, findsAtLeastNWidgets(1));
+      final initialTop = tester.getTopLeft(skeletonCards.first).dy;
+      expect(
+        initialTop,
+        greaterThanOrEqualTo(
+          tester.getBottomLeft(find.byType(TopPageHeader)).dy,
+        ),
+      );
+
+      await tester.pump();
+      expect(
+        tester.getTopLeft(skeletonCards.first).dy,
+        closeTo(initialTop, 0.01),
+      );
+    },
+  );
+
+  testWidgets(
+    'playlist skeleton play button placeholder matches actual card play button center',
+    (WidgetTester tester) async {
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      final track = testMusicTrack(
+        name: 'Alignment track',
+        path: '/library/alignment/track.mp3',
+        groupKey: '/library/alignment',
+        groupTitle: 'Alignment',
+      );
+      final session = PlaybackSession(
+        id: 'alignment-session',
+        currentTrackPath: track.path,
+        loopMode: SessionLoopMode.single,
+        nonSingleLoopMode: SessionLoopMode.single,
+        volume: 1,
+        createdAt: DateTime(2026),
+        state: const PlayerState(false, ProcessingState.ready),
+      );
+      addTearDown(session.shutdown);
+      fixture.runtimeGraph.library.addTracks(
+        <MusicTrack>[track],
+        notify: false,
+        persist: false,
+      );
+      fixture.playbackService.registerSession(session);
+      fixture.playbackService.syncSlice(
+        activeSessions: <PlaybackSession>[session],
+        playingSessionCount: 0,
+        focusedSessionId: session.id,
+        coverGeneration: 0,
+        isInitialized: true,
+      );
+
+      await tester.pumpWidget(
+        buildAppRuntimeTestApp(
+          runtimeGraph: fixture.runtimeGraph,
+          persistenceRepository: fixture.persistenceRepository,
+          nativePlaybackRepository: fixture.nativePlaybackRepository,
+          playbackCommandRunner:
+              AppRuntimeWidgetTestFixture.playbackCommandRunner,
+          libraryService: fixture.libraryService,
+          playbackService: fixture.playbackService,
+          timerService: fixture.timerService,
+          notificationCoordinatorService:
+              fixture.notificationCoordinatorService,
+          settingsRepository: fixture.settings,
+          languageProvider: fixture.languageProvider,
+          child: const PlaylistTab(),
+        ),
+      );
+
+      final skeletonCards = find.byWidgetPredicate((widget) {
+        final key = widget.key;
+        return key is ValueKey<String> &&
+            key.value.startsWith('playlist_skeleton_card_');
+      });
+      expect(skeletonCards, findsAtLeastNWidgets(1));
+      final skeletonTrailingCircle = find.descendant(
+        of: skeletonCards.first,
+        matching: find.byWidgetPredicate((widget) {
+          return widget is Container &&
+              widget.decoration is BoxDecoration &&
+              (widget.decoration! as BoxDecoration).shape == BoxShape.circle &&
+              widget !=
+                  tester.widget(
+                    find
+                        .descendant(
+                          of: skeletonCards.first,
+                          matching: find.byWidgetPredicate(
+                            (w) =>
+                                w is Container &&
+                                w.constraints ==
+                                    const BoxConstraints.tightFor(
+                                      width: playlistCoverSize,
+                                      height: playlistCoverSize,
+                                    ),
+                          ),
+                        )
+                        .first,
+                  );
+        }),
+      );
+      expect(skeletonTrailingCircle, findsOneWidget);
+      final skeletonCenter = tester.getCenter(skeletonTrailingCircle);
+
+      // Dismiss the skeleton so the actual session card appears
+      await tester.pump();
+      await tester.pump(kPlaceholderContentTransitionDuration);
+      await tester.pump(const Duration(milliseconds: 10));
+      await tester.pump();
+
+      final actualCard = find.byType(SessionListCard);
+      expect(actualCard, findsOneWidget);
+      final playButton = find.descendant(
+        of: actualCard,
+        matching: find.byType(IconButton),
+      );
+      expect(playButton, findsOneWidget);
+      final actualCenter = tester.getCenter(playButton);
+
+      expect(skeletonCenter.dx, closeTo(actualCenter.dx, 0.01));
+      expect(skeletonCenter.dy, closeTo(actualCenter.dy, 0.01));
+    },
+  );
 
   testWidgets('expanded console consumes the downward detail dismiss gesture', (
     tester,
@@ -5933,7 +6104,7 @@ void main() {
       expect(
         tester.getTopLeft(savedCard).dy -
             tester.getBottomLeft(temporaryCard).dy,
-        16.0,
+        0.0,
       );
       final temporarySwipe = tester.widget<SwipeRevealCard>(
         find.ancestor(
@@ -6149,7 +6320,7 @@ void main() {
       expect(
         find.byWidgetPredicate(
           (widget) =>
-              widget is Padding &&
+              widget is RepaintBoundary &&
               widget.key == ValueKey(queueSessions.first.id),
         ),
         findsOneWidget,

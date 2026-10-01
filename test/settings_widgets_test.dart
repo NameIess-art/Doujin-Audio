@@ -106,7 +106,6 @@ void main() {
         ],
         'section_updates_permissions': [
           'settings_group_permissions',
-          'notification_permission_status',
         ],
       }.entries) {
         await tester.ensureVisible(find.text(i18n.tr(entry.key)));
@@ -328,12 +327,12 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(updatesCategory);
     await tester.pumpAndSettle();
-    final notificationTile = find.text(
-      i18n.tr('notification_permission_status'),
+    final backgroundRunTile = find.text(
+      i18n.tr('allow_background_run'),
     );
-    expect(notificationTile, findsOneWidget);
+    expect(backgroundRunTile, findsOneWidget);
     expect(
-      find.ancestor(of: notificationTile, matching: find.byType(Card)),
+      find.ancestor(of: backgroundRunTile, matching: find.byType(Card)),
       findsOneWidget,
     );
     expect(find.text(i18n.tr('install_permission_title')), findsOneWidget);
@@ -697,7 +696,7 @@ void main() {
     await tester.pumpAndSettle();
 
     _expectIconCentersAligned(tester, const [
-      Icons.notifications_rounded,
+      Icons.battery_saver_rounded,
       Icons.system_update_alt_rounded,
       Icons.update_rounded,
     ]);

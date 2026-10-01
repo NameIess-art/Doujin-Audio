@@ -133,21 +133,6 @@ class NativePlaybackForegroundCoordinatorTest {
     }
 
     @Test
-    fun `notification suppression does not bypass the idle shutdown grace`() {
-        val environment = FakeForegroundEnvironment()
-        val host = FakeForegroundHost(
-            hasPlaybackToKeepAlive = false,
-            foregroundSuppressed = true
-        )
-        val coordinator = coordinator(host, environment)
-
-        coordinator.sync()
-
-        assertEquals(listOf(10_000L), environment.delays())
-        assertEquals(1, host.idleGraceBegans)
-    }
-
-    @Test
     fun `overdue grace is force closed when its timer slept through the deadline`() {
         val environment = FakeForegroundEnvironment()
         val host = FakeForegroundHost(
@@ -166,7 +151,7 @@ class NativePlaybackForegroundCoordinatorTest {
 
         assertTrue(closed)
         assertEquals(1, host.graceExpiries)
-        assertEquals(listOf(true), host.stopRequests)
+        assertEquals(1, host.foregroundStops)
         assertFalse(coordinator.isStarted)
         // The stale runnable must not fire a second time later.
         assertTrue(environment.tasks.isEmpty())
@@ -213,8 +198,38 @@ class NativePlaybackForegroundCoordinatorTest {
         environment.runFirst(10_000L)
 
         assertEquals(1, host.graceExpiries)
-        assertEquals(listOf(true), host.stopRequests)
+        assertEquals(1, host.foregroundStops)
         assertFalse(coordinator.isStarted)
+    }
+
+    @Test
+    fun `idle grace removes the minimal notification while paused sessions remain`() {
+        val environment = FakeForegroundEnvironment()
+        val host = FakeForegroundHost()
+        val coordinator = coordinator(host, environment)
+        coordinator.startOrUpdate()
+
+        host.hasPlaybackToKeepAlive = false
+        coordinator.sync()
+        environment.runFirst(10_000L)
+
+        assertTrue(host.hasSessions)
+        assertEquals(1, host.foregroundStops)
+        assertFalse(coordinator.isStarted)
+    }
+
+    @Test
+    fun `active sync keeps one minimal notification until playback stops`() {
+        val environment = FakeForegroundEnvironment()
+        val host = FakeForegroundHost()
+        val coordinator = coordinator(host, environment)
+
+        repeat(3) { coordinator.sync() }
+        coordinator.triggerWatchdog()
+
+        assertEquals(1, host.playbackStarts)
+        assertTrue(coordinator.isStarted)
+        assertEquals(0, host.foregroundStops)
     }
 
     /**
@@ -238,7 +253,7 @@ class NativePlaybackForegroundCoordinatorTest {
 
         assertTrue(coordinator.expireGraceIfOverdue())
         assertEquals(0, host.graceExpiries)
-        assertTrue(host.stopRequests.isEmpty())
+        assertEquals(0, host.foregroundStops)
         assertTrue(coordinator.isStarted)
     }
 
@@ -274,7 +289,7 @@ class NativePlaybackForegroundCoordinatorTest {
     }
 
     @Test
-    fun `watchdog does not fight a user dismiss when notification state is unknown`() {
+    fun `watchdog does not rebuild when the platform notification query failed`() {
         val environment = FakeForegroundEnvironment()
         val host = FakeForegroundHost(notificationPosted = null)
         val coordinator = coordinator(host, environment)
@@ -313,23 +328,23 @@ class NativePlaybackForegroundCoordinatorTest {
 
         host.hasSessions = false
         assertTrue(coordinator.onTaskRemoved())
-        assertEquals(listOf(true), host.stopRequests)
+        assertEquals(1, host.foregroundStops)
     }
 
     @Test
-    fun `stop honours unified notification retention and shutdown cancels tasks`() {
+    fun `stop removes the minimal notification and shutdown cancels tasks`() {
         val environment = FakeForegroundEnvironment()
-        val host = FakeForegroundHost(removeForegroundNotification = false)
+        val host = FakeForegroundHost()
         val coordinator = coordinator(host, environment)
         coordinator.startOrUpdate()
         coordinator.ensureWatchdog()
         host.hasPlaybackToKeepAlive = false
         coordinator.sync()
 
-        coordinator.stop(reason = "test", removeNotification = true)
+        coordinator.stop(reason = "test")
         coordinator.shutdown()
 
-        assertEquals(listOf(false), host.stopRequests)
+        assertEquals(2, host.foregroundStops)
         assertTrue(environment.tasks.isEmpty())
         assertFalse(coordinator.isStarted)
     }
@@ -372,9 +387,7 @@ private class FakeForegroundHost(
     override var hasPlaybackToKeepAlive: Boolean = true,
     override var hasSessions: Boolean = true,
     override var playbackSuspended: Boolean = false,
-    override var foregroundSuppressed: Boolean = false,
-    var signature: String? = "session|playing",
-    var removeForegroundNotification: Boolean = true,
+    var signature: String? = "playback",
     var notificationPosted: Boolean? = true,
     var failPlaybackStart: Boolean = false
 ) : NativePlaybackForegroundHost {
@@ -384,7 +397,7 @@ private class FakeForegroundHost(
     var watchdogRefreshes = 0
     var playbackStarts = 0
     var bootstrapStarts = 0
-    val stopRequests = mutableListOf<Boolean>()
+    var foregroundStops = 0
 
     override fun playbackSignature(): String? = signature
 
@@ -415,11 +428,8 @@ private class FakeForegroundHost(
         bootstrapStarts += 1
     }
 
-    override fun shouldRemoveForegroundNotification(removeNotification: Boolean): Boolean =
-        removeNotification && removeForegroundNotification
-
-    override fun stopForeground(wasStarted: Boolean, removeNotification: Boolean) {
-        stopRequests += removeNotification
+    override fun stopForeground(wasStarted: Boolean) {
+        foregroundStops += 1
     }
 
     override fun logInfo(message: String) = Unit

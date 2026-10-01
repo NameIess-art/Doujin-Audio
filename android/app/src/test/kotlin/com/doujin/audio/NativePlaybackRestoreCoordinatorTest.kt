@@ -127,68 +127,6 @@ class NativePlaybackRestoreCoordinatorTest {
     }
 
     @Test
-    fun `notification restore uses provided snapshot and reports restored session`() {
-        val environment = FakeRestoreEnvironment()
-        val restored = mutableListOf<String>()
-        val coordinator = coordinator(
-            environment,
-            onNotificationSessionRestored = restored::add
-        )
-        coordinator.restoreSessionForNotification(
-            sessionId = "notification",
-            loadedSessions = listOf(storedSession("other"), storedSession("notification")),
-            sessionExists = false
-        )
-        assertEquals(listOf("notification"), restored)
-        assertEquals(0, environment.loadCount)
-    }
-
-    @Test
-    fun `removal during notification disk load cannot recreate the session`() {
-        val environment = FakeRestoreEnvironment().apply {
-            sessions = listOf(storedSession("removed"))
-        }
-        val restored = mutableListOf<String>()
-        val coordinator = coordinator(environment, onNotificationSessionRestored = restored::add)
-        coordinator.loadStoredSessions("removed") { stored ->
-            if (stored != null) coordinator.restoreSessionForNotification("removed", stored, false)
-        }
-        environment.runBackground()
-        coordinator.excludeSessionFromRestartRestore("removed")
-        environment.runMain()
-        assertTrue(restored.isEmpty())
-    }
-
-    @Test
-    fun `live session created during notification disk load cancels the old action`() {
-        val environment = FakeRestoreEnvironment().apply {
-            sessions = listOf(storedSession("live"))
-        }
-        val sessions = mutableSetOf<String>()
-        val coordinator = coordinator(environment, sessionExists = sessions::contains)
-        var accepted: Boolean? = null
-        coordinator.loadStoredSessions("live") { accepted = it != null }
-        environment.runBackground()
-        sessions += "live"
-        environment.runMain()
-        assertEquals(false, accepted)
-    }
-
-    @Test
-    fun `newer notification request supersedes only the same session`() {
-        val environment = FakeRestoreEnvironment().apply {
-            sessions = listOf(storedSession("a"), storedSession("b"))
-        }
-        val coordinator = coordinator(environment)
-        val accepted = mutableListOf<String>()
-        coordinator.loadStoredSessions("a") { if (it != null) accepted += "old-a" }
-        coordinator.loadStoredSessions("b") { if (it != null) accepted += "b" }
-        coordinator.loadStoredSessions("a") { if (it != null) accepted += "new-a" }
-        environment.runAll()
-        assertEquals(listOf("b", "new-a"), accepted)
-    }
-
-    @Test
     fun `restore after service restart restores snapshot without autoplay`() {
         val environment = FakeRestoreEnvironment().apply {
             sessions = listOf(storedSession("player"))
@@ -340,25 +278,7 @@ class NativePlaybackRestoreCoordinatorTest {
     }
 
     @Test
-    fun `notification load and queue preparation failures end the pending action`() {
-        for (failDuringLoad in listOf(true, false)) {
-            val environment = FakeRestoreEnvironment().apply {
-                sessions = listOf(storedSession("session"))
-                if (failDuringLoad) loadFailure = IllegalStateException("Disk failure")
-            }
-            var completions = 0
-            val coordinator = coordinator(environment, prepareQueues = { error("Invalid queue") })
-            coordinator.loadStoredSessions("session") {
-                assertEquals(null, it)
-                completions += 1
-            }
-            environment.runAll()
-            assertEquals(1, completions)
-        }
-    }
-
-    @Test
-    fun `shutdown settles queued timer and notification restoration once`() {
+    fun `shutdown settles queued timer restoration once`() {
         val environment = FakeRestoreEnvironment().apply { sessions = listOf(storedSession("session")) }
         val coordinator = coordinator(environment)
         val completed = mutableListOf<String>()
@@ -366,13 +286,9 @@ class NativePlaybackRestoreCoordinatorTest {
             assertEquals(false, it)
             completed += "timer"
         }
-        coordinator.loadStoredSessions("notification") {
-            assertEquals(null, it)
-            completed += "notification"
-        }
         coordinator.shutdown()
         environment.runAll()
-        assertEquals(listOf("timer", "notification"), completed)
+        assertEquals(listOf("timer"), completed)
     }
 
     private fun coordinator(
@@ -390,7 +306,6 @@ class NativePlaybackRestoreCoordinatorTest {
         sessionExists: (String) -> Boolean = { false },
         resetRestoreState: () -> Unit = {},
         onMissingSessionsRestored: (List<String>) -> Unit = {},
-        onNotificationSessionRestored: (String) -> Unit = {},
         startBootstrap: () -> NativePlaybackForegroundStartResult = {
             NativePlaybackForegroundStartResult.STARTED
         },
@@ -408,7 +323,6 @@ class NativePlaybackRestoreCoordinatorTest {
         hasPendingCommandDelivery = hasPendingCommandDelivery,
         stopIdleService = stopIdleService,
         onMissingSessionsRestored = onMissingSessionsRestored,
-        onNotificationSessionRestored = onNotificationSessionRestored,
         logInfo = {},
         prepareSessionsOnBackground = prepareQueues,
         discardPreparedSessions = discardQueues

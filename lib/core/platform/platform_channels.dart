@@ -65,10 +65,7 @@ abstract final class NativePlaybackMethod {
   static const String removeSession = 'removeSession';
   static const String pauseAll = 'pauseAll';
   static const String clearAll = 'clearAll';
-  static const String setForegroundEnabled = 'setForegroundEnabled';
   static const String setPlaybackBehavior = 'setPlaybackBehavior';
-  static const String dismissNotifications = 'dismissNotifications';
-  static const String undismissNotifications = 'undismissNotifications';
   static const String snapshot = 'snapshot';
 }
 
@@ -161,14 +158,6 @@ abstract final class NotificationsMethod {
       'syncUnifiedPlaybackNotifications';
   static const String clearUnifiedPlaybackNotifications =
       'clearUnifiedPlaybackNotifications';
-  static const String areNotificationsEnabled = 'areNotificationsEnabled';
-  static const String openNotificationSettings = 'openNotificationSettings';
-  static const String consumePendingNotificationSessionId =
-      'consumePendingNotificationSessionId';
-
-  /// Sent from Kotlin to Dart (not invoked from Dart).
-  static const String openSessionFromNotification =
-      'openSessionFromNotification';
 }
 
 // ---------------------------------------------------------------------------

@@ -8,7 +8,6 @@ extension AppDatabaseSessions on AppDatabase {
         s.id,
         s.track_path,
         s.is_temporary,
-        s.retain_in_now_playing,
         s.loop_mode,
         s.created_at_ms,
         s.updated_at_ms,

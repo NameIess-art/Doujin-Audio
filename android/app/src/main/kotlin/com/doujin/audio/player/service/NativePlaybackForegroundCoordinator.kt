@@ -16,7 +16,6 @@ internal interface NativePlaybackForegroundHost {
     val hasPlaybackToKeepAlive: Boolean
     val hasSessions: Boolean
     val playbackSuspended: Boolean
-    val foregroundSuppressed: Boolean
 
     fun playbackSignature(): String?
     fun onActiveSync()
@@ -35,16 +34,13 @@ internal interface NativePlaybackForegroundHost {
      * rebuilding it on every watchdog tick.
      *
      * Only an explicit `false` triggers a rebuild. `null` means "not
-     * answerable" - notifications were dismissed by the user, or the platform
-     * query failed - and must NOT force a re-post, otherwise the watchdog
-     * fights the user's dismiss every interval.
+     * answerable" when the platform query failed and must not force a re-post.
      */
     fun isForegroundNotificationPosted(): Boolean?
     fun onWatchdog()
     fun startPlaybackForeground()
     fun startBootstrapForeground()
-    fun shouldRemoveForegroundNotification(removeNotification: Boolean): Boolean
-    fun stopForeground(wasStarted: Boolean, removeNotification: Boolean)
+    fun stopForeground(wasStarted: Boolean)
     fun logInfo(message: String)
     fun logWarn(message: String, error: Throwable)
 }
@@ -97,10 +93,7 @@ internal class NativePlaybackForegroundCoordinator(
             host.logInfo("foreground_stop_grace_expired executing_deferred_stop")
             host.onGraceExpired()
             stopWatchdog()
-            stop(
-                reason = "grace_expired_no_active_playback",
-                removeNotification = !host.hasSessions
-            )
+            stop(reason = "grace_expired_no_active_playback")
         } else {
             host.logInfo("foreground_stop_grace_expired playback_resumed_skip")
         }
@@ -161,9 +154,6 @@ internal class NativePlaybackForegroundCoordinator(
         if (host.playbackSuspended) {
             host.logInfo("start_foreground_skip playback_suspended forceRefresh=$forceRefresh")
             return NativePlaybackForegroundStartResult.SKIPPED
-        }
-        if (host.foregroundSuppressed) {
-            host.logInfo("start_foreground_minimal foreground_suppressed forceRefresh=$forceRefresh")
         }
         val nextSignature = host.playbackSignature() ?: run {
             host.logInfo("start_foreground_skip no_session")
@@ -255,19 +245,9 @@ internal class NativePlaybackForegroundCoordinator(
         watchdogScheduled = false
     }
 
-    fun stop(reason: String, removeNotification: Boolean = true) {
-        val shouldRemoveNotification =
-            host.shouldRemoveForegroundNotification(removeNotification)
-        host.logInfo(
-            "stop_foreground reason=$reason removeNotification=$removeNotification " +
-                "shouldRemoveNotification=$shouldRemoveNotification wasStarted=$isStarted"
-        )
-        if (isStarted || shouldRemoveNotification) {
-            host.stopForeground(
-                wasStarted = isStarted,
-                removeNotification = shouldRemoveNotification
-            )
-        }
+    fun stop(reason: String) {
+        host.logInfo("stop_foreground reason=$reason wasStarted=$isStarted")
+        host.stopForeground(wasStarted = isStarted)
         isStarted = false
         signature = null
     }
@@ -285,7 +265,7 @@ internal class NativePlaybackForegroundCoordinator(
             else -> {
                 stopWatchdog()
                 cancelGrace()
-                stop(reason = "task_removed_no_sessions", removeNotification = true)
+                stop(reason = "task_removed_no_sessions")
                 true
             }
         }
@@ -296,7 +276,7 @@ internal class NativePlaybackForegroundCoordinator(
         pendingPlaybackStarts.clear()
         cancelGrace()
         stopWatchdog()
-        stop(reason = "on_destroy", removeNotification = true)
+        stop(reason = "on_destroy")
     }
 
     private companion object {

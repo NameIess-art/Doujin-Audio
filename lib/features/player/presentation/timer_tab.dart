@@ -182,12 +182,6 @@ class _TimerTabState extends ConsumerState<TimerTab>
     );
   }
 
-  Future<bool> _areNotificationsEnabled() async {
-    return _permissionStatusService.isGranted(
-      PermissionCapability.notifications,
-    );
-  }
-
   Future<void> _openExactAlarmSettings() async {
     await _permissionStatusService.openSettings(
       PermissionCapability.exactAlarms,
@@ -200,12 +194,6 @@ class _TimerTabState extends ConsumerState<TimerTab>
     );
   }
 
-  Future<void> _openNotificationSettings() async {
-    await _permissionStatusService.openSettings(
-      PermissionCapability.notifications,
-    );
-  }
-
   Future<_TimerReliabilityStatus> _loadReliabilityStatus() async {
     return ref
         .read(uiOperationServiceProvider)
@@ -214,14 +202,12 @@ class _TimerTabState extends ConsumerState<TimerTab>
           labelKey: 'timer_reliability_checking',
           task: (_) async {
             final results = await Future.wait<bool>([
-              _areNotificationsEnabled(),
               _canScheduleExactAlarms(),
               _isIgnoringBatteryOptimizations(),
             ]);
             return _TimerReliabilityStatus(
-              notificationsEnabled: results[0],
-              exactAlarmsEnabled: results[1],
-              backgroundRunAllowed: results[2],
+              exactAlarmsEnabled: results[0],
+              backgroundRunAllowed: results[1],
             );
           },
         );
@@ -262,15 +248,12 @@ class _TimerTabState extends ConsumerState<TimerTab>
 
 class _TimerReliabilityStatus {
   const _TimerReliabilityStatus({
-    required this.notificationsEnabled,
     required this.exactAlarmsEnabled,
     required this.backgroundRunAllowed,
   });
 
-  final bool notificationsEnabled;
   final bool exactAlarmsEnabled;
   final bool backgroundRunAllowed;
 
-  bool get isStronglyReliable =>
-      notificationsEnabled && exactAlarmsEnabled && backgroundRunAllowed;
+  bool get isStronglyReliable => exactAlarmsEnabled && backgroundRunAllowed;
 }

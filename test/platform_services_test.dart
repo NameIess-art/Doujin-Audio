@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/services.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/core/platform/notifications_platform_service.dart';
 import 'package:doujin_audio/core/platform/platform_channels.dart';
@@ -160,24 +161,25 @@ void main() {
       channel.setMethodCallHandler(null);
     });
 
-    test('returns non-Android defaults without invoking the channel', () async {
-      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(channel, (call) async {
-            calls.add(call);
-            return null;
-          });
-      final service = NotificationsPlatformService(
-        channel: channel,
-        isAndroidOverride: false,
-      );
+    test(
+      'Android never invokes the removed playback notification channel',
+      () async {
+        debugDefaultTargetPlatformOverride = TargetPlatform.android;
+        addTearDown(() => debugDefaultTargetPlatformOverride = null);
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, (call) async {
+              calls.add(call);
+              return null;
+            });
+        final service = NotificationsPlatformService(channel: channel);
 
-      expect(await service.areNotificationsEnabled(), isTrue);
-      expect(await service.openNotificationSettings(), isFalse);
-      expect(await service.consumePendingNotificationSessionId(), isNull);
-      await service.syncUnifiedPlaybackNotifications(const <String, dynamic>{});
-      await service.clearUnifiedPlaybackNotifications();
-      expect(calls, isEmpty);
-    });
+        await service.syncUnifiedPlaybackNotifications(
+          const <String, dynamic>{},
+        );
+        await service.clearUnifiedPlaybackNotifications();
+        expect(calls, isEmpty);
+      },
+    );
 
     test('sync and clear call the typed methods', () async {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
@@ -187,7 +189,7 @@ void main() {
           });
       final service = NotificationsPlatformService(
         channel: channel,
-        isAndroidOverride: true,
+        isWindowsOverride: true,
       );
 
       await service.syncUnifiedPlaybackNotifications(<String, dynamic>{
@@ -202,39 +204,6 @@ void main() {
       expect(calls.first.arguments, containsPair('items', const <Object?>[]));
     });
 
-    test(
-      'queries notification state and consumes pending session id',
-      () async {
-        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-            .setMockMethodCallHandler(channel, (call) async {
-              calls.add(call);
-              return _success(switch (call.method) {
-                NotificationsMethod.areNotificationsEnabled => true,
-                NotificationsMethod.openNotificationSettings => true,
-                NotificationsMethod.consumePendingNotificationSessionId =>
-                  'session-3',
-                _ => null,
-              });
-            });
-        final service = NotificationsPlatformService(
-          channel: channel,
-          isAndroidOverride: true,
-        );
-
-        expect(await service.areNotificationsEnabled(), isTrue);
-        expect(await service.openNotificationSettings(), isTrue);
-        expect(
-          await service.consumePendingNotificationSessionId(),
-          'session-3',
-        );
-        expect(calls.map((call) => call.method), [
-          NotificationsMethod.areNotificationsEnabled,
-          NotificationsMethod.openNotificationSettings,
-          NotificationsMethod.consumePendingNotificationSessionId,
-        ]);
-      },
-    );
-
     test('timeout and exceptions do not throw', () async {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(channel, (call) {
@@ -242,7 +211,7 @@ void main() {
           });
       final service = NotificationsPlatformService(
         channel: channel,
-        isAndroidOverride: true,
+        isWindowsOverride: true,
         timeout: const Duration(milliseconds: 1),
       );
 
@@ -254,48 +223,7 @@ void main() {
           });
       await service.clearUnifiedPlaybackNotifications();
     });
-
-    test('open-session handler only forwards matching session calls', () async {
-      final service = NotificationsPlatformService(
-        channel: channel,
-        isAndroidOverride: true,
-      );
-      final openedSessions = <String>[];
-      service.setOpenSessionHandler(openedSessions.add);
-
-      await _sendPlatformMethodCall(
-        channel,
-        const MethodCall('ignored', <String, Object?>{'sessionId': 'x'}),
-      );
-      await _sendPlatformMethodCall(
-        channel,
-        const MethodCall(
-          NotificationsMethod.openSessionFromNotification,
-          <String, Object?>{'sessionId': 'session-1'},
-        ),
-      );
-      await _sendPlatformMethodCall(
-        channel,
-        const MethodCall(
-          NotificationsMethod.openSessionFromNotification,
-          'session-2',
-        ),
-      );
-
-      expect(openedSessions, ['session-1', 'session-2']);
-    });
   });
-}
-
-Future<void> _sendPlatformMethodCall(MethodChannel channel, MethodCall call) {
-  final completer = Completer<void>();
-  TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-      .handlePlatformMessage(
-        channel.name,
-        const StandardMethodCodec().encodeMethodCall(call),
-        (ByteData? data) => completer.complete(),
-      );
-  return completer.future;
 }
 
 Map<String, Object?> _success(Object? value) => <String, Object?>{

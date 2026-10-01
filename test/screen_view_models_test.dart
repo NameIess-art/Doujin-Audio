@@ -369,7 +369,7 @@ void main() {
     );
   });
 
-  test('overlay catalog keeps only playing or retained sessions', () {
+  test('overlay catalog removes ordinary sessions when paused', () {
     final paused = session(id: 'paused', path: '/tracks/a.mp3');
     final playing = session(
       id: 'playing',
@@ -384,13 +384,77 @@ void main() {
       'playing',
     ]);
 
-    paused.retainInNowPlaying = true;
-    service.publishSession(paused);
-    expect(service.catalog.state.nowPlayingSessions.map((s) => s.id), [
-      'paused',
-      'playing',
-    ]);
+    playing.confirmPaused();
+    service.publishSession(playing);
+    expect(service.catalog.state.nowPlayingSessions, isEmpty);
   });
+
+  testWidgets(
+    'overlay distinguishes idle startup from pause, completion and failure',
+    (tester) async {
+      final value = session(id: 'idle', path: '/tracks/idle.mp3')
+        ..setOptimisticState(processingState: ProcessingState.idle);
+      addTearDown(value.shutdown);
+      final service = serviceFor([value]);
+      List<String> overlayIds() {
+        service.publishSession(value);
+        return service.catalog.state.nowPlayingSessions
+            .map((s) => s.id)
+            .toList();
+      }
+
+      expect(overlayIds(), isEmpty);
+
+      value.beginTransportCommand(commandId: 1, playing: true);
+      expect(value.isPlaybackLoading, false);
+      expect(overlayIds(), ['idle']);
+
+      value.beginTransportCommand(commandId: 2, playing: false);
+      expect(overlayIds(), isEmpty);
+      value.confirmPaused();
+      expect(overlayIds(), isEmpty);
+
+      value.setOptimisticState(
+        playing: true,
+        processingState: ProcessingState.completed,
+      );
+      expect(value.playbackRequested, true);
+      expect(overlayIds(), isEmpty);
+      value.beginCompletionAdvance(
+        commandGeneration: value.playbackCommandGeneration,
+      );
+      expect(overlayIds(), ['idle']);
+      value.finishCompletionAdvance(
+        commandGeneration: value.playbackCommandGeneration,
+        preparationGeneration: value.loadGeneration,
+      );
+      expect(overlayIds(), isEmpty);
+
+      value.applyNativeSnapshot(
+        NativePlaybackSnapshot(
+          sessionId: value.id,
+          playing: false,
+          playWhenReady: true,
+          processingState: 'idle',
+          position: Duration.zero,
+          bufferedPosition: Duration.zero,
+          volume: 1,
+          boostGain: 1,
+          channelSwapEnabled: false,
+          transportCommandId: 3,
+          error: 'Source failed',
+        ),
+      );
+      expect(value.playbackRequested, true);
+      expect(overlayIds(), isEmpty);
+
+      value.beginTransportCommand(commandId: 4, playing: true);
+      expect(overlayIds(), ['idle']);
+      value.failTransportCommand(4);
+      value.confirmPaused();
+      expect(overlayIds(), isEmpty);
+    },
+  );
 
   test('overlay session list ignores progress-only snapshot changes', () {
     final value = session(id: 'overlay', path: '/tracks/overlay.mp3');

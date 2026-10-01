@@ -16,8 +16,6 @@ import '../state/subtitle_settings_provider.dart';
 import '../../core/persistence/app_preferences.dart';
 import '../../features/settings/application/permission_status_service.dart';
 import '../../features/settings/application/settings_state.dart';
-import '../../core/logging/app_log_service.dart';
-import '../../features/player/application/notification_facade.dart';
 import '../../features/player/application/playback_session_snapshot.dart';
 import '../../features/player/domain/playback_mode.dart';
 import '../../features/player/application/subtitle_overlay_controller.dart';
@@ -47,7 +45,7 @@ import 'app_dock_glass_panel.dart';
 export 'main_destination.dart' show MainDestinationType;
 export 'app_dock_glass_panel.dart';
 
-part 'main_screen_notifications.dart';
+part 'main_screen_permissions.dart';
 part 'main_screen_layout.dart';
 part 'main_screen_widgets.dart';
 
@@ -184,10 +182,6 @@ class _MainScreenState extends ConsumerState<MainScreen>
     });
   }
 
-  bool _notificationPermissionCheckDone = false;
-  bool _notificationPermissionCheckQueued = false;
-  bool _notificationSettingsDialogVisible = false;
-  bool _notificationSettingsOpened = false;
   bool _backgroundPlaybackPromptShownThisLaunch = false;
   bool _backgroundPlaybackPromptQueued = false;
   bool _autoUpdateCheckQueued = false;
@@ -195,15 +189,8 @@ class _MainScreenState extends ConsumerState<MainScreen>
       PermissionActionController();
   late final AppUpdateFlow _updateFlow;
   late final SubtitleOverlayController _subtitleOverlay;
-  late final NotificationFacade _notificationFacade;
 
   bool _isDataReady = false;
-  Timer? _notificationSessionNavigationTimer;
-  String? _pendingNotificationSessionId;
-  DateTime? _pendingNotificationSessionStartedAt;
-  int _pendingNotificationSessionRetryCount = 0;
-  String? _lastOpenedNotificationSessionId;
-  DateTime? _lastOpenedNotificationAt;
   Timer? _metricsRecoveryTimer;
   Size? _lastRecoveredViewSize;
   FlutterView? _observedView;
@@ -230,7 +217,6 @@ class _MainScreenState extends ConsumerState<MainScreen>
     ref.listenManual<SubtitleSettingsState>(subtitleSettingsProvider, (_, _) {
       _subtitleOverlay.requestRuntimeSync();
     });
-    _notificationFacade = ref.read(notificationFacadeProvider);
     _updateFlow = AppUpdateFlow(
       permissionController: _permissionActionController,
       languageProvider: ref.read(appLanguageProviderInstanceProvider),
@@ -240,12 +226,6 @@ class _MainScreenState extends ConsumerState<MainScreen>
     ref.listenManual<bool>(
       mainOverlayUiProvider.select((state) => state.startupReady),
       (_, startupReady) => _handleStartupReadyChanged(startupReady),
-      fireImmediately: true,
-    );
-    ref.listenManual<int>(
-      mainOverlayUiProvider.select((state) => state.activeSessionCount),
-      (_, activeSessionCount) =>
-          _handleActiveSessionCountChanged(activeSessionCount),
       fireImmediately: true,
     );
     ref.listenManual<bool>(
@@ -295,15 +275,11 @@ class _MainScreenState extends ConsumerState<MainScreen>
       }
     });
     WidgetsBinding.instance.addObserver(this);
-    _notificationFacade.setOpenSessionHandler(
-      _queueNotificationSessionNavigation,
-    );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _rememberCurrentViewMetrics();
       final warmup = ref.read(audioUiWarmupCoordinatorProvider);
       _subtitleOverlay.requestRuntimeSync();
-      unawaited(_consumePendingNotificationSession());
       Future.delayed(const Duration(milliseconds: 750), () {
         if (!mounted) return;
         warmup.schedule(
@@ -351,18 +327,6 @@ class _MainScreenState extends ConsumerState<MainScreen>
       setState(() => _isDataReady = true);
     }
     _queueAutoUpdateCheckIfReady();
-  }
-
-  void _handleActiveSessionCountChanged(int activeSessionCount) {
-    if (!mounted) return;
-    if (activeSessionCount > 0 &&
-        !_notificationPermissionCheckDone &&
-        !_notificationPermissionCheckQueued) {
-      _notificationPermissionCheckQueued = true;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _ensureNotificationPermission();
-      });
-    }
   }
 
   void _handlePlayingSessionChanged(bool hasPlayingSession) {
@@ -514,14 +478,8 @@ class _MainScreenState extends ConsumerState<MainScreen>
     _sleepModeAutoEntryTimer?.cancel();
     _sleepModeAutoEntryTimer = null;
     _metricsRecoveryTimer?.cancel();
-    _notificationSessionNavigationTimer?.cancel();
-    _notificationSessionNavigationTimer = null;
-    _pendingNotificationSessionId = null;
-    _pendingNotificationSessionStartedAt = null;
-    _pendingNotificationSessionRetryCount = 0;
     unawaited(_subtitleOverlay.detachRuntime());
     _permissionActionController.dispose();
-    _notificationFacade.setOpenSessionHandler(null);
     _activePageIndex.dispose();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
@@ -658,7 +616,6 @@ class _MainScreenState extends ConsumerState<MainScreen>
     } else {
       unawaited(_subtitleOverlay.stopRuntime(immediate: true));
     }
-    unawaited(_consumePendingNotificationSession());
     unawaited(_permissionActionController.handleAppResumed());
     unawaited(
       ref.read(audioRuntimeCoordinatorProvider).resumeForeground().then((_) {
@@ -670,11 +627,6 @@ class _MainScreenState extends ConsumerState<MainScreen>
         );
       }),
     );
-    if (!_notificationSettingsOpened) {
-      return;
-    }
-    _notificationSettingsOpened = false;
-    _handleNotificationSettingsReturn();
   }
 
   void _switchPage(int index) {
@@ -683,6 +635,9 @@ class _MainScreenState extends ConsumerState<MainScreen>
       return;
     }
 
+    unawaited(
+      AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection),
+    );
     ref
         .read(mainScreenControllerProvider)
         .requestStopScroll(_activePageIndex.value);

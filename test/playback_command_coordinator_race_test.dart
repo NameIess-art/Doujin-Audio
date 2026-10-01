@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/foundation.dart';
 import 'support/runtime_test_models.dart';
 import 'package:doujin_audio/core/persistence/app_database.dart';
 import 'support/test_persistence_repository.dart';
@@ -1020,7 +1021,7 @@ void main() {
     );
 
     testWidgets(
-      'defers playback notification sync while scrolling interaction is active',
+      'defers Windows media control sync while scrolling interaction is active',
       (tester) async {
         var notificationSyncCalls = 0;
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
@@ -1041,7 +1042,7 @@ void main() {
           notificationService: PlaybackNotificationService(
             notificationsPlatformService: NotificationsPlatformService(
               channel: notificationsChannel,
-              isAndroidOverride: true,
+              isWindowsOverride: true,
               timeout: const Duration(milliseconds: 50),
             ),
           ),
@@ -1076,6 +1077,7 @@ void main() {
         expect(notificationSyncCalls, 1);
         await tester.runAsync(runtimeGraph.runtime.dispose);
       },
+      variant: TargetPlatformVariant.only(TargetPlatform.windows),
     );
 
     test('sessionById returns null for unknown id', () {

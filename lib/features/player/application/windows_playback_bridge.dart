@@ -900,16 +900,6 @@ class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
     if (_pauseOnDisconnect) await pauseAll();
   }
 
-  // Desktop lifetime and system media UI are owned by the Windows host.
-  @override
-  Future<NativeResult<void>> setForegroundEnabled(bool enabled) async =>
-      const NativeSuccess();
-  @override
-  Future<NativeResult<void>> dismissNotifications() async =>
-      const NativeSuccess();
-  @override
-  Future<NativeResult<void>> undismissNotifications() async =>
-      const NativeSuccess();
   @override
   Future<void> dispose() async {
     if (_disposed) return;

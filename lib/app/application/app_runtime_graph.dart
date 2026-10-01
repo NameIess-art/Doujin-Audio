@@ -186,7 +186,6 @@ AppRuntimeGraph createAppRuntimeGraph({
       library: library,
       playback: playback,
       notifications: notifications,
-      settings: settings,
       playbackCommands: playbackCommands,
       keepAlive: keepAlive,
       subtitles: subtitles,

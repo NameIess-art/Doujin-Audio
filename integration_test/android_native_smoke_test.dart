@@ -12,6 +12,7 @@ import 'package:doujin_audio/app/presentation/main_screen.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
 import 'package:doujin_audio/features/player/application/native_playback_bridge.dart';
 import 'package:doujin_audio/features/player/application/playback_facade.dart';
+import 'package:doujin_audio/features/player/application/playback_session_snapshot.dart';
 import 'package:doujin_audio/features/player/domain/playback_mode.dart';
 import 'package:doujin_audio/main.dart' as app;
 
@@ -85,14 +86,17 @@ void main() {
               .every((s) => !s.effectivePlaying),
           'native playback did not pause',
         );
-        var nativeSession = await _nativeSession(playback, sessionId);
-        expect(nativeSession.playWhenReady, isFalse);
+        // Paused sessions retain their state in Dart and release the native
+        // runtime, so a service snapshot no longer contains their definition.
+        var retainedSession = _retainedSession(playback, sessionId);
+        expect(retainedSession.playbackRequested, isFalse);
+        expect(retainedSession.loadedPath, isNull);
 
         const seekPosition = Duration(seconds: 2);
         await playback.seekSession(sessionId, seekPosition);
-        nativeSession = await _nativeSession(playback, sessionId);
+        retainedSession = _retainedSession(playback, sessionId);
         expect(
-          nativeSession.position.inMilliseconds,
+          retainedSession.position.inMilliseconds,
           inInclusiveRange(1500, 2500),
         );
 
@@ -103,6 +107,10 @@ void main() {
               .where((s) => s.id == sessionId)
               .any((s) => s.effectivePlaying),
           'native playback did not resume after seek',
+        );
+        expect(
+          (await _nativeSession(playback, sessionId)).position.inMilliseconds,
+          greaterThanOrEqualTo(1500),
         );
         await _waitFor(
           tester,
@@ -115,7 +123,7 @@ void main() {
         final beforeBackground = await _nativeSession(playback, sessionId);
         _transitionToPaused(tester);
         await Future<void>.delayed(const Duration(milliseconds: 500));
-        nativeSession = await _nativeSession(playback, sessionId);
+        var nativeSession = await _nativeSession(playback, sessionId);
         expect(nativeSession.playWhenReady, isTrue);
         expect(nativeSession.position, greaterThan(beforeBackground.position));
 
@@ -162,13 +170,12 @@ void main() {
         await playback.toggleSessionPlayPause(sessionId);
         await _waitFor(
           tester,
-          () async =>
-              !(await _nativeSession(playback, sessionId)).playWhenReady,
+          () => !_retainedSession(playback, sessionId).playbackRequested,
           'first session did not pause independently',
         );
         await playback.seekSession(sessionId, const Duration(seconds: 5));
         expect(
-          (await _nativeSession(playback, sessionId)).position.inMilliseconds,
+          _retainedSession(playback, sessionId).position.inMilliseconds,
           inInclusiveRange(4500, 5500),
         );
         await _waitFor(tester, () async {
@@ -179,15 +186,17 @@ void main() {
         }, 'pausing and seeking one session disrupted the other');
 
         expect(await playback.pauseAllSessions(), isTrue);
-        await _waitFor(tester, () async {
-          final first = await _nativeSession(playback, sessionId);
-          final second = await _nativeSession(playback, secondSessionId);
-          return !first.playWhenReady && !second.playWhenReady;
+        await _waitFor(tester, () {
+          final first = _retainedSession(playback, sessionId);
+          final second = _retainedSession(playback, secondSessionId);
+          return !first.playbackRequested && !second.playbackRequested;
         }, 'all native sessions did not pause');
         await Future<void>.delayed(const Duration(milliseconds: 800));
         await tester.pump();
-        final firstPaused = await _nativeSession(playback, sessionId);
-        final secondPaused = await _nativeSession(playback, secondSessionId);
+        final firstPaused = _retainedSession(playback, sessionId);
+        final secondPaused = _retainedSession(playback, secondSessionId);
+        expect(firstPaused.loadedPath, isNull);
+        expect(secondPaused.loadedPath, isNull);
         var progressEvents = 0;
         var stateEvents = 0;
         final progressSubscription = playback.nativeRepository.progressUpdates
@@ -212,11 +221,11 @@ void main() {
             reason: 'paused retained sessions emitted periodic state',
           );
           expect(
-            (await _nativeSession(playback, sessionId)).position,
+            _retainedSession(playback, sessionId).position,
             firstPaused.position,
           );
           expect(
-            (await _nativeSession(playback, secondSessionId)).position,
+            _retainedSession(playback, secondSessionId).position,
             secondPaused.position,
           );
           debugPrint(
@@ -299,6 +308,13 @@ Future<void> _waitFor(
   }
   if (!await condition()) throw TestFailure(failureMessage);
 }
+
+PlaybackSessionSnapshot _retainedSession(
+  PlaybackFacade playback,
+  String sessionId,
+) => playback.state.activeSessions.singleWhere(
+  (session) => session.id == sessionId,
+);
 
 Future<NativePlaybackSnapshot> _nativeSession(
   PlaybackFacade playback,

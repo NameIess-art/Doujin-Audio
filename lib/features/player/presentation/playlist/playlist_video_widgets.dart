@@ -786,32 +786,34 @@ class _SessionVideoFullscreenPageState
               top: 0,
               left: 0,
               right: 0,
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Colors.black.withValues(alpha: 0.6),
-                      Colors.transparent,
-                    ],
+              child: AppPageHeaderTransition(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Colors.black.withValues(alpha: 0.6),
+                        Colors.transparent,
+                      ],
+                    ),
                   ),
-                ),
-                child: SafeArea(
-                  minimum: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-                  bottom: false,
-                  child: Align(
-                    alignment: Alignment.topLeft,
-                    child: IconButton(
-                      key: const ValueKey<String>('fullscreen_video_exit'),
-                      tooltip: i18n.tr('exit_fullscreen'),
-                      onPressed: _requestExit,
-                      color: Colors.white,
-                      constraints: const BoxConstraints.tightFor(
-                        width: 48,
-                        height: 48,
+                  child: SafeArea(
+                    minimum: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                    bottom: false,
+                    child: Align(
+                      alignment: Alignment.topLeft,
+                      child: IconButton(
+                        key: const ValueKey<String>('fullscreen_video_exit'),
+                        tooltip: i18n.tr('exit_fullscreen'),
+                        onPressed: _requestExit,
+                        color: Colors.white,
+                        constraints: const BoxConstraints.tightFor(
+                          width: 48,
+                          height: 48,
+                        ),
+                        icon: const Icon(Icons.arrow_back_rounded),
                       ),
-                      icon: const Icon(Icons.arrow_back_rounded),
                     ),
                   ),
                 ),

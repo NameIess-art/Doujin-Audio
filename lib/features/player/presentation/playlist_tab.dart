@@ -196,6 +196,44 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
   @override
   double get defaultHeaderHeight => AppPageHeaderMetrics.expandedToolbarHeight;
 
+  double _minimumExpandedHeaderHeight(BuildContext context) {
+    return defaultHeaderHeight + MediaQuery.paddingOf(context).top;
+  }
+
+  Orientation? _lastOrientation;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final orientation = MediaQuery.maybeOrientationOf(context);
+    if (_lastOrientation != orientation) {
+      _lastOrientation = orientation;
+      headerHeight = _minimumExpandedHeaderHeight(context);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        measureHeader();
+      });
+    } else {
+      final minHeight = _minimumExpandedHeaderHeight(context);
+      if (headerHeight < minHeight) {
+        headerHeight = minHeight;
+      }
+    }
+  }
+
+  @override
+  void measureHeader() {
+    final box = headerKey.currentContext?.findRenderObject() as RenderBox?;
+    if (box != null && mounted) {
+      final h = box.size.height - headerControlsFullHeight;
+      final minHeight = _minimumExpandedHeaderHeight(context);
+      final targetHeight = h < minHeight ? minHeight : h;
+      if (targetHeight > 0 && (targetHeight - headerHeight).abs() > 0.5) {
+        setState(() => headerHeight = targetHeight);
+      }
+    }
+  }
+
   @override
   bool get wantKeepAlive => true;
 
@@ -360,12 +398,15 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
     final isLandscape =
         defaultTargetPlatform == TargetPlatform.windows ||
         MediaQuery.orientationOf(context) == Orientation.landscape;
+    final effectiveHeaderHeight = headerHeight > defaultHeaderHeight
+        ? headerHeight
+        : _minimumExpandedHeaderHeight(context);
     final listCacheExtent = playlistListCacheExtent(
-      headerHeight: headerHeight,
+      headerHeight: effectiveHeaderHeight,
       viewportWidth: MediaQuery.sizeOf(context).width,
       isLandscape: isLandscape,
     );
-    final topPadding = headerHeight + 4.0;
+    final topPadding = effectiveHeaderHeight + 4.0;
     final bottomPadding = listBottomInset + 16.0;
 
     Widget buildSessionItem(BuildContext context, int index) {
@@ -375,15 +416,12 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
       final structure = visibleEntries[index];
       final session = structure.session;
       final isTemporary = session.isTemporary;
-      final endsTemporaryGroup =
-          isTemporary &&
-          index + 1 < visibleEntries.length &&
-          !visibleEntries[index + 1].session.isTemporary;
       final isPinned =
           !isTemporary && pinnedPlaylistSessionIds.contains(session.id);
       final track = paths.sessionTrackForPath(session.id, structure.trackPath);
       final coverPath = library.resolvedPlaybackCoverPathForTrack(track);
-      final child = RepaintBoundary(
+      return RepaintBoundary(
+        key: ValueKey(session.id),
         child: structure.isPlaybackQueue
             ? PlaybackQueueCard(
                 session: session,
@@ -435,11 +473,6 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                           .togglePlaylistSessionPinned(session.id),
                 onOpen: () => _openSessionDetail(context, session.id),
               ),
-      );
-      return Padding(
-        key: ValueKey(session.id),
-        padding: EdgeInsets.only(bottom: endsTemporaryGroup ? AppSpacing.md : 0),
-        child: child,
       );
     }
 

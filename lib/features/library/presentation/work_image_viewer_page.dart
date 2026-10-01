@@ -139,14 +139,14 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage> {
     }
   }
 
-  Widget _buildImage(WorkImageItem image) {
+  Widget _buildImage(WorkImageItem image, ColorScheme cs) {
     final imagePath = image.path.trim();
     final isRemoteImage =
         imagePath.startsWith('http://') || imagePath.startsWith('https://');
-    Widget loadingIndicator(BuildContext _) => const Center(
+    Widget loadingIndicator(BuildContext _) => Center(
       child: SizedBox.square(
         dimension: 32,
-        child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5),
+        child: CircularProgressIndicator(color: cs.primary, strokeWidth: 2.5),
       ),
     );
     if (isRemoteImage) {
@@ -172,17 +172,24 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage> {
   @override
   Widget build(BuildContext context) {
     final i18n = ref.watch(appLanguageProviderInstanceProvider);
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
     if (widget.images.isEmpty) {
       return Scaffold(
-        backgroundColor: Colors.black,
-        appBar: AppBar(
-          backgroundColor: Colors.black,
-          foregroundColor: Colors.white,
+        backgroundColor: cs.surface,
+        appBar: PreferredSize(
+          preferredSize: const Size.fromHeight(kToolbarHeight),
+          child: AppPageHeaderTransition(
+            child: AppBar(
+              backgroundColor: cs.surface,
+              foregroundColor: cs.onSurface,
+            ),
+          ),
         ),
         body: AppPageContentTransition(child: Center(
           child: Text(
             i18n.tr('no_images'),
-            style: const TextStyle(color: Colors.white70),
+            style: TextStyle(color: cs.onSurfaceVariant),
           ),
         )),
       );
@@ -221,7 +228,7 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage> {
         : bottomInset + 20.0;
 
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: cs.surface,
       body: Stack(
         children: [
           Positioned.fill(
@@ -253,7 +260,7 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage> {
                       onZoomChanged: (zoomed) {
                         setState(() => _isCurrentZoomed = zoomed);
                       },
-                      child: _buildImage(img),
+                      child: _buildImage(img, cs),
                     );
                   },
                 ),

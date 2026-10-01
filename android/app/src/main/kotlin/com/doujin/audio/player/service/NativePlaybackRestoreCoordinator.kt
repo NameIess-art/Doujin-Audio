@@ -51,7 +51,6 @@ internal class NativePlaybackRestoreCoordinator(
     private val hasPendingCommandDelivery: () -> Boolean,
     private val stopIdleService: (Int, String) -> Unit,
     private val onMissingSessionsRestored: (List<String>) -> Unit,
-    private val onNotificationSessionRestored: (String) -> Unit,
     private val logInfo: (String) -> Unit,
     private val logWarn: (String, Throwable) -> Unit = { message, error -> logInfo("$message error=$error") },
     private val prepareSessionsOnBackground: (List<StoredNativePlaybackSession>) -> Unit = {},
@@ -149,50 +148,6 @@ internal class NativePlaybackRestoreCoordinator(
                         missingRestoreGenerations[id] == version
                     }
                 })
-            }
-        }
-    }
-
-    fun restoreSessionForNotification(
-        sessionId: String,
-        loadedSessions: List<StoredNativePlaybackSession>,
-        sessionExists: Boolean
-    ) {
-        if (sessionExists) return
-        restoreSessions(
-            loadedSessions.filter { it.sessionId == sessionId },
-            { false },
-            onNotificationSessionRestored
-        )
-    }
-
-    fun loadStoredSessions(
-        sessionId: String,
-        complete: (List<StoredNativePlaybackSession>?) -> Unit
-    ) {
-        val requestedGeneration = generation
-        val sessionGeneration = (missingRestoreGenerations[sessionId] ?: 0L) + 1L
-        missingRestoreGenerations[sessionId] = sessionGeneration
-        val sessionGenerations = missingRestoreGenerations.toMap()
-        val finish = pendingCompletion<List<StoredNativePlaybackSession>?>(null, complete)
-        environment.executeBackground {
-            var stored = emptyList<StoredNativePlaybackSession>()
-            val loaded = runCatching {
-                stored = environment.loadSessions().filter { sessionId.isBlank() || it.sessionId == sessionId }
-                prepareSessionsOnBackground(stored)
-            }
-            environment.postMain {
-                loaded.exceptionOrNull()?.let { logWarn("notification_restore_load_failed", it) }
-                val valid = loaded.isSuccess && requestedGeneration == generation &&
-                    missingRestoreGenerations[sessionId] == sessionGeneration &&
-                    (sessionId.isBlank() || !sessionExists(sessionId))
-                try {
-                    finish(if (valid) stored.filter {
-                        sessionGenerations[it.sessionId] == missingRestoreGenerations[it.sessionId]
-                    } else null)
-                } finally {
-                    discardPreparedSessions(stored)
-                }
             }
         }
     }

@@ -116,19 +116,6 @@ class _PermissionSettingsControlsState
     return AppSettingsGroupCard(
       children: [
         _PermissionActionTile(
-          title: i18n.tr('notification_permission_status'),
-          description: i18n.tr('permission_notification_description'),
-          icon: Icons.notifications_rounded,
-          enabled: _enabled(PermissionCapability.notifications),
-          enabledLabel: i18n.tr('permission_enabled'),
-          disabledLabel: i18n.tr('permission_not_enabled'),
-          onTap: () => _open(
-            title: i18n.tr('notification_permission_status'),
-            description: i18n.tr('permission_notification_description'),
-            capability: PermissionCapability.notifications,
-          ),
-        ),
-        _PermissionActionTile(
           title: i18n.tr('allow_background_run'),
           description: i18n.tr('permission_background_description'),
           icon: Icons.battery_saver_rounded,
@@ -197,7 +184,6 @@ class _PermissionSettingsControlsState
     final status = _status;
     if (status == null) return null;
     return switch (capability) {
-      PermissionCapability.notifications => status.notificationsEnabled,
       PermissionCapability.backgroundRun =>
         status.backgroundRunAllowed && status.exactAlarmsAllowed,
       PermissionCapability.exactAlarms => status.exactAlarmsAllowed,

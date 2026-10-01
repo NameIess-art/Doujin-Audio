@@ -464,6 +464,60 @@ void main() {
     },
   );
 
+  testWidgets(
+    'batch metadata page directly shows real setup view without skeleton when entries omitted',
+    (WidgetTester tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(390, 800);
+      addTearDown(() {
+        tester.view.resetDevicePixelRatio();
+        tester.view.resetPhysicalSize();
+      });
+
+      final fixture = AppRuntimeWidgetTestFixture(
+        dlsiteMetadataService: _FakeDlsiteMetadataService(),
+        asmrMetadataService: _FakeAsmrMetadataService(),
+      );
+      addTearDown(fixture.dispose);
+
+      await tester.pumpWidget(
+        buildAppRuntimeTestApp(
+          runtimeGraph: fixture.runtimeGraph,
+          persistenceRepository: fixture.persistenceRepository,
+          nativePlaybackRepository: fixture.nativePlaybackRepository,
+          playbackCommandRunner:
+              AppRuntimeWidgetTestFixture.playbackCommandRunner,
+          libraryService: fixture.libraryService,
+          playbackService: fixture.playbackService,
+          timerService: fixture.timerService,
+          notificationCoordinatorService:
+              fixture.notificationCoordinatorService,
+          settingsRepository: fixture.settings,
+          languageProvider: fixture.languageProvider,
+          child: const DlsiteMetadataBatchPage(),
+        ),
+      );
+      await tester.pump();
+
+      expect(
+        find.byKey(const ValueKey('batch_metadata_scope_group')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('batch_metadata_start')),
+        findsOneWidget,
+      );
+      expect(find.byType(OperationSkeletonList), findsNothing);
+
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(
+        find.byKey(const ValueKey('batch_metadata_scope_group')),
+        findsOneWidget,
+      );
+      expect(find.byType(OperationSkeletonList), findsNothing);
+    },
+  );
+
   testWidgets('metadata review batch mode shows navigation with count and confirm action', (
     WidgetTester tester,
   ) async {

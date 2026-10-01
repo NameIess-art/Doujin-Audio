@@ -211,22 +211,9 @@ extension NotificationFacadeSync on NotificationFacade {
         unchangedItems) {
       return;
     }
-    final showUnifiedSummary = sessionsToShow.isNotEmpty;
-    final summaryLines = payload
-        .map((item) => item['title'] as String)
-        .toList(growable: false);
-    final summaryText = showUnifiedSummary
-        ? _notificationSummaryText(summaryLines)
-        : null;
-
     final syncPayload = <String, dynamic>{
-      'mode': 'multi',
-      'styleVariant': 'multi_thread',
       'mainSessionId': mainSession?.id,
       'items': payload,
-      'showSummary': showUnifiedSummary,
-      'summaryText': summaryText,
-      'summaryLines': summaryLines,
     };
     final nextSyncKey = json.encode(syncPayload);
     if (_unifiedNotificationSyncKey == nextSyncKey) {

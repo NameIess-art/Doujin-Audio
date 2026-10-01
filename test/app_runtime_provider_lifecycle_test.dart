@@ -79,7 +79,7 @@ void main() {
       expect(displayModes, [CoverImageDisplayMode.fill]);
       states.add(SettingsState());
       await container.pump();
-      states.add(SettingsState(notificationsEnabled: false));
+      states.add(SettingsState(converterFormat: 'flac'));
       await container.pump();
       for (final consumerValues in values) {
         expect(consumerValues, [true]);

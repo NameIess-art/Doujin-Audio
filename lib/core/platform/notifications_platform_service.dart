@@ -4,90 +4,32 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import '../errors/native_result.dart';
-import 'app_platform.dart';
 import '../logging/app_log_service.dart';
 import 'platform_channels.dart';
 import 'platform_method_client.dart';
 
-typedef NotificationSessionHandler = void Function(String sessionId);
-
 class NotificationsPlatformService {
   NotificationsPlatformService({
     MethodChannel? channel,
-    @visibleForTesting bool? isAndroidOverride,
+    @visibleForTesting bool? isWindowsOverride,
     Duration timeout = const Duration(seconds: 5),
-  }) : _channel = channel ?? const MethodChannel(NotificationsChannel.name),
-       _client = PlatformMethodClient(
+  }) : _client = PlatformMethodClient(
          channel ?? const MethodChannel(NotificationsChannel.name),
        ),
-       _isAndroidOverride = isAndroidOverride,
+       _isWindowsOverride = isWindowsOverride,
        _timeout = timeout;
 
-  final MethodChannel _channel;
   final PlatformMethodClient _client;
-  final bool? _isAndroidOverride;
+  final bool? _isWindowsOverride;
   final Duration _timeout;
 
-  bool get _isAndroid => _isAndroidOverride ?? AppPlatform.isAndroid;
   bool get _isWindows =>
-      _isAndroidOverride == null &&
-      defaultTargetPlatform == TargetPlatform.windows;
-
-  Future<bool> areNotificationsEnabled() async {
-    if (!_isAndroid) return true;
-    final result = await _client.invoke<bool>(
-      NotificationsMethod.areNotificationsEnabled,
-      decode: (value) => value as bool,
-    );
-    _logFailure(NotificationsMethod.areNotificationsEnabled, result);
-    return result.valueOrNull ?? true;
-  }
-
-  Future<bool> openNotificationSettings() async {
-    if (!_isAndroid) return false;
-    final result = await _client.invoke<bool>(
-      NotificationsMethod.openNotificationSettings,
-      decode: (value) => value as bool,
-    );
-    _logFailure(NotificationsMethod.openNotificationSettings, result);
-    return result.valueOrNull ?? false;
-  }
-
-  Future<String?> consumePendingNotificationSessionId() async {
-    if (!_isAndroid) return null;
-    final result = await _client.invoke<String?>(
-      NotificationsMethod.consumePendingNotificationSessionId,
-      decode: (value) => value as String?,
-    );
-    _logFailure(
-      NotificationsMethod.consumePendingNotificationSessionId,
-      result,
-    );
-    final sessionId = result.valueOrNull;
-    return sessionId == null || sessionId.isEmpty ? null : sessionId;
-  }
-
-  void setOpenSessionHandler(NotificationSessionHandler? handler) {
-    if (handler == null) {
-      _channel.setMethodCallHandler(null);
-      return;
-    }
-    _channel.setMethodCallHandler((call) async {
-      if (call.method != NotificationsMethod.openSessionFromNotification) {
-        return null;
-      }
-      final sessionId = _sessionIdFromArguments(call.arguments);
-      if (sessionId != null && sessionId.isNotEmpty) {
-        handler(sessionId);
-      }
-      return null;
-    });
-  }
+      _isWindowsOverride ?? defaultTargetPlatform == TargetPlatform.windows;
 
   Future<void> syncUnifiedPlaybackNotifications(
     Map<String, dynamic> payload,
   ) async {
-    if (!_isAndroid && !_isWindows) return;
+    if (!_isWindows) return;
     try {
       final result = await _client
           .invoke<void>(
@@ -113,7 +55,7 @@ class NotificationsPlatformService {
   }
 
   Future<void> clearUnifiedPlaybackNotifications() async {
-    if (!_isAndroid && !_isWindows) return;
+    if (!_isWindows) return;
     try {
       final result = await _client
           .invoke<void>(
@@ -138,16 +80,6 @@ class NotificationsPlatformService {
         stackTrace: stackTrace,
       );
     }
-  }
-
-  String? _sessionIdFromArguments(Object? arguments) {
-    if (arguments is Map) {
-      return arguments['sessionId'] as String?;
-    }
-    if (arguments is String) {
-      return arguments;
-    }
-    return null;
   }
 
   void _logFailure<T>(String method, NativeResult<T> result) {

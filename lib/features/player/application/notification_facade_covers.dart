@@ -18,17 +18,6 @@ extension NotificationFacadeCovers on NotificationFacade {
     );
   }
 
-  String _notificationSummaryText(List<String> sessionTitles) {
-    final titles = sessionTitles
-        .where((title) => title.isNotEmpty)
-        .toSet()
-        .toList();
-    if (titles.isEmpty) return '${sessionTitles.length} active sessions';
-    if (titles.length == 1) return titles.first;
-    if (titles.length == 2) return '${titles[0]} / ${titles[1]}';
-    return '${titles.first} +${titles.length - 1}';
-  }
-
   String? coverPathForTrack(MusicTrack? track, {String? trackPath}) {
     return resolvedPlaybackCoverPathForTrack(track, trackPath: trackPath);
   }

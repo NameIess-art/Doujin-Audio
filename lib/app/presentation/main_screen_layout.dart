@@ -108,8 +108,7 @@ extension _MainScreenLayout on _MainScreenState {
       indexListenable: _activePageIndex,
       itemCount: destinations.length,
       itemBuilder: pageShell,
-      style: AppIndexedStackTransitionStyle.gradient,
-      duration: kAppMotionSlow,
+      style: AppIndexedStackTransitionStyle.none,
       onTransitionCompleted: _handlePageTransitionCompleted,
     );
   }
@@ -143,7 +142,7 @@ extension _MainScreenLayout on _MainScreenState {
   Widget _buildBottomBar(
     BuildContext context, {
     required bool isPlaybackExpanded,
-    required double focusProgress,
+    required double anchorProgress,
     required double stackProgress,
     required double expandedWidth,
     required VoidCallback onCurrentTap,
@@ -168,7 +167,7 @@ extension _MainScreenLayout on _MainScreenState {
         destinations,
         selectedIndex,
         isPlaybackExpanded: isPlaybackExpanded,
-        focusProgress: focusProgress,
+        anchorProgress: anchorProgress,
         stackProgress: stackProgress,
         expandedWidth: expandedWidth,
         onCurrentTap: onCurrentTap,
@@ -181,7 +180,7 @@ extension _MainScreenLayout on _MainScreenState {
     List<MainDestination> destinations,
     int selectedIndex, {
     required bool isPlaybackExpanded,
-    required double focusProgress,
+    required double anchorProgress,
     required double stackProgress,
     required double expandedWidth,
     required VoidCallback onCurrentTap,
@@ -194,15 +193,15 @@ extension _MainScreenLayout on _MainScreenState {
 
     final entries = destinations.asMap().entries.toList();
     final activeIndex = selectedIndex.clamp(0, destinations.length - 1);
-    final layeredEntries = [
-      if (stackProgress < 1)
-        ...entries.where((entry) => entry.key != activeIndex),
-      entries[activeIndex],
-    ];
+    // ASMR.ONE occupies the first slot. Keep that motion anchor independent
+    // of selection, then show the active destination once the icons overlap.
+    final collapsed = stackProgress == 1;
+    final layeredEntries = [if (!collapsed) ...entries.skip(1), entries.first];
     final items = layeredEntries.map((entry) {
       final index = entry.key;
-      final item = entry.value;
-      final selected = index == activeIndex;
+      final destinationIndex = index == 0 && collapsed ? activeIndex : index;
+      final item = destinations[destinationIndex];
+      final selected = destinationIndex == activeIndex;
       final label = item.labelKey == 'show_asmr_one'
           ? 'ASMR.ONE'
           : i18n.tr(item.labelKey);
@@ -212,7 +211,7 @@ extension _MainScreenLayout on _MainScreenState {
       final expandedLeft =
           expandedWidth * (index + 0.5) / destinations.length -
           kActiveSessionCarouselDockHeight / 2;
-      final progress = selected ? focusProgress : stackProgress;
+      final progress = index == 0 ? anchorProgress : stackProgress;
       return Positioned(
         left: expandedLeft * (1 - progress),
         top: 0,
@@ -235,7 +234,7 @@ extension _MainScreenLayout on _MainScreenState {
                   ),
                   onTap: isPlaybackExpanded && selected
                       ? onCurrentTap
-                      : () => _switchPage(index),
+                      : () => _switchPage(destinationIndex),
                   child: Stack(
                     alignment: Alignment.center,
                     children: [

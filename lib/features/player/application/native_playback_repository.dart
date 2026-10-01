@@ -195,10 +195,6 @@ class NativePlaybackRepository {
 
   Future<NativeResult<void>> clearAll() => _bridge.clearAll();
 
-  Future<NativeResult<void>> setForegroundEnabled(bool enabled) {
-    return _bridge.setForegroundEnabled(enabled);
-  }
-
   Future<NativeResult<void>> setPlaybackBehavior({
     required bool pauseOnAudioDeviceDisconnect,
     required bool requestAudioFocus,
@@ -211,14 +207,6 @@ class NativePlaybackRepository {
       pauseOnTransientAudioFocusLoss: pauseOnTransientAudioFocusLoss,
       resumeAfterTransientAudioFocusGain: resumeAfterTransientAudioFocusGain,
     );
-  }
-
-  Future<NativeResult<void>> dismissNotifications() {
-    return _bridge.dismissNotifications();
-  }
-
-  Future<NativeResult<void>> undismissNotifications() {
-    return _bridge.undismissNotifications();
   }
 
   Future<NativeResult<NativePlaybackBundleSnapshot>> snapshot() {

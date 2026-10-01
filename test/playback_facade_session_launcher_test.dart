@@ -157,44 +157,52 @@ void main() {
     expect(restored.currentTrackPath, track('b').path);
     expect(restored.isTemporary, isTrue);
     expect(restored.state.playing, isFalse);
+    expect(restarted.catalogState.nowPlayingSessions.map((s) => s.id), [
+      savedId,
+    ]);
     expect(restored.customQueueTracks?.map((item) => item.path), [
       track('a').path,
       track('b').path,
     ]);
   });
 
-  test('restart retains an ordinary playing entry without autoplay', () async {
-    SharedPreferences.setMockInitialValues(const <String, Object>{});
-    final repository = _RecordingRepository();
-    final original = PlaybackFacade.create(databaseRepository: repository);
-    addTearDown(original.dispose);
-    final playing = original.createTrackSession(track('ordinary'));
-    playing.state = const PlayerState(true, ProcessingState.ready);
-    await original.savePersistedState();
-    expect(repository.saved.single.retainInNowPlaying, isTrue);
+  test(
+    'restart restores ordinary playback without a now-playing card',
+    () async {
+      SharedPreferences.setMockInitialValues(const <String, Object>{});
+      final repository = _RecordingRepository();
+      final original = PlaybackFacade.create(databaseRepository: repository);
+      addTearDown(original.dispose);
+      final playing = original.createTrackSession(track('ordinary'));
+      playing.state = const PlayerState(true, ProcessingState.ready);
+      playing.lastKnownPosition = const Duration(seconds: 12);
+      await original.savePersistedState();
 
-    final restarted = PlaybackFacade.create(databaseRepository: repository);
-    addTearDown(restarted.dispose);
-    restarted.attachPersistenceRuntime(
-      trackByPath: (_) => track('ordinary'),
-      recordPlaybackProgress: () => true,
-      restoreRuntime: (_, {required focusedSessionId}) async {},
-      updatePlaybackHistory:
-          ({
-            required trackPath,
-            required position,
-            required now,
-            required updatePlayedAt,
-          }) => null,
-      onFocusChanged: (_) {},
-    );
-    await restarted.loadPersistedState();
+      final restarted = PlaybackFacade.create(databaseRepository: repository);
+      addTearDown(restarted.dispose);
+      restarted.attachPersistenceRuntime(
+        trackByPath: (_) => track('ordinary'),
+        recordPlaybackProgress: () => true,
+        restoreRuntime: (_, {required focusedSessionId}) async {},
+        updatePlaybackHistory:
+            ({
+              required trackPath,
+              required position,
+              required now,
+              required updatePlayedAt,
+            }) => null,
+        onFocusChanged: (_) {},
+      );
+      await restarted.loadPersistedState();
 
-    final restored = restarted.activeSessions.single;
-    expect(restored.id, playing.id);
-    expect(restored.retainInNowPlaying, isTrue);
-    expect(restored.playbackRequested, isFalse);
-  });
+      final restored = restarted.activeSessions.single;
+      expect(restored.id, playing.id);
+      expect(restored.currentTrackPath, track('ordinary').path);
+      expect(restored.position, const Duration(seconds: 12));
+      expect(restored.playbackRequested, isFalse);
+      expect(restarted.catalogState.nowPlayingSessions, isEmpty);
+    },
+  );
 
   test('direct playback keeps an added playlist item independent', () async {
     final facade = PlaybackFacade.create(
@@ -396,28 +404,32 @@ class _RecordingRepository extends TestPersistenceRepository {
       saved = [...saved, session];
     } else {
       final previous = saved[index];
-      saved = [...saved]..[index] = PersistedPlaybackSession(
-        id: session.id,
-        trackPath: session.trackPath,
-        isTemporary: session.isTemporary,
-        retainInNowPlaying: session.retainInNowPlaying,
-        loopModeIndex: session.loopModeIndex,
-        volume: session.volume,
-        speed: session.speed,
-        positionMs: session.positionMs,
-        durationMs: session.durationMs,
-        customQueueTracks: includeQueue
-            ? session.customQueueTracks
-            : previous.customQueueTracks,
-        playbackQueue: includeQueue ? session.playbackQueue : previous.playbackQueue,
-        currentQueueIndex: session.currentQueueIndex,
-        channelSwapEnabled: session.channelSwapEnabled,
-        audioEffects: includeEffects ? session.audioEffects : previous.audioEffects,
-        sortOrder: session.sortOrder,
-        createdAtMs: session.createdAtMs,
-        updatedAtMs: session.updatedAtMs,
-        lastPlayedAtMs: session.lastPlayedAtMs,
-      );
+      saved = [...saved]
+        ..[index] = PersistedPlaybackSession(
+          id: session.id,
+          trackPath: session.trackPath,
+          isTemporary: session.isTemporary,
+          loopModeIndex: session.loopModeIndex,
+          volume: session.volume,
+          speed: session.speed,
+          positionMs: session.positionMs,
+          durationMs: session.durationMs,
+          customQueueTracks: includeQueue
+              ? session.customQueueTracks
+              : previous.customQueueTracks,
+          playbackQueue: includeQueue
+              ? session.playbackQueue
+              : previous.playbackQueue,
+          currentQueueIndex: session.currentQueueIndex,
+          channelSwapEnabled: session.channelSwapEnabled,
+          audioEffects: includeEffects
+              ? session.audioEffects
+              : previous.audioEffects,
+          sortOrder: session.sortOrder,
+          createdAtMs: session.createdAtMs,
+          updatedAtMs: session.updatedAtMs,
+          lastPlayedAtMs: session.lastPlayedAtMs,
+        );
     }
   }
 

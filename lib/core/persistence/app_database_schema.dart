@@ -15,19 +15,7 @@ Future<void> _onCreate(Database db, int version) async {
     ''');
   await _createTrackDetailTables(db);
   await _createTrackIndexes(db);
-  await db.execute('''
-      CREATE TABLE sessions (
-        id TEXT PRIMARY KEY,
-        track_path TEXT NOT NULL,
-        is_temporary INTEGER NOT NULL DEFAULT 0,
-        retain_in_now_playing INTEGER NOT NULL DEFAULT 0,
-        loop_mode INTEGER NOT NULL,
-        created_at_ms INTEGER,
-        updated_at_ms INTEGER,
-        last_played_at_ms INTEGER,
-        sort_order INTEGER NOT NULL DEFAULT 0
-      )
-    ''');
+  await _createSessionsTable(db);
   await _createSessionDetailTables(db);
   await _createAsmrTables(db);
   await _createAudioDetailsTable(db);
@@ -73,6 +61,20 @@ Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
       'INTEGER NOT NULL DEFAULT 0',
     );
   }
+  if (oldVersion < 8 && newVersion >= 8) {
+    await _createSessionsTable(db, tableName: 'sessions_v8');
+    await db.execute('''
+      INSERT INTO sessions_v8 (
+        id, track_path, is_temporary, loop_mode,
+        created_at_ms, updated_at_ms, last_played_at_ms, sort_order
+      )
+      SELECT id, track_path, is_temporary, loop_mode,
+        created_at_ms, updated_at_ms, last_played_at_ms, sort_order
+      FROM sessions
+    ''');
+    await db.execute('DROP TABLE sessions');
+    await db.execute('ALTER TABLE sessions_v8 RENAME TO sessions');
+  }
   await _createTrackDetailTables(db);
   await _createTrackIndexes(db);
   await _createSessionDetailTables(db);
@@ -92,6 +94,24 @@ Future<void> _addColumnIfMissing(
   final exists = columns.any((row) => row['name'] == column);
   if (exists) return;
   await db.execute('ALTER TABLE $table ADD COLUMN $column $definition');
+}
+
+Future<void> _createSessionsTable(
+  Database db, {
+  String tableName = 'sessions',
+}) async {
+  await db.execute('''
+      CREATE TABLE $tableName (
+        id TEXT PRIMARY KEY,
+        track_path TEXT NOT NULL,
+        is_temporary INTEGER NOT NULL DEFAULT 0,
+        loop_mode INTEGER NOT NULL,
+        created_at_ms INTEGER,
+        updated_at_ms INTEGER,
+        last_played_at_ms INTEGER,
+        sort_order INTEGER NOT NULL DEFAULT 0
+      )
+    ''');
 }
 
 Future<void> _createTrackDetailTables(Database db) async {

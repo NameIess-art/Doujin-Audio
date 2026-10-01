@@ -2,7 +2,6 @@ package com.doujin.audio.player.session
 
 import androidx.media3.common.Player
 import com.doujin.audio.player.common.isNativePlaybackNetworkUri
-import com.doujin.audio.player.service.resolveNotificationSessionId
 
 internal class NativePlaybackSessionManager(
     private val sessionFactory: (sessionId: String) -> NativePlaybackSession
@@ -41,18 +40,6 @@ internal class NativePlaybackSessionManager(
     fun focusedSession(): NativePlaybackSession? {
         return focusedSessionId?.let { sessions[it] } ?: sessions.values.firstOrNull()
     }
-
-    fun notificationSessionId(
-        requestedSessionId: String,
-        storedSessions: List<StoredNativePlaybackSession>
-    ): String = resolveNotificationSessionId(
-        requestedSessionId = requestedSessionId,
-        focusedSessionId = focusedSessionId,
-        activeSessionIds = sessions.values.filter { it.isPlaying() }.map { it.sessionId },
-        existingSessionIds = sessionIds,
-        storedActiveSessionIds = storedSessions.filter { it.playing || it.playWhenReady }.map { it.sessionId },
-        storedSessionIds = storedSessions.map { it.sessionId }
-    )
 
     fun focus(sessionId: String?): Boolean {
         if (sessionId != null && !sessions.containsKey(sessionId)) return false

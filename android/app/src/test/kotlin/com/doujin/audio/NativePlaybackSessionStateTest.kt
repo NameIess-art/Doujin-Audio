@@ -17,7 +17,7 @@ import java.nio.ByteOrder
 
 class NativePlaybackSessionStateTest {
     @Test
-    fun `paused notification queue navigation changes only data and preserves duplicate indices`() {
+    fun `paused queue navigation changes only data and preserves duplicate indices`() {
         val descriptor = NativeMediaItemDescriptor("/same.mp3", "file:///same.mp3", "Audio", null, null)
         val session = NativePlaybackSession(
             sessionId = "paused", createPlayer = { _, _ -> error("paused navigation must not create a player") },

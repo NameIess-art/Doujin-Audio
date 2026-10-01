@@ -107,7 +107,6 @@ extension _TimerTabBody on _TimerTabState {
           final resolvedStatus =
               status ??
               const _TimerReliabilityStatus(
-                notificationsEnabled: true,
                 exactAlarmsEnabled: true,
                 backgroundRunAllowed: true,
               );
@@ -118,9 +117,6 @@ extension _TimerTabBody on _TimerTabState {
               ? i18n.tr('timer_reliability_ready')
               : i18n.tr('timer_reliability_missing');
           final detail = [
-            resolvedStatus.notificationsEnabled
-                ? i18n.tr('notification_permission_ready')
-                : i18n.tr('notification_permission_missing'),
             resolvedStatus.exactAlarmsEnabled
                 ? i18n.tr('exact_alarm_permission_ready')
                 : i18n.tr('exact_alarm_permission_missing'),
@@ -156,13 +152,6 @@ extension _TimerTabBody on _TimerTabState {
                       spacing: 8,
                       runSpacing: 8,
                       children: [
-                        if (!resolvedStatus.notificationsEnabled)
-                          OutlinedButton(
-                            onPressed: () {
-                              unawaited(_openNotificationSettings());
-                            },
-                            child: Text(i18n.tr('open_notification_settings')),
-                          ),
                         if (!resolvedStatus.exactAlarmsEnabled)
                           OutlinedButton(
                             onPressed: () {

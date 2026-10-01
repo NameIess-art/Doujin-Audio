@@ -92,7 +92,6 @@ void main() {
       await preferences.setString(
         'playback_settings_v1',
         json.encode(<String, Object?>{
-          'notificationsEnabled': false,
           'startupPage': StartupPage.asmrOne.name,
           'autoCheckUpdates': true,
           'recordPlaybackProgress': false,
@@ -138,7 +137,6 @@ void main() {
       await repository.loadPersistedState();
 
       expect(repository.slice.state.isInitialized, isTrue);
-      expect(repository.notificationsEnabled, isFalse);
       expect(repository.coverImageResolution, CoverImageResolution.ultraHigh);
       expect(repository.coverImageDisplayMode, CoverImageDisplayMode.tile);
       expect(repository.preferEmbeddedCover, isFalse);
@@ -192,7 +190,6 @@ void main() {
       repository
         ..converterFormat = 'flac'
         ..converterBitrate = '192k'
-        ..notificationsEnabled = false
         ..startupPage = StartupPage.asmrOne
         ..autoCheckUpdates = true
         ..dlsiteMetadataLanguage = ContentLanguagePreference.en
@@ -215,11 +212,6 @@ void main() {
         isA<SettingsState>()
             .having((state) => state.converterFormat, 'format', 'flac')
             .having((state) => state.converterBitrate, 'bitrate', '192k')
-            .having(
-              (state) => state.notificationsEnabled,
-              'notifications',
-              isFalse,
-            )
             .having(
               (state) => state.startupPage,
               'startup page',
@@ -298,7 +290,7 @@ void main() {
       final initial = repository.slice.state;
 
       repository
-        ..notificationsEnabled = false
+        ..converterFormat = 'flac'
         ..syncSlice();
       final unrelatedUpdate = repository.slice.state;
       expect(

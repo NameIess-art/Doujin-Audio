@@ -903,7 +903,6 @@ void main() {
           .setMockMethodCallHandler(nativePlaybackChannel, (call) async {
             switch (call.method) {
               case NativePlaybackMethod.prepareSession:
-              case NativePlaybackMethod.setForegroundEnabled:
                 return <String, Object?>{'ok': true, 'value': null};
               case NativePlaybackMethod.snapshot:
                 return <String, Object?>{

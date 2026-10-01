@@ -252,10 +252,7 @@ internal fun isSupportedNativePlaybackMethod(method: String): Boolean = method i
     NativePlaybackMethods.REMOVE_SESSION,
     NativePlaybackMethods.PAUSE_ALL,
     NativePlaybackMethods.CLEAR_ALL,
-    NativePlaybackMethods.SET_FOREGROUND_ENABLED,
     NativePlaybackMethods.SET_PLAYBACK_BEHAVIOR,
-    NativePlaybackMethods.DISMISS_NOTIFICATIONS,
-    NativePlaybackMethods.UNDISMISS_NOTIFICATIONS,
     NativePlaybackMethods.SNAPSHOT
 )
 
@@ -397,13 +394,6 @@ internal fun parsePlaybackCommand(call: MethodCall): ParsedPlaybackCommand {
             NativePlaybackStateStore.clearTimerRuntimeState(context)
             channelSuccess(null)
         }) { service -> service.clearAll() }
-        NativePlaybackMethods.SET_FOREGROUND_ENABLED -> {
-            val enabled = arguments.requiredBoolean("enabled")
-            ParsedPlaybackCommand(dispatchInactive = {
-                NativePlaybackService.foregroundSuppressed = !enabled
-                channelSuccess(null)
-            }) { service -> service.setForegroundEnabled(enabled) }
-        }
         NativePlaybackMethods.SET_PLAYBACK_BEHAVIOR -> {
             val pauseOnAudioDeviceDisconnect =
                 arguments.requiredBoolean("pauseOnAudioDeviceDisconnect")
@@ -427,16 +417,6 @@ internal fun parsePlaybackCommand(call: MethodCall): ParsedPlaybackCommand {
                 )
             }
         }
-        NativePlaybackMethods.DISMISS_NOTIFICATIONS ->
-            ParsedPlaybackCommand(dispatchInactive = {
-                NativePlaybackService.notificationsDismissed = true
-                channelSuccess(null)
-            }) { service -> service.dismissNotifications() }
-        NativePlaybackMethods.UNDISMISS_NOTIFICATIONS ->
-            ParsedPlaybackCommand(dispatchInactive = {
-                NativePlaybackService.notificationsDismissed = false
-                channelSuccess(null)
-            }) { service -> service.undismissNotifications() }
         NativePlaybackMethods.SNAPSHOT -> ParsedPlaybackCommand(dispatchInactive = {
             channelSuccess(inactiveNativePlaybackRuntimeSnapshot)
         }) { service -> service.snapshot() }

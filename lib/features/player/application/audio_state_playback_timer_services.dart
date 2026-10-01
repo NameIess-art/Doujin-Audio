@@ -91,13 +91,16 @@ class PlaybackSessionService {
       a.lastPlayedAt == b.lastPlayedAt &&
       a.createdAt == b.createdAt;
 
+  // Cold preparation returns idle before play starts. The loading indicator's
+  // delay must not remove a session that still has a playback request.
   static bool _showInOverlay(PlaybackSessionSnapshot s) =>
       s.currentTrackPath.isNotEmpty &&
       (s.isTemporary ||
-          s.retainInNowPlaying ||
           (s.playbackRequested &&
               (s.isLoading ||
                   s.isPlaybackLoading ||
+                  (s.state.processing == PlaybackProcessingStatus.idle &&
+                      s.playbackError == null) ||
                   s.state.processing == PlaybackProcessingStatus.loading ||
                   s.state.processing == PlaybackProcessingStatus.buffering ||
                   s.state.processing == PlaybackProcessingStatus.ready)));

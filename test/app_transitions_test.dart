@@ -22,7 +22,7 @@ class _StateProbeState extends State<_StateProbe> {
 }
 
 void main() {
-  testWidgets('page routes use main tab duration', (tester) async {
+  testWidgets('page routes open and close in 300 ms', (tester) async {
     final navigatorKey = GlobalKey<NavigatorState>();
     await tester.pumpWidget(
       MaterialApp(
@@ -82,17 +82,26 @@ void main() {
     ),
   );
 
-  for (final materialRoute in [false, true]) {
+  for (final (platform, materialRoute) in [
+    (TargetPlatform.android, false),
+    (TargetPlatform.android, true),
+    (TargetPlatform.windows, false),
+    (TargetPlatform.windows, true),
+  ]) {
     testWidgets(
-      'route reveal preserves page state (material: $materialRoute)',
+      'route slide preserves page state ($platform, material: $materialRoute)',
       (tester) async {
         final navigatorKey = GlobalKey<NavigatorState>();
         await tester.pumpWidget(
           MaterialApp(
             navigatorKey: navigatorKey,
             theme: ThemeData(
+              platform: platform,
               pageTransitionsTheme: const PageTransitionsTheme(
-                builders: {TargetPlatform.android: AppPageTransitionsBuilder()},
+                builders: {
+                  TargetPlatform.android: AppPageTransitionsBuilder(),
+                  TargetPlatform.windows: AppPageTransitionsBuilder(),
+                },
               ),
             ),
             home: const Scaffold(),
@@ -113,7 +122,14 @@ void main() {
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 60));
         final state = tester.state<_StateProbeState>(find.byType(_StateProbe));
-        expect(find.byType(ShaderMask), findsOneWidget);
+        expect(
+          find.ancestor(
+            of: find.byType(_StateProbe),
+            matching: find.byType(SlideTransition),
+          ),
+          findsOneWidget,
+        );
+        expect(find.byType(ShaderMask), findsNothing);
         await tester.pumpAndSettle();
         expect(
           tester.state<_StateProbeState>(find.byType(_StateProbe)),
@@ -132,62 +148,66 @@ void main() {
     );
   }
 
-  testWidgets('route content reveals while headers change in place', (
+  testWidgets(
+    'route content slides from the right while narrow headers stay fixed',
+    (tester) async {
+      final navigatorKey = GlobalKey<NavigatorState>();
+      await tester.pumpWidget(
+        MaterialApp(navigatorKey: navigatorKey, home: regions('home')),
+      );
+      final navigator = navigatorKey.currentState!;
+      final expectedHeader = tester.getRect(
+        find.byKey(const ValueKey('home-header')),
+      );
+      unawaited(
+        navigator.push(
+          buildAppPageRoute<void>(
+            context: navigator.context,
+            child: regions('detail'),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 75));
+      final header = find.byKey(const ValueKey('detail-header'));
+      final body = find.byKey(const ValueKey('detail-body'));
+      final enteringHeader = tester.getRect(header);
+      final enteringBody = tester.getRect(body);
+      expect(
+        tester
+            .widgetList<Opacity>(
+              find.ancestor(of: header, matching: find.byType(Opacity)),
+            )
+            .any((opacity) => opacity.opacity > 0 && opacity.opacity < 1),
+        isTrue,
+      );
+      await tester.pumpAndSettle();
+      final settledHeader = tester.getRect(header);
+      final settledBody = tester.getRect(body);
+      expect(enteringHeader, settledHeader);
+      expect(enteringBody.left, greaterThan(settledBody.left));
+      expect(enteringBody.size, settledBody.size);
+      expect(
+        find.byKey(const ValueKey('home-header'), skipOffstage: false),
+        findsOneWidget,
+      );
+      navigator.pop();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 60));
+      expect(tester.getRect(header), settledHeader);
+      expect(tester.getRect(body).left, greaterThan(settledBody.left));
+      await tester.pumpAndSettle();
+      expect(
+        tester.getRect(find.byKey(const ValueKey('home-header'))),
+        expectedHeader,
+      );
+      expect(find.byKey(const ValueKey('home-header')), findsOneWidget);
+    },
+  );
+
+  testWidgets('detail routes slide body over the old page and fade header', (
     tester,
   ) async {
-    final navigatorKey = GlobalKey<NavigatorState>();
-    await tester.pumpWidget(
-      MaterialApp(navigatorKey: navigatorKey, home: regions('home')),
-    );
-    final navigator = navigatorKey.currentState!;
-    final expectedHeader = tester.getRect(
-      find.byKey(const ValueKey('home-header')),
-    );
-    unawaited(
-      navigator.push(
-        buildAppPageRoute<void>(
-          context: navigator.context,
-          child: regions('detail'),
-        ),
-      ),
-    );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 75));
-    final header = find.byKey(const ValueKey('detail-header'));
-    final body = find.byKey(const ValueKey('detail-body'));
-    final enteringHeader = tester.getRect(header);
-    final enteringBody = tester.getRect(body);
-    expect(
-      tester
-          .widgetList<Opacity>(
-            find.ancestor(of: header, matching: find.byType(Opacity)),
-          )
-          .any((opacity) => opacity.opacity > 0 && opacity.opacity < 1),
-      isTrue,
-    );
-    await tester.pumpAndSettle();
-    final settledHeader = tester.getRect(header);
-    final settledBody = tester.getRect(body);
-    expect(enteringHeader, settledHeader);
-    expect(enteringBody, settledBody);
-    expect(
-      find.byKey(const ValueKey('home-header'), skipOffstage: false),
-      findsOneWidget,
-    );
-    navigator.pop();
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 60));
-    expect(tester.getRect(header), settledHeader);
-    expect(tester.getRect(body), settledBody);
-    await tester.pumpAndSettle();
-    expect(
-      tester.getRect(find.byKey(const ValueKey('home-header'))),
-      expectedHeader,
-    );
-    expect(find.byKey(const ValueKey('home-header')), findsOneWidget);
-  });
-
-  testWidgets('detail routes reveal body and fade header', (tester) async {
     final navigatorKey = GlobalKey<NavigatorState>();
     final surface = GlobalKey();
 
@@ -242,8 +262,8 @@ void main() {
     final midHeader = tester.getRect(header);
     expect(find.byKey(const ValueKey('home-body')), findsOneWidget);
     expect(find.byKey(const ValueKey('home-header')), findsOneWidget);
-    expect(await pixelAt(0.1), const Color(0xff2196f3));
-    expect(await pixelAt(0.9), const Color(0xfff44336));
+    expect(await pixelAt(0.1), const Color(0xfff44336));
+    expect(await pixelAt(0.9), const Color(0xff2196f3));
     final headerOpacity = tester.widgetList<Opacity>(
       find.ancestor(of: header, matching: find.byType(Opacity)),
     );
@@ -255,13 +275,15 @@ void main() {
       findsNothing,
     );
     expect(
-      find.ancestor(of: body, matching: find.byType(ShaderMask)),
+      find.ancestor(of: body, matching: find.byType(SlideTransition)),
       findsOneWidget,
     );
+    expect(find.byType(ShaderMask), findsNothing);
     await tester.pumpAndSettle();
     final settledBody = tester.getRect(body);
     final settledHeader = tester.getRect(header);
-    expect(midBody, settledBody);
+    expect(midBody.left, greaterThan(settledBody.left));
+    expect(midBody.size, settledBody.size);
     expect(midHeader.left - settledHeader.left, closeTo(0, 0.01));
 
     navigatorKey.currentState!.pop();
@@ -271,9 +293,9 @@ void main() {
     final popHeader = tester.getRect(header);
     expect(find.byKey(const ValueKey('home-body')), findsOneWidget);
     expect(find.byKey(const ValueKey('home-header')), findsOneWidget);
-    expect(await pixelAt(0.1), const Color(0xff2196f3));
-    expect(await pixelAt(0.9), const Color(0xfff44336));
-    expect(popBody, settledBody);
+    expect(await pixelAt(0.1), const Color(0xfff44336));
+    expect(await pixelAt(0.9), const Color(0xff2196f3));
+    expect(popBody.left, greaterThan(settledBody.left));
     expect(popHeader.left - settledHeader.left, closeTo(0, 0.01));
     await tester.pumpAndSettle();
   });
@@ -324,7 +346,7 @@ void main() {
       findsNothing,
     );
     expect(
-      find.ancestor(of: incoming, matching: find.byType(ShaderMask)),
+      find.ancestor(of: incoming, matching: find.byType(SlideTransition)),
       findsOneWidget,
     );
   });
@@ -417,89 +439,53 @@ void main() {
     );
   });
 
-  testWidgets('gradient tabs reveal the new page without dimming either page', (
+  testWidgets('tabs switch immediately and preserve cached page state', (
     tester,
   ) async {
     final index = ValueNotifier<int>(0);
     addTearDown(index.dispose);
-    const firstKey = ValueKey<String>('gradient-first-state');
-    final surface = GlobalKey();
-
-    Future<Color> pixelAt(double xFraction) async {
-      return (await tester.runAsync(() async {
-        final boundary = tester.renderObject<RenderRepaintBoundary>(
-          find.byKey(surface),
-        );
-        final image = await boundary.toImage();
-        final data = await image.toByteData();
-        final x = (image.width * xFraction).floor();
-        final offset = ((image.height * 0.75).floor() * image.width + x) * 4;
-        final color = Color.fromARGB(
-          data!.getUint8(offset + 3),
-          data.getUint8(offset),
-          data.getUint8(offset + 1),
-          data.getUint8(offset + 2),
-        );
-        image.dispose();
-        return color;
-      }))!;
-    }
-
+    const firstKey = ValueKey<String>('instant-first-state');
+    final completed = <int>[];
     await tester.pumpWidget(
       MaterialApp(
-        home: RepaintBoundary(
-          key: surface,
-          child: AppFadeThroughIndexedStack(
-            indexListenable: index,
-            style: AppIndexedStackTransitionStyle.gradient,
-            duration: const Duration(milliseconds: 300),
-            separateHeader: true,
-            children: [
-              Container(
-                key: const ValueKey('gradient-old'),
-                color: Colors.red,
-                child: const _StateProbe(key: firstKey, label: 'first'),
-              ),
-              const ColoredBox(
-                key: ValueKey('gradient-new'),
-                color: Colors.blue,
-              ),
-            ],
-          ),
+        home: AppFadeThroughIndexedStack.lazy(
+          indexListenable: index,
+          style: AppIndexedStackTransitionStyle.none,
+          itemCount: 2,
+          onTransitionCompleted: completed.add,
+          itemBuilder: (_, pageIndex) => pageIndex == 0
+              ? const _StateProbe(key: firstKey, label: 'first')
+              : const _StateProbe(label: 'second'),
         ),
       ),
     );
     final originalState = tester.state<_StateProbeState>(find.byKey(firstKey));
-    expect(find.byType(ShaderMask), findsNothing);
-
     index.value = 1;
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 60));
-    expect(await pixelAt(0.1), const Color(0xff2196f3));
-    expect(await pixelAt(0.9), const Color(0xfff44336));
-    expect(find.byType(ShaderMask), findsOneWidget);
-    expect(find.byKey(const ValueKey('gradient-old')), findsOneWidget);
-    expect(find.byKey(const ValueKey('gradient-new')), findsOneWidget);
+    expect(find.text('second'), findsOneWidget);
+    expect(find.text('first'), findsNothing);
+    expect(completed, [1]);
+    expect(find.byType(ShaderMask), findsNothing);
     expect(
       find.descendant(
         of: find.byType(AppFadeThroughIndexedStack),
-        matching: find.byType(FadeTransition),
+        matching: find.byType(SlideTransition),
       ),
       findsNothing,
     );
-    await tester.pumpAndSettle();
-    expect(find.byType(ShaderMask), findsNothing);
-
+    expect(
+      find.descendant(
+        of: find.byType(AppFadeThroughIndexedStack),
+        matching: find.byType(Opacity),
+      ),
+      findsNothing,
+    );
+    expect(tester.binding.transientCallbackCount, 0);
     index.value = 0;
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 60));
-    expect(await pixelAt(0.1), const Color(0xff2196f3));
-    expect(await pixelAt(0.9), const Color(0xfff44336));
-    expect(find.byType(ShaderMask), findsOneWidget);
-    expect(find.byKey(const ValueKey('gradient-old')), findsOneWidget);
-    expect(find.byKey(const ValueKey('gradient-new')), findsOneWidget);
-    await tester.pumpAndSettle();
-    expect(find.byType(ShaderMask), findsNothing);
+    expect(find.text('first'), findsOneWidget);
+    expect(find.text('second'), findsNothing);
+    expect(completed, [1, 0]);
     expect(
       tester.state<_StateProbeState>(find.byKey(firstKey)),
       same(originalState),
@@ -809,7 +795,7 @@ void main() {
           builder: (context, itemCount, _) => AppFadeThroughIndexedStack.lazy(
             indexListenable: index,
             itemCount: itemCount,
-            style: AppIndexedStackTransitionStyle.gradient,
+            style: AppIndexedStackTransitionStyle.none,
             itemBuilder: (_, itemIndex) =>
                 _StateProbe(label: 'page-$itemIndex'),
           ),

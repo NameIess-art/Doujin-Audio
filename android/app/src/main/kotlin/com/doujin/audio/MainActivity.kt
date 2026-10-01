@@ -264,11 +264,6 @@ open class MainActivity : FlutterFragmentActivity() {
             PlatformChannelNames.NATIVE_PLAYBACK_EVENTS
         ).also { it.setStreamHandler(nativePlaybackBridge) }
 
-        powerMethodHandler?.dispose()
-        val powerMethodHandler = PowerMethodHandler(this)
-        this.powerMethodHandler = powerMethodHandler
-        MethodChannel(messenger, PlatformChannelNames.POWER)
-            .setMethodCallHandler(powerMethodHandler)
         MethodChannel(messenger, PlatformChannelNames.UPDATE)
             .setMethodCallHandler(UpdateMethodHandler(this))
         videoDisplayMethodHandler?.dispose()
@@ -290,6 +285,11 @@ open class MainActivity : FlutterFragmentActivity() {
         val fileCacheOperations = FileCacheOperations(applicationContext)
         val fileCacheTaskExecutor = FileCacheTaskExecutor()
         this.fileCacheTaskExecutor = fileCacheTaskExecutor
+        powerMethodHandler?.dispose()
+        val powerMethodHandler = PowerMethodHandler(this, fileCacheTaskExecutor)
+        this.powerMethodHandler = powerMethodHandler
+        MethodChannel(messenger, PlatformChannelNames.POWER)
+            .setMethodCallHandler(powerMethodHandler)
         val audioPickerCoordinator = AudioPickerCoordinator(
             this,
             fileCacheTaskExecutor

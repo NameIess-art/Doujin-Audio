@@ -67,6 +67,60 @@ void main() {
     expect(store.resolvedPath('missing'), isNull);
   });
 
+  test('restored synchronous lookups never query the filesystem', () async {
+    final store = createStore();
+    final saved = await store.putBytes(
+      logicalKey: 'track:cold',
+      bytes: <int>[1, 2, 3],
+    );
+    final restored = createStore();
+    await restored.initialize();
+
+    IOOverrides.runZoned(() {
+      expect(restored.resolvedPath('track:cold'), saved);
+      expect(restored.resolveStoredPath(saved), saved);
+    }, createFile: (_) => throw StateError('Synchronous cover I/O'));
+  });
+
+  test('asynchronous validation retires a missing persisted binding', () async {
+    final store = createStore();
+    final saved = await store.putBytes(
+      logicalKey: 'track:missing',
+      bytes: <int>[1, 2, 3],
+    );
+    await File(saved!).delete();
+
+    expect(store.resolvedPath('track:missing'), saved);
+    expect(await store.validatedPath('track:missing'), isNull);
+    expect(store.resolvedPath('track:missing'), isNull);
+    final restored = createStore();
+    await restored.initialize();
+    expect(restored.resolvedPath('track:missing'), isNull);
+  });
+
+  test('old validation cannot remove a replacement binding', () async {
+    final store = createStore();
+    await store.initialize();
+    final missing = File(path.join(supportDirectory.path, 'missing.jpg'));
+    final missingStat = await missing.stat();
+    await store.bind('track:rebound', missing.path);
+    final stat = Completer<FileStat>();
+    final validation = IOOverrides.runZoned(
+      () => store.validatedPath('track:rebound'),
+      createFile: (value) => _DelayedStatFile(value, stat.future),
+    );
+    await store.invalidate(<String>['track:rebound']);
+    const replacement = 'content://covers/replacement';
+    await store.bind('track:rebound', replacement);
+    stat.complete(missingStat);
+
+    expect(await validation, isNull);
+    expect(store.resolvedPath('track:rebound'), replacement);
+    final restored = createStore();
+    await restored.initialize();
+    expect(restored.resolvedPath('track:rebound'), replacement);
+  });
+
   test(
     'legacy cache files are migrated and old paths remain resolvable',
     () async {
@@ -219,4 +273,18 @@ void main() {
 
     expect(second, first);
   });
+}
+
+class _DelayedStatFile implements File {
+  _DelayedStatFile(this.path, this._stat);
+
+  @override
+  final String path;
+  final Future<FileStat> _stat;
+
+  @override
+  Future<FileStat> stat() => _stat;
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

@@ -639,7 +639,8 @@ void main() {
         );
         final root = result.detail.target.targetPath;
         final renamedCover = PathMatcher.join(root, 'other.jpg');
-        final generation = runtimeGraph.library.coverArtworkCacheService.generation;
+        final generation =
+            runtimeGraph.library.coverArtworkCacheService.generation;
         await runtimeGraph.library.setFolderManualCover(root, renamedCover);
 
         expect(queue.playbackQueue!.name, 'My queue');
@@ -1392,12 +1393,13 @@ void main() {
 
         cache.resolvedPath = '/cover.image';
         coverUi.setInteractionPaused(true);
-        String? immediateCover;
-        unawaited(coverUi.deferredTrackCover(track).then((path) {
-          immediateCover = path;
-        }));
-        expect(immediateCover, '/cover.image');
+        final validation = coverUi.deferredTrackCover(track);
+        expect(cache.resolvedForTrack(track), '/cover.image');
+        await Future<void>.delayed(const Duration(milliseconds: 20));
         expect(cache.requestedPaths, <String>[track.path]);
+        coverUi.setInteractionPaused(false);
+        expect(await validation, '/cover.image');
+        expect(cache.requestedPaths, <String>[track.path, track.path]);
       },
     );
   });
@@ -1412,8 +1414,8 @@ class _PlaybackCoverWarmupRecordingCacheService
   String? resolvedPath;
 
   @override
-  String? resolvedForTrack(MusicTrack? track, {String? trackPath}) => resolvedPath;
-
+  String? resolvedForTrack(MusicTrack? track, {String? trackPath}) =>
+      resolvedPath;
 
   @override
   Future<String?> futureForTrack(MusicTrack? track, {String? trackPath}) async {

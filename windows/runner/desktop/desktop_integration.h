@@ -11,6 +11,7 @@
 
 class SubtitleWindow;
 class MediaControls;
+class ScheduledTasks;
 
 class DesktopIntegration {
  public:
@@ -44,4 +45,5 @@ class DesktopIntegration {
   std::vector<std::unique_ptr<Channel>> channels_;
   std::unique_ptr<SubtitleWindow> subtitles_;
   std::unique_ptr<MediaControls> media_;
+  std::unique_ptr<ScheduledTasks> scheduled_tasks_;
 };

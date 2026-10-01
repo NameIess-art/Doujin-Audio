@@ -110,6 +110,21 @@ void main() {
           );
           expect(result?['ok'], true);
         }
+        // Validation errors raised on the scheduler worker keep the channel's
+        // existing error contract and still complete on the platform thread.
+        await expectLater(
+          power.invokeMethod<Object?>('syncPlaybackTimerAlarms', {
+            ...timer,
+            'timerEndsAtWallClockMs': 'invalid',
+          }),
+          throwsA(
+            isA<PlatformException>().having(
+              (error) => error.code,
+              'code',
+              'invalid_argument',
+            ),
+          ),
+        );
         expect(
           () => const MethodChannel(
             'doujin_audio/power',

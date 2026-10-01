@@ -597,8 +597,6 @@ final class TimerFacade {
     _service.autoResumeAt = null;
     _service.timerActive = false;
     _service.timerWaitingForPlayback = false;
-    unawaited(saveRuntime());
-    unawaited(syncNativeAlarms());
   }
 
   void _tickCountdown() {
@@ -652,6 +650,7 @@ final class TimerFacade {
     _cancelResumeFadeIn();
     _service.countdownTimer?.cancel();
     _service.autoResumeTimer?.cancel();
+    await _persistence.pendingNativeAlarmSync;
     await _service.dispose();
   }
 }

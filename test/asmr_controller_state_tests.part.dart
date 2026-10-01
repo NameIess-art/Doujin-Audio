@@ -128,6 +128,91 @@ void registerAsmrControllerStateTests({
   });
 
   test(
+    'disposing the controller prevents an in-flight category commit',
+    () async {
+      await resetPrefs();
+      final started = Completer<void>();
+      final release = Completer<void>();
+      var requests = 0;
+      final api = _FakeAsmrApiService(
+        beforeFetchWorkResponse: (_) async {
+          if (++requests == 2) {
+            started.complete();
+            await release.future;
+          }
+        },
+      );
+      final controller = createTestAsmrController(
+        preferencesStore: preferences,
+        persistenceRepository: persistenceRepository(),
+        apiService: api,
+      );
+      await controller.initializeForVisiblePage();
+      await controller.refreshCategory(AsmrCategoryType.release);
+      final pending = controller.refreshCategory(AsmrCategoryType.release);
+      await started.future;
+      final previous = controller.categoryViewState(AsmrCategoryType.release);
+      controller.dispose();
+      release.complete();
+      await pending;
+      final current = controller.categoryViewState(AsmrCategoryType.release);
+      expect(current.works, same(previous.works));
+      expect(current.revision, previous.revision);
+      expect(current.lastError, isNull);
+    },
+  );
+
+  for (final failOldPage in [false, true]) {
+    test(
+      'language change ignores old pagination completion, failure=$failOldPage',
+      () async {
+        await resetPrefs();
+        final started = Completer<void>();
+        final release = Completer<void>();
+        final api = _FakeAsmrApiService(
+          largeRecommendationPool: true,
+          beforeFetchWorkResponse: (request) async {
+            if (request == 'release:desc:2') {
+              started.complete();
+              await release.future;
+            }
+          },
+        );
+        final controller = createTestAsmrController(
+          preferencesStore: preferences,
+          persistenceRepository: persistenceRepository(),
+          apiService: api,
+        );
+        await controller.initializeForVisiblePage(
+          defaultLanguage: AsmrContentLanguage.en,
+        );
+        await controller.refreshCategory(AsmrCategoryType.release);
+        final pending = controller.loadMoreCategory(AsmrCategoryType.release);
+        await started.future;
+        expect(controller.setPageLanguage(AppLanguage.ja), isTrue);
+        await controller.refreshCategory(AsmrCategoryType.release);
+        final previous = controller.categoryViewState(AsmrCategoryType.release);
+        var notifications = 0;
+        controller.addListener(() => notifications++);
+        if (failOldPage) {
+          release.completeError(StateError('Old page failed'));
+        } else {
+          release.complete();
+        }
+        await pending;
+        final current = controller.categoryViewState(AsmrCategoryType.release);
+        expect(current.works, same(previous.works));
+        expect(current.works, hasLength(40));
+        expect(current.revision, previous.revision);
+        expect(current.lastError, isNull);
+        expect(current.isLoadingMore, isFalse);
+        expect(current.needsLoadMoreRetry, isFalse);
+        expect(notifications, 0);
+      },
+    );
+  }
+
+  test(
     'ASMR visible categories default to requested five categories',
     () async {
       await resetPrefs();

@@ -75,6 +75,7 @@ android {
 
     defaultConfig {
         applicationId = "com.doujin.audio"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode

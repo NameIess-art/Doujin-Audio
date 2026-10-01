@@ -56,11 +56,13 @@ final class LibraryMetadataCoordinator {
   final void Function() _notifyCoverChanged;
   Future<void>? _missingDurationBackfill;
   bool _backfillRequestedAgain = false;
+  bool _pendingCoverNotification = false;
   int _epoch = 0;
   bool _disposed = false;
 
   void prepareForReset() {
     _epoch++;
+    _pendingCoverNotification = false;
     _missingDurationBackfill = null;
     _backfillRequestedAgain = false;
   }
@@ -74,13 +76,25 @@ final class LibraryMetadataCoordinator {
   Future<AudioDetailLoadResult> loadAudioDetail(AudioDetailTarget target) =>
       _detailCacheService.load(canonicalTarget(target));
 
-  Future<AudioDetailSaveResult> saveAudioDetail(AudioDetail detail) async {
+  Future<AudioDetailSaveResult> saveAudioDetail(
+    AudioDetail detail, {
+    bool deferCategoryUpdate = false,
+  }) async {
     final result = await _detailCacheService.save(
       detail.copyWith(target: canonicalTarget(detail.target)),
     );
-    _snapshotCacheService.markDetailChanged(result.detail);
-    _syncState();
+    _snapshotCacheService.markDetailChanged(result.detail, deferCategoryUpdate);
+    if (!deferCategoryUpdate) _syncState();
     return result;
+  }
+
+  void flushMetadataUpdates() {
+    _snapshotCacheService.flushDetailChanges();
+    _syncState();
+    if (_pendingCoverNotification) {
+      _pendingCoverNotification = false;
+      _notifyCoverChanged();
+    }
   }
 
   Future<void> deleteAudioDetail(AudioDetailTarget target) async {
@@ -518,6 +532,7 @@ final class LibraryMetadataCoordinator {
     String imagePath, {
     bool newlySaved = false,
     String? sourcePath,
+    bool deferNotification = false,
   }) async {
     final stored = await _coverArtwork().setFolderCoverSelection(
       folderPath,
@@ -525,7 +540,12 @@ final class LibraryMetadataCoordinator {
       newlySaved: newlySaved,
       sourcePath: sourcePath,
     );
-    _notifyCoverChanged();
+    if (deferNotification) {
+      // The runtime cover callback also publishes detail revisions.
+      _pendingCoverNotification = true;
+    } else {
+      _notifyCoverChanged();
+    }
     return stored;
   }
 
@@ -540,6 +560,7 @@ final class LibraryMetadataCoordinator {
     required bool saveCover,
     required AppLanguage language,
     bool missingOnly = false,
+    bool deferCategoryUpdate = false,
   }) async {
     String stringValue(String current, String fetched) =>
         missingOnly && current.trim().isNotEmpty ? current : fetched;
@@ -561,7 +582,10 @@ final class LibraryMetadataCoordinator {
           ? detail.rating
           : metadata.rating,
     );
-    final saved = await saveAudioDetail(next);
+    final saved = await saveAudioDetail(
+      next,
+      deferCategoryUpdate: deferCategoryUpdate,
+    );
     String? coverPath;
     Object? coverError;
     if (saveCover &&
@@ -581,6 +605,7 @@ final class LibraryMetadataCoordinator {
           coverPath,
           newlySaved: true,
           sourcePath: downloaded.sourcePath,
+          deferNotification: deferCategoryUpdate,
         );
       } catch (error) {
         coverError = error;

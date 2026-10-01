@@ -156,16 +156,16 @@ void main() {
           'playbackSessions': sessions.length,
         },
         'scenario': _scenario,
+        'mode': kProfileMode ? 'profile' : (kReleaseMode ? 'release' : 'debug'),
+        'frameTimingDeliveryWaitMs': 2000,
+        'frameSampleWindow':
+            'Frame build start inside action wall-clock interval',
         'frameBudgetUs': _frameBudget.inMicroseconds,
         'rounds': rounds,
       };
       binding.reportData = <String, dynamic>{'uiPerformance': report};
       debugPrint('UI_PERFORMANCE ${jsonEncode(report)}');
-      expect(
-        !kProfileMode ||
-            rounds.every((round) => (round['frameCount'] as int) > 0),
-        isTrue,
-      );
+      _expectFrameBudgets(rounds);
       return;
     }
 
@@ -177,9 +177,18 @@ void main() {
       final timings = <FrameTiming>[];
       void collect(List<FrameTiming> values) => timings.addAll(values);
       WidgetsBinding.instance.addTimingsCallback(collect);
-      await _runScenario(tester, sessions, _scenario, backupFixture);
-      await tester.pump(const Duration(milliseconds: 100));
-      WidgetsBinding.instance.removeTimingsCallback(collect);
+      final started = DateTime.now().microsecondsSinceEpoch;
+      late int finished;
+      try {
+        await _runScenario(tester, sessions, _scenario, backupFixture);
+        finished = DateTime.now().microsecondsSinceEpoch;
+        await Future<void>.delayed(const Duration(seconds: 2));
+      } finally {
+        WidgetsBinding.instance.removeTimingsCallback(collect);
+      }
+      timings.retainWhere(
+        (timing) => _frameStartedWithin(timing, started, finished),
+      );
       rounds.add(_summarizeRound(round, timings));
     }
 
@@ -192,16 +201,16 @@ void main() {
         'playbackSessions': 12,
       },
       'scenario': _scenario,
+      'mode': kProfileMode ? 'profile' : (kReleaseMode ? 'release' : 'debug'),
+      'frameTimingDeliveryWaitMs': 2000,
+      'frameSampleWindow':
+          'Frame build start inside action wall-clock interval',
       'frameBudgetUs': _frameBudget.inMicroseconds,
       'rounds': rounds,
     };
     binding.reportData = <String, dynamic>{'uiPerformance': report};
     debugPrint('UI_PERFORMANCE ${jsonEncode(report)}');
-    expect(
-      !kProfileMode ||
-          rounds.every((round) => (round['frameCount'] as int) > 0),
-      isTrue,
-    );
+    _expectFrameBudgets(rounds);
     // PERF_SCENARIO changes at build time; playback uses platform semantics only.
     // ignore: avoid_redundant_argument_values
   }, semanticsEnabled: _scenario != 'playback');
@@ -822,14 +831,23 @@ Future<List<Map<String, Object>>> _measureDetailComparison(
         final timings = <FrameTiming>[];
         void collect(List<FrameTiming> values) => timings.addAll(values);
         WidgetsBinding.instance.addTimingsCallback(collect);
-        unawaited(
-          navigator.push(buildSessionDetailRoute(sessionId: sessionId)),
-        );
-        for (var frame = 0; frame < 20; frame++) {
-          await tester.pump(const Duration(milliseconds: 16));
+        final started = DateTime.now().microsecondsSinceEpoch;
+        late int finished;
+        try {
+          unawaited(
+            navigator.push(buildSessionDetailRoute(sessionId: sessionId)),
+          );
+          for (var frame = 0; frame < 20; frame++) {
+            await tester.pump(const Duration(milliseconds: 16));
+          }
+          finished = DateTime.now().microsecondsSinceEpoch;
+          await Future<void>.delayed(const Duration(seconds: 2));
+        } finally {
+          WidgetsBinding.instance.removeTimingsCallback(collect);
         }
-        await tester.pump(const Duration(milliseconds: 100));
-        WidgetsBinding.instance.removeTimingsCallback(collect);
+        timings.retainWhere(
+          (timing) => _frameStartedWithin(timing, started, finished),
+        );
         rounds.add(<String, Object>{
           ..._summarizeRound(opening, timings),
           'source': source,
@@ -1274,6 +1292,25 @@ Map<String, Object> _assessPlaybackPerformance(
     'absoluteChecks': absoluteChecks,
     'idleSessionIncrements': increments,
   };
+}
+
+void _expectFrameBudgets(List<Map<String, Object>> rounds) {
+  if (!kProfileMode) return;
+  for (final round in rounds) {
+    final reason = 'PERF_SCENARIO=$_scenario sample=${jsonEncode(round)}';
+    expect(round['frameCount'], greaterThan(0), reason: reason);
+    expect(
+      round['uiP95Us'],
+      lessThanOrEqualTo(_frameBudget.inMicroseconds),
+      reason: reason,
+    );
+    expect(
+      round['rasterP95Us'],
+      lessThanOrEqualTo(_frameBudget.inMicroseconds),
+      reason: reason,
+    );
+    expect(round['overBudgetPercent'], lessThanOrEqualTo(1), reason: reason);
+  }
 }
 
 Map<String, Object> _summarizeRound(int round, List<FrameTiming> timings) {

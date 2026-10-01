@@ -102,3 +102,76 @@ void SyncScheduledTasks(const flutter::EncodableMap& payload) {
       TASK_CREATE_OR_UPDATE,_variant_t(user_sid.c_str()),_variant_t(),TASK_LOGON_INTERACTIVE_TOKEN,
       _variant_t(),registered.put()));
 }
+
+ScheduledTasks::ScheduledTasks(HWND window)
+    : window_(window), worker_([this] { Run(); }) {}
+
+ScheduledTasks::~ScheduledTasks() {
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    stopping_ = true;
+  }
+  changed_.notify_one();
+  worker_.join();
+  // The engine is still alive; finish channel replies on its platform thread.
+  Reply();
+}
+
+void ScheduledTasks::Sync(const flutter::EncodableMap& payload,
+    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    pending_.push_back({payload, std::move(result), {}});
+  }
+  changed_.notify_one();
+}
+
+void ScheduledTasks::Run() {
+  const auto apartment = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+  for (;;) {
+    Request request;
+    {
+      std::unique_lock<std::mutex> lock(mutex_);
+      changed_.wait(lock, [this] { return stopping_ || !pending_.empty(); });
+      if (pending_.empty()) break;
+      request = std::move(pending_.front());
+      pending_.pop_front();
+    }
+    try {
+      winrt::check_hresult(apartment);
+      SyncScheduledTasks(request.payload);
+    } catch (const std::invalid_argument& e) {
+      request.error = e.what();
+      request.error_code = "invalid_argument";
+    } catch (const winrt::hresult_error& e) {
+      request.error = winrt::to_string(e.message());
+    } catch (const _com_error& e) {
+      request.error = winrt::to_string(e.ErrorMessage());
+    } catch (const std::exception& e) {
+      request.error = e.what();
+    }
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      completed_.push_back(std::move(request));
+    }
+    PostMessage(window_, kReply, 0, 0);
+  }
+  if (SUCCEEDED(apartment)) CoUninitialize();
+}
+
+void ScheduledTasks::Reply() {
+  std::deque<Request> replies;
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    replies.swap(completed_);
+  }
+  using Value = flutter::EncodableValue;
+  for (auto& reply : replies) {
+    if (reply.error.empty()) {
+      reply.result->Success(Value(flutter::EncodableMap{
+          {Value("ok"), Value(true)}, {Value("value"), Value()}}));
+    } else {
+      reply.result->Error(reply.error_code, reply.error);
+    }
+  }
+}

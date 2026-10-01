@@ -86,20 +86,30 @@ final class CoverArtworkStore {
   String? resolvedPath(String logicalKey) {
     if (!_initialized || logicalKey.isEmpty) return null;
     final stored = _bindings[logicalKey];
-    final resolved = _validResolvedValue(stored);
+    return stored == null ? null : _absoluteValue(stored);
+  }
+
+  Future<String?> validatedPath(String logicalKey) async {
+    final stored = _bindings[logicalKey];
+    final epoch = _clearEpoch;
+    final resolved = await _validResolvedValue(stored);
+    if (epoch != _clearEpoch || _bindings[logicalKey] != stored) return null;
     if (stored != null && resolved == null) {
       _bindings.remove(logicalKey);
-      unawaited(_enqueue<void>(_persistIndex));
+      await _enqueue<void>(_persistIndex);
     }
     return resolved;
   }
 
-  String? resolvedArtifact(CoverArtworkNamespace namespace, String fileName) {
+  Future<String?> validatedArtifact(
+    CoverArtworkNamespace namespace,
+    String fileName,
+  ) async {
     if (!_initialized || fileName.isEmpty) return null;
-    final candidate = File(
-      path.join(_root.path, namespace.name, _safeFileName(fileName)),
-    );
-    return _isUsableFileSync(candidate.path) ? candidate.path : null;
+    final epoch = _clearEpoch;
+    final candidate = _artifactFile(namespace, fileName);
+    final usable = await _isUsableFile(candidate.path);
+    return epoch == _clearEpoch && usable ? candidate.path : null;
   }
 
   String? resolveStoredPath(String? storedPath) {
@@ -107,11 +117,8 @@ final class CoverArtworkStore {
     final value = storedPath?.trim();
     if (value == null || value.isEmpty) return null;
     if (_isUri(value)) return value;
-    final migrated = _validResolvedValue(
-      _legacyAliases[_legacyAliasKey(value)],
-    );
-    if (migrated != null) return migrated;
-    return _isUsableFileSync(value) ? value : null;
+    final migrated = _legacyAliases[_legacyAliasKey(value)];
+    return migrated == null ? value : _absoluteValue(migrated);
   }
 
   Future<String?> putBytes({
@@ -162,7 +169,7 @@ final class CoverArtworkStore {
             ),
           };
       final output = _artifactFile(namespace, '$stem.image');
-      if (!_isUsableFileSync(output.path)) await _copyFile(source, output);
+      if (!await _isUsableFile(output.path)) await _copyFile(source, output);
       _bindings[logicalKey] = _storedValue(output.path);
       await _persistIndex();
       return output.path;
@@ -227,7 +234,9 @@ final class CoverArtworkStore {
           if (shouldCancel?.call() == true) break;
           if (entity is! File || entity.path.endsWith('.part')) continue;
           final aliasKey = _legacyAliasKey(entity.path);
-          if (_validResolvedValue(_legacyAliases[aliasKey]) != null) continue;
+          if (await _validResolvedValue(_legacyAliases[aliasKey]) != null) {
+            continue;
+          }
           final namespace = root.remote
               ? CoverArtworkNamespace.remote
               : CoverArtworkNamespace.legacy;
@@ -235,7 +244,9 @@ final class CoverArtworkStore {
               ? path.basename(entity.path)
               : '${sha256.convert(utf8.encode(path.normalize(entity.path)))}.image';
           final output = _artifactFile(namespace, outputName);
-          if (!_isUsableFileSync(output.path)) await _copyFile(entity, output);
+          if (!await _isUsableFile(output.path)) {
+            await _copyFile(entity, output);
+          }
           _legacyAliases[aliasKey] = _storedValue(output.path);
           migrated++;
         }
@@ -318,10 +329,10 @@ final class CoverArtworkStore {
     }
   }
 
-  String? _validResolvedValue(String? stored) {
+  Future<String?> _validResolvedValue(String? stored) async {
     if (stored == null || stored.isEmpty) return null;
     final value = _absoluteValue(stored);
-    return _isUri(value) || _isUsableFileSync(value) ? value : null;
+    return _isUri(value) || await _isUsableFile(value) ? value : null;
   }
 
   String _storedValue(String value) =>
@@ -333,11 +344,12 @@ final class CoverArtworkStore {
       ? value
       : path.join(_root.path, value);
 
-  bool _isUsableFileSync(String value) {
+  Future<bool> _isUsableFile(String value) async {
     try {
       final file = File(value);
-      return file.existsSync() && file.lengthSync() > 0;
-    } catch (_) {
+      final stat = await file.stat();
+      return stat.type == FileSystemEntityType.file && stat.size > 0;
+    } on FileSystemException {
       return false;
     }
   }

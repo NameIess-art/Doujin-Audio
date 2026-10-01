@@ -1,7 +1,11 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:doujin_audio/core/app_language.dart';
 import 'package:doujin_audio/core/media/audio_detail.dart';
+import 'package:doujin_audio/core/media/dlsite_metadata.dart';
+import 'package:doujin_audio/core/media/path_matcher.dart';
+import 'package:doujin_audio/core/platform/file_cache_platform_gateway.dart';
 import 'package:doujin_audio/core/persistence/json_document_store.dart';
 import 'package:doujin_audio/features/library/domain/library_node.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
@@ -10,6 +14,10 @@ import 'package:doujin_audio/features/library/application/audio_detail_repositor
 import 'package:doujin_audio/features/library/application/library_service.dart';
 import 'package:doujin_audio/features/library/application/library_organizer.dart';
 import 'package:doujin_audio/features/library/application/library_snapshot_cache_service.dart';
+import 'package:doujin_audio/features/library/application/library_metadata_coordinator.dart';
+import 'package:doujin_audio/features/library/application/dlsite_metadata_service.dart';
+import 'package:doujin_audio/features/library/application/cover_artwork_cache_service.dart';
+import 'support/test_persistence_repository.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -139,6 +147,90 @@ void main() {
 
       final updated = await service.categorySnapshot(onCommitted: () {});
       expect(updated.entries.single.detail.workTitle, 'Updated');
+    },
+  );
+
+  test(
+    'batch metadata with covers rebuilds categories and publishes once',
+    () async {
+      final library = LibraryService();
+      for (var index = 0; index < 24; index++) {
+        final folder = PathMatcher.normalize('C:/library/$index');
+        library.watchedFolders.add(folder);
+        library.library.add(
+          _track(path: '$folder/track.mp3', groupKey: folder),
+        );
+      }
+      library.markStructureChanged();
+      final repository = _FakeAudioDetailRepository();
+      final detailCache = AudioDetailCacheService(repository: repository);
+      final snapshots = LibrarySnapshotCacheService(
+        libraryService: library,
+        detailCacheService: detailCache,
+      );
+      final initial = await snapshots.categorySnapshot(onCommitted: () {});
+      final initialRevision = snapshots.categorySnapshotRevision;
+      var stateNotifications = 0;
+      var coverNotifications = 0;
+      final covers = _BatchCoverArtwork();
+      final coordinator = LibraryMetadataCoordinator(
+        databaseRepository: TestPersistenceRepository(),
+        detailCacheService: detailCache,
+        metadataService: _BatchMetadataService(),
+        asmrMetadataService: null,
+        service: library,
+        snapshotCacheService: snapshots,
+        coverArtwork: () => covers,
+        syncState: () => stateNotifications++,
+        notifyCoverChanged: () {
+          coverNotifications++;
+          expect(
+            snapshots.categorySnapshotSync?.detailRevision,
+            detailCache.revision,
+          );
+        },
+      );
+      addTearDown(coordinator.dispose);
+      for (var index = 0; index < initial.entries.length; index++) {
+        await coordinator.applyMetadata(
+          initial.entries[index].detail,
+          DlsiteMetadata(
+            rjCode: 'RJ123456',
+            workTitle: 'Updated $index',
+            circleName: index == 0 ? 'Rare circle' : 'Common circle',
+            voiceActors: const ['Common voice'],
+            tags: index == 0 ? const ['Rare tag'] : const ['Common tag'],
+            coverUrl: 'https://example.com/cover.jpg',
+          ),
+          saveCover: true,
+          language: AppLanguage.zh,
+          deferCategoryUpdate: true,
+        );
+      }
+      final latest = initial.entries.first.detail.copyWith(
+        workTitle: 'Latest edit',
+        tags: const ['Common tag'],
+      );
+      await coordinator.saveAudioDetail(latest, deferCategoryUpdate: true);
+      expect(snapshots.categorySnapshotRevision, initialRevision);
+      expect(stateNotifications, 0);
+      expect(coverNotifications, 0);
+      expect(covers.savedCount, 24);
+
+      coordinator.flushMetadataUpdates();
+      final updated = await snapshots.categorySnapshot(onCommitted: () {});
+      expect(snapshots.categorySnapshotRevision, initialRevision + 1);
+      expect(stateNotifications, 1);
+      expect(coverNotifications, 1);
+      expect(updated.entries.first.detail.workTitle, 'Latest edit');
+      expect(updated.entries.last.detail.workTitle, 'Updated 23');
+      expect(updated.tagTerms, ['Common tag']);
+      expect(updated.voiceActorTerms, ['Common voice']);
+      expect(updated.circleTerms, ['Common circle']);
+      expect(repository.batchLoadCount, 1);
+
+      await coordinator.setFolderManualCover('C:/library/0', '/covers/new.jpg');
+      expect(coverNotifications, 2);
     },
   );
 
@@ -474,6 +566,41 @@ void main() {
     expect(buildCount, 2);
     expect(commitCount, 1);
   });
+}
+
+class _BatchCoverArtwork implements CoverArtworkCacheService {
+  int savedCount = 0;
+
+  @override
+  Future<String?> setFolderCoverSelection(
+    String folderPath,
+    String coverPath, {
+    bool newlySaved = false,
+    String? sourcePath,
+  }) async {
+    savedCount++;
+    return coverPath;
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _BatchMetadataService implements DlsiteMetadataService {
+  @override
+  Future<CoverImageReference> downloadCover({
+    required String coverUrl,
+    required String folderPath,
+    required String rjCode,
+    String? fileName,
+    AppLanguage language = AppLanguage.ja,
+  }) async => const CoverImageReference(
+    displayPath: '/covers/cover.jpg',
+    sourcePath: '/covers/cover.jpg',
+  );
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 MusicTrack _track({required String path, required String groupKey}) {

@@ -74,6 +74,7 @@ DesktopIntegration::DesktopIntegration(HWND window, flutter::BinaryMessenger* me
   }
   subtitles_ = std::make_unique<SubtitleWindow>(GetModuleHandle(nullptr));
   media_ = std::make_unique<MediaControls>(window);
+  scheduled_tasks_ = std::make_unique<ScheduledTasks>(window);
   desktop_ = std::make_unique<Channel>(messenger,"doujin_audio/windows_desktop",&flutter::StandardMethodCodec::GetInstance());
   desktop_->SetMethodCallHandler([this](const auto& call, auto result) {
     try {
@@ -165,12 +166,14 @@ DesktopIntegration::DesktopIntegration(HWND window, flutter::BinaryMessenger* me
       // The installer asks the running app to exit only when the user commits installation.
     } else result.NotImplemented();
   });
-  add("doujin_audio/power",[this](const auto& call, Result& result) {
+  auto power = std::make_unique<Channel>(messenger,"doujin_audio/power",&flutter::StandardMethodCodec::GetInstance());
+  power->SetMethodCallHandler([this](const auto& call, auto result) {
+    try {
     const auto& name = call.method_name(); const auto& args = Arguments(call);
     if (name == "syncPlaybackTimerAlarms") {
       RequiredBool(args,"timerWaitingForPlayback"); RequiredBool(args,"autoResumeEnabled");
       if (!Find(args,"generation") || !Find(args,"autoResumeHour") || !Find(args,"autoResumeMinute")) throw std::invalid_argument("timer arguments");
-      SyncScheduledTasks(args); Success(result);
+      scheduled_tasks_->Sync(args,std::move(result));
     }
     else if (name == "acquireWakeLock" || name == "releaseWakeLock" || name == "setKeepScreenOn") {
       if (name == "setKeepScreenOn") screen_on_ = RequiredBool(args,"enabled");
@@ -178,9 +181,13 @@ DesktopIntegration::DesktopIntegration(HWND window, flutter::BinaryMessenger* me
         auto tag = RequiredText(args,"tag");
         if (name == "acquireWakeLock") wake_locks_.insert(tag); else wake_locks_.erase(tag);
       }
-      RefreshPower(); Success(result,Value(true));
-    } else result.NotImplemented();
+      RefreshPower(); Success(*result,Value(true));
+    } else result->NotImplemented();
+    } catch (const std::invalid_argument& e) { result->Error("invalid_argument",e.what()); }
+      catch (const winrt::hresult_error& e) { result->Error("windows_error",winrt::to_string(e.message())); }
+      catch (const std::exception& e) { result->Error("windows_error",e.what()); }
   });
+  channels_.push_back(std::move(power));
   add("doujin_audio/file_cache",[](const auto& call, Result& result) {
     if (call.method_name() != "getStorageUsage") { result.NotImplemented(); return; }
     const auto cache = std::filesystem::path(winrt::to_hstring(RequiredText(Arguments(call),"cachePath")).c_str());
@@ -199,6 +206,7 @@ DesktopIntegration::DesktopIntegration(HWND window, flutter::BinaryMessenger* me
   AddTray();
 }
 DesktopIntegration::~DesktopIntegration() {
+  scheduled_tasks_.reset();
   NOTIFYICONDATAW icon{}; icon.cbSize = sizeof(icon); icon.hWnd = window_; icon.uID = 1;
   Shell_NotifyIconW(NIM_DELETE,&icon);
   SetThreadExecutionState(ES_CONTINUOUS);
@@ -295,6 +303,7 @@ void DesktopIntegration::SetFullscreen(bool enabled) {
   }
 }
 std::optional<LRESULT> DesktopIntegration::HandleMessage(UINT message, WPARAM wp, LPARAM lp) {
+  if (message == ScheduledTasks::kReply) { scheduled_tasks_->Reply(); return 0; }
   if (auto action = media_->HandleMessage(message, wp)) {
     if (*action == "showWindow") Show();
     else if (!action->empty()) Action(*action);

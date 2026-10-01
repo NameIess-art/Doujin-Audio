@@ -8,6 +8,8 @@ import '../../../core/immutable_collections.dart';
 import '../domain/audio_effects.dart';
 import 'native_playback_bridge.dart';
 
+part 'windows_playback_session.dart';
+
 /// The desktop implementation of the existing playback transport. Each session
 /// owns one libmpv player; video surfaces borrow it without opening another source.
 class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
@@ -697,9 +699,6 @@ class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
     });
   }
 
-  static String _queueKey(Map<String, Object?> item) =>
-      (item['path'] ?? item['uri']) as String;
-
   Future<void> _updateQueue(
     _WindowsPlaybackSession session,
     List<Map<String, Object?>> queue, {
@@ -710,112 +709,11 @@ class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
         (queueStartIndex < 0 || queueStartIndex >= queue.length)) {
       throw ArgumentError('queueStartIndex is outside the queue');
     }
-    final previousQueue = session.queue;
-    final previous = previousQueue[session.index];
-    final items = queue.map((item) => Map<String, Object?>.from(item)).toList();
-    final previousKey = _queueKey(previous);
-    var occurrence = previousQueue
-        .take(session.index)
-        .where((item) => _queueKey(item) == previousKey)
-        .length;
-    var index = -1;
-    for (var i = 0; i < items.length; i++) {
-      if (_queueKey(items[i]) == previousKey && occurrence-- == 0) {
-        index = i;
-        break;
-      }
-    }
-    if (queueStartIndex != null &&
-        _queueKey(items[queueStartIndex]) == previousKey) {
-      index = queueStartIndex;
-    }
-    session.hasRetainedCurrent = index < 0;
-    if (index < 0) {
-      // Finish the removed current item with its existing decoder.
-      items.insert(0, Map<String, Object?>.from(previous));
-      index = 0;
-    }
-    final player = session.player;
-    if (player != null) {
-      final currentToken = session.index;
-      final order = List.generate(previousQueue.length, (i) => i);
-      final nativeItems = [...previousQueue];
-      session.opening = true;
-      try {
-        final available = <(String, Object?), List<int>>{};
-        for (var i = 0; i < previousQueue.length; i++) {
-          if (i == session.index) continue;
-          available
-              .putIfAbsent((
-                _queueKey(previousQueue[i]),
-                previousQueue[i]['uri'],
-              ), () => [])
-              .add(i);
-        }
-        final desired = <int?>[
-          for (var i = 0; i < items.length; i++)
-            if (i == index)
-              session.index
-            else if (available[(_queueKey(items[i]), items[i]['uri'])]
-                    ?.isNotEmpty ==
-                true)
-              available[(_queueKey(items[i]), items[i]['uri'])]!.removeAt(0)
-            else
-              null,
-        ];
-        final retained = desired.whereType<int>().toSet();
-        for (var i = order.length - 1; i >= 0; i--) {
-          if (!retained.contains(order[i])) {
-            await player.remove(i);
-            if (!_isCurrent(session)) return;
-            order.removeAt(i);
-            nativeItems.removeAt(i);
-          }
-        }
-        var newToken = -1;
-        for (var i = 0; i < desired.length; i++) {
-          final token = desired[i];
-          var from = token == null ? -1 : order.indexOf(token);
-          if (from < 0) {
-            await player.add(Media(items[i]['uri'] as String));
-            if (!_isCurrent(session)) return;
-            from = order.length;
-            order.add(newToken--);
-            nativeItems.add(items[i]);
-          }
-          if (from != i) {
-            await player.move(from, i);
-            order.insert(i, order.removeAt(from));
-            nativeItems.insert(i, nativeItems.removeAt(from));
-          }
-          if (!_isCurrent(session)) return;
-        }
-      } catch (_) {
-        if (_isCurrent(session)) {
-          // Earlier successful edits remain applied when a later command fails.
-          session.queue = nativeItems;
-          session.index = order.indexOf(currentToken);
-        }
-        rethrow;
-      } finally {
-        session.opening = false;
-      }
-    }
-    session.queue = items;
-    session.index = index;
-    if (player != null &&
-        session.pendingStart != null &&
-        player.state.duration > Duration.zero) {
-      final position = session.pendingStart!;
-      final generation = session.generation;
-      session.pendingStart = null;
-      await player.seek(position);
-      if (_isCurrent(session) &&
-          generation == session.generation &&
-          session.wantsPlay) {
-        await player.play();
-      }
-    }
+    await session.updateQueue(
+      queue,
+      queueStartIndex: queueStartIndex,
+      isCurrent: () => _isCurrent(session),
+    );
   }
 
   @override
@@ -909,138 +807,6 @@ class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
     await Future.wait(_retiring.toList());
     await _snapshots.close();
     await _progress.close();
-  }
-}
-
-class _WindowsPlaybackSession {
-  _WindowsPlaybackSession(this.id);
-  final String id;
-  Player? player;
-  VideoController? videoController;
-  final subscriptions = <StreamSubscription<dynamic>>[];
-  Future<void> serial = Future.value();
-  bool retired = false, eventPending = false;
-  Object? lastEventKey;
-  int queueRevision = 0, externalQueueRevision = 0, emittedQueueRevision = -1;
-  Duration? lastProgressPosition;
-  Duration? duration;
-
-  Future<T> enqueue<T>(Future<T> Function() action) {
-    final result = serial.then((_) => action());
-    serial = result.then<void>((_) {}, onError: (Object _, StackTrace _) {});
-    return result;
-  }
-
-  List<Map<String, Object?>> _queue = [];
-  List<String>? _cachedRetainedUris;
-
-  List<Map<String, Object?>> get queue => _queue;
-  set queue(List<Map<String, Object?>> items) {
-    var retainedChanged = items.length != _queue.length;
-    if (!retainedChanged) {
-      for (var i = 0; i < items.length; i++) {
-        if (items[i]['uri'] != _queue[i]['uri']) {
-          retainedChanged = true;
-          break;
-        }
-      }
-    }
-    _queue = items;
-    if (retainedChanged) invalidateRetainedUris();
-  }
-
-  void invalidateRetainedUris() {
-    _cachedRetainedUris = null;
-    queueRevision++;
-  }
-
-  int index = 0;
-  Duration position = Duration.zero;
-  Duration? pendingStart;
-  double volume = 1, speed = 1, fade = 1;
-  double? temporarySpeed;
-  bool repeatOne = false,
-      repeatAll = false,
-      shuffle = false,
-      wantsPlay = false,
-      completed = false,
-      opening = false;
-  NativeAudioEffects effects = NativeAudioEffects(
-    state: AudioEffectsState.flat,
-    channelSwapEnabled: false,
-  );
-  String? error;
-  bool hasRetainedCurrent = false;
-  int commandId = 0, retryAttempt = 0, generation = 0, retryGeneration = 0;
-  Timer? retryTimer;
-  Duration? retryStartedAt;
-
-  void cancelRetry() {
-    retryGeneration++;
-    retryTimer?.cancel();
-  }
-
-  NativePlaybackSnapshot snapshot({bool includeRetainedUris = true}) {
-    final item = queue[index];
-    final state = player?.state;
-    return NativePlaybackSnapshot(
-      sessionId: id,
-      uri: item['uri'] as String?,
-      path: item['path'] as String?,
-      title: item['title'] as String?,
-      subtitle: item['subtitle'] as String?,
-      artUri: item['artUri'] as String?,
-      playing: state?.playing == true && !opening && error == null,
-      playWhenReady: wantsPlay,
-      processingState: opening || pendingStart != null
-          ? 'loading'
-          : state == null
-          ? completed
-                ? 'completed'
-                : 'idle'
-          : state.completed
-          ? 'completed'
-          : state.buffering
-          ? 'buffering'
-          : 'ready',
-      position: position,
-      bufferedPosition: state?.buffer ?? Duration.zero,
-      duration: state?.duration ?? duration,
-      volume: volume,
-      speed: speed,
-      boostGain: volume > 1 ? volume : 1,
-      channelSwapEnabled: effects.channelSwapEnabled,
-      audioEffects: effects.state,
-      eqCapabilities: windowsEqCapabilities,
-      error: error,
-      queueIndex: index,
-      retainedUris: includeRetainedUris
-          ? (_cachedRetainedUris ??= immutableList(
-              queue.map((i) => i['uri'] as String),
-            ))
-          : const [],
-      hasRetainedUrisPayload: includeRetainedUris,
-      transportCommandId: commandId,
-    );
-  }
-
-  Future<void> releasePlayer() async {
-    cancelRetry();
-    temporarySpeed = null;
-    final current = player;
-    if (current == null) return;
-    if (current.state.duration > Duration.zero) {
-      duration = current.state.duration;
-    }
-    player = null;
-    videoController = null;
-    pendingStart = null;
-    lastProgressPosition = null;
-    for (final subscription in subscriptions) {
-      await subscription.cancel();
-    }
-    subscriptions.clear();
-    await current.dispose();
   }
 }
 

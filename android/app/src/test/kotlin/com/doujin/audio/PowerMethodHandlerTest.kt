@@ -2,6 +2,7 @@ package com.doujin.audio
 
 import android.app.Activity
 import com.doujin.audio.channel.PowerMethodHandler
+import com.doujin.audio.channel.FileCacheTaskExecutor
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import org.junit.Assert.assertEquals
@@ -13,7 +14,7 @@ class PowerMethodHandlerTest {
     @Test
     fun `missing or invalid power parameters fail before platform side effects`() {
         val activity = PowerActivity()
-        val handler = PowerMethodHandler(activity)
+        val handler = PowerMethodHandler(activity, FileCacheTaskExecutor())
         val calls = listOf(
             MethodCall("acquireWakeLock", emptyMap<String, Any?>()),
             MethodCall("acquireWakeLock", mapOf("tag" to "")),
@@ -44,7 +45,7 @@ class PowerMethodHandlerTest {
     @Test
     fun `optional wake timeout accepts omitted value`() {
         val activity = PowerActivity()
-        val handler = PowerMethodHandler(activity)
+        val handler = PowerMethodHandler(activity, FileCacheTaskExecutor())
         val result = PowerResult()
         handler.onMethodCall(MethodCall("acquireWakeLock", mapOf("tag" to "test")), result)
         val envelope = result.value as Map<*, *>

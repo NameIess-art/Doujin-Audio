@@ -257,7 +257,7 @@ final class CoverArtworkSourceResolver {
     final logicalKey =
         'video:${PathMatcher.normalize(track.path)}:'
         '${track.modifiedAt?.millisecondsSinceEpoch ?? 0}:v3';
-    final storedFrame = _artworkStore.resolvedPath(logicalKey);
+    final storedFrame = await _artworkStore.validatedPath(logicalKey);
     if (storedFrame != null) return storedFrame;
     try {
       final nativeFrame = await _fileCacheGateway.resolveVideoFrame(

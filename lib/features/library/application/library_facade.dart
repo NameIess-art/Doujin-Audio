@@ -528,13 +528,17 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
     required bool saveCover,
     required AppLanguage language,
     bool missingOnly = false,
+    bool deferCategoryUpdate = false,
   }) => _metadataCoordinator.applyMetadata(
     detail,
     metadata,
     saveCover: saveCover,
     language: language,
     missingOnly: missingOnly,
+    deferCategoryUpdate: deferCategoryUpdate,
   );
+
+  void flushMetadataUpdates() => _metadataCoordinator.flushMetadataUpdates();
 
   void setInteractionPaused(bool paused) {
     if (_interactionPaused == paused) return;

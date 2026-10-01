@@ -16,6 +16,67 @@ void main() {
   });
 
   group('TimerFacade', () {
+    for (final target in [TargetPlatform.android, TargetPlatform.windows]) {
+      test(
+        '$target manual confirmation synchronizes only the final timer',
+        () async {
+          debugDefaultTargetPlatformOverride = target;
+          addTearDown(() => debugDefaultTargetPlatformOverride = null);
+          final platform = _RecordingPowerPlatformService();
+          final service = TimerService();
+          final timer = TimerFacade.create(
+            service: service,
+            powerPlatformService: platform,
+          );
+          addTearDown(timer.dispose);
+          _attachNoopRuntime(timer);
+
+          timer.configureTimer(TimerMode.manual, const Duration(minutes: 5));
+          timer.startCountdown();
+          await timer.syncNativeAlarms();
+
+          expect(platform.timerSyncs, hasLength(1));
+          expect(
+            platform.timerSyncs.single['timerEndsAtWallClockMs'],
+            service.timerEndsAt!.millisecondsSinceEpoch,
+          );
+          expect(
+            platform.timerSyncs.single['generation'],
+            service.timerGeneration,
+          );
+        },
+      );
+    }
+
+    test(
+      'alarm changes wait for the previous native reply and send the latest state',
+      () async {
+        final platform = _RecordingPowerPlatformService();
+        final gate = Completer<void>();
+        platform.syncGate = gate;
+        final timer = TimerFacade.create(powerPlatformService: platform);
+        addTearDown(timer.dispose);
+        _attachNoopRuntime(timer);
+        timer.configureTimer(TimerMode.manual, const Duration(minutes: 5));
+        timer.startCountdown();
+        await Future<void>.delayed(Duration.zero);
+        expect(platform.timerSyncs, hasLength(1));
+
+        timer.setAutoResume(true, 8, 15);
+        timer.cancelTimer();
+        final finished = timer.syncNativeAlarms();
+        await Future<void>.delayed(Duration.zero);
+        expect(platform.timerSyncs, hasLength(1));
+        gate.complete();
+        await finished;
+
+        expect(platform.timerSyncs, hasLength(2));
+        expect(platform.timerSyncs.last['timerMode'], isNull);
+        expect(platform.timerSyncs.last['timerEndsAtWallClockMs'], isNull);
+        expect(platform.timerSyncs.last['autoResumeAtMs'], isNull);
+      },
+    );
+
     test(
       'Android auto-resume alarms wait for the paused definitions to flush',
       () async {
@@ -573,6 +634,7 @@ final class _RecordingPowerPlatformService extends PowerPlatformService {
   _RecordingPowerPlatformService() : super(isAndroidOverride: false);
 
   final List<Map<String, Object?>> timerSyncs = <Map<String, Object?>>[];
+  Completer<void>? syncGate;
 
   @override
   Future<void> syncPlaybackTimerAlarms({
@@ -589,9 +651,11 @@ final class _RecordingPowerPlatformService extends PowerPlatformService {
   }) async {
     timerSyncs.add(<String, Object?>{
       'timerMode': timerMode,
+      'timerEndsAtWallClockMs': timerEndsAtWallClockMs,
       'pausedSessionIds': List<String>.from(pausedSessionIds),
       'generation': generation,
       'autoResumeAtMs': autoResumeAtMs,
     });
+    await syncGate?.future;
   }
 }

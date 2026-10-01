@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as path;
 
@@ -14,7 +13,12 @@ import '../../../core/media/media_file_support.dart';
 import '../domain/library_persistence_repository.dart';
 import 'audio_detail_cache_service.dart';
 import 'cover_artwork_store.dart';
-import 'remote_cover_downloader.dart';
+import 'remote_cover_cache.dart';
+export 'remote_cover_cache.dart'
+    show
+        remoteCoverSearchKey,
+        normalizeRemoteCoverUrl,
+        normalizedRemoteUrlFromKey;
 export 'remote_cover_downloader.dart' show remoteCoverRequestHeadersForUrl;
 import 'library_organizer.dart';
 import 'library_service.dart';
@@ -25,7 +29,6 @@ import '../../../core/media/path_matcher.dart';
 const String _folderCoverSelectionsKey = 'folder_cover_selections_v1';
 const int _resolvedTrackCoverLimit = 600;
 const int _resolvedFolderCoverLimit = 300;
-const int _resolvedRemoteCoverLimit = 300;
 const int _manualCoverValidityLimit = 1200;
 
 class CoverArtworkCacheService {
@@ -51,8 +54,6 @@ class CoverArtworkCacheService {
        _audioDetailCacheService = audioDetailCacheService,
        _fileCacheGateway =
            fileCacheGateway ?? FileCachePlatformGateway.instance,
-       _remoteCoverDownloader = remoteCoverDownloader,
-       _now = now ?? DateTime.now,
        _artworkStore =
            artworkStore ??
            CoverArtworkStore(
@@ -62,11 +63,15 @@ class CoverArtworkCacheService {
        _isActiveCoverKey = isActiveCoverKey,
        _onActiveCoverChanged = onActiveCoverChanged,
        _preferEmbeddedCover = preferEmbeddedCover {
-    _remoteDownloads = RemoteCoverDownloader(
+    _remoteCovers = RemoteCoverCache(
       requestTimeout: requestTimeout,
       downloadIdleTimeout: downloadIdleTimeout,
       artworkStore: _artworkStore,
       isClearingPersistentCache: () => _isClearingPersistentCache,
+      download: remoteCoverDownloader,
+      now: now,
+      isActiveCoverKey: isActiveCoverKey,
+      onActiveCoverChanged: onActiveCoverChanged,
     );
     _sourceResolver = CoverArtworkSourceResolver(
       libraryService: libraryService,
@@ -81,9 +86,7 @@ class CoverArtworkCacheService {
   final LibraryPersistenceRepository? _databaseRepository;
   final AudioDetailCacheService? _audioDetailCacheService;
   final FileCachePlatformGateway _fileCacheGateway;
-  final Future<String?> Function(String remoteUrl)? _remoteCoverDownloader;
-  late final RemoteCoverDownloader _remoteDownloads;
-  final DateTime Function() _now;
+  late final RemoteCoverCache _remoteCovers;
   final CoverArtworkStore _artworkStore;
   late final CoverArtworkSourceResolver _sourceResolver;
   final bool Function(String coverSearchKey)? _isActiveCoverKey;
@@ -102,12 +105,6 @@ class CoverArtworkCacheService {
   final Map<String, String?> _resolvedTrackCovers = <String, String?>{};
   final Map<String, Future<String?>> _resolvedTrackCoverFutures =
       <String, Future<String?>>{};
-  final Map<String, Future<String?>> _remoteCoverFutures =
-      <String, Future<String?>>{};
-  final Map<String, String?> _resolvedRemoteCovers = <String, String?>{};
-  final Map<String, Future<String?>> _resolvedRemoteCoverFutures =
-      <String, Future<String?>>{};
-  final Map<String, _RemoteCoverFailure> _remoteCoverFailures = {};
   final Map<String, bool> _manualCoverPathValidityCache = <String, bool>{};
   final Map<String, Future<String?>> _manualCoverValidationFutures =
       <String, Future<String?>>{};
@@ -153,7 +150,7 @@ class CoverArtworkCacheService {
     final pending = <Future<String?>>{
       ..._trackCoverFutures.values,
       ..._folderCoverFutures.values,
-      ..._remoteCoverFutures.values,
+      ..._remoteCovers.pending,
     };
     invalidateAll();
     try {
@@ -270,16 +267,7 @@ class CoverArtworkCacheService {
     return null;
   }
 
-  String? resolvedForRemoteCover(String url) {
-    final remoteKey = remoteCoverSearchKey(url);
-    if (remoteKey == null) return null;
-    return _resolvedRemoteCovers[remoteKey] ??
-        _artworkStore.resolvedPath(remoteKey) ??
-        _artworkStore.resolvedArtifact(
-          CoverArtworkNamespace.remote,
-          '${_remoteCoverFileStem(url)}.image',
-        );
-  }
+  String? resolvedForRemoteCover(String url) => _remoteCovers.resolvedFor(url);
 
   String? resolvedEmbeddedCoverForPath(String filePath) {
     final track = _libraryService.trackByPath(filePath);
@@ -410,36 +398,8 @@ class CoverArtworkCacheService {
     return _resolveCoverPathForFolder(folderPath);
   }
 
-  Future<String?> futureForRemoteCover(String url) {
-    final remoteKey = remoteCoverSearchKey(url);
-    if (remoteKey == null) return Future<String?>.value();
-    final resolvedFuture = _resolvedRemoteCoverFutures[remoteKey];
-    if (resolvedFuture != null) {
-      final resolvedPath = _resolvedRemoteCovers[remoteKey];
-      if (resolvedPath != null &&
-          _isResolvedRemoteCoverPathPresent(resolvedPath)) {
-        return resolvedFuture;
-      }
-      _resolvedRemoteCovers.remove(remoteKey);
-      _resolvedRemoteCoverFutures.remove(remoteKey);
-    }
-    final storedPath =
-        _artworkStore.resolvedPath(remoteKey) ??
-        _artworkStore.resolvedArtifact(
-          CoverArtworkNamespace.remote,
-          '${_remoteCoverFileStem(url)}.image',
-        );
-    if (storedPath != null) {
-      _resolvedRemoteCovers[remoteKey] = storedPath;
-      final storedFuture = SynchronousFuture<String?>(storedPath);
-      _resolvedRemoteCoverFutures[remoteKey] = storedFuture;
-      return storedFuture;
-    }
-    return _resolveRemoteCover(
-      remoteKey,
-      normalizedRemoteUrlFromKey(remoteKey),
-    );
-  }
+  Future<String?> futureForRemoteCover(String url) =>
+      _remoteCovers.resolve(url);
 
   bool isLoadingForFolder(String folderPath) {
     return _folderCoverFutures.containsKey(PathMatcher.normalize(folderPath));
@@ -693,9 +653,7 @@ class CoverArtworkCacheService {
     _resolvedTrackCovers.remove(normalizedScope);
     _resolvedTrackCoverFutures.remove(normalizedScope);
     _removeTrackCoverEntriesInScope(normalizedScope);
-    _remoteCoverFutures.remove(normalizedScope);
-    _resolvedRemoteCovers.remove(normalizedScope);
-    _resolvedRemoteCoverFutures.remove(normalizedScope);
+    _remoteCovers.invalidate(normalizedScope);
     _manualCoverPathValidityCache.clear();
     _manualCoverValidationFutures.clear();
   }
@@ -742,10 +700,7 @@ class CoverArtworkCacheService {
       _resolvedTrackCovers.remove(scope);
       _resolvedTrackCoverFutures.remove(scope);
       _removeTrackCoverEntriesInScope(scope);
-      _remoteCoverFutures.remove(scope);
-      _resolvedRemoteCovers.remove(scope);
-      _resolvedRemoteCoverFutures.remove(scope);
-      _remoteCoverFailures.remove(scope);
+      _remoteCovers.invalidate(scope, clearFailure: true);
     }
   }
 
@@ -761,10 +716,7 @@ class CoverArtworkCacheService {
     _trackCoverFutures.clear();
     _resolvedTrackCovers.clear();
     _resolvedTrackCoverFutures.clear();
-    _remoteCoverFutures.clear();
-    _resolvedRemoteCovers.clear();
-    _resolvedRemoteCoverFutures.clear();
-    _remoteCoverFailures.clear();
+    _remoteCovers.invalidateAll();
     _manualCoverPathValidityCache.clear();
     _manualCoverValidationFutures.clear();
   }
@@ -830,14 +782,6 @@ class CoverArtworkCacheService {
     );
   }
 
-  void _trimResolvedRemoteCovers() {
-    _trimResolvedCache(
-      _resolvedRemoteCovers,
-      _resolvedRemoteCoverLimit,
-      futures: _resolvedRemoteCoverFutures,
-    );
-  }
-
   void _trimPlaybackTrackCoverFutures() {
     _trimResolvedCache(_playbackTrackCoverFutures, _resolvedTrackCoverLimit);
   }
@@ -857,11 +801,7 @@ class CoverArtworkCacheService {
       _resolvedFolderCoverLimit ~/ 4,
       futures: _resolvedFolderCoverFutures,
     );
-    _trimResolvedCache(
-      _resolvedRemoteCovers,
-      _resolvedRemoteCoverLimit ~/ 4,
-      futures: _resolvedRemoteCoverFutures,
-    );
+    _remoteCovers.trimMemory();
   }
 
   void _removeTrackCoverEntriesInScope(String normalizedScope) {
@@ -951,39 +891,22 @@ class CoverArtworkCacheService {
       }
     }
 
-    final storedTrackPath = _artworkStore.resolvedPath(
-      _trackStoreKey(coverSearchKey, track),
-    );
+    final storeKey = _trackStoreKey(coverSearchKey, track);
+    final previousStoredPath = _artworkStore.resolvedPath(storeKey);
+    final storedTrackPath = await _artworkStore.validatedPath(storeKey);
+    if (requestGeneration != _generation) {
+      return resolvedForTrack(track, trackPath: trackPath);
+    }
     if (storedTrackPath != null) {
       _resolvedTrackCovers[coverSearchKey] = storedTrackPath;
       final storedFuture = SynchronousFuture<String?>(storedTrackPath);
       _resolvedTrackCoverFutures[coverSearchKey] = storedFuture;
       return storedFuture;
     }
-
-    final cachedManualPath = track?.isSingle == true
-        ? _cachedManualCoverPath(track?.manualCoverPath)
-        : null;
-    if (cachedManualPath != null) {
-      unawaited(_saveTrackCardCoverPath(track, cachedManualPath));
-      _resolvedTrackCovers[coverSearchKey] = cachedManualPath;
-      final future = _resolvedTrackCoverFutures.putIfAbsent(
-        coverSearchKey,
-        () => SynchronousFuture<String?>(cachedManualPath),
-      );
-      _trimResolvedTrackCovers();
-      return future;
-    }
-    final cachedCoverPath = _cachedManualCoverPath(track?.coverCachePath);
-    if (cachedCoverPath != null) {
-      unawaited(_saveTrackCardCoverPath(track, cachedCoverPath));
-      _resolvedTrackCovers[coverSearchKey] = cachedCoverPath;
-      final future = _resolvedTrackCoverFutures.putIfAbsent(
-        coverSearchKey,
-        () => SynchronousFuture<String?>(cachedCoverPath),
-      );
-      _trimResolvedTrackCovers();
-      return future;
+    if (previousStoredPath != null &&
+        _resolvedTrackCovers[coverSearchKey] == previousStoredPath) {
+      _resolvedTrackCovers.remove(coverSearchKey);
+      unawaited(_resolvedTrackCoverFutures.remove(coverSearchKey));
     }
 
     final manualPathFuture = track?.isSingle == true
@@ -992,14 +915,11 @@ class CoverArtworkCacheService {
     final coverCachePathFuture = _validatedManualCoverPath(
       track?.coverCachePath,
     );
-    final cachedFuture = _resolvedTrackCoverFutures[coverSearchKey];
-    if (cachedFuture != null &&
-        _resolvedTrackCovers.containsKey(coverSearchKey)) {
-      return cachedFuture;
-    }
-
     return _trackCoverFutures.putIfAbsent(coverSearchKey, () async {
       final manualPath = await manualPathFuture;
+      if (requestGeneration != _generation) {
+        return resolvedForTrack(track, trackPath: trackPath);
+      }
       if (manualPath != null) {
         _resolvedTrackCovers[coverSearchKey] = manualPath;
         _resolvedTrackCoverFutures[coverSearchKey] = SynchronousFuture<String?>(
@@ -1011,6 +931,9 @@ class CoverArtworkCacheService {
         return manualPath;
       }
       final coverCachePath = await coverCachePathFuture;
+      if (requestGeneration != _generation) {
+        return resolvedForTrack(track, trackPath: trackPath);
+      }
       if (coverCachePath != null) {
         _resolvedTrackCovers[coverSearchKey] = coverCachePath;
         _resolvedTrackCoverFutures[coverSearchKey] = SynchronousFuture<String?>(
@@ -1022,6 +945,15 @@ class CoverArtworkCacheService {
         return coverCachePath;
       }
 
+      final cachedPath = _resolvedTrackCovers[coverSearchKey];
+      if (cachedPath != null &&
+          (cachedPath ==
+                  _artworkStore.resolveStoredPath(track?.manualCoverPath) ||
+              cachedPath ==
+                  _artworkStore.resolveStoredPath(track?.coverCachePath))) {
+        _resolvedTrackCovers.remove(coverSearchKey);
+        unawaited(_resolvedTrackCoverFutures.remove(coverSearchKey));
+      }
       if (_resolvedTrackCovers.containsKey(coverSearchKey)) {
         return _resolvedTrackCoverFutures.putIfAbsent(
           coverSearchKey,
@@ -1034,6 +966,9 @@ class CoverArtworkCacheService {
       final persistedCardCover = cardCoverTarget == null
           ? null
           : (await _loadValidCardCover(cardCoverTarget)).path;
+      if (requestGeneration != _generation || _disposed) {
+        return resolvedForTrack(track, trackPath: trackPath);
+      }
       if (persistedCardCover != null) {
         final removedTrackFuture = _trackCoverFutures.remove(coverSearchKey);
         if (removedTrackFuture != null) unawaited(removedTrackFuture);
@@ -1153,21 +1088,33 @@ class CoverArtworkCacheService {
       trackPath: trackPath,
     );
     for (final normalizedFolderScope in candidateScopes) {
+      var requestGeneration = _generation;
+      var requestRevision = _coverKeyRevision(normalizedFolderScope);
+      bool isCurrent() => _isCoverKeyCurrent(
+        normalizedFolderScope,
+        generation: requestGeneration,
+        revision: requestRevision,
+      );
       var selectedCover = _folderCoverSelections[normalizedFolderScope];
       var selectedCoverPath = await _displayPathForStoredCover(
         AudioDetailTarget.libraryRootFolder(normalizedFolderScope),
         selectedCover,
       );
+      if (!isCurrent()) return resolvedForTrack(track, trackPath: trackPath);
       if (selectedCover != null && selectedCoverPath == null) {
         _folderCoverSelections.remove(normalizedFolderScope);
         await _saveFolderCoverSelections();
+        if (!isCurrent()) return resolvedForTrack(track, trackPath: trackPath);
         invalidateFolder(normalizedFolderScope);
+        requestGeneration = _generation;
+        requestRevision = _coverKeyRevision(normalizedFolderScope);
         selectedCover = null;
       }
       if (selectedCoverPath == null) {
         final persistedCover = await _loadValidFolderCardCover(
           normalizedFolderScope,
         );
+        if (!isCurrent()) return resolvedForTrack(track, trackPath: trackPath);
         if (persistedCover.selected) {
           selectedCover = persistedCover.path;
           if (selectedCover != null) {
@@ -1175,6 +1122,9 @@ class CoverArtworkCacheService {
             _folderCoverSelections[normalizedFolderScope] =
                 _persistedFolderCoverPath(selectedCover);
             await _saveFolderCoverSelections();
+            if (!isCurrent()) {
+              return resolvedForTrack(track, trackPath: trackPath);
+            }
           }
         }
       }
@@ -1187,6 +1137,7 @@ class CoverArtworkCacheService {
           normalizedFolderScope,
           selectedCoverPath,
         );
+        if (!isCurrent()) return resolvedForTrack(track, trackPath: trackPath);
         return selectedCoverPath;
       }
     }
@@ -1196,23 +1147,9 @@ class CoverArtworkCacheService {
   Future<String?> _resolveCoverPathForFolder(String folderPath) {
     final normalizedFolderPath = PathMatcher.normalize(folderPath);
 
-    final storedFolderPath = _artworkStore.resolvedPath(
-      _folderStoreKey(normalizedFolderPath),
-    );
-    if (storedFolderPath != null) {
-      _resolvedFolderCovers[normalizedFolderPath] = storedFolderPath;
-      final storedFuture = SynchronousFuture<String?>(storedFolderPath);
-      _resolvedFolderCoverFutures[normalizedFolderPath] = storedFuture;
-      return storedFuture;
-    }
-
-    if (_resolvedFolderCovers.containsKey(normalizedFolderPath)) {
-      return _resolvedFolderCoverFutures.putIfAbsent(
-        normalizedFolderPath,
-        () => SynchronousFuture<String?>(
-          _resolvedFolderCovers[normalizedFolderPath],
-        ),
-      );
+    if (_resolvedFolderCovers.containsKey(normalizedFolderPath) &&
+        _resolvedFolderCovers[normalizedFolderPath] == null) {
+      return _resolvedFolderCoverFutures[normalizedFolderPath]!;
     }
 
     final inFlight = _folderCoverFutures[normalizedFolderPath];
@@ -1221,6 +1158,24 @@ class CoverArtworkCacheService {
     final requestRevision = _coverKeyRevision(normalizedFolderPath);
     late final Future<String?> lookup;
     lookup = () async {
+      final storedFolderPath = await _artworkStore.validatedPath(
+        _folderStoreKey(normalizedFolderPath),
+      );
+      if (!_isFolderLookupCurrent(
+        normalizedFolderPath,
+        requestGeneration,
+        requestRevision,
+        lookup,
+      )) {
+        return _resolvedFolderCovers[normalizedFolderPath];
+      }
+      if (storedFolderPath != null) {
+        _resolvedFolderCovers[normalizedFolderPath] = storedFolderPath;
+        _resolvedFolderCoverFutures[normalizedFolderPath] =
+            SynchronousFuture<String?>(storedFolderPath);
+        _trimResolvedFolderCovers();
+        return storedFolderPath;
+      }
       await _ensureFolderCoverSelections();
       if (!_isFolderLookupCurrent(
         normalizedFolderPath,
@@ -1367,14 +1322,6 @@ class CoverArtworkCacheService {
     return AudioDetailTarget.libraryRootFolder(rootFolder);
   }
 
-  Future<void> _saveTrackCardCoverPath(
-    MusicTrack? track,
-    String coverPath,
-  ) async {
-    final target = _cardCoverTargetForTrack(track);
-    if (target != null) await _saveCardCoverPath(target, coverPath);
-  }
-
   Future<({String? path, bool selected})> _loadValidCardCover(
     AudioDetailTarget target,
   ) async {
@@ -1472,118 +1419,20 @@ class CoverArtworkCacheService {
         : _validatedManualCoverPath(discovered);
   }
 
-  Future<String?> _resolveRemoteCover(String remoteKey, String remoteUrl) {
-    if (_disposed) return Future<String?>.value();
-    final resolvedFuture = _resolvedRemoteCoverFutures[remoteKey];
-    if (resolvedFuture != null) return resolvedFuture;
-    final inFlight = _remoteCoverFutures[remoteKey];
-    if (inFlight != null) return inFlight;
-    final failure = _remoteCoverFailures[remoteKey];
-    if (failure != null && _now().isBefore(failure.retryAt)) {
-      return Future<String?>.value();
-    }
-    return _remoteCoverFutures.putIfAbsent(remoteKey, () async {
-      try {
-        final previous = _resolvedRemoteCovers[remoteKey];
-        var coverPath = previous;
-        if (coverPath == null && _remoteCoverDownloader == null) {
-          await _artworkStore.initialize();
-          coverPath = _artworkStore.resolvedPath(remoteKey);
-        }
-        if (coverPath == null ||
-            !await _remoteDownloads.isUsablePath(coverPath)) {
-          _resolvedRemoteCovers.remove(remoteKey);
-          final removedResolvedFuture = _resolvedRemoteCoverFutures.remove(
-            remoteKey,
-          );
-          if (removedResolvedFuture != null) {
-            unawaited(removedResolvedFuture);
-          }
-          final downloader = _remoteCoverDownloader;
-          coverPath = await _remoteDownloads.run(
-            () => downloader == null
-                ? _remoteDownloads.download(remoteUrl, logicalKey: remoteKey)
-                : downloader(remoteUrl),
-          );
-        }
-
-        if (_disposed) return null;
-        if (coverPath == null) {
-          _resolvedRemoteCovers.remove(remoteKey);
-          final removedResolvedFuture = _resolvedRemoteCoverFutures.remove(
-            remoteKey,
-          );
-          if (removedResolvedFuture != null) {
-            unawaited(removedResolvedFuture);
-          }
-          _recordRemoteCoverFailure(remoteKey);
-        } else {
-          _remoteCoverFailures.remove(remoteKey);
-          _resolvedRemoteCovers.remove(remoteKey);
-          _resolvedRemoteCovers[remoteKey] = coverPath;
-          final resolvedFuture = Future<String?>.value(coverPath);
-          _resolvedRemoteCoverFutures[remoteKey] = resolvedFuture;
-          await _sourceResolver.bindPersistentCover(remoteKey, coverPath);
-          _trimResolvedRemoteCovers();
-        }
-
-        if (previous != coverPath &&
-            (_isActiveCoverKey?.call(remoteKey) ?? false)) {
-          _onActiveCoverChanged?.call();
-        }
-
-        return coverPath;
-      } finally {
-        final removedRemoteFuture = _remoteCoverFutures.remove(remoteKey);
-        if (removedRemoteFuture != null) unawaited(removedRemoteFuture);
-      }
-    });
-  }
-
-  void _recordRemoteCoverFailure(String remoteKey) {
-    final failureCount = (_remoteCoverFailures[remoteKey]?.count ?? 0) + 1;
-    var delaySeconds = 10;
-    for (var attempt = 1; attempt < failureCount; attempt++) {
-      delaySeconds = (delaySeconds * 2).clamp(10, 300).toInt();
-    }
-    _remoteCoverFailures.remove(remoteKey);
-    _remoteCoverFailures[remoteKey] = _RemoteCoverFailure(
-      count: failureCount,
-      retryAt: _now().add(Duration(seconds: delaySeconds)),
-    );
-    while (_remoteCoverFailures.length > _resolvedRemoteCoverLimit) {
-      _remoteCoverFailures.remove(_remoteCoverFailures.keys.first);
-    }
-  }
-
-  bool _isResolvedRemoteCoverPathPresent(String coverPath) {
-    if (PathMatcher.isContentUri(coverPath) ||
-        PathMatcher.isRemoteUri(coverPath)) {
-      return true;
-    }
-    try {
-      return File(coverPath).existsSync();
-    } catch (_) {
-      return false;
-    }
-  }
-
   Future<void> dispose() async {
     if (_disposed) return;
     _disposed = true;
-    _remoteDownloads.dispose();
+    _remoteCovers.dispose();
     await _generationSlice.dispose();
-    _remoteCoverFutures.clear();
-    _resolvedRemoteCoverFutures.clear();
-    _resolvedRemoteCovers.clear();
-    _remoteCoverFailures.clear();
   }
 
   String? _cachedManualCoverPath(String? coverPath) {
     final value = coverPath?.trim();
     if (value == null || value.isEmpty) return null;
     final stored = _artworkStore.resolveStoredPath(value);
-    if (stored != null) return stored;
+    if (stored != null && _manualCoverPathValidityCache[stored] == true) {
+      return stored;
+    }
     if (PathMatcher.isContentUri(value) || PathMatcher.isRemoteUri(value)) {
       return value;
     }
@@ -1593,28 +1442,34 @@ class CoverArtworkCacheService {
   Future<String?> _validatedManualCoverPath(String? coverPath) {
     final value = coverPath?.trim();
     if (value == null || value.isEmpty) return SynchronousFuture<String?>(null);
-    final stored = _artworkStore.resolveStoredPath(value);
-    if (stored != null) {
-      _manualCoverPathValidityCache[stored] = true;
-      _trimManualCoverValidityCache();
-      return SynchronousFuture<String?>(stored);
-    }
     if (PathMatcher.isContentUri(value) || PathMatcher.isRemoteUri(value)) {
-      _manualCoverPathValidityCache[value] = true;
-      _trimManualCoverValidityCache();
       return SynchronousFuture<String?>(value);
     }
-    final cached = _manualCoverPathValidityCache[value];
-    if (cached != null) {
-      return SynchronousFuture<String?>(cached ? value : null);
-    }
-    return _manualCoverValidationFutures.putIfAbsent(value, () async {
-      final exists = await File(value).exists();
-      _manualCoverPathValidityCache[value] = exists;
-      _trimManualCoverValidityCache();
-      unawaited(_manualCoverValidationFutures.remove(value) ?? Future.value());
-      return exists ? value : null;
-    });
+    final inFlight = _manualCoverValidationFutures[value];
+    if (inFlight != null) return inFlight;
+    late final Future<String?> validation;
+    validation = () async {
+      final requestGeneration = _generation;
+      final stored = _artworkStore.resolveStoredPath(value) ?? value;
+      try {
+        final stat = await File(stored).stat();
+        final usable = stat.type == FileSystemEntityType.file && stat.size > 0;
+        if (requestGeneration != _generation ||
+            _disposed ||
+            !identical(_manualCoverValidationFutures[value], validation)) {
+          return null;
+        }
+        _manualCoverPathValidityCache[stored] = usable;
+        _trimManualCoverValidityCache();
+        return usable ? stored : null;
+      } finally {
+        if (identical(_manualCoverValidationFutures[value], validation)) {
+          unawaited(_manualCoverValidationFutures.remove(value));
+        }
+      }
+    }();
+    _manualCoverValidationFutures[value] = validation;
+    return validation;
   }
 
   Future<String?> resolveEmbeddedCoverForPath(String filePath) =>
@@ -1633,38 +1488,7 @@ class CoverArtworkCacheService {
       'folder:$normalizedFolderPath';
 }
 
-final class _RemoteCoverFailure {
-  const _RemoteCoverFailure({required this.count, required this.retryAt});
-
-  final int count;
-  final DateTime retryAt;
-}
-
-String? remoteCoverSearchKey(String url) {
-  final normalized = normalizeRemoteCoverUrl(url);
-  if (normalized == null) return null;
-  return 'remote-cover:$normalized';
-}
-
-String? normalizeRemoteCoverUrl(String url) {
-  final trimmed = url.trim();
-  if (trimmed.isEmpty || !PathMatcher.isRemoteUri(trimmed)) return null;
-  return PathMatcher.normalize(trimmed);
-}
-
-String normalizedRemoteUrlFromKey(String remoteKey) {
-  const prefix = 'remote-cover:';
-  return remoteKey.startsWith(prefix)
-      ? remoteKey.substring(prefix.length)
-      : remoteKey;
-}
-
 String _normalizeCoverCacheKey(String value) {
   if (!value.startsWith('remote-cover:')) return PathMatcher.normalize(value);
   return remoteCoverSearchKey(normalizedRemoteUrlFromKey(value)) ?? value;
-}
-
-String _remoteCoverFileStem(String remoteUrl) {
-  final normalized = normalizeRemoteCoverUrl(remoteUrl) ?? remoteUrl.trim();
-  return sha1.convert(utf8.encode(normalized)).toString();
 }

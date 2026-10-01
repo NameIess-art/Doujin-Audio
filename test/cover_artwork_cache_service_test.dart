@@ -11,11 +11,152 @@ import 'package:doujin_audio/features/library/application/audio_detail_repositor
 import 'package:doujin_audio/features/library/application/library_service.dart';
 import 'package:doujin_audio/core/cache/app_cache_service.dart';
 import 'package:doujin_audio/features/library/application/cover_artwork_cache_service.dart';
+import 'package:doujin_audio/features/library/application/cover_artwork_store.dart';
 import 'package:doujin_audio/features/library/application/cover_image_cache_policy.dart';
 import 'package:doujin_audio/core/platform/file_cache_platform_gateway.dart';
 import 'package:doujin_audio/core/media/path_matcher.dart';
 
 void main() {
+  test(
+    'deleted persisted track artwork retires its resolved memory path',
+    () async {
+      final directory = await Directory.systemTemp.createTemp(
+        'stored_cover_deleted_',
+      );
+      addTearDown(() => directory.delete(recursive: true));
+      final track = _track(
+        path: '${directory.path}${Platform.pathSeparator}voice.flac',
+        groupKey: '',
+        isSingle: true,
+      );
+      final store = CoverArtworkStore(
+        persistentDirectory: () async => directory,
+      );
+      final key = 'track:${PathMatcher.normalize(track.path)}|0|0|false';
+      final saved = await store.putBytes(
+        logicalKey: key,
+        bytes: <int>[1, 2, 3],
+      );
+      final gateway = _FakeFileCachePlatformGateway(coversByPath: const {});
+      final cache = CoverArtworkCacheService(
+        libraryService: LibraryService(),
+        artworkStore: store,
+        fileCacheGateway: gateway,
+      );
+      expect(await cache.futureForTrack(track), saved);
+      expect(cache.resolvedForTrack(track), saved);
+      await File(saved!).delete();
+
+      expect(await cache.futureForTrack(track), isNull);
+      expect(store.resolvedPath(key), isNull);
+      expect(cache.resolvedForTrack(track), isNull);
+      expect(gateway.resolveTrackCoverPaths, <String>[track.path]);
+    },
+  );
+
+  test(
+    'old folder selection validation cannot erase a new selection',
+    () async {
+      final cover = await _temporaryCoverFile('folder_selection_stat_race');
+      final folder = cover.parent.path;
+      final repository = _MemoryTestPersistenceRepository();
+      final cache = CoverArtworkCacheService(
+        libraryService: LibraryService()..watchedFolders.add(folder),
+        databaseRepository: repository,
+        fileCacheGateway: _FakeFileCachePlatformGateway(coversByPath: const {}),
+      );
+      final track = _track(
+        path: '$folder${Platform.pathSeparator}voice.flac',
+        groupKey: folder,
+      );
+      await cache.setFolderCoverSelection(folder, cover.path, newlySaved: true);
+      await cover.delete();
+      final missingStat = await cover.stat();
+      final stat = Completer<FileStat>();
+      final started = Completer<void>();
+      final oldLookup = IOOverrides.runZoned(
+        () => cache.futureForTrack(track),
+        createFile: (value) {
+          expect(value, cover.path);
+          if (!started.isCompleted) started.complete();
+          return _DelayedManualStatFile(value, stat.future);
+        },
+      );
+      await started.future;
+      const replacement = 'content://covers/new-selection.jpg';
+      await cache.setFolderCoverSelection(
+        folder,
+        replacement,
+        newlySaved: true,
+      );
+      final committedGeneration = cache.generation;
+      stat.complete(missingStat);
+
+      expect(await oldLookup, replacement);
+      expect(cache.generation, committedGeneration);
+      expect(cache.resolvedForFolder(folder), replacement);
+      final saved =
+          json.decode(
+                (await repository.loadAppSetting(
+                  'folder_cover_selections_v1',
+                ))!,
+              )
+              as Map<String, dynamic>;
+      expect(saved[PathMatcher.normalize(folder)], replacement);
+      expect(await cache.futureForTrack(track), replacement);
+    },
+  );
+
+  test('retired manual validation keeps its replacement in flight', () async {
+    final cover = (await _temporaryCoverFile('manual_validation_race')).path;
+    final usableStat = await File(cover).stat();
+    final oldStat = Completer<FileStat>();
+    final newStat = Completer<FileStat>();
+    final oldStarted = Completer<void>();
+    final newStarted = Completer<void>();
+    var validations = 0;
+    final cache = CoverArtworkCacheService(
+      libraryService: LibraryService(),
+      fileCacheGateway: _FakeFileCachePlatformGateway(coversByPath: const {}),
+    );
+    final track = _track(
+      path: '/single/manual.flac',
+      groupKey: '',
+      isSingle: true,
+      manualCoverPath: cover,
+    );
+    final trackFile = File(track.path);
+
+    await IOOverrides.runZoned(
+      () async {
+        final oldLookup = cache.futureForTrack(track);
+        await oldStarted.future;
+        cache.trimMemory();
+        final newLookup = cache.futureForTrack(track);
+        await newStarted.future;
+        oldStat.complete(usableStat);
+        expect(await oldLookup, isNull);
+        expect(await newLookup, isNull);
+        final joinedLookup = cache.futureForTrack(track);
+        await Future<void>.delayed(Duration.zero);
+        expect(validations, 2);
+        newStat.complete(usableStat);
+        expect(await joinedLookup, cover);
+        expect(cache.resolvedForTrack(track), cover);
+      },
+      createFile: (value) {
+        if (value != cover) return trackFile;
+        validations++;
+        if (validations == 1) {
+          oldStarted.complete();
+          return _DelayedManualStatFile(value, oldStat.future);
+        }
+        if (!newStarted.isCompleted) newStarted.complete();
+        return _DelayedManualStatFile(value, newStat.future);
+      },
+    );
+  });
+
   test(
     'committing a folder cover refreshes lookups started during selection',
     () async {
@@ -1237,8 +1378,12 @@ void main() {
       addTearDown(() async {
         if (await rootDir.exists()) await rootDir.delete(recursive: true);
       });
-      final albumDir = Directory('${rootDir.path}${Platform.pathSeparator}Album');
-      final discDir = Directory('${albumDir.path}${Platform.pathSeparator}Disc 1');
+      final albumDir = Directory(
+        '${rootDir.path}${Platform.pathSeparator}Album',
+      );
+      final discDir = Directory(
+        '${albumDir.path}${Platform.pathSeparator}Disc 1',
+      );
       await discDir.create(recursive: true);
 
       final trackPath = '${discDir.path}${Platform.pathSeparator}01.flac';
@@ -1349,64 +1494,65 @@ void main() {
     },
   );
 
-  test('video cover follows own-cover preference for a selected folder cover', () async {
-    final directory = await Directory.systemTemp.createTemp(
-      'cover_cache_video_preference_',
-    );
-    addTearDown(() async {
-      if (await directory.exists()) await directory.delete(recursive: true);
-    });
-    final videoPath = '${directory.path}${Platform.pathSeparator}video.mp4';
-    final folderCover = '${directory.path}${Platform.pathSeparator}cover.jpg';
-    const videoFrame = '/cache/video-frame.image';
-    await File(videoPath).writeAsBytes(<int>[1]);
-    await File(folderCover).writeAsBytes(<int>[0xff, 0xd8, 0xff, 0xd9]);
+  test(
+    'video cover follows own-cover preference for a selected folder cover',
+    () async {
+      final directory = await Directory.systemTemp.createTemp(
+        'cover_cache_video_preference_',
+      );
+      addTearDown(() async {
+        if (await directory.exists()) await directory.delete(recursive: true);
+      });
+      final videoPath = '${directory.path}${Platform.pathSeparator}video.mp4';
+      final folderCover = '${directory.path}${Platform.pathSeparator}cover.jpg';
+      const videoFrame = '/cache/video-frame.image';
+      await File(videoPath).writeAsBytes(<int>[1]);
+      await File(folderCover).writeAsBytes(<int>[0xff, 0xd8, 0xff, 0xd9]);
 
-    final track = _track(
-      path: videoPath,
-      groupKey: directory.path,
-      isVideo: true,
-    );
-    final library = LibraryService()
-      ..watchedFolders.add(directory.path)
-      ..library.add(track);
-    var preferEmbedded = true;
-    final gateway = _FakeFileCachePlatformGateway(
-      coversByPath: <String, String>{
-        videoPath: '/cache/audio-cover.image',
-      },
-      videoFramesByPath: <String, String>{videoPath: videoFrame},
-    );
-    final cache = CoverArtworkCacheService(
-      libraryService: library,
-      fileCacheGateway: gateway,
-      preferEmbeddedCover: () => preferEmbedded,
-    );
+      final track = _track(
+        path: videoPath,
+        groupKey: directory.path,
+        isVideo: true,
+      );
+      final library = LibraryService()
+        ..watchedFolders.add(directory.path)
+        ..library.add(track);
+      var preferEmbedded = true;
+      final gateway = _FakeFileCachePlatformGateway(
+        coversByPath: <String, String>{videoPath: '/cache/audio-cover.image'},
+        videoFramesByPath: <String, String>{videoPath: videoFrame},
+      );
+      final cache = CoverArtworkCacheService(
+        libraryService: library,
+        fileCacheGateway: gateway,
+        preferEmbeddedCover: () => preferEmbedded,
+      );
 
-    await cache.setFolderCoverSelection(directory.path, folderCover);
+      await cache.setFolderCoverSelection(directory.path, folderCover);
 
-    expect(await cache.futureForTrack(track), videoFrame);
-    expect(await cache.futureForPlaybackTrack(track), videoFrame);
-    expect(cache.resolvedForTrack(track), videoFrame);
-    expect(cache.resolvedForPlaybackTrack(track), videoFrame);
-    expect(gateway.resolveTrackCoverPaths, isEmpty);
+      expect(await cache.futureForTrack(track), videoFrame);
+      expect(await cache.futureForPlaybackTrack(track), videoFrame);
+      expect(cache.resolvedForTrack(track), videoFrame);
+      expect(cache.resolvedForPlaybackTrack(track), videoFrame);
+      expect(gateway.resolveTrackCoverPaths, isEmpty);
 
-    preferEmbedded = false;
-    cache.invalidateAll();
+      preferEmbedded = false;
+      cache.invalidateAll();
 
-    expect(cache.resolvedForTrack(track), folderCover);
-    expect(cache.resolvedForPlaybackTrack(track), folderCover);
-    expect(await cache.futureForTrack(track), folderCover);
-    expect(await cache.futureForPlaybackTrack(track), folderCover);
-    expect(cache.resolvedForTrack(track), folderCover);
-    expect(cache.resolvedForPlaybackTrack(track), folderCover);
+      expect(cache.resolvedForTrack(track), folderCover);
+      expect(cache.resolvedForPlaybackTrack(track), folderCover);
+      expect(await cache.futureForTrack(track), folderCover);
+      expect(await cache.futureForPlaybackTrack(track), folderCover);
+      expect(cache.resolvedForTrack(track), folderCover);
+      expect(cache.resolvedForPlaybackTrack(track), folderCover);
 
-    preferEmbedded = true;
-    cache.invalidateAll();
+      preferEmbedded = true;
+      cache.invalidateAll();
 
-    expect(await cache.futureForTrack(track), videoFrame);
-    expect(await cache.futureForPlaybackTrack(track), videoFrame);
-  });
+      expect(await cache.futureForTrack(track), videoFrame);
+      expect(await cache.futureForPlaybackTrack(track), videoFrame);
+    },
+  );
 
   test(
     'in-flight video frame cannot replace selected folder cover after preference changes',
@@ -1884,14 +2030,10 @@ void main() {
       final audio3 = '${directory.path}${Platform.pathSeparator}03.flac';
       final audio4 = '${directory.path}${Platform.pathSeparator}04.flac';
 
-      final matchingBridge = File(
-        '${temporaryDirectory.path}/matching.image',
-      );
+      final matchingBridge = File('${temporaryDirectory.path}/matching.image');
       await matchingBridge.writeAsBytes(<int>[0xff, 0xd8, 0xff, 0xd9, 0x01]);
 
-      final distinctBridge = File(
-        '${temporaryDirectory.path}/distinct.image',
-      );
+      final distinctBridge = File('${temporaryDirectory.path}/distinct.image');
       await distinctBridge.writeAsBytes(<int>[0x89, 0x50, 0x4e, 0x47, 0x02]);
 
       final library = LibraryService();
@@ -2420,4 +2562,18 @@ MusicTrack _track({
     coverCachePath: coverCachePath,
     manualCoverPath: manualCoverPath,
   );
+}
+
+class _DelayedManualStatFile implements File {
+  _DelayedManualStatFile(this.path, this._stat);
+
+  @override
+  final String path;
+  final Future<FileStat> _stat;
+
+  @override
+  Future<FileStat> stat() => _stat;
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

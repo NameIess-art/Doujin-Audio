@@ -170,6 +170,7 @@ class LibrarySnapshotCacheService {
   int _categoryFutureStructureRevision = -1;
   int _categoryFutureDetailRevision = -1;
   int _categorySnapshotRevision = 0;
+  final _pendingCategoryDetails = <String, AudioDetail>{};
 
   List<LibraryNode> get cards => _cachedCards;
 
@@ -183,7 +184,10 @@ class LibrarySnapshotCacheService {
 
   int get categorySnapshotRevision => _categorySnapshotRevision;
 
-  AudioLibraryCategorySnapshot? get categorySnapshotSync => _categorySnapshot;
+  AudioLibraryCategorySnapshot? get categorySnapshotSync {
+    flushDetailChanges();
+    return _categorySnapshot;
+  }
 
   Future<LibraryDerivedSnapshot> buildDerivedSnapshot() {
     return AppLogService.measureAsync(
@@ -327,6 +331,7 @@ class LibrarySnapshotCacheService {
   Future<AudioLibraryCategorySnapshot> categorySnapshot({
     required VoidCallback onCommitted,
   }) {
+    flushDetailChanges();
     final structureRevision = _libraryService.structureRevision;
     final detailRevision = _detailCacheService.revision;
     final cached = _categorySnapshot;
@@ -359,6 +364,7 @@ class LibrarySnapshotCacheService {
           if (snapshot.structureRevision == _libraryService.structureRevision &&
               snapshot.detailRevision == _detailCacheService.revision) {
             _categorySnapshot = snapshot;
+            _pendingCategoryDetails.clear();
             _categorySnapshotRevision++;
             onCommitted();
           }
@@ -383,11 +389,18 @@ class LibrarySnapshotCacheService {
     _categoryFuture = null;
   }
 
-  void markDetailChanged([AudioDetail? detail]) {
+  void markDetailChanged([AudioDetail? detail, bool defer = false]) {
     _categoryFuture = null;
-    if (detail != null) {
-      _applyDetailToCategorySnapshot(detail);
+    if (detail == null) {
+      _pendingCategoryDetails.clear();
+      _categorySnapshot = null;
+      return;
     }
+    _pendingCategoryDetails[AudioLibraryCategorySnapshot.targetKey(
+          detail.target,
+        )] =
+        detail;
+    if (!defer) flushDetailChanges();
   }
 
   void clear() {
@@ -408,6 +421,7 @@ class LibrarySnapshotCacheService {
     _categoryFutureStructureRevision = -1;
     _categoryFutureDetailRevision = -1;
     _categorySnapshotRevision = 0;
+    _pendingCategoryDetails.clear();
   }
 
   void _cacheTreeSnapshot(LibraryTreeSnapshot snapshot) {
@@ -505,19 +519,21 @@ class LibrarySnapshotCacheService {
     );
   }
 
-  void _applyDetailToCategorySnapshot(AudioDetail detail) {
+  void flushDetailChanges() {
+    if (_pendingCategoryDetails.isEmpty) return;
     final cached = _categorySnapshot;
-    if (cached == null) return;
-
-    final targetKey = AudioLibraryCategorySnapshot.targetKey(detail.target);
-    var changed = false;
+    if (cached == null ||
+        cached.structureRevision != _libraryService.structureRevision) {
+      _pendingCategoryDetails.clear();
+      return;
+    }
     final updatedEntries = cached.entries
         .map((entry) {
-          if (AudioLibraryCategorySnapshot.targetKey(entry.target) !=
-              targetKey) {
-            return entry;
-          }
-          changed = true;
+          final detail =
+              _pendingCategoryDetails[AudioLibraryCategorySnapshot.targetKey(
+                entry.target,
+              )];
+          if (detail == null) return entry;
           return AudioLibraryCategoryEntry(
             target: entry.target,
             title: entry.title,
@@ -528,13 +544,14 @@ class LibrarySnapshotCacheService {
           );
         })
         .toList(growable: false);
-    if (!changed) return;
+    _pendingCategoryDetails.clear();
 
     _categorySnapshot = _categorySnapshotFromEntries(
       updatedEntries,
       structureRevision: _libraryService.structureRevision,
       detailRevision: _detailCacheService.revision,
     );
+    _categorySnapshotRevision++;
   }
 
   AudioLibraryCategorySnapshot _categorySnapshotFromEntries(

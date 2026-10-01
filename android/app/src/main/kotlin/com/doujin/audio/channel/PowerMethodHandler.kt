@@ -11,6 +11,8 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
+import android.os.Handler
+import android.os.Looper
 import android.os.PowerManager
 import android.provider.Settings
 import android.view.WindowManager
@@ -30,6 +32,48 @@ internal data class PlaybackTimerSyncArguments(
     val pausedSessionIds: List<String>,
     val generation: Int
 )
+
+internal class PlaybackTimerSyncCoordinator(
+    private val loadCandidates: ((FileCacheTaskResult<Map<String, Long>>) -> Unit) -> Boolean,
+    private val isSessionCurrent: (String, Long) -> Boolean,
+    private val apply: (PlaybackTimerSyncArguments, List<String>) -> Unit
+) {
+    private var request = 0L
+    private var closed = false
+
+    fun sync(arguments: PlaybackTimerSyncArguments, complete: (Exception?) -> Unit) {
+        val expectedRequest = ++request
+        fun finish(result: FileCacheTaskResult<Map<String, Long>>) {
+            if (closed || expectedRequest != request) {
+                complete(null)
+                return
+            }
+            val error = try {
+                when (result) {
+                    is FileCacheTaskResult.Success -> {
+                        val ids = result.value.filter { (id, revision) -> isSessionCurrent(id, revision) }.keys.toList()
+                        apply(arguments, ids)
+                        null
+                    }
+                    is FileCacheTaskResult.Failure -> result.exception
+                }
+            } catch (error: Exception) {
+                error
+            }
+            complete(error)
+        }
+        if (arguments.timerEndsAtWallClockMs == null) {
+            finish(FileCacheTaskResult.Success(emptyMap()))
+        } else if (!loadCandidates(::finish)) {
+            complete(IllegalStateException("Timer synchronization is unavailable"))
+        }
+    }
+
+    fun close() {
+        closed = true
+        request++
+    }
+}
 
 private data class ApplicationExitDiagnostics(
     val reason: Int,
@@ -62,9 +106,35 @@ internal fun parsePlaybackTimerSyncArguments(call: MethodCall): PlaybackTimerSyn
 }
 
 internal class PowerMethodHandler(
-    private val activity: Activity
+    private val activity: Activity,
+    private val taskExecutor: FileCacheTaskExecutor
 ) : MethodChannel.MethodCallHandler {
     private val activeWakeLocks = mutableMapOf<String, PowerManager.WakeLock>()
+    private val mainHandler by lazy { Handler(Looper.getMainLooper()) }
+    private val timerSync = PlaybackTimerSyncCoordinator(
+        loadCandidates = { complete ->
+            taskExecutor.submit({ NativePlaybackStateStore.loadActiveSessionRevisions(activity.applicationContext) }) {
+                result -> mainHandler.post { complete(result) }
+            }
+        },
+        isSessionCurrent = { id, revision -> NativePlaybackStateStore.sessionRevision(id) == revision },
+        apply = { arguments, candidateIds ->
+            PlaybackTimerAlarmScheduler.sync(
+                activity.applicationContext,
+                timerModeIndex = arguments.timerModeIndex,
+                durationMs = arguments.durationMs,
+                waitingForPlayback = arguments.waitingForPlayback,
+                timerEndsAtWallClockMs = arguments.timerEndsAtWallClockMs,
+                autoResumeEnabled = arguments.autoResumeEnabled,
+                autoResumeHour = arguments.autoResumeHour,
+                autoResumeMinute = arguments.autoResumeMinute,
+                autoResumeAtMs = arguments.autoResumeAtMs,
+                pausedSessionIds = arguments.pausedSessionIds,
+                generation = arguments.generation,
+                timerCandidateSessionIds = candidateIds
+            )
+        }
+    )
 
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
         val envelope = ChannelEnvelopeResult(result)
@@ -100,20 +170,10 @@ internal class PowerMethodHandler(
             }
             PowerMethods.SYNC_PLAYBACK_TIMER_ALARMS -> {
                 val arguments = parsePlaybackTimerSyncArguments(call)
-                PlaybackTimerAlarmScheduler.sync(
-                    activity.applicationContext,
-                    timerModeIndex = arguments.timerModeIndex,
-                    durationMs = arguments.durationMs,
-                    waitingForPlayback = arguments.waitingForPlayback,
-                    timerEndsAtWallClockMs = arguments.timerEndsAtWallClockMs,
-                    autoResumeEnabled = arguments.autoResumeEnabled,
-                    autoResumeHour = arguments.autoResumeHour,
-                    autoResumeMinute = arguments.autoResumeMinute,
-                    autoResumeAtMs = arguments.autoResumeAtMs,
-                    pausedSessionIds = arguments.pausedSessionIds,
-                    generation = arguments.generation
-                )
-                envelope.success(null)
+                timerSync.sync(arguments) { error ->
+                    if (error == null) envelope.success(null)
+                    else envelope.error("timer_sync_failed", error.message, null)
+                }
             }
             PowerMethods.ACQUIRE_WAKE_LOCK -> envelope.success(acquireWakeLock(call))
             PowerMethods.RELEASE_WAKE_LOCK -> envelope.success(releaseWakeLock(call))
@@ -339,6 +399,7 @@ internal class PowerMethodHandler(
     }
 
     fun dispose() {
+        timerSync.close()
         try {
             activity.runOnUiThread {
                 activity.window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)

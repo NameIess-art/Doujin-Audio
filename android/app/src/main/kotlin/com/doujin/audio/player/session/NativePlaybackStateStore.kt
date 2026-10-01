@@ -1,6 +1,9 @@
 package com.doujin.audio.player.session
 
 import android.content.Context
+import android.util.JsonReader
+import android.util.JsonToken
+import java.io.StringReader
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.ConcurrentHashMap
@@ -383,6 +386,66 @@ object NativePlaybackStateStore {
             .remove(keySessions)
             .remove(keySessionProgress)
             .apply()
+    }
+
+    /** Called on the file executor; queue values are skipped without creating queue objects. */
+    @Synchronized
+    internal fun loadActiveSessionRevisions(context: Context): Map<String, Long> {
+        // A session can be invalidated while this background read owns the store
+        // lock. Do not attach the newer revision to its old persisted definition.
+        val readRevision = revisionSequence.get()
+        val raw = context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
+            .getString(keySessions, null)
+        val progress = loadSessionProgress(context)
+        val ids = try {
+            if (raw == null) emptyList() else JsonReader(StringReader(raw)).use { reader ->
+                buildList {
+                    reader.beginArray()
+                    while (reader.hasNext()) {
+                        if (reader.peek() != JsonToken.BEGIN_OBJECT) {
+                            reader.skipValue()
+                            continue
+                        }
+                        var id: String? = null
+                        var uri: String? = null
+                        var playing = false
+                        var ready = false
+                        reader.beginObject()
+                        while (reader.hasNext()) {
+                            val name = reader.nextName()
+                            when (name) {
+                                "sessionId", "uri" -> {
+                                    if (reader.peek() == JsonToken.STRING || reader.peek() == JsonToken.NUMBER) {
+                                        val value = reader.nextString()
+                                        if (name == "sessionId") id = value else uri = value
+                                    } else reader.skipValue()
+                                }
+                                "playing", "playWhenReady" -> {
+                                    val value = when (reader.peek()) {
+                                        JsonToken.BOOLEAN -> reader.nextBoolean()
+                                        JsonToken.STRING -> reader.nextString().equals("true", ignoreCase = true)
+                                        else -> { reader.skipValue(); false }
+                                    }
+                                    if (name == "playing") playing = value else ready = value
+                                }
+                                else -> reader.skipValue()
+                            }
+                        }
+                        reader.endObject()
+                        val validId = id?.takeIf(String::isNotBlank) ?: continue
+                        if (uri.isNullOrBlank()) continue
+                        val overlay = progress[validId]
+                        if (overlay?.let { it.playing || it.playWhenReady } ?: (playing || ready)) add(validId)
+                    }
+                    reader.endArray()
+                }
+            }
+        } catch (_: Exception) {
+            emptyList()
+        }
+        return (ids + loadTemporarySessions().filter { it.playing || it.playWhenReady }.map { it.sessionId })
+            .mapNotNull { id -> sessionRevision(id).takeIf { it <= readRevision }?.let { id to it } }
+            .toMap()
     }
 
     @Synchronized

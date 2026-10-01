@@ -107,7 +107,8 @@ object PlaybackTimerAlarmScheduler {
         autoResumeMinute: Int,
         autoResumeAtMs: Long?,
         pausedSessionIds: List<String>,
-        generation: Int
+        generation: Int,
+        timerCandidateSessionIds: List<String>
     ) {
         if (timerEndsAtWallClockMs != null || pausedSessionIds.isEmpty()) {
             NativePlaybackService.controller()?.cancelTimerStopAfterCurrentTrack()
@@ -139,9 +140,6 @@ object PlaybackTimerAlarmScheduler {
         }
 
         if (timerEndsAtWallClockMs != null) {
-            val timerCandidateSessionIds = NativePlaybackStateStore.loadSessions(context)
-                .filter { it.playing || it.playWhenReady }
-                .map { it.sessionId }
             NativePlaybackStateStore.storeTimerCandidateSessionIds(
                 context,
                 timerCandidateSessionIds

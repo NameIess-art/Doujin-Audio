@@ -123,6 +123,8 @@ void main() {
   test(
     'summarizes saved, skipped, and failed batch metadata results',
     () async {
+      var completedCount = 0;
+      final applied = <String>[];
       final session = DlsiteMetadataBatchSession(
         entries: [entry('001'), entry('002'), entry('003'), entry('004')],
         maxConcurrentLookups: 4,
@@ -138,7 +140,12 @@ void main() {
           if (item.entry.title == '004') {
             return Future<void>.error(StateError('storage unavailable'));
           }
+          applied.add(item.entry.title);
           return Future<void>.value();
+        },
+        onApplyCompleted: () {
+          completedCount++;
+          expect(applied, ['001']);
         },
       );
       addTearDown(session.dispose);
@@ -153,6 +160,7 @@ void main() {
       expect(result.savedCount, 1);
       expect(result.skippedCount, 1);
       expect(result.failedCount, 2);
+      expect(completedCount, 1);
       expect(
         result.savedCount + result.skippedCount + result.failedCount,
         session.items.length,

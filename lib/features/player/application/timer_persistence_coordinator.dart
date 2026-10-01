@@ -41,6 +41,8 @@ final class TimerPersistenceCoordinator {
   final PowerPlatformService powerPlatformService;
   final Future<SharedPreferences> Function() _preferencesLoader;
   SharedPreferences? _cachedPreferences;
+  Future<void>? _nativeAlarmSync;
+  bool _nativeAlarmSyncRequested = false;
   final Set<String> _restoredCountdownSessions;
   final Iterable<PlaybackSession> Function() _sessions;
   final bool Function() _hasArmedRuntime;
@@ -163,7 +165,26 @@ final class TimerPersistenceCoordinator {
     }
   }
 
-  Future<void> syncNativeAlarms() async {
+  Future<void> syncNativeAlarms() {
+    _nativeAlarmSyncRequested = true;
+    return _nativeAlarmSync ??= Future<void>.microtask(() async {
+      // Configuration and countdown start can occur in the same UI action.
+      // Send their final state and serialize later changes behind that reply.
+      try {
+        while (_nativeAlarmSyncRequested) {
+          _nativeAlarmSyncRequested = false;
+          await _syncNativeAlarms();
+        }
+      } finally {
+        _nativeAlarmSync = null;
+      }
+    });
+  }
+
+  Future<void> get pendingNativeAlarmSync =>
+      _nativeAlarmSync ?? Future<void>.value();
+
+  Future<void> _syncNativeAlarms() async {
     try {
       final autoResumeAt = _service.autoResumeAt;
       final generation = _service.timerGeneration;

@@ -1,7 +1,6 @@
 import 'library_providers.dart';
 import '../../settings/presentation/settings_providers.dart';
 import 'dart:async';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -13,21 +12,17 @@ import '../application/library_facade.dart';
 import '../domain/audio_library_category.dart';
 import '../domain/library_node.dart';
 import '../../../core/media/path_matcher.dart';
-import '../../../core/logging/app_log_service.dart';
-import '../../../core/ui/ui_interaction_coordinator.dart';
 import '../../../core/ui/visual_settings_providers.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/app_search_page.dart';
 import '../../../core/widgets/library_like_cards.dart';
-import '../../../core/widgets/operation_feedback.dart';
 import '../../../core/widgets/search_highlight.dart';
-import '../../../app/presentation/screen_view_models.dart';
 import '../../../app/theme/app_styles.dart';
 
 import 'library_tab_ui_helpers.dart';
 import 'library_tab_empty_scan.dart';
-import 'library_tab_tree_widgets.dart';
+import 'library_search_all_results.dart';
 import 'library_tab_category_widgets.dart';
 
 final _categoryTermSplitRegex = RegExp(r'[\s,，;；|]+');
@@ -40,8 +35,6 @@ class LibrarySearchPage extends ConsumerStatefulWidget {
 }
 
 class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
-  static const _searchCommitKey = 'library_search_page';
-
   final TextEditingController _controller = TextEditingController();
   final FocusNode _focusNode = FocusNode();
   final ScrollController _scrollController = ScrollController();
@@ -56,19 +49,9 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
   bool _hasSwitchedCategory = false;
   bool _isSelectionMode = false;
   String _query = '';
+  int _queryRevision = 0;
 
-  FilteredLibraryTreeResult? _visibleSearchResult;
-  String _visibleSearchQuery = '';
-  int? _visibleSearchRevision;
-  int? _visibleSearchDetailRevision;
-  String? _pendingSearchKey;
-  Object? _visibleSearchError;
-  String? _visibleSearchErrorKey;
-  final Set<String> _expandedSearchFolderPaths = <String>{};
-  List<VisibleLibraryItem> _visibleSearchItems = const <VisibleLibraryItem>[];
-  List<LibraryNode>? _visibleSearchItemsSource;
-  int _visibleSearchItemsVersion = 0;
-  int _visibleSearchItemsCacheVersion = -1;
+  List<LibraryNode> _searchSelectionTree = const [];
 
   AudioLibraryCategorySnapshot? _lastCategoryFilterSnapshot;
   AudioLibraryCategoryType? _lastCategoryFilterType;
@@ -100,9 +83,9 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
       if (_query == query) return;
       setState(() {
         _query = query;
+        _queryRevision++;
+        _searchSelectionTree = const [];
         _clearSelection();
-        _pendingSearchKey = null;
-        _clearSearchError();
       });
       _jumpToTop();
     });
@@ -114,9 +97,9 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
     if (_query != query) {
       setState(() {
         _query = query;
+        _queryRevision++;
+        _searchSelectionTree = const [];
         _clearSelection();
-        _pendingSearchKey = null;
-        _clearSearchError();
       });
     }
     FocusManager.instance.primaryFocus?.unfocus();
@@ -132,9 +115,9 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
     _controller.clear();
     setState(() {
       _query = '';
+      _queryRevision++;
+      _searchSelectionTree = const [];
       _clearSelection();
-      _pendingSearchKey = null;
-      _clearSearchError();
     });
     _jumpToTop();
   }
@@ -168,8 +151,6 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
     AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
     setState(() {
       _isSelectionMode = true;
-      _expandedSearchFolderPaths.clear();
-      _visibleSearchItemsVersion++;
       _selectedLibraryPaths
         ..clear()
         ..add(selectionKeyForLibraryNode(node));
@@ -223,7 +204,7 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
   Future<List<LibraryBatchSelection>> _currentSelections() async {
     if (_categoryType == AudioLibraryCategoryType.all) {
       return selectedLibraryNodeSelections(
-        _visibleSearchResult?.tree ?? const <LibraryNode>[],
+        _searchSelectionTree,
         _selectedLibraryPaths,
       );
     }
@@ -283,327 +264,9 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
     );
   }
 
-  void _ensureFilteredSearchSnapshot({
-    required LibraryFacade libraryFacade,
-    required String query,
-    required int structureRevision,
-    required int detailRevision,
-  }) {
-    final categorySnapshot = currentLibraryCategorySnapshot(
-      snapshot: libraryFacade.categorySnapshot,
-      detailRevision: detailRevision,
-    );
-    final categoryRevision = detailRevision;
-    if (_visibleSearchQuery == query &&
-        _visibleSearchRevision == structureRevision &&
-        _visibleSearchDetailRevision == categoryRevision) {
-      return;
-    }
-
-    final requestKey = '$structureRevision|$categoryRevision|$query';
-    if (_pendingSearchKey == requestKey) {
-      return;
-    }
-    if (_visibleSearchErrorKey == requestKey) {
-      return;
-    }
-
-    if (query.isEmpty) {
-      final currentTree = libraryFacade.snapshotCacheService.tree;
-      if (currentTree.isNotEmpty) {
-        _visibleSearchResult = FilteredLibraryTreeResult(
-          tree: currentTree,
-          matchCount: libraryTreeTrackCount(currentTree),
-        );
-        _visibleSearchQuery = query;
-        _visibleSearchRevision = structureRevision;
-        _visibleSearchDetailRevision = categoryRevision;
-        _expandedSearchFolderPaths.clear();
-        _visibleSearchItemsVersion++;
-        return;
-      }
-
-      _pendingSearchKey = requestKey;
-      unawaited(
-        libraryFacade.loadLibraryTree().then<void>(
-          (tree) {
-            if (!mounted || _pendingSearchKey != requestKey) return;
-            UiInteractionCoordinator.instance.scheduleCommit(
-              key: _searchCommitKey,
-              priority: 5,
-              commit: () {
-                if (!mounted || _pendingSearchKey != requestKey) return;
-                setState(() {
-                  _visibleSearchResult = FilteredLibraryTreeResult(
-                    tree: tree,
-                    matchCount: libraryTreeTrackCount(tree),
-                  );
-                  _visibleSearchQuery = query;
-                  _visibleSearchRevision = structureRevision;
-                  _visibleSearchDetailRevision = categoryRevision;
-                  _pendingSearchKey = null;
-                  _clearSearchError();
-                  _expandedSearchFolderPaths.clear();
-                  _visibleSearchItemsVersion++;
-                });
-              },
-            );
-          },
-          onError: (Object error, StackTrace stackTrace) {
-            if (!mounted || _pendingSearchKey != requestKey) return;
-            AppLogService.error(
-              'library_search_snapshot_failed',
-              error: error,
-              stackTrace: stackTrace,
-            );
-            setState(() {
-              _pendingSearchKey = null;
-              _visibleSearchError = error;
-              _visibleSearchErrorKey = requestKey;
-            });
-          },
-        ),
-      );
-      return;
-    }
-
-    _pendingSearchKey = requestKey;
-    final searchFuture = () async {
-      final effectiveCategorySnapshot =
-          categorySnapshot ??
-          await libraryFacade.audioLibraryCategorySnapshot();
-      if (!mounted || _pendingSearchKey != requestKey) return null;
-      final tree = await libraryFacade.loadLibraryTree();
-      if (!mounted || _pendingSearchKey != requestKey) return null;
-      final request = LibrarySearchSnapshotRequest(
-        tree: tree,
-        query: query,
-        structureRevision: structureRevision,
-        categorySnapshot: effectiveCategorySnapshot,
-      );
-      return libraryTreeTrackCount(tree) > 200
-          ? await compute(buildFilteredLibraryTreeSnapshot, request)
-          : buildFilteredLibraryTreeSnapshot(request);
-    }();
-    unawaited(
-      searchFuture.then<void>(
-        (result) {
-          if (result == null || !mounted || _pendingSearchKey != requestKey) {
-            return;
-          }
-          UiInteractionCoordinator.instance.scheduleCommit(
-            key: _searchCommitKey,
-            priority: 5,
-            commit: () {
-              if (!mounted || _pendingSearchKey != requestKey) return;
-              setState(() {
-                _visibleSearchResult = result;
-                _visibleSearchQuery = query;
-                _visibleSearchRevision = structureRevision;
-                _visibleSearchDetailRevision = categoryRevision;
-                _pendingSearchKey = null;
-                _clearSearchError();
-                _expandedSearchFolderPaths
-                  ..clear()
-                  ..addAll(
-                    result.expandedFolderPaths.map(PathMatcher.normalize),
-                  );
-                _visibleSearchItemsVersion++;
-              });
-            },
-          );
-        },
-        onError: (Object error, StackTrace stackTrace) {
-          if (!mounted || _pendingSearchKey != requestKey) return;
-          AppLogService.error(
-            'library_search_snapshot_failed',
-            error: error,
-            stackTrace: stackTrace,
-          );
-          setState(() {
-            _pendingSearchKey = null;
-            _visibleSearchError = error;
-            _visibleSearchErrorKey = requestKey;
-          });
-        },
-      ),
-    );
-  }
-
-  void _clearSearchError() {
-    _visibleSearchError = null;
-    _visibleSearchErrorKey = null;
-  }
-
-  void _retrySearch() {
-    setState(() {
-      _pendingSearchKey = null;
-      _clearSearchError();
-    });
-  }
-
-  void _handleSearchFolderExpansionChanged(FolderNode folder, bool expanded) {
-    final normalizedPath = PathMatcher.normalize(folder.path);
-    final changed = expanded
-        ? _expandedSearchFolderPaths.add(normalizedPath)
-        : _expandedSearchFolderPaths.remove(normalizedPath);
-    if (changed) {
-      setState(() => _visibleSearchItemsVersion++);
-    }
-  }
-
-  List<VisibleLibraryItem> _flattenVisibleSearchTree(List<LibraryNode> tree) {
-    if (identical(_visibleSearchItemsSource, tree) &&
-        _visibleSearchItemsCacheVersion == _visibleSearchItemsVersion) {
-      return _visibleSearchItems;
-    }
-    final result = <VisibleLibraryItem>[];
-    void addNode(LibraryNode node, int depth) {
-      result.add(VisibleLibraryItem(node: node, depth: depth));
-      if (node is! FolderNode ||
-          !_expandedSearchFolderPaths.contains(
-            PathMatcher.normalize(node.path),
-          )) {
-        return;
-      }
-      for (final child in node.children) {
-        addNode(child, depth + 1);
-      }
-    }
-
-    for (final node in tree) {
-      addNode(node, 0);
-    }
-    _visibleSearchItemsSource = tree;
-    _visibleSearchItemsCacheVersion = _visibleSearchItemsVersion;
-    return _visibleSearchItems = result;
-  }
-
-  Widget _buildAllResults({
-    required LibraryFacade libraryFacade,
-    required AppLanguageProvider i18n,
-    required int structureRevision,
-    required int detailRevision,
-    required double topPadding,
-  }) {
-    _ensureFilteredSearchSnapshot(
-      libraryFacade: libraryFacade,
-      query: _query,
-      structureRevision: structureRevision,
-      detailRevision: detailRevision,
-    );
-    final hasCurrentResult =
-        _visibleSearchQuery == _query &&
-        _visibleSearchRevision == structureRevision &&
-        _visibleSearchDetailRevision == detailRevision;
-    final hasCurrentError =
-        _visibleSearchErrorKey == '$structureRevision|$detailRevision|$_query';
-    final result = hasCurrentResult
-        ? _visibleSearchResult
-        : hasCurrentError && _visibleSearchQuery == _query
-        ? _visibleSearchResult
-        : null;
-    final tree = result?.tree;
-    final Widget content;
-    if (tree == null && hasCurrentError) {
-      content = AppErrorState(
-        key: const ValueKey<String>('library_search_error'),
-        title: i18n.tr('error'),
-        message: i18n.tr('operation_failed_retry'),
-        retryLabel: i18n.tr('retry'),
-        onRetry: _retrySearch,
-      );
-    } else if (tree == null) {
-      content = const SizedBox.shrink();
-    } else if (tree.isEmpty) {
-      content = AppEmptyState(
-        key: const ValueKey<String>('library_search_empty'),
-        icon: _query.isEmpty
-            ? Icons.library_music_outlined
-            : Icons.search_off_rounded,
-        title: i18n.tr(_query.isEmpty ? 'no_audio_files' : 'no_search_results'),
-        message: i18n.tr(
-          _query.isEmpty ? 'import_audio_hint' : 'search_try_another_term',
-        ),
-      );
-    } else {
-      final visibleItems = _flattenVisibleSearchTree(tree);
-      final errorItemCount = hasCurrentError ? 1 : 0;
-      content = SearchHighlightScope(
-        query: _query,
-        child: ListView.builder(
-          key: const ValueKey<String>('library_search_results_all'),
-          controller: _scrollController,
-          padding: EdgeInsets.fromLTRB(
-            LibraryLikeCardMetrics.listHorizontalPadding,
-            topPadding,
-            LibraryLikeCardMetrics.listHorizontalPadding,
-            MediaQuery.paddingOf(context).bottom + 16,
-          ),
-          cacheExtent: 320,
-          physics: const ClampingScrollPhysics(),
-          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-          itemCount: visibleItems.length + errorItemCount,
-          itemBuilder: (context, index) {
-            if (hasCurrentError && index == 0) {
-              return Padding(
-                key: const ValueKey<String>('library_search_stale_error'),
-                padding: const EdgeInsets.only(bottom: 8),
-                child: OperationStatusBanner(
-                  label: i18n.tr('operation_failed_retry'),
-                  error: _visibleSearchError,
-                  onRetry: _retrySearch,
-                  retryTooltip: i18n.tr('retry'),
-                ),
-              );
-            }
-            final item = visibleItems[index - errorItemCount];
-            final node = item.node;
-            return Padding(
-              padding: EdgeInsets.only(left: item.depth * 8.0),
-              child: RepaintBoundary(
-                key: ValueKey<String>('search_${node.path}'),
-                child: LibraryTreeItem(
-                  node: node,
-                  initiallyExpanded:
-                      node is FolderNode &&
-                      _expandedSearchFolderPaths.contains(
-                        PathMatcher.normalize(node.path),
-                      ),
-                  onFolderExpansionChanged: _handleSearchFolderExpansionChanged,
-                  renderChildrenInline: false,
-                  searchQuery: _query,
-                  isSelectionMode: item.depth == 0 && _isSelectionMode,
-                  isSelected: _selectedLibraryPaths.contains(
-                    selectionKeyForLibraryNode(node),
-                  ),
-                  onLongPress: item.depth == 0
-                      ? () => _enterSelectionMode(node)
-                      : null,
-                  onToggleSelect: item.depth == 0
-                      ? () => _toggleLibrarySelection(node)
-                      : null,
-                ),
-              ),
-            );
-          },
-        ),
-      );
-    }
-    return PlaceholderContentTransition(
-      showPlaceholder: result == null && !hasCurrentError,
-      placeholder: LibraryLoadingSkeleton(
-        bottomInset: 16,
-        topInset: AppSearchPageScaffold.controlsTopInset(context),
-      ),
-      content: content,
-    );
-  }
-
   @override
   void dispose() {
     _debounceTimer?.cancel();
-    UiInteractionCoordinator.instance.cancelCommit(_searchCommitKey);
     _controller.dispose();
     _focusNode.dispose();
     _scrollController.dispose();
@@ -652,27 +315,37 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
         )
         .toSet();
 
-    final Widget body;
-    if (_categoryType == AudioLibraryCategoryType.all) {
-      body = _buildAllResults(
-        libraryFacade: libraryFacade,
-        i18n: i18n,
-        structureRevision: structureRevision,
-        detailRevision: detailRevision,
-        topPadding: topInset,
-      );
-    } else {
-      body = _buildCategoryBody(
-        libraryFacade: libraryFacade,
-        i18n: i18n,
-        topPadding: topInset,
-        bottomPadding: MediaQuery.paddingOf(context).bottom + 16,
-        cacheExtent: 320,
-        structureRevision: structureRevision,
-        detailRevision: detailRevision,
-        pinnedPaths: pinnedLibraryPaths,
-      );
-    }
+    final isAll = _categoryType == AudioLibraryCategoryType.all;
+    final body = Stack(
+      fit: StackFit.expand,
+      children: [
+        LibrarySearchAllResults(
+          active: isAll,
+          query: _query,
+          queryRevision: _queryRevision,
+          structureRevision: structureRevision,
+          detailRevision: detailRevision,
+          scrollController: _scrollController,
+          topPadding: topInset,
+          isSelectionMode: _isSelectionMode,
+          selectedPaths: _selectedLibraryPaths,
+          onEnterSelectionMode: _enterSelectionMode,
+          onToggleSelection: _toggleLibrarySelection,
+          onTreeChanged: (tree) => _searchSelectionTree = tree,
+        ),
+        if (!isAll)
+          _buildCategoryBody(
+            libraryFacade: libraryFacade,
+            i18n: i18n,
+            topPadding: topInset,
+            bottomPadding: MediaQuery.paddingOf(context).bottom + 16,
+            cacheExtent: 320,
+            structureRevision: structureRevision,
+            detailRevision: detailRevision,
+            pinnedPaths: pinnedLibraryPaths,
+          ),
+      ],
+    );
 
     final isAllPinned =
         _selectedLibraryPaths.isNotEmpty &&

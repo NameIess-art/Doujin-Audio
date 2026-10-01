@@ -99,10 +99,12 @@ final class DlsiteMetadataBatchSession extends ChangeNotifier {
     required Iterable<AudioLibraryCategoryEntry> entries,
     required DlsiteMetadataBatchLookup lookup,
     DlsiteMetadataBatchApply? apply,
+    void Function()? onApplyCompleted,
     this.maxConcurrentLookups = 3,
   }) : assert(maxConcurrentLookups > 0),
        _lookup = lookup,
        _apply = apply,
+       _onApplyCompleted = onApplyCompleted,
        _items = entries
            .map((entry) {
              final query = DlsiteMetadataQuery.fromDetail(entry.detail);
@@ -141,12 +143,15 @@ final class DlsiteMetadataBatchSession extends ChangeNotifier {
         metadata,
         saveCover: item.saveCover ?? false,
         language: language,
+        deferCategoryUpdate: true,
       );
     },
+    onApplyCompleted: library.flushMetadataUpdates,
   );
 
   final DlsiteMetadataBatchLookup _lookup;
   final DlsiteMetadataBatchApply? _apply;
+  final void Function()? _onApplyCompleted;
   final int maxConcurrentLookups;
   final List<DlsiteMetadataBatchItem> _items;
   final Queue<int> _pending = Queue<int>();
@@ -272,17 +277,21 @@ final class DlsiteMetadataBatchSession extends ChangeNotifier {
               item.status == DlsiteMetadataBatchLookupStatus.failed,
         )
         .length;
-    for (final item in _items.where(
-      (item) =>
-          !item.isExcluded &&
-          item.status == DlsiteMetadataBatchLookupStatus.confirmed,
-    )) {
-      try {
-        await apply(item);
-        savedCount += 1;
-      } catch (_) {
-        failedCount += 1;
+    try {
+      for (final item in _items.where(
+        (item) =>
+            !item.isExcluded &&
+            item.status == DlsiteMetadataBatchLookupStatus.confirmed,
+      )) {
+        try {
+          await apply(item);
+          savedCount += 1;
+        } catch (_) {
+          failedCount += 1;
+        }
       }
+    } finally {
+      _onApplyCompleted?.call();
     }
     return DlsiteMetadataBatchApplyResult(
       savedCount: savedCount,

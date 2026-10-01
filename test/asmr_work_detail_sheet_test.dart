@@ -39,6 +39,96 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'support/app_runtime_test_fixture.dart';
 
 void main() {
+  testWidgets(
+    'ASMR tab loads covers nearest the viewport focus before cached offscreen cards',
+    (tester) async {
+      SharedPreferences.setMockInitialValues(const <String, Object>{});
+      tester.view.physicalSize = const Size(600, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final cache = _RecordingTabCoverCache();
+      final fixture = AppRuntimeWidgetTestFixture(
+        coverArtworkCacheService: cache,
+      );
+      addTearDown(fixture.dispose);
+      addTearDown(cache.releaseAll);
+      await fixture.languageProvider.setLanguage(AppLanguage.zh);
+      final controller = _LoadedTabAsmrController(createTestAsmrServices(), [
+        for (var id = 1; id <= 30; id++)
+          _work(
+            id: id,
+            title: 'Favorite $id',
+            coverUrl: 'https://example.com/cover-$id.png',
+          ),
+      ]);
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(
+        fixture.build(
+          const AsmrTab(),
+          overrides: [
+            asmrLibraryControllerProvider.overrideWithValue(controller),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('收藏'));
+      await tester.pumpAndSettle();
+
+      String nearestVisibleCover({Set<String> excluded = const {}}) {
+        final viewport = tester.getRect(find.byType(ListView));
+        final covers = find.byType(AsyncRemoteCoverImage).evaluate().where((
+          element,
+        ) {
+          final widget = element.widget as AsyncRemoteCoverImage;
+          return !excluded.contains(widget.url) &&
+              tester.getRect(find.byWidget(widget)).overlaps(viewport);
+        }).toList();
+        covers.sort((left, right) {
+          final leftRect = tester.getRect(find.byWidget(left.widget));
+          final rightRect = tester.getRect(find.byWidget(right.widget));
+          return (leftRect.center - viewport.center).distance.compareTo(
+            (rightRect.center - viewport.center).distance,
+          );
+        });
+        expect(covers, isNotEmpty);
+        return (covers.first.widget as AsyncRemoteCoverImage).url;
+      }
+
+      final firstFocus = nearestVisibleCover();
+      expect(
+        firstFocus,
+        isNot(
+          tester
+              .widget<AsyncRemoteCoverImage>(
+                find.byType(AsyncRemoteCoverImage).first,
+              )
+              .url,
+        ),
+      );
+      expect(cache.started, [firstFocus]);
+
+      final list = tester.widget<ListView>(find.byType(ListView));
+      list.controller!.jumpTo(600);
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pumpAndSettle();
+      final nextFocus = nearestVisibleCover(excluded: {firstFocus});
+      expect(nextFocus, isNot(firstFocus));
+      cache.pending[firstFocus]!.complete(null);
+      await tester.pump();
+      await tester.pump();
+      expect(cache.started, [firstFocus, nextFocus]);
+
+      cache.releaseAll();
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(seconds: 6));
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
   for (final resolution in CoverImageResolution.values) {
     testWidgets(
       'ASMR covers share one cache across all surfaces at ${resolution.name}',
@@ -171,11 +261,20 @@ void main() {
           coverGeneration: 0,
           isInitialized: true,
         );
-        await tester.runAsync(
-          () => fixture.runtimeGraph.library.playbackCoverPathFutureForTrack(
-            track,
-          ),
-        );
+        final playbackCover = fixture.runtimeGraph.library
+            .playbackCoverPathFutureForTrack(track);
+        var playbackCoverReady = false;
+        unawaited(playbackCover.then((_) => playbackCoverReady = true));
+        // Page lookups started in the fake clock zone. Deliver disk events in
+        // runAsync, then pump their continuations before awaiting shared work.
+        for (var tick = 0; tick < 100 && !playbackCoverReady; tick++) {
+          await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 10)),
+          );
+          await tester.pump();
+        }
+        expect(playbackCoverReady, isTrue);
+        expect(await playbackCover, cover.path);
         await tester.pumpWidget(
           fixture.build(
             const PlaylistTab(),
@@ -226,6 +325,17 @@ void main() {
           ),
         );
         await tester.pumpAndSettle();
+        for (
+          var tick = 0;
+          tick < 100 && PaintingBinding.instance.imageCache.pendingImageCount > 0;
+          tick++
+        ) {
+          await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 10)),
+          );
+          await tester.pump();
+        }
+        expect(PaintingBinding.instance.imageCache.pendingImageCount, 0);
         expect(
           await imageKey(find.byType(AsyncLocalCoverImage).first),
           sharedKey,
@@ -1088,6 +1198,12 @@ class _TestFavoritesAsmrLibraryController extends AsmrLibraryController {
       : const <AsmrWork>[];
 
   @override
+  List<AsmrWork> filteredWorksFor(
+    AsmrCategoryType category, {
+    String searchQuery = '',
+  }) => categoryViewState(category, searchQuery: searchQuery).works;
+
+  @override
   int totalCountFor(AsmrCategoryType category) => worksFor(category).length;
 
   @override
@@ -1115,6 +1231,28 @@ class _TestFavoritesAsmrLibraryController extends AsmrLibraryController {
       operationError: null,
       revision: _revision,
     );
+  }
+}
+
+class _RecordingTabCoverCache extends CoverArtworkCacheService {
+  _RecordingTabCoverCache() : super(libraryService: LibraryService());
+
+  final started = <String>[];
+  final pending = <String, Completer<String?>>{};
+  bool _released = false;
+
+  @override
+  Future<String?> futureForRemoteCover(String url) {
+    if (_released) return Future<String?>.value();
+    started.add(url);
+    return (pending[url] = Completer<String?>()).future;
+  }
+
+  void releaseAll() {
+    _released = true;
+    for (final completer in pending.values) {
+      if (!completer.isCompleted) completer.complete(null);
+    }
   }
 }
 

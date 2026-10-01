@@ -4,6 +4,202 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/core/ui/warmup_scheduler.dart';
 
 void main() {
+  test('capacity waiter wakes before the remaining queue is idle', () async {
+    final scheduler = WarmupScheduler(maxQueueSize: 2);
+    scheduler.beginGeneration(1);
+    final releaseFirst = Completer<void>();
+    final releaseSecond = Completer<void>();
+    scheduler.schedule(
+      key: 'first',
+      priority: 0,
+      generation: 1,
+      task: () => releaseFirst.future,
+    );
+    scheduler.schedule(
+      key: 'second',
+      priority: 1,
+      generation: 1,
+      task: () => releaseSecond.future,
+    );
+    scheduler.schedule(
+      key: 'third',
+      priority: 2,
+      generation: 1,
+      task: () async {},
+    );
+    var capacityReady = false;
+    final capacity = scheduler.capacityAvailable.then((_) {
+      capacityReady = true;
+    });
+    await Future<void>.delayed(Duration.zero);
+    expect(capacityReady, isFalse);
+
+    releaseFirst.complete();
+    await capacity;
+    expect(scheduler.activeCount, 1);
+    expect(scheduler.pendingCount, 1);
+    expect(scheduler.isIdle, isFalse);
+
+    releaseSecond.complete();
+    await scheduler.idle;
+  });
+
+  test(
+    'shutdown releases capacity waiters while active work finishes',
+    () async {
+      final scheduler = WarmupScheduler(maxQueueSize: 1);
+      scheduler.beginGeneration(1);
+      final releaseActive = Completer<void>();
+      scheduler.schedule(
+        key: 'active',
+        priority: 0,
+        generation: 1,
+        task: () => releaseActive.future,
+      );
+      scheduler.schedule(
+        key: 'queued',
+        priority: 1,
+        generation: 1,
+        task: () async {},
+      );
+      final capacity = scheduler.capacityAvailable;
+      final shutdown = scheduler.shutdown();
+      await capacity;
+      await scheduler.capacityAvailable;
+      expect(scheduler.activeCount, 1);
+      expect(scheduler.pendingCount, 0);
+      releaseActive.complete();
+      await shutdown;
+    },
+  );
+
+  test('reorders queued covers when viewport focus changes', () async {
+    final scheduler = WarmupScheduler(maxQueueSize: 4);
+    scheduler.beginGeneration(1);
+    final releaseActive = Completer<void>();
+    final started = <String>[];
+    var focus = 'upper';
+    scheduler.schedule(
+      key: 'active',
+      priority: 0,
+      generation: 1,
+      task: () => releaseActive.future,
+    );
+    for (final key in <String>['upper', 'lower']) {
+      scheduler.schedule(
+        key: key,
+        priority: key == 'upper' ? 0 : 100,
+        priorityResolver: () => key == focus ? 0 : 100,
+        generation: 1,
+        task: () async => started.add(key),
+      );
+    }
+
+    focus = 'lower';
+    expect(scheduler.activeCount, 1);
+    expect(scheduler.pendingCount, 2);
+    releaseActive.complete();
+    await scheduler.idle;
+
+    expect(started, <String>['lower', 'upper']);
+    expect(scheduler.activeCount, 0);
+  });
+
+  test(
+    'queue admission uses current priorities and releases evicted work',
+    () async {
+      final scheduler = WarmupScheduler(maxQueueSize: 2);
+      scheduler.setPaused(true);
+      scheduler.beginGeneration(1);
+      final started = <String>[];
+      final discarded = <String>[];
+      var upperPriority = 0;
+      var lowerPriority = 100;
+      scheduler.schedule(
+        key: 'upper',
+        priority: 0,
+        priorityResolver: () => upperPriority,
+        generation: 1,
+        onDiscard: () => discarded.add('upper'),
+        task: () async => started.add('upper'),
+      );
+      scheduler.schedule(
+        key: 'lower',
+        priority: 100,
+        priorityResolver: () => lowerPriority,
+        generation: 1,
+        onDiscard: () => discarded.add('lower'),
+        task: () async => started.add('lower'),
+      );
+
+      upperPriority = 100;
+      lowerPriority = 0;
+      expect(
+        scheduler.schedule(
+          key: 'middle',
+          priority: 200,
+          priorityResolver: () => 50,
+          generation: 1,
+          task: () async => started.add('middle'),
+        ),
+        isTrue,
+      );
+      expect(discarded, <String>['upper']);
+      expect(scheduler.pendingCount, 2);
+      expect(
+        scheduler.schedule(
+          key: 'offscreen',
+          priority: 0,
+          priorityResolver: () => 200,
+          generation: 1,
+          onDiscard: () => discarded.add('offscreen'),
+          task: () async => started.add('offscreen'),
+        ),
+        isFalse,
+      );
+
+      scheduler.setPaused(false);
+      await scheduler.idle;
+      expect(started, <String>['lower', 'middle']);
+      expect(discarded, <String>['upper']);
+    },
+  );
+
+  test('paused queue resumes latest focus within concurrency limit', () async {
+    final scheduler = WarmupScheduler(maxConcurrent: 2, maxQueueSize: 4);
+    scheduler.setPaused(true);
+    scheduler.beginGeneration(1);
+    final started = <String>[];
+    final release = Completer<void>();
+    var focus = 0;
+    for (var index = 0; index < 4; index++) {
+      final coverIndex = index;
+      scheduler.schedule(
+        key: 'cover:$index',
+        priority: index,
+        priorityResolver: () => (coverIndex - focus).abs(),
+        generation: 1,
+        task: () async {
+          started.add('cover:$coverIndex');
+          await release.future;
+        },
+      );
+    }
+
+    focus = 3;
+    expect(started, isEmpty);
+    expect(scheduler.pendingCount, 4);
+    scheduler.setPaused(false);
+    expect(started, <String>['cover:3', 'cover:2']);
+    expect(scheduler.activeCount, 2);
+    expect(scheduler.pendingCount, 2);
+
+    release.complete();
+    await scheduler.idle;
+    expect(started, <String>['cover:3', 'cover:2', 'cover:1', 'cover:0']);
+    expect(scheduler.activeCount, 0);
+  });
+
   test('deduplicates queued work by key within a generation', () {
     final scheduler = WarmupScheduler(maxQueueSize: 4);
     scheduler.beginGeneration(1);

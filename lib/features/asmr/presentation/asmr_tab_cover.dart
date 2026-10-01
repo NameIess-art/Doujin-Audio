@@ -43,10 +43,13 @@ class _AsmrWorkCover extends ConsumerWidget {
                   ? CoverFallbackArtwork(seed: url, compact: true)
                   : AsyncRemoteCoverImage(
                       url: url,
-                      future: coverUi.deferredRemoteCover(url),
+                      future: coverUi.deferredRemoteCover(
+                        url,
+                        context: context,
+                      ),
                       initialPath: library.resolvedCoverPathForRemoteCover(url),
                       retryFutureBuilder: () =>
-                          coverUi.deferredRemoteCover(url),
+                          coverUi.deferredRemoteCover(url, context: context),
                       retryDelay: const Duration(seconds: 5),
                       maxRetryAttempts: 2,
                       fit: BoxFit.cover,

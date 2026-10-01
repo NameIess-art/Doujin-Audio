@@ -11,6 +11,7 @@ class WarmupScheduler {
   final Set<String> _activeKeys = <String>{};
   Timer? _cooldownTimer;
   Completer<void>? _idleCompleter;
+  Completer<void>? _capacityCompleter;
 
   int _currentGeneration = 0;
   bool _isCoolingDown = false;
@@ -26,6 +27,13 @@ class WarmupScheduler {
   Future<void> get idle {
     if (isIdle) return Future<void>.value();
     return (_idleCompleter ??= Completer<void>()).future;
+  }
+
+  Future<void> get capacityAvailable {
+    if (_isShutDown || _pending.length < maxQueueSize) {
+      return Future<void>.value();
+    }
+    return (_capacityCompleter ??= Completer<void>()).future;
   }
 
   void setPaused(bool value) {
@@ -56,8 +64,10 @@ class WarmupScheduler {
   bool schedule({
     required String key,
     required int priority,
+    int Function()? priorityResolver,
     required int generation,
     String? group,
+    void Function()? onDiscard,
     required Future<void> Function() task,
   }) {
     if (_isShutDown) return false;
@@ -67,8 +77,10 @@ class WarmupScheduler {
     final queuedTask = _QueuedWarmupTask(
       key: key,
       priority: priority,
+      priorityResolver: priorityResolver,
       generation: generation,
       group: group,
+      onDiscard: onDiscard,
       task: task,
     );
 
@@ -76,18 +88,21 @@ class WarmupScheduler {
       final worstTask = _pending.isEmpty
           ? null
           : _pending.reduce(
-              (left, right) => left.priority >= right.priority ? left : right,
+              (left, right) => left.effectivePriority >= right.effectivePriority
+                  ? left
+                  : right,
             );
-      if (worstTask == null || worstTask.priority <= priority) {
+      if (worstTask == null ||
+          worstTask.effectivePriority <= queuedTask.effectivePriority) {
         return false;
       }
       _pending.remove(worstTask);
       _queuedKeys.remove(worstTask.key);
+      worstTask.onDiscard?.call();
     }
 
     _pending.add(queuedTask);
     _markBusy();
-    _pending.sort((left, right) => left.priority.compareTo(right.priority));
     _queuedKeys.add(key);
     _pump();
     return true;
@@ -99,6 +114,7 @@ class WarmupScheduler {
     _isCoolingDown = false;
     _pending.clear();
     _queuedKeys.clear();
+    _completeCapacityIfAvailable();
     _completeIdleIfNeeded();
   }
 
@@ -114,6 +130,7 @@ class WarmupScheduler {
       _queuedKeys.remove(task.key);
       return true;
     });
+    _completeCapacityIfAvailable();
   }
 
   void _dropStalePending() {
@@ -124,13 +141,19 @@ class WarmupScheduler {
       _queuedKeys.remove(task.key);
       return true;
     });
+    _completeCapacityIfAvailable();
   }
 
   void _pump() {
     if (_isShutDown || _isCoolingDown || _isPaused) return;
     while (_activeKeys.length < maxConcurrent && _pending.isNotEmpty) {
+      _pending.sort(
+        (left, right) =>
+            left.effectivePriority.compareTo(right.effectivePriority),
+      );
       final nextTask = _pending.removeAt(0);
       _queuedKeys.remove(nextTask.key);
+      _completeCapacityIfAvailable();
       if (nextTask.generation != _currentGeneration) {
         continue;
       }
@@ -157,6 +180,13 @@ class WarmupScheduler {
     }
   }
 
+  void _completeCapacityIfAvailable() {
+    if (!_isShutDown && _pending.length >= maxQueueSize) return;
+    final completer = _capacityCompleter;
+    _capacityCompleter = null;
+    completer?.complete();
+  }
+
   void _completeIdleIfNeeded() {
     if (!isIdle) return;
     final completer = _idleCompleter;
@@ -171,14 +201,20 @@ class _QueuedWarmupTask {
   const _QueuedWarmupTask({
     required this.key,
     required this.priority,
+    this.priorityResolver,
     required this.generation,
     this.group,
+    this.onDiscard,
     required this.task,
   });
 
   final String key;
   final int priority;
+  final int Function()? priorityResolver;
   final int generation;
   final String? group;
+  final void Function()? onDiscard;
   final Future<void> Function() task;
+
+  int get effectivePriority => priorityResolver?.call() ?? priority;
 }

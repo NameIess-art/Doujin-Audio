@@ -1,5 +1,8 @@
 import 'dart:async';
 
+import 'package:flutter/rendering.dart';
+import 'package:flutter/widgets.dart';
+
 import '../../../core/media/music_track.dart';
 import '../../../core/media/path_matcher.dart';
 import '../../../core/ui/warmup_scheduler.dart';
@@ -10,93 +13,191 @@ final class LibraryCoverUiController {
     required LibraryFacade library,
     WarmupScheduler? scheduler,
   }) : _library = library,
-       _scheduler = scheduler ?? WarmupScheduler();
+       _scheduler = scheduler ?? WarmupScheduler(),
+       _interactionPaused = scheduler?.isPaused ?? false;
 
   final LibraryFacade _library;
   final WarmupScheduler _scheduler;
-  final Map<String, Completer<String?>> _deferredLookups =
-      <String, Completer<String?>>{};
+  final Map<String, _DeferredCoverLookup> _deferredLookups = {};
+  bool _scheduleBatchPending = false;
+  bool _waitingForCapacity = false;
+  bool _interactionPaused;
   bool _disposed = false;
 
-  Future<String?> deferredFolderCover(String folderPath) {
+  Future<String?> deferredFolderCover(
+    String folderPath, {
+    BuildContext? context,
+  }) {
     final normalizedPath = PathMatcher.normalize(folderPath);
     final generation = _library.coverArtworkCacheService.generation;
     return _deferredLookup(
       key: 'folder:$normalizedPath:$generation',
+      context: context,
       lookup: () => _library.coverPathFutureForFolder(folderPath),
     );
   }
 
-  Future<String?> deferredTrackCover(MusicTrack track) {
+  Future<String?> deferredTrackCover(
+    MusicTrack track, {
+    BuildContext? context,
+  }) {
     final coverKey =
         _library.coverArtworkCacheService.coverSearchKeyForTrack(track) ??
         track.path;
     final generation = _library.coverArtworkCacheService.generation;
     return _deferredLookup(
       key: 'track:$coverKey:$generation',
+      context: context,
       lookup: () => _library.coverPathFutureForTrack(track),
     );
   }
 
-  Future<String?> deferredRemoteCover(String url) {
+  Future<String?> deferredRemoteCover(String url, {BuildContext? context}) {
     final normalizedUrl = url.trim();
     final generation = _library.coverArtworkCacheService.generation;
     return _deferredLookup(
       key: 'remote:$normalizedUrl:$generation',
+      context: context,
       lookup: () => _library.coverPathFutureForRemoteCover(normalizedUrl),
     );
   }
 
   Future<String?> _deferredLookup({
     required String key,
+    required BuildContext? context,
     required Future<String?> Function() lookup,
   }) {
     if (_disposed) return Future<String?>.value();
-    final existing = _deferredLookups[key];
-    if (existing != null) return existing.future;
-
-    final completer = Completer<String?>();
-    _deferredLookups[key] = completer;
-    Future<void> run() async {
-      try {
-        final value = await lookup();
-        if (!completer.isCompleted) completer.complete(value);
-      } catch (error, stackTrace) {
-        if (!completer.isCompleted) completer.completeError(error, stackTrace);
-      } finally {
-        if (identical(_deferredLookups[key], completer)) {
-          _deferredLookups.remove(key);
-        }
-      }
+    final request = _deferredLookups.putIfAbsent(
+      key,
+      () => _DeferredCoverLookup(lookup),
+    );
+    if (context == null) {
+      request.hasUnscopedRequest = true;
+    } else {
+      request.contexts.add(context);
     }
-
-    Future<void> scheduleWhenAvailable() async {
-      while (!_disposed && !completer.isCompleted) {
-        final scheduled = _scheduler.schedule(
-          key: 'visible_library_cover:$key',
-          priority: -1,
-          generation: _scheduler.currentGeneration,
-          group: 'visible_library_cover',
-          task: run,
-        );
-        if (scheduled) return;
-        await _scheduler.idle;
-      }
-    }
-
-    unawaited(scheduleWhenAvailable());
-    return completer.future;
+    _schedulePendingLookups();
+    return request.result.future;
   }
 
-  void setInteractionPaused(bool paused) => _scheduler.setPaused(paused);
+  void _schedulePendingLookups() {
+    if (_scheduleBatchPending) return;
+    _scheduleBatchPending = true;
+    scheduleMicrotask(() {
+      _scheduleBatchPending = false;
+      if (_disposed) return;
+      // Admit this frame's cards together after layout, so the first built
+      // cache-extent item cannot start before the viewport's center is known.
+      _scheduler.setPaused(true);
+      final requests = _deferredLookups.entries.toList()
+        ..sort(
+          (left, right) => _priorityForRequest(
+            left.value,
+          ).compareTo(_priorityForRequest(right.value)),
+        );
+      for (final entry in requests) {
+        final request = entry.value;
+        if (request.submitted) continue;
+        request.submitted = _scheduler.schedule(
+          key: 'visible_library_cover:${entry.key}',
+          priority: -1,
+          priorityResolver: () => _priorityForRequest(request),
+          generation: _scheduler.currentGeneration,
+          group: 'visible_library_cover',
+          onDiscard: () => request.submitted = false,
+          task: () => _runLookup(entry.key, request),
+        );
+      }
+      _scheduler.setPaused(_interactionPaused);
+      if (_deferredLookups.values.any((request) => !request.submitted)) {
+        unawaited(_waitForCapacity());
+      }
+    });
+  }
+
+  Future<void> _waitForCapacity() async {
+    if (_waitingForCapacity) return;
+    _waitingForCapacity = true;
+    await _scheduler.capacityAvailable;
+    _waitingForCapacity = false;
+    if (!_disposed) _schedulePendingLookups();
+  }
+
+  Future<void> _runLookup(String key, _DeferredCoverLookup request) async {
+    final completer = request.result;
+    try {
+      final hasMountedRequester =
+          request.hasUnscopedRequest ||
+          request.contexts.any((context) => context.mounted);
+      final value = !_disposed && hasMountedRequester
+          ? await request.lookup()
+          : null;
+      if (!completer.isCompleted) completer.complete(value);
+    } catch (error, stackTrace) {
+      if (!completer.isCompleted) completer.completeError(error, stackTrace);
+    } finally {
+      if (identical(_deferredLookups[key], request)) {
+        _deferredLookups.remove(key);
+      }
+    }
+  }
+
+  int _priorityForRequest(_DeferredCoverLookup request) {
+    var priority = request.hasUnscopedRequest ? -2000 : 1 << 30;
+    for (final context in request.contexts) {
+      if (!context.mounted ||
+          !TickerMode.getValuesNotifier(context).value.enabled) {
+        continue;
+      }
+      final box = context.findRenderObject();
+      if (box is! RenderBox || !box.attached || !box.hasSize) continue;
+      final ancestor = RenderAbstractViewport.maybeOf(box);
+      final viewport = ancestor is RenderBox ? ancestor as RenderBox : null;
+      if (viewport == null || !viewport.hasSize) {
+        if (priority > -2000) priority = -2000;
+        continue;
+      }
+      final bounds = MatrixUtils.transformRect(
+        box.getTransformTo(viewport),
+        Offset.zero & box.size,
+      );
+      final viewportBounds = viewport.paintBounds;
+      final distance = (bounds.center - viewportBounds.center).distance;
+      final extent = viewportBounds.longestSide;
+      if (extent <= 0 || !distance.isFinite) continue;
+      final candidate =
+          (bounds.overlaps(viewportBounds) ? -2000 : 1000) +
+          (distance * 1000 / extent).round();
+      if (candidate < priority) priority = candidate;
+    }
+    return priority;
+  }
+
+  void setInteractionPaused(bool paused) {
+    _interactionPaused = paused;
+    if (!paused && _deferredLookups.isNotEmpty) _schedulePendingLookups();
+    _scheduler.setPaused(paused || _scheduleBatchPending);
+  }
 
   Future<void> dispose() async {
     if (_disposed) return;
     _disposed = true;
-    for (final completer in _deferredLookups.values) {
+    for (final request in _deferredLookups.values) {
+      final completer = request.result;
       if (!completer.isCompleted) completer.complete(null);
     }
     _deferredLookups.clear();
     await _scheduler.shutdown();
   }
+}
+
+final class _DeferredCoverLookup {
+  _DeferredCoverLookup(this.lookup);
+
+  final Future<String?> Function() lookup;
+  final result = Completer<String?>();
+  final contexts = <BuildContext>{};
+  bool hasUnscopedRequest = false;
+  bool submitted = false;
 }

@@ -252,9 +252,7 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp> {
             themeMode: themeProvider.themeMode,
             scrollBehavior: const AppScrollBehavior().copyWith(
               scrollbars: true,
-              physics: const ClampingScrollPhysics(
-                parent: AlwaysScrollableScrollPhysics(),
-              ),
+              physics: AppScrollBehavior.defaultScrollPhysics,
             ),
             builder: (context, child) {
               final mediaQuery = MediaQuery.of(context);

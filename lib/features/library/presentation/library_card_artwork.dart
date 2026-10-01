@@ -67,7 +67,8 @@ class _LibraryCoverThumbnailState extends ConsumerState<LibraryCoverThumbnail> {
       _lastCoverGeneration = coverGeneration;
       _coverPathFuture = deferLibraryCardCoverLookup(
         isMounted: () => mounted,
-        lookup: () => coverUi.deferredFolderCover(widget.folderPath),
+        lookup: () =>
+            coverUi.deferredFolderCover(widget.folderPath, context: context),
       );
     }
     return _coverPathFuture!;
@@ -101,8 +102,10 @@ class _LibraryCoverThumbnailState extends ConsumerState<LibraryCoverThumbnail> {
                 initialPath: libraryFacade.resolvedCoverPathForFolder(
                   widget.folderPath,
                 ),
-                retryFutureBuilder: () =>
-                    coverUi.deferredFolderCover(widget.folderPath),
+                retryFutureBuilder: () => coverUi.deferredFolderCover(
+                  widget.folderPath,
+                  context: context,
+                ),
                 seed: widget.folderPath,
                 cacheWidth: coverCacheWidth,
                 useDefaultCacheWidth: false,
@@ -157,7 +160,8 @@ class _LibraryTrackCoverThumbnailState
       _lastCoverGeneration = coverGeneration;
       _coverPathFuture = deferLibraryCardCoverLookup(
         isMounted: () => mounted,
-        lookup: () => coverUi.deferredTrackCover(widget.track),
+        lookup: () =>
+            coverUi.deferredTrackCover(widget.track, context: context),
       );
     }
     return _coverPathFuture!;
@@ -188,7 +192,8 @@ class _LibraryTrackCoverThumbnailState
               future: coverPathFuture,
               requestKey: track.path,
               initialPath: libraryFacade.resolvedCoverPathForTrack(track),
-              retryFutureBuilder: () => coverUi.deferredTrackCover(track),
+              retryFutureBuilder: () =>
+                  coverUi.deferredTrackCover(track, context: context),
               seed: track.displayName,
               cacheWidth: coverCacheWidth,
               useDefaultCacheWidth: false,

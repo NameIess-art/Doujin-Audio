@@ -262,9 +262,7 @@ Widget buildAppRuntimeTestApp({
           themeMode: theme.themeMode,
           scrollBehavior: const AppScrollBehavior().copyWith(
             scrollbars: true,
-            physics: const ClampingScrollPhysics(
-              parent: AlwaysScrollableScrollPhysics(),
-            ),
+            physics: AppScrollBehavior.defaultScrollPhysics,
           ),
           home: Scaffold(
             body: Consumer(

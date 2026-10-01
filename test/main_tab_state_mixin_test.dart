@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  testWidgets('deep scroll animates only the final two viewports', (
+  testWidgets('deep scroll jumps directly to the top without animation', (
     tester,
   ) async {
     final tabKey = GlobalKey<_ScrollToTopTestTabState>();
@@ -17,18 +17,11 @@ void main() {
 
     tabKey.currentState!.scrollToTop();
 
-    final animationStart = controller.offset;
-    expect(animationStart, controller.position.viewportDimension * 2);
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 100));
-    expect(controller.offset, greaterThan(0));
-    expect(controller.offset, lessThan(animationStart));
-    await tester.pumpAndSettle();
-
+    // Jumps immediately to top without animation frames
     expect(controller.offset, 0);
   });
 
-  testWidgets('short scroll animates from its current position', (
+  testWidgets('short scroll jumps directly to the top without animation', (
     tester,
   ) async {
     final tabKey = GlobalKey<_ScrollToTopTestTabState>();
@@ -43,30 +36,17 @@ void main() {
 
     tabKey.currentState!.scrollToTop();
 
-    expect(controller.offset, shortOffset);
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 100));
-    expect(controller.offset, greaterThan(0));
-    expect(controller.offset, lessThan(shortOffset));
-    await tester.pumpAndSettle();
-
     expect(controller.offset, 0);
   });
 
-  testWidgets('reduced motion returns to the top immediately', (tester) async {
+  testWidgets('scrollToTop when already at top is a no-op', (tester) async {
     final tabKey = GlobalKey<_ScrollToTopTestTabState>();
     await tester.pumpWidget(
-      MaterialApp(
-        home: MediaQuery(
-          data: const MediaQueryData(disableAnimations: true),
-          child: _ScrollToTopTestTab(key: tabKey),
-        ),
-      ),
+      MaterialApp(home: _ScrollToTopTestTab(key: tabKey)),
     );
 
     final controller = tabKey.currentState!.controller;
-    controller.jumpTo(40000);
-    await tester.pump();
+    expect(controller.offset, 0);
     tabKey.currentState!.scrollToTop();
 
     expect(controller.offset, 0);

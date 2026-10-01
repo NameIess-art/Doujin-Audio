@@ -112,7 +112,11 @@ final class LibraryMetadataCoordinator {
         )
         .firstOrNull;
     if (track == null) return true;
-    return _detailCacheService.exportTimeSegments(targetForTrack(track));
+    try {
+      return await _detailCacheService.exportTimeSegments(targetForTrack(track));
+    } on AudioDetailOperationCancelled {
+      return false;
+    }
   }
 
   Future<AudioDetailSaveResult?> prefillRjCode(

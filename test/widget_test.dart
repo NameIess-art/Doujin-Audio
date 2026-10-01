@@ -5131,6 +5131,12 @@ final class _QueuedEmptyAsmrLibraryController extends AsmrLibraryController {
   }
 
   @override
+  List<AsmrWork> filteredWorksFor(
+    AsmrCategoryType category, {
+    String searchQuery = '',
+  }) => categoryViewState(category, searchQuery: searchQuery).works;
+
+  @override
   int totalCountFor(AsmrCategoryType category) => worksFor(category).length;
 
   @override

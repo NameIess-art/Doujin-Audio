@@ -52,7 +52,12 @@ List<Widget> _buildSettingsDataSection({
                       : AppCacheService.defaultMaxCacheBytes,
                   onChanged: (value) {
                     if (value != null) {
-                      settingsController.setMaxCacheBytes(value);
+                      unawaited(
+                        saveSettingsWithFeedback(
+                          context,
+                          () => settingsController.setMaxCacheBytes(value),
+                        ),
+                      );
                     }
                   },
                   items: _settingsCacheLimitOptions

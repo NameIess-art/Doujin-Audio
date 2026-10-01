@@ -337,6 +337,8 @@ class PlatformLibraryScanDataSource implements LibraryScanDataSource {
   Future<String?> _cachePickedFile(PlatformFile file, int index) async {
     final stream = file.readStream;
     if (stream != null) {
+      File? output;
+      IOSink? sink;
       try {
         final cacheDir = await _persistentImportDirectory();
         if (!await cacheDir.exists()) await cacheDir.create(recursive: true);
@@ -346,10 +348,40 @@ class PlatformLibraryScanDataSource implements LibraryScanDataSource {
           '${DateTime.now().microsecondsSinceEpoch}_$index'
           '${extension.isEmpty ? '.bin' : extension}',
         );
-        await stream.pipe(File(outPath).openWrite());
+        final target = File(outPath);
+        await target.create(exclusive: true);
+        output = target;
+        sink = target.openWrite();
+        await sink.addStream(stream);
+        await sink.flush();
+        await sink.close();
+        sink = null;
         return outPath;
-      } catch (_) {
-        // Fall through to the native content-uri cache.
+      } catch (error, stackTrace) {
+        AppLogService.error(
+          'picked_file_copy_failed',
+          error: error,
+          stackTrace: stackTrace,
+        );
+        try {
+          await sink?.close();
+        } catch (closeError, closeStack) {
+          AppLogService.error(
+            'picked_file_close_failed',
+            error: closeError,
+            stackTrace: closeStack,
+          );
+        }
+        try {
+          if (output != null && await output.exists()) await output.delete();
+        } catch (cleanupError, cleanupStack) {
+          AppLogService.error(
+            'picked_file_cleanup_failed',
+            error: cleanupError,
+            stackTrace: cleanupStack,
+          );
+        }
+        // Fall through to the native content-uri cache after cleaning this output.
       }
     }
 

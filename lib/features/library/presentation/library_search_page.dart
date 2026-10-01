@@ -265,7 +265,11 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
         .map((selection) => selection.path)
         .toList(growable: false);
     _exitSelectionMode();
-    await ref.read(settingsRepositoryProvider).toggleLibraryPathsPinned(paths);
+    await saveSettingsWithFeedback(
+      context,
+      () =>
+          ref.read(settingsRepositoryProvider).toggleLibraryPathsPinned(paths),
+    );
   }
 
   Future<void> _removeCurrentSelections() async {

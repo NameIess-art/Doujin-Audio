@@ -221,7 +221,10 @@ class PowerPlatformService implements PowerPlatformGateway {
     if (!_isAndroid && !_isWindows) return true;
     final result = await _client.invoke<bool>(
       PowerMethod.acquireWakeLock,
-      arguments: <String, Object?>{'tag': tag, 'timeoutMs': timeoutMs},
+      arguments: <String, Object?>{
+        'tag': tag,
+        'timeoutMs': ?timeoutMs,
+      },
       decode: (value) => value as bool? ?? false,
     );
     _logFailure(PowerMethod.acquireWakeLock, result);

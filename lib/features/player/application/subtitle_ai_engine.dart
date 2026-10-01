@@ -40,6 +40,7 @@ class SubtitleAiEngine {
     String scriptPath, {
     SubtitleProgressCallback? onProgress,
     bool Function()? isCancelled,
+    Future<void>? cancellation,
   }) async {
     _requireSupported();
     final scriptBytes = await _files.readDocumentBytes(scriptPath);
@@ -52,6 +53,8 @@ class SubtitleAiEngine {
     final model = await _ensureModel(
       SubtitleModelStore.japaneseCtc,
       onProgress,
+      isCancelled,
+      cancellation,
     );
     _checkCancelled(isCancelled);
 
@@ -136,6 +139,7 @@ class SubtitleAiEngine {
     required String trackPath,
     SubtitleProgressCallback? onProgress,
     bool Function()? isCancelled,
+    Future<void>? cancellation,
   }) async {
     _requireSupported();
     if (targetLanguage != 'zh' && targetLanguage != 'en') {
@@ -151,16 +155,51 @@ class SubtitleAiEngine {
       ),
     );
     await workDir.create(recursive: true);
-    final identity = sha256
+    final sourceIdentity = sha256
+        .convert(utf8.encode(jsonEncode([trackPath, targetLanguage])))
+        .toString();
+    final input = [
+      for (var index = 0; index < source.length; index++)
+        [
+          source[index].start.inMicroseconds,
+          source[index].end.inMicroseconds,
+          originals[index],
+        ],
+    ];
+    final identity = sha256.convert(utf8.encode(jsonEncode(input))).toString();
+    final checkpoint = File(
+      path.join(workDir.path, '${sourceIdentity}_v2_$identity.json'),
+    );
+    final legacyIdentity = sha256
         .convert(
           utf8.encode('$trackPath|$targetLanguage|${jsonEncode(originals)}'),
         )
         .toString();
-    final checkpoint = File(path.join(workDir.path, '$identity.json'));
+    await for (final entry in workDir.list()) {
+      final name = path.basename(entry.path);
+      if (entry is File &&
+          entry.path != checkpoint.path &&
+          (name.startsWith('${sourceIdentity}_v2_') ||
+              name == '$legacyIdentity.json')) {
+        await entry.delete();
+      }
+    }
     final prior = await _readCheckpoint(checkpoint);
+    _checkCancelled(isCancelled);
+    if (prior.nextChunk == source.length &&
+        prior.cues.length == source.length) {
+      return SubtitleDraft(
+        cues: prior.cues,
+        kind: SubtitleDraftKind.translation,
+        sourceLanguage: 'ja',
+        targetLanguage: targetLanguage,
+      );
+    }
     final model = await _ensureModel(
       SubtitleModelStore.translation,
       onProgress,
+      isCancelled,
+      cancellation,
     );
     _checkCancelled(isCancelled);
     onProgress?.call(const SubtitleTaskProgress('loading', 0, ''));
@@ -224,9 +263,12 @@ class SubtitleAiEngine {
   Future<String> _ensureModel(
     SubtitleModelSpec spec,
     SubtitleProgressCallback? onProgress,
-  ) => _models.ensure(
-    spec,
-    onProgress: (fraction, received, total) {
+    bool Function()? isCancelled,
+    Future<void>? cancellation,
+  ) async {
+    _checkCancelled(isCancelled);
+    void reportProgress(double fraction, int received, int total) {
+      if (isCancelled?.call() == true) return;
       onProgress?.call(
         SubtitleTaskProgress(
           'download',
@@ -234,8 +276,21 @@ class SubtitleAiEngine {
           '${(received / 1048576).toStringAsFixed(0)} / ${(total / 1048576).toStringAsFixed(0)} MiB',
         ),
       );
-    },
-  );
+    }
+
+    final snapshot = _models.snapshot(spec);
+    if (snapshot.active) {
+      reportProgress(snapshot.fraction, snapshot.received, snapshot.total);
+    }
+    // Models are shared with the settings page and later generation jobs.
+    // Cancel this waiter without interrupting their download.
+    final download = _models.ensure(spec, onProgress: reportProgress);
+    if (cancellation == null) return download;
+    return Future.any<String>([
+      download,
+      cancellation.then<String>((_) => throw const SubtitleTaskCancelled()),
+    ]);
+  }
 
   Future<void> _decodeAudio(
     String source,
@@ -334,7 +389,7 @@ Future<_Checkpoint> _readCheckpoint(File file) async {
   }
   try {
     final data = jsonDecode(await file.readAsString()) as Map<String, dynamic>;
-    if ((data['version'] as int? ?? 1) != 1) {
+    if (data['version'] != 2) {
       return (nextChunk: 0, cues: <SubtitleCue>[]);
     }
     final cues = (data['cues'] as List).map((item) {
@@ -359,7 +414,7 @@ Future<void> _writeCheckpoint(
   final temporary = File('${file.path}.tmp');
   await temporary.writeAsString(
     jsonEncode({
-      'version': 1,
+      'version': 2,
       'nextChunk': nextChunk,
       'cues': cues
           .map(

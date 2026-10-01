@@ -2263,6 +2263,7 @@ void main() {
         notificationCoordinatorService: notificationCoordinatorService,
         settingsRepository: settingsRepository,
         languageProvider: languageProvider,
+        undoableRemovalService: fixture.undoableRemovalService,
         child: const PlaylistTab(),
       ),
     );
@@ -2505,6 +2506,18 @@ void main() {
     expect(find.byKey(const ValueKey('delete_equalizer_preset')), findsNothing);
     expect(find.byKey(const ValueKey('save_equalizer_preset')), findsOneWidget);
     expect(runtimeGraph.settings.customEqPresets, contains(customPreset));
+    expect(session.audioEffects.eqPresetId, customPreset.id);
+    expect(session.audioEffects.eqBandLevels, customPreset.bandLevels);
+    final presetDropdown = find.descendant(
+      of: find.byType(EqualizerPage),
+      matching: find.byType(DropdownButtonFormField<String>),
+    );
+    expect(
+      tester
+          .widget<DropdownButtonFormField<String>>(presetDropdown)
+          .initialValue,
+      isNull,
+    );
 
     await tester.tap(find.textContaining(languageProvider.tr('undo')));
     await tester.runAsync(
@@ -2512,6 +2525,21 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(runtimeGraph.settings.customEqPresets, contains(customPreset));
+    expect(session.audioEffects.eqPresetId, customPreset.id);
+    expect(
+      ProviderScope.containerOf(tester.element(find.byType(EqualizerPage)))
+          .read(undoableRemovalServiceProvider)
+          .state
+          .hiddenKeys,
+      isEmpty,
+    );
+    expect(deleteEqualizerPresetButton, findsOneWidget);
+    expect(
+      tester
+          .widget<DropdownButtonFormField<String>>(presetDropdown)
+          .initialValue,
+      customPreset.id,
+    );
 
     await tester.tap(find.text(languageProvider.tr('volume_balance')));
     await tester.pumpAndSettle();
@@ -4996,7 +5024,8 @@ void main() {
       await tester.pump();
       expect(find.byType(SessionVideoBlurredBackdrop), findsOneWidget);
       await settingsRepository.setAllowVideoPlayback(false);
-      await tester.pump();
+      expect(settingsRepository.slice.state.allowVideoPlayback, isFalse);
+      await tester.pumpAndSettle();
       expect(find.byType(SessionVideoBlurredBackdrop), findsNothing);
       expect(queueSession.currentTrackPath, track.path);
       expect(
@@ -5046,7 +5075,8 @@ void main() {
       );
 
       await settingsRepository.setBlurPlayerBackgroundEnabled(false);
-      await tester.pump();
+      expect(settingsRepository.slice.state.blurPlayerBackgroundEnabled, isFalse);
+      await tester.pumpAndSettle();
       expect(
         find.byKey(const ValueKey('session_detail_background_blur')),
         findsNothing,

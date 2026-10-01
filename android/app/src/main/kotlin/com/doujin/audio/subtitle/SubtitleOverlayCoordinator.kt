@@ -20,21 +20,21 @@ internal class SubtitleOverlayCoordinator(
     private val context: Context
 ) {
     private var service: SubtitleOverlayService? = null
-    private var isBound = false
+    private var connection: ServiceConnection? = null
     private var pendingText: String? = null
     private var pendingStyle: SubtitleOverlayStyle? = null
 
-    private val connection = object : ServiceConnection {
+    private fun newConnection() = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
+            if (connection !== this) return
             val localBinder = binder as SubtitleOverlayService.LocalBinder
             service = localBinder.getService()
-            isBound = true
             applyPendingState()
         }
 
         override fun onServiceDisconnected(name: ComponentName?) {
+            if (connection !== this) return
             service = null
-            isBound = false
         }
     }
 
@@ -53,22 +53,29 @@ internal class SubtitleOverlayCoordinator(
         return true
     }
 
-    fun start() {
-        if (!isBound) {
-            val intent = Intent(context, SubtitleOverlayService::class.java)
-            context.startService(intent)
-            context.bindService(intent, connection, Context.BIND_AUTO_CREATE)
-        } else {
+    fun start(): Boolean {
+        if (connection != null) {
             applyPendingState()
+            return true
         }
+        val intent = Intent(context, SubtitleOverlayService::class.java)
+        context.startService(intent)
+        val nextConnection = newConnection()
+        connection = nextConnection
+        try {
+            if (context.bindService(intent, nextConnection, Context.BIND_AUTO_CREATE)) return true
+        } catch (error: Exception) {
+            connection = null
+            context.stopService(intent)
+            throw error
+        }
+        connection = null
+        context.stopService(intent)
+        return false
     }
 
     fun stop() {
-        if (isBound) {
-            context.unbindService(connection)
-            isBound = false
-            service = null
-        }
+        dispose()
         pendingText = null
         context.stopService(Intent(context, SubtitleOverlayService::class.java))
     }
@@ -90,11 +97,10 @@ internal class SubtitleOverlayCoordinator(
     }
 
     fun dispose() {
-        if (isBound) {
-            context.unbindService(connection)
-            isBound = false
-            service = null
-        }
+        val previous = connection
+        connection = null
+        service = null
+        if (previous != null) context.unbindService(previous)
     }
 
     private fun applyPendingState() {

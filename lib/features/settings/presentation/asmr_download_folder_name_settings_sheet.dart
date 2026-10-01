@@ -1,3 +1,4 @@
+import '../../../app/presentation/app_presentation_providers.dart';
 import 'settings_providers.dart';
 import 'dart:async';
 
@@ -29,25 +30,35 @@ class _AsmrDownloadFolderNameSettingsSheetState
         .toList(growable: true);
   }
 
-  void _persistSelection() {
+  Future<void> _persistSelection() async {
     final snapshot = List<AsmrDownloadFolderNameField>.unmodifiable(_selected);
-    unawaited(
-      ref
+    final saved = await saveSettingsWithFeedback(
+      context,
+      () => ref
           .read(settingsRepositoryProvider)
           .setAsmrDownloadFolderNameFields(snapshot),
     );
+    if (!saved && mounted) {
+      setState(() {
+        _selected
+          ..clear()
+          ..addAll(
+            ref.read(settingsRepositoryProvider).asmrDownloadFolderNameFields,
+          );
+      });
+    }
   }
 
   void _remove(AsmrDownloadFolderNameField field) {
     if (_selected.length == 1) return;
     setState(() => _selected.remove(field));
-    _persistSelection();
+    unawaited(_persistSelection());
   }
 
   void _add(AsmrDownloadFolderNameField field) {
     if (_selected.contains(field)) return;
     setState(() => _selected.add(field));
-    _persistSelection();
+    unawaited(_persistSelection());
   }
 
   void _reorder(int oldIndex, int newIndex) {
@@ -56,7 +67,7 @@ class _AsmrDownloadFolderNameSettingsSheetState
       final field = _selected.removeAt(oldIndex);
       _selected.insert(newIndex, field);
     });
-    _persistSelection();
+    unawaited(_persistSelection());
   }
 
   @override

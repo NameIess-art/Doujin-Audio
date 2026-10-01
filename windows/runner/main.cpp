@@ -24,11 +24,25 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   HANDLE singleton = CreateMutexW(nullptr,TRUE,mutex_name);
   if (!singleton) return EXIT_FAILURE;
   if (GetLastError() == ERROR_ALREADY_EXISTS) {
-    if (auto existing = FindWindowW(window_class,nullptr)) {
-      PostMessage(existing,DesktopIntegration::kActivate,
-        std::wstring(command_line).find(L"--background") != std::wstring::npos ? 1 : 0,0);
+    const auto deadline = GetTickCount64() + 5000;
+    while (true) {
+      const auto ownership = WaitForSingleObject(singleton,0);
+      // The primary may fail before creating its window. An abandoned mutex
+      // grants ownership, allowing this process to finish startup instead.
+      if (ownership == WAIT_OBJECT_0 || ownership == WAIT_ABANDONED) break;
+      if (ownership == WAIT_FAILED) { CloseHandle(singleton); return EXIT_FAILURE; }
+      if (auto existing = FindWindowW(window_class,nullptr)) {
+        if (PostMessage(existing,DesktopIntegration::kActivate,
+            std::wstring(command_line).find(L"--background") != std::wstring::npos ? 1 : 0,0)) {
+          CloseHandle(singleton); return EXIT_SUCCESS;
+        }
+      }
+      if (GetTickCount64() >= deadline) {
+        OutputDebugStringW(L"DoujinAudio: primary window not ready after 5 seconds\n");
+        CloseHandle(singleton); return EXIT_FAILURE;
+      }
+      Sleep(50);
     }
-    CloseHandle(singleton); return EXIT_SUCCESS;
   }
   // Attach to console when present (e.g., 'flutter run') or create a
   // new console when running with a debugger.
@@ -51,6 +65,8 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   Win32Window::Point origin(10, 10);
   Win32Window::Size size(1280, 800);
   if (!window.Create(L"Doujin Audio", origin, size)) {
+    ::CoUninitialize();
+    ReleaseMutex(singleton); CloseHandle(singleton);
     return EXIT_FAILURE;
   }
   window.SetQuitOnClose(true);

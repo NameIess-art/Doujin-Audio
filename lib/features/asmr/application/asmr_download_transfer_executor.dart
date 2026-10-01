@@ -121,6 +121,8 @@ class AsmrDownloadTransferExecutor {
       final activeTransfers = <Future<void>>{};
       final transfersDone = Completer<void>();
       var transfersStopped = false;
+      Object? firstError;
+      StackTrace? firstErrorStack;
 
       Future<void> downloadOneFile(PlannedDownloadFile item) async {
         throwIfCancelled(workId);
@@ -228,21 +230,26 @@ class AsmrDownloadTransferExecutor {
               },
               onError: (Object error, StackTrace stackTrace) {
                 activeTransfers.remove(transfer);
-                transfersStopped = true;
-                pendingFiles.clear();
-                client.close(force: true);
-                if (!transfersDone.isCompleted) {
-                  transfersDone.completeError(error, stackTrace);
+                if (!transfersStopped) {
+                  firstError = error;
+                  firstErrorStack = stackTrace;
+                  transfersStopped = true;
+                  pendingFiles.clear();
+                  client.close(force: true);
                 }
+                pumpTransfers();
               },
             ),
           );
         }
-        if (!transfersStopped &&
-            pendingFiles.isEmpty &&
+        if (pendingFiles.isEmpty &&
             activeTransfers.isEmpty &&
             !transfersDone.isCompleted) {
-          transfersDone.complete();
+          if (firstError case final error?) {
+            transfersDone.completeError(error, firstErrorStack);
+          } else {
+            transfersDone.complete();
+          }
         }
       };
 

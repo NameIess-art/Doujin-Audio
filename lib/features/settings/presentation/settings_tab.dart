@@ -169,10 +169,9 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
       },
     );
     if (!mounted || folder == null || folder.trim().isEmpty) return;
-    await _runSettingsOperation<void>(
-      scope: UiOperationScope.settingsAsmrDownloadPath,
-      labelKey: 'loading_dot',
-      task: (_) => ref
+    await saveSettingsWithFeedback(
+      context,
+      () => ref
           .read(settingsRepositoryProvider)
           .setAsmrDownloadDestinationRoot(folder),
     );

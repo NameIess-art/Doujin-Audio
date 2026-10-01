@@ -29,9 +29,11 @@ class DesktopIntegration {
   void SetFullscreen(bool enabled);
   void SavePlacement();
   void RefreshPower();
+  void EndSession();
   HWND window_;
   bool ready_ = false;
   bool quitting_ = false;
+  bool ending_session_ = false;
   bool fullscreen_ = false;
   bool screen_on_ = false;
   int initial_show_command_ = SW_SHOWNORMAL;

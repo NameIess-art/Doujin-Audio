@@ -82,6 +82,47 @@ void main() {
     expect(bootstrapSettledCalls, 1);
   });
 
+  testWidgets('invalid persisted theme can recover through bootstrap retry', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({'themeMode': 42});
+    await AppPreferences.init();
+    final theme = ThemeProvider(loadPersistedState: false);
+    addTearDown(theme.dispose);
+    expect(theme.themeMode, ThemeMode.system);
+    var attempts = 0;
+    final controller = AppBootstrapController(
+      initializer: () async {
+        attempts++;
+        await AppPreferences.init();
+        await theme.reloadPersistedState();
+      },
+    );
+    await tester.pumpWidget(
+      AppBootstrapHost(
+        controller: controller,
+        themeProvider: theme,
+        locale: const Locale('zh'),
+        appBuilder: () => const MaterialApp(home: Text('ready app')),
+      ),
+    );
+    await tester.pump();
+    expect(
+      find.byKey(const ValueKey<String>('app_error_view')),
+      findsOneWidget,
+    );
+    expect(find.text('ready app'), findsNothing);
+    SharedPreferences.setMockInitialValues({'themeMode': 'dark'});
+    await tester.tap(
+      find.byKey(const ValueKey<String>('startup_retry_button')),
+    );
+    await tester.pump();
+    await tester.pump();
+    expect(theme.themeMode, ThemeMode.dark);
+    expect(find.text('ready app'), findsOneWidget);
+    expect(attempts, 2);
+  });
+
   testWidgets('successful startup releases the native splash once', (
     tester,
   ) async {

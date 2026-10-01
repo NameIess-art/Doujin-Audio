@@ -1038,18 +1038,21 @@ void main() {
             });
 
         await tester.runAsync(runtimeGraph.runtime.dispose);
-        runtimeGraph = createTestRuntimeGraph(
-          notificationService: PlaybackNotificationService(
-            notificationsPlatformService: NotificationsPlatformService(
-              channel: notificationsChannel,
-              isWindowsOverride: true,
-              timeout: const Duration(milliseconds: 50),
+        // Settings disposal must await futures created outside FakeAsync.
+        runtimeGraph = (await tester.runAsync(
+          () async => createTestRuntimeGraph(
+            notificationService: PlaybackNotificationService(
+              notificationsPlatformService: NotificationsPlatformService(
+                channel: notificationsChannel,
+                isWindowsOverride: true,
+                timeout: const Duration(milliseconds: 50),
+              ),
+            ),
+            persistenceRepository: TestPersistenceRepository(
+              database: AppDatabase.test(db),
             ),
           ),
-          persistenceRepository: TestPersistenceRepository(
-            database: AppDatabase.test(db),
-          ),
-        );
+        ))!;
         fixture.bindRuntimeGraph(runtimeGraph);
         runtimeGraph.playback.configurePersistence(enabled: false);
         final track = MusicTrack(

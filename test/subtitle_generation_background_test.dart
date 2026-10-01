@@ -29,6 +29,7 @@ class _FakeSubtitleAiEngine extends SubtitleAiEngine {
     String scriptPath, {
     void Function(SubtitleTaskProgress)? onProgress,
     bool Function()? isCancelled,
+    Future<void>? cancellation,
   }) {
     scriptProgress = onProgress;
     scriptCancelled = isCancelled;
@@ -42,6 +43,7 @@ class _FakeSubtitleAiEngine extends SubtitleAiEngine {
     required String trackPath,
     void Function(SubtitleTaskProgress)? onProgress,
     bool Function()? isCancelled,
+    Future<void>? cancellation,
   }) {
     translationProgress = onProgress;
     return translationResult.future;

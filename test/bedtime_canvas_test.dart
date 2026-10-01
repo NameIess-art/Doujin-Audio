@@ -655,8 +655,10 @@ void main() {
     testWidgets(
       'automatically enters BedtimeCanvasPage after 5 min of playback',
       (tester) async {
-        await fixture.settings.setSleepModeAutoTrigger(
-          SleepModeAutoTrigger.afterPlayback5min,
+        await tester.runAsync(
+          () => fixture.settings.setSleepModeAutoTrigger(
+            SleepModeAutoTrigger.afterPlayback5min,
+          ),
         );
 
         final session = PlaybackSession(
@@ -697,8 +699,10 @@ void main() {
     testWidgets('cancels auto-entry if playback is paused before 5 min', (
       tester,
     ) async {
-      await fixture.settings.setSleepModeAutoTrigger(
-        SleepModeAutoTrigger.afterPlayback5min,
+      await tester.runAsync(
+        () => fixture.settings.setSleepModeAutoTrigger(
+          SleepModeAutoTrigger.afterPlayback5min,
+        ),
       );
 
       final session = PlaybackSession(
@@ -746,8 +750,10 @@ void main() {
     testWidgets(
       'automatically enters BedtimeCanvasPage after 5 min of countdown',
       (tester) async {
-        await fixture.settings.setSleepModeAutoTrigger(
-          SleepModeAutoTrigger.afterCountdown5min,
+        await tester.runAsync(
+          () => fixture.settings.setSleepModeAutoTrigger(
+            SleepModeAutoTrigger.afterCountdown5min,
+          ),
         );
 
         final session = PlaybackSession(
@@ -797,8 +803,10 @@ void main() {
     testWidgets('countdown does not open sleep mode without playback', (
       tester,
     ) async {
-      await fixture.settings.setSleepModeAutoTrigger(
-        SleepModeAutoTrigger.afterCountdown5min,
+      await tester.runAsync(
+        () => fixture.settings.setSleepModeAutoTrigger(
+          SleepModeAutoTrigger.afterCountdown5min,
+        ),
       );
       fixture.timer.configureTimer(
         TimerMode.manual,
@@ -820,8 +828,10 @@ void main() {
     testWidgets('video playback does not enable automatic sleep mode', (
       tester,
     ) async {
-      await fixture.settings.setSleepModeAutoTrigger(
-        SleepModeAutoTrigger.afterCountdown5min,
+      await tester.runAsync(
+        () => fixture.settings.setSleepModeAutoTrigger(
+          SleepModeAutoTrigger.afterCountdown5min,
+        ),
       );
       const videoPath = 'content://media/external/video/5';
       final video = MusicTrack(
@@ -875,8 +885,10 @@ void main() {
     testWidgets(
       'does not enter BedtimeCanvasPage when manual even after 5 min',
       (tester) async {
-        await fixture.settings.setSleepModeAutoTrigger(
-          SleepModeAutoTrigger.manual,
+        await tester.runAsync(
+          () => fixture.settings.setSleepModeAutoTrigger(
+            SleepModeAutoTrigger.manual,
+          ),
         );
 
         final session = PlaybackSession(

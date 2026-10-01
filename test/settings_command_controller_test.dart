@@ -1,6 +1,9 @@
+import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/painting.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:doujin_audio/features/library/application/cover_image_cache_policy.dart';
 import 'package:doujin_audio/features/player/domain/playback_mode.dart';
 import 'package:doujin_audio/core/errors/native_result.dart';
 import 'package:doujin_audio/features/player/application/native_playback_repository.dart';
@@ -163,6 +166,40 @@ void main() {
     },
   );
 
+  test('failed EQ persistence never sends a native reset', () async {
+    SharedPreferences.setMockInitialValues({});
+    final preset = EqPreset(
+      id: 'custom',
+      labelKey: 'Custom',
+      bandLevels: {60: 1},
+    );
+    final settings = _FailingSettingsRepository()
+      ..customEqPresets = [preset]
+      ..syncSlice(isInitialized: true);
+    final native = _AudioEffectsRepository();
+    final playback = PlaybackFacade.create(
+      databaseRepository: TestPersistenceRepository(),
+      nativeRepository: native,
+    )..configurePersistence(enabled: false);
+    final session = _sessionUsingPreset('session', preset);
+    playback.registerSession(session);
+    addTearDown(settings.dispose);
+    addTearDown(playback.dispose);
+    addTearDown(session.shutdown);
+    final controller = SettingsCommandController(
+      settings: settings,
+      playback: playback,
+    );
+    final calls = native.calls;
+    await expectLater(
+      controller.deleteCustomEqPreset(preset.id),
+      throwsStateError,
+    );
+    expect(native.calls, calls);
+    expect(settings.customEqPresets, [preset]);
+    expect(session.audioEffects.eqPresetId, preset.id);
+  });
+
   test('mixing strategy disables native audio focus requests', () async {
     SharedPreferences.setMockInitialValues(const <String, Object>{});
     final settings = SettingsRepository()..syncSlice(isInitialized: true);
@@ -186,6 +223,141 @@ void main() {
 
     expect(settings.audioFocusStrategy, AudioFocusStrategy.mixWithOthers);
     expect(native.requestAudioFocus, isFalse);
+  });
+
+  test(
+    'queued focus change back to the original value is saved and applied',
+    () async {
+      SharedPreferences.setMockInitialValues({});
+      final settings = SettingsRepository()..syncSlice(isInitialized: true);
+      final native = _CapturingPlaybackBehaviorRepository();
+      final playback = PlaybackFacade.create(
+        databaseRepository: TestPersistenceRepository(),
+        nativeRepository: native,
+      );
+      addTearDown(settings.dispose);
+      addTearDown(playback.dispose);
+      final controller = SettingsCommandController(
+        settings: settings,
+        playback: playback,
+      );
+
+      final first = controller.setAudioFocusStrategy(
+        AudioFocusStrategy.mixWithOthers,
+      );
+      final second = controller.setAudioFocusStrategy(
+        AudioFocusStrategy.standard,
+      );
+      await Future.wait([first, second]);
+
+      expect(native.focusHistory, [false, true]);
+      expect(settings.audioFocusStrategy, AudioFocusStrategy.standard);
+      final saved =
+          jsonDecode(
+                (await SharedPreferences.getInstance()).getString(
+                  'playback_settings_v1',
+                )!,
+              )
+              as Map;
+      expect(saved['audioFocusStrategy'], AudioFocusStrategy.standard.name);
+    },
+  );
+
+  test(
+    'native feedback completes before the next setting can be saved',
+    () async {
+      SharedPreferences.setMockInitialValues({});
+      final settings = _SequencedSettingsRepository(failSave: 2)
+        ..syncSlice(isInitialized: true);
+      final native = _CapturingPlaybackBehaviorRepository()
+        ..firstCallGate = Completer<void>();
+      final playback = PlaybackFacade.create(
+        databaseRepository: TestPersistenceRepository(),
+        nativeRepository: native,
+      );
+      addTearDown(settings.dispose);
+      addTearDown(playback.dispose);
+      final controller = SettingsCommandController(
+        settings: settings,
+        playback: playback,
+      );
+      final first = controller.setAudioFocusStrategy(
+        AudioFocusStrategy.mixWithOthers,
+      );
+      await native.firstCallStarted.future;
+      final second = controller.setAudioFocusStrategy(
+        AudioFocusStrategy.standard,
+      );
+      final failed = expectLater(second, throwsStateError);
+      await Future<void>.delayed(Duration.zero);
+      expect(settings.saves, 1);
+      expect(native.focusHistory, [false]);
+      native.firstCallGate!.complete();
+      await first;
+      await failed;
+      expect(native.focusHistory, [false]);
+      expect(
+        settings.slice.state.audioFocusStrategy,
+        AudioFocusStrategy.mixWithOthers,
+      );
+    },
+  );
+
+  test('failed cover save leaves image cache policy unchanged', () async {
+    SharedPreferences.setMockInitialValues({});
+    final settings = _FailingSettingsRepository()
+      ..syncSlice(isInitialized: true);
+    final playback = PlaybackFacade.create(
+      databaseRepository: TestPersistenceRepository(),
+    );
+    addTearDown(settings.dispose);
+    addTearDown(playback.dispose);
+    final cache = PaintingBinding.instance.imageCache;
+    final previousSize = cache.maximumSize;
+    final previousBytes = cache.maximumSizeBytes;
+    addTearDown(() {
+      cache.maximumSize = previousSize;
+      cache.maximumSizeBytes = previousBytes;
+    });
+    applyCoverImageCachePolicy(CoverImageResolution.balanced);
+    final size = cache.maximumSize;
+    final bytes = cache.maximumSizeBytes;
+    final controller = SettingsCommandController(
+      settings: settings,
+      playback: playback,
+    );
+    await expectLater(
+      controller.setCoverImageResolution(CoverImageResolution.original),
+      throwsStateError,
+    );
+    expect(settings.coverImageResolution, CoverImageResolution.balanced);
+    expect(cache.maximumSize, size);
+    expect(cache.maximumSizeBytes, bytes);
+  });
+
+  test('post-save feedback failure preserves the committed setting', () async {
+    SharedPreferences.setMockInitialValues({});
+    final settings = SettingsRepository()..syncSlice(isInitialized: true);
+    addTearDown(settings.dispose);
+    await expectLater(
+      settings.setCoverImageResolution(
+        CoverImageResolution.original,
+        afterSave: () async => throw StateError('runtime_feedback_failed'),
+      ),
+      throwsStateError,
+    );
+    expect(
+      settings.slice.state.coverImageResolution,
+      CoverImageResolution.original,
+    );
+    final saved =
+        jsonDecode(
+              (await SharedPreferences.getInstance()).getString(
+                'playback_settings_v1',
+              )!,
+            )
+            as Map;
+    expect(saved['coverImageResolution'], CoverImageResolution.original.name);
   });
 
   test('application cache clearing is coordinated by the controller', () async {
@@ -218,6 +390,9 @@ void main() {
 final class _CapturingPlaybackBehaviorRepository
     extends NativePlaybackRepository {
   bool? requestAudioFocus;
+  final List<bool> focusHistory = [];
+  final firstCallStarted = Completer<void>();
+  Completer<void>? firstCallGate;
 
   @override
   Future<NativeResult<void>> setPlaybackBehavior({
@@ -227,6 +402,11 @@ final class _CapturingPlaybackBehaviorRepository
     required bool resumeAfterTransientAudioFocusGain,
   }) async {
     this.requestAudioFocus = requestAudioFocus;
+    focusHistory.add(requestAudioFocus);
+    if (focusHistory.length == 1) {
+      firstCallStarted.complete();
+      await firstCallGate?.future;
+    }
     return const NativeSuccess<void>();
   }
 
@@ -257,12 +437,14 @@ final class _AudioEffectsRepository extends NativePlaybackRepository {
   _AudioEffectsRepository({this.fail = false});
 
   final bool fail;
+  int calls = 0;
 
   @override
   Future<NativeResult<NativePlaybackSnapshot>> setAudioEffects(
     String sessionId,
     NativeAudioEffects effects,
   ) async {
+    calls++;
     if (fail) {
       return const NativeFailure<NativePlaybackSnapshot>('effects failed');
     }
@@ -271,4 +453,21 @@ final class _AudioEffectsRepository extends NativePlaybackRepository {
 
   @override
   Future<void> dispose() async {}
+}
+
+class _FailingSettingsRepository extends SettingsRepository {
+  @override
+  Future<void> persist() async => throw StateError('settings_write_failed');
+}
+
+class _SequencedSettingsRepository extends SettingsRepository {
+  _SequencedSettingsRepository({required this.failSave});
+  final int failSave;
+  int saves = 0;
+
+  @override
+  Future<void> persist() async {
+    if (++saves == failSave) throw StateError('settings_write_failed');
+    await super.persist();
+  }
 }

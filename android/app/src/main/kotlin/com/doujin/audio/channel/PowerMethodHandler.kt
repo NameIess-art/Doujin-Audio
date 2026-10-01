@@ -276,8 +276,14 @@ internal class PowerMethodHandler(
     }
 
     private fun acquireWakeLock(call: MethodCall): Boolean {
-        val tag = call.argument<String>("tag") ?: "generic"
-        val timeoutMs = call.argument<Number>("timeoutMs")?.toLong() ?: (15 * 60 * 1000L)
+        val arguments = call.argumentReader()
+        val tag = arguments.requiredString("tag")
+        val timeoutMs = if (arguments.hasKey("timeoutMs")) {
+            arguments.requiredLong("timeoutMs")
+        } else {
+            15 * 60 * 1000L
+        }
+        require(timeoutMs > 0L) { "timeoutMs must be positive." }
         val powerManager = activity.getSystemService(Activity.POWER_SERVICE) as? PowerManager ?: return false
         return try {
             synchronized(activeWakeLocks) {
@@ -302,7 +308,7 @@ internal class PowerMethodHandler(
     }
 
     private fun releaseWakeLock(call: MethodCall): Boolean {
-        val tag = call.argument<String>("tag") ?: "generic"
+        val tag = call.argumentReader().requiredString("tag")
         return try {
             synchronized(activeWakeLocks) {
                 val lock = activeWakeLocks.remove(tag)
@@ -317,7 +323,7 @@ internal class PowerMethodHandler(
     }
 
     private fun setKeepScreenOn(call: MethodCall): Boolean {
-        val enabled = call.argument<Boolean>("enabled") ?: false
+        val enabled = call.argumentReader().requiredBoolean("enabled")
         return try {
             activity.runOnUiThread {
                 if (enabled) {

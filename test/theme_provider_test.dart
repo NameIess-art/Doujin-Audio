@@ -23,6 +23,27 @@ void main() {
     expect(ThemeAccentPreset.values, hasLength(16));
   });
 
+  test(
+    'bootstrap defaults load persisted theme only on initialization',
+    () async {
+      SharedPreferences.setMockInitialValues({
+        'themeMode': 'dark',
+        'appThemeColor': 'mint',
+        'pureBlackTheme': true,
+      });
+      await AppPreferences.init();
+      final provider = ThemeProvider(loadPersistedState: false);
+      addTearDown(provider.dispose);
+      expect(provider.themeMode, ThemeMode.system);
+      expect(provider.appThemeColor, ThemeAccentPreset.rose);
+      expect(provider.pureBlackTheme, false);
+      await provider.reloadPersistedState();
+      expect(provider.themeMode, ThemeMode.dark);
+      expect(provider.appThemeColor, ThemeAccentPreset.mint);
+      expect(provider.pureBlackTheme, true);
+    },
+  );
+
   testWidgets('touch long press does not show icon tooltips', (tester) async {
     SharedPreferences.setMockInitialValues(const <String, Object>{});
     await AppPreferences.init();

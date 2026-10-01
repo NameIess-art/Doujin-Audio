@@ -78,7 +78,12 @@ List<Widget> _buildSettingsAsmrSection({
                 value: conflictPolicy,
                 onChanged: (value) {
                   if (value != null) {
-                    settings.setAsmrDownloadConflictPolicy(value);
+                    unawaited(
+                      saveSettingsWithFeedback(
+                        context,
+                        () => settings.setAsmrDownloadConflictPolicy(value),
+                      ),
+                    );
                   }
                 },
                 items: AsmrDownloadConflictPolicy.values
@@ -110,7 +115,14 @@ List<Widget> _buildSettingsAsmrSection({
                 context,
                 value: retryCount,
                 onChanged: (value) {
-                  if (value != null) settings.setAsmrDownloadRetryCount(value);
+                  if (value != null) {
+                    unawaited(
+                      saveSettingsWithFeedback(
+                        context,
+                        () => settings.setAsmrDownloadRetryCount(value),
+                      ),
+                    );
+                  }
                 },
                 items:
                     <int>[
@@ -150,7 +162,12 @@ List<Widget> _buildSettingsAsmrSection({
                 value: threadCount,
                 onChanged: (value) {
                   if (value != null) {
-                    settings.setAsmrDownloadThreadCount(value);
+                    unawaited(
+                      saveSettingsWithFeedback(
+                        context,
+                        () => settings.setAsmrDownloadThreadCount(value),
+                      ),
+                    );
                   }
                 },
                 items:
@@ -188,7 +205,10 @@ List<Widget> _buildSettingsAsmrSection({
             );
             return SwitchListTile(
               value: saveMetadata,
-              onChanged: settings.setAsmrDownloadSaveMetadata,
+              onChanged: (value) => saveSettingsWithFeedback(
+                context,
+                () => settings.setAsmrDownloadSaveMetadata(value),
+              ),
               title: _settingsTitle(
                 i18n.tr('asmr_download_save_metadata_setting'),
               ),
@@ -209,7 +229,10 @@ List<Widget> _buildSettingsAsmrSection({
             );
             return SwitchListTile(
               value: saveCover,
-              onChanged: settings.setAsmrDownloadSaveCover,
+              onChanged: (value) => saveSettingsWithFeedback(
+                context,
+                () => settings.setAsmrDownloadSaveCover(value),
+              ),
               title: _settingsTitle(i18n.tr('asmr_download_save_cover')),
               secondary: _settingsIcon(Icons.image_outlined, cs.onSurface),
               contentPadding: const EdgeInsets.symmetric(horizontal: 8),

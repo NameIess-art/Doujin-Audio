@@ -728,4 +728,72 @@ void main() {
     await tester.pump(const Duration(milliseconds: 1000));
     expect(find.text('Item deleted (1s)'), findsOneWidget);
   });
+
+  testWidgets(
+    'new feedback updates in place on existing surface without fade in/out flashing',
+    (tester) async {
+      await tester.pumpWidget(
+        _feedbackApp(
+          blurEnabled: true,
+          home: Scaffold(
+            body: Builder(
+              builder: (context) => Column(
+                children: [
+                  const SizedBox(height: 140),
+                  TextButton(
+                    onPressed: () => showAppSnackBar(
+                      context,
+                      'First message',
+                      duration: const Duration(seconds: 5),
+                    ),
+                    child: const Text('First'),
+                  ),
+                  TextButton(
+                    onPressed: () => showAppSnackBar(
+                      context,
+                      'Second message',
+                      tone: AppFeedbackTone.success,
+                      title: 'Updated title',
+                      duration: const Duration(seconds: 5),
+                    ),
+                    child: const Text('Second'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+
+      // Trigger first message
+      await tester.tap(find.text('First'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 250)); // Finish initial fade-in
+
+      expect(find.text('First message'), findsOneWidget);
+      final fade = find.ancestor(
+        of: find.byType(AppFeedbackSurface),
+        matching: find.byType(FadeTransition),
+      );
+      final firstFadeAnimation = tester.widget<FadeTransition>(fade).opacity;
+      expect(firstFadeAnimation.value, 1.0);
+
+      // Trigger second message while first is showing
+      await tester.tap(find.text('Second'));
+      await tester.pump();
+
+      // Verify it updated in place without restarting fade animation
+      expect(find.text('Second message'), findsOneWidget);
+      expect(find.text('Updated title'), findsOneWidget);
+      expect(find.text('First message'), findsNothing);
+      final updatedFade = find.ancestor(
+        of: find.byType(AppFeedbackSurface),
+        matching: find.byType(FadeTransition),
+      );
+      final updatedFadeAnimation =
+          tester.widget<FadeTransition>(updatedFade).opacity;
+      expect(identical(updatedFadeAnimation, firstFadeAnimation), isTrue);
+      expect(updatedFadeAnimation.value, 1.0); // Kept fully opaque without flashing
+    },
+  );
 }

@@ -1,3 +1,4 @@
+import '../../../app/presentation/app_presentation_providers.dart';
 import 'library_removal_feedback.dart';
 import '../../player/presentation/playback_providers.dart';
 import '../../settings/presentation/settings_providers.dart';
@@ -143,7 +144,10 @@ Future<void> toggleLibraryBatchSelectionsPinned({
       .map((selection) => selection.path)
       .toList(growable: false);
   exitSelectionMode();
-  await ref.read(settingsRepositoryProvider).toggleLibraryPathsPinned(paths);
+  await saveSettingsWithFeedback(
+    context,
+    () => ref.read(settingsRepositoryProvider).toggleLibraryPathsPinned(paths),
+  );
 }
 
 Future<void> removeLibraryBatchSelections({

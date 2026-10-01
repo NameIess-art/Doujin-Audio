@@ -1,4 +1,3 @@
-import '../playback_providers.dart';
 import '../../../settings/presentation/settings_providers.dart';
 import 'dart:async';
 
@@ -25,32 +24,16 @@ Future<void> _stageEqualizerPresetRemoval(
   WidgetRef ref,
   EqPreset preset,
 ) async {
-  final playback = ref.read(playbackFacadeProvider);
   final commands = ref.read(settingsCommandControllerProvider);
   final service = ref.read(undoableRemovalServiceProvider);
-  final referencingSessionIds = playback.sessions.values
-      .where((session) => session.audioEffects.eqPresetId == preset.id)
-      .map((session) => session.id)
-      .toList(growable: false);
-  final flat = builtInEqPresets.first;
   final staged = await service.stage(
     UndoableRemovalAction(
       key: equalizerPresetRemovalKey(preset.id),
-      prepare: () async {
-        for (final sessionId in referencingSessionIds) {
-          if (playback.hasSession(sessionId)) {
-            await playback.applySessionEqPreset(sessionId, flat);
-          }
-        }
-        return true;
-      },
-      undo: () async {
-        for (final sessionId in referencingSessionIds) {
-          if (playback.hasSession(sessionId)) {
-            await playback.applySessionEqPreset(sessionId, preset);
-          }
-        }
-      },
+      prepare: () => ref
+          .read(settingsRepositoryProvider)
+          .customEqPresets
+          .any((value) => value.id == preset.id),
+      undo: () {},
       commit: () => commands.deleteCustomEqPreset(preset.id),
     ),
   );
@@ -381,7 +364,10 @@ class EqualizerPage extends ConsumerWidget {
             )
             .toList(growable: false);
     final presets = <EqPreset>[...builtInEqPresets, ...customPresets];
-    final selectedPresetId = effects.eqPresetId;
+    final selectedPresetId =
+        presets.any((preset) => preset.id == effects.eqPresetId)
+        ? effects.eqPresetId
+        : null;
     final hasAdjustedEqBands = effects.eqBandLevels.values.any(
       (gainDb) => gainDb.abs() >= 0.001,
     );
@@ -602,8 +588,13 @@ class EqualizerPage extends ConsumerWidget {
       },
     );
     controller.dispose();
-    if (name == null || name.trim().isEmpty) return;
-    unawaited(commands.saveCustomEqPreset(name, session.id));
+    if (name == null || name.trim().isEmpty || !context.mounted) return;
+    unawaited(
+      saveSettingsWithFeedback(
+        context,
+        () => commands.saveCustomEqPreset(name, session.id),
+      ),
+    );
   }
 }
 

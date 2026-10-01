@@ -82,6 +82,11 @@ Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
   await _createAudioDetailsTable(db);
   await _createLibraryEntriesTable(db);
   await _createTimeSegmentLabelsTable(db);
+  if (oldVersion < 9 && newVersion >= 9) {
+    await db.execute('DROP INDEX IF EXISTS idx_track_scan_generation');
+    await db.execute('DROP INDEX IF EXISTS idx_track_playback_last_played');
+    await db.execute('DROP INDEX IF EXISTS idx_track_playback_favorite');
+  }
 }
 
 Future<void> _addColumnIfMissing(
@@ -156,18 +161,6 @@ Future<void> _createTrackDetailTables(Database db) async {
         PRIMARY KEY(path, tag)
       )
     ''');
-  await db.execute(
-    'CREATE INDEX IF NOT EXISTS idx_track_scan_generation '
-    'ON track_scan_info(scan_generation)',
-  );
-  await db.execute(
-    'CREATE INDEX IF NOT EXISTS idx_track_playback_last_played '
-    'ON track_playback_state(last_played_at_ms)',
-  );
-  await db.execute(
-    'CREATE INDEX IF NOT EXISTS idx_track_playback_favorite '
-    'ON track_playback_state(is_favorite)',
-  );
   await db.execute(
     'CREATE INDEX IF NOT EXISTS idx_track_remote_kind '
     'ON track_remote_metadata(remote_metadata_kind)',

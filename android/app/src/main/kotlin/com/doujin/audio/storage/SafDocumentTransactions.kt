@@ -120,22 +120,22 @@ internal fun <T> replaceSafDocument(
     writeTemp: (T) -> Boolean,
     rename: (T, String) -> T?,
     delete: (T) -> Boolean
-): Boolean {
+): T? {
     var current = existing
     if (current == null && staleBackup != null) {
         current = runCatching { rename(staleBackup, targetName) }.getOrNull()
-            ?: return false
+            ?: return null
     } else if (current != null && staleBackup != null) {
-        return false
+        return null
     }
 
-    val temp = runCatching { createTemp() }.getOrNull() ?: return false
+    val temp = runCatching { createTemp() }.getOrNull() ?: return null
     fun cleanupTemp() {
         runCatching { delete(temp) }
     }
     if (runCatching { writeTemp(temp) }.getOrDefault(false).not()) {
         cleanupTemp()
-        return false
+        return null
     }
 
     return commitSafDocumentReplacement(
@@ -144,7 +144,7 @@ internal fun <T> replaceSafDocument(
         temporary = temp,
         rename = rename,
         delete = delete
-    ) != null
+    )
 }
 
 internal fun <T> createSafDocumentIfAbsent(

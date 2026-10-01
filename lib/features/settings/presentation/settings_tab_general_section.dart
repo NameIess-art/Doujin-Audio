@@ -53,7 +53,14 @@ List<Widget> _buildSettingsLanguageSection({
                 context,
                 value: dlsiteLanguage,
                 onChanged: (value) {
-                  if (value != null) settings.setDlsiteMetadataLanguage(value);
+                  if (value != null) {
+                    unawaited(
+                      saveSettingsWithFeedback(
+                        context,
+                        () => settings.setDlsiteMetadataLanguage(value),
+                      ),
+                    );
+                  }
                 },
                 items: ContentLanguagePreference.values.map((preference) {
                   final language = preference.explicitLanguage;
@@ -158,7 +165,14 @@ List<Widget> _buildSettingsGeneralSection({
                 context,
                 value: effectiveStartupPage,
                 onChanged: (value) {
-                  if (value != null) settings.setStartupPage(value);
+                  if (value != null) {
+                    unawaited(
+                      saveSettingsWithFeedback(
+                        context,
+                        () => settings.setStartupPage(value),
+                      ),
+                    );
+                  }
                 },
                 items: availablePages
                     .map(
@@ -191,7 +205,10 @@ List<Widget> _buildSettingsGeneralSection({
               return SwitchListTile(
                 title: _settingsTitle(i18n.tr('portrait_lock')),
                 value: enabled,
-                onChanged: settings.setPortraitLockEnabled,
+                onChanged: (value) => saveSettingsWithFeedback(
+                  context,
+                  () => settings.setPortraitLockEnabled(value),
+                ),
                 secondary: _settingsIcon(
                   Icons.screen_lock_portrait_rounded,
                   cs.onSurface,
@@ -210,7 +227,10 @@ List<Widget> _buildSettingsGeneralSection({
             return SwitchListTile(
               title: _settingsTitle(i18n.tr('reduce_animations')),
               value: enabled,
-              onChanged: settings.setReduceAnimations,
+              onChanged: (value) => saveSettingsWithFeedback(
+                context,
+                () => settings.setReduceAnimations(value),
+              ),
               secondary: _settingsIcon(Icons.animation_rounded, cs.onSurface),
               contentPadding: const EdgeInsets.symmetric(horizontal: 8),
             );
@@ -227,7 +247,10 @@ List<Widget> _buildSettingsGeneralSection({
               return SwitchListTile(
                 title: _settingsTitle(i18n.tr('haptic_feedback_enabled')),
                 value: enabled,
-                onChanged: settings.setHapticFeedbackEnabled,
+                onChanged: (value) => saveSettingsWithFeedback(
+                  context,
+                  () => settings.setHapticFeedbackEnabled(value),
+                ),
                 secondary: _settingsIcon(Icons.vibration_rounded, cs.onSurface),
                 contentPadding: const EdgeInsets.symmetric(horizontal: 8),
               );
@@ -262,7 +285,12 @@ List<Widget> _buildSettingsPageDisplaySection({
                   title: _settingsTitle(i18n.tr('show_asmr_one')),
                   value: showAsmr,
                   onChanged: showLocal
-                      ? (value) => unawaited(settings.setShowAsmrOne(value))
+                      ? (value) => unawaited(
+                          saveSettingsWithFeedback(
+                            context,
+                            () => settings.setShowAsmrOne(value),
+                          ),
+                        )
                       : null,
                   secondary: _settingsIcon(Icons.cloud_outlined, cs.onSurface),
                   contentPadding: const EdgeInsets.symmetric(horizontal: 8),
@@ -274,8 +302,12 @@ List<Widget> _buildSettingsPageDisplaySection({
                   title: _settingsTitle(i18n.tr('show_local_library')),
                   value: showLocal,
                   onChanged: showAsmr
-                      ? (value) =>
-                            unawaited(settings.setShowLocalLibrary(value))
+                      ? (value) => unawaited(
+                          saveSettingsWithFeedback(
+                            context,
+                            () => settings.setShowLocalLibrary(value),
+                          ),
+                        )
                       : null,
                   secondary: _settingsIcon(
                     Icons.library_music_rounded,
@@ -291,7 +323,12 @@ List<Widget> _buildSettingsPageDisplaySection({
                     value: displayMode,
                     onChanged: (value) {
                       if (value != null) {
-                        unawaited(settings.setWorkNameDisplay(value));
+                        unawaited(
+                          saveSettingsWithFeedback(
+                            context,
+                            () => settings.setWorkNameDisplay(value),
+                          ),
+                        );
                       }
                     },
                     items: WorkNameDisplay.values

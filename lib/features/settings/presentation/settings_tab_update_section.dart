@@ -46,7 +46,10 @@ List<Widget> _buildSettingsUpdateSection({
             );
             return SwitchListTile(
               value: autoCheckUpdates,
-              onChanged: settings.setAutoCheckUpdates,
+              onChanged: (value) => saveSettingsWithFeedback(
+                context,
+                () => settings.setAutoCheckUpdates(value),
+              ),
               title: _settingsTitle(i18n.tr('auto_check_updates')),
               secondary: _settingsIcon(Icons.update_rounded, cs.onSurface),
               shape: const RoundedRectangleBorder(

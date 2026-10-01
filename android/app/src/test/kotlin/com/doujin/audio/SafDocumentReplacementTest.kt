@@ -16,6 +16,46 @@ import java.util.concurrent.TimeUnit
 
 class SafDocumentReplacementTest {
     @Test
+    fun `replacement returns provider document after commit rename`() {
+        data class Document(val uri: String, val name: String)
+        val existing = Document("old-uri", "cover.jpg")
+        val temporary = Document("temporary-uri", "cover.jpg.doujin.part")
+        val committed = Document("committed-uri", "cover.jpg")
+        val deleted = mutableListOf<Document>()
+        val result = replaceSafDocument(
+            targetName = "cover.jpg",
+            existing = existing,
+            staleBackup = null,
+            createTemp = { temporary },
+            writeTemp = { true },
+            rename = { document, name ->
+                if (document == temporary) committed else Document("backup-uri", name)
+            },
+            delete = { deleted.add(it); true }
+        )
+
+        assertEquals(committed, result)
+        assertEquals(listOf(Document("backup-uri", "cover.jpg.doujin.bak")), deleted)
+    }
+
+    @Test
+    fun `partial write exception preserves old subtitle and removes temporary`() {
+        val files = linkedMapOf("track.srt" to "old subtitle")
+        val result = replaceSafDocument(
+            targetName = "track.srt",
+            existing = "track.srt",
+            staleBackup = null,
+            createTemp = { "track.srt.doujin.part".also { files[it] = "" } },
+            writeTemp = { files[it] = "partial subtitle"; throw java.io.IOException("storage full") },
+            rename = { _, _ -> error("Failed write must not rename the old document") },
+            delete = { files.remove(it) != null }
+        )
+
+        assertNull(result)
+        assertEquals(mapOf("track.srt" to "old subtitle"), files)
+    }
+
+    @Test
     fun `createFile returning the target never opens or deletes it`() {
         val files = mutableListOf("metadata.json")
         var writeCalled = false
@@ -270,7 +310,7 @@ class SafDocumentReplacementTest {
                 }
             },
             delete = { file -> files.remove(file) != null }
-        )
+        ) != null
     }
 
     private fun recover(

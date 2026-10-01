@@ -16,8 +16,7 @@ internal class SubtitleOverlayMethodHandler(
                 SubtitleOverlayMethods.OPEN_OVERLAY_SETTINGS ->
                     envelope.success(coordinator.openOverlaySettings())
                 SubtitleOverlayMethods.START_OVERLAY -> {
-                    coordinator.start()
-                    envelope.success(true)
+                    envelope.success(coordinator.start())
                 }
                 SubtitleOverlayMethods.STOP_OVERLAY -> {
                     coordinator.stop()

@@ -105,6 +105,7 @@ class _PendingGenerationEngine extends SubtitleAiEngine {
     required String trackPath,
     void Function(SubtitleTaskProgress)? onProgress,
     bool Function()? isCancelled,
+    Future<void>? cancellation,
   }) => result.future;
 }
 

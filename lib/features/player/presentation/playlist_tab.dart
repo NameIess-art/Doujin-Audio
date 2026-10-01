@@ -147,6 +147,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
     final sessionIds = _selectedSessionIds.toList(growable: false);
     _exitSelectionMode();
     await PlaylistBatchActions.pinSelected(
+      context: context,
       ref: ref,
       selectedSessionIds: sessionIds,
     );
@@ -348,10 +349,13 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
     );
     if (!mounted || result == null) return;
     final settings = ref.read(settingsRepositoryProvider);
-    await settings.setPlaylistSortOptions(
-      criterion: result.criterion,
-      ascending: result.ascending,
-      groupByLibrary: result.groupByLibrary,
+    await saveSettingsWithFeedback(
+      context,
+      () => settings.setPlaylistSortOptions(
+        criterion: result.criterion,
+        ascending: result.ascending,
+        groupByLibrary: result.groupByLibrary,
+      ),
     );
   }
 
@@ -437,9 +441,12 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                 onToggleSelect: () => _toggleSessionSelection(session.id),
                 onTogglePin: isTemporary
                     ? null
-                    : () => ref
-                          .read(settingsRepositoryProvider)
-                          .togglePlaylistSessionPinned(session.id),
+                    : () => saveSettingsWithFeedback(
+                        context,
+                        () => ref
+                            .read(settingsRepositoryProvider)
+                            .togglePlaylistSessionPinned(session.id),
+                      ),
                 onOpen: () => session.currentTrackPath.isEmpty
                     ? showAppSnackBar(
                         context,
@@ -468,9 +475,12 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                 onToggleSelect: () => _toggleSessionSelection(session.id),
                 onTogglePin: isTemporary
                     ? null
-                    : () => ref
-                          .read(settingsRepositoryProvider)
-                          .togglePlaylistSessionPinned(session.id),
+                    : () => saveSettingsWithFeedback(
+                        context,
+                        () => ref
+                            .read(settingsRepositoryProvider)
+                            .togglePlaylistSessionPinned(session.id),
+                      ),
                 onOpen: () => _openSessionDetail(context, session.id),
               ),
       );

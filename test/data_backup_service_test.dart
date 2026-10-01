@@ -163,104 +163,168 @@ void main() {
     },
   );
 
-  test('staged backup restores database, preferences, and account', () async {
-    await sourceDatabase.insert('tracks', <String, Object?>{
-      'path': '/audio/restored.mp3',
-      'display_name': 'Restored',
-      'group_key': '/audio',
-      'group_title': 'Audio',
-      'group_subtitle': '',
-      'is_single': 0,
-      'is_video': 0,
-      'duration_ms': 2000,
-    });
-    final service = DataBackupService(
-      database: appDatabase,
-      accountStore: accountStore,
-      appUpdateService: _FakeAppUpdateService(),
-      supportDirectoryProvider: () async => temporaryDirectory,
-      databasesPathProvider: () async => databaseDirectory.path,
-      platformName: 'test-platform',
-      clock: () => DateTime.utc(2026, 8, 8),
-    );
-    final backup = await service.exportBackup(
-      '${temporaryDirectory.path}/restore-source.dabackup',
-    );
-    final exported = ZipDecoder().decodeBytes(await backup.readAsBytes());
-    final legacyArchive = Archive();
-    for (final entry in exported.files) {
-      legacyArchive.addFile(
-        ArchiveFile(entry.name, entry.size, entry.content as List<int>),
-      );
-    }
-    final legacyBackup = File('${temporaryDirectory.path}/legacy.dabackup');
-    await legacyBackup.writeAsBytes(ZipEncoder().encode(legacyArchive));
-    final legacyDecoded = ZipDecoder().decodeBytes(
-      await legacyBackup.readAsBytes(),
-    );
-    expect(
-      legacyDecoded.find('database.sqlite')?.compression,
-      CompressionType.deflate,
-    );
+  for (final schemaVersion in [8, AppDatabase.schemaVersion]) {
+    test(
+      'staged schema $schemaVersion backup restores database, preferences, and account',
+      () async {
+        await sourceDatabase.insert('tracks', <String, Object?>{
+          'path': '/audio/restored.mp3',
+          'display_name': 'Restored',
+          'group_key': '/audio',
+          'group_title': 'Audio',
+          'group_subtitle': '',
+          'is_single': 0,
+          'is_video': 0,
+          'duration_ms': 2000,
+        });
+        final service = DataBackupService(
+          database: appDatabase,
+          accountStore: accountStore,
+          appUpdateService: _FakeAppUpdateService(),
+          supportDirectoryProvider: () async => temporaryDirectory,
+          databasesPathProvider: () async => databaseDirectory.path,
+          platformName: 'test-platform',
+          clock: () => DateTime.utc(2026, 8, 8),
+        );
+        final backup = await service.exportBackup(
+          '${temporaryDirectory.path}/restore-source.dabackup',
+        );
+        final exported = ZipDecoder().decodeBytes(await backup.readAsBytes());
+        if (schemaVersion == 8) {
+          final legacyDatabaseFile = File('${temporaryDirectory.path}/v8.db');
+          await legacyDatabaseFile.writeAsBytes(
+            exported.find('database.sqlite')!.content as List<int>,
+          );
+          final legacyDatabase = await databaseFactoryFfi.openDatabase(
+            legacyDatabaseFile.path,
+          );
+          await legacyDatabase.setVersion(8);
+          for (final entry in {
+            'idx_track_scan_generation': 'track_scan_info(scan_generation)',
+            'idx_track_playback_last_played':
+                'track_playback_state(last_played_at_ms)',
+            'idx_track_playback_favorite': 'track_playback_state(is_favorite)',
+          }.entries) {
+            await legacyDatabase.execute(
+              'CREATE INDEX ${entry.key} ON ${entry.value}',
+            );
+          }
+          await legacyDatabase.close();
+          final bytes = await legacyDatabaseFile.readAsBytes();
+          final manifest =
+              jsonDecode(
+                    utf8.decode(
+                      exported.find('manifest.json')!.content as List<int>,
+                    ),
+                  )
+                  as Map<String, dynamic>;
+          manifest['databaseSchemaVersion'] = 8;
+          (manifest['files'] as Map<String, dynamic>)['database.sqlite'] = {
+            'length': bytes.length,
+            'sha256': sha256.convert(bytes).toString(),
+          };
+          exported.addFile(ArchiveFile('database.sqlite', bytes.length, bytes));
+          exported.addFile(
+            ArchiveFile.string('manifest.json', jsonEncode(manifest)),
+          );
+        }
+        final legacyArchive = Archive();
+        for (final entry in exported.files) {
+          legacyArchive.addFile(
+            ArchiveFile(entry.name, entry.size, entry.content as List<int>),
+          );
+        }
+        final legacyBackup = File('${temporaryDirectory.path}/legacy.dabackup');
+        await legacyBackup.writeAsBytes(ZipEncoder().encode(legacyArchive));
+        final legacyDecoded = ZipDecoder().decodeBytes(
+          await legacyBackup.readAsBytes(),
+        );
+        expect(
+          legacyDecoded.find('database.sqlite')?.compression,
+          CompressionType.deflate,
+        );
 
-    await AppPreferences.replaceSnapshot(<String, Object?>{
-      'themeMode': 'light',
-      'timer_runtime_v1': 'current-runtime',
-    });
-    await accountStore.replaceFromBackup(
-      AsmrAccountBackupSnapshot(
-        token: 'current-token',
-        name: 'current-name',
-        password: 'current-password',
-        createdAt: DateTime.utc(2026, 8, 9),
-      ),
-    );
+        await AppPreferences.replaceSnapshot(<String, Object?>{
+          'themeMode': 'light',
+          'timer_runtime_v1': 'current-runtime',
+        });
+        await accountStore.replaceFromBackup(
+          AsmrAccountBackupSnapshot(
+            token: 'current-token',
+            name: 'current-name',
+            password: 'current-password',
+            createdAt: DateTime.utc(2026, 8, 9),
+          ),
+        );
 
-    final expandedSize = legacyDecoded.files.fold<int>(
-      0,
-      (total, entry) => total + entry.size,
-    );
-    final restoreService = DataBackupService(
-      database: appDatabase,
-      accountStore: accountStore,
-      supportDirectoryProvider: () async => temporaryDirectory,
-      databasesPathProvider: () async => databaseDirectory.path,
-      platformName: 'test-platform',
-      maximumExpandedBytes: expandedSize,
-    );
-    final staged = await restoreService.inspectAndStageRestore(
-      legacyBackup.path,
-    );
-    final outcome = await restoreService.applyAtStartup();
+        final expandedSize = legacyDecoded.files.fold<int>(
+          0,
+          (total, entry) => total + entry.size,
+        );
+        final restoreService = DataBackupService(
+          database: appDatabase,
+          accountStore: accountStore,
+          supportDirectoryProvider: () async => temporaryDirectory,
+          databasesPathProvider: () async => databaseDirectory.path,
+          platformName: 'test-platform',
+          maximumExpandedBytes: expandedSize,
+        );
+        final staged = await restoreService.inspectAndStageRestore(
+          legacyBackup.path,
+        );
+        final outcome = await restoreService.applyAtStartup();
 
-    expect(staged.manifest.platform, 'test-platform');
-    expect(outcome?.succeeded, isTrue);
-    expect(outcome?.errorCode, isNull);
-    expect(
-      Directory('${temporaryDirectory.path}/backup_restore').existsSync(),
-      isFalse,
-    );
+        expect(staged.manifest.platform, 'test-platform');
+        expect(staged.manifest.databaseSchemaVersion, schemaVersion);
+        expect(outcome?.succeeded, isTrue);
+        expect(outcome?.errorCode, isNull);
+        expect(
+          Directory('${temporaryDirectory.path}/backup_restore').existsSync(),
+          isFalse,
+        );
 
-    final restoredDatabase = await databaseFactoryFfi.openDatabase(
-      '${databaseDirectory.path}/${AppDatabase.fileName}',
+        final restoredDatabase = await databaseFactoryFfi.openDatabase(
+          '${databaseDirectory.path}/${AppDatabase.fileName}',
+        );
+        addTearDown(restoredDatabase.close);
+        expect(await restoredDatabase.getVersion(), AppDatabase.schemaVersion);
+        final indexes = (await restoredDatabase.rawQuery(
+          "SELECT name FROM sqlite_master WHERE type = 'index'",
+        )).map((row) => row['name']).toSet();
+        expect(
+          indexes,
+          containsAll([
+            'idx_tracks_scan_generation',
+            'idx_tracks_last_played_at',
+            'idx_tracks_favorite',
+          ]),
+        );
+        expect(
+          indexes.intersection({
+            'idx_track_scan_generation',
+            'idx_track_playback_last_played',
+            'idx_track_playback_favorite',
+          }),
+          isEmpty,
+        );
+        expect(
+          await restoredDatabase.query(
+            'tracks',
+            where: 'path = ?',
+            whereArgs: <Object?>['/audio/restored.mp3'],
+          ),
+          hasLength(1),
+        );
+        expect(await AppPreferences.getString('themeMode'), 'dark');
+        expect(await AppPreferences.getString('timer_runtime_v1'), isNull);
+        expect(await accountStore.readToken(), 'account-token');
+        expect(await accountStore.readCredentials(), <String, String>{
+          'name': 'account-name',
+          'password': 'account-password',
+        });
+      },
     );
-    addTearDown(restoredDatabase.close);
-    expect(
-      await restoredDatabase.query(
-        'tracks',
-        where: 'path = ?',
-        whereArgs: <Object?>['/audio/restored.mp3'],
-      ),
-      hasLength(1),
-    );
-    expect(await AppPreferences.getString('themeMode'), 'dark');
-    expect(await AppPreferences.getString('timer_runtime_v1'), isNull);
-    expect(await accountStore.readToken(), 'account-token');
-    expect(await accountStore.readCredentials(), <String, String>{
-      'name': 'account-name',
-      'password': 'account-password',
-    });
-  });
+  }
 }
 
 class _FakeAppUpdateService extends AppUpdateService {

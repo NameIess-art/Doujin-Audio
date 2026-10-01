@@ -20,7 +20,10 @@ List<Widget> _buildSettingsPlaybackSection({
             return SwitchListTile(
               key: const ValueKey<String>('allow_video_playback_switch'),
               value: allowVideoPlayback,
-              onChanged: settings.setAllowVideoPlayback,
+              onChanged: (value) => saveSettingsWithFeedback(
+                context,
+                () => settings.setAllowVideoPlayback(value),
+              ),
               title: _settingsTitle(i18n.tr('allow_video_playback')),
               secondary: _settingsIcon(Icons.videocam_rounded, cs.onSurface),
               shape: const RoundedRectangleBorder(
@@ -38,7 +41,10 @@ List<Widget> _buildSettingsPlaybackSection({
             );
             return SwitchListTile(
               value: asmrPlaybackCacheEnabled,
-              onChanged: settings.setAsmrPlaybackCacheEnabled,
+              onChanged: (value) => saveSettingsWithFeedback(
+                context,
+                () => settings.setAsmrPlaybackCacheEnabled(value),
+              ),
               title: _settingsTitle(i18n.tr('asmr_playback_cache')),
               secondary: _settingsIcon(Icons.cached_rounded, cs.onSurface),
               shape: const RoundedRectangleBorder(
@@ -56,7 +62,10 @@ List<Widget> _buildSettingsPlaybackSection({
             );
             return SwitchListTile(
               value: recordProgress,
-              onChanged: settings.setRecordPlaybackProgress,
+              onChanged: (value) => saveSettingsWithFeedback(
+                context,
+                () => settings.setRecordPlaybackProgress(value),
+              ),
               title: _settingsTitle(i18n.tr('record_playback_progress')),
               secondary: _settingsIcon(Icons.restore_rounded, cs.onSurface),
               shape: const RoundedRectangleBorder(
@@ -82,7 +91,12 @@ List<Widget> _buildSettingsPlaybackSection({
                 value: trigger,
                 onChanged: (value) {
                   if (value != null) {
-                    settings.setSleepModeAutoTrigger(value);
+                    unawaited(
+                      saveSettingsWithFeedback(
+                        context,
+                        () => settings.setSleepModeAutoTrigger(value),
+                      ),
+                    );
                   }
                 },
                 items: SleepModeAutoTrigger.values
@@ -124,7 +138,13 @@ List<Widget> _buildSettingsPlaybackSection({
                 value: behavior,
                 onChanged: (value) {
                   if (value != null) {
-                    settingsController.setAudioDeviceDisconnectBehavior(value);
+                    unawaited(
+                      saveSettingsWithFeedback(
+                        context,
+                        () => settingsController
+                            .setAudioDeviceDisconnectBehavior(value),
+                      ),
+                    );
                   }
                 },
                 items: AudioDeviceDisconnectBehavior.values
@@ -164,7 +184,12 @@ List<Widget> _buildSettingsPlaybackSection({
                   value: strategy,
                   onChanged: (value) {
                     if (value != null) {
-                      settingsController.setAudioFocusStrategy(value);
+                      unawaited(
+                        saveSettingsWithFeedback(
+                          context,
+                          () => settingsController.setAudioFocusStrategy(value),
+                        ),
+                      );
                     }
                   },
                   items: AudioFocusStrategy.values
@@ -202,8 +227,12 @@ List<Widget> _buildSettingsPlaybackSection({
                   value: behavior,
                   onChanged: (value) {
                     if (value != null) {
-                      settingsController.setTransientAudioFocusLossBehavior(
-                        value,
+                      unawaited(
+                        saveSettingsWithFeedback(
+                          context,
+                          () => settingsController
+                              .setTransientAudioFocusLossBehavior(value),
+                        ),
                       );
                     }
                   },
@@ -242,7 +271,14 @@ List<Widget> _buildSettingsPlaybackSection({
                 value: behavior,
                 onChanged: (value) {
                   if (value != null) {
-                    settingsController.setInterruptionResumeBehavior(value);
+                    unawaited(
+                      saveSettingsWithFeedback(
+                        context,
+                        () => settingsController.setInterruptionResumeBehavior(
+                          value,
+                        ),
+                      ),
+                    );
                   }
                 },
                 items: InterruptionResumeBehavior.values

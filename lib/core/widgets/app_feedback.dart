@@ -23,12 +23,88 @@ enum AppFeedbackDismissReason { timeout, action, swipe, replaced, updated }
 const Duration kUndoableRemovalFeedbackDuration = Duration(seconds: 5);
 const String _undoableRemovalFeedbackGroup = 'undoable-removal';
 
+class _FeedbackData {
+  const _FeedbackData({
+    required this.message,
+    required this.tone,
+    this.title,
+    required this.icon,
+    this.iconColor,
+    required this.duration,
+    this.actionLabel,
+    this.onAction,
+    required this.showCountdown,
+    required this.showActionCountdown,
+    required this.context,
+    required this.dismissKey,
+  });
+
+  final String message;
+  final AppFeedbackTone tone;
+  final String? title;
+  final IconData icon;
+  final Color? iconColor;
+  final Duration duration;
+  final String? actionLabel;
+  final VoidCallback? onAction;
+  final bool showCountdown;
+  final bool showActionCountdown;
+  final BuildContext context;
+  final Object dismissKey;
+
+  _FeedbackData copyWith({
+    String? message,
+    AppFeedbackTone? tone,
+    String? title,
+    IconData? icon,
+    Color? iconColor,
+    Duration? duration,
+    String? actionLabel,
+    VoidCallback? onAction,
+    bool? showCountdown,
+    bool? showActionCountdown,
+    BuildContext? context,
+    Object? dismissKey,
+  }) {
+    return _FeedbackData(
+      message: message ?? this.message,
+      tone: tone ?? this.tone,
+      title: title ?? this.title,
+      icon: icon ?? this.icon,
+      iconColor: iconColor ?? this.iconColor,
+      duration: duration ?? this.duration,
+      actionLabel: actionLabel ?? this.actionLabel,
+      onAction: onAction ?? this.onAction,
+      showCountdown: showCountdown ?? this.showCountdown,
+      showActionCountdown: showActionCountdown ?? this.showActionCountdown,
+      context: context ?? this.context,
+      dismissKey: dismissKey ?? this.dismissKey,
+    );
+  }
+}
+
 OverlayEntry? _activeFeedbackEntry;
+OverlayState? _activeFeedbackOverlay;
 void Function(AppFeedbackDismissReason reason)? _activeFeedbackRemove;
-void Function(String message)? _activeFeedbackUpdateMessage;
-VoidCallback? _activeFeedbackResetDuration;
+void Function(_FeedbackData data)? _activeFeedbackUpdateData;
+void Function([Duration? duration, bool? showCountdown])?
+    _activeFeedbackResetDuration;
+ValueChanged<AppFeedbackDismissReason>? _activeFeedbackOnDismissed;
 Object? _activeFeedbackReplacementGroup;
 Object? _activeFeedbackReplacementOwner;
+Object? _activeFeedbackDismissKey;
+ValueNotifier<_FeedbackData>? _activeDataNotifier;
+
+void Function(String message)? get _activeFeedbackUpdateMessage {
+  if (_activeDataNotifier == null) return null;
+  return (String nextMessage) {
+    if (_activeDataNotifier != null &&
+        _activeDataNotifier!.value.message != nextMessage) {
+      _activeDataNotifier!.value =
+          _activeDataNotifier!.value.copyWith(message: nextMessage);
+    }
+  };
+}
 
 abstract final class AppInteractionFeedback {
   static bool get hapticFeedbackEnabled =>
@@ -243,8 +319,6 @@ void _showTopFeedback(
 }) {
   final overlay = Overlay.of(context, rootOverlay: true);
   final resolvedIcon = icon ?? _defaultIconForTone(tone);
-  final hasAction =
-      actionLabel != null && actionLabel.trim().isNotEmpty && onAction != null;
   if (provideHapticFeedback) {
     unawaited(
       AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection),
@@ -257,154 +331,224 @@ void _showTopFeedback(
           identical(replacementOwner, _activeFeedbackReplacementOwner)
       ? AppFeedbackDismissReason.updated
       : AppFeedbackDismissReason.replaced;
+
+  if (_activeFeedbackEntry != null &&
+      _activeFeedbackEntry!.mounted &&
+      _activeFeedbackOverlay == overlay &&
+      _activeFeedbackUpdateData != null &&
+      _activeFeedbackResetDuration != null) {
+    final previousOnDismissed = _activeFeedbackOnDismissed;
+    _activeFeedbackOnDismissed = onDismissed;
+    _activeFeedbackReplacementGroup = replacementGroup;
+    _activeFeedbackReplacementOwner = replacementOwner;
+    previousOnDismissed?.call(replacementReason);
+
+    final updatedData = _FeedbackData(
+      message: message,
+      tone: tone,
+      title: title,
+      icon: resolvedIcon,
+      iconColor: iconColor,
+      duration: duration,
+      actionLabel: actionLabel,
+      onAction: onAction,
+      showCountdown: showCountdown,
+      showActionCountdown: showActionCountdown,
+      context: context,
+      dismissKey: _activeFeedbackDismissKey ?? Object(),
+    );
+
+    _activeFeedbackUpdateData!(updatedData);
+    _activeFeedbackResetDuration!(duration, showCountdown);
+    return;
+  }
+
   _activeFeedbackRemove?.call(replacementReason);
 
   final dismissKey = Object();
+  _activeFeedbackDismissKey = dismissKey;
+  _activeFeedbackReplacementGroup = replacementGroup;
+  _activeFeedbackReplacementOwner = replacementOwner;
+  _activeFeedbackOnDismissed = onDismissed;
+
   final animationKey = GlobalKey<_FeedbackAnimationWrapperState>();
-  final messageNotifier = ValueNotifier<String>(message);
+  final initialData = _FeedbackData(
+    message: message,
+    tone: tone,
+    title: title,
+    icon: resolvedIcon,
+    iconColor: iconColor,
+    duration: duration,
+    actionLabel: actionLabel,
+    onAction: onAction,
+    showCountdown: showCountdown,
+    showActionCountdown: showActionCountdown,
+    context: context,
+    dismissKey: dismissKey,
+  );
+  final dataNotifier = ValueNotifier<_FeedbackData>(initialData);
+  _activeDataNotifier = dataNotifier;
+
   late final OverlayEntry entry;
   var removed = false;
   void removeEntry(AppFeedbackDismissReason reason) {
     if (removed) return;
     removed = true;
+    final callback = _activeFeedbackOnDismissed;
     if (_activeFeedbackEntry == entry) {
       _activeFeedbackEntry = null;
+      _activeFeedbackOverlay = null;
       _activeFeedbackRemove = null;
-      _activeFeedbackUpdateMessage = null;
+      _activeFeedbackUpdateData = null;
       _activeFeedbackResetDuration = null;
+      _activeFeedbackOnDismissed = null;
       _activeFeedbackReplacementGroup = null;
       _activeFeedbackReplacementOwner = null;
+      _activeFeedbackDismissKey = null;
+      _activeDataNotifier = null;
     }
-    messageNotifier.dispose();
+    dataNotifier.dispose();
     entry.remove();
-    onDismissed?.call(reason);
+    callback?.call(reason);
   }
 
   entry = OverlayEntry(
     builder: (overlayContext) {
-      final mediaQuery = MediaQuery.of(overlayContext);
-      final isLandscape =
-          mediaQuery.orientation == Orientation.landscape ||
-          mediaQuery.size.width >= 980;
-      final topInset =
-          mediaQuery.padding.top +
-          AppPageHeaderMetrics.mainTabPadding.top +
-          36.0 +
-          6.0;
+      return ValueListenableBuilder<_FeedbackData>(
+        valueListenable: dataNotifier,
+        builder: (context, currentData, _) {
+          final mediaQuery = MediaQuery.of(overlayContext);
+          final isLandscape =
+              mediaQuery.orientation == Orientation.landscape ||
+              mediaQuery.size.width >= 980;
+          final topInset =
+              mediaQuery.padding.top +
+              AppPageHeaderMetrics.mainTabPadding.top +
+              36.0 +
+              6.0;
 
-      var leftInset = 16.0;
-      var rightInset = 16.0;
-      if (isLandscape && context.mounted) {
-        RenderBox? targetBox;
-        bool findCanvas(Element element) {
-          final key = element.widget.key;
-          if (key is ValueKey<String> &&
-              key.value.startsWith('main_page_canvas_')) {
-            final box = element.findRenderObject();
-            if (box is RenderBox && box.hasSize) {
-              targetBox = box;
-              return false;
+          var leftInset = 16.0;
+          var rightInset = 16.0;
+          if (isLandscape && currentData.context.mounted) {
+            RenderBox? targetBox;
+            bool findCanvas(Element element) {
+              final key = element.widget.key;
+              if (key is ValueKey<String> &&
+                  key.value.startsWith('main_page_canvas_')) {
+                final box = element.findRenderObject();
+                if (box is RenderBox && box.hasSize) {
+                  targetBox = box;
+                  return false;
+                }
+              }
+              return true;
+            }
+
+            currentData.context.visitAncestorElements(findCanvas);
+            if (targetBox == null) {
+              // Main-screen and navigation callbacks sit outside the page canvas.
+              // Search only their own route so standalone pages keep their bounds.
+              void visit(Element element) {
+                if (targetBox != null) return;
+                final widget = element.widget;
+                if (widget is Offstage && widget.offstage) return;
+                if (findCanvas(element)) element.visitChildren(visit);
+              }
+
+              final routeContext =
+                  ModalRoute.of(currentData.context)?.subtreeContext;
+              if (routeContext is Element) visit(routeContext);
+            }
+            final box = targetBox;
+            final overlayBox = overlay.context.findRenderObject();
+            if (box != null && overlayBox is RenderBox) {
+              final origin =
+                  box.localToGlobal(Offset.zero, ancestor: overlayBox);
+              leftInset = origin.dx + 16.0;
+              rightInset =
+                  overlayBox.size.width - origin.dx - box.size.width + 16.0;
             }
           }
-          return true;
-        }
 
-        context.visitAncestorElements(findCanvas);
-        if (targetBox == null) {
-          // Main-screen and navigation callbacks sit outside the page canvas.
-          // Search only their own route so standalone pages keep their bounds.
-          void visit(Element element) {
-            if (targetBox != null) return;
-            final widget = element.widget;
-            if (widget is Offstage && widget.offstage) return;
-            if (findCanvas(element)) element.visitChildren(visit);
-          }
+          final hasAction =
+              currentData.actionLabel != null &&
+              currentData.actionLabel!.trim().isNotEmpty &&
+              currentData.onAction != null;
 
-          final routeContext = ModalRoute.of(context)?.subtreeContext;
-          if (routeContext is Element) visit(routeContext);
-        }
-        final box = targetBox;
-        final overlayBox = overlay.context.findRenderObject();
-        if (box != null && overlayBox is RenderBox) {
-          final origin = box.localToGlobal(Offset.zero, ancestor: overlayBox);
-          leftInset = origin.dx + 16.0;
-          rightInset =
-              overlayBox.size.width - origin.dx - box.size.width + 16.0;
-        }
-      }
-
-      return Positioned(
-        top: topInset,
-        left: leftInset,
-        right: rightInset,
-        child: _FeedbackAnimationWrapper(
-          key: animationKey,
-          duration: duration,
-          transitionDuration: AppDesignTokens.of(overlayContext).motionStandard,
-          showCountdown: showCountdown,
-          onRemove: () => removeEntry(AppFeedbackDismissReason.timeout),
-          builder: (wrapperContext, remainingSeconds) {
-            final isRemovalAction =
-                hasAction && showActionCountdown && remainingSeconds != null;
-            final resolvedActionLabel = hasAction
-                ? (isRemovalAction
-                      ? '$actionLabel (${remainingSeconds}s)'
-                      : actionLabel)
-                : null;
-            return Dismissible(
-              key: ValueKey<Object>(dismissKey),
-              onDismissed: (_) => removeEntry(AppFeedbackDismissReason.swipe),
-              child: Material(
-                color: Colors.transparent,
-                child: ValueListenableBuilder<String>(
-                  valueListenable: messageNotifier,
-                  builder: (context, currentMessage, _) => AppFeedbackSurface(
-                    tone: tone,
-                    icon: resolvedIcon,
-                    iconColor: iconColor,
-                    title: title,
-                    message: currentMessage,
-                    remainingSeconds: hasAction ? null : remainingSeconds,
-                    trailing: hasAction
-                        ? TextButton(
-                            style: TextButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 4,
+          return Positioned(
+            top: topInset,
+            left: leftInset,
+            right: rightInset,
+            child: _FeedbackAnimationWrapper(
+              key: animationKey,
+              duration: currentData.duration,
+              transitionDuration:
+                  AppDesignTokens.of(overlayContext).motionStandard,
+              showCountdown: currentData.showCountdown,
+              onRemove: () => removeEntry(AppFeedbackDismissReason.timeout),
+              builder: (wrapperContext, remainingSeconds) {
+                final isRemovalAction =
+                    hasAction &&
+                    currentData.showActionCountdown &&
+                    remainingSeconds != null;
+                final resolvedActionLabel = hasAction
+                    ? (isRemovalAction
+                          ? '${currentData.actionLabel!} (${remainingSeconds}s)'
+                          : currentData.actionLabel!)
+                    : null;
+                return Dismissible(
+                  key: ValueKey<Object>(currentData.dismissKey),
+                  onDismissed: (_) =>
+                      removeEntry(AppFeedbackDismissReason.swipe),
+                  child: Material(
+                    color: Colors.transparent,
+                    child: AppFeedbackSurface(
+                      tone: currentData.tone,
+                      icon: currentData.icon,
+                      iconColor: currentData.iconColor,
+                      title: currentData.title,
+                      message: currentData.message,
+                      remainingSeconds: hasAction ? null : remainingSeconds,
+                      trailing: hasAction
+                          ? TextButton(
+                              style: TextButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 4,
+                                ),
+                                minimumSize: Size.zero,
+                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                shape: const StadiumBorder(),
                               ),
-                              minimumSize: Size.zero,
-                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                              shape: const StadiumBorder(),
-                            ),
-                            onPressed: () {
-                              removeEntry(AppFeedbackDismissReason.action);
-                              onAction();
-                            },
-                            child: Text(resolvedActionLabel!),
-                          )
-                        : null,
+                              onPressed: () {
+                                removeEntry(AppFeedbackDismissReason.action);
+                                currentData.onAction!();
+                              },
+                              child: Text(resolvedActionLabel!),
+                            )
+                          : null,
+                    ),
                   ),
-                ),
-              ),
-            );
-          },
-        ),
+                );
+              },
+            ),
+          );
+        },
       );
     },
   );
 
   overlay.insert(entry);
   _activeFeedbackEntry = entry;
+  _activeFeedbackOverlay = overlay;
   _activeFeedbackRemove = removeEntry;
-  _activeFeedbackUpdateMessage = (nextMessage) {
-    if (!removed && messageNotifier.value != nextMessage) {
-      messageNotifier.value = nextMessage;
+  _activeFeedbackUpdateData = (nextData) {
+    if (!removed && dataNotifier.value != nextData) {
+      dataNotifier.value = nextData;
     }
   };
-  _activeFeedbackResetDuration = () =>
-      animationKey.currentState?.resetDuration();
-  _activeFeedbackReplacementGroup = replacementGroup;
-  _activeFeedbackReplacementOwner = replacementOwner;
+  _activeFeedbackResetDuration = ([dur, cd]) =>
+      animationKey.currentState?.resetDuration(dur, cd);
 }
 
 class _FeedbackAnimationWrapper extends StatefulWidget {
@@ -435,10 +579,14 @@ class _FeedbackAnimationWrapperState extends State<_FeedbackAnimationWrapper>
   Timer? _dismissTimer;
   Timer? _countdownTimer;
   late int _remainingSeconds;
+  late Duration _currentDuration;
+  late bool _currentShowCountdown;
 
   @override
   void initState() {
     super.initState();
+    _currentDuration = widget.duration;
+    _currentShowCountdown = widget.showCountdown;
     _controller = AnimationController(
       vsync: this,
       duration: widget.transitionDuration,
@@ -446,16 +594,16 @@ class _FeedbackAnimationWrapperState extends State<_FeedbackAnimationWrapper>
     _opacity = CurvedAnimation(parent: _controller, curve: Curves.easeOut);
 
     _controller.forward();
-    _startDuration();
+    _startDuration(_currentDuration, _currentShowCountdown);
   }
 
-  void _startDuration() {
+  void _startDuration(Duration duration, bool showCountdown) {
     _dismissTimer?.cancel();
     _countdownTimer?.cancel();
-    final totalSeconds = (widget.duration.inMilliseconds / 1000).ceil();
+    final totalSeconds = (duration.inMilliseconds / 1000).ceil();
     _remainingSeconds = totalSeconds > 0 ? totalSeconds : 1;
 
-    if (widget.showCountdown && totalSeconds > 1) {
+    if (showCountdown && totalSeconds > 1) {
       _countdownTimer = Timer.periodic(const Duration(seconds: 1), (_) {
         if (!mounted) return;
         if (_remainingSeconds > 1) {
@@ -466,7 +614,7 @@ class _FeedbackAnimationWrapperState extends State<_FeedbackAnimationWrapper>
       });
     }
 
-    final stayDuration = widget.duration - widget.transitionDuration;
+    final stayDuration = duration - widget.transitionDuration;
     _dismissTimer = Timer(
       stayDuration > Duration.zero ? stayDuration : Duration.zero,
       () {
@@ -479,9 +627,14 @@ class _FeedbackAnimationWrapperState extends State<_FeedbackAnimationWrapper>
     );
   }
 
-  void resetDuration() {
+  void resetDuration([Duration? duration, bool? showCountdown]) {
     if (!mounted) return;
-    _startDuration();
+    if (duration != null) _currentDuration = duration;
+    if (showCountdown != null) _currentShowCountdown = showCountdown;
+    _startDuration(_currentDuration, _currentShowCountdown);
+    if (!_controller.isCompleted) {
+      _controller.forward();
+    }
     setState(() {});
   }
 
@@ -497,7 +650,7 @@ class _FeedbackAnimationWrapperState extends State<_FeedbackAnimationWrapper>
   Widget build(BuildContext context) {
     final content = widget.builder(
       context,
-      widget.showCountdown ? _remainingSeconds : null,
+      _currentShowCountdown ? _remainingSeconds : null,
     );
     if (MediaQuery.disableAnimationsOf(context)) return content;
     return FadeTransition(opacity: _opacity, child: content);
@@ -570,52 +723,69 @@ class AppFeedbackSurface extends ConsumerWidget {
         padding: padding,
         child: Row(
           children: [
-            Container(
+            AnimatedContainer(
+              duration: tokens.motionFast,
+              curve: Curves.easeOutCubic,
               width: 28,
               height: 28,
               decoration: BoxDecoration(
                 color: chipBackground,
                 shape: BoxShape.circle,
               ),
-              child: Center(child: Icon(icon, size: 16, color: accent)),
+              child: Center(
+                child: AnimatedSwitcher(
+                  duration: tokens.motionFast,
+                  child: Icon(
+                    icon,
+                    key: ValueKey<IconData>(icon),
+                    size: 16,
+                    color: accent,
+                  ),
+                ),
+              ),
             ),
             const SizedBox(width: 10),
             Expanded(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (title != null) ...[
-                    Text(
-                      title!,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.labelMedium?.copyWith(
-                        color: cs.onSurface,
-                        fontWeight: FontWeight.w800,
+              child: AnimatedSize(
+                duration: tokens.motionFast,
+                curve: Curves.easeOutCubic,
+                alignment: Alignment.centerLeft,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (title != null) ...[
+                      Text(
+                        title!,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.labelMedium?.copyWith(
+                          color: cs.onSurface,
+                          fontWeight: FontWeight.w800,
+                        ),
                       ),
+                      const SizedBox(height: 1),
+                    ],
+                    Text(
+                      displayMessage,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style:
+                          (title != null
+                                  ? theme.textTheme.bodySmall
+                                  : theme.textTheme.labelLarge)
+                              ?.copyWith(
+                                color: title != null
+                                    ? cs.onSurfaceVariant
+                                    : cs.onSurface,
+                                fontWeight: title != null
+                                    ? FontWeight.w600
+                                    : FontWeight.w700,
+                                height: 1.25,
+                              ),
                     ),
-                    const SizedBox(height: 1),
                   ],
-                  Text(
-                    displayMessage,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style:
-                        (title != null
-                                ? theme.textTheme.bodySmall
-                                : theme.textTheme.labelLarge)
-                            ?.copyWith(
-                              color: title != null
-                                  ? cs.onSurfaceVariant
-                                  : cs.onSurface,
-                              fontWeight: title != null
-                                  ? FontWeight.w600
-                                  : FontWeight.w700,
-                              height: 1.25,
-                            ),
-                  ),
-                ],
+                ),
               ),
             ),
             if (trailing != null) ...[const SizedBox(width: 8), trailing!],

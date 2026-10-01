@@ -53,6 +53,7 @@ abstract final class PlaylistBatchActions {
   }
 
   static Future<void> pinSelected({
+    required BuildContext context,
     required WidgetRef ref,
     required Iterable<String> selectedSessionIds,
   }) async {
@@ -61,9 +62,12 @@ abstract final class PlaylistBatchActions {
       AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection),
     );
     final sessionIds = selectedSessionIds.toList(growable: false);
-    await ref
-        .read(settingsCommandControllerProvider)
-        .togglePlaylistSessionsPinned(sessionIds);
+    await saveSettingsWithFeedback(
+      context,
+      () => ref
+          .read(settingsCommandControllerProvider)
+          .togglePlaylistSessionsPinned(sessionIds),
+    );
   }
 
   static Future<void> removeSelected({

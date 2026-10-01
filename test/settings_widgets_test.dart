@@ -11,6 +11,7 @@ import 'package:doujin_audio/core/widgets/subtitle_window_visual.dart';
 import 'package:doujin_audio/app/state/subtitle_settings_provider.dart';
 import 'package:doujin_audio/features/settings/application/settings_repository.dart';
 import 'package:doujin_audio/features/settings/presentation/settings_tab.dart';
+import 'package:doujin_audio/features/settings/presentation/asmr_download_folder_name_settings_sheet.dart';
 import 'package:doujin_audio/features/data_support/application/storage_usage_service.dart';
 import 'package:doujin_audio/core/platform/file_cache_platform_gateway.dart';
 import 'package:doujin_audio/features/settings/presentation/about_page.dart';
@@ -1449,6 +1450,65 @@ void main() {
     expect(find.text('多线程播放'), findsNothing);
   });
 
+  testWidgets('playback setting reports a rejected save', (tester) async {
+    final harness = AppRuntimeWidgetTestFixture(
+      providedSettingsRepository: _RejectedSettingsRepository(),
+    );
+    addTearDown(harness.dispose);
+    await tester.pumpWidget(harness.build(const SettingsTab()));
+    await tester.pump();
+    await tester.tap(
+      find.text(harness.languageProvider.tr('section_playback')),
+    );
+    await tester.pumpAndSettle();
+    final toggle = find.byKey(
+      const ValueKey<String>('allow_video_playback_switch'),
+    );
+    await tester.tap(toggle);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+    expect(tester.widget<SwitchListTile>(toggle).value, true);
+    expect(
+      find.textContaining(
+        harness.languageProvider.tr('operation_failed_retry'),
+      ),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets(
+    'folder name selection restores repository state after save failure',
+    (tester) async {
+      final harness = AppRuntimeWidgetTestFixture(
+        providedSettingsRepository: _RejectedSettingsRepository(),
+      );
+      addTearDown(harness.dispose);
+      await tester.pumpWidget(
+        harness.build(const AsmrDownloadFolderNameSettingsSheet()),
+      );
+      await tester.pumpAndSettle();
+      final workTitle = find.widgetWithText(
+        CheckboxListTile,
+        harness.languageProvider.tr('asmr_download_folder_field_work_title'),
+      );
+      expect(tester.widget<CheckboxListTile>(workTitle).value, true);
+      await tester.tap(workTitle);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 250));
+      expect(tester.widget<CheckboxListTile>(workTitle).value, true);
+      expect(
+        find.textContaining(
+          harness.languageProvider.tr('operation_failed_retry'),
+        ),
+        findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
+
   testWidgets('update tile reflects checking and download progress', (
     tester,
   ) async {
@@ -1554,4 +1614,26 @@ final class _DeferredFolderNameSettingsRepository extends SettingsRepository {
 class _UnavailableStorageGateway extends FileCachePlatformGateway {
   @override
   Future<StorageUsagePlatformSnapshot?> readStorageUsage() async => null;
+}
+
+final class _RejectedSettingsRepository extends SettingsRepository {
+  _RejectedSettingsRepository() {
+    asmrDownloadFolderNameFields = const [
+      AsmrDownloadFolderNameField.workTitle,
+      AsmrDownloadFolderNameField.rjCode,
+    ];
+    syncSlice(isInitialized: true);
+  }
+
+  @override
+  Future<void> setAllowVideoPlayback(bool value) async {
+    throw StateError('save rejected');
+  }
+
+  @override
+  Future<void> setAsmrDownloadFolderNameFields(
+    Iterable<AsmrDownloadFolderNameField> fields,
+  ) async {
+    throw StateError('save rejected');
+  }
 }

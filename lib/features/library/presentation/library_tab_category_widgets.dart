@@ -576,9 +576,12 @@ class AudioLibraryCategoryEntryCard extends ConsumerWidget {
           ),
         ),
         onLeadingAction: () => unawaited(
-          ref
-              .read(settingsRepositoryProvider)
-              .toggleLibraryPathPinned(entry.path),
+          saveSettingsWithFeedback(
+            context,
+            () => ref
+                .read(settingsRepositoryProvider)
+                .toggleLibraryPathPinned(entry.path),
+          ),
         ),
         leadingActionLabel: i18n.tr(isPinned ? 'unpin_from_top' : 'pin_to_top'),
         leadingActionTooltip: i18n.tr(

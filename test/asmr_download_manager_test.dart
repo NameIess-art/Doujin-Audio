@@ -2959,6 +2959,112 @@ void main() {
     }
   });
 
+  for (final cancel in <bool>[false, true]) {
+    test(
+      '${cancel ? 'cancel' : 'pause'} drains HTTP, retry and SAF transfers before restart',
+      () async {
+        final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+        final copyStarted = Completer<void>();
+        final releaseCopy = Completer<void>();
+        final stalledRequest = Completer<void>();
+        var restarting = false;
+        var retryRequests = 0;
+        final gateway = _StatefulSafGateway(
+          beforeCopy: (path) async {
+            if (path == 'Copy.mp3' && !copyStarted.isCompleted) {
+              copyStarted.complete();
+              await releaseCopy.future;
+            }
+          },
+        );
+        unawaited(
+          server.forEach((request) async {
+            if (request.uri.path == '/retry.mp3') {
+              retryRequests++;
+              if (!restarting) {
+                request.response.statusCode = HttpStatus.serviceUnavailable;
+              } else {
+                request.response.add(<int>[1]);
+              }
+            } else if (request.uri.path == '/stall.mp3' && !restarting) {
+              if (!stalledRequest.isCompleted) stalledRequest.complete();
+              await releaseCopy.future;
+            } else {
+              request.response.add(<int>[1]);
+            }
+            await request.response.close().catchError((_) {});
+          }),
+        );
+        final manager = AsmrDownloadManager(
+          fileCacheGateway: gateway,
+          temporaryDirectoryProvider: () async => Directory.systemTemp,
+          automaticFileRetryDelay: const Duration(milliseconds: 500),
+          persistTasks: false,
+        );
+        final roots = <AsmrTrackFile>[
+          for (final name in <String>['Retry', 'Copy', 'Stall'])
+            _file(
+              downloadUrl:
+                  'http://${server.address.host}:${server.port}/${name.toLowerCase()}.mp3',
+              title: '$name.mp3',
+              ),
+        ];
+        Future<void> start() => manager.startDownload(
+          work: _work(),
+          selectedRoots: roots,
+          destinationRoot: 'content://test/tree/downloads',
+          conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
+          saveMetadata: false,
+          saveCover: false,
+        );
+        try {
+          await start();
+          await copyStarted.future.timeout(const Duration(seconds: 5));
+          await stalledRequest.future.timeout(const Duration(seconds: 5));
+          await _waitForFileRetryAttempt(manager, 1, 'Retry.mp3', 1);
+          var interruptionReturned = false;
+          final interruption =
+              (cancel ? manager.cancelTask(1) : manager.pauseTask(1)).then(
+                (_) => interruptionReturned = true,
+              );
+          await Future<void>.delayed(const Duration(milliseconds: 100));
+          expect(interruptionReturned, isFalse);
+          expect(gateway.deletedPaths, isEmpty);
+          releaseCopy.complete();
+          await interruption.timeout(const Duration(seconds: 5));
+          expect(retryRequests, 1);
+          if (cancel) {
+            expect(manager.getTask(1), isNull);
+            expect(gateway.existingPaths, isEmpty);
+          } else {
+            expect(manager.getTask(1)?.status, AsmrDownloadTaskStatus.paused);
+            expect(
+              manager.getTask(1)?.completedFilePaths,
+              contains('Copy.mp3'),
+            );
+          }
+          restarting = true;
+          await start();
+          await _waitForTaskStatus(
+            manager,
+            1,
+            AsmrDownloadTaskStatus.completed,
+          );
+          expect(retryRequests, 2);
+          expect(manager.getTask(1)?.completedFiles, 3);
+          expect(
+            gateway.copiedRelativePaths.where((p) => p == 'Copy.mp3').length,
+            cancel ? 2 : 1,
+          );
+        } finally {
+          if (!releaseCopy.isCompleted) releaseCopy.complete();
+          await manager.shutdown();
+          await server.close(force: true);
+        }
+      },
+    );
+  }
+
   test(
     'truncated responses fail without committing the final media file',
     () async {
@@ -3882,11 +3988,14 @@ final class _RecordingSafGateway extends FileCachePlatformGateway {
 }
 
 final class _StatefulSafGateway extends FileCachePlatformGateway {
-  _StatefulSafGateway() : super(isAndroid: () => true);
+  _StatefulSafGateway({this.beforeCopy}) : super(isAndroid: () => true);
+
+  final Future<void> Function(String)? beforeCopy;
 
   final Set<String> existingPaths = <String>{};
   final List<String> copiedRelativePaths = <String>[];
   final List<String> checkedPaths = <String>[];
+  final List<String> deletedPaths = <String>[];
 
   @override
   Future<bool> documentPathExists(String path) async {
@@ -3908,6 +4017,7 @@ final class _StatefulSafGateway extends FileCachePlatformGateway {
     required String relativePath,
     required bool overwrite,
   }) async {
+    await beforeCopy?.call(relativePath);
     copiedRelativePaths.add(relativePath);
     final targetPath = folder.contains('::')
         ? '${folder.replaceAll(RegExp(r'/+$'), '')}/$relativePath'
@@ -3918,6 +4028,7 @@ final class _StatefulSafGateway extends FileCachePlatformGateway {
 
   @override
   Future<bool> deleteDocumentPath(String path) async {
+    deletedPaths.add(path);
     existingPaths.remove(path);
     return true;
   }

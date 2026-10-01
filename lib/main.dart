@@ -22,19 +22,18 @@ import 'features/settings/application/settings_state.dart'
 export 'app/presentation/music_player_app.dart' show MusicPlayerApp;
 
 Future<void> main() async {
-  final binding = WidgetsFlutterBinding.ensureInitialized();
-  await initializePlatformRuntime();
-  binding.deferFirstFrame();
-  var firstFrameAllowed = false;
-
-  void allowFirstFrame() {
-    if (firstFrameAllowed) return;
-    firstFrameAllowed = true;
-    binding.allowFirstFrame();
-  }
-
   await runZonedGuarded<Future<void>>(
     () async {
+      final binding = WidgetsFlutterBinding.ensureInitialized();
+      binding.deferFirstFrame();
+      var firstFrameAllowed = false;
+
+      void allowFirstFrame() {
+        if (firstFrameAllowed) return;
+        firstFrameAllowed = true;
+        binding.allowFirstFrame();
+      }
+
       AppLogService.installFlutterErrorHandler();
       AppLogService.installPlatformErrorHandler();
       ErrorWidget.builder = (details) {
@@ -48,12 +47,13 @@ Future<void> main() async {
 
       bool? shouldShowOnboarding;
       StartupRestoreOutcome? startupRestoreOutcome;
-      await AppPreferences.init();
-      final themeProvider = ThemeProvider();
+      final themeProvider = ThemeProvider(loadPersistedState: false);
 
       late final AppBootstrapController appBootstrapController;
       appBootstrapController = AppBootstrapController(
         initializer: () async {
+          await initializePlatformRuntime();
+          await AppPreferences.init();
           startupRestoreOutcome = await _initializeAudioPlayerApp();
           await themeProvider.reloadPersistedState();
           unawaited(
@@ -95,7 +95,7 @@ Future<StartupRestoreOutcome?> _initializeAudioPlayerApp() async {
   await AppLogService.initialize();
   applyCoverImageCachePolicy(CoverImageResolution.balanced);
 
-  // Start essential services in parallel to minimize blocking before runApp
+  // Initialize platform UI policy alongside the startup services.
   final initFutures = Future.wait([
     if (!Platform.isWindows)
       SystemChrome.setPreferredOrientations(

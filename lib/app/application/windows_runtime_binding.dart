@@ -11,20 +11,32 @@ Future<void> attachWindowsRuntime({
   required NotificationFacade notifications,
   required TimerFacade timer,
 }) async {
-  var exiting = false;
+  Future<void>? shutdown;
+  var endingSession = false;
   var pausedByTaskbar = <String>{};
+  Future<void> saveAndDispose({required bool closeWindow}) async {
+    await playback.savePersistedState();
+    await timer.saveRuntime();
+    await runtime.dispose();
+    // Windows needs the channel reply before WM_ENDSESSION returns.
+    if (closeWindow && !endingSession) {
+      await WindowsDesktopService.instance.exit();
+    }
+  }
+
   await WindowsDesktopService.instance.attach((action) async {
-    if (exiting) return;
+    if (action == 'endSession') endingSession = true;
+    if (shutdown != null && action != 'exit' && action != 'endSession') return;
     switch (action) {
       case 'exit':
-        exiting = true;
+      case 'endSession':
+        final pending = shutdown ??= saveAndDispose(
+          closeWindow: action == 'exit',
+        );
         try {
-          await playback.savePersistedState();
-          await timer.saveRuntime();
-          await runtime.dispose();
-          await WindowsDesktopService.instance.exit();
+          await pending;
         } catch (_) {
-          exiting = false;
+          if (identical(shutdown, pending)) shutdown = null;
           rethrow;
         }
       case 'play':

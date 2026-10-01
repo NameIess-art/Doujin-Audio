@@ -4,9 +4,11 @@
 #include "scheduled_tasks.h"
 #include "../resource.h"
 #include <flutter/standard_method_codec.h>
+#include <flutter/method_result_functions.h>
 #include <shellapi.h>
 #include <dwmapi.h>
 #include <filesystem>
+#include <iostream>
 #include <set>
 #include <stdexcept>
 #include <winrt/base.h>
@@ -81,7 +83,8 @@ DesktopIntegration::DesktopIntegration(HWND window, flutter::BinaryMessenger* me
         auto pending = std::move(pending_); pending_.clear();
         for (const auto& action : pending) Action(action);
       } else if (call.method_name() == "exit") {
-        quitting_ = true; result->Success(); PostMessage(window_,WM_CLOSE,0,0);
+        result->Success();
+        if (!ending_session_) { quitting_ = true; PostMessage(window_,WM_CLOSE,0,0); }
       } else if (call.method_name() == "setFullscreen") {
         SetFullscreen(RequiredBool(Arguments(call),"enabled")); result->Success();
       } else if (call.method_name() == "getHotkeyStatus") {
@@ -207,8 +210,52 @@ void DesktopIntegration::AddTray() {
   wcscpy_s(icon.szTip,L"Doujin Audio"); Shell_NotifyIconW(NIM_ADD,&icon);
 }
 void DesktopIntegration::Action(const std::string& action) {
+  if (ending_session_) return;
   if (!ready_) { pending_.push_back(action); return; }
   desktop_->InvokeMethod("action",std::make_unique<Value>(action));
+}
+void DesktopIntegration::EndSession() {
+  if (ending_session_) return;
+  ending_session_ = true;
+  SavePlacement();
+  struct Completion { bool finished = false; bool success = false; };
+  // A reply may arrive after the deadline, so it must not capture stack state.
+  const auto completion = std::make_shared<Completion>();
+  const auto deadline = GetTickCount64() + 4000;
+  bool sent = false;
+  while (!completion->finished && GetTickCount64() < deadline) {
+    if (ready_ && !sent) {
+      sent = true;
+      desktop_->InvokeMethod("action",std::make_unique<Value>("endSession"),
+        std::make_unique<flutter::MethodResultFunctions<Value>>(
+          [completion](const Value*) { completion->finished = true; completion->success = true; },
+          [completion](const std::string&, const std::string&, const Value*) { completion->finished = true; },
+          [completion]() { completion->finished = true; }));
+    }
+    if (completion->finished) break;
+    // Flutter runs channel replies on the window thread; keep its messages moving.
+    MSG message;
+    while (PeekMessage(&message,nullptr,0,0,PM_REMOVE)) {
+      if (message.message == WM_QUIT) {
+        PostQuitMessage(static_cast<int>(message.wParam));
+        completion->finished = true;
+        break;
+      }
+      TranslateMessage(&message);
+      DispatchMessage(&message);
+      if (completion->finished || GetTickCount64() >= deadline) break;
+    }
+    const auto now = GetTickCount64();
+    if (ready_ && !sent) continue;
+    if (!completion->finished && now < deadline) {
+      MsgWaitForMultipleObjectsEx(0,nullptr,static_cast<DWORD>(deadline-now),
+        QS_ALLINPUT,MWMO_INPUTAVAILABLE);
+    }
+  }
+  const char* status = !completion->finished ? "DoujinAudio: endSession timed out after 4 seconds\n"
+    : completion->success ? "DoujinAudio: endSession completed\n" : "DoujinAudio: endSession failed\n";
+  OutputDebugStringA(status);
+  std::cerr << status;
 }
 void DesktopIntegration::Show() {
   ShowWindow(window_,IsIconic(window_) ? SW_RESTORE : SW_SHOW);
@@ -256,10 +303,12 @@ std::optional<LRESULT> DesktopIntegration::HandleMessage(UINT message, WPARAM wp
   if (message == kTaskbarCreated) { AddTray(); return 0; }
   if (message == kActivate) { if (wp == 0) Show(); else Action("resume"); return 0; }
   if (message == WM_EXITSIZEMOVE) SavePlacement();
+  // A previously queued tray exit must not destroy the engine during the reply wait.
+  if (message == WM_CLOSE && ending_session_) return 0;
   if (message == WM_CLOSE && !quitting_) { SavePlacement(); ShowWindow(window_,SW_HIDE); Action("background"); return 0; }
   if (message == WM_QUERYENDSESSION) return TRUE;
   if (message == WM_ENDSESSION) {
-    if (wp) Action("exit");
+    if (wp) EndSession();
     return 0;
   }
   if (message == WM_APP + 43) { Action("exit"); return 0; }

@@ -54,6 +54,20 @@ void main() {
     );
   });
 
+  test('restore rejects a newer manifest schema before staging', () async {
+    await expectLater(
+      _inspect(
+        _backupArchive(schemaVersion: AppDatabase.schemaVersion + 1),
+        temporaryDirectory,
+      ),
+      throwsFormatException,
+    );
+    expect(
+      Directory('${temporaryDirectory.path}/backup_restore').existsSync(),
+      isFalse,
+    );
+  });
+
   test(
     'Windows rejects Android backup before creating a pending restore',
     () async {
@@ -123,6 +137,7 @@ Archive _backupArchive({
   List<int> database = const <int>[1],
   List<int>? preferences,
   String platform = 'test-platform',
+  int schemaVersion = AppDatabase.schemaVersion,
 }) {
   final preferenceBytes = preferences ?? utf8.encode('{}');
   final account = utf8.encode(
@@ -136,7 +151,7 @@ Archive _backupArchive({
   final manifest = BackupManifest(
     formatVersion: 1,
     appVersion: '0.17.0+1700',
-    databaseSchemaVersion: AppDatabase.schemaVersion,
+    databaseSchemaVersion: schemaVersion,
     platform: platform,
     createdAt: DateTime.utc(2026, 8, 8),
     containsSensitiveAccountData: true,

@@ -187,10 +187,13 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     );
     if (!mounted || result == null) return;
     final settings = ref.read(settingsRepositoryProvider);
-    await settings.setLibrarySortOptions(
-      criterion: result.criterion,
-      ascending: result.ascending,
-      groupByLibrary: result.groupByLibrary,
+    await saveSettingsWithFeedback(
+      context,
+      () => settings.setLibrarySortOptions(
+        criterion: result.criterion,
+        ascending: result.ascending,
+        groupByLibrary: result.groupByLibrary,
+      ),
     );
   }
 

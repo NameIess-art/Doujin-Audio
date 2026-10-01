@@ -7,6 +7,8 @@ import android.webkit.MimeTypeMap
 import androidx.documentfile.provider.DocumentFile
 import java.io.File
 import java.io.FileOutputStream
+import java.io.IOException
+import java.io.InputStream
 import java.util.Locale
 
 internal class DocumentStorageOperations(
@@ -50,20 +52,10 @@ internal class DocumentStorageOperations(
         if (!outDir.exists()) {
             outDir.mkdirs()
         }
-        val outFile = File(outDir, "${System.currentTimeMillis()}_${index}.$safeExt")
-        contentResolver.openInputStream(uri).use { input ->
-            if (input == null) {
-                throw IllegalStateException("cannot open input stream")
-            }
-            FileOutputStream(outFile).use { output ->
-                val buffer = ByteArray(64 * 1024)
-                while (true) {
-                    val read = input.read(buffer)
-                    if (read < 0) break
-                    output.write(buffer, 0, read)
-                }
-                output.flush()
-            }
+        val outFile = File.createTempFile("import_${index}_", ".$safeExt", outDir)
+        copyImportedDocumentToFile(outFile) {
+            contentResolver.openInputStream(uri)
+                ?: throw IllegalStateException("cannot open input stream")
         }
         return outFile.absolutePath
     }
@@ -239,21 +231,17 @@ internal class DocumentStorageOperations(
         mimeType: String?
     ): String? {
         val folder = resolveDocumentFileForFolderPath(folderPath) ?: return null
-        val file = folder.listFiles().firstOrNull {
-            it.isFile && paths.normalizeDisplayName(it.name?.trim().orEmpty()) == name
-        } ?: folder.createFile(
-            mimeType ?: MimeTypeMap.getSingleton()
-                .getMimeTypeFromExtension(name.substringAfterLast('.', "").lowercase(Locale.US))
-                ?: "application/octet-stream",
-            name
-        ) ?: return null
-
-        contentResolver.openOutputStream(file.uri, "w")?.use { output ->
-            output.write(bytes)
-            output.flush()
-        } ?: return null
-
-        return file.uri.toString()
+        val resolvedMimeType = mimeType ?: MimeTypeMap.getSingleton()
+            .getMimeTypeFromExtension(name.substringAfterLast('.', "").lowercase(Locale.US))
+            ?: "application/octet-stream"
+        val saved = replaceSafDocumentInFolder(folder, name, resolvedMimeType) { temporary ->
+            contentResolver.openOutputStream(temporary.uri, "w")?.use { output ->
+                output.write(bytes)
+                output.flush()
+            } ?: return@replaceSafDocumentInFolder false
+            true
+        }
+        return saved?.uri?.toString()
     }
 
     fun ensureFolderPath(
@@ -308,12 +296,6 @@ internal class DocumentStorageOperations(
         ) ?: return false
 
         val targetName = normalizedRelative.substringAfterLast('/')
-        val documents = targetFolder.listFiles()
-        val existing = documents.firstOrNull {
-            it.isFile && paths.sameDocumentName(it.name, targetName)
-        }
-        if (existing != null && !overwrite) return false
-
         val mimeType = MimeTypeMap.getSingleton()
             .getMimeTypeFromExtension(targetName.substringAfterLast('.', "").lowercase(Locale.US))
             ?: "application/octet-stream"
@@ -333,6 +315,27 @@ internal class DocumentStorageOperations(
             }
         }
 
+        return replaceSafDocumentInFolder(targetFolder, targetName, mimeType) { temporary ->
+            java.io.FileInputStream(source).use { input ->
+                contentResolver.openOutputStream(temporary.uri, "w")?.use { output ->
+                    input.copyTo(output)
+                    output.flush()
+                } ?: return@replaceSafDocumentInFolder false
+            }
+            true
+        } != null
+    }
+
+    private fun replaceSafDocumentInFolder(
+        folder: DocumentFile,
+        targetName: String,
+        mimeType: String,
+        writeTemp: (DocumentFile) -> Boolean
+    ): DocumentFile? {
+        val documents = folder.listFiles()
+        val existing = documents.firstOrNull {
+            it.isFile && paths.sameDocumentName(it.name, targetName)
+        }
         val backupName = "$targetName.doujin.bak"
         val staleBackup = documents.firstOrNull {
             it.isFile && paths.normalizeDisplayName(it.name?.trim().orEmpty()) == backupName
@@ -342,23 +345,15 @@ internal class DocumentStorageOperations(
             it.isFile && paths.normalizeDisplayName(it.name?.trim().orEmpty()) == tempName
         }
         if (staleTemp != null && !runCatching { staleTemp.delete() }.getOrDefault(false)) {
-            return false
+            return null
         }
 
         return replaceSafDocument(
             targetName = targetName,
             existing = existing,
             staleBackup = staleBackup,
-            createTemp = { targetFolder.createFile(mimeType, tempName) },
-            writeTemp = { temp ->
-                java.io.FileInputStream(source).use { input ->
-                    contentResolver.openOutputStream(temp.uri, "w")?.use { output ->
-                        input.copyTo(output)
-                        output.flush()
-                    } ?: return@replaceSafDocument false
-                }
-                true
-            },
+            createTemp = { folder.createFile(mimeType, tempName) },
+            writeTemp = writeTemp,
             rename = { document, name -> paths.renameDocumentFile(document, name) },
             delete = { document -> document.delete() }
         )
@@ -445,5 +440,25 @@ internal class DocumentStorageOperations(
             write = write,
             delete = { it.delete() }
         )
+    }
+}
+
+internal fun copyImportedDocumentToFile(outFile: File, openInput: () -> InputStream) {
+    try {
+        openInput().use { input ->
+            FileOutputStream(outFile).use { output ->
+                input.copyTo(output, 64 * 1024)
+                output.flush()
+            }
+        }
+    } catch (error: Throwable) {
+        try {
+            if (outFile.exists() && !outFile.delete()) {
+                error.addSuppressed(IOException("Cannot remove failed import: ${outFile.absolutePath}"))
+            }
+        } catch (cleanupError: Exception) {
+            error.addSuppressed(cleanupError)
+        }
+        throw error
     }
 }

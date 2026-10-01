@@ -643,9 +643,12 @@ class _FolderNodeWidgetState extends ConsumerState<LibraryFolderNodeWidget> {
           : null,
       onLeadingAction: isRootFolder
           ? () => unawaited(
-              ref
-                  .read(settingsRepositoryProvider)
-                  .toggleLibraryPathPinned(widget.folder.path),
+              saveSettingsWithFeedback(
+                context,
+                () => ref
+                    .read(settingsRepositoryProvider)
+                    .toggleLibraryPathPinned(widget.folder.path),
+              ),
             )
           : null,
       leadingActionLabel: isRootFolder
@@ -798,9 +801,12 @@ class _TrackNodeWidget extends ConsumerWidget {
           ),
         ),
         onLeadingAction: () => unawaited(
-          ref
-              .read(settingsRepositoryProvider)
-              .toggleLibraryPathPinned(track.path),
+          saveSettingsWithFeedback(
+            context,
+            () => ref
+                .read(settingsRepositoryProvider)
+                .toggleLibraryPathPinned(track.path),
+          ),
         ),
         leadingActionLabel: i18n.tr(isPinned ? 'unpin_from_top' : 'pin_to_top'),
         leadingActionTooltip: i18n.tr(

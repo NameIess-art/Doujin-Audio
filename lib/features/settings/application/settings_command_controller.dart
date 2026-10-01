@@ -31,25 +31,27 @@ final class SettingsCommandController {
   Future<void> togglePlaylistSessionsPinned(Iterable<String> sessionIds) =>
       _settings.togglePlaylistSessionsPinned(sessionIds);
 
-  Future<void> setCoverImageResolution(CoverImageResolution resolution) async {
-    if (_settings.coverImageResolution == resolution) return;
-    applyCoverImageCachePolicy(resolution, clear: true);
-    await _settings.setCoverImageResolution(resolution);
-  }
+  Future<void> setCoverImageResolution(CoverImageResolution resolution) =>
+      _settings.setCoverImageResolution(
+        resolution,
+        afterSave: () async =>
+            applyCoverImageCachePolicy(resolution, clear: true),
+      );
 
-  Future<void> setPreferEmbeddedCover(bool enabled) async {
-    if (_settings.preferEmbeddedCover == enabled) return;
-    await _settings.setPreferEmbeddedCover(enabled);
-    _library?.invalidateCoverArtwork();
-  }
+  Future<void> setPreferEmbeddedCover(bool enabled) =>
+      _settings.setPreferEmbeddedCover(
+        enabled,
+        afterSave: () async => _library?.invalidateCoverArtwork(),
+      );
 
   Future<void> setMaxCacheBytes(int bytes) async {
     final normalized = bytes <= 0
         ? AppCacheService.defaultMaxCacheBytes
         : bytes;
-    if (_settings.maxCacheBytes == normalized) return;
-    await AppCacheService.setMaxCacheBytes(normalized);
-    await _settings.setMaxCacheBytes(normalized);
+    await _settings.setMaxCacheBytes(
+      normalized,
+      afterSave: () => AppCacheService.setMaxCacheBytes(normalized),
+    );
   }
 
   Future<int> clearApplicationCache() async {
@@ -63,33 +65,27 @@ final class SettingsCommandController {
 
   Future<void> setAudioDeviceDisconnectBehavior(
     AudioDeviceDisconnectBehavior behavior,
-  ) async {
-    if (_settings.audioDeviceDisconnectBehavior == behavior) return;
-    await _settings.setAudioDeviceDisconnectBehavior(behavior);
-    await syncNativePlaybackBehavior();
-  }
+  ) => _settings.setAudioDeviceDisconnectBehavior(
+    behavior,
+    afterSave: syncNativePlaybackBehavior,
+  );
 
-  Future<void> setAudioFocusStrategy(AudioFocusStrategy strategy) async {
-    if (_settings.audioFocusStrategy == strategy) return;
-    await _settings.setAudioFocusStrategy(strategy);
-    await syncNativePlaybackBehavior();
-  }
+  Future<void> setAudioFocusStrategy(AudioFocusStrategy strategy) => _settings
+      .setAudioFocusStrategy(strategy, afterSave: syncNativePlaybackBehavior);
 
   Future<void> setTransientAudioFocusLossBehavior(
     TransientAudioFocusLossBehavior behavior,
-  ) async {
-    if (_settings.transientAudioFocusLossBehavior == behavior) return;
-    await _settings.setTransientAudioFocusLossBehavior(behavior);
-    await syncNativePlaybackBehavior();
-  }
+  ) => _settings.setTransientAudioFocusLossBehavior(
+    behavior,
+    afterSave: syncNativePlaybackBehavior,
+  );
 
   Future<void> setInterruptionResumeBehavior(
     InterruptionResumeBehavior behavior,
-  ) async {
-    if (_settings.interruptionResumeBehavior == behavior) return;
-    await _settings.setInterruptionResumeBehavior(behavior);
-    await syncNativePlaybackBehavior();
-  }
+  ) => _settings.setInterruptionResumeBehavior(
+    behavior,
+    afterSave: syncNativePlaybackBehavior,
+  );
 
   Future<void> syncNativePlaybackBehavior() async {
     await _playback.nativeRepository.setPlaybackBehavior(
@@ -117,8 +113,7 @@ final class SettingsCommandController {
     final session = _playback.sessionSnapshotById(sessionId);
     if (session == null) return;
     final timestamp = now ?? DateTime.now();
-    _settings.customEqPresets = List<EqPreset>.unmodifiable(<EqPreset>[
-      ..._settings.customEqPresets,
+    await _settings.saveCustomEqPreset(
       EqPreset(
         id: 'custom_${timestamp.microsecondsSinceEpoch}',
         labelKey: trimmedName,
@@ -126,38 +121,26 @@ final class SettingsCommandController {
           session.audioEffects.eqBandLevels,
         ),
       ),
-    ]);
-    _settings.syncSlice(isInitialized: _settings.slice.state.isInitialized);
-    await _settings.persist();
+    );
   }
 
-  Future<void> deleteCustomEqPreset(String presetId) async {
-    final previousPresets = _settings.customEqPresets;
-    if (!previousPresets.any((preset) => preset.id == presetId)) return;
-
-    final referencingSessionIds = _playback.sessions.values
-        .where((session) => session.audioEffects.eqPresetId == presetId)
-        .map((session) => session.id)
-        .toList(growable: false);
-    final flat = builtInEqPresets.first;
-    for (final sessionId in referencingSessionIds) {
-      await _playback.applySessionEqPreset(sessionId, flat);
-    }
-
-    final stillReferenced = _playback.sessions.values.any(
-      (session) => session.audioEffects.eqPresetId == presetId,
-    );
-    if (stillReferenced) return;
-
-    _settings.customEqPresets = List<EqPreset>.unmodifiable(
-      previousPresets.where((preset) => preset.id != presetId),
-    );
-    try {
-      await _settings.persist();
-    } catch (_) {
-      _settings.customEqPresets = previousPresets;
-      rethrow;
-    }
-    _settings.syncSlice(isInitialized: _settings.slice.state.isInitialized);
-  }
+  Future<void> deleteCustomEqPreset(String presetId) =>
+      _settings.deleteCustomEqPreset(
+        presetId,
+        resetSessions: () async {
+          final referencingSessionIds = _playback.sessions.values
+              .where((session) => session.audioEffects.eqPresetId == presetId)
+              .map((session) => session.id)
+              .toList(growable: false);
+          for (final sessionId in referencingSessionIds) {
+            await _playback.applySessionEqPreset(
+              sessionId,
+              builtInEqPresets.first,
+            );
+          }
+          return !_playback.sessions.values.any(
+            (session) => session.audioEffects.eqPresetId == presetId,
+          );
+        },
+      );
 }

@@ -72,20 +72,20 @@ List<Widget> _buildSettingsAppearanceSection({
         if (Theme.of(context).brightness == Brightness.dark)
           SwitchListTile(
             key: const ValueKey<String>('pure_black_theme_tile'),
-          title: _settingsTitle(i18n.tr('black_theme')),
-          value: themeProvider.pureBlackTheme,
-          onChanged: (value) {
-            unawaited(
-              _applyThemeChange(
-                context: context,
-                i18n: i18n,
-                change: () => themeProvider.setPureBlackTheme(value),
-              ),
-            );
-          },
-          secondary: _settingsIcon(Icons.contrast_rounded, cs.onSurface),
-          contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-        ),
+            title: _settingsTitle(i18n.tr('black_theme')),
+            value: themeProvider.pureBlackTheme,
+            onChanged: (value) {
+              unawaited(
+                _applyThemeChange(
+                  context: context,
+                  i18n: i18n,
+                  change: () => themeProvider.setPureBlackTheme(value),
+                ),
+              );
+            },
+            secondary: _settingsIcon(Icons.contrast_rounded, cs.onSurface),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+          ),
         SwitchListTile(
           title: _settingsTitle(i18n.tr('differentiate_asmr_theme')),
           value: themeProvider.differentiateAsmrTheme,
@@ -152,7 +152,13 @@ List<Widget> _buildSettingsAppearanceSection({
                   value: ref.watch(coverImageResolutionProvider),
                   onChanged: (value) {
                     if (value != null) {
-                      settingsController.setCoverImageResolution(value);
+                      unawaited(
+                        saveSettingsWithFeedback(
+                          context,
+                          () =>
+                              settingsController.setCoverImageResolution(value),
+                        ),
+                      );
                     }
                   },
                   items: CoverImageResolution.values
@@ -179,7 +185,12 @@ List<Widget> _buildSettingsAppearanceSection({
                   value: ref.watch(coverImageDisplayModeProvider),
                   onChanged: (value) {
                     if (value != null) {
-                      settings.setCoverImageDisplayMode(value);
+                      unawaited(
+                        saveSettingsWithFeedback(
+                          context,
+                          () => settings.setCoverImageDisplayMode(value),
+                        ),
+                      );
                     }
                   },
                   items: CoverImageDisplayMode.values
@@ -206,7 +217,10 @@ List<Widget> _buildSettingsAppearanceSection({
             return SwitchListTile(
               key: const ValueKey<String>('prefer_embedded_cover_switch'),
               value: enabled,
-              onChanged: settingsController.setPreferEmbeddedCover,
+              onChanged: (value) => saveSettingsWithFeedback(
+                context,
+                () => settingsController.setPreferEmbeddedCover(value),
+              ),
               title: _settingsTitle(i18n.tr('prefer_embedded_cover')),
               secondary: _settingsIcon(Icons.audio_file_rounded, cs.onSurface),
               contentPadding: const EdgeInsets.symmetric(horizontal: 8),
@@ -222,7 +236,10 @@ List<Widget> _buildSettingsAppearanceSection({
             );
             return SwitchListTile(
               value: enabled,
-              onChanged: settings.setUiBlurEffectEnabled,
+              onChanged: (value) => saveSettingsWithFeedback(
+                context,
+                () => settings.setUiBlurEffectEnabled(value),
+              ),
               title: _settingsTitle(i18n.tr('ui_blur_effect')),
               secondary: _settingsIcon(Icons.blur_linear_rounded, cs.onSurface),
               contentPadding: const EdgeInsets.symmetric(horizontal: 8),
@@ -243,7 +260,10 @@ List<Widget> _buildSettingsAppearanceSection({
             );
             return SwitchListTile(
               value: enabled,
-              onChanged: settings.setBlurPlayerBackgroundEnabled,
+              onChanged: (value) => saveSettingsWithFeedback(
+                context,
+                () => settings.setBlurPlayerBackgroundEnabled(value),
+              ),
               title: _settingsTitle(i18n.tr('blur_player_background')),
               secondary: _settingsIcon(Icons.blur_on_rounded, cs.onSurface),
               contentPadding: const EdgeInsets.symmetric(horizontal: 8),

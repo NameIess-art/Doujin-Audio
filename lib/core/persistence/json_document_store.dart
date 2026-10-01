@@ -220,20 +220,20 @@ final class DefaultJsonDocumentStore implements JsonDocumentStore {
         return _decodePlatformDelete(value);
       }
       try {
-        final recoveryError = await _recoverLocal(location);
-        if (recoveryError != null) {
+        final recovered = await _recoverLocal(location);
+        if (recovered.error != null) {
           return JsonDocumentDeleteResult(
             status: JsonDocumentDeleteStatus.conflict,
-            error: recoveryError,
+            error: recovered.error,
           );
         }
-        final target = _findCaseInsensitive(_localTarget(location));
+        final target = recovered.target;
         if (target == null) {
           return const JsonDocumentDeleteResult(
             status: JsonDocumentDeleteStatus.missing,
           );
         }
-        if (_revision(await target.readAsBytes()) != expectedRevision) {
+        if (_revision(recovered.bytes!) != expectedRevision) {
           return const JsonDocumentDeleteResult(
             status: JsonDocumentDeleteStatus.conflict,
             error: 'revision_mismatch',
@@ -261,14 +261,12 @@ final class DefaultJsonDocumentStore implements JsonDocumentStore {
     JsonDocumentLocation location,
   ) async {
     try {
-      final recoveryError = await _recoverLocal(location);
-      if (recoveryError != null) {
-        return JsonDocumentReadResult.unreadable(recoveryError);
+      final recovered = await _recoverLocal(location);
+      if (recovered.error != null) {
+        return JsonDocumentReadResult.unreadable(recovered.error!);
       }
-      final target = _localTarget(location);
-      final actual = _findCaseInsensitive(target);
-      if (actual == null) return const JsonDocumentReadResult.missing();
-      final bytes = await actual.readAsBytes();
+      final bytes = recovered.bytes;
+      if (bytes == null) return const JsonDocumentReadResult.missing();
       return JsonDocumentReadResult.found(
         JsonDocumentSnapshot(bytes: bytes, revision: _revision(bytes)),
       );
@@ -286,18 +284,18 @@ final class DefaultJsonDocumentStore implements JsonDocumentStore {
     final target = _localTarget(location);
     final parent = target.parent;
     await parent.create(recursive: true);
-    final recoveryError = await _recoverLocal(location);
-    if (recoveryError != null) {
+    final recovered = await _recoverLocal(location);
+    if (recovered.error != null) {
       return JsonDocumentWriteResult(
         status: JsonDocumentWriteStatus.conflict,
-        error: recoveryError,
+        error: recovered.error,
       );
     }
-    final existing = _findCaseInsensitive(target);
+    final existing = recovered.target;
     if (mode == JsonDocumentWriteMode.createIfAbsent && existing != null) {
       return JsonDocumentWriteResult(
         status: JsonDocumentWriteStatus.preserved,
-        revision: _revision(await existing.readAsBytes()),
+        revision: _revision(recovered.bytes!),
       );
     }
     if (mode == JsonDocumentWriteMode.replaceIfRevision) {
@@ -307,7 +305,7 @@ final class DefaultJsonDocumentStore implements JsonDocumentStore {
           error: 'document_missing',
         );
       }
-      final currentRevision = _revision(await existing.readAsBytes());
+      final currentRevision = _revision(recovered.bytes!);
       if (currentRevision != expectedRevision) {
         return JsonDocumentWriteResult(
           status: JsonDocumentWriteStatus.conflict,
@@ -333,7 +331,13 @@ final class DefaultJsonDocumentStore implements JsonDocumentStore {
         throw const FormatException('staging_validation_failed');
       }
 
-      final latest = _findCaseInsensitive(target);
+      // Recheck the current file after staging; never reuse its earlier revision.
+      File? latest;
+      if (existing != null && await existing.exists()) {
+        latest = existing;
+      } else if (await target.exists()) {
+        latest = target;
+      }
       if (mode == JsonDocumentWriteMode.createIfAbsent && latest != null) {
         await temporary.delete();
         return JsonDocumentWriteResult(
@@ -372,8 +376,7 @@ final class DefaultJsonDocumentStore implements JsonDocumentStore {
     } on Object catch (error) {
       if (await temporary.exists()) await temporary.delete();
       if (movedExisting != null && await movedExisting.exists()) {
-        final current = _findCaseInsensitive(target);
-        if (current != null) await current.delete();
+        if (await target.exists()) await target.delete();
         await movedExisting.rename(target.path);
       }
       return JsonDocumentWriteResult(
@@ -383,55 +386,58 @@ final class DefaultJsonDocumentStore implements JsonDocumentStore {
     }
   }
 
-  Future<String?> _recoverLocal(JsonDocumentLocation location) async {
+  Future<({File? target, Uint8List? bytes, String? error})> _recoverLocal(
+    JsonDocumentLocation location,
+  ) async {
     final target = _localTarget(location);
-    final actualTarget = _findCaseInsensitive(target);
-    final backup = _findCaseInsensitive(
-      _transactionFile(target, '.doujin.bak'),
-    );
-    final staged = _findCaseInsensitive(
-      _transactionFile(target, '.doujin.part'),
-    );
-    final targetValid = await _isValidJsonFile(actualTarget);
-    final backupValid = await _isValidJsonFile(backup);
-    final stagedValid = await _isValidJsonFile(staged);
-
+    final files = await _findLocalTransactionFiles(target);
+    final actualTarget = files.target;
+    final backup = files.backup;
+    final staged = files.staged;
     try {
-      if (targetValid) {
+      final targetBytes = await _validJsonBytes(actualTarget);
+      if (targetBytes != null) {
         await _deleteIfPresent(backup);
         await _deleteIfPresent(staged);
-        return null;
+        return (target: actualTarget, bytes: targetBytes, error: null);
       }
-
-      if (backupValid) {
+      final backupBytes = await _validJsonBytes(backup);
+      if (backupBytes != null) {
         await _deleteIfPresent(actualTarget);
         await _deleteIfPresent(staged);
-        await backup!.rename(target.path);
-        return null;
+        final restored = await backup!.rename(target.path);
+        return (target: restored, bytes: backupBytes, error: null);
       }
-
-      if (stagedValid) {
+      final stagedBytes = await _validJsonBytes(staged);
+      if (stagedBytes != null) {
         await _deleteIfPresent(actualTarget);
         await _deleteIfPresent(backup);
-        await staged!.rename(target.path);
-        return null;
+        final restored = await staged!.rename(target.path);
+        return (target: restored, bytes: stagedBytes, error: null);
       }
-
-      if (actualTarget != null || backup != null || staged != null) {
-        return 'transaction_recovery_failed';
-      }
-      return null;
+      return (
+        target: null,
+        bytes: null,
+        error: actualTarget != null || backup != null || staged != null
+            ? 'transaction_recovery_failed'
+            : null,
+      );
     } on Object catch (error) {
-      return 'transaction_recovery_failed: $error';
+      return (
+        target: null,
+        bytes: null,
+        error: 'transaction_recovery_failed: $error',
+      );
     }
   }
 
-  Future<bool> _isValidJsonFile(File? file) async {
-    if (file == null) return false;
+  Future<Uint8List?> _validJsonBytes(File? file) async {
+    if (file == null) return null;
     try {
-      return _validate(await file.readAsBytes()) == null;
+      final bytes = await file.readAsBytes();
+      return _validate(bytes) == null ? bytes : null;
     } on Object {
-      return false;
+      return null;
     }
   }
 
@@ -450,18 +456,29 @@ final class DefaultJsonDocumentStore implements JsonDocumentStore {
     return File(path.join(parentPath, location.name));
   }
 
-  File? _findCaseInsensitive(File target) {
-    if (target.existsSync()) return target;
-    final parent = target.parent;
-    if (!parent.existsSync()) return null;
-    final expected = path.basename(target.path).toLowerCase();
-    for (final entity in parent.listSync(followLinks: false)) {
-      if (entity is File &&
-          path.basename(entity.path).toLowerCase() == expected) {
-        return entity;
+  Future<({File? target, File? backup, File? staged})>
+  _findLocalTransactionFiles(File target) async {
+    final expected = <File>[
+      target,
+      _transactionFile(target, '.doujin.bak'),
+      _transactionFile(target, '.doujin.part'),
+    ];
+    final present = await Future.wait(expected.map((file) => file.exists()));
+    final matches = <File?>[
+      for (var i = 0; i < expected.length; i++) present[i] ? expected[i] : null,
+    ];
+    if (present.any((exists) => !exists) && await target.parent.exists()) {
+      final names = expected
+          .map((file) => path.basename(file.path).toLowerCase())
+          .toList(growable: false);
+      // One enumeration per transaction, including case variants of recovery files.
+      await for (final entity in target.parent.list(followLinks: false)) {
+        if (entity is! File) continue;
+        final index = names.indexOf(path.basename(entity.path).toLowerCase());
+        if (index >= 0) matches[index] ??= entity;
       }
     }
-    return null;
+    return (target: matches[0], backup: matches[1], staged: matches[2]);
   }
 
   JsonDocumentReadResult _decodePlatformRead(Map<String, Object?>? value) {

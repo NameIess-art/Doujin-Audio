@@ -1,3 +1,5 @@
+import 'package:flutter/material.dart';
+import '../../core/widgets/app_feedback.dart';
 import '../state/subtitle_settings_provider.dart';
 import '../../features/player/application/playback_session.dart';
 import '../../features/library/presentation/library_providers.dart';
@@ -448,3 +450,27 @@ final sessionDetailTransportProvider = Provider.autoDispose
           ? null
           : sessionDetailViewStateFromSession(session);
     });
+
+int _settingsSaveSequence = 0;
+
+Future<bool> saveSettingsWithFeedback(
+  BuildContext context,
+  Future<void> Function() save,
+) async {
+  final container = ProviderScope.containerOf(context, listen: false);
+  final i18n = container.read(appLanguageProviderInstanceProvider);
+  final saved = await container
+      .read(uiOperationServiceProvider)
+      .runWithFeedback<bool>(
+        context: context,
+        scope: UiOperationScope('settings:save:${++_settingsSaveSequence}'),
+        labelKey: 'loading_dot',
+        task: (_) async {
+          await save();
+          return true;
+        },
+        failureMessage: i18n.tr('operation_failed_retry'),
+        operationFailedTitle: i18n.tr('operation_failed'),
+      );
+  return saved ?? false;
+}

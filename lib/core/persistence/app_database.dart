@@ -23,7 +23,7 @@ const int _sqliteInClauseBatchSize = 900;
 class AppDatabase {
   AppDatabase._();
 
-  static const int schemaVersion = 8;
+  static const int schemaVersion = 9;
   static const String fileName = 'audio_player.db';
 
   @visibleForTesting

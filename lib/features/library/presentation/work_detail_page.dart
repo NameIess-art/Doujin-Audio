@@ -113,26 +113,24 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
 
     setState(() {
       _loadingLocal = true;
+      _localFolderNode = null;
+      _localTextFiles = const [];
+      _localImageFiles = const [];
     });
 
     try {
-      final detailFuture = library.loadAudioDetail(target);
-      final treeFuture = library.loadLibraryFolderTree(folderPath);
-
-      final detailResult = await detailFuture;
-      final tree = await treeFuture;
+      final detailResult = await library.loadAudioDetail(target);
 
       if (!mounted || request != _localLoadRequest) return;
       setState(() {
         _localDetail = detailResult.detail;
-        _localFolderNode = tree;
         _localManualCover =
             library.resolvedCoverPathForFolder(folderPath) ??
             detailResult.detail.cardCoverPath;
         _loadingLocal = false;
       });
 
-      // Directory scans and cover discovery should not compete with navigation.
+      // File trees, directory scans and cover discovery wait for navigation.
       UiInteractionCoordinator.instance.scheduleCommit(
         key: _localFilesCommitKey,
         commit: () {
@@ -156,6 +154,15 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
     bool isCurrent() => mounted && request == _localLoadRequest;
 
     await Future.wait<void>([
+      () async {
+        try {
+          final tree = await library.loadLibraryFolderTree(folderPath);
+          if (!isCurrent()) return;
+          setState(() => _localFolderNode = tree);
+        } catch (_) {
+          // Text and image discovery can still complete independently.
+        }
+      }(),
       () async {
         try {
           final texts = await textService.findWorkTextFiles(folderPath);
@@ -552,10 +559,14 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
   }
 
   Future<void> _refreshLocalTree() async {
+    if (_localFolderNode == null) return;
+    final request = _localLoadRequest;
     final tree = await ref
         .read(libraryFacadeProvider)
         .loadLibraryFolderTree(_localTarget!.targetPath);
-    if (mounted) setState(() => _localFolderNode = tree);
+    if (mounted && request == _localLoadRequest) {
+      setState(() => _localFolderNode = tree);
+    }
   }
 
   // Open text file
@@ -1000,17 +1011,46 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
                       vertical: 4,
                     ),
                     sliver: SliverList(
-                      delegate: SliverChildBuilderDelegate((context, index) {
-                        final item = currentEntries[index];
-                        return WorkDetailEntryTile(
-                          item: item,
-                          accentColor: widget.isAsmr ? asmrBlue : cs.primary,
-                          menuEntries: _entryMenuItems(item),
-                          moreLabel: i18n.tr('more_actions'),
-                          onAction: (action) =>
-                              _handleEntryAction(item, action),
-                        );
-                      }, childCount: currentEntries.length),
+                      delegate: SliverChildBuilderDelegate(
+                        (context, index) {
+                          final item = currentEntries[index];
+                          final tile = WorkDetailEntryTile(
+                            item: item,
+                            accentColor: widget.isAsmr ? asmrBlue : cs.primary,
+                            menuEntries: _entryMenuItems(item),
+                            moreLabel: i18n.tr('more_actions'),
+                            onAction: (action) =>
+                                _handleEntryAction(item, action),
+                          );
+                          if (!widget.isLocal) return tile;
+                          return TweenAnimationBuilder<double>(
+                            key: ValueKey(
+                              '${item.type.name}:${item.relativePath}',
+                            ),
+                            tween: Tween(begin: 0, end: 1),
+                            duration: MediaQuery.disableAnimationsOf(context)
+                                ? Duration.zero
+                                : const Duration(milliseconds: 300),
+                            curve: Curves.easeOutCubic,
+                            child: tile,
+                            builder: (context, opacity, child) =>
+                                Opacity(opacity: opacity, child: child),
+                          );
+                        },
+                        childCount: currentEntries.length,
+                        findChildIndexCallback: widget.isLocal
+                            ? (key) {
+                                final index = currentEntries.indexWhere(
+                                  (item) =>
+                                      key ==
+                                      ValueKey(
+                                        '${item.type.name}:${item.relativePath}',
+                                      ),
+                                );
+                                return index < 0 ? null : index;
+                              }
+                            : null,
+                      ),
                     ),
                   ),
                 if (bottomOverlayInset > 0)

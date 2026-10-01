@@ -1,3 +1,4 @@
+import '../../../app/presentation/app_presentation_providers.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -41,9 +42,9 @@ class _VideoConverterTabState extends ConsumerState<VideoConverterTab> {
 
   Future<void> _pickOutputDirectory() async {
     final settings = ref.read(settingsRepositoryProvider);
-    await ref
+    await saveSettingsWithFeedback(context, () => ref
         .read(videoConversionCoordinatorProvider)
-        .pickOutputDirectory(settings);
+        .pickOutputDirectory(settings));
   }
 
   Future<void> _startConversion(SettingsRepository settings) async {
@@ -216,7 +217,7 @@ class _VideoConverterTabState extends ConsumerState<VideoConverterTab> {
                               displayBuilder: (item) => item.toUpperCase(),
                               onChanged: (value) {
                                 if (value != null) {
-                                  settings.setConverterSettings(format: value);
+                                  unawaited(saveSettingsWithFeedback(context, () => settings.setConverterSettings(format: value)));
                                 }
                               },
                             ),
@@ -231,7 +232,7 @@ class _VideoConverterTabState extends ConsumerState<VideoConverterTab> {
                               enabled: bitrateEnabled,
                               onChanged: (value) {
                                 if (value != null) {
-                                  settings.setConverterSettings(bitrate: value);
+                                  unawaited(saveSettingsWithFeedback(context, () => settings.setConverterSettings(bitrate: value)));
                                 }
                               },
                             ),

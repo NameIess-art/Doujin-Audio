@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/features/player/domain/audio_effects.dart';
 import 'package:doujin_audio/core/media/audio_detail.dart';
@@ -31,9 +33,107 @@ void main() {
 
   tearDown(() => db.close());
 
-  test('schema starts from version 8', () {
-    expect(AppDatabase.schemaVersion, 8);
+  test('schema starts from version 9', () {
+    expect(AppDatabase.schemaVersion, 9);
   });
+
+  test(
+    'version 9 drops only redundant indexes and preserves all table data',
+    () async {
+      await repository.seedSessions([_playbackSession('existing')]);
+      await db.insert('tracks', {
+        'path': '/audio/one.mp3',
+        'display_name': 'One',
+        'group_key': '/audio',
+        'group_title': 'Audio',
+        'group_subtitle': '',
+      });
+      await db.insert('track_scan_info', {
+        'path': '/audio/one.mp3',
+        'scan_generation': 12,
+      });
+      await db.insert('track_playback_state', {
+        'path': '/audio/one.mp3',
+        'last_played_at_ms': 42,
+        'is_favorite': 1,
+      });
+      await db.insert('audio_details', {
+        'target_type': 'track',
+        'target_path': '/audio/one.mp3',
+        'work_title': 'Kept',
+      });
+      await db.insert('asmr_works', {'id': 123, 'title': 'Remote work'});
+      const redundant = {
+        'idx_track_scan_generation': 'track_scan_info(scan_generation)',
+        'idx_track_playback_last_played':
+            'track_playback_state(last_played_at_ms)',
+        'idx_track_playback_favorite': 'track_playback_state(is_favorite)',
+      };
+      for (final entry in redundant.entries) {
+        await db.execute('CREATE INDEX ${entry.key} ON ${entry.value}');
+      }
+      final schemaBefore = await db.rawQuery(
+        "SELECT name, sql FROM sqlite_master WHERE type = 'table' ORDER BY name",
+      );
+      final before = <String, List<Map<String, Object?>>>{};
+      for (final table in schemaBefore) {
+        final name = table['name']! as String;
+        before[name] = await db.query(name);
+      }
+      final indexesBefore = (await db.rawQuery(
+        "SELECT name FROM sqlite_master WHERE type = 'index'",
+      )).map((row) => row['name']).toSet();
+
+      await AppDatabase.upgradeSchemaForTest(db, 8, 9);
+
+      expect(
+        await db.rawQuery(
+          "SELECT name, sql FROM sqlite_master WHERE type = 'table' ORDER BY name",
+        ),
+        schemaBefore,
+      );
+      for (final table in before.entries) {
+        expect(await db.query(table.key), table.value, reason: table.key);
+      }
+      final indexesAfter = (await db.rawQuery(
+        "SELECT name FROM sqlite_master WHERE type = 'index'",
+      )).map((row) => row['name']).toSet();
+      expect(indexesAfter, indexesBefore.difference(redundant.keys.toSet()));
+      for (final query in {
+        'SELECT path FROM track_scan_info WHERE scan_generation = 12':
+            'idx_tracks_scan_generation',
+        'SELECT path FROM track_playback_state WHERE is_favorite = 1':
+            'idx_tracks_favorite',
+        'SELECT path FROM track_playback_state WHERE last_played_at_ms = 42':
+            'idx_tracks_last_played_at',
+      }.entries) {
+        final plan = await db.rawQuery('EXPLAIN QUERY PLAN ${query.key}');
+        expect(plan.map((row) => row['detail']).join(), contains(query.value));
+      }
+    },
+  );
+
+  test(
+    'restore candidate rejects a newer SQLite schema without changing it',
+    () async {
+      final directory = await Directory.systemTemp.createTemp(
+        'future_database_',
+      );
+      addTearDown(() => directory.delete(recursive: true));
+      final candidate = await appDatabase.createPortableSnapshot(
+        '${directory.path}/candidate.db',
+      );
+      final newer = await databaseFactoryFfi.openDatabase(candidate.path);
+      await newer.setVersion(AppDatabase.schemaVersion + 1);
+      await newer.close();
+      final before = await candidate.readAsBytes();
+      await expectLater(
+        appDatabase.validateAndMigrateRestoreCandidate(candidate.path),
+        throwsFormatException,
+      );
+      expect(await candidate.readAsBytes(), before);
+    },
+  );
 
   test('version 3 migration adds audio detail duration', () async {
     await db.execute('DROP TABLE audio_details');
@@ -770,6 +870,11 @@ void main() {
         .toSet();
     expect(playbackIndexNames, contains('idx_tracks_last_played_at'));
     expect(playbackIndexNames, contains('idx_tracks_favorite'));
+    expect(
+      playbackIndexNames,
+      isNot(contains('idx_track_playback_last_played')),
+    );
+    expect(playbackIndexNames, isNot(contains('idx_track_playback_favorite')));
 
     final scanIndexes = await db.rawQuery('PRAGMA index_list(track_scan_info)');
     final scanIndexNames = scanIndexes
@@ -777,6 +882,7 @@ void main() {
         .whereType<String>()
         .toSet();
     expect(scanIndexNames, contains('idx_tracks_scan_generation'));
+    expect(scanIndexNames, isNot(contains('idx_track_scan_generation')));
 
     final columns = await db.rawQuery('PRAGMA table_info(tracks)');
     final columnNames = columns

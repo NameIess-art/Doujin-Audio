@@ -341,9 +341,11 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
   ThemeData get lightTheme => _lightTheme;
   ThemeData get darkTheme => _darkTheme;
 
-  ThemeProvider({ThemePreferenceWriter? preferenceWriter})
-    : _preferenceWriter = preferenceWriter ?? _writePreference {
-    _loadThemeSync();
+  ThemeProvider({
+    ThemePreferenceWriter? preferenceWriter,
+    bool loadPersistedState = true,
+  }) : _preferenceWriter = preferenceWriter ?? _writePreference {
+    _loadThemeSync(readPreferences: loadPersistedState);
     _rebuildThemes();
   }
 
@@ -385,17 +387,18 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
     );
   }
 
-  void _loadThemeSync() {
-    _themeMode = readThemeModeSync();
-    _differentiateAsmrTheme =
-        AppPreferences.getBoolSync(_differentiateAsmrThemeKey) ?? true;
-    _pureBlackTheme =
-        AppPreferences.getBoolSync(_pureBlackThemeKey) ?? false;
-    _appThemeColor = readAppThemeColorSync();
-    _asmrThemeColor = _readThemeColor(
-      AppPreferences.getStringSync(_asmrThemeColorKey),
-      ThemeAccentPreset.blue,
-    );
+  void _loadThemeSync({bool readPreferences = true}) {
+    if (readPreferences) {
+      _themeMode = readThemeModeSync();
+      _differentiateAsmrTheme =
+          AppPreferences.getBoolSync(_differentiateAsmrThemeKey) ?? true;
+      _pureBlackTheme = AppPreferences.getBoolSync(_pureBlackThemeKey) ?? false;
+      _appThemeColor = readAppThemeColorSync();
+      _asmrThemeColor = _readThemeColor(
+        AppPreferences.getStringSync(_asmrThemeColorKey),
+        ThemeAccentPreset.blue,
+      );
+    }
     _persistedThemeMode = _themeMode;
     _persistedDifferentiateAsmrTheme = _differentiateAsmrTheme;
     _persistedPureBlackTheme = _pureBlackTheme;

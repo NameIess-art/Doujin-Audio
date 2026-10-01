@@ -33,6 +33,7 @@ class SubtitleGenerationJob {
   SubtitleTaskProgress? _progress;
   String? _errorMessage;
   bool _cancelRequested = false;
+  final Completer<void> _cancellation = Completer<void>();
 
   SubtitleGenerationStatus get status => _status;
   SubtitleTaskProgress? get progress => _progress;
@@ -84,11 +85,12 @@ class PlaybackSubtitleService extends ChangeNotifier {
   }) => _startGeneration(
     trackPath,
     SubtitleDraftKind.script,
-    (onProgress, isCancelled) => prepareScriptSubtitle(
+    (onProgress, isCancelled, cancellation) => prepareScriptSubtitle(
       trackPath,
       scriptPath,
       onProgress: onProgress,
       isCancelled: isCancelled,
+      cancellation: cancellation,
     ),
     onApplied,
   );
@@ -101,12 +103,13 @@ class PlaybackSubtitleService extends ChangeNotifier {
   }) => _startGeneration(
     trackPath,
     SubtitleDraftKind.translation,
-    (onProgress, isCancelled) => prepareTranslation(
+    (onProgress, isCancelled, cancellation) => prepareTranslation(
       trackPath,
       targetLanguage,
       sourceJapaneseConfirmed: sourceJapaneseConfirmed,
       onProgress: onProgress,
       isCancelled: isCancelled,
+      cancellation: cancellation,
     ),
     onApplied,
   );
@@ -117,6 +120,7 @@ class PlaybackSubtitleService extends ChangeNotifier {
     Future<SubtitleDraft?> Function(
       void Function(SubtitleTaskProgress),
       bool Function(),
+      Future<void>,
     )
     prepare,
     VoidCallback? onApplied,
@@ -137,16 +141,21 @@ class PlaybackSubtitleService extends ChangeNotifier {
     Future<SubtitleDraft?> Function(
       void Function(SubtitleTaskProgress),
       bool Function(),
+      Future<void>,
     )
     prepare,
     VoidCallback? onApplied,
   ) async {
     try {
-      final draft = await prepare((progress) {
-        if (!identical(_generationJob, job)) return;
-        job._progress = progress;
-        notifyListeners();
-      }, () => job._cancelRequested);
+      final draft = await prepare(
+        (progress) {
+          if (!identical(_generationJob, job) || job._cancelRequested) return;
+          job._progress = progress;
+          notifyListeners();
+        },
+        () => job._cancelRequested,
+        job._cancellation.future,
+      );
       if (job._cancelRequested) {
         job._status = SubtitleGenerationStatus.cancelled;
       } else if (draft == null || draft.cues.isEmpty) {
@@ -193,6 +202,7 @@ class PlaybackSubtitleService extends ChangeNotifier {
       return;
     }
     job._cancelRequested = true;
+    if (!job._cancellation.isCompleted) job._cancellation.complete();
     notifyListeners();
   }
 
@@ -246,11 +256,13 @@ class PlaybackSubtitleService extends ChangeNotifier {
     String scriptPath, {
     void Function(SubtitleTaskProgress)? onProgress,
     bool Function()? isCancelled,
+    Future<void>? cancellation,
   }) => _aiEngine.prepareScript(
     trackPath,
     scriptPath,
     onProgress: onProgress,
     isCancelled: isCancelled,
+    cancellation: cancellation,
   );
 
   Future<SubtitleDraft> prepareTranslation(
@@ -259,6 +271,7 @@ class PlaybackSubtitleService extends ChangeNotifier {
     bool sourceJapaneseConfirmed = false,
     void Function(SubtitleTaskProgress)? onProgress,
     bool Function()? isCancelled,
+    Future<void>? cancellation,
   }) async {
     final source = await japaneseSourceCues(
       trackPath,
@@ -270,6 +283,7 @@ class PlaybackSubtitleService extends ChangeNotifier {
       trackPath: trackPath,
       onProgress: onProgress,
       isCancelled: isCancelled,
+      cancellation: cancellation,
     );
   }
 

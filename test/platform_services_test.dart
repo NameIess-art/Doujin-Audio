@@ -47,6 +47,28 @@ void main() {
       expect(calls, isEmpty);
     });
 
+    test(
+      'omits an unset wake timeout and forwards an explicit timeout',
+      () async {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, (call) async {
+              calls.add(call);
+              return _success(true);
+            });
+        final service = PowerPlatformService(
+          channel: channel,
+          isAndroidOverride: true,
+        );
+        expect(await service.acquireWakeLock(tag: 'playback'), isTrue);
+        expect(calls.last.arguments, {'tag': 'playback'});
+        expect(
+          await service.acquireWakeLock(tag: 'playback', timeoutMs: 1000),
+          isTrue,
+        );
+        expect(calls.last.arguments, {'tag': 'playback', 'timeoutMs': 1000});
+      },
+    );
+
     test('sends timer alarm payloads', () async {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(channel, (call) async {

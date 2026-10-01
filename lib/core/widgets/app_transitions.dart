@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -207,7 +209,7 @@ extension AppHeaderTransitionWidget on Widget {
   Widget withAppHeaderTransition() => AppHeaderTransition(child: this);
 }
 
-enum AppIndexedStackTransitionStyle { none, directional, crossFade }
+enum AppIndexedStackTransitionStyle { none, directional, crossFade, slide }
 
 class PlaceholderContentTransition extends StatefulWidget {
   const PlaceholderContentTransition({
@@ -667,7 +669,13 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
   void _handleIndexChanged() {
     if (!mounted || _itemCount == 0) return;
     final nextIndex = _safeIndex(widget.indexListenable.value);
-    if (nextIndex == _targetIndex) return;
+    if (nextIndex == _targetIndex) {
+      if (widget.style == AppIndexedStackTransitionStyle.slide &&
+          _isAnimating) {
+        _controller.forward();
+      }
+      return;
+    }
     UiInteractionCoordinator.instance.beginInteraction(
       _lazyTransitionInteraction,
     );
@@ -684,6 +692,33 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
       UiInteractionCoordinator.instance.endInteraction(
         _lazyTransitionInteraction,
       );
+      return;
+    }
+
+    if (widget.style == AppIndexedStackTransitionStyle.slide && _isAnimating) {
+      if (nextIndex == _currentIndex) {
+        _controller.reverse().then<void>((_) {
+          if (mounted && _controller.status == AnimationStatus.dismissed) {
+            _completeTransition(_currentIndex);
+          }
+        });
+        return;
+      }
+      final direction = nextIndex > _currentIndex ? 1 : -1;
+      if (direction == _transitionDirection) {
+        setState(() => _targetIndex = nextIndex);
+        _controller.forward();
+        return;
+      }
+      // Swap the visible source when the new destination is on the other side.
+      // Invert decelerate so its position survives the direction change.
+      final progress = Curves.decelerate.transform(_controller.value);
+      setState(() {
+        _currentIndex = _targetIndex;
+        _targetIndex = nextIndex;
+        _transitionDirection = direction;
+      });
+      _controller.forward(from: 1 - math.sqrt(progress));
       return;
     }
 
@@ -717,11 +752,14 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
   }
 
   void _handleStatusChanged(AnimationStatus status) {
-    if (status != AnimationStatus.completed || !_isAnimating || !mounted) {
-      return;
-    }
+    if (status == AnimationStatus.completed) _completeTransition(_targetIndex);
+  }
+
+  void _completeTransition(int index) {
+    if (!_isAnimating || !mounted) return;
     setState(() {
-      _currentIndex = _targetIndex;
+      _currentIndex = index;
+      _targetIndex = index;
       _isAnimating = false;
     });
     widget.onTransitionCompleted?.call(_currentIndex);
@@ -732,9 +770,12 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
 
   Widget _childAt(int index) {
     if (!_isLazy) return widget.children[index];
-    // Keep first-visit initialization out of the navigation animation. Rapid
-    // switches never instantiate an intermediate page that was not displayed.
-    if (_lazyChildren[index] == null && _isAnimating && index == _targetIndex) {
+    // Sliding pages need their shell before entering the viewport. Their
+    // expensive activation stays deferred by the interaction coordinator.
+    if (widget.style != AppIndexedStackTransitionStyle.slide &&
+        _lazyChildren[index] == null &&
+        _isAnimating &&
+        index == _targetIndex) {
       return ColoredBox(color: Theme.of(context).colorScheme.surface);
     }
     if (_lazyChildren[index] == null &&
@@ -786,11 +827,52 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
         child: RepaintBoundary(key: _pageKeys[index], child: page),
       );
     }
+    final animation = outgoing || incoming
+        ? _controller
+        : const AlwaysStoppedAnimation<double>(1);
+    if (widget.style == AppIndexedStackTransitionStyle.slide) {
+      final progress = animation.drive(CurveTween(curve: Curves.decelerate));
+      final direction = _transitionDirection.toDouble();
+      final position = progress.drive(
+        Tween<Offset>(
+          begin: incoming ? Offset(direction, 0) : Offset.zero,
+          end: outgoing ? Offset(-direction, 0) : Offset.zero,
+        ),
+      );
+      if (!widget.separateHeader) {
+        return KeyedSubtree(
+          key: ValueKey<String>('app_indexed_page_$index'),
+          child: SlideTransition(
+            position: position,
+            child: RepaintBoundary(key: _pageKeys[index], child: page),
+          ),
+        );
+      }
+      return KeyedSubtree(
+        key: ValueKey<String>('app_indexed_page_$index'),
+        child: _AppPageMotionScope(
+          contentBuilder: (context, content) => SlideTransition(
+            position: position,
+            child: ColoredBox(
+              color: Theme.of(context).colorScheme.surface,
+              child: content,
+            ),
+          ),
+          headerBuilder: (_, header) => FadeTransition(
+            opacity: outgoing
+                ? ReverseAnimation(progress)
+                : incoming
+                ? progress
+                : const AlwaysStoppedAnimation<double>(1),
+            child: header,
+          ),
+          child: RepaintBoundary(key: _pageKeys[index], child: page),
+        ),
+      );
+    }
     return AnimatedBuilder(
       key: ValueKey<String>('app_indexed_page_$index'),
-      animation: outgoing || incoming
-          ? _controller
-          : const AlwaysStoppedAnimation<double>(1),
+      animation: animation,
       child: RepaintBoundary(key: _pageKeys[index], child: page),
       builder: (context, child) {
         final rawProgress = _isAnimating ? _controller.value : 1.0;

@@ -439,6 +439,354 @@ void main() {
     );
   });
 
+  for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+    testWidgets(
+      'slide goes directly between nonadjacent pages in 300 ms on $platform',
+      (tester) async {
+        final index = ValueNotifier<int>(0);
+        addTearDown(index.dispose);
+        final coordinator = UiInteractionCoordinator.instance;
+        coordinator.resetForTest();
+        addTearDown(coordinator.resetForTest);
+        final builds = <int>[0, 0, 0, 0];
+        final completed = <int>[];
+        await tester.pumpWidget(
+          MaterialApp(
+            home: AppFadeThroughIndexedStack.lazy(
+              indexListenable: index,
+              style: AppIndexedStackTransitionStyle.slide,
+              duration: kAppMotionSlow,
+              itemCount: 4,
+              onTransitionCompleted: completed.add,
+              itemBuilder: (_, page) {
+                builds[page]++;
+                return Stack(
+                  children: [
+                    regions('page-$page'),
+                    _StateProbe(label: 'state-$page'),
+                  ],
+                );
+              },
+            ),
+          ),
+        );
+        final firstState = tester.state(
+          find.ancestor(
+            of: find.text('state-0'),
+            matching: find.byType(_StateProbe),
+          ),
+        );
+        final body = find.byKey(const ValueKey('page-0-body'));
+        final width = tester.getSize(body).width;
+        final headerLeft = tester
+            .getTopLeft(find.byKey(const ValueKey('page-0-header')))
+            .dx;
+        var idleWork = false;
+        index.value = 3;
+        coordinator.scheduleAfterIdle(
+          key: 'slide-idle-work',
+          generation: coordinator.generation,
+          priority: 0,
+          task: () async => idleWork = true,
+        );
+        await tester.pump();
+        expect(builds, [1, 0, 0, 1]);
+        expect(
+          tester.getTopLeft(find.byKey(const ValueKey('page-3-body'))).dx,
+          width,
+        );
+        expect(completed, isEmpty);
+        expect(coordinator.isInteracting, isTrue);
+        await tester.pump(const Duration(milliseconds: 150));
+        final outgoing = tester.getRect(body);
+        final incoming = tester.getRect(
+          find.byKey(const ValueKey('page-3-body')),
+        );
+        expect(outgoing.left, lessThan(0));
+        expect(incoming.left, allOf(greaterThan(0), lessThan(width)));
+        expect(outgoing.right, closeTo(incoming.left, 0.01));
+        expect(
+          tester.getTopLeft(find.byKey(const ValueKey('page-3-header'))).dx,
+          closeTo(headerLeft + incoming.left, 0.01),
+        );
+        expect(idleWork, isFalse);
+        expect(find.byType(Opacity), findsNothing);
+        expect(find.byType(PageView), findsNothing);
+        expect(builds, [
+          1,
+          0,
+          0,
+          1,
+        ], reason: 'Animation frames reuse the page subtree.');
+        await tester.pump(const Duration(milliseconds: 149));
+        expect(completed, isEmpty);
+        await tester.pump(const Duration(milliseconds: 2));
+        expect(completed, [3]);
+        expect(
+          tester.getTopLeft(find.byKey(const ValueKey('page-3-body'))).dx,
+          0,
+        );
+        await tester.pump(coordinator.idleDelay);
+        await tester.pumpAndSettle();
+        expect(idleWork, isTrue);
+        expect(coordinator.isInteracting, isFalse);
+        index.value = 0;
+        await tester.pump();
+        expect(tester.getTopLeft(body).dx, -width);
+        await tester.pump(const Duration(milliseconds: 150));
+        expect(
+          tester.getRect(find.byKey(const ValueKey('page-3-body'))).left,
+          greaterThan(0),
+        );
+        expect(tester.getRect(body).left, lessThan(0));
+        await tester.pumpAndSettle();
+        expect(completed, [3, 0]);
+        expect(builds, [1, 0, 0, 1]);
+        expect(
+          tester.state(
+            find.ancestor(
+              of: find.text('state-0'),
+              matching: find.byType(_StateProbe),
+            ),
+          ),
+          same(firstState),
+        );
+      },
+      variant: TargetPlatformVariant({platform}),
+    );
+  }
+
+  for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+    testWidgets(
+      'slide changes headers independently on $platform',
+      (tester) async {
+        final index = ValueNotifier<int>(0);
+        addTearDown(index.dispose);
+        var builds = 0;
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Center(
+              child: SizedBox(
+                width: 420,
+                height: 500,
+                child: AppFadeThroughIndexedStack.lazy(
+                  indexListenable: index,
+                  itemCount: 4,
+                  separateHeader: true,
+                  style: AppIndexedStackTransitionStyle.slide,
+                  duration: kAppMotionSlow,
+                  itemBuilder: (_, page) {
+                    builds++;
+                    return regions('fixed-$page', transparentPage: true);
+                  },
+                ),
+              ),
+            ),
+          ),
+        );
+        final oldHeader = find.byKey(const ValueKey('fixed-0-header'));
+        final newHeader = find.byKey(const ValueKey('fixed-3-header'));
+        final newBody = find.byKey(const ValueKey('fixed-3-body'));
+        final headerRect = tester.getRect(oldHeader);
+        final left = tester
+            .getRect(find.byKey(const ValueKey('fixed-0-body')))
+            .left;
+        index.value = 3;
+        await tester.pump();
+        expect(tester.getRect(newHeader), headerRect);
+        await tester.pump(const Duration(milliseconds: 150));
+        expect(tester.getRect(oldHeader), headerRect);
+        expect(tester.getRect(newHeader), headerRect);
+        expect(tester.getRect(newBody).left, greaterThan(left));
+        final tabFades = find.descendant(
+          of: find.byType(AppFadeThroughIndexedStack),
+          matching: find.byType(FadeTransition),
+        );
+        final oldFade = tester.widget<FadeTransition>(
+          find.ancestor(of: oldHeader, matching: tabFades),
+        );
+        final newFade = tester.widget<FadeTransition>(
+          find.ancestor(of: newHeader, matching: tabFades),
+        );
+        expect(oldFade.opacity.value, allOf(greaterThan(0), lessThan(1)));
+        expect(
+          oldFade.opacity.value + newFade.opacity.value,
+          closeTo(1, 0.001),
+        );
+        expect(find.ancestor(of: newBody, matching: tabFades), findsNothing);
+        expect(
+          find.ancestor(of: newBody, matching: find.byType(Opacity)),
+          findsNothing,
+        );
+        expect(builds, 2);
+        await tester.pumpAndSettle();
+        index.value = 0;
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 150));
+        expect(tester.getRect(oldHeader), headerRect);
+        expect(tester.getRect(newHeader), headerRect);
+        expect(
+          tester.getRect(find.byKey(const ValueKey('fixed-0-body'))).left,
+          lessThan(left),
+        );
+        await tester.pumpAndSettle();
+        expect(builds, 2);
+      },
+      variant: TargetPlatformVariant({platform}),
+    );
+  }
+
+  for (final elapsed in [80, 200]) {
+    testWidgets('slide completes the latest rapid switch after $elapsed ms', (
+      tester,
+    ) async {
+      final index = ValueNotifier<int>(0);
+      addTearDown(index.dispose);
+      final coordinator = UiInteractionCoordinator.instance;
+      coordinator.resetForTest();
+      addTearDown(coordinator.resetForTest);
+      final completed = <int>[];
+      final built = <int>[];
+      await tester.pumpWidget(
+        MaterialApp(
+          home: AppFadeThroughIndexedStack.lazy(
+            indexListenable: index,
+            itemCount: 4,
+            style: AppIndexedStackTransitionStyle.slide,
+            duration: kAppMotionSlow,
+            onTransitionCompleted: completed.add,
+            itemBuilder: (_, page) {
+              built.add(page);
+              return Text('slide-$page');
+            },
+          ),
+        ),
+      );
+      index.value = 1;
+      await tester.pump();
+      await tester.pump(Duration(milliseconds: elapsed));
+      final before = _translationFor(tester, 'slide-0');
+      index.value = 3;
+      await tester.pump();
+      expect(_translationFor(tester, 'slide-0'), before);
+      expect(find.text('slide-2', skipOffstage: false), findsNothing);
+      await tester.pumpAndSettle();
+      expect(built, [0, 1, 3]);
+      expect(completed, [3]);
+      expect(find.text('slide-3'), findsOneWidget);
+      await tester.pump(coordinator.idleDelay);
+      expect(UiInteractionCoordinator.instance.isInteracting, isFalse);
+      index.value = 0;
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 80));
+      final beforeReturn = _translationFor(tester, 'slide-3');
+      index.value = 3;
+      await tester.pump();
+      expect(_translationFor(tester, 'slide-3'), beforeReturn);
+      await tester.pumpAndSettle();
+      expect(completed, [3, 3]);
+      expect(find.text('slide-3'), findsOneWidget);
+      await tester.pump(coordinator.idleDelay);
+      expect(UiInteractionCoordinator.instance.isInteracting, isFalse);
+      index.value = 1;
+      index.value = 3;
+      index.value = 0;
+      await tester.pumpAndSettle();
+      expect(completed, [3, 3, 0]);
+      expect(find.text('slide-0'), findsOneWidget);
+      index.value = 1;
+      index.value = 0;
+      index.value = 1;
+      await tester.pumpAndSettle();
+      expect(completed, [3, 3, 0, 1]);
+      expect(find.text('slide-1'), findsOneWidget);
+    });
+  }
+
+  testWidgets('slide keeps its position when retargeted to the other side', (
+    tester,
+  ) async {
+    final index = ValueNotifier<int>(1);
+    addTearDown(index.dispose);
+    final completed = <int>[];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AppFadeThroughIndexedStack.lazy(
+          indexListenable: index,
+          itemCount: 4,
+          style: AppIndexedStackTransitionStyle.slide,
+          duration: kAppMotionSlow,
+          onTransitionCompleted: completed.add,
+          itemBuilder: (_, page) => Text('opposite-$page'),
+        ),
+      ),
+    );
+    index.value = 3;
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 80));
+    final before = _translationFor(tester, 'opposite-3');
+    index.value = 0;
+    await tester.pump();
+    expect(
+      _translationFor(tester, 'opposite-3').dx,
+      closeTo(before.dx, 0.0001),
+    );
+    expect(find.text('opposite-1'), findsNothing);
+    await tester.pump(const Duration(milliseconds: 40));
+    final beforeReverse = _translationFor(tester, 'opposite-3');
+    index.value = 3;
+    await tester.pump();
+    expect(_translationFor(tester, 'opposite-3'), beforeReverse);
+    await tester.pump(const Duration(milliseconds: 40));
+    final beforeResume = _translationFor(tester, 'opposite-3');
+    index.value = 0;
+    await tester.pump();
+    expect(_translationFor(tester, 'opposite-3'), beforeResume);
+    await tester.pumpAndSettle();
+    expect(completed, [0]);
+    expect(find.text('opposite-0'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('slide respects reduced motion', (tester) async {
+    final index = ValueNotifier<int>(0);
+    addTearDown(index.dispose);
+    final completed = <int>[];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MediaQuery(
+          data: const MediaQueryData(disableAnimations: true),
+          child: AppFadeThroughIndexedStack.lazy(
+            indexListenable: index,
+            itemCount: 4,
+            style: AppIndexedStackTransitionStyle.slide,
+            duration: kAppMotionSlow,
+            onTransitionCompleted: completed.add,
+            itemBuilder: (_, page) => Text('reduced-$page'),
+          ),
+        ),
+      ),
+    );
+    index.value = 3;
+    await tester.pump();
+    expect(find.text('reduced-3'), findsOneWidget);
+    expect(find.text('reduced-0'), findsNothing);
+    expect(completed, [3]);
+    expect(
+      tester
+          .widgetList<FractionalTranslation>(
+            find.ancestor(
+              of: find.text('reduced-3'),
+              matching: find.byType(FractionalTranslation),
+            ),
+          )
+          .every((widget) => widget.translation == Offset.zero),
+      isTrue,
+    );
+    expect(tester.binding.transientCallbackCount, 0);
+    await tester.pumpAndSettle();
+  });
+
   testWidgets('tabs switch immediately and preserve cached page state', (
     tester,
   ) async {
@@ -661,6 +1009,7 @@ void main() {
               child: AppFadeThroughIndexedStack.lazy(
                 indexListenable: index,
                 itemCount: 3,
+                style: AppIndexedStackTransitionStyle.slide,
                 itemBuilder: (_, page) => LayoutBuilder(
                   builder: (_, constraints) {
                     layouts[page]++;
@@ -705,6 +1054,7 @@ void main() {
           home: AppFadeThroughIndexedStack.lazy(
             indexListenable: index,
             itemCount: 2,
+            style: AppIndexedStackTransitionStyle.slide,
             itemBuilder: (_, page) => Consumer(
               builder: (_, ref, _) {
                 builds[page]++;

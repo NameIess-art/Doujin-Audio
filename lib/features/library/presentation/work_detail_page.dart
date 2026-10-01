@@ -127,7 +127,6 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
         _localManualCover =
             library.resolvedCoverPathForFolder(folderPath) ??
             detailResult.detail.cardCoverPath;
-        _loadingLocal = false;
       });
 
       // File trees, directory scans and cover discovery wait for navigation.
@@ -152,6 +151,22 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
     final textService = ref.read(workTextServiceProvider);
     final previousCover = _localManualCover;
     bool isCurrent() => mounted && request == _localLoadRequest;
+
+    if (previousCover == null || previousCover.trim().isEmpty) {
+      unawaited(() async {
+        try {
+          final currentCover = await library.coverPathFutureForFolder(
+            folderPath,
+          );
+          if (!isCurrent() || _localManualCover != previousCover) return;
+          if (_localManualCover != currentCover) {
+            setState(() => _localManualCover = currentCover);
+          }
+        } catch (_) {
+          // Retain the cover already provided by the library metadata.
+        }
+      }());
+    }
 
     await Future.wait<void>([
       () async {
@@ -196,21 +211,8 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
           // Text discovery can still complete independently.
         }
       }(),
-      if (previousCover == null || previousCover.trim().isEmpty)
-        () async {
-          try {
-            final currentCover = await library.coverPathFutureForFolder(
-              folderPath,
-            );
-            if (!isCurrent() || _localManualCover != previousCover) return;
-            if (_localManualCover != currentCover) {
-              setState(() => _localManualCover = currentCover);
-            }
-          } catch (_) {
-            // Retain the cover already provided by the library metadata.
-          }
-        }(),
     ]);
+    if (isCurrent()) setState(() => _loadingLocal = false);
   }
 
   @override
@@ -858,7 +860,9 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
     const rjBarHeight = 44.0;
 
     final currentEntries = _buildCurrentEntries();
-    final isLoading = widget.isLocal ? _loadingLocal : _loadingAsmr;
+    final isLoading = widget.isLocal
+        ? _loadingLocal && currentEntries.isEmpty
+        : _loadingAsmr;
 
     final String? trimmedCover = coverPath?.trim();
     final bool hasValidCover = trimmedCover != null && trimmedCover.isNotEmpty;

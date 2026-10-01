@@ -43,73 +43,62 @@ extension _MainScreenLayout on _MainScreenState {
 
       return KeyedSubtree(
         key: ValueKey<String>('main_page_fade_$actualIndex'),
-        child: Align(
-          alignment: Alignment.topCenter,
-          child: Padding(
-            padding: isDesktop && !isLandscapeLayout
-                ? padding
-                : EdgeInsets.zero,
-            child: Builder(
-              builder: (pageContext) {
-                // This shell is cached by the lazy indexed stack. Read the
-                // inherited theme here so its surfaces follow live changes.
-                final pageCs = Theme.of(pageContext).colorScheme;
-                return DecoratedBox(
-                  decoration: isDesktop
-                      ? BoxDecoration(
-                          color: isLandscapeLayout
-                              ? pageCs.surface
-                              : pageCs.surfaceContainerLow,
-                          borderRadius: isLandscapeLayout
-                              ? BorderRadius.zero
-                              : radius,
-                          border: isLandscapeLayout
-                              ? null
-                              : Border.all(
-                                  color: pageCs.outlineVariant.withValues(
-                                    alpha: 0.85,
-                                  ),
-                                ),
-                          boxShadow: isLandscapeLayout
-                              ? null
-                              : [
-                                  BoxShadow(
-                                    color: pageCs.shadow.withValues(alpha: 0.1),
-                                    blurRadius: 28,
-                                    offset: const Offset(0, 12),
-                                  ),
-                                ],
-                        )
-                      : const BoxDecoration(),
-                  child: ClipRRect(
-                    borderRadius: isDesktop
-                        ? (isLandscapeLayout ? BorderRadius.zero : radius)
-                        : BorderRadius.zero,
-                    clipBehavior: isDesktop && !isLandscapeLayout
-                        ? Clip.hardEdge
-                        : Clip.none,
-                    child: ColoredBox(
-                      key: ValueKey<String>('main_page_canvas_$actualIndex'),
-                      color: pageCs.surface,
-                      child: RepaintBoundary(child: page),
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-        ),
+        child: RepaintBoundary(child: page),
       );
     }
 
-    return AppFadeThroughIndexedStack.lazy(
-      key: const ValueKey<String>('main_page_stack'),
-      separateHeader: true,
-      indexListenable: _activePageIndex,
-      itemCount: destinations.length,
-      itemBuilder: pageShell,
-      style: AppIndexedStackTransitionStyle.none,
-      onTransitionCompleted: _handlePageTransitionCompleted,
+    final pageCs = Theme.of(context).colorScheme;
+    return Align(
+      alignment: Alignment.topCenter,
+      child: Padding(
+        padding: isDesktop && !isLandscapeLayout ? padding : EdgeInsets.zero,
+        child: DecoratedBox(
+          decoration: isDesktop
+              ? BoxDecoration(
+                  color: isLandscapeLayout
+                      ? pageCs.surface
+                      : pageCs.surfaceContainerLow,
+                  borderRadius: isLandscapeLayout ? BorderRadius.zero : radius,
+                  border: isLandscapeLayout
+                      ? null
+                      : Border.all(
+                          color: pageCs.outlineVariant.withValues(alpha: 0.85),
+                        ),
+                  boxShadow: isLandscapeLayout
+                      ? null
+                      : [
+                          BoxShadow(
+                            color: pageCs.shadow.withValues(alpha: 0.1),
+                            blurRadius: 28,
+                            offset: const Offset(0, 12),
+                          ),
+                        ],
+                )
+              : const BoxDecoration(),
+          child: ClipRRect(
+            borderRadius: isDesktop
+                ? (isLandscapeLayout ? BorderRadius.zero : radius)
+                : BorderRadius.zero,
+            clipBehavior: isDesktop && !isLandscapeLayout
+                ? Clip.hardEdge
+                : Clip.none,
+            child: ColoredBox(
+              key: const ValueKey<String>('main_page_canvas'),
+              color: pageCs.surface,
+              child: AppFadeThroughIndexedStack.lazy(
+                key: const ValueKey<String>('main_page_stack'),
+                separateHeader: true,
+                indexListenable: _activePageIndex,
+                itemCount: destinations.length,
+                itemBuilder: pageShell,
+                style: AppIndexedStackTransitionStyle.slide,
+                duration: kAppMotionSlow,
+                onTransitionCompleted: _handlePageTransitionCompleted,
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 

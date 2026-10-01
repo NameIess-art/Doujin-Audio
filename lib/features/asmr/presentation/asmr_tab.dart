@@ -820,10 +820,8 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
       child: Stack(
         clipBehavior: Clip.none,
         children: [
-          Positioned.fill(
-            child: ColoredBox(color: Theme.of(context).colorScheme.surface),
-          ),
           AppPageContentTransition(
+            backgroundColor: Theme.of(context).colorScheme.surface,
             child: RepaintBoundary(
               child: PlaceholderContentTransition(
                 showPlaceholder: !globalInitialized,

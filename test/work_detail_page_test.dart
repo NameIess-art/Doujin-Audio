@@ -174,7 +174,13 @@ void main() {
             ],
           );
           await tester.pumpWidget(buildPage(const ValueKey('initial')));
-          await tester.pumpAndSettle();
+          await tester.pump(const Duration(milliseconds: 500));
+          await tester.pump();
+          expect(find.byType(CircularProgressIndicator), findsOneWidget);
+          expect(
+            find.text(fixture.languageProvider.tr('empty_folder')),
+            findsNothing,
+          );
           expect(covers.imageRequests, 0);
           expect(covers.coverRequests, 0);
           expect(treeRequests, 0);
@@ -213,6 +219,7 @@ void main() {
             expect(opacity(key), 1);
           }
           expect(treeRequests, 1);
+          expect(find.byType(CircularProgressIndicator), findsNothing);
           expect(find.text('audio.mp3'), findsOneWidget);
           expect(covers.imageRequests, 1);
           expect(covers.coverRequests, 1);
@@ -250,6 +257,59 @@ void main() {
         variant: TargetPlatformVariant({platform}),
       );
     }
+
+    testWidgets('empty local tree keeps loading until file scans finish', (
+      tester,
+    ) async {
+      SharedPreferences.setMockInitialValues(const <String, Object>{});
+      final covers = _ControlledWorkDetailCoverService();
+      final fixture = AppRuntimeWidgetTestFixture(
+        coverArtworkCacheService: covers,
+      );
+      addTearDown(fixture.dispose);
+      const target = AudioDetailTarget(
+        targetType: AudioDetailTargetType.libraryRootFolder,
+        targetPath: 'C:/works/empty',
+      );
+      await tester.runAsync(() async {
+        await fixture.library.loadAudioDetail(target);
+        await fixture.library.loadLibraryTree();
+      });
+      await tester.pumpWidget(
+        fixture.build(
+          const WorkDetailPage.forLocal(target: target),
+          overrides: [
+            workTextServiceProvider.overrideWithValue(
+              WorkTextService(
+                platformGateway: _NestedWorkDetailFileGateway([]),
+              ),
+            ),
+          ],
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(covers.imageRequests, 1);
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      expect(
+        find.text(fixture.languageProvider.tr('empty_folder')),
+        findsNothing,
+      );
+      covers.images.complete([]);
+      await tester.pumpAndSettle();
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+      expect(
+        find.text(fixture.languageProvider.tr('empty_folder')),
+        findsOneWidget,
+      );
+      expect(
+        covers.cover.isCompleted,
+        isFalse,
+        reason: 'Cover discovery must not hold the file-tree loading state.',
+      );
+      covers.cover.complete(null);
+      await tester.pumpAndSettle();
+    });
 
     testWidgets(
       'local tree shows folders containing only text or image files',

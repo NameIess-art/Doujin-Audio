@@ -259,7 +259,7 @@ void main() {
             find.byKey(const ValueKey<String>('main_page_stack')),
           )
           .style,
-      AppIndexedStackTransitionStyle.none,
+      AppIndexedStackTransitionStyle.slide,
     );
     expect(find.byKey(const ValueKey<String>('main_page_fade_1')), findsOne);
     expect(
@@ -294,7 +294,7 @@ void main() {
 
     expect(find.byKey(const ValueKey<String>('main_page_fade_3')), findsOne);
     final settingsCanvas = tester.widget<ColoredBox>(
-      find.byKey(const ValueKey<String>('main_page_canvas_3')),
+      find.byKey(const ValueKey<String>('main_page_canvas')),
     );
     expect(settingsCanvas.color, isNot(Colors.transparent));
     expect(
@@ -5418,6 +5418,7 @@ Future<void> _pumpMainScreenAnimations(
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 900));
   } else {
+    await tester.pump(kAppMotionSlow);
     await tester.pump(const Duration(milliseconds: 180));
   }
   await tester.pump();

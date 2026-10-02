@@ -32,6 +32,8 @@ import 'package:doujin_audio/features/library/application/dlsite_metadata_servic
 import 'package:doujin_audio/features/library/application/library_facade.dart';
 import 'package:doujin_audio/features/library/application/library_service.dart';
 import 'package:doujin_audio/features/library/application/library_snapshot_cache_service.dart';
+import 'package:doujin_audio/features/library/presentation/library_providers.dart'
+    show workTextServiceProvider;
 import 'package:doujin_audio/features/player/application/native_playback_repository.dart';
 import 'package:doujin_audio/features/player/application/notification_facade.dart';
 import 'package:doujin_audio/features/player/application/playback_command_runner.dart';
@@ -242,6 +244,14 @@ Widget buildAppRuntimeTestApp({
         timer: runtimeGraph.timer,
         notifications: runtimeGraph.notifications,
         settings: runtimeGraph.settings,
+        // Match production ownership and honor this fixture's persistence flag.
+        // A default provider would create a second service backed by SQLite.
+        workTexts:
+            overrides.any(
+              (override) => identical(override.origin, workTextServiceProvider),
+            )
+            ? null
+            : runtimeGraph.workTexts,
         uiOperationService: uiOperationService,
         undoableRemovalService: undoableRemovalService,
       ),

@@ -290,6 +290,7 @@ class CoverLoadingArtwork extends StatelessWidget {
 class LocalCoverImage extends StatelessWidget {
   const LocalCoverImage({
     super.key,
+    this.onImageError,
     this.path,
     required this.seed,
     this.cacheWidth,
@@ -333,6 +334,8 @@ class LocalCoverImage extends StatelessWidget {
     );
   }
 
+  final ValueChanged<String>? onImageError;
+
   @override
   Widget build(BuildContext context) {
     final resolvedPath = path;
@@ -341,6 +344,7 @@ class LocalCoverImage extends StatelessWidget {
     }
     return RetryingFileImage(
       path: resolvedPath,
+      onImageError: onImageError,
       cacheWidth: cacheWidth,
       cacheHeight: cacheHeight,
       useDefaultCacheWidth: useDefaultCacheWidth,
@@ -358,6 +362,7 @@ class LocalCoverImage extends StatelessWidget {
 class AsyncLocalCoverImage extends StatelessWidget {
   const AsyncLocalCoverImage({
     super.key,
+    this.onImageError,
     required this.future,
     this.requestKey,
     this.initialPath,
@@ -404,6 +409,7 @@ class AsyncLocalCoverImage extends StatelessWidget {
   Widget _cover(BuildContext context, String? path, {required bool loading}) {
     return LocalCoverImage(
       path: path,
+      onImageError: onImageError,
       seed: seed,
       cacheWidth: cacheWidth,
       cacheHeight: cacheHeight,
@@ -420,6 +426,8 @@ class AsyncLocalCoverImage extends StatelessWidget {
       displayMode: displayMode,
     );
   }
+
+  final ValueChanged<String>? onImageError;
 
   @override
   Widget build(BuildContext context) {
@@ -644,6 +652,7 @@ class RetryingNetworkImage extends ConsumerWidget {
 class AsyncRemoteCoverImage extends StatelessWidget {
   const AsyncRemoteCoverImage({
     super.key,
+    this.onImageError,
     required this.url,
     required this.future,
     this.initialPath,
@@ -681,6 +690,8 @@ class AsyncRemoteCoverImage extends StatelessWidget {
   final Duration retryDelay;
   final int maxRetryAttempts;
 
+  final ValueChanged<String>? onImageError;
+
   @override
   Widget build(BuildContext context) {
     final trimmedUrl = url.trim();
@@ -700,6 +711,7 @@ class AsyncRemoteCoverImage extends StatelessWidget {
       imageBuilder: (context, coverPath) {
         return RetryingFileImage(
           path: coverPath,
+          onImageError: onImageError,
           fit: fit,
           alignment: alignment,
           cacheWidth: cacheWidth,
@@ -718,6 +730,7 @@ class AsyncRemoteCoverImage extends StatelessWidget {
 class RetryingFileImage extends ConsumerWidget {
   const RetryingFileImage({
     super.key,
+    this.onImageError,
     required this.path,
     required this.fallbackBuilder,
     this.loadingBuilder,
@@ -751,6 +764,8 @@ class RetryingFileImage extends ConsumerWidget {
   final int maxRetryAttempts;
   final CoverImageDisplayMode? displayMode;
 
+  final ValueChanged<String>? onImageError;
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     if (path.isEmpty) {
@@ -765,6 +780,7 @@ class RetryingFileImage extends ConsumerWidget {
         displayMode ?? ref.watch(coverImageDisplayModeProvider);
     return RetryingImage(
       retryKey: (path, effectiveCacheWidth, cacheHeight),
+      onImageError: () => onImageError?.call(path),
       imageProviderBuilder: () => resizeFileImageIfNeeded(
         path: path,
         cacheWidth: effectiveCacheWidth,
@@ -783,7 +799,9 @@ class RetryingFileImage extends ConsumerWidget {
       maxRetryAttempts: maxRetryAttempts,
       displayMode: effectiveDisplayMode,
       deferLoadDuringInteraction: false,
-      retainInImageCache: defaultTargetPlatform == TargetPlatform.windows,
+      retainInImageCache:
+          defaultTargetPlatform == TargetPlatform.windows ||
+          defaultTargetPlatform == TargetPlatform.android,
     );
   }
 }
@@ -791,6 +809,7 @@ class RetryingFileImage extends ConsumerWidget {
 class RetryingImage extends StatefulWidget {
   const RetryingImage({
     super.key,
+    this.onImageError,
     required this.retryKey,
     required this.imageProviderBuilder,
     required this.fallbackBuilder,
@@ -809,6 +828,7 @@ class RetryingImage extends StatefulWidget {
   });
 
   final Object retryKey;
+  final VoidCallback? onImageError;
   final ImageProvider<Object> Function() imageProviderBuilder;
   final WidgetBuilder fallbackBuilder;
   final WidgetBuilder? loadingBuilder;
@@ -991,6 +1011,9 @@ class _RetryingImageState extends State<RetryingImage> {
             : null,
         errorBuilder: primary
             ? (context, error, stackTrace) {
+                if (_retryAttempt == 0 && _retryTimer?.isActive != true) {
+                  widget.onImageError?.call();
+                }
                 _scheduleRetry(imageProvider);
                 return widget.fallbackBuilder(context);
               }

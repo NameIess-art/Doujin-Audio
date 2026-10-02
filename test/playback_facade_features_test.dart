@@ -10,6 +10,8 @@ import 'package:doujin_audio/core/persistence/app_database.dart';
 import 'support/test_persistence_repository.dart';
 import 'package:doujin_audio/features/player/application/native_playback_bridge.dart';
 import 'package:doujin_audio/features/player/application/playback_notification_service.dart';
+import 'package:doujin_audio/features/library/application/cover_artwork_cache_service.dart';
+import 'package:doujin_audio/features/library/application/library_service.dart';
 import 'package:doujin_audio/core/platform/platform_channels.dart';
 import 'package:path/path.dart' as path;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -1345,6 +1347,25 @@ void main() {
     );
 
     test('passes ASMR remote cover to native session and queue', () async {
+      final artworkDirectory = await Directory.systemTemp.createTemp(
+        'playback_remote_artwork_',
+      );
+      addTearDown(() => artworkDirectory.delete(recursive: true));
+      await runtimeGraph.runtime.dispose();
+      final libraryService = LibraryService();
+      runtimeGraph = createTestRuntimeGraph(
+        notificationService: notificationService,
+        persistenceRepository: TestPersistenceRepository(
+          database: AppDatabase.test(db),
+        ),
+        libraryService: libraryService,
+        coverArtworkCacheService: CoverArtworkCacheService(
+          libraryService: libraryService,
+          persistentDirectory: () async => artworkDirectory,
+          temporaryDirectory: () async => artworkDirectory,
+          remoteCoverDownloader: (_) async => null,
+        ),
+      );
       Map<Object?, Object?>? prepareArguments;
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(nativePlaybackChannel, (call) async {

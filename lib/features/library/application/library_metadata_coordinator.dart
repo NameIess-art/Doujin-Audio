@@ -524,11 +524,13 @@ final class LibraryMetadataCoordinator {
     String? selectedCoverPath,
     bool includeVideoFrames = true,
     bool includeEmbeddedCovers = true,
+    bool propagateFailure = false,
   }) => _coverArtwork().discoverCoverCandidatesInFolder(
     folderPath,
     selectedCoverPath: selectedCoverPath,
     includeVideoFrames: includeVideoFrames,
     includeEmbeddedCovers: includeEmbeddedCovers,
+    propagateFailure: propagateFailure,
   );
 
   Future<String?> setFolderManualCover(

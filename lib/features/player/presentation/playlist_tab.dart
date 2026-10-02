@@ -1,3 +1,4 @@
+import '../../../app/presentation/browse_page_scroll.dart';
 import '../../library/presentation/library_providers.dart';
 import 'playback_providers.dart';
 import '../../settings/presentation/settings_providers.dart';
@@ -424,7 +425,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
           !isTemporary && pinnedPlaylistSessionIds.contains(session.id);
       final track = paths.sessionTrackForPath(session.id, structure.trackPath);
       final coverPath = library.resolvedPlaybackCoverPathForTrack(track);
-      return RepaintBoundary(
+      final card = RepaintBoundary(
         key: ValueKey(session.id),
         child: structure.isPlaybackQueue
             ? PlaybackQueueCard(
@@ -484,9 +485,10 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                 onOpen: () => _openSessionDetail(context, session.id),
               ),
       );
+      return BrowseAnchor(id: session.id, child: card);
     }
 
-    return ScrollActivityGate(
+    final page = ScrollActivityGate(
       child: PageHeaderInset(
         topInset: topPadding,
         child: Stack(
@@ -775,6 +777,12 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
       ),
     ),
   );
+    return BrowsePageScroll(
+      pageKey: 'playlist',
+      controller: _scrollController,
+      anchorIds: visibleEntries.map((entry) => entry.session.id).toList(),
+      child: page,
+    );
   }
 
   Future<void> _openTimerQuickMenu(BuildContext context) async {

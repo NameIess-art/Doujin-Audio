@@ -765,6 +765,8 @@ class _ActiveSessionCover extends ConsumerWidget {
         shape: const CircleBorder(),
         clipBehavior: Clip.antiAlias,
         child: AsyncLocalCoverImage(
+          onImageError:
+              library.coverArtworkCacheService.reportArtworkReadFailure,
           future: coverPathFuture,
           requestKey: (sessionId, track?.path),
           initialPath: library.resolvedPlaybackCoverPathForTrack(track),

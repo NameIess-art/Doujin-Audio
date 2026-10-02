@@ -82,6 +82,8 @@ class _SingleFileCoverPreviewState
               child: AspectRatio(
                 aspectRatio: kStandardCoverAspectRatio,
                 child: RetryingFileImage(
+                  onImageError:
+                      library.coverArtworkCacheService.reportArtworkReadFailure,
                   path: coverPath,
                   fit: BoxFit.cover,
                   cacheWidth: coverCacheWidth,

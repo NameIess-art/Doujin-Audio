@@ -53,6 +53,8 @@ class SessionHeroArtwork extends ConsumerWidget {
               // detail route is being dragged.
               enabled: true,
               child: AsyncLocalCoverImage(
+                onImageError:
+                    library.coverArtworkCacheService.reportArtworkReadFailure,
                 future: coverPathFuture,
                 requestKey: (
                   sessionId,
@@ -116,15 +118,13 @@ class SessionHeroArtwork extends ConsumerWidget {
               child: RepaintBoundary(
                 child: SessionVideoViewport(
                   videoReady:
-                      allowVideoPlayback &&
-                      isSessionVideoReady(session, track),
-                  surfaceBuilder: (_) =>
-                      NativeSessionVideoSurface(
-                        sessionId: sessionId,
-                        nativeRepository: ref
-                            .read(playbackFacadeProvider)
-                            .nativeRepository,
-                      ),
+                      allowVideoPlayback && isSessionVideoReady(session, track),
+                  surfaceBuilder: (_) => NativeSessionVideoSurface(
+                    sessionId: sessionId,
+                    nativeRepository: ref
+                        .read(playbackFacadeProvider)
+                        .nativeRepository,
+                  ),
                   onFullscreen: () => showSessionVideoFullscreen(
                     context,
                     ref,
@@ -168,8 +168,7 @@ class SessionCoverThumbnail extends ConsumerStatefulWidget {
       _SessionCoverThumbnailState();
 }
 
-class _SessionCoverThumbnailState
-    extends ConsumerState<SessionCoverThumbnail> {
+class _SessionCoverThumbnailState extends ConsumerState<SessionCoverThumbnail> {
   Future<String?>? _coverFuture;
   String? _lastTrackPath;
   int _lastCoverGeneration = -1;
@@ -190,6 +189,7 @@ class _SessionCoverThumbnailState
   Widget build(BuildContext context) {
     final library = ref.read(libraryFacadeProvider);
     final cover = AsyncLocalCoverImage(
+      onImageError: library.coverArtworkCacheService.reportArtworkReadFailure,
       future: _futureFor(library),
       requestKey: (widget.sessionId, widget.track?.path),
       initialPath: widget.coverPath,
@@ -207,9 +207,7 @@ class _SessionCoverThumbnailState
       key: ValueKey<String>('playlist_cover_${widget.sessionId}'),
       width: playlistCoverSize,
       height: playlistCoverSize,
-      child: ClipOval(
-        child: cover,
-      ),
+      child: ClipOval(child: cover),
     );
   }
 }

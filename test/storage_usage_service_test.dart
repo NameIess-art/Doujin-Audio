@@ -90,7 +90,7 @@ void main() {
   );
 
   test(
-    'adds persistent covers to platform cache without double counting',
+    'adds persistent covers and browser snapshots without double counting',
     () async {
       messenger.setMockMethodCallHandler(channel, (call) async {
         return <String, Object?>{
@@ -110,12 +110,13 @@ void main() {
         ),
         libraryTracks: () => const <MusicTrack>[],
         persistentCoverCacheBytes: () async => 25,
+        persistentBrowseCacheBytes: () async => 15,
       );
 
       final snapshot = await service.load();
 
-      expect(snapshot.applicationCacheBytes, 125);
-      expect(snapshot.otherUsedBytes, 375);
+      expect(snapshot.applicationCacheBytes, 140);
+      expect(snapshot.otherUsedBytes, 360);
     },
   );
 }

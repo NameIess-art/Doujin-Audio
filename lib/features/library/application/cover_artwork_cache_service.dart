@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
 
@@ -23,6 +24,7 @@ export 'remote_cover_downloader.dart' show remoteCoverRequestHeadersForUrl;
 import 'library_organizer.dart';
 import 'library_service.dart';
 import 'cover_artwork_source_resolver.dart';
+import '../data/audio_detail_cover_store.dart';
 import '../../../core/platform/file_cache_platform_gateway.dart';
 import '../../../core/media/path_matcher.dart';
 
@@ -30,6 +32,15 @@ const String _folderCoverSelectionsKey = 'folder_cover_selections_v1';
 const int _resolvedTrackCoverLimit = 600;
 const int _resolvedFolderCoverLimit = 300;
 const int _manualCoverValidityLimit = 1200;
+
+Map<String, T> _coverKeyMap<T>() => LinkedHashMap<String, T>(
+  equals: (a, b) => _coverIdentity(a) == _coverIdentity(b),
+  hashCode: (value) => _coverIdentity(value).hashCode,
+);
+
+String _coverIdentity(String value) => value.startsWith('remote-cover:')
+    ? _normalizeCoverCacheKey(value)
+    : PathMatcher.equivalenceKey(value);
 
 class CoverArtworkCacheService {
   CoverArtworkCacheService({
@@ -49,6 +60,7 @@ class CoverArtworkCacheService {
     bool Function(String coverSearchKey)? isActiveCoverKey,
     VoidCallback? onActiveCoverChanged,
     bool Function()? preferEmbeddedCover,
+    void Function(List<MusicTrack> tracks)? persistRetargetedManualCovers,
   }) : _libraryService = libraryService,
        _databaseRepository = databaseRepository,
        _audioDetailCacheService = audioDetailCacheService,
@@ -62,7 +74,8 @@ class CoverArtworkCacheService {
            ),
        _isActiveCoverKey = isActiveCoverKey,
        _onActiveCoverChanged = onActiveCoverChanged,
-       _preferEmbeddedCover = preferEmbeddedCover {
+       _preferEmbeddedCover = preferEmbeddedCover,
+       _persistRetargetedManualCovers = persistRetargetedManualCovers {
     _remoteCovers = RemoteCoverCache(
       requestTimeout: requestTimeout,
       downloadIdleTimeout: downloadIdleTimeout,
@@ -72,6 +85,7 @@ class CoverArtworkCacheService {
       now: now,
       isActiveCoverKey: isActiveCoverKey,
       onActiveCoverChanged: onActiveCoverChanged,
+      onCoverRefreshed: _remoteCoverRefreshed,
     );
     _sourceResolver = CoverArtworkSourceResolver(
       libraryService: libraryService,
@@ -92,26 +106,27 @@ class CoverArtworkCacheService {
   final bool Function(String coverSearchKey)? _isActiveCoverKey;
   final VoidCallback? _onActiveCoverChanged;
   final bool Function()? _preferEmbeddedCover;
+  final void Function(List<MusicTrack> tracks)? _persistRetargetedManualCovers;
 
-  final Map<String, Future<String?>> _folderCoverFutures =
-      <String, Future<String?>>{};
-  final Map<String, String?> _resolvedFolderCovers = <String, String?>{};
+  final Map<String, Future<String?>> _folderCoverFutures = _coverKeyMap();
+  final Map<String, String?> _resolvedFolderCovers = _coverKeyMap();
   final Map<String, Future<String?>> _resolvedFolderCoverFutures =
-      <String, Future<String?>>{};
-  final Map<String, Future<String?>> _trackCoverFutures =
-      <String, Future<String?>>{};
+      _coverKeyMap();
+  final Map<String, Future<String?>> _trackCoverFutures = _coverKeyMap();
   final Map<String, Future<String?>> _playbackTrackCoverFutures =
-      <String, Future<String?>>{};
-  final Map<String, String?> _resolvedTrackCovers = <String, String?>{};
+      _coverKeyMap();
+  final Map<String, String?> _resolvedTrackCovers = _coverKeyMap();
   final Map<String, Future<String?>> _resolvedTrackCoverFutures =
-      <String, Future<String?>>{};
-  final Map<String, bool> _manualCoverPathValidityCache = <String, bool>{};
+      _coverKeyMap();
+  final Map<String, bool> _manualCoverPathValidityCache = _coverKeyMap();
   final Map<String, Future<String?>> _manualCoverValidationFutures =
-      <String, Future<String?>>{};
-  final Map<String, String> _folderCoverSelections = <String, String>{};
-  final Map<String, int> _coverKeyRevisions = <String, int>{};
+      _coverKeyMap();
+  final Map<String, String> _folderCoverSelections = _coverKeyMap();
+  final Map<String, int> _coverKeyRevisions = _coverKeyMap();
   Future<void>? _folderCoverSelectionsLoadFuture;
   int _generation = 0;
+  int _cacheEpoch = 0;
+  final Map<String, Future<void>> _artworkRepairs = _coverKeyMap();
   final _generationSlice = AudioStateSlice<int>(0);
   Stream<int> get generationChanges => _generationSlice.stream;
   bool _disposed = false;
@@ -146,11 +161,13 @@ class CoverArtworkCacheService {
       _clearPersistentCacheFuture ??= _clearPersistentCache();
 
   Future<int> _clearPersistentCache() async {
+    await prepareManualCoversForCacheClear();
     _isClearingPersistentCache = true;
     final pending = <Future<String?>>{
       ..._trackCoverFutures.values,
       ..._folderCoverFutures.values,
       ..._remoteCovers.pending,
+      ..._sourceResolver.pendingPlatformCovers,
     };
     invalidateAll();
     try {
@@ -170,6 +187,10 @@ class CoverArtworkCacheService {
       _manualCoverPathValidityCache.length;
 
   String? resolvedForTrack(MusicTrack? track, {String? trackPath}) {
+    if (PathMatcher.isRemoteUri(trackPath ?? track?.path ?? '') &&
+        track?.remoteCoverUrl != null) {
+      return resolvedForRemoteCover(track!.remoteCoverUrl!);
+    }
     final preferEmbedded = _preferTrackEmbeddedCover(
       track,
       trackPath: trackPath,
@@ -219,6 +240,10 @@ class CoverArtworkCacheService {
   }
 
   String? resolvedForPlaybackTrack(MusicTrack? track, {String? trackPath}) {
+    if (PathMatcher.isRemoteUri(trackPath ?? track?.path ?? '') &&
+        track?.remoteCoverUrl != null) {
+      return resolvedForRemoteCover(track!.remoteCoverUrl!);
+    }
     final preferEmbedded = _preferTrackEmbeddedCover(
       track,
       trackPath: trackPath,
@@ -285,6 +310,15 @@ class CoverArtworkCacheService {
   }
 
   Future<String?> futureForTrack(MusicTrack? track, {String? trackPath}) {
+    if (PathMatcher.isRemoteUri(trackPath ?? track?.path ?? '') &&
+        track?.remoteCoverUrl != null) {
+      return futureForRemoteCover(track!.remoteCoverUrl!);
+    }
+    final key = coverSearchKeyForTrack(track, trackPath: trackPath);
+    final warm = key == null ? null : _resolvedTrackCovers[key];
+    if (warm != null) {
+      return _resolvedTrackCoverFutures[key] ?? SynchronousFuture(warm);
+    }
     return _resolveCoverPathForTrack(track, trackPath: trackPath);
   }
 
@@ -292,6 +326,10 @@ class CoverArtworkCacheService {
     MusicTrack? track, {
     String? trackPath,
   }) {
+    if (PathMatcher.isRemoteUri(trackPath ?? track?.path ?? '') &&
+        track?.remoteCoverUrl != null) {
+      return futureForRemoteCover(track!.remoteCoverUrl!);
+    }
     final coverSearchKey = coverSearchKeyForTrack(track, trackPath: trackPath);
     if (coverSearchKey == null) return Future<String?>.value();
 
@@ -334,9 +372,16 @@ class CoverArtworkCacheService {
     MusicTrack? track, {
     String? trackPath,
   }) async {
-    final requestGeneration = _generation;
+    final requestGeneration = _cacheEpoch;
+    final key = coverSearchKeyForTrack(track, trackPath: trackPath)!;
+    final revision = _coverKeyRevision(key);
+    bool isCurrent() => _isCoverKeyCurrent(
+      key,
+      generation: requestGeneration,
+      revision: revision,
+    );
     await _ensureFolderCoverSelections();
-    if (requestGeneration != _generation) {
+    if (!isCurrent()) {
       return futureForPlaybackTrack(track, trackPath: trackPath);
     }
     final preferEmbedded = _preferTrackEmbeddedCover(
@@ -373,33 +418,213 @@ class CoverArtworkCacheService {
 
     if (!preferEmbedded) {
       final folderCover = await resolveFromFolder();
-      if (requestGeneration != _generation) {
+      if (!isCurrent()) {
         return futureForPlaybackTrack(track, trackPath: trackPath);
       }
       if (folderCover != null) return folderCover;
       final trackCover = await futureForTrack(track, trackPath: trackPath);
-      return requestGeneration == _generation
+      return isCurrent()
           ? trackCover
           : futureForPlaybackTrack(track, trackPath: trackPath);
     } else {
       final trackCover = await futureForTrack(track, trackPath: trackPath);
-      if (requestGeneration != _generation) {
+      if (!isCurrent()) {
         return futureForPlaybackTrack(track, trackPath: trackPath);
       }
       if (trackCover != null) return trackCover;
       final folderCover = await resolveFromFolder();
-      return requestGeneration == _generation
+      return isCurrent()
           ? folderCover
           : futureForPlaybackTrack(track, trackPath: trackPath);
     }
   }
 
   Future<String?> futureForFolder(String folderPath) {
+    final key = PathMatcher.normalize(folderPath);
+    final warm = _resolvedFolderCovers[key];
+    if (warm != null) {
+      return _resolvedFolderCoverFutures[key] ?? SynchronousFuture(warm);
+    }
     return _resolveCoverPathForFolder(folderPath);
   }
 
   Future<String?> futureForRemoteCover(String url) =>
       _remoteCovers.resolve(url);
+
+  Future<String?> refreshRemoteCover(String url, {bool force = false}) =>
+      _remoteCovers.refresh(url, force: force);
+
+  void _remoteCoverRefreshed(String key) {
+    _resolvedTrackCovers.remove(key);
+    _resolvedTrackCoverFutures.remove(key);
+    _playbackTrackCoverFutures.remove(key);
+    _advanceCoverKeyRevision(key);
+    _generationSlice.update(++_generation);
+  }
+
+  /// A decode failure is the explicit signal to revalidate a warm binding.
+  void reportArtworkReadFailure(String coverPath) {
+    if (_disposed || _isClearingPersistentCache) return;
+    _artworkRepairs.putIfAbsent(coverPath, () {
+      final epoch = _cacheEpoch;
+      late final Future<void> repair;
+      repair =
+          Future<void>.microtask(() async {
+                if (_disposed ||
+                    epoch != _cacheEpoch ||
+                    _isClearingPersistentCache) {
+                  return;
+                }
+                final folders = _resolvedFolderCovers.entries
+                    .where(
+                      (entry) => PathMatcher.equalsNormalized(
+                        entry.value ?? '',
+                        coverPath,
+                      ),
+                    )
+                    .map((entry) => entry.key)
+                    .toList();
+                final tracks = _resolvedTrackCovers.entries
+                    .where(
+                      (entry) => PathMatcher.equalsNormalized(
+                        entry.value ?? '',
+                        coverPath,
+                      ),
+                    )
+                    .map((entry) => entry.key)
+                    .toList();
+                final keys = _artworkStore
+                    .logicalKeysForPath(coverPath)
+                    .toList();
+                await _artworkStore.discardUnreadableArtifact(
+                  coverPath,
+                  keys: keys,
+                );
+                if (_disposed ||
+                    epoch != _cacheEpoch ||
+                    _isClearingPersistentCache) {
+                  return;
+                }
+                _manualCoverPathValidityCache.remove(coverPath);
+                for (final folder in folders) {
+                  invalidateFolder(folder);
+                }
+                for (final track in tracks) {
+                  invalidateTrack(
+                    _libraryService.trackByPath(track),
+                    trackPath: track,
+                  );
+                }
+                await _remoteCovers.reportArtworkReadFailure(
+                  coverPath,
+                  keys: keys,
+                );
+              })
+              .catchError((Object error, StackTrace trace) {
+                AppLogService.warning(
+                  'cover_artwork_read_repair_failed',
+                  error: error,
+                  stackTrace: trace,
+                );
+              })
+              .whenComplete(() {
+                if (identical(_artworkRepairs[coverPath], repair)) {
+                  _artworkRepairs.remove(coverPath);
+                }
+              });
+      return repair;
+    });
+  }
+
+  /// User selections are authored data, even when their image originated in cache.
+  Future<void> prepareManualCoversForCacheClear() async {
+    await initialize();
+    final root = _artworkStore.rootPath;
+    if (root == null) {
+      throw StateError('Cover storage unavailable for cache clear.');
+    }
+    final portable = Directory(
+      path.join(Directory(root).parent.path, 'portable_card_covers'),
+    );
+    final coverStore = AudioDetailCoverStore(
+      portableDirectory: () async => portable,
+    );
+    Future<String> preserve(AudioDetailTarget target, String value) async {
+      final source = _artworkStore.resolveStoredPath(value) ?? value;
+      if (!await _artworkStore.isRebuildablePath(source)) return value;
+      final original = AudioDetail.empty(
+        target,
+      ).copyWith(cardCoverPath: source, cardCoverSelected: true);
+      final fields = await coverStore.documentFields(original);
+      final restored = await coverStore.restore(
+        AudioDetail.empty(target),
+        fields,
+      );
+      final saved = restored.cardCoverPath;
+      if (saved == null || await _artworkStore.isRebuildablePath(saved)) {
+        throw StateError('Unable to preserve selected cover: $source');
+      }
+      return saved;
+    }
+
+    final folders = <String>{
+      ..._folderCoverSelections.keys,
+      ..._libraryService.watchedFolders,
+      ..._libraryService.watchedLibraries,
+    };
+    for (final folder in folders) {
+      final target = AudioDetailTarget.libraryRootFolder(folder);
+      final stored = await _audioDetailCacheService?.loadCardCoverSelection(
+        target,
+      );
+      final source =
+          _folderCoverSelections[folder] ??
+          (stored?.selected == true ? stored?.path : null);
+      if (source == null) continue;
+      final saved = await preserve(target, source);
+      if (saved == source) continue;
+      // Persist authored data before any reconstructible directory is removed.
+      await _audioDetailCacheService?.saveCardCoverPath(
+        target,
+        saved,
+        selected: true,
+        writeDocument: true,
+      );
+      _folderCoverSelections[folder] = saved;
+    }
+    final tracks = <MusicTrack>[];
+    for (final track in _libraryService.library.where(
+      (track) => track.isSingle,
+    )) {
+      final target = AudioDetailTarget.singleAudioFile(track.path);
+      final stored = await _audioDetailCacheService?.loadCardCoverSelection(
+        target,
+      );
+      if (stored?.selected == true && stored?.path != null) {
+        final saved = await preserve(target, stored!.path!);
+        if (saved != stored.path) {
+          await _audioDetailCacheService?.saveCardCoverPath(
+            target,
+            saved,
+            selected: true,
+            writeDocument: true,
+          );
+        }
+      }
+      final source = track.manualCoverPath;
+      if (source == null) continue;
+      final saved = await preserve(target, source);
+      if (saved != source) tracks.add(track.copyWith(manualCoverPath: saved));
+    }
+    if (tracks.isNotEmpty) {
+      final persist = _persistRetargetedManualCovers;
+      if (persist == null) {
+        throw StateError('Manual cover retargeting is not attached.');
+      }
+      persist(tracks);
+    }
+    await _saveFolderCoverSelections();
+  }
 
   bool isLoadingForFolder(String folderPath) {
     return _folderCoverFutures.containsKey(PathMatcher.normalize(folderPath));
@@ -458,11 +683,27 @@ class CoverArtworkCacheService {
     return PathMatcher.normalize(pathValue);
   }
 
+  Future<List<CoverImageReference>> discoverCoverImageReferencesInFolder(
+    String folderPath, {
+    bool refresh = false,
+  }) {
+    if (refresh) {
+      _sourceResolver.invalidateFolderImageIndexes(
+        PathMatcher.normalize(folderPath),
+      );
+    }
+    return _sourceResolver.discoverFolderImageReferences(
+      folderPath,
+      propagateFailure: true,
+    );
+  }
+
   Future<List<String>> discoverCoverCandidatesInFolder(
     String folderPath, {
     String? selectedCoverPath,
     bool includeVideoFrames = true,
     bool includeEmbeddedCovers = true,
+    bool propagateFailure = false,
   }) async {
     final normalizedFolder = PathMatcher.normalize(folderPath);
     if (normalizedFolder.isEmpty) return const <String>[];
@@ -470,6 +711,7 @@ class CoverArtworkCacheService {
       normalizedFolder,
       includeVideoFrames: includeVideoFrames,
       includeEmbeddedCovers: includeEmbeddedCovers,
+      propagateFailure: propagateFailure,
     );
     final selectedCover = selectedCoverPath?.trim();
     if (selectedCover == null || selectedCover.isEmpty) return candidates;
@@ -520,7 +762,7 @@ class CoverArtworkCacheService {
     if (durableSource != null && durableSource.isNotEmpty) {
       _sourceResolver.rememberFolderImageSource(normalizedCover, durableSource);
     }
-    final selectionGeneration = _generation;
+    final selectionGeneration = _cacheEpoch;
     final selectionRevision = _coverKeyRevision(normalizedFolder);
     await _ensureFolderCoverSelections();
     _folderCoverSelections[normalizedFolder] = normalizedCover;
@@ -533,9 +775,25 @@ class CoverArtworkCacheService {
       selected: true,
       writeDocument: true,
     );
-    final effectiveCoverPath = hasDurableSource
+    var effectiveCoverPath = hasDurableSource
         ? normalizedCover
         : storedCoverPath ?? normalizedCover;
+    if (hasDurableSource &&
+        !PathMatcher.equalsNormalized(
+          _persistedFolderCoverPath(normalizedCover),
+          normalizedCover,
+        )) {
+      effectiveCoverPath = await _sourceResolver.persistBridgeCover(
+        logicalKey:
+            'selected-image:${PathMatcher.equivalenceKey(normalizedFolder)}',
+        sourcePath: normalizedCover,
+        namespace: CoverArtworkNamespace.embedded,
+      );
+      _sourceResolver.rememberFolderImageSource(
+        effectiveCoverPath,
+        _persistedFolderCoverPath(normalizedCover),
+      );
+    }
     _folderCoverSelections[normalizedFolder] = hasDurableSource
         ? _persistedFolderCoverPath(normalizedCover)
         : effectiveCoverPath;
@@ -569,7 +827,7 @@ class CoverArtworkCacheService {
     final oldFolder = PathMatcher.normalize(oldFolderPath);
     final newFolder = PathMatcher.normalize(newFolderPath);
     if (oldFolder.isEmpty || newFolder.isEmpty) return;
-    final nextSelections = <String, String>{};
+    final nextSelections = _coverKeyMap<String>();
     final changedScopes = <String>{};
     var changed = false;
     for (final entry in _folderCoverSelections.entries) {
@@ -618,12 +876,24 @@ class CoverArtworkCacheService {
     invalidateFolder(key);
   }
 
+  void invalidateCatalogTracks(Iterable<MusicTrack> tracks) {
+    final scopes = <String>{};
+    for (final track in tracks) {
+      final key = coverSearchKeyForTrack(track);
+      if (key != null) scopes.add(key);
+      final scope = coverScopeFolderForTrack(track);
+      if (scope != null) scopes.add(scope);
+    }
+    if (scopes.isNotEmpty) invalidateFolders(scopes);
+  }
+
   void invalidateFolder(String? scope) {
     if (scope == null || scope.isEmpty) {
       invalidateAll();
       return;
     }
     final normalizedScope = _normalizeCoverCacheKey(scope);
+    _invalidateManualCoverChecks(normalizedScope);
     final trackStoreKeys = <String>[];
     for (final track in _sourceResolver.tracksInCompleteCoverScope(
       normalizedScope,
@@ -641,21 +911,29 @@ class CoverArtworkCacheService {
     );
     _generation++;
     _generationSlice.update(_generation);
-    _coverKeyRevisions.clear();
     _advanceCoverKeyRevision(normalizedScope);
     _advanceTrackCoverRevisionsInScope(normalizedScope);
     _sourceResolver.invalidateFolderImageIndexes(normalizedScope);
     _folderCoverFutures.remove(normalizedScope);
     _resolvedFolderCovers.remove(normalizedScope);
     _resolvedFolderCoverFutures.remove(normalizedScope);
-    _playbackTrackCoverFutures.clear();
     _trackCoverFutures.remove(normalizedScope);
     _resolvedTrackCovers.remove(normalizedScope);
     _resolvedTrackCoverFutures.remove(normalizedScope);
     _removeTrackCoverEntriesInScope(normalizedScope);
+    _playbackTrackCoverFutures.removeWhere(
+      (key, _) => _isTrackCoverKeyWithinScope(key, normalizedScope),
+    );
     _remoteCovers.invalidate(normalizedScope);
-    _manualCoverPathValidityCache.clear();
-    _manualCoverValidationFutures.clear();
+  }
+
+  void _invalidateManualCoverChecks(String scope) {
+    final selected = _folderCoverSelections[scope];
+    bool affected(String key) =>
+        _isTrackCoverKeyWithinScope(key, scope) ||
+        (selected != null && PathMatcher.equalsNormalized(key, selected));
+    _manualCoverPathValidityCache.removeWhere((key, _) => affected(key));
+    _manualCoverValidationFutures.removeWhere((key, _) => affected(key));
   }
 
   void invalidateFolders(Iterable<String?> scopes) {
@@ -670,12 +948,9 @@ class CoverArtworkCacheService {
     }
     _generation++;
     _generationSlice.update(_generation);
-    _coverKeyRevisions.clear();
-    _manualCoverPathValidityCache.clear();
-    _manualCoverValidationFutures.clear();
-    _playbackTrackCoverFutures.clear();
     final trackStoreKeys = <String>[];
     for (final scope in normalizedScopes) {
+      _invalidateManualCoverChecks(scope);
       for (final track in _sourceResolver.tracksInCompleteCoverScope(scope)) {
         final key = coverSearchKeyForTrack(track);
         if (key != null) {
@@ -700,11 +975,16 @@ class CoverArtworkCacheService {
       _resolvedTrackCovers.remove(scope);
       _resolvedTrackCoverFutures.remove(scope);
       _removeTrackCoverEntriesInScope(scope);
+      _playbackTrackCoverFutures.removeWhere(
+        (key, _) => _isTrackCoverKeyWithinScope(key, scope),
+      );
       _remoteCovers.invalidate(scope, clearFailure: true);
     }
   }
 
   void invalidateAll() {
+    _cacheEpoch++;
+    _artworkRepairs.clear();
     _generation++;
     _generationSlice.update(_generation);
     _coverKeyRevisions.clear();
@@ -729,6 +1009,7 @@ class CoverArtworkCacheService {
 
   void _advanceTrackCoverRevisionsInScope(String normalizedScope) {
     final keys = <String>{
+      ..._playbackTrackCoverFutures.keys,
       ..._trackCoverFutures.keys,
       ..._resolvedTrackCovers.keys,
       ..._resolvedTrackCoverFutures.keys,
@@ -746,7 +1027,7 @@ class CoverArtworkCacheService {
     required int revision,
   }) {
     return !_disposed &&
-        generation == _generation &&
+        generation == _cacheEpoch &&
         revision == _coverKeyRevision(key);
   }
 
@@ -864,10 +1145,16 @@ class CoverArtworkCacheService {
     MusicTrack? track, {
     String? trackPath,
   }) async {
-    final requestGeneration = _generation;
+    final requestGeneration = _cacheEpoch;
     final pathValue = track?.path ?? trackPath;
     final coverSearchKey = coverSearchKeyForTrack(track, trackPath: pathValue);
     if (coverSearchKey == null) return Future<String?>.value();
+    final requestRevision = _coverKeyRevision(coverSearchKey);
+    bool isCurrent() => _isCoverKeyCurrent(
+      coverSearchKey,
+      generation: requestGeneration,
+      revision: requestRevision,
+    );
 
     final preferEmbeddedCover = _preferTrackEmbeddedCover(
       track,
@@ -878,7 +1165,7 @@ class CoverArtworkCacheService {
         track,
         trackPath: pathValue,
       );
-      if (requestGeneration != _generation) {
+      if (!isCurrent()) {
         return resolvedForTrack(track, trackPath: trackPath);
       }
       if (folderCoverPath != null) {
@@ -894,7 +1181,7 @@ class CoverArtworkCacheService {
     final storeKey = _trackStoreKey(coverSearchKey, track);
     final previousStoredPath = _artworkStore.resolvedPath(storeKey);
     final storedTrackPath = await _artworkStore.validatedPath(storeKey);
-    if (requestGeneration != _generation) {
+    if (!isCurrent()) {
       return resolvedForTrack(track, trackPath: trackPath);
     }
     if (storedTrackPath != null) {
@@ -917,7 +1204,7 @@ class CoverArtworkCacheService {
     );
     return _trackCoverFutures.putIfAbsent(coverSearchKey, () async {
       final manualPath = await manualPathFuture;
-      if (requestGeneration != _generation) {
+      if (!isCurrent()) {
         return resolvedForTrack(track, trackPath: trackPath);
       }
       if (manualPath != null) {
@@ -931,7 +1218,7 @@ class CoverArtworkCacheService {
         return manualPath;
       }
       final coverCachePath = await coverCachePathFuture;
-      if (requestGeneration != _generation) {
+      if (!isCurrent()) {
         return resolvedForTrack(track, trackPath: trackPath);
       }
       if (coverCachePath != null) {
@@ -966,7 +1253,7 @@ class CoverArtworkCacheService {
       final persistedCardCover = cardCoverTarget == null
           ? null
           : (await _loadValidCardCover(cardCoverTarget)).path;
-      if (requestGeneration != _generation || _disposed) {
+      if (!isCurrent() || _disposed) {
         return resolvedForTrack(track, trackPath: trackPath);
       }
       if (persistedCardCover != null) {
@@ -1019,7 +1306,7 @@ class CoverArtworkCacheService {
         }
       }
 
-      if (requestGeneration != _generation) {
+      if (!isCurrent()) {
         return resolvedForTrack(track, trackPath: trackPath);
       }
 
@@ -1088,7 +1375,7 @@ class CoverArtworkCacheService {
       trackPath: trackPath,
     );
     for (final normalizedFolderScope in candidateScopes) {
-      var requestGeneration = _generation;
+      var requestGeneration = _cacheEpoch;
       var requestRevision = _coverKeyRevision(normalizedFolderScope);
       bool isCurrent() => _isCoverKeyCurrent(
         normalizedFolderScope,
@@ -1106,7 +1393,7 @@ class CoverArtworkCacheService {
         await _saveFolderCoverSelections();
         if (!isCurrent()) return resolvedForTrack(track, trackPath: trackPath);
         invalidateFolder(normalizedFolderScope);
-        requestGeneration = _generation;
+        requestGeneration = _cacheEpoch;
         requestRevision = _coverKeyRevision(normalizedFolderScope);
         selectedCover = null;
       }
@@ -1154,7 +1441,7 @@ class CoverArtworkCacheService {
 
     final inFlight = _folderCoverFutures[normalizedFolderPath];
     if (inFlight != null) return inFlight;
-    final requestGeneration = _generation;
+    final requestGeneration = _cacheEpoch;
     final requestRevision = _coverKeyRevision(normalizedFolderPath);
     late final Future<String?> lookup;
     lookup = () async {
@@ -1449,12 +1736,12 @@ class CoverArtworkCacheService {
     if (inFlight != null) return inFlight;
     late final Future<String?> validation;
     validation = () async {
-      final requestGeneration = _generation;
+      final requestGeneration = _cacheEpoch;
       final stored = _artworkStore.resolveStoredPath(value) ?? value;
       try {
         final stat = await File(stored).stat();
         final usable = stat.type == FileSystemEntityType.file && stat.size > 0;
-        if (requestGeneration != _generation ||
+        if (requestGeneration != _cacheEpoch ||
             _disposed ||
             !identical(_manualCoverValidationFutures[value], validation)) {
           return null;

@@ -21,6 +21,7 @@ Future<void> _onCreate(Database db, int version) async {
   await _createAudioDetailsTable(db);
   await _createLibraryEntriesTable(db);
   await _createTimeSegmentLabelsTable(db);
+  await _createBrowseSnapshotsTable(db);
 }
 
 Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
@@ -82,6 +83,7 @@ Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
   await _createAudioDetailsTable(db);
   await _createLibraryEntriesTable(db);
   await _createTimeSegmentLabelsTable(db);
+  await _createBrowseSnapshotsTable(db);
   if (oldVersion < 9 && newVersion >= 9) {
     await db.execute('DROP INDEX IF EXISTS idx_track_scan_generation');
     await db.execute('DROP INDEX IF EXISTS idx_track_playback_last_played');
@@ -563,3 +565,13 @@ Future<void> _createTimeSegmentLabelsTable(Database db) async {
     'ON time_segment_labels(track_key, start_ms, created_at_ms)',
   );
 }
+
+Future<void> _createBrowseSnapshotsTable(Database db) => db.execute('''
+  CREATE TABLE IF NOT EXISTS browse_snapshots (
+    kind TEXT NOT NULL,
+    scope TEXT NOT NULL,
+    cache_key TEXT NOT NULL,
+    payload TEXT NOT NULL,
+    PRIMARY KEY(kind, scope, cache_key)
+  )
+''');

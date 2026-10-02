@@ -97,6 +97,9 @@ class _LibraryCoverThumbnailState extends ConsumerState<LibraryCoverThumbnail> {
                 LibraryLikeCardMetrics.coverRadius,
               ),
               child: AsyncLocalCoverImage(
+                onImageError: libraryFacade
+                    .coverArtworkCacheService
+                    .reportArtworkReadFailure,
                 future: coverPathFuture,
                 requestKey: widget.folderPath,
                 initialPath: libraryFacade.resolvedCoverPathForFolder(
@@ -189,6 +192,9 @@ class _LibraryTrackCoverThumbnailState
               LibraryLikeCardMetrics.coverRadius,
             ),
             child: AsyncLocalCoverImage(
+              onImageError: libraryFacade
+                  .coverArtworkCacheService
+                  .reportArtworkReadFailure,
               future: coverPathFuture,
               requestKey: track.path,
               initialPath: libraryFacade.resolvedCoverPathForTrack(track),

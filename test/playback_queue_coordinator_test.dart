@@ -964,13 +964,25 @@ void main() {
       'ASMR playback cache keeps custom queue metadata on cached paths',
       () async {
         const cachedPath = '/cache/asmr_playback_cache/cached_01.mp3';
+        final artworkDirectory = await Directory.systemTemp.createTemp(
+          'queue_remote_artwork_',
+        );
+        addTearDown(() => artworkDirectory.delete(recursive: true));
         await runtimeGraph.runtime.dispose();
+        final libraryService = LibraryService();
         runtimeGraph = createTestRuntimeGraph(
           notificationService: notificationService,
           persistenceRepository: TestPersistenceRepository(
             database: AppDatabase.test(db),
           ),
           asmrPlaybackCacheService: _FakeAsmrPlaybackCacheService(cachedPath),
+          libraryService: libraryService,
+          coverArtworkCacheService: CoverArtworkCacheService(
+            libraryService: libraryService,
+            persistentDirectory: () async => artworkDirectory,
+            temporaryDirectory: () async => artworkDirectory,
+            remoteCoverDownloader: (_) async => null,
+          ),
         );
         paths = AudioPathCoordinator(
           library: runtimeGraph.library,

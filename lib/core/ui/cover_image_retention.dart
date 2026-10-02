@@ -4,11 +4,20 @@ import 'package:flutter/painting.dart';
 
 // Keep recently displayed covers live in Flutter's existing ImageCache while
 // their cards are unmounted during navigation or list recycling.
-const int _maximumRetainedCoverBytes = 256 * 1024 * 1024;
-const int _maximumRetainedCovers = 1200;
+int _maximumRetainedCoverBytes = 50 * 1024 * 1024;
+int _maximumRetainedCovers = 200;
 final LinkedHashMap<ImageProvider<Object>, _RetainedCover> _retainedCovers =
     LinkedHashMap<ImageProvider<Object>, _RetainedCover>();
 int _retainedCoverBytes = 0;
+
+void configureRetainedCoverBudget({
+  required int maximumSize,
+  required int maximumSizeBytes,
+}) {
+  _maximumRetainedCovers = maximumSize;
+  _maximumRetainedCoverBytes = maximumSizeBytes;
+  _trimRetainedCovers();
+}
 
 void retainCoverImage(
   ImageProvider<Object> provider,

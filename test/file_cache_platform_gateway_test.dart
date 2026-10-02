@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -256,6 +257,75 @@ void main() {
       const Duration(milliseconds: 123456),
     );
   });
+
+  test(
+    'Windows discovery preserves empty success and missing-directory failure',
+    () async {
+      final folder = await Directory.systemTemp.createTemp('目录 cache ');
+      addTearDown(() => folder.delete(recursive: true));
+      final windows = FileCachePlatformGateway(
+        isAndroid: () => false,
+        isWindows: () => true,
+      );
+      expect(await windows.discoverWorkTexts(folder.path), isEmpty);
+      expect(
+        await windows.discoverRootImages(
+          path: folder.path,
+          rootFolder: folder.path,
+        ),
+        isEmpty,
+      );
+      final missing = '${folder.path}${Platform.pathSeparator}missing';
+      await expectLater(
+        windows.discoverWorkTexts(missing),
+        throwsA(isA<FileSystemException>()),
+      );
+      await expectLater(
+        windows.discoverRootImages(path: missing, rootFolder: missing),
+        throwsA(isA<FileSystemException>()),
+      );
+    },
+  );
+
+  test(
+    'directory discovery distinguishes failure from successful empty scans',
+    () async {
+      messenger.setMockMethodCallHandler(channel, (_) async => success([]));
+      expect(await gateway.discoverWorkTexts('content://work'), isEmpty);
+      expect(
+        await gateway.discoverRootImages(
+          path: 'content://work',
+          rootFolder: 'content://work',
+        ),
+        isEmpty,
+      );
+      messenger.setMockMethodCallHandler(
+        channel,
+        (_) async => {
+          'ok': false,
+          'errorCode': 'access_denied',
+          'error': 'Access denied',
+        },
+      );
+      await expectLater(
+        gateway.discoverWorkTexts('content://work'),
+        throwsA(
+          isA<PlatformException>().having(
+            (e) => e.code,
+            'code',
+            'access_denied',
+          ),
+        ),
+      );
+      await expectLater(
+        gateway.discoverRootImages(
+          path: 'content://work',
+          rootFolder: 'content://work',
+        ),
+        throwsA(isA<PlatformException>()),
+      );
+    },
+  );
 
   test(
     'structured JSON document and byte-write helpers preserve values',

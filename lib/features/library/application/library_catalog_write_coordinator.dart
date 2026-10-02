@@ -122,6 +122,7 @@ final class LibraryCatalogWriteCoordinator {
     final mutation = _service.addTracks(tracks, persist: persist);
     if (mutation.tracks.isEmpty) return;
     recordEntriesForTracks(mutation.tracks, persist: persist);
+    _coverArtwork()?.invalidateCatalogTracks(mutation.tracks);
     if (mutation.batched) return;
     _markLibraryStructureChanged();
     if (persist && _persistenceCoordinator.enabled) {
@@ -146,6 +147,7 @@ final class LibraryCatalogWriteCoordinator {
     );
     if (mutation.tracks.isEmpty) return;
     recordEntriesForTracks(mutation.tracks, persist: persist);
+    _coverArtwork()?.invalidateCatalogTracks(mutation.tracks);
     if (mutation.batched) return;
     _markLibraryStructureChanged();
     if (persist && _persistenceCoordinator.enabled) {
@@ -157,7 +159,6 @@ final class LibraryCatalogWriteCoordinator {
   }
 
   void _markLibraryStructureChanged() {
-    _coverArtwork()?.invalidateAll();
     snapshotCacheService.markStructureChanged();
     _syncStateSlice();
   }
@@ -171,6 +172,7 @@ final class LibraryCatalogWriteCoordinator {
         .map((track) => track.path)
         .toList(growable: false);
     if (removedPaths.isEmpty) return const <String>[];
+    _coverArtwork()?.invalidateCatalogTracks(mutation.tracks);
     _trackRemovalHandler?.call(removedPaths);
     if (persist && _persistenceCoordinator.enabled) {
       unawaited(databaseRepository.deleteTracks(removedPaths));
@@ -313,7 +315,6 @@ final class LibraryCatalogWriteCoordinator {
       ..libraryBatchPersistEntriesByKey.clear();
 
     if (didChangeLibrary) {
-      _coverArtwork()?.invalidateAll();
       _service.syncGroupOrderFromLibrary();
       final derivedGeneration = ++_service.libraryDerivedGeneration;
       final derivedSnapshot = await snapshotCacheService.buildDerivedSnapshot();

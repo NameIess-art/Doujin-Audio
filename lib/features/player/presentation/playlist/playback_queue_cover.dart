@@ -46,6 +46,7 @@ class QueueTrackCoverState extends ConsumerState<QueueTrackCover> {
     _trackPath = widget.track.path;
     _coverGeneration = coverGeneration;
     return AsyncLocalCoverImage(
+      onImageError: library.coverArtworkCacheService.reportArtworkReadFailure,
       future: _future!,
       requestKey: widget.track.path,
       initialPath: widget.coverPath,

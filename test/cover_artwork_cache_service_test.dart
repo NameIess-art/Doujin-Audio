@@ -18,6 +18,295 @@ import 'package:doujin_audio/core/media/path_matcher.dart';
 
 void main() {
   test(
+    'clearing retires delayed SAF discoveries without awaiting native IO',
+    () async {
+      final support = await Directory.systemTemp.createTemp(
+        'cover_clear_discovery_',
+      );
+      addTearDown(() => support.delete(recursive: true));
+      final nativeImage = File('${support.path}/native.jpg');
+      await nativeImage.writeAsBytes([0xff, 0xd8, 0xff, 0xd9]);
+      const root = 'content://library/work';
+      const source = '$root/cover.jpg';
+      final pending = Completer<List<CoverImageReference>>();
+      var scans = 0;
+      final library = LibraryService();
+      final store = CoverArtworkStore(persistentDirectory: () async => support);
+      final cache = CoverArtworkCacheService(
+        libraryService: library,
+        artworkStore: store,
+        fileCacheGateway: _FakeFileCachePlatformGateway(
+          coversByPath: {},
+          discoveredImages: (_) {
+            scans++;
+            return pending.future;
+          },
+        ),
+      );
+      addTearDown(cache.dispose);
+      addTearDown(library.dispose);
+      await cache.initialize();
+      final stale = cache.discoverCoverImageReferencesInFolder(root);
+      final staleFailure = expectLater(stale, throwsStateError);
+      expect(scans, 1);
+      await cache.clearPersistentCache();
+      expect(pending.isCompleted, isFalse);
+      pending.complete([
+        CoverImageReference(displayPath: nativeImage.path, sourcePath: source),
+      ]);
+      await staleFailure;
+      expect(
+        store.resolvedPath(
+          'source-image:${PathMatcher.equivalenceKey(source)}',
+        ),
+        isNull,
+      );
+      expect(
+        await Directory(store.rootPath!)
+            .list(recursive: true)
+            .where((item) => item is File && item.path.endsWith('.image'))
+            .toList(),
+        isEmpty,
+      );
+      final fresh = await cache.discoverCoverImageReferencesInFolder(root);
+      expect(scans, 2);
+      expect(fresh.single.displayPath, isNot(nativeImage.path));
+      expect(await File(fresh.single.displayPath).readAsBytes(), [
+        0xff,
+        0xd8,
+        0xff,
+        0xd9,
+      ]);
+    },
+  );
+
+  test(
+    'explicit directory refresh rescans images without invalidating cover bindings',
+    () async {
+      final support = await Directory.systemTemp.createTemp(
+        'cover_directory_refresh_',
+      );
+      addTearDown(() => support.delete(recursive: true));
+      final first = File('${support.path}/first.jpg');
+      final next = File('${support.path}/next.jpg');
+      await first.writeAsBytes([1, 2, 3]);
+      await next.writeAsBytes([4, 5, 6]);
+      var current = [first.path];
+      var scans = 0;
+      final library = LibraryService();
+      final cache = CoverArtworkCacheService(
+        libraryService: library,
+        artworkStore: CoverArtworkStore(
+          persistentDirectory: () async => support,
+        ),
+        filesystemImageScanner: (_, _) async {
+          scans++;
+          return current;
+        },
+      );
+      addTearDown(cache.dispose);
+      addTearDown(library.dispose);
+      expect(
+        (await cache.discoverCoverImageReferencesInFolder(
+          support.path,
+        )).single.sourcePath,
+        first.path,
+      );
+      current = [next.path];
+      expect(
+        (await cache.discoverCoverImageReferencesInFolder(
+          support.path,
+          refresh: true,
+        )).single.sourcePath,
+        next.path,
+      );
+      expect(scans, 2);
+    },
+  );
+
+  test('verified warm covers perform no filesystem lookups', () async {
+    final support = await Directory.systemTemp.createTemp('cover_warm_no_io_');
+    addTearDown(() => support.delete(recursive: true));
+    final track = _track(
+      path: '${support.path}/voice.flac',
+      groupKey: '',
+      isSingle: true,
+    );
+    final store = CoverArtworkStore(persistentDirectory: () async => support);
+    final saved = await store.putBytes(
+      logicalKey: 'track:${PathMatcher.normalize(track.path)}|0|0|false',
+      bytes: [1, 2, 3],
+    );
+    final library = LibraryService();
+    final cache = CoverArtworkCacheService(
+      libraryService: library,
+      artworkStore: store,
+      fileCacheGateway: _FakeFileCachePlatformGateway(coversByPath: {}),
+    );
+    addTearDown(cache.dispose);
+    addTearDown(library.dispose);
+    expect(await cache.futureForTrack(track), saved);
+    var lookups = 0;
+    await IOOverrides.runZoned(
+      () async {
+        for (var index = 0; index < 5; index++) {
+          var sync = false;
+          unawaited(cache.futureForTrack(track).then<void>((_) => sync = true));
+          expect(sync, isTrue);
+        }
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        expect(lookups, 0);
+      },
+      createFile: (value) {
+        lookups++;
+        throw StateError('Warm cover unexpectedly touched $value');
+      },
+    );
+  });
+
+  test(
+    'temporary manual covers are moved through the catalog owner before clearing',
+    () async {
+      final support = await Directory.systemTemp.createTemp(
+        'manual_cover_support_',
+      );
+      final temporary = await Directory.systemTemp.createTemp(
+        'manual_cover_temp_',
+      );
+      addTearDown(() => support.delete(recursive: true));
+      addTearDown(() => temporary.delete(recursive: true));
+      final image = File('${temporary.path}/selected.jpg');
+      await image.writeAsBytes([0xff, 0xd8, 0xff, 0xd9]);
+      final track = _track(
+        path: '${support.path}/voice.flac',
+        groupKey: '',
+        isSingle: true,
+      ).copyWith(manualCoverPath: image.path);
+      final library = LibraryService()
+        ..addOrReplaceTracks([track], persist: false);
+      final cache = CoverArtworkCacheService(
+        libraryService: library,
+        persistentDirectory: () async => support,
+        temporaryDirectory: () async => temporary,
+        persistRetargetedManualCovers: (tracks) => library.addOrReplaceTracks(
+          tracks,
+          persist: false,
+          mergeExistingState: false,
+        ),
+      );
+      addTearDown(cache.dispose);
+      addTearDown(library.dispose);
+      await cache.prepareManualCoversForCacheClear();
+      await image.delete();
+      await cache.clearPersistentCache();
+      final selected = library.trackByPath(track.path)!.manualCoverPath!;
+      expect(selected, contains('portable_card_covers'));
+      expect(await File(selected).readAsBytes(), [0xff, 0xd8, 0xff, 0xd9]);
+      expect(
+        await cache.futureForTrack(library.trackByPath(track.path)),
+        selected,
+      );
+    },
+  );
+
+  test(
+    'equivalent Windows track paths share a synchronous warm result',
+    () async {
+      const original = r'C:\作品\Audio Folder\Voice.flac';
+      const equivalent = 'c:/作品/audio folder/voice.flac';
+      const cover = 'content://covers/shared';
+      final gateway = _FakeFileCachePlatformGateway(
+        coversByPath: {original: cover},
+      );
+      final library = LibraryService();
+      final cache = CoverArtworkCacheService(
+        libraryService: library,
+        fileCacheGateway: gateway,
+      );
+      addTearDown(cache.dispose);
+      addTearDown(library.dispose);
+      final first = _track(path: original, groupKey: '', isSingle: true);
+      final second = _track(path: equivalent, groupKey: '', isSingle: true);
+      expect(await cache.futureForTrack(first), cover);
+      var synchronous = false;
+      unawaited(
+        cache.futureForTrack(second).then<void>((_) => synchronous = true),
+      );
+      expect(synchronous, isTrue);
+      expect(cache.resolvedForTrack(second), cover);
+      expect(gateway.resolveTrackCoverPaths, [original]);
+    },
+  );
+
+  test(
+    'unrelated folder invalidation preserves in-flight track and playback covers',
+    () async {
+      final result = Completer<String?>();
+      final gateway = _FakeFileCachePlatformGateway(
+        coversByPath: {},
+        resolveTrackCoverHandler: (_, _) => result.future,
+      );
+      final library = LibraryService();
+      final cache = CoverArtworkCacheService(
+        libraryService: library,
+        fileCacheGateway: gateway,
+      );
+      addTearDown(cache.dispose);
+      addTearDown(library.dispose);
+      final track = _track(
+        path: '/work/voice.flac',
+        groupKey: '',
+        isSingle: true,
+      );
+      final pending = cache.futureForPlaybackTrack(track);
+      await Future<void>.delayed(Duration.zero);
+      cache.invalidateFolder('/other/work');
+      expect(cache.futureForPlaybackTrack(track), same(pending));
+      result.complete('content://covers/preserved');
+      expect(await pending, 'content://covers/preserved');
+      expect(gateway.resolveTrackCoverPaths, [track.path]);
+    },
+  );
+
+  test(
+    'manual cached cover survives explicit cache clear and service recreation',
+    () async {
+      final support = await Directory.systemTemp.createTemp(
+        'manual_cover_preserve_',
+      );
+      addTearDown(() => support.delete(recursive: true));
+      final folder = '${support.path}${Platform.pathSeparator}work';
+      final library = LibraryService()..watchedFolders.add(folder);
+      final repository = _MemoryTestPersistenceRepository();
+      final store = CoverArtworkStore(persistentDirectory: () async => support);
+      final source = await store.putBytes(
+        logicalKey: 'selected',
+        bytes: [0xff, 0xd8, 0xff, 0xd9],
+      );
+      final cache = CoverArtworkCacheService(
+        libraryService: library,
+        databaseRepository: repository,
+        artworkStore: store,
+      );
+      addTearDown(cache.dispose);
+      addTearDown(library.dispose);
+      await cache.setFolderCoverSelection(folder, source!, newlySaved: true);
+      await cache.clearPersistentCache();
+      final restarted = CoverArtworkCacheService(
+        libraryService: library,
+        databaseRepository: repository,
+        persistentDirectory: () async => support,
+      );
+      addTearDown(restarted.dispose);
+      await restarted.initialize();
+      final selected = await restarted.futureForFolder(folder);
+      expect(selected, contains('portable_card_covers'));
+      expect(await File(selected!).readAsBytes(), [0xff, 0xd8, 0xff, 0xd9]);
+      expect(await File(source).exists(), isFalse);
+    },
+  );
+
+  test(
     'deleted persisted track artwork retires its resolved memory path',
     () async {
       final directory = await Directory.systemTemp.createTemp(
@@ -46,7 +335,10 @@ void main() {
       expect(await cache.futureForTrack(track), saved);
       expect(cache.resolvedForTrack(track), saved);
       await File(saved!).delete();
-
+      // Warm lookups render immediately; the decoder reports a missing artifact.
+      expect(await cache.futureForTrack(track), saved);
+      cache.reportArtworkReadFailure(saved);
+      await _waitForCoverRepair(() => cache.resolvedForTrack(track) == null);
       expect(await cache.futureForTrack(track), isNull);
       expect(store.resolvedPath(key), isNull);
       expect(cache.resolvedForTrack(track), isNull);
@@ -616,7 +908,11 @@ void main() {
 
     expect(await cache.futureForRemoteCover(url), firstCover.path);
     await firstCover.delete();
-
+    expect(await cache.futureForRemoteCover(url), firstCover.path);
+    cache.reportArtworkReadFailure(firstCover.path);
+    await _waitForCoverRepair(
+      () => cache.resolvedForRemoteCover(url) == replacementCover.path,
+    );
     expect(await cache.futureForRemoteCover(url), replacementCover.path);
     expect(downloads, 2);
     expect(cache.resolvedForRemoteCover(url), replacementCover.path);
@@ -2401,6 +2697,16 @@ void main() {
     cache.trimMemory();
     expect(cache.manualCoverPathValidityCacheSize, 0);
   });
+}
+
+Future<void> _waitForCoverRepair(bool Function() repaired) async {
+  final deadline = DateTime.now().add(const Duration(seconds: 2));
+  while (!repaired()) {
+    if (DateTime.now().isAfter(deadline)) {
+      throw StateError('Cover repair did not complete.');
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+  }
 }
 
 Future<File> _temporaryCoverFile(String prefix) async {

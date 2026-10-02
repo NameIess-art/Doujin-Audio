@@ -13,6 +13,7 @@ import '../../../app/localization/app_language_provider.dart';
 import '../domain/asmr_models.dart';
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/presentation/app_presentation_providers.dart';
+import '../../../app/presentation/browse_page_scroll.dart';
 import '../application/asmr_download_models.dart';
 import '../application/asmr_api_service.dart';
 import '../application/asmr_library_controller.dart';
@@ -403,6 +404,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
     if (controller == null) return;
     final coordinator = UiInteractionCoordinator.instance;
     if (_activationCompleted) {
+      unawaited(_ensureCategoryLoaded(_selectedCategory));
       _scheduleAccountHydration(controller, coordinator.generation);
       return;
     }
@@ -451,6 +453,18 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
         defaultLanguage: defaultLanguage,
       );
       if (!mounted || !_isActive) return;
+      final pageStore = ref.read(browsePageStateStoreProvider);
+      final savedCategory = pageStore.stateFor(
+        'asmr_root:${controller.browseCacheScope}',
+      )['category'];
+      if (savedCategory is String) {
+        final restored = AsmrCategoryType.values.where(
+          (value) => value.name == savedCategory,
+        );
+        if (restored.isNotEmpty && _headerCategories.contains(restored.first)) {
+          setState(() => _selectedCategory = restored.first);
+        }
+      }
       await _ensureCategoryLoaded(_selectedCategory);
       if (!mounted || !_isActive) return;
       setState(() => _activationCompleted = true);
@@ -541,14 +555,6 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
     }
   }
 
-  bool _categoryNeedsRefresh(
-    AsmrLibraryController controller,
-    AsmrCategoryType category,
-  ) {
-    return !controller.hasLoadedCategory(category) ||
-        controller.activeQueryFor(category).isNotEmpty;
-  }
-
   void _scheduleHeaderMeasurement({bool force = false}) {
     _forceHeaderMeasurement = _forceHeaderMeasurement || force;
     if (_headerMeasurementScheduled || !_isActive) return;
@@ -580,8 +586,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
   Future<void> _ensureCategoryLoaded(AsmrCategoryType category) async {
     final controller = ref.read(asmrLibraryControllerProvider);
     if (controller == null) return;
-    if (!_categoryNeedsRefresh(controller, category)) return;
-    await _runCategoryRefresh(category);
+    await controller.ensureCategoryLoaded(category);
   }
 
   Future<void> _runCategoryRefresh(AsmrCategoryType category) {
@@ -603,6 +608,11 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
       _selectedCategory = category;
       _isSelectionMode = false;
       _selectedWorkIds.clear();
+    });
+    final scope =
+        ref.read(asmrLibraryControllerProvider)?.browseCacheScope ?? '';
+    ref.read(browsePageStateStoreProvider).update('asmr_root:$scope', {
+      'category': category.name,
     });
     unawaited(_ensureCategoryLoaded(category));
   }
@@ -734,23 +744,13 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
   }
 
   void _openSearchPage() {
-    final searchedCategories = <AsmrCategoryType>{};
-    Navigator.of(context)
-        .push(
-          buildAppPageRoute<void>(
-            context: context,
-            child: _AsmrSearchPage(onSearchRequested: searchedCategories.add),
-            duration: Duration.zero,
-          ),
-        )
-        .whenComplete(() {
-          if (!mounted || searchedCategories.isEmpty) return;
-          final controller = ref.read(asmrLibraryControllerProvider);
-          if (controller == null) return;
-          for (final category in searchedCategories) {
-            unawaited(controller.refreshCategory(category));
-          }
-        });
+    Navigator.of(context).push(
+      buildAppPageRoute<void>(
+        context: context,
+        child: const _AsmrSearchPage(),
+        duration: Duration.zero,
+      ),
+    );
   }
 
   Future<T?> _showAsmrPanel<T>({required WidgetBuilder builder}) {
@@ -960,7 +960,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
       if (!_isActive) return;
       final changed = controller.setPageLanguage(language);
       if (changed && mounted) {
-        await _runCategoryRefresh(_selectedCategory);
+        await _ensureCategoryLoaded(_selectedCategory);
       }
     });
   }

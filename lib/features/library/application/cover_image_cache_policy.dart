@@ -62,6 +62,10 @@ void applyCoverImageCachePolicy(
       ? 256 * 1024 * 1024
       : budget.maximumSizeBytes;
   cache.maximumSize = useDesktopBudget ? 1200 : budget.maximumSize;
+  configureRetainedCoverBudget(
+    maximumSize: cache.maximumSize,
+    maximumSizeBytes: cache.maximumSizeBytes,
+  );
   if (clear) {
     releaseRetainedCoverImages();
     cache.clear();

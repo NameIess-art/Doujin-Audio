@@ -7,6 +7,35 @@ import android.os.Environment
 import android.provider.DocumentsContract
 import androidx.documentfile.provider.DocumentFile
 import java.util.Locale
+import java.io.IOException
+
+internal data class DirectoryDocument(val uri: Uri, val name: String, val mime: String)
+
+internal fun listReadableDirectoryDocuments(context: Context, folder: Uri): List<DirectoryDocument> {
+    val children = DocumentsContract.buildChildDocumentsUriUsingTree(
+        folder, DocumentsContract.getDocumentId(folder)
+    )
+    // DocumentFile.listFiles catches provider failures and reports an empty directory.
+    // Discoveries persisted by Dart must distinguish those failures from success.
+    val cursor = context.contentResolver.query(children, arrayOf(
+        DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+        DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+        DocumentsContract.Document.COLUMN_MIME_TYPE
+    ), null, null, null) ?: throw IOException("Document provider query failed: $children")
+    return cursor.use {
+        val idColumn = it.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
+        val nameColumn = it.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
+        val mimeColumn = it.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_MIME_TYPE)
+        buildList {
+            while (it.moveToNext()) {
+                val id = it.getString(idColumn) ?: throw IOException("Document ID is missing: $children")
+                val name = it.getString(nameColumn) ?: throw IOException("Document name is missing: $children")
+                val mime = it.getString(mimeColumn) ?: throw IOException("Document type is missing: $children")
+                add(DirectoryDocument(DocumentsContract.buildDocumentUriUsingTree(folder, id), name, mime))
+            }
+        }
+    }
+}
 
 internal data class DocumentRenameTarget(
     val uri: Uri,

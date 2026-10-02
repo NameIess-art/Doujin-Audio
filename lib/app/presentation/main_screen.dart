@@ -322,7 +322,15 @@ class _MainScreenState extends ConsumerState<MainScreen>
                     : MainDestinationType.playlist),
         StartupPage.playlist => MainDestinationType.playlist,
       };
-      final startupIndex = destinations.indexWhere((d) => d.type == targetType);
+      final savedDestination = ref
+          .read(browsePageStateStoreProvider)
+          .stateFor('main')['destination'];
+      final restoredIndex = destinations.indexWhere(
+        (d) => d.type.name == savedDestination,
+      );
+      final startupIndex = restoredIndex >= 0
+          ? restoredIndex
+          : destinations.indexWhere((d) => d.type == targetType);
       _activePageIndex.value = startupIndex >= 0 ? startupIndex : 0;
       setState(() => _isDataReady = true);
     }
@@ -647,6 +655,11 @@ class _MainScreenState extends ConsumerState<MainScreen>
     _pageSwitchCoordinatorGeneration = coordinator.beginGeneration();
     _activePageIndex.value = index;
     final destinations = _currentDestinations();
+    if (index >= 0 && index < destinations.length) {
+      ref.read(browsePageStateStoreProvider).update('main', {
+        'destination': destinations[index].type.name,
+      });
+    }
     if (index >= 0 &&
         index < destinations.length &&
         destinations[index].type == MainDestinationType.asmrOne) {

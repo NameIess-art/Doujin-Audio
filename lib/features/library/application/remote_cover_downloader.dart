@@ -12,20 +12,20 @@ import '../../../core/media/path_matcher.dart';
 
 const String _asmrOneAcceptLanguage = 'zh-CN,zh;q=0.9,en;q=0.8';
 
+typedef RemoteCoverResponse = ({
+  Uint8List? bytes,
+  bool notModified,
+  String? etag,
+  String? lastModified,
+});
+
 /// Owns remote artwork transport and its bounded request lifetime.
 final class RemoteCoverDownloader {
   RemoteCoverDownloader({
-    required CoverArtworkStore artworkStore,
-    required bool Function() isClearingPersistentCache,
     required Duration requestTimeout,
     required Duration downloadIdleTimeout,
-  }) : _artworkStore = artworkStore,
-       _isClearing = isClearingPersistentCache,
-       _requestTimeout = requestTimeout,
+  }) : _requestTimeout = requestTimeout,
        _downloadIdleTimeout = downloadIdleTimeout;
-
-  final CoverArtworkStore _artworkStore;
-  final bool Function() _isClearing;
   final Duration _requestTimeout;
   final Duration _downloadIdleTimeout;
   final Queue<Completer<void>> _remoteDownloadWaiters = Queue();
@@ -54,7 +54,10 @@ final class RemoteCoverDownloader {
     }
   }
 
-  Future<Uint8List?> downloadBytes(String remoteUrl) async {
+  Future<RemoteCoverResponse?> fetch(
+    String remoteUrl, {
+    RemoteCoverValidation? validation,
+  }) async {
     HttpClientRequest? request;
     try {
       final client = _remoteHttpClient ??= HttpClient();
@@ -65,7 +68,23 @@ final class RemoteCoverDownloader {
       for (final header in remoteCoverRequestHeadersForUrl(remoteUrl).entries) {
         request.headers.set(header.key, header.value);
       }
+      if (validation?.etag case final String etag) {
+        request.headers.set(HttpHeaders.ifNoneMatchHeader, etag);
+      } else if (validation?.lastModified case final String modified) {
+        request.headers.set(HttpHeaders.ifModifiedSinceHeader, modified);
+      }
       final response = await request.close().timeout(_requestTimeout);
+      final etag = response.headers.value(HttpHeaders.etagHeader);
+      final modified = response.headers.value(HttpHeaders.lastModifiedHeader);
+      if (response.statusCode == HttpStatus.notModified) {
+        await response.drain<void>();
+        return (
+          bytes: null,
+          notModified: true,
+          etag: etag ?? validation?.etag,
+          lastModified: modified ?? validation?.lastModified,
+        );
+      }
       if (response.statusCode < 200 || response.statusCode >= 300) {
         return null;
       }
@@ -88,7 +107,12 @@ final class RemoteCoverDownloader {
       if (totalBytes <= 0 || detectCoverMimeType('', headerBytes) == null) {
         return null;
       }
-      return bytes.takeBytes();
+      return (
+        bytes: bytes.takeBytes(),
+        notModified: false,
+        etag: etag,
+        lastModified: modified,
+      );
     } catch (error, stackTrace) {
       request?.abort(error, stackTrace);
       AppLogService.warning(
@@ -113,19 +137,6 @@ final class RemoteCoverDownloader {
     } catch (_) {
       return false;
     }
-  }
-
-  Future<String?> download(
-    String remoteUrl, {
-    required String logicalKey,
-  }) async {
-    final bytes = await downloadBytes(remoteUrl);
-    if (bytes == null || _isClearing()) return null;
-    return _artworkStore.putBytes(
-      logicalKey: logicalKey,
-      bytes: bytes,
-      namespace: CoverArtworkNamespace.remote,
-    );
   }
 
   void dispose() {

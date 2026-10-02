@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:doujin_audio/features/library/application/cover_artwork_store.dart';
@@ -30,6 +31,68 @@ void main() {
   CoverArtworkStore createStore() => CoverArtworkStore(
     persistentDirectory: () async => supportDirectory,
     temporaryDirectory: () async => temporaryDirectory,
+  );
+
+  test(
+    'legacy path bindings migrate to equivalent Windows and SAF identities',
+    () async {
+      final root = Directory(
+        path.join(supportDirectory.path, coverArtworkStoreDirectoryName),
+      );
+      await root.create();
+      final index = File(path.join(root.path, coverArtworkStoreIndexFileName));
+      await index.writeAsString(
+        jsonEncode({
+          'version': 1,
+          'bindings': {
+            r'folder:C:\作品\Cover Folder': 'content://covers/windows',
+            'native:content://provider/tree/root/document/root%2Fvoice.flac|10|20':
+                'content://covers/saf',
+          },
+          'legacyAliases': <String, String>{},
+        }),
+      );
+      final store = createStore();
+      await store.initialize();
+      expect(
+        store.resolvedPath('folder:c:/作品/cover folder'),
+        'content://covers/windows',
+      );
+      expect(
+        store.resolvedPath(
+          'native:content://provider/document/root%2Fvoice.flac|10|20',
+        ),
+        'content://covers/saf',
+      );
+      final restarted = createStore();
+      await restarted.initialize();
+      expect(
+        restarted.resolvedPath('folder:c:/作品/cover folder'),
+        'content://covers/windows',
+      );
+      expect((jsonDecode(await index.readAsString()) as Map)['version'], 2);
+    },
+  );
+
+  test(
+    'unchanged bindings and content do not rewrite the index or artifact',
+    () async {
+      final store = createStore();
+      final saved = await store.putBytes(
+        logicalKey: 'folder:/work',
+        bytes: [1, 2, 3],
+      );
+      final index = File(
+        path.join(store.rootPath!, coverArtworkStoreIndexFileName),
+      );
+      final marker = DateTime(2000);
+      await index.setLastModified(marker);
+      await File(saved!).setLastModified(marker);
+      await store.bind('folder:/work', saved);
+      await store.putBytes(logicalKey: 'folder:/work', bytes: [1, 2, 3]);
+      expect(await index.lastModified(), marker);
+      expect(await File(saved).lastModified(), marker);
+    },
   );
 
   test('saved artwork is synchronously restored by a new store', () async {

@@ -4,14 +4,16 @@ import android.content.Context
 import java.io.File
 import java.util.Locale
 import android.net.Uri
-import androidx.documentfile.provider.DocumentFile
+import android.provider.DocumentsContract
+import java.io.IOException
+
+private val supportedWorkDocExtensions = setOf("txt", "md", "pdf")
 
 internal class WorkTextDocumentReader(
     private val context: Context,
     private val paths: DocumentPathResolver
 ) {
     private val contentResolver get() = context.contentResolver
-    private val supportedWorkDocExtensions = setOf("txt", "md", "pdf")
 
     private fun isSupportedWorkDocName(name: String): Boolean {
         val ext = name.substringAfterLast('.', "").lowercase(Locale.US)
@@ -22,25 +24,24 @@ internal class WorkTextDocumentReader(
         val trimmed = folderPath.trim()
         if (trimmed.startsWith("content://")) {
             val root = paths.resolveDocumentFileForFolderPath(trimmed)
-            if (root != null && root.exists()) {
+            if (root != null && root.exists() && root.isDirectory && root.canRead()) {
                 val results = mutableListOf<Map<String, String>>()
-                data class Node(val folder: DocumentFile, val relPath: String)
+                data class Node(val uri: Uri, val relPath: String)
                 val pending = java.util.ArrayDeque<Node>()
-                pending += Node(root, "")
+                pending += Node(root.uri, "")
                 while (pending.isNotEmpty()) {
                     val node = pending.removeFirst()
-                    node.folder.listFiles().forEach { child ->
-                        val name = paths.normalizeDisplayName(child.name.orEmpty())
+                    for (child in listReadableDirectoryDocuments(context, node.uri)) {
+                        val name = paths.normalizeDisplayName(child.name)
                         val childRel = listOf(node.relPath, name).filter(String::isNotBlank).joinToString("/")
-                        when {
-                            child.isDirectory -> pending += Node(child, childRel)
-                            child.isFile && isSupportedWorkDocName(name) -> {
-                                results += mapOf(
-                                    "name" to name,
-                                    "relativePath" to childRel,
-                                    "path" to child.uri.toString()
-                                )
-                            }
+                        if (child.mime == DocumentsContract.Document.MIME_TYPE_DIR) {
+                            pending += Node(child.uri, childRel)
+                        } else if (isSupportedWorkDocName(name)) {
+                            results += mapOf(
+                                "name" to name,
+                                "relativePath" to childRel,
+                                "path" to child.uri.toString()
+                            )
                         }
                     }
                 }
@@ -50,25 +51,9 @@ internal class WorkTextDocumentReader(
             if (localPath != null) {
                 return discoverLocalWorkTexts(localPath)
             }
-            return emptyList()
+            throw IOException("Document directory is unavailable: $trimmed")
         }
         return discoverLocalWorkTexts(trimmed)
-    }
-
-    private fun discoverLocalWorkTexts(folderPath: String): List<Map<String, String>> {
-        val root = File(folderPath)
-        if (!root.exists() || !root.isDirectory) return emptyList()
-        return root.walkTopDown()
-            .filter { it.isFile && it.extension.lowercase(Locale.US) in supportedWorkDocExtensions }
-            .sortedWith(compareBy { it.absolutePath.lowercase(Locale.US) })
-            .map { file ->
-                val rel = file.relativeToOrNull(root)?.invariantSeparatorsPath ?: file.name
-                mapOf(
-                    "name" to file.name,
-                    "relativePath" to rel,
-                    "path" to file.absolutePath
-                )
-            }.toList()
     }
 
     fun readDocumentBytes(path: String): ByteArray? {
@@ -84,4 +69,22 @@ internal class WorkTextDocumentReader(
             null
         }
     }
+}
+
+internal fun discoverLocalWorkTexts(folderPath: String): List<Map<String, String>> {
+    val root = File(folderPath)
+    if (!root.isDirectory || !root.canRead()) {
+        throw IOException("Document directory is unavailable: $folderPath")
+    }
+    return root.walkTopDown()
+        .onFail { _, error -> throw error }
+        .filter { it.isFile && it.extension.lowercase(Locale.US) in supportedWorkDocExtensions }
+        .sortedWith(compareBy { it.absolutePath.lowercase(Locale.US) })
+        .map { file ->
+            mapOf(
+                "name" to file.name,
+                "relativePath" to file.relativeTo(root).invariantSeparatorsPath,
+                "path" to file.absolutePath
+            )
+        }.toList()
 }

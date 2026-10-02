@@ -1,3 +1,5 @@
+import '../../features/library/application/work_text_service.dart';
+import '../../features/library/domain/local_directory_cache_repository.dart';
 import 'dart:io';
 import '../localization/app_language_provider.dart';
 import 'windows_runtime_binding.dart';
@@ -49,6 +51,7 @@ import 'playback_keep_alive_coordinator.dart';
 import 'playback_runtime_binding.dart';
 import 'persisted_uri_permission_coordinator.dart';
 import 'runtime_binding.dart';
+import 'browse_page_state_store.dart';
 import 'timer_runtime_binding.dart';
 
 typedef ProductionAppRuntime = ({
@@ -64,6 +67,8 @@ typedef ProductionAppRuntime = ({
 });
 
 typedef AppRuntimeGraph = ({
+  WorkTextService workTexts,
+  BrowsePageStateStore browsePageStates,
   AudioPathCoordinator audioPaths,
   AppRuntimeLifecycle runtime,
   AudioUiWarmupCoordinator warmup,
@@ -89,7 +94,19 @@ AppRuntimeGraph createAppRuntimeGraph({
   PlaybackTrackCache? asmrPlaybackCacheService,
   FileCachePlatformGateway? fileCacheGateway,
   bool persistenceEnabled = true,
+  Future<void> Function()? flushAsmrBrowseCaches,
 }) {
+  final browsePageStates = BrowsePageStateStore(persistent: persistenceEnabled);
+  final workTexts = WorkTextService(
+    directoryCache:
+        persistenceEnabled &&
+            library.databaseRepository is LocalDirectoryCacheRepository
+        ? library.databaseRepository as LocalDirectoryCacheRepository
+        : null,
+    discoverImages: (folder) =>
+        library.discoverCoverImageReferencesInFolder(folder, refresh: true),
+    directoryRevision: () => (library.structureRevision, library.scanRevision),
+  );
   final audioPaths = AudioPathCoordinator(library: library, playback: playback);
   final subtitles = PlaybackSubtitleService(
     trackResolver: audioPaths.trackByPath,
@@ -234,10 +251,18 @@ AppRuntimeGraph createAppRuntimeGraph({
     keepAlive: keepAlive,
     playbackCommands: playbackCommands,
     asmrDownloads: asmrDownloads,
+    flushBrowseCaches: () async {
+      await browsePageStates.flush();
+      await workTexts.flushDirectoryCache();
+      await flushAsmrBrowseCaches?.call();
+    },
+    disposeBrowseCaches: workTexts.dispose,
     bindings: bindings,
   );
   syncAllState();
   return (
+    browsePageStates: browsePageStates,
+    workTexts: workTexts,
     audioPaths: audioPaths,
     runtime: runtime,
     warmup: warmup,
@@ -289,14 +314,6 @@ ProductionAppRuntime createProductionAppRuntime() {
     service: notificationService,
     stateService: notificationCoordinatorService,
   );
-  final runtimeGraph = createAppRuntimeGraph(
-    library: libraryFacade,
-    playback: playbackFacade,
-    timer: timerFacade,
-    notifications: notificationFacade,
-    settings: settingsRepository,
-    asmrDownloads: asmrDownloadManager,
-  );
   final asmrPreferences = AsmrPreferencesStore(repository: asmrRepository);
   final asmrLibraryController = AsmrLibraryController(
     preferencesStore: asmrPreferences,
@@ -314,10 +331,20 @@ ProductionAppRuntime createProductionAppRuntime() {
     source: asmrLibraryController,
     launcher: PlaybackFacadeSessionLauncher(playbackFacade),
   );
+  final runtimeGraph = createAppRuntimeGraph(
+    library: libraryFacade,
+    playback: playbackFacade,
+    timer: timerFacade,
+    notifications: notificationFacade,
+    settings: settingsRepository,
+    asmrDownloads: asmrDownloadManager,
+    flushAsmrBrowseCaches: asmrLibraryController.flushBrowseCaches,
+  );
 
   Future<void> initializeRuntimeData() async {
     await appLanguageProvider.initialized;
     await Future.wait<void>([
+      runtimeGraph.browsePageStates.initialize(),
       runtimeGraph.runtime.start(),
       asmrDownloadManager.initialize(),
       asmrLibraryController.initialize(

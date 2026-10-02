@@ -1,3 +1,4 @@
+import '../../../app/presentation/browse_page_scroll.dart';
 import 'library_tree_list.dart';
 import 'library_providers.dart';
 import 'library_tab_edit.dart';
@@ -652,7 +653,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
       );
     }
 
-    return ScrollActivityGate(
+    final page = ScrollActivityGate(
       child: PageHeaderInset(
         topInset: listTopPadding,
         child: Stack(
@@ -880,6 +881,11 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
           ],
         ),
       ),
+    );
+    return BrowsePageScroll(
+      pageKey: 'library',
+      controller: _scrollController,
+      child: page,
     );
   }
 

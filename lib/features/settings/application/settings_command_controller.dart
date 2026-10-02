@@ -15,9 +15,11 @@ final class SettingsCommandController {
     required PlaybackFacade playback,
     LibraryFacade? library,
     Future<int> Function()? clearApplicationCacheFiles,
+    Future<void> Function()? clearBrowseCaches,
   }) : _settings = settings,
        _playback = playback,
        _library = library,
+       _clearBrowseCaches = clearBrowseCaches,
        _clearApplicationCacheFiles =
            clearApplicationCacheFiles ?? AppCacheService.clearAllCaches;
 
@@ -25,6 +27,7 @@ final class SettingsCommandController {
   final PlaybackFacade _playback;
   final LibraryFacade? _library;
   final Future<int> Function() _clearApplicationCacheFiles;
+  final Future<void> Function()? _clearBrowseCaches;
 
   SettingsRepository get settings => _settings;
 
@@ -55,6 +58,8 @@ final class SettingsCommandController {
   }
 
   Future<int> clearApplicationCache() async {
+    await _library?.coverArtworkCacheService.prepareManualCoversForCacheClear();
+    await _clearBrowseCaches?.call();
     final deletedBytes = await _clearApplicationCacheFiles();
     await _library?.coverArtworkCacheService.clearPersistentCache();
     applyCoverImageCachePolicy(_settings.coverImageResolution, clear: true);

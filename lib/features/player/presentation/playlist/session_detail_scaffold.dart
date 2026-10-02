@@ -279,6 +279,9 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
                                 ),
                                 imageBuilder: (context, coverPath) {
                                   return RetryingFileImage(
+                                    onImageError: library
+                                        .coverArtworkCacheService
+                                        .reportArtworkReadFailure,
                                     path: coverPath,
                                     cacheWidth: backgroundCacheWidth,
                                     useDefaultCacheWidth: false,

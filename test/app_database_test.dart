@@ -33,9 +33,82 @@ void main() {
 
   tearDown(() => db.close());
 
-  test('schema starts from version 9', () {
-    expect(AppDatabase.schemaVersion, 9);
+  test('schema starts from version 10', () {
+    expect(AppDatabase.schemaVersion, 10);
   });
+
+  test(
+    'version 10 snapshots isolate kind, account scope and query keys',
+    () async {
+      await db.execute('DROP TABLE browse_snapshots');
+      await AppDatabase.upgradeSchemaForTest(db, 9, 10);
+      await appDatabase.saveBrowseSnapshot(
+        kind: 'category',
+        scope: 'alice:zh',
+        key: 'root',
+        payload: {'version': 1, 'works': [], 'page': 2},
+      );
+      await appDatabase.saveBrowseSnapshot(
+        kind: 'category',
+        scope: 'bob:zh',
+        key: 'root',
+        payload: {
+          'version': 1,
+          'works': [7],
+        },
+      );
+      await appDatabase.saveBrowseSnapshot(
+        kind: 'tree',
+        scope: 'alice:zh',
+        key: 'root',
+        payload: {'version': 1, 'tree': []},
+      );
+      expect(
+        await appDatabase.loadBrowseSnapshot(
+          kind: 'category',
+          scope: 'alice:zh',
+          key: 'root',
+        ),
+        {'version': 1, 'works': <Object?>[], 'page': 2},
+      );
+      expect(
+        await appDatabase.loadBrowseSnapshot(
+          kind: 'category',
+          scope: 'alice:en',
+          key: 'root',
+        ),
+        isNull,
+      );
+      await appDatabase.clearBrowseSnapshots(
+        kind: 'category',
+        scope: 'alice:zh',
+      );
+      expect(
+        await appDatabase.loadBrowseSnapshot(
+          kind: 'category',
+          scope: 'alice:zh',
+          key: 'root',
+        ),
+        isNull,
+      );
+      expect(
+        await appDatabase.loadBrowseSnapshot(
+          kind: 'category',
+          scope: 'bob:zh',
+          key: 'root',
+        ),
+        isNotNull,
+      );
+      expect(
+        await appDatabase.loadBrowseSnapshot(
+          kind: 'tree',
+          scope: 'alice:zh',
+          key: 'root',
+        ),
+        isNotNull,
+      );
+    },
+  );
 
   test(
     'version 9 drops only redundant indexes and preserves all table data',
@@ -132,6 +205,95 @@ void main() {
         throwsFormatException,
       );
       expect(await candidate.readAsBytes(), before);
+    },
+  );
+
+  test(
+    'portable backups omit browser caches and restore removes legacy cached data',
+    () async {
+      final directory = await Directory.systemTemp.createTemp('browse_backup_');
+      addTearDown(() => directory.delete(recursive: true));
+      await appDatabase.saveBrowseSnapshot(
+        kind: 'asmr_tree',
+        scope: 'alice:zh',
+        key: '72',
+        payload: {'version': 1, 'tree': <Object?>[]},
+      );
+      await appDatabase.saveAppSetting(
+        'browse_page_state_v1',
+        '{"pages":{"library":{"offset":120}}}',
+      );
+      await appDatabase.saveAppSetting('user_setting', 'keep');
+      await repository.seedSessions([_playbackSession('kept')]);
+      await db.insert('asmr_works', {'id': 72, 'title': 'Favorite work'});
+      final candidate = await appDatabase.createPortableSnapshot(
+        '${directory.path}/candidate.db',
+      );
+      final snapshot = await databaseFactoryFfi.openDatabase(
+        candidate.path,
+        options: OpenDatabaseOptions(singleInstance: false),
+      );
+      expect(await snapshot.query('browse_snapshots'), isEmpty);
+      expect(
+        await snapshot.query(
+          'app_kv_settings',
+          where: 'key = ?',
+          whereArgs: ['browse_page_state_v1'],
+        ),
+        isEmpty,
+      );
+      expect(await snapshot.query('sessions'), hasLength(1));
+      expect(await snapshot.query('asmr_works'), hasLength(1));
+      await snapshot.insert('browse_snapshots', {
+        'kind': 'asmr_tree',
+        'scope': 'alice:zh',
+        'cache_key': '72',
+        'payload': '{}',
+      });
+      await snapshot.insert('app_kv_settings', {
+        'key': 'browse_page_state_v1',
+        'value': '{}',
+      });
+      await snapshot.close();
+      await appDatabase.validateAndMigrateRestoreCandidate(candidate.path);
+      final restored = await databaseFactoryFfi.openDatabase(
+        candidate.path,
+        options: OpenDatabaseOptions(singleInstance: false),
+      );
+      expect(await restored.query('browse_snapshots'), isEmpty);
+      expect(
+        await restored.query(
+          'app_kv_settings',
+          where: 'key = ?',
+          whereArgs: ['browse_page_state_v1'],
+        ),
+        isEmpty,
+      );
+      expect(
+        await restored.query(
+          'app_kv_settings',
+          where: 'key = ?',
+          whereArgs: ['user_setting'],
+        ),
+        [
+          {'key': 'user_setting', 'value': 'keep'},
+        ],
+      );
+      expect(await restored.query('sessions'), hasLength(1));
+      expect(await restored.query('asmr_works'), hasLength(1));
+      await restored.close();
+      expect(
+        await appDatabase.loadBrowseSnapshot(
+          kind: 'asmr_tree',
+          scope: 'alice:zh',
+          key: '72',
+        ),
+        isNotNull,
+      );
+      expect(
+        await appDatabase.loadAppSetting('browse_page_state_v1'),
+        isNotNull,
+      );
     },
   );
 

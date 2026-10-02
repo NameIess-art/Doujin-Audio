@@ -16,10 +16,7 @@ Future<void> showAsmrWorkDetailSheet(
     child: WorkDetailPage.forAsmr(work: work),
   );
   if (replace && navigator.canPop()) {
-    return navigator.pushAndRemoveUntil(
-      route,
-      (candidate) => candidate.isFirst,
-    );
+    return navigator.pushReplacement(route);
   }
   return navigator.push(route);
 }

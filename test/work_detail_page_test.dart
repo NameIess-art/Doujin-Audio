@@ -1,3 +1,5 @@
+import 'package:doujin_audio/app/application/browse_page_state_store.dart';
+import 'package:doujin_audio/app/state/app_runtime_providers.dart';
 import 'dart:async';
 import 'dart:io';
 
@@ -90,11 +92,27 @@ class _ControlledWorkDetailCoverService extends CoverArtworkCacheService {
   }
 
   @override
+  Future<List<CoverImageReference>> discoverCoverImageReferencesInFolder(
+    String folderPath, {
+    bool refresh = false,
+  }) {
+    imageRequests++;
+    return images.future.then(
+      (paths) => paths
+          .map(
+            (path) => CoverImageReference(displayPath: path, sourcePath: path),
+          )
+          .toList(),
+    );
+  }
+
+  @override
   Future<List<String>> discoverCoverCandidatesInFolder(
     String folderPath, {
     String? selectedCoverPath,
     bool includeVideoFrames = true,
     bool includeEmbeddedCovers = true,
+    bool propagateFailure = false,
   }) {
     expect(includeVideoFrames, isFalse);
     expect(includeEmbeddedCovers, isFalse);
@@ -162,6 +180,8 @@ void main() {
             overrides: [
               workTextServiceProvider.overrideWithValue(
                 WorkTextService(
+                  discoverImages:
+                      fixture.library.discoverCoverImageReferencesInFolder,
                   platformGateway: _NestedWorkDetailFileGateway([
                     {
                       'name': 'notes.txt',
@@ -281,6 +301,8 @@ void main() {
           overrides: [
             workTextServiceProvider.overrideWithValue(
               WorkTextService(
+                discoverImages:
+                    fixture.library.discoverCoverImageReferencesInFolder,
                 platformGateway: _NestedWorkDetailFileGateway([]),
               ),
             ),
@@ -358,6 +380,8 @@ void main() {
             overrides: [
               workTextServiceProvider.overrideWithValue(
                 WorkTextService(
+                  discoverImages:
+                      fixture.library.discoverCoverImageReferencesInFolder,
                   platformGateway: _NestedWorkDetailFileGateway([
                     {
                       'name': 'notes.txt',
@@ -452,6 +476,8 @@ void main() {
           overrides: [
             workTextServiceProvider.overrideWithValue(
               WorkTextService(
+                discoverImages:
+                    fixture.library.discoverCoverImageReferencesInFolder,
                 platformGateway: _WorkDetailFileGateway(textFile),
               ),
             ),
@@ -1147,6 +1173,45 @@ void main() {
 
   group('WorkImageViewerPage', () {
     testWidgets(
+      'image browsing restores stable identity while explicit first image wins',
+      (tester) async {
+        final fixture = AppRuntimeWidgetTestFixture();
+        addTearDown(fixture.dispose);
+        final store = BrowsePageStateStore(persistent: false);
+        store.update('images:work', {'image': '02.jpg'});
+        const images = [
+          WorkImageItem(
+            name: 'new.jpg',
+            path: 'new-cache.jpg',
+            relativePath: 'new.jpg',
+          ),
+          WorkImageItem(
+            name: '02.jpg',
+            path: 'changed-cache.jpg',
+            relativePath: '02.jpg',
+          ),
+        ];
+        Widget page({int? index}) => fixture.build(
+          WorkImageViewerPage(
+            images: images,
+            browseKey: 'images:work',
+            initialIndex: index,
+          ),
+          overrides: [browsePageStateStoreProvider.overrideWithValue(store)],
+        );
+        await tester.pumpWidget(page());
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(find.text('2 / 2'), findsOneWidget);
+        await tester.pumpWidget(const SizedBox());
+        await tester.pumpWidget(page(index: 0));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(find.text('1 / 2'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
       'displays images, switches with prev/next, and sets manual cover',
       (tester) async {
         SharedPreferences.setMockInitialValues(const <String, Object>{});
@@ -1491,6 +1556,8 @@ void main() {
             overrides: [
               workTextServiceProvider.overrideWithValue(
                 WorkTextService(
+                  discoverImages:
+                      fixture.library.discoverCoverImageReferencesInFolder,
                   platformGateway: _WorkDetailFileGateway(textFile),
                 ),
               ),

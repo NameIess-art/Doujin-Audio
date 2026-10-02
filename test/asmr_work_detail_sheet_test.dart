@@ -327,7 +327,8 @@ void main() {
         await tester.pumpAndSettle();
         for (
           var tick = 0;
-          tick < 100 && PaintingBinding.instance.imageCache.pendingImageCount > 0;
+          tick < 100 &&
+              PaintingBinding.instance.imageCache.pendingImageCount > 0;
           tick++
         ) {
           await tester.runAsync(
@@ -416,11 +417,81 @@ void main() {
     await tester.pump(const Duration(seconds: 1));
     expect(controller.refreshRequests, isEmpty);
     expect(controller.pageLanguage, AppLanguage.zh);
+    expect(controller.ensureLanguages, isEmpty);
     activeTab.value = 2;
     await tester.pumpAndSettle();
     expect(controller.pageLanguage, AppLanguage.en);
-    expect(controller.refreshRequests, [AsmrCategoryType.collected]);
+    expect(controller.refreshRequests, isEmpty);
+    expect(controller.ensureLanguages, contains(AppLanguage.en));
   });
+
+  testWidgets(
+    'ASMR search restores separate query positions without resetting the root',
+    (tester) async {
+      SharedPreferences.setMockInitialValues(const <String, Object>{});
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      await fixture.languageProvider.setLanguage(AppLanguage.zh);
+      final controller = _LoadedTabAsmrController(createTestAsmrServices(), [
+        for (var id = 1; id <= 30; id++)
+          _work(id: id, title: 'Shared work $id'),
+      ]);
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(
+        fixture.build(
+          const AsmrTab(),
+          overrides: [
+            asmrLibraryControllerProvider.overrideWithValue(controller),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('收藏'));
+      await tester.pumpAndSettle();
+      final rootScroll = tester
+          .widget<ListView>(find.byType(ListView))
+          .controller!;
+      rootScroll.jumpTo(320);
+      await tester.pump();
+      await tester.tap(
+        find.byKey(const ValueKey<String>('asmr_search_button')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('收藏'));
+      await tester.pumpAndSettle();
+      Future<void> query(String value) async {
+        await tester.enterText(find.byType(TextField), value);
+        await tester.pump(const Duration(milliseconds: 260));
+        await tester.pumpAndSettle();
+      }
+
+      await query('shared');
+      final searchScroll = tester
+          .widget<ListView>(
+            find.descendant(
+              of: find.byKey(const ValueKey<String>('asmr_search_favorites')),
+              matching: find.byKey(
+                const PageStorageKey(AsmrCategoryType.favorites),
+              ),
+            ),
+          )
+          .controller!;
+      searchScroll.jumpTo(480);
+      await tester.pump();
+      await query('work');
+      expect(searchScroll.offset, closeTo(0, 1));
+      searchScroll.jumpTo(760);
+      await tester.pump();
+      await query('shared');
+      expect(searchScroll.offset, closeTo(480, 1));
+      await query('work');
+      expect(searchScroll.offset, closeTo(760, 1));
+      Navigator.of(tester.element(find.byType(TextField))).pop();
+      await tester.pumpAndSettle();
+      expect(rootScroll.offset, closeTo(320, 1));
+      expect(controller.refreshRequests, isEmpty);
+    },
+  );
 
   testWidgets(
     'Windows metadata copies with right click only',
@@ -591,51 +662,55 @@ void main() {
   tearDown(UiInteractionCoordinator.instance.resetForTest);
 
   for (final count in <int>[100, 1000, 5000]) {
-    testWidgets('selection and updated rows stay visible for $count ASMR works', (
-      tester,
-    ) async {
-      SharedPreferences.setMockInitialValues(const <String, Object>{});
-      final fixture = AppRuntimeWidgetTestFixture();
-      addTearDown(fixture.dispose);
-      await fixture.languageProvider.setLanguage(AppLanguage.zh);
-      final controller = _TestFavoritesAsmrLibraryController(
-        createTestAsmrServices(),
-        const [],
-      );
-      controller.favoriteWorks = immutableList(
-        List.generate(count, (index) => _work(id: index, title: 'Work $index')),
-      );
-      addTearDown(controller.dispose);
-      await tester.pumpWidget(
-        fixture.build(
-          const AsmrTab(),
-          overrides: [
-            asmrLibraryControllerProvider.overrideWithValue(controller),
-          ],
-        ),
-      );
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('收藏'));
-      await tester.pumpAndSettle();
-      await tester.longPress(find.text('Work 0'));
-      await tester.pumpAndSettle();
+    testWidgets(
+      'selection and updated rows stay visible for $count ASMR works',
+      (tester) async {
+        SharedPreferences.setMockInitialValues(const <String, Object>{});
+        final fixture = AppRuntimeWidgetTestFixture();
+        addTearDown(fixture.dispose);
+        await fixture.languageProvider.setLanguage(AppLanguage.zh);
+        final controller = _TestFavoritesAsmrLibraryController(
+          createTestAsmrServices(),
+          const [],
+        );
+        controller.favoriteWorks = immutableList(
+          List.generate(
+            count,
+            (index) => _work(id: index, title: 'Work $index'),
+          ),
+        );
+        addTearDown(controller.dispose);
+        await tester.pumpWidget(
+          fixture.build(
+            const AsmrTab(),
+            overrides: [
+              asmrLibraryControllerProvider.overrideWithValue(controller),
+            ],
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('收藏'));
+        await tester.pumpAndSettle();
+        await tester.longPress(find.text('Work 0'));
+        await tester.pumpAndSettle();
 
-      expect(find.text('已选择 1 项'), findsOneWidget);
-      await tester.tap(find.text('Work 1'));
-      await tester.pumpAndSettle();
-      expect(find.text('已选择 2 项'), findsOneWidget);
-      expect(find.text('Work 0'), findsOneWidget);
-      expect(find.text('Work 1'), findsOneWidget);
-      expect(find.text('Work ${count - 1}'), findsNothing);
+        expect(find.text('已选择 1 项'), findsOneWidget);
+        await tester.tap(find.text('Work 1'));
+        await tester.pumpAndSettle();
+        expect(find.text('已选择 2 项'), findsOneWidget);
+        expect(find.text('Work 0'), findsOneWidget);
+        expect(find.text('Work 1'), findsOneWidget);
+        expect(find.text('Work ${count - 1}'), findsNothing);
 
-      controller.updateFavorites(<AsmrWork>[
-        _work(id: count, title: 'New work'),
-      ]);
-      await tester.pumpAndSettle();
-      expect(find.text('New work'), findsOneWidget);
-      await tester.pumpWidget(const SizedBox.shrink());
-      await tester.pump();
-    });
+        controller.updateFavorites(<AsmrWork>[
+          _work(id: count, title: 'New work'),
+        ]);
+        await tester.pumpAndSettle();
+        expect(find.text('New work'), findsOneWidget);
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump();
+      },
+    );
   }
 
   testWidgets('detail download button opens the work download page', (
@@ -752,9 +827,11 @@ void main() {
     await tester.pump();
     await tester.pump();
     expect(
-      tester.widget<PlaceholderContentTransition>(
-        find.byType(PlaceholderContentTransition),
-      ).duration,
+      tester
+          .widget<PlaceholderContentTransition>(
+            find.byType(PlaceholderContentTransition),
+          )
+          .duration,
       kPlaceholderContentTransitionDuration,
     );
     expect(find.byType(OperationSkeletonList), findsOneWidget);
@@ -1029,10 +1106,9 @@ void main() {
       addTearDown(fixture.dispose);
       await fixture.languageProvider.setLanguage(AppLanguage.zh);
       final work = _work(id: 301, title: 'Batch work');
-      final controller = _BatchAsmrLibraryController(
-        createTestAsmrServices(),
-        [work],
-      );
+      final controller = _BatchAsmrLibraryController(createTestAsmrServices(), [
+        work,
+      ]);
       addTearDown(controller.dispose);
       final coordinator = AsmrPlaybackCoordinator(
         source: controller,
@@ -1081,10 +1157,9 @@ void main() {
       addTearDown(fixture.dispose);
       await fixture.languageProvider.setLanguage(AppLanguage.zh);
       final work = _work(id: 302, title: 'Favorite batch work');
-      final controller = _BatchAsmrLibraryController(
-        createTestAsmrServices(),
-        [work],
-      );
+      final controller = _BatchAsmrLibraryController(createTestAsmrServices(), [
+        work,
+      ]);
       addTearDown(controller.dispose);
       await tester.pumpWidget(
         fixture.build(
@@ -1170,6 +1245,14 @@ class _TestFavoritesAsmrLibraryController extends AsmrLibraryController {
     );
   }
 
+  @override
+  Future<void> ensureCategoryLoaded(
+    AsmrCategoryType category, {
+    String searchQuery = '',
+    bool refreshInBackground = true,
+  }) async {}
+  @override
+  Future<void> refreshWorkInBackground(AsmrWork work) async {}
   @override
   Future<void> initialize({AsmrContentLanguage? defaultLanguage}) async {}
 
@@ -1260,6 +1343,16 @@ class _LoadedTabAsmrController extends _TestFavoritesAsmrLibraryController {
   _LoadedTabAsmrController(super.services, super.initialWorks);
 
   final refreshRequests = <AsmrCategoryType>[];
+  final ensureLanguages = <AppLanguage>[];
+
+  @override
+  Future<void> ensureCategoryLoaded(
+    AsmrCategoryType category, {
+    String searchQuery = '',
+    bool refreshInBackground = true,
+  }) async {
+    ensureLanguages.add(pageLanguage);
+  }
 
   @override
   bool get initialized => true;

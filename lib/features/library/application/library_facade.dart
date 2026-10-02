@@ -335,6 +335,21 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
     return null;
   }
 
+  FolderNode? resolvedLibraryFolderTree(String folderPath) {
+    FolderNode? find(Iterable<LibraryNode> nodes) {
+      for (final folder in nodes.whereType<FolderNode>()) {
+        if (PathMatcher.equalsNormalized(folder.path, folderPath)) {
+          return folder;
+        }
+        final nested = find(folder.children);
+        if (nested != null) return nested;
+      }
+      return null;
+    }
+
+    return find(snapshotCacheService.tree);
+  }
+
   String? libraryRootForPath(String entityPath) =>
       _service.libraryRootForPath(entityPath);
 
@@ -500,11 +515,21 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
     String? selectedCoverPath,
     bool includeVideoFrames = true,
     bool includeEmbeddedCovers = true,
+    bool propagateFailure = false,
   }) => _metadataCoordinator.discoverCoverCandidates(
     folderPath,
     selectedCoverPath: selectedCoverPath,
     includeVideoFrames: includeVideoFrames,
     includeEmbeddedCovers: includeEmbeddedCovers,
+    propagateFailure: propagateFailure,
+  );
+
+  Future<List<CoverImageReference>> discoverCoverImageReferencesInFolder(
+    String folderPath, {
+    bool refresh = false,
+  }) => coverArtworkCacheService.discoverCoverImageReferencesInFolder(
+    folderPath,
+    refresh: refresh,
   );
 
   Future<String?> setFolderManualCover(
@@ -937,6 +962,8 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
       libraryService: _service,
       databaseRepository: databaseRepository,
       audioDetailCacheService: detailCacheService,
+      persistRetargetedManualCovers: (tracks) =>
+          addOrReplaceTracks(tracks, mergeExistingState: false),
       isActiveCoverKey: isActiveCoverKey,
       onActiveCoverChanged: onActiveCoverChanged,
       preferEmbeddedCover: preferEmbeddedCover,

@@ -296,6 +296,34 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
+  testWidgets('retained decoded covers obey count and byte budgets', (
+    tester,
+  ) async {
+    final first = _ControlledImageProvider();
+    final second = _ControlledImageProvider();
+    final cache = PaintingBinding.instance.imageCache;
+    addTearDown(() {
+      releaseRetainedCoverImages();
+      configureRetainedCoverBudget(
+        maximumSize: 200,
+        maximumSizeBytes: 50 * 1024 * 1024,
+      );
+    });
+    configureRetainedCoverBudget(maximumSize: 1, maximumSizeBytes: 16);
+    first.complete(await _createTestImage());
+    second.complete(await _createTestImage());
+    retainCoverImage(first, ImageConfiguration.empty);
+    await tester.pump();
+    retainCoverImage(second, ImageConfiguration.empty);
+    await tester.pump();
+    cache.clear();
+    expect(cache.statusForKey(first).live, isFalse);
+    expect(cache.statusForKey(second).live, isTrue);
+    configureRetainedCoverBudget(maximumSize: 1, maximumSizeBytes: 15);
+    cache.clear();
+    expect(cache.statusForKey(second).live, isFalse);
+  });
+
   testWidgets('AsyncCoverImage retries when the first path is empty', (
     tester,
   ) async {
@@ -736,97 +764,105 @@ void main() {
     },
   );
 
-  testWidgets(
-    'RetryingImage fades the placeholder out over 750ms',
-    (tester) async {
-      final provider = _ControlledImageProvider();
+  testWidgets('RetryingImage fades the placeholder out over 750ms', (
+    tester,
+  ) async {
+    final provider = _ControlledImageProvider();
 
-      await tester.pumpWidget(
-        MaterialApp(
-          home: SizedBox(
-            width: 120,
-            height: 90,
-            child: RetryingImage(
-              retryKey: 'controlled-cover',
-              imageProviderBuilder: () => provider,
-              fallbackBuilder: (_) => const ColoredBox(
-                key: ValueKey<String>('decoding_placeholder'),
-                color: Colors.pink,
-              ),
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SizedBox(
+          width: 120,
+          height: 90,
+          child: RetryingImage(
+            retryKey: 'controlled-cover',
+            imageProviderBuilder: () => provider,
+            fallbackBuilder: (_) => const ColoredBox(
+              key: ValueKey<String>('decoding_placeholder'),
+              color: Colors.pink,
             ),
           ),
         ),
-      );
+      ),
+    );
 
-      expect(
-        find.byKey(const ValueKey<String>('decoding_placeholder')),
-        findsOneWidget,
-      );
+    expect(
+      find.byKey(const ValueKey<String>('decoding_placeholder')),
+      findsOneWidget,
+    );
 
-      final image = await _createTestImage();
-      addTearDown(image.dispose);
-      provider.complete(image);
-      await tester.pump();
-      await tester.pump();
+    final image = await _createTestImage();
+    addTearDown(image.dispose);
+    provider.complete(image);
+    await tester.pump();
+    await tester.pump();
 
-      expect(
-        find.byKey(const ValueKey<String>('decoding_placeholder')),
-        findsOneWidget,
-      );
-      final transition = find.byType(PlaceholderContentTransition);
-      expect(
-        tester.widget<PlaceholderContentTransition>(transition).duration,
-        kPlaceholderContentTransitionDuration,
-      );
-      expect(kPlaceholderContentTransitionDuration, const Duration(milliseconds: 750));
-      final fades = find.descendant(
-        of: transition,
-        matching: find.byType(FadeTransition),
-      );
-      expect(fades, findsNWidgets(2));
-      final placeholderFade = find.ancestor(
-        of: find.byKey(const ValueKey<String>('decoding_placeholder')),
-        matching: find.byType(FadeTransition),
-      );
-      expect(tester.widget<FadeTransition>(placeholderFade.first).opacity.value, 1);
-      await tester.pump(const Duration(milliseconds: 375));
-      final midwayOpacity = tester.widget<FadeTransition>(placeholderFade.first).opacity.value;
-      expect(midwayOpacity, greaterThan(0));
-      expect(midwayOpacity, lessThan(1));
-      await tester.pumpWidget(
-        MaterialApp(
-          home: SizedBox(
-            width: 120,
-            height: 90,
-            child: RetryingImage(
-              retryKey: 'controlled-cover',
-              imageProviderBuilder: () => provider,
-              fallbackBuilder: (_) => const ColoredBox(
-                key: ValueKey<String>('decoding_placeholder'),
-                color: Colors.pink,
-              ),
+    expect(
+      find.byKey(const ValueKey<String>('decoding_placeholder')),
+      findsOneWidget,
+    );
+    final transition = find.byType(PlaceholderContentTransition);
+    expect(
+      tester.widget<PlaceholderContentTransition>(transition).duration,
+      kPlaceholderContentTransitionDuration,
+    );
+    expect(
+      kPlaceholderContentTransitionDuration,
+      const Duration(milliseconds: 750),
+    );
+    final fades = find.descendant(
+      of: transition,
+      matching: find.byType(FadeTransition),
+    );
+    expect(fades, findsNWidgets(2));
+    final placeholderFade = find.ancestor(
+      of: find.byKey(const ValueKey<String>('decoding_placeholder')),
+      matching: find.byType(FadeTransition),
+    );
+    expect(
+      tester.widget<FadeTransition>(placeholderFade.first).opacity.value,
+      1,
+    );
+    await tester.pump(const Duration(milliseconds: 375));
+    final midwayOpacity = tester
+        .widget<FadeTransition>(placeholderFade.first)
+        .opacity
+        .value;
+    expect(midwayOpacity, greaterThan(0));
+    expect(midwayOpacity, lessThan(1));
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SizedBox(
+          width: 120,
+          height: 90,
+          child: RetryingImage(
+            retryKey: 'controlled-cover',
+            imageProviderBuilder: () => provider,
+            fallbackBuilder: (_) => const ColoredBox(
+              key: ValueKey<String>('decoding_placeholder'),
+              color: Colors.pink,
             ),
           ),
         ),
-      );
-      expect(
-        tester.widget<FadeTransition>(placeholderFade.first).opacity.value,
-        closeTo(midwayOpacity, 0.001),
-      );
-      await tester.pump(const Duration(milliseconds: 374));
-      expect(
-        find.byKey(const ValueKey<String>('decoding_placeholder')),
-        findsOneWidget,
-      );
-      await tester.pump(const Duration(milliseconds: 1));
-      await tester.pumpAndSettle();
-      expect(
-        find.byKey(const ValueKey<String>('decoding_placeholder')),
-        findsNothing,
-      );
-      expect(find.byType(RawImage), findsOneWidget);
-    },
-  );
+      ),
+    );
+    expect(
+      tester.widget<FadeTransition>(placeholderFade.first).opacity.value,
+      closeTo(midwayOpacity, 0.001),
+    );
+    await tester.pump(const Duration(milliseconds: 374));
+    expect(
+      find.byKey(const ValueKey<String>('decoding_placeholder')),
+      findsOneWidget,
+    );
+    await tester.pump(const Duration(milliseconds: 1));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey<String>('decoding_placeholder')),
+      findsNothing,
+    );
+    expect(find.byType(RawImage), findsOneWidget);
+  });
 
   testWidgets('RetryingImage renders every cover display mode', (tester) async {
     final imageBytes = base64Decode(
@@ -865,37 +901,40 @@ void main() {
     expect(find.byType(ImageFiltered), findsOneWidget);
   });
 
-  testWidgets('file covers retain the placeholder during decoding', (
-    tester,
-  ) async {
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          coverImageResolutionProvider.overrideWithValue(
-            CoverImageResolution.balanced,
-          ),
-          coverImageDisplayModeProvider.overrideWithValue(
-            CoverImageDisplayMode.tile,
-          ),
-        ],
-        child: MaterialApp(
-          home: RetryingFileImage(
-            path: 'missing-cover.png',
-            fit: BoxFit.cover,
-            displayMode: CoverImageDisplayMode.fill,
-            fallbackBuilder: (_) => const SizedBox.shrink(),
+  testWidgets(
+    'file covers retain the placeholder during decoding',
+    (tester) async {
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            coverImageResolutionProvider.overrideWithValue(
+              CoverImageResolution.balanced,
+            ),
+            coverImageDisplayModeProvider.overrideWithValue(
+              CoverImageDisplayMode.tile,
+            ),
+          ],
+          child: MaterialApp(
+            home: RetryingFileImage(
+              path: 'missing-cover.png',
+              fit: BoxFit.cover,
+              displayMode: CoverImageDisplayMode.fill,
+              fallbackBuilder: (_) => const SizedBox.shrink(),
+            ),
           ),
         ),
-      ),
-    );
+      );
 
-    final retryingImage = tester.widget<RetryingImage>(
-      find.byType(RetryingImage),
-    );
-    expect(retryingImage.displayMode, CoverImageDisplayMode.fill);
-    expect(retryingImage.deferLoadDuringInteraction, isFalse);
-  }, variant: const TargetPlatformVariant({
-    TargetPlatform.android,
-    TargetPlatform.windows,
-  }));
+      final retryingImage = tester.widget<RetryingImage>(
+        find.byType(RetryingImage),
+      );
+      expect(retryingImage.displayMode, CoverImageDisplayMode.fill);
+      expect(retryingImage.deferLoadDuringInteraction, isFalse);
+      expect(retryingImage.retainInImageCache, isTrue);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
 }

@@ -8,12 +8,47 @@ import 'package:path_provider/path_provider.dart';
 
 import '../../../core/logging/app_log_service.dart';
 import '../../../core/media/cover_image_format.dart';
+import '../../../core/media/path_matcher.dart';
 export '../../../core/media/cover_image_format.dart'
     show coverArtworkStoreDirectoryName;
 
 const String coverArtworkStoreIndexFileName = 'index.json';
 
 enum CoverArtworkNamespace { remote, embedded, generated, legacy }
+
+typedef RemoteCoverValidation = ({
+  DateTime checkedAt,
+  String? etag,
+  String? lastModified,
+});
+
+String _canonicalLogicalKey(String value) {
+  for (final prefix in const [
+    'folder:',
+    'track:',
+    'native:',
+    'embedded:',
+    'video:',
+  ]) {
+    if (!value.startsWith(prefix)) continue;
+    final source = value.substring(prefix.length);
+    if (source.startsWith('remote-cover:')) return value;
+    final fingerprintAt = source.indexOf('|');
+    final videoAt = prefix == 'video:'
+        ? source.lastIndexOf(':', source.lastIndexOf(':') - 1)
+        : -1;
+    final suffixAt = fingerprintAt >= 0 ? fingerprintAt : videoAt;
+    final sourcePath = suffixAt < 0 ? source : source.substring(0, suffixAt);
+    if (sourcePath.startsWith('windows:') ||
+        sourcePath.startsWith('file:') ||
+        (sourcePath.startsWith('content:') &&
+            !sourcePath.startsWith('content://'))) {
+      return value;
+    }
+    return '$prefix${PathMatcher.equivalenceKey(sourcePath)}${suffixAt < 0 ? '' : source.substring(suffixAt)}';
+  }
+  return value;
+}
 
 /// Owns durable cover files and the small synchronous lookup index used by UI.
 final class CoverArtworkStore {
@@ -28,6 +63,7 @@ final class CoverArtworkStore {
   final Future<Directory> Function() _temporaryDirectory;
   final Map<String, String> _bindings = <String, String>{};
   final Map<String, String> _legacyAliases = <String, String>{};
+  final Map<String, RemoteCoverValidation> _remoteValidation = {};
   Future<void>? _initializeFuture;
   Future<void> _operations = Future<void>.value();
   late Directory _root;
@@ -62,9 +98,26 @@ final class CoverArtworkStore {
     try {
       if (await _index.exists()) {
         final decoded = json.decode(await _index.readAsString());
-        if (decoded is Map && decoded['version'] == 1) {
+        if (decoded is Map &&
+            (decoded['version'] == 1 || decoded['version'] == 2)) {
           _decodeMap(decoded['bindings'], _bindings);
           _decodeMap(decoded['legacyAliases'], _legacyAliases);
+          final validation = decoded['remoteValidation'];
+          if (validation is Map) {
+            for (final entry in validation.entries) {
+              final data = entry.value;
+              if (data is! Map) continue;
+              final checkedAt = DateTime.tryParse(
+                data['checkedAt']?.toString() ?? '',
+              );
+              if (checkedAt == null) continue;
+              _remoteValidation[entry.key.toString()] = (
+                checkedAt: checkedAt,
+                etag: data['etag'] as String?,
+                lastModified: data['lastModified'] as String?,
+              );
+            }
+          }
         }
       }
     } catch (_) {
@@ -72,6 +125,17 @@ final class CoverArtworkStore {
       _legacyAliases.clear();
     }
     _initialized = true;
+    final migrated = <String, String>{
+      for (final entry in _bindings.entries)
+        _canonicalLogicalKey(entry.key): entry.value,
+    };
+    if (migrated.keys.any((key) => !_bindings.containsKey(key)) ||
+        migrated.length != _bindings.length) {
+      _bindings
+        ..clear()
+        ..addAll(migrated);
+      await _persistIndex();
+    }
   }
 
   void _decodeMap(Object? value, Map<String, String> target) {
@@ -85,11 +149,56 @@ final class CoverArtworkStore {
 
   String? resolvedPath(String logicalKey) {
     if (!_initialized || logicalKey.isEmpty) return null;
-    final stored = _bindings[logicalKey];
+    final stored = _bindings[_canonicalLogicalKey(logicalKey)];
     return stored == null ? null : _absoluteValue(stored);
   }
 
+  Iterable<String> logicalKeysForPath(String resolvedPath) => _bindings.entries
+      .where(
+        (entry) => PathMatcher.equalsNormalized(
+          _absoluteValue(entry.value),
+          resolvedPath,
+        ),
+      )
+      .map((entry) => entry.key);
+
+  Future<void> discardUnreadableArtifact(
+    String value, {
+    Iterable<String> keys = const [],
+  }) {
+    final epoch = _clearEpoch;
+    return _enqueue<void>(() async {
+      if (epoch != _clearEpoch || !_initialized) return;
+      if (path.isWithin(_root.path, value)) {
+        final file = File(value);
+        if (await file.exists()) await file.delete();
+      }
+      var changed = false;
+      for (final key in keys) {
+        changed =
+            _bindings.remove(_canonicalLogicalKey(key)) != null || changed;
+      }
+      if (changed) await _persistIndex();
+    });
+  }
+
+  Future<bool> isRebuildablePath(String value) async {
+    await initialize();
+    if (_isUri(value)) return false;
+    if (path.isWithin(_root.path, value)) return true;
+    if (path.isWithin(
+      path.join(_root.parent.path, 'portable_card_covers'),
+      value,
+    )) {
+      return false;
+    }
+    final temporary = await _temporaryDirectory();
+    return path.isWithin(temporary.path, value) ||
+        path.isWithin(path.join(_root.parent.path, 'remote_covers'), value);
+  }
+
   Future<String?> validatedPath(String logicalKey) async {
+    logicalKey = _canonicalLogicalKey(logicalKey);
     final stored = _bindings[logicalKey];
     final epoch = _clearEpoch;
     final resolved = await _validResolvedValue(stored);
@@ -134,9 +243,13 @@ final class CoverArtworkStore {
       if (epoch != _clearEpoch) return null;
       final stem = fileStem ?? sha256.convert(bytes).toString();
       final output = _artifactFile(namespace, '$stem.image');
-      await _writeBytes(output, bytes);
-      _bindings[logicalKey] = _storedValue(output.path);
-      await _persistIndex();
+      if (!await _isUsableFile(output.path)) await _writeBytes(output, bytes);
+      final key = _canonicalLogicalKey(logicalKey);
+      final stored = _storedValue(output.path);
+      if (_bindings[key] != stored) {
+        _bindings[key] = stored;
+        await _persistIndex();
+      }
       return output.path;
     });
   }
@@ -170,8 +283,12 @@ final class CoverArtworkStore {
           };
       final output = _artifactFile(namespace, '$stem.image');
       if (!await _isUsableFile(output.path)) await _copyFile(source, output);
-      _bindings[logicalKey] = _storedValue(output.path);
-      await _persistIndex();
+      final key = _canonicalLogicalKey(logicalKey);
+      final stored = _storedValue(output.path);
+      if (_bindings[key] != stored) {
+        _bindings[key] = stored;
+        await _persistIndex();
+      }
       return output.path;
     });
   }
@@ -182,7 +299,10 @@ final class CoverArtworkStore {
     return _enqueue<void>(() async {
       await initialize();
       if (epoch != _clearEpoch) return;
-      _bindings[logicalKey] = _storedValue(resolvedPath);
+      final key = _canonicalLogicalKey(logicalKey);
+      final stored = _storedValue(resolvedPath);
+      if (_bindings[key] == stored) return;
+      _bindings[key] = stored;
       await _persistIndex();
     });
   }
@@ -191,7 +311,7 @@ final class CoverArtworkStore {
     if (!_initialized) return Future<void>.value();
     var changed = false;
     for (final key in logicalKeys) {
-      changed = _bindings.remove(key) != null || changed;
+      changed = _bindings.remove(_canonicalLogicalKey(key)) != null || changed;
     }
     return changed ? _enqueue<void>(_persistIndex) : Future<void>.value();
   }
@@ -200,6 +320,21 @@ final class CoverArtworkStore {
     if (!_initialized || _bindings.isEmpty) return Future<void>.value();
     _bindings.clear();
     return _enqueue<void>(_persistIndex);
+  }
+
+  RemoteCoverValidation? remoteValidation(String key) => _remoteValidation[key];
+
+  Future<void> saveRemoteValidation(
+    String key,
+    RemoteCoverValidation validation,
+  ) {
+    final epoch = _clearEpoch;
+    return _enqueue<void>(() async {
+      await initialize();
+      if (epoch != _clearEpoch || _remoteValidation[key] == validation) return;
+      _remoteValidation[key] = validation;
+      await _persistIndex();
+    });
   }
 
   Future<int> migrateLegacyCaches({bool Function()? shouldCancel}) {
@@ -264,6 +399,7 @@ final class CoverArtworkStore {
       if (await _root.exists()) await _root.delete(recursive: true);
       _bindings.clear();
       _legacyAliases.clear();
+      _remoteValidation.clear();
       await _root.create(recursive: true);
       await _persistIndex();
       return deletedBytes;
@@ -316,9 +452,17 @@ final class CoverArtworkStore {
     await _root.create(recursive: true);
     final partial = File('${_index.path}.part');
     final payload = json.encode(<String, Object>{
-      'version': 1,
+      'version': 2,
       'bindings': _bindings,
       'legacyAliases': _legacyAliases,
+      'remoteValidation': {
+        for (final entry in _remoteValidation.entries)
+          entry.key: {
+            'checkedAt': entry.value.checkedAt.toUtc().toIso8601String(),
+            'etag': entry.value.etag,
+            'lastModified': entry.value.lastModified,
+          },
+      },
     });
     try {
       await partial.writeAsString(payload, flush: true);

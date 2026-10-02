@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:convert';
+import '../../../core/logging/app_log_service.dart';
 import 'package:flutter/foundation.dart';
 
 import '../../../core/persistence/persisted_state_reloader.dart';
@@ -15,6 +17,7 @@ import 'asmr_library_view_state.dart';
 import 'asmr_work_content_mapping.dart';
 import 'asmr_work_content_store.dart';
 import '../../../core/app_language.dart';
+import '../../../core/media/search_query_utils.dart';
 
 export 'asmr_library_view_state.dart';
 export 'asmr_work_content_mapping.dart' show collectAsmrWorkTextFiles;
@@ -48,6 +51,9 @@ class AsmrLibraryController extends ChangeNotifier
     localWorks: (category) =>
         category == AsmrCategoryType.favorites ? _favoriteWorks : _historyWorks,
     decorateWork: _decorateWork,
+    currentContext: () => _categoryRequestContext,
+    persist: (scope, key, payload) =>
+        _persistBrowse('asmr_category', scope, key, payload),
   );
 
   List<AsmrCategoryType> _visibleCategories = kDefaultVisibleAsmrCategories;
@@ -75,6 +81,143 @@ class AsmrLibraryController extends ChangeNotifier
   int _authEpoch = 0;
   int _contentEpoch = 0;
   bool _disposed = false;
+  int _browseCacheEpoch = 0;
+  Future<void> _browseWriteTail = Future<void>.value();
+  Future<void>? _browseClearTask;
+  final Map<String, Future<void>> _browseHydrations = {};
+  final Set<String> _hydratedBrowseScopes = {};
+
+  String get browseCacheScope =>
+      jsonEncode([_authSession?.userName.trim() ?? '', _contentLanguage.name]);
+
+  void _persistBrowse(
+    String kind,
+    String scope,
+    String key,
+    Map<String, Object?> payload,
+  ) {
+    final epoch = _browseCacheEpoch;
+    _browseWriteTail = _browseWriteTail
+        .then((_) async {
+          if (epoch != _browseCacheEpoch) return;
+          await _preferencesStore.saveBrowseSnapshot(kind, scope, key, payload);
+        })
+        .catchError((Object error, StackTrace stack) {
+          AppLogService.warning(
+            'asmr_browse_cache_write_failed',
+            error: error,
+            stackTrace: stack,
+          );
+        });
+  }
+
+  Future<void> flushBrowseCaches() async {
+    while (true) {
+      final pending = _browseWriteTail;
+      await pending;
+      if (identical(pending, _browseWriteTail)) return;
+    }
+  }
+
+  Future<void> clearBrowseCaches() {
+    final existing = _browseClearTask;
+    if (existing != null) return existing;
+    late final Future<void> task;
+    task = _clearBrowseCaches().whenComplete(() {
+      if (identical(_browseClearTask, task)) _browseClearTask = null;
+    });
+    _browseClearTask = task;
+    return task;
+  }
+
+  Future<void> _clearBrowseCaches() async {
+    _browseCacheEpoch++;
+    _contentEpoch++;
+    _catalog.clearWorks();
+    _workContent.clearCaches(clearErrors: true);
+    _hydratedBrowseScopes.clear();
+    _browseHydrations.clear();
+    await flushBrowseCaches();
+    await _preferencesStore.clearBrowseSnapshots();
+    notifyListeners();
+  }
+
+  Future<void> _hydrateBrowseScope() {
+    final scope = browseCacheScope;
+    if (_hydratedBrowseScopes.contains(scope)) return Future<void>.value();
+    final existing = _browseHydrations[scope];
+    if (existing != null) return existing;
+    final context = _categoryRequestContext;
+    final epoch = _browseCacheEpoch;
+    late final Future<void> task;
+    task =
+        () async {
+          for (final category in AsmrCategoryType.values.where(
+            AsmrCategoryCatalog.isRemote,
+          )) {
+            final key = jsonEncode([category.name, '']);
+            final payload = await _readBrowsePayload(
+              'asmr_category',
+              scope,
+              key,
+            );
+            if (_disposed ||
+                epoch != _browseCacheEpoch ||
+                !_isContextCurrent(context)) {
+              return;
+            }
+            if (payload != null) _restoreCategoryPayload(scope, key, payload);
+          }
+          _hydratedBrowseScopes.add(scope);
+          notifyListeners();
+        }().whenComplete(() {
+          if (identical(_browseHydrations[scope], task)) {
+            _browseHydrations.remove(scope);
+          }
+        });
+    _browseHydrations[scope] = task;
+    return task;
+  }
+
+  Future<Map<String, Object?>?> _readBrowsePayload(
+    String kind,
+    String scope,
+    String key,
+  ) async {
+    await _browseClearTask;
+    try {
+      return await _preferencesStore.loadBrowseSnapshot(kind, scope, key);
+    } catch (error, stack) {
+      AppLogService.warning(
+        'asmr_browse_cache_read_failed kind=$kind key=$key',
+        error: error,
+        stackTrace: stack,
+      );
+      return null;
+    }
+  }
+
+  void _restoreCategoryPayload(
+    String scope,
+    String key,
+    Map<String, Object?> payload,
+  ) {
+    try {
+      _catalog.restore(scope, {key: payload});
+    } catch (error, stack) {
+      AppLogService.warning(
+        'asmr_category_cache_decode_failed key=$key',
+        error: error,
+        stackTrace: stack,
+      );
+    }
+  }
+
+  bool _isContextCurrent(AsmrCategoryRequestContext context) =>
+      !_disposed &&
+      context.authEpoch == _authEpoch &&
+      context.contentEpoch == _contentEpoch &&
+      context.scope == browseCacheScope;
 
   @override
   void notifyListeners() {
@@ -96,23 +239,35 @@ class AsmrLibraryController extends ChangeNotifier
     return result;
   }
 
-  AsmrWorkRequestKey _workRequestKey(int workId) =>
-      (workId: workId, contentEpoch: _contentEpoch, authEpoch: _authEpoch);
+  AsmrWorkRequestKey _workRequestKey(int workId) => (
+    workId: workId,
+    contentEpoch: _contentEpoch,
+    authEpoch: _authEpoch,
+    cacheEpoch: _browseCacheEpoch,
+  );
 
   bool _isWorkRequestCurrent(AsmrWorkRequestKey key) =>
-      key.contentEpoch == _contentEpoch && key.authEpoch == _authEpoch;
+      !_disposed &&
+      key.contentEpoch == _contentEpoch &&
+      key.authEpoch == _authEpoch &&
+      key.cacheEpoch == _browseCacheEpoch;
 
   AsmrCategoryRequestContext get _categoryRequestContext => (
     authEpoch: _authEpoch,
     token: _authSession?.token,
     contentEpoch: _contentEpoch,
     language: _contentLanguage,
+    scope: browseCacheScope,
   );
 
   void _refreshLoadedCategoriesForCurrentAuth() {
-    for (final entry in _catalog.takePendingAuthRefreshes().entries) {
-      unawaited(refreshCategory(entry.key, searchQuery: entry.value));
-    }
+    final pending = _catalog.takePendingAuthRefreshes();
+    unawaited(() async {
+      await _hydrateBrowseScope();
+      for (final entry in pending.entries) {
+        await ensureCategoryLoaded(entry.key, searchQuery: entry.value);
+      }
+    }());
   }
 
   void _invalidateRemoteWorkCaches() {
@@ -269,6 +424,8 @@ class AsmrLibraryController extends ChangeNotifier
     final accountSnapshot = await _accountSyncService.initialize();
     if (_disposed) return;
     _applyAccountSnapshot(accountSnapshot);
+    await _hydrateBrowseScope();
+    if (_disposed) return;
     _catalog.updateLocalCounts();
     _initialized = true;
     _bumpGlobalRevision();
@@ -338,6 +495,10 @@ class AsmrLibraryController extends ChangeNotifier
   @override
   Future<void> reloadPersistedState() async {
     _initialized = false;
+    _browseCacheEpoch++;
+    _contentEpoch++;
+    _hydratedBrowseScopes.clear();
+    _browseHydrations.clear();
     _catalog.clearWorks();
     _workContent.clearCaches(clearErrors: true);
     await initialize();
@@ -517,7 +678,7 @@ class AsmrLibraryController extends ChangeNotifier
     _applyContentLanguage(nextLanguage);
     await Future.wait(
       refreshQueries.entries.map(
-        (entry) => refreshCategory(entry.key, searchQuery: entry.value),
+        (entry) => ensureCategoryLoaded(entry.key, searchQuery: entry.value),
       ),
     );
   }
@@ -538,11 +699,60 @@ class AsmrLibraryController extends ChangeNotifier
     notifyListeners();
   }
 
+  Future<void> ensureCategoryLoaded(
+    AsmrCategoryType category, {
+    String searchQuery = '',
+    bool refreshInBackground = true,
+  }) async {
+    await initializeForVisiblePage();
+    await _browseClearTask;
+    if (_disposed) return;
+    await _hydrateBrowseScope();
+    final context = _categoryRequestContext;
+    if (AsmrCategoryCatalog.isRemote(category) &&
+        searchQuery.trim().isNotEmpty &&
+        !_catalog.hasLoaded(category, searchQuery: searchQuery)) {
+      final key = jsonEncode([
+        category.name,
+        normalizeSearchQuery(searchQuery),
+      ]);
+      final payload = await _readBrowsePayload(
+        'asmr_category',
+        context.scope,
+        key,
+      );
+      if (!_isContextCurrent(context)) return;
+      if (payload != null) _restoreCategoryPayload(context.scope, key, payload);
+    }
+    if (!_catalog.hasLoaded(category, searchQuery: searchQuery)) {
+      await _catalog.refresh(
+        category,
+        searchQuery: searchQuery,
+        context: context,
+      );
+    } else if (refreshInBackground) {
+      unawaited(
+        _catalog.refresh(
+          category,
+          searchQuery: searchQuery,
+          context: context,
+          background: true,
+        ),
+      );
+    }
+  }
+
+  void acceptCategoryUpdates(
+    AsmrCategoryType category, {
+    String searchQuery = '',
+  }) => _catalog.acceptUpdates(category, searchQuery: searchQuery);
+
   Future<void> refreshCategory(
     AsmrCategoryType category, {
     String searchQuery = '',
   }) async {
     await initialize();
+    await _browseClearTask;
     if (_disposed) return;
     await _catalog.refresh(
       category,
@@ -556,6 +766,7 @@ class AsmrLibraryController extends ChangeNotifier
     String searchQuery = '',
   }) async {
     await initialize();
+    await _browseClearTask;
     if (_disposed) return;
     await _catalog.loadMore(
       category,
@@ -568,14 +779,73 @@ class AsmrLibraryController extends ChangeNotifier
     return work.copyWith(isFavorite: _favoriteIds.contains(work.id));
   }
 
+  AsmrWorkDetail? cachedWorkDetail(int workId) =>
+      _workContent.cachedDetail(workId);
+  Future<void> refreshWorkInBackground(AsmrWork work) async {
+    await _browseClearTask;
+    if (_disposed) return;
+    final key = _workRequestKey(work.id);
+    await Future.wait<void>([
+      _workContent
+          .requestDetail(key, () => _loadWorkDetailOnce(work, key))
+          .then<void>(
+            (_) {},
+            onError: (Object error, StackTrace stack) {
+              AppLogService.warning(
+                'asmr_detail_background_refresh_failed',
+                error: error,
+                stackTrace: stack,
+              );
+            },
+          ),
+      _workContent
+          .requestTrackTree(key, () => _loadTrackTreeOnce(work, key))
+          .then<void>(
+            (_) {},
+            onError: (Object error, StackTrace stack) {
+              AppLogService.warning(
+                'asmr_tree_background_refresh_failed',
+                error: error,
+                stackTrace: stack,
+              );
+            },
+          ),
+    ]);
+  }
+
   Future<AsmrWorkDetail> loadWorkDetail(AsmrWork work) {
     final cached = _workContent.cachedDetail(work.id);
-    if (cached != null) return SynchronousFuture<AsmrWorkDetail>(cached);
+    if (cached != null) {
+      return SynchronousFuture<AsmrWorkDetail>(cached);
+    }
     final key = _workRequestKey(work.id);
-    return _workContent.requestDetail(
-      key,
-      () => _loadWorkDetailOnce(work, key),
-    );
+    return _workContent.requestDetail(key, () async {
+      final scope = browseCacheScope;
+      final payload = await _readBrowsePayload(
+        'asmr_detail',
+        scope,
+        work.id.toString(),
+      );
+      if (!_isWorkRequestCurrent(key)) {
+        if (_disposed || key.cacheEpoch != _browseCacheEpoch) {
+          throw StateError('browse_cache_invalidated');
+        }
+        return loadWorkDetail(work);
+      }
+      if (payload != null && payload['version'] == 1) {
+        try {
+          _workContent.restoreDetails({work.id.toString(): payload});
+          return _workContent.cachedDetail(work.id)!;
+        } catch (error, stack) {
+          AppLogService.warning(
+            'asmr_detail_cache_decode_failed',
+            error: error,
+            stackTrace: stack,
+          );
+        }
+      }
+      return _loadWorkDetailOnce(work, key);
+    });
   }
 
   Future<AsmrWorkDetail> _loadWorkDetailOnce(
@@ -588,7 +858,12 @@ class AsmrLibraryController extends ChangeNotifier
       token: _authSession?.token,
       language: language,
     );
-    if (!_isWorkRequestCurrent(key)) return loadWorkDetail(work);
+    if (!_isWorkRequestCurrent(key)) {
+      if (_disposed || key.cacheEpoch != _browseCacheEpoch) {
+        throw StateError('browse_cache_invalidated');
+      }
+      return loadWorkDetail(work);
+    }
     final merged = AsmrWorkDetail(
       work: _decorateWork(detail.work),
       description: detail.description,
@@ -597,6 +872,13 @@ class AsmrLibraryController extends ChangeNotifier
       userRating: detail.userRating,
     );
     _workContent.storeDetail(merged);
+    notifyListeners();
+    _persistBrowse(
+      'asmr_detail',
+      browseCacheScope,
+      work.id.toString(),
+      AsmrWorkContentStore.detailPayload(merged),
+    );
     return merged;
   }
 
@@ -697,12 +979,37 @@ class AsmrLibraryController extends ChangeNotifier
 
   Future<List<AsmrTrackFile>> ensureTrackTree(AsmrWork work) {
     final cached = _workContent.cachedTrackTree(work.id);
-    if (cached != null) return SynchronousFuture<List<AsmrTrackFile>>(cached);
+    if (cached != null) {
+      return SynchronousFuture<List<AsmrTrackFile>>(cached);
+    }
     final key = _workRequestKey(work.id);
-    return _workContent.requestTrackTree(
-      key,
-      () => _loadTrackTreeOnce(work, key),
-    );
+    return _workContent.requestTrackTree(key, () async {
+      final scope = browseCacheScope;
+      final payload = await _readBrowsePayload(
+        'asmr_tree',
+        scope,
+        work.id.toString(),
+      );
+      if (!_isWorkRequestCurrent(key)) {
+        if (_disposed || key.cacheEpoch != _browseCacheEpoch) {
+          throw StateError('browse_cache_invalidated');
+        }
+        return ensureTrackTree(work);
+      }
+      if (payload != null && payload['version'] == 1) {
+        try {
+          _workContent.restoreTrees({work.id.toString(): payload});
+          return _workContent.cachedTrackTree(work.id)!;
+        } catch (error, stack) {
+          AppLogService.warning(
+            'asmr_tree_cache_decode_failed',
+            error: error,
+            stackTrace: stack,
+          );
+        }
+      }
+      return _loadTrackTreeOnce(work, key);
+    });
   }
 
   Future<List<AsmrTrackFile>> _loadTrackTreeOnce(
@@ -718,7 +1025,16 @@ class AsmrLibraryController extends ChangeNotifier
         _workContent.clearTrackTreeError(work.id);
         final sortedTree = _workContent.storeTrackTree(work.id, tree);
         _workContent.bumpTrackRevision(work.id);
+        _persistBrowse(
+          'asmr_tree',
+          browseCacheScope,
+          work.id.toString(),
+          AsmrWorkContentStore.treePayload(sortedTree),
+        );
         return sortedTree;
+      }
+      if (_disposed || key.cacheEpoch != _browseCacheEpoch) {
+        throw StateError('browse_cache_invalidated');
       }
       return ensureTrackTree(work);
     } catch (error) {

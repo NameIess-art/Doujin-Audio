@@ -2527,10 +2527,9 @@ void main() {
     expect(runtimeGraph.settings.customEqPresets, contains(customPreset));
     expect(session.audioEffects.eqPresetId, customPreset.id);
     expect(
-      ProviderScope.containerOf(tester.element(find.byType(EqualizerPage)))
-          .read(undoableRemovalServiceProvider)
-          .state
-          .hiddenKeys,
+      ProviderScope.containerOf(
+        tester.element(find.byType(EqualizerPage)),
+      ).read(undoableRemovalServiceProvider).state.hiddenKeys,
       isEmpty,
     );
     expect(deleteEqualizerPresetButton, findsOneWidget);
@@ -5075,7 +5074,10 @@ void main() {
       );
 
       await settingsRepository.setBlurPlayerBackgroundEnabled(false);
-      expect(settingsRepository.slice.state.blurPlayerBackgroundEnabled, isFalse);
+      expect(
+        settingsRepository.slice.state.blurPlayerBackgroundEnabled,
+        isFalse,
+      );
       await tester.pumpAndSettle();
       expect(
         find.byKey(const ValueKey('session_detail_background_blur')),
@@ -6586,21 +6588,22 @@ void main() {
       await tester.pump(const Duration(milliseconds: 600));
       await tester.pump();
       expect(find.byType(WorkDetailPage), findsOneWidget);
-      expect(find.byType(SessionDetailPage), findsNothing);
+      expect(find.byType(SessionDetailPage, skipOffstage: false), findsWidgets);
 
-      // Exiting from work detail page directly returns to the main page
+      // Returning keeps the live playback detail and its navigation context.
       final backButton = find.byKey(const ValueKey('work_detail_back_button'));
       expect(backButton, findsOneWidget);
       await tester.tap(backButton);
       await tester.pumpAndSettle();
       expect(find.byType(WorkDetailPage), findsNothing);
-      expect(find.byType(SessionDetailPage), findsNothing);
-      expect(find.byType(PlaylistTab), findsOneWidget);
+      expect(find.byType(SessionDetailPage, skipOffstage: false), findsWidgets);
+      expect(find.byType(SessionDetailPage), findsOneWidget);
+      expect(find.byType(PlaylistTab, skipOffstage: false), findsOneWidget);
     },
   );
 
   testWidgets(
-    'work detail opened from playback skips intermediate routes on exit',
+    'work detail opened from playback preserves intermediate routes on exit',
     (tester) async {
       await _pumpSubtitleDetail(
         tester: tester,
@@ -6637,9 +6640,18 @@ void main() {
 
       await tester.tap(find.byKey(const ValueKey('work_detail_back_button')));
       await tester.pumpAndSettle();
-      expect(find.byType(PlaylistTab), findsOneWidget);
-      expect(find.text('Intermediate page'), findsNothing);
-      expect(find.byType(SessionDetailPage), findsNothing);
+      expect(find.byType(SessionDetailPage), findsOneWidget);
+      expect(find.byType(PlaylistTab, skipOffstage: false), findsOneWidget);
+      navigator.pop();
+      await tester.pumpAndSettle();
+      expect(find.text('Intermediate page'), findsOneWidget);
+      expect(find.byType(SessionDetailPage, skipOffstage: false), findsWidgets);
+      // Wait for SQLite-backed directory cache work in real async time before
+      // fixture disposal; navigation now keeps the intermediate routes alive.
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 200)),
+      );
+      await tester.pump();
       expect(tester.takeException(), isNull);
     },
   );

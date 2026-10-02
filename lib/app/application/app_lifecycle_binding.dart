@@ -29,6 +29,8 @@ final class AppLifecycleBinding implements RuntimeBinding, AppRuntimeLifecycle {
     required PlaybackCommandCoordinator playbackCommands,
     AsmrDownloadManager? asmrDownloads,
     required List<RuntimeBinding> bindings,
+    Future<void> Function()? flushBrowseCaches,
+    Future<void> Function()? disposeBrowseCaches,
   }) : _persistence = persistence,
        _library = library,
        _playback = playback,
@@ -39,6 +41,8 @@ final class AppLifecycleBinding implements RuntimeBinding, AppRuntimeLifecycle {
        _keepAlive = keepAlive,
        _playbackCommands = playbackCommands,
        _asmrDownloads = asmrDownloads,
+       _flushBrowseCaches = flushBrowseCaches,
+       _disposeBrowseCaches = disposeBrowseCaches,
        _bindings = List<RuntimeBinding>.unmodifiable(bindings) {
     _runtime = AudioRuntimeCoordinator(
       snapshots: playback.nativeRepository.snapshots,
@@ -67,6 +71,8 @@ final class AppLifecycleBinding implements RuntimeBinding, AppRuntimeLifecycle {
     required PlaybackCommandCoordinator playbackCommands,
     AsmrDownloadManager? asmrDownloads,
     required List<RuntimeBinding> bindings,
+    Future<void> Function()? flushBrowseCaches,
+    Future<void> Function()? disposeBrowseCaches,
   }) {
     return AppLifecycleBinding._(
       persistence: persistence,
@@ -80,6 +86,8 @@ final class AppLifecycleBinding implements RuntimeBinding, AppRuntimeLifecycle {
       playbackCommands: playbackCommands,
       asmrDownloads: asmrDownloads,
       bindings: bindings,
+      flushBrowseCaches: flushBrowseCaches,
+      disposeBrowseCaches: disposeBrowseCaches,
     );
   }
 
@@ -97,6 +105,8 @@ final class AppLifecycleBinding implements RuntimeBinding, AppRuntimeLifecycle {
   late final AudioRuntimeCoordinator _runtime;
   bool _bindingsDisposed = false;
   Future<void>? _disposeFuture;
+  final Future<void> Function()? _flushBrowseCaches;
+  final Future<void> Function()? _disposeBrowseCaches;
 
   @override
   Future<void> start() => _runtime.start();
@@ -125,6 +135,7 @@ final class AppLifecycleBinding implements RuntimeBinding, AppRuntimeLifecycle {
   }
 
   Future<void> _enterBackground() async {
+    await _flushBrowseCaches?.call();
     _playback.setBackgroundMode(true);
     _keepAlive.enterBackground();
     await _playback.flushSessionStatePersistence();
@@ -152,6 +163,8 @@ final class AppLifecycleBinding implements RuntimeBinding, AppRuntimeLifecycle {
     }
 
     await attempt(_playback.flushSessionStatePersistence);
+    if (_flushBrowseCaches != null) await attempt(_flushBrowseCaches);
+    if (_disposeBrowseCaches != null) await attempt(_disposeBrowseCaches);
     await attempt(_persistence.dispose);
     await attempt(_playback.cancelScheduledPersistence);
     await attempt(_library.cancelPendingScanProgressNotification);

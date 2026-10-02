@@ -15,6 +15,19 @@ class AsmrPreferencesStore {
 
   final AsmrPersistenceRepository _repository;
 
+  Future<Map<String, Object?>?> loadBrowseSnapshot(
+    String kind,
+    String scope,
+    String key,
+  ) => _repository.loadBrowseSnapshot(kind, scope, key);
+  Future<void> saveBrowseSnapshot(
+    String kind,
+    String scope,
+    String key,
+    Map<String, Object?> payload,
+  ) => _repository.saveBrowseSnapshot(kind, scope, key, payload);
+  Future<void> clearBrowseSnapshots() => _repository.clearBrowseSnapshots();
+
   Future<void> clearForTest() async {
     await _repository.clearForTest();
     for (final key in [

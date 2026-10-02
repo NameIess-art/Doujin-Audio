@@ -284,7 +284,12 @@ class FileCachePlatformGateway {
     if (_isWindows() && !_isAndroid()) {
       final images = <CoverImageReference>[];
       final directory = Directory(rootFolder);
-      if (!await directory.exists()) return images;
+      if (!await directory.exists()) {
+        throw FileSystemException(
+          'Image directory is unavailable.',
+          rootFolder,
+        );
+      }
       await for (final entity in directory.list(
         recursive: recursive,
         followLinks: false,
@@ -317,6 +322,11 @@ class FileCachePlatformGateway {
     );
     if (result is NativeFailure<List<Object?>>) {
       _logOptionalFailure(FileCacheMethod.discoverRootImages, result);
+      throw PlatformException(
+        code: result.code,
+        message: result.message,
+        details: result.details,
+      );
     }
     final raw = result.valueOrNull;
     return raw
@@ -331,7 +341,12 @@ class FileCachePlatformGateway {
       const supportedExtensions = {'.txt', '.md', '.pdf'};
       final texts = <Map<String, String>>[];
       final directory = Directory(folderPath);
-      if (!await directory.exists()) return texts;
+      if (!await directory.exists()) {
+        throw FileSystemException(
+          'Document directory is unavailable.',
+          folderPath,
+        );
+      }
       try {
         await for (final entity in directory.list(
           recursive: true,
@@ -357,7 +372,7 @@ class FileCachePlatformGateway {
           error: error,
           stackTrace: stackTrace,
         );
-        return const <Map<String, String>>[];
+        rethrow;
       }
       texts.sort(
         (a, b) => (a['relativePath'] ?? '').toLowerCase().compareTo(
@@ -373,6 +388,11 @@ class FileCachePlatformGateway {
     );
     if (result is NativeFailure<List<Object?>>) {
       _logOptionalFailure(FileCacheMethod.discoverWorkTexts, result);
+      throw PlatformException(
+        code: result.code,
+        message: result.message,
+        details: result.details,
+      );
     }
     final raw = result.valueOrNull;
     return raw

@@ -55,7 +55,33 @@ class SqliteAsmrRepository implements AsmrPersistenceRepository {
   Future<List<MusicTrack>> loadTracksForRecommendations() =>
       _database.loadAllTracks();
   @override
+  Future<Map<String, Object?>?> loadBrowseSnapshot(
+    String kind,
+    String scope,
+    String key,
+  ) => _database.loadBrowseSnapshot(kind: kind, scope: scope, key: key);
+  @override
+  Future<void> saveBrowseSnapshot(
+    String kind,
+    String scope,
+    String key,
+    Map<String, Object?> payload,
+  ) => _database.saveBrowseSnapshot(
+    kind: kind,
+    scope: scope,
+    key: key,
+    payload: payload,
+  );
+  @override
+  Future<void> clearBrowseSnapshots() async {
+    for (final kind in ['asmr_category', 'asmr_detail', 'asmr_tree']) {
+      await _database.clearBrowseSnapshots(kind: kind);
+    }
+  }
+
+  @override
   Future<void> clearForTest() async {
+    await clearBrowseSnapshots();
     final db = await _database.databaseForTest;
     final batch = db.batch();
     batch.delete('asmr_sync_operations');

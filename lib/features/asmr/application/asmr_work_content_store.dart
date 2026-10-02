@@ -6,7 +6,12 @@ import '../../../core/media/music_track.dart';
 import '../domain/asmr_models.dart';
 import 'asmr_library_view_state.dart';
 
-typedef AsmrWorkRequestKey = ({int workId, int contentEpoch, int authEpoch});
+typedef AsmrWorkRequestKey = ({
+  int workId,
+  int contentEpoch,
+  int authEpoch,
+  int cacheEpoch,
+});
 
 /// Owns work content caches; the library controller coordinates account state.
 final class AsmrWorkContentStore {
@@ -52,6 +57,86 @@ final class AsmrWorkContentStore {
     _playableTrackCache[work.id] = (work: work, tracks: frozen);
     return frozen;
   }
+
+  void restoreDetails(Map<String, Map<String, Object?>> snapshots) {
+    for (final payload in snapshots.values) {
+      if (payload['version'] != 1) continue;
+      storeDetail(
+        AsmrWorkDetail(
+          work: AsmrWork.fromJson(
+            Map<String, dynamic>.from(payload['work'] as Map),
+          ),
+          description: payload['description'] as String,
+          ageCategory: payload['ageCategory'] as String,
+          languageEditionLabels: (payload['editions'] as List).cast<String>(),
+          userRating: (payload['userRating'] as num?)?.toDouble(),
+        ),
+      );
+    }
+  }
+
+  void restoreTrees(Map<String, Map<String, Object?>> snapshots) {
+    for (final entry in snapshots.entries) {
+      if (entry.value['version'] != 1) continue;
+      storeTrackTree(
+        int.parse(entry.key),
+        (entry.value['tree'] as List)
+            .map(
+              (node) => _trackFromCache(Map<String, Object?>.from(node as Map)),
+            )
+            .toList(),
+      );
+    }
+  }
+
+  static Map<String, Object?> detailPayload(AsmrWorkDetail detail) => {
+    'version': 1,
+    'work': detail.work.toJson(),
+    'description': detail.description,
+    'ageCategory': detail.ageCategory,
+    'editions': detail.languageEditionLabels,
+    'userRating': detail.userRating,
+  };
+  static Map<String, Object?> treePayload(List<AsmrTrackFile> tree) => {
+    'version': 1,
+    'tree': tree.map(_trackToCache).toList(),
+  };
+  static Map<String, Object?> _trackToCache(AsmrTrackFile node) => {
+    'hash': node.hash,
+    'title': node.title,
+    'type': node.type,
+    'stream': node.streamUrl,
+    'download': node.downloadUrl,
+    'lowQuality': node.lowQualityUrl,
+    'durationMs': node.duration.inMilliseconds,
+    'size': node.size,
+    'workId': node.workId,
+    'workTitle': node.workTitle,
+    'sourceId': node.sourceId,
+    'relativePath': node.relativePath,
+    'children': node.children.map(_trackToCache).toList(),
+  };
+  static AsmrTrackFile _trackFromCache(Map<String, Object?> node) =>
+      AsmrTrackFile(
+        hash: node['hash'] as String,
+        title: node['title'] as String,
+        type: node['type'] as String,
+        streamUrl: node['stream'] as String?,
+        downloadUrl: node['download'] as String?,
+        lowQualityUrl: node['lowQuality'] as String?,
+        duration: Duration(milliseconds: node['durationMs'] as int),
+        size: node['size'] as int,
+        workId: node['workId'] as int,
+        workTitle: node['workTitle'] as String,
+        sourceId: node['sourceId'] as String,
+        relativePath: node['relativePath'] as String,
+        children: (node['children'] as List)
+            .map(
+              (child) =>
+                  _trackFromCache(Map<String, Object?>.from(child as Map)),
+            )
+            .toList(),
+      );
 
   void replaceHiddenTracks(Set<String> tracks, {int? changedWorkId}) {
     _hiddenTracks = tracks;

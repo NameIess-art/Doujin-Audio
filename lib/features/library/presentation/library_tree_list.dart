@@ -1,5 +1,8 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../app/state/app_runtime_providers.dart';
+import '../../../app/presentation/browse_page_scroll.dart';
 
 import '../../../app/localization/app_language_provider.dart';
 import '../domain/library_node.dart';
@@ -19,7 +22,7 @@ class _LoadedLibraryFolder {
   final int revision;
 }
 
-class LibraryTreeList extends StatefulWidget {
+class LibraryTreeList extends ConsumerStatefulWidget {
   const LibraryTreeList({
     super.key,
     required this.tree,
@@ -52,10 +55,10 @@ class LibraryTreeList extends StatefulWidget {
   final ValueChanged<LibraryNode> onLongPress;
   final ValueChanged<LibraryNode> onToggleSelect;
   @override
-  State<LibraryTreeList> createState() => _LibraryTreeListState();
+  ConsumerState<LibraryTreeList> createState() => _LibraryTreeListState();
 }
 
-class _LibraryTreeListState extends State<LibraryTreeList> {
+class _LibraryTreeListState extends ConsumerState<LibraryTreeList> {
   final Set<String> _expandedCardPaths = <String>{};
   final Set<String> _folderTreeErrorPaths = <String>{};
   final Map<String, bool> _cardExpansionMotions = <String, bool>{};
@@ -69,6 +72,17 @@ class _LibraryTreeListState extends State<LibraryTreeList> {
   int _visibleItemsVersion = 0;
   int _visibleItemsCacheVersion = -1;
   int _prunedFolderTreeRevision = -1;
+
+  @override
+  void initState() {
+    super.initState();
+    final expanded = ref
+        .read(browsePageStateStoreProvider)
+        .stateFor('library')['expanded'];
+    if (expanded is List) {
+      _expandedCardPaths.addAll(expanded.whereType<String>());
+    }
+  }
 
   @override
   void didUpdateWidget(covariant LibraryTreeList oldWidget) {
@@ -96,6 +110,9 @@ class _LibraryTreeListState extends State<LibraryTreeList> {
         ? _expandedCardPaths.add(normalizedPath)
         : _expandedCardPaths.remove(normalizedPath);
     if (!changed || !mounted) return;
+    ref.read(browsePageStateStoreProvider).update('library', {
+      'expanded': _expandedCardPaths.toList(),
+    });
     final animate = !MediaQuery.disableAnimationsOf(context);
     setState(() {
       if (animate) {
@@ -309,7 +326,16 @@ class _LibraryTreeListState extends State<LibraryTreeList> {
     for (final loaded in _loadedFolderTrees.values) {
       collectFolderPaths(loaded.folder);
     }
-    _expandedCardPaths.retainWhere(validExpandedPaths.contains);
+    _expandedCardPaths.retainWhere(
+      (path) =>
+          validExpandedPaths.contains(path) ||
+          (rootPaths?.any(
+                (root) =>
+                    !_loadedFolderTrees.containsKey(root) &&
+                    PathMatcher.isWithinOrEqual(path, root),
+              ) ??
+              false),
+    );
   }
 
   void _removeMissingExpandedFolderPaths(
@@ -339,6 +365,10 @@ class _LibraryTreeListState extends State<LibraryTreeList> {
     final visibleItems = _visibleLibraryItems(
       tree: widget.tree,
       structureRevision: widget.structureRevision,
+    );
+    BrowsePageScroll.setAnchorIds(
+      context,
+      visibleItems.map((item) => PathMatcher.equivalenceKey(item.node.path)),
     );
     Widget buildTopLevelLibraryItem(BuildContext context, int index) {
       if (index == visibleItems.length) {
@@ -395,16 +425,19 @@ class _LibraryTreeListState extends State<LibraryTreeList> {
           ),
         ),
       );
-      return KeyedSubtree(
-        key: ValueKey(node.path),
-        child: item.depth == 0
-            ? treeItem
-            : AnimatedTreeReveal(
-                key: ValueKey<String>('library-tree-reveal:${node.path}'),
-                visible: item.revealed,
-                animateInitial: item.animateInitialReveal,
-                child: treeItem,
-              ),
+      return BrowseAnchor(
+        id: PathMatcher.equivalenceKey(node.path),
+        child: KeyedSubtree(
+          key: ValueKey(node.path),
+          child: item.depth == 0
+              ? treeItem
+              : AnimatedTreeReveal(
+                  key: ValueKey<String>('library-tree-reveal:${node.path}'),
+                  visible: item.revealed,
+                  animateInitial: item.animateInitialReveal,
+                  child: treeItem,
+                ),
+        ),
       );
     }
 

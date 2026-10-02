@@ -23,10 +23,15 @@ extension AppDatabaseBackup on AppDatabase {
         await target.transaction((targetTxn) async {
           for (final row in targetTables) {
             final table = row['name'] as String;
+            if (table == 'browse_snapshots') continue;
             var offset = 0;
             while (true) {
               final values = await sourceTxn.query(
                 table,
+                where: table == 'app_kv_settings' ? 'key != ?' : null,
+                whereArgs: table == 'app_kv_settings'
+                    ? ['browse_page_state_v1']
+                    : null,
                 limit: 500,
                 offset: offset,
               );
@@ -109,6 +114,12 @@ extension AppDatabaseBackup on AppDatabase {
       if (!tables.containsAll(requiredTables)) {
         throw const FormatException('missing_database_tables');
       }
+      await db.delete('browse_snapshots');
+      await db.delete(
+        'app_kv_settings',
+        where: 'key = ?',
+        whereArgs: ['browse_page_state_v1'],
+      );
       await db.update('track_assets', <String, Object?>{
         'cover_cache_path': null,
       });

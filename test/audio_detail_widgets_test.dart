@@ -118,6 +118,7 @@ class _DetailCoverCacheService extends CoverArtworkCacheService {
     String? selectedCoverPath,
     bool includeVideoFrames = true,
     bool includeEmbeddedCovers = true,
+    bool propagateFailure = false,
   }) async => candidatesFuture ?? candidates;
 }
 

@@ -655,6 +655,7 @@ class _SessionVideoFullscreenPageState
                       RepaintBoundary(
                         child: SessionVideoBlurredBackdrop(
                           child: AsyncLocalCoverImage(
+                            onImageError: library.coverArtworkCacheService.reportArtworkReadFailure,
                             future: _coverFuture ?? Future<String?>.value(),
                             requestKey: 'fullscreen:${widget.sessionId}',
                             initialPath:

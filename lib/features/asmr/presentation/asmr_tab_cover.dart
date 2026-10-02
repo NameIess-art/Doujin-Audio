@@ -27,6 +27,11 @@ class _AsmrWorkCover extends ConsumerWidget {
         : ref.read(coverImageResolutionProvider);
     final coverCacheWidth = coverCacheWidthForResolution(coverResolution);
     final library = ref.read(libraryFacadeProvider);
+    ref.watch(
+      coverGenerationProvider.select(
+        (_) => library.resolvedCoverPathForRemoteCover(url),
+      ),
+    );
     final coverUi = ref.read(libraryCoverUiControllerProvider);
     return SizedBox(
       width: width,
@@ -42,6 +47,9 @@ class _AsmrWorkCover extends ConsumerWidget {
               child: url.isEmpty
                   ? CoverFallbackArtwork(seed: url, compact: true)
                   : AsyncRemoteCoverImage(
+                      onImageError: library
+                          .coverArtworkCacheService
+                          .reportArtworkReadFailure,
                       url: url,
                       future: coverUi.deferredRemoteCover(
                         url,
@@ -69,10 +77,7 @@ class _AsmrWorkCover extends ConsumerWidget {
               Positioned(
                 left: 4,
                 top: 4,
-                child: RjCodeOverlay(
-                  rjCode: rjCode,
-                  maxWidth: width - 8,
-                ),
+                child: RjCodeOverlay(rjCode: rjCode, maxWidth: width - 8),
               ),
             if (duration != null && duration! > Duration.zero)
               Positioned(

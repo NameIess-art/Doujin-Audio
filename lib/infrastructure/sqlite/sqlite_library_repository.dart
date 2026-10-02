@@ -6,13 +6,46 @@ import '../../features/player/domain/time_segment_label.dart';
 import '../../features/library/domain/library_entry.dart';
 import '../../features/library/domain/audio_detail_store.dart';
 import '../../features/library/domain/library_persistence_repository.dart';
+import '../../features/library/domain/local_directory_cache_repository.dart';
 
 class SqliteLibraryRepository
-    implements LibraryPersistenceRepository, AudioDetailStore {
+    implements
+        LibraryPersistenceRepository,
+        AudioDetailStore,
+        LocalDirectoryCacheRepository {
   SqliteLibraryRepository({required AppDatabase database})
     : _database = database;
 
   final AppDatabase _database;
+
+  @override
+  Future<Map<String, Object?>?> loadDirectorySnapshot({
+    required String kind,
+    required String key,
+  }) => _database.loadBrowseSnapshot(
+    kind: 'local_directory_$kind',
+    scope: 'local',
+    key: key,
+  );
+
+  @override
+  Future<void> saveDirectorySnapshot({
+    required String kind,
+    required String key,
+    required Map<String, Object?> payload,
+  }) => _database.saveBrowseSnapshot(
+    kind: 'local_directory_$kind',
+    scope: 'local',
+    key: key,
+    payload: payload,
+  );
+
+  @override
+  Future<void> clearDirectorySnapshots() async {
+    for (final kind in ['work_texts', 'work_images']) {
+      await _database.clearBrowseSnapshots(kind: 'local_directory_$kind');
+    }
+  }
 
   @override
   Future<List<MusicTrack>> loadAllTracks() => _database.loadAllTracks();

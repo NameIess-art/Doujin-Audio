@@ -1,3 +1,5 @@
+import '../../features/library/application/work_text_service.dart';
+import '../../core/persistence/app_database.dart';
 import '../../features/asmr/presentation/asmr_providers.dart';
 import '../../features/library/presentation/library_providers.dart';
 import '../../features/player/presentation/playback_providers.dart';
@@ -8,6 +10,7 @@ import 'package:flutter_riverpod/legacy.dart' show ChangeNotifierProvider;
 import 'package:flutter_riverpod/misc.dart' show Override;
 
 import '../application/app_persistence_coordinator.dart';
+import '../application/browse_page_state_store.dart';
 import '../application/audio_path_coordinator.dart';
 import '../../features/player/application/playback_queue_coordinator.dart';
 import '../application/app_runtime_lifecycle.dart';
@@ -44,6 +47,11 @@ import '../../features/video_converter/application/video_conversion_coordinator.
 final themeProviderInstanceProvider = ChangeNotifierProvider<ThemeProvider>(
   (ref) => ThemeProvider(),
 );
+
+final browsePageStateStoreProvider = Provider<BrowsePageStateStore>((ref) {
+  // Isolated previews and widget fixtures have no application database.
+  return BrowsePageStateStore(persistent: false);
+});
 
 final appLanguageProviderInstanceProvider = Provider<AppLanguageProvider>((
   ref,
@@ -115,6 +123,7 @@ final dataSupportStorageUsageServiceProvider = Provider<StorageUsageService>((
   return StorageUsageService(
     fileCacheGateway: FileCachePlatformGateway.instance,
     libraryTracks: () => library.library,
+    persistentBrowseCacheBytes: AppDatabase.instance.logicalBrowseCacheBytes,
   );
 });
 
@@ -184,6 +193,11 @@ final settingsCommandControllerProvider = Provider<SettingsCommandController>((
     settings: ref.watch(settingsRepositoryProvider),
     playback: ref.watch(playbackFacadeProvider),
     library: ref.watch(libraryFacadeProvider),
+    clearBrowseCaches: () async {
+      await ref.read(browsePageStateStoreProvider).clear();
+      await ref.read(asmrLibraryControllerProvider)?.clearBrowseCaches();
+      await ref.read(workTextServiceProvider).clearDirectoryCache();
+    },
   );
 });
 
@@ -252,8 +266,13 @@ List<Override> createAppRuntimeOverrides({
   UiOperationService? uiOperationService,
   UndoableRemovalService? undoableRemovalService,
   PowerPlatformGateway? powerPlatformGateway,
+  BrowsePageStateStore? browsePageStates,
+  WorkTextService? workTexts,
 }) {
   return <Override>[
+    if (workTexts != null) workTextServiceProvider.overrideWithValue(workTexts),
+    if (browsePageStates != null)
+      browsePageStateStoreProvider.overrideWithValue(browsePageStates),
     appPersistenceCoordinatorProvider.overrideWithValue(persistence),
     audioRuntimeCoordinatorProvider.overrideWithValue(runtime),
     audioUiWarmupCoordinatorProvider.overrideWithValue(warmup),

@@ -38,12 +38,14 @@ class WorkImageViewerPage extends ConsumerStatefulWidget {
   const WorkImageViewerPage({
     super.key,
     required this.images,
-    this.initialIndex = 0,
+    this.initialIndex,
+    this.browseKey,
     this.onSetAsCover,
   });
 
   final List<WorkImageItem> images;
-  final int initialIndex;
+  final int? initialIndex;
+  final String? browseKey;
   final Future<void> Function(WorkImageItem image)? onSetAsCover;
 
   @override
@@ -58,15 +60,48 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage> {
   final GlobalKey _switcherKey = GlobalKey();
   double _headerHeight = 0;
   double _switcherHeight = 0;
-  late int _currentIndex = widget.initialIndex.clamp(
-    0,
-    widget.images.isEmpty ? 0 : widget.images.length - 1,
-  );
-  late final PageController _pageController = PageController(
-    initialPage: _currentIndex,
-  );
+  late int _currentIndex;
+  late final int _browseEpoch;
+  late final PageController _pageController;
   bool _isSettingCover = false;
   bool _isCurrentZoomed = false;
+
+  String get _browseKey =>
+      widget.browseKey ??
+      'images:${widget.images.map((image) => image.path).join('\u0000')}';
+
+  String _imageIdentity(int index) {
+    final image = widget.images[index];
+    return image.relativePath.isEmpty ? image.path : image.relativePath;
+  }
+
+  void _saveImage(int index) => ref.read(browsePageStateStoreProvider).update(
+    _browseKey,
+    {'image': _imageIdentity(index)},
+    epoch: _browseEpoch,
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    _browseEpoch = ref.read(browsePageStateStoreProvider).epoch;
+    _currentIndex = (widget.initialIndex ?? 0).clamp(
+      0,
+      widget.images.isEmpty ? 0 : widget.images.length - 1,
+    );
+    final path = ref
+        .read(browsePageStateStoreProvider)
+        .stateFor(_browseKey)['image'];
+    final restored = widget.images.indexWhere(
+      (image) =>
+          (image.relativePath.isEmpty ? image.path : image.relativePath) ==
+          path,
+    );
+    if (restored >= 0 && widget.initialIndex == null) _currentIndex = restored;
+
+    if (widget.images.isNotEmpty) _saveImage(_currentIndex);
+    _pageController = PageController(initialPage: _currentIndex);
+  }
 
   @override
   void dispose() {
@@ -80,6 +115,7 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage> {
       _currentIndex = index;
       _isCurrentZoomed = false;
     });
+    _saveImage(index);
   }
 
   void _goToPrevious() {
@@ -186,12 +222,14 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage> {
             ),
           ),
         ),
-        body: AppPageContentTransition(child: Center(
-          child: Text(
-            i18n.tr('no_images'),
-            style: TextStyle(color: cs.onSurfaceVariant),
+        body: AppPageContentTransition(
+          child: Center(
+            child: Text(
+              i18n.tr('no_images'),
+              style: TextStyle(color: cs.onSurfaceVariant),
+            ),
           ),
-        )),
+        ),
       );
     }
 
@@ -343,52 +381,55 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage> {
               key: _switcherKey,
               right: 16,
               bottom: MediaQuery.paddingOf(context).bottom + 20,
-              child: AppPageContentTransition(child: HeaderFloatingSurface(
-                padding: const EdgeInsets.symmetric(horizontal: 4),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    IconButton(
-                      key: const ValueKey<String>('image_viewer_prev_button'),
-                      iconSize: 18,
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints.tightFor(
-                        width: 32,
-                        height: 32,
+              child: AppPageContentTransition(
+                child: HeaderFloatingSurface(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        key: const ValueKey<String>('image_viewer_prev_button'),
+                        iconSize: 18,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints.tightFor(
+                          width: 32,
+                          height: 32,
+                        ),
+                        icon: const Icon(Icons.chevron_left_rounded),
+                        tooltip: i18n.tr('previous'),
+                        onPressed: _currentIndex > 0 ? _goToPrevious : null,
                       ),
-                      icon: const Icon(Icons.chevron_left_rounded),
-                      tooltip: i18n.tr('previous'),
-                      onPressed: _currentIndex > 0 ? _goToPrevious : null,
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 6),
-                      child: Text(
-                        '${_currentIndex + 1} / ${widget.images.length}',
-                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 0.5,
-                          fontSize: 12.5,
-                          color: Theme.of(context).colorScheme.onSurface,
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 6),
+                        child: Text(
+                          '${_currentIndex + 1} / ${widget.images.length}',
+                          style: Theme.of(context).textTheme.titleSmall
+                              ?.copyWith(
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 0.5,
+                                fontSize: 12.5,
+                                color: Theme.of(context).colorScheme.onSurface,
+                              ),
                         ),
                       ),
-                    ),
-                    IconButton(
-                      key: const ValueKey<String>('image_viewer_next_button'),
-                      iconSize: 18,
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints.tightFor(
-                        width: 32,
-                        height: 32,
+                      IconButton(
+                        key: const ValueKey<String>('image_viewer_next_button'),
+                        iconSize: 18,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints.tightFor(
+                          width: 32,
+                          height: 32,
+                        ),
+                        icon: const Icon(Icons.chevron_right_rounded),
+                        tooltip: i18n.tr('next'),
+                        onPressed: _currentIndex < widget.images.length - 1
+                            ? _goToNext
+                            : null,
                       ),
-                      icon: const Icon(Icons.chevron_right_rounded),
-                      tooltip: i18n.tr('next'),
-                      onPressed: _currentIndex < widget.images.length - 1
-                          ? _goToNext
-                          : null,
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              )),
+              ),
             ),
         ],
       ),

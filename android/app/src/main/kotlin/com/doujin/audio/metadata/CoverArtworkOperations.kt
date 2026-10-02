@@ -5,9 +5,11 @@ import com.doujin.audio.storage.*
 
 import android.content.Context
 import android.net.Uri
+import android.provider.DocumentsContract
 import androidx.documentfile.provider.DocumentFile
 import java.io.File
 import java.io.FileOutputStream
+import java.io.IOException
 import java.util.ArrayDeque
 import java.util.Locale
 
@@ -60,13 +62,13 @@ internal class CoverArtworkOperations(
         }
         if (documentRoot != null) {
             val root = storage.resolveDocumentFileForFolderPath(documentRoot)
-            val candidates = root?.let { documentImages(it, recursive) }.orEmpty()
-            if (candidates.isNotEmpty()) {
-                return candidates.mapNotNull { candidate ->
+            if (root != null && root.exists() && root.isDirectory && root.canRead()) {
+                val candidates = documentImages(root, recursive, strict = true)
+                return candidates.map { candidate ->
                     val cachedPath = cacheDocument(
                         candidate.file,
                         "$trackPath|${candidate.path}"
-                    ) ?: return@mapNotNull null
+                    ) ?: throw IOException("Unable to cache image: ${candidate.file.uri}")
                     mapOf(
                         "path" to cachedPath,
                         "sourcePath" to candidate.file.uri.toString()
@@ -75,7 +77,7 @@ internal class CoverArtworkOperations(
             }
             val localRoot = storage.contentUriToFilePath(documentRoot)
             if (localRoot != null) return fileImages(localRoot, trackPath, recursive)
-            return emptyList()
+            throw IOException("Image directory is unavailable: $documentRoot")
         }
         if (!rootFolder.isNullOrBlank()) return fileImages(rootFolder, trackPath, recursive)
         return emptyList()
@@ -158,12 +160,13 @@ internal class CoverArtworkOperations(
         recursive: Boolean
     ): List<Map<String, String>> {
         val root = File(folderPath)
-        if (!root.isDirectory) return emptyList()
-        val files = if (recursive) root.walkTopDown() else root.listFiles().orEmpty().asSequence()
+        if (!root.isDirectory || !root.canRead()) throw IOException("Image directory is unavailable: $folderPath")
+        val files = if (recursive) root.walkTopDown().onFail { _, error -> throw error }
+            else (root.listFiles() ?: throw IOException("Unable to list image directory: $folderPath")).asSequence()
         return files
             .filter { it.isFile && isImage(it.name, null) }
             .sortedWith(compareBy<File>({ priority(it.name) }, { it.absolutePath.lowercase(Locale.US) }))
-            .mapNotNull { file ->
+            .map { file ->
                 val relative = file.relativeToOrNull(root)?.invariantSeparatorsPath ?: file.name
                 val versionedKey = coverBridgeCacheKey(
                     "$cacheKey|$relative",
@@ -178,16 +181,16 @@ internal class CoverArtworkOperations(
                         "path" to output.absolutePath,
                         "sourcePath" to file.absolutePath
                     )
-                } catch (_: Exception) {
+                } catch (error: Exception) {
                     output.delete()
-                    null
+                    throw error
                 }
             }.toList()
     }
 
     private fun preferredDocument(root: DocumentFile): DocumentCandidate? = documentImages(root, true).firstOrNull()
 
-    private fun documentImages(root: DocumentFile, recursive: Boolean): List<DocumentCandidate> {
+    private fun documentImages(root: DocumentFile, recursive: Boolean, strict: Boolean = false): List<DocumentCandidate> {
         data class Node(val folder: DocumentFile, val path: String)
         val found = mutableListOf<DocumentCandidate>()
         try {
@@ -195,7 +198,19 @@ internal class CoverArtworkOperations(
             pending += Node(root, "")
             while (pending.isNotEmpty()) {
                 val node = pending.removeFirst()
-                node.folder.listFiles().forEach { child ->
+                if (strict) {
+                    for (entry in listReadableDirectoryDocuments(context, node.folder.uri)) {
+                        val child = DocumentFile.fromSingleUri(context, entry.uri)
+                            ?: throw IOException("Image document is unavailable: ${entry.uri}")
+                        val name = MediaNameMetadata.normalizeDisplayName(entry.name)
+                        val childPath = listOf(node.path, name).filter(String::isNotBlank).joinToString("/")
+                        if (recursive && entry.mime == DocumentsContract.Document.MIME_TYPE_DIR) {
+                            pending += Node(child, childPath)
+                        } else if (isImage(name, entry.mime)) {
+                            found += DocumentCandidate(child, childPath)
+                        }
+                    }
+                } else node.folder.listFiles().forEach { child ->
                     val name = MediaNameMetadata.normalizeDisplayName(child.name.orEmpty())
                     val childPath = listOf(node.path, name).filter(String::isNotBlank).joinToString("/")
                     when {
@@ -204,7 +219,8 @@ internal class CoverArtworkOperations(
                     }
                 }
             }
-        } catch (_: Exception) {
+        } catch (error: Exception) {
+            if (strict) throw error
             return emptyList()
         }
         return found.sortedWith(compareBy<DocumentCandidate>({ priority(it.file.name.orEmpty()) }, { it.path.lowercase(Locale.US) }))

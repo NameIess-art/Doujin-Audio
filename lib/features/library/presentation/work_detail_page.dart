@@ -1,3 +1,4 @@
+import '../../../app/presentation/browse_page_scroll.dart';
 import 'work_detail_breadcrumbs.dart';
 import 'work_detail_actions.dart';
 import 'library_download_actions.dart';
@@ -10,13 +11,13 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:path/path.dart' as p;
 
 import '../../../app/presentation/app_presentation_providers.dart';
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/theme/app_design_tokens.dart';
 import '../../../core/media/audio_detail.dart';
 import '../../../core/media/path_display.dart';
+import '../../../core/media/path_matcher.dart';
 import '../../../core/ui/ui_operation_service.dart';
 import '../../../core/ui/visual_settings_providers.dart';
 import '../../../core/ui/undoable_removal_service.dart';
@@ -72,6 +73,10 @@ class WorkDetailPage extends ConsumerStatefulWidget {
 }
 
 class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
+  final ScrollController _scrollController = ScrollController();
+  late String _browseKey;
+  late final int _browseEpoch;
+  StreamSubscription<String>? _directorySubscription;
   // Local state
   AudioDetailTarget? _localTarget;
   AudioDetail? _localDetail;
@@ -97,6 +102,54 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
   void initState() {
     super.initState();
     _localTarget = widget.localTarget;
+    _browseEpoch = ref.read(browsePageStateStoreProvider).epoch;
+    _browseKey = widget.isLocal
+        ? 'work-local:${PathMatcher.equivalenceKey(_localTarget!.targetPath)}'
+        : 'work-asmr:${ref.read(asmrLibraryControllerProvider)?.browseCacheScope ?? ''}:${widget.asmrWork!.id}';
+    final savedPath = ref
+        .read(browsePageStateStoreProvider)
+        .stateFor(_browseKey)['directory'];
+    if (savedPath is List) {
+      _currentPathSegments.addAll(savedPath.whereType<String>());
+    }
+    if (widget.isLocal) {
+      final library = ref.read(libraryFacadeProvider);
+      _localDetail = library.resolvedAudioDetail(_localTarget!);
+      _localFolderNode = library.resolvedLibraryFolderTree(
+        _localTarget!.targetPath,
+      );
+      _localManualCover =
+          library.resolvedCoverPathForFolder(_localTarget!.targetPath) ??
+          _localDetail?.cardCoverPath;
+      _localTextFiles =
+          ref
+              .read(workTextServiceProvider)
+              .cachedWorkTextFiles(_localTarget!.targetPath) ??
+          const [];
+      _localImageFiles = _imageItems(
+        ref
+                .read(workTextServiceProvider)
+                .cachedWorkImageFiles(_localTarget!.targetPath) ??
+            const [],
+        _localTarget!.targetPath,
+      );
+      final textService = ref.read(workTextServiceProvider);
+      _directorySubscription = textService.directoryChanges.listen((key) {
+        final folder = _localTarget!.targetPath;
+        if (!mounted || key != PathMatcher.equivalenceKey(folder)) return;
+        setState(() {
+          _localTextFiles =
+              textService.cachedWorkTextFiles(folder) ?? _localTextFiles;
+          final images = textService.cachedWorkImageFiles(folder);
+          if (images != null) _localImageFiles = _imageItems(images, folder);
+        });
+      });
+    } else {
+      _asmrTree = ref
+          .read(asmrLibraryControllerProvider)
+          ?.trackTreeFor(widget.asmrWork!.id);
+      _loadingAsmr = _asmrTree == null;
+    }
     if (widget.isLocal) {
       _loadLocalData();
     } else {
@@ -111,12 +164,13 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
     final folderPath = target.targetPath;
     final library = ref.read(libraryFacadeProvider);
 
-    setState(() {
-      _loadingLocal = true;
-      _localFolderNode = null;
-      _localTextFiles = const [];
-      _localImageFiles = const [];
-    });
+    final files = ref.read(workTextServiceProvider);
+    setState(
+      () => _loadingLocal =
+          _localFolderNode == null ||
+          files.cachedWorkTextFiles(folderPath) == null ||
+          files.cachedWorkImageFiles(folderPath) == null,
+    );
 
     try {
       final detailResult = await library.loadAudioDetail(target);
@@ -133,7 +187,9 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
       UiInteractionCoordinator.instance.scheduleCommit(
         key: _localFilesCommitKey,
         commit: () {
-          if (mounted && request == _localLoadRequest) {
+          if (mounted &&
+              request == _localLoadRequest &&
+              _browseEpoch == ref.read(browsePageStateStoreProvider).epoch) {
             unawaited(_loadLocalFiles(request, folderPath));
           }
         },
@@ -149,8 +205,13 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
   Future<void> _loadLocalFiles(int request, String folderPath) async {
     final library = ref.read(libraryFacadeProvider);
     final textService = ref.read(workTextServiceProvider);
+    final hadTextCache = textService.cachedWorkTextFiles(folderPath) != null;
+    final hadImageCache = textService.cachedWorkImageFiles(folderPath) != null;
     final previousCover = _localManualCover;
-    bool isCurrent() => mounted && request == _localLoadRequest;
+    bool isCurrent() =>
+        mounted &&
+        request == _localLoadRequest &&
+        _browseEpoch == ref.read(browsePageStateStoreProvider).epoch;
 
     if (previousCover == null || previousCover.trim().isEmpty) {
       unawaited(() async {
@@ -189,23 +250,11 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
       }(),
       () async {
         try {
-          final candidateImages = await library.discoverCoverCandidatesInFolder(
+          final candidateImages = await textService.findWorkImageFiles(
             folderPath,
-            includeVideoFrames: false,
-            includeEmbeddedCovers: false,
           );
           if (!isCurrent()) return;
-          final imageItems = <WorkImageItem>[];
-          for (final imgPath in candidateImages) {
-            final name = p.basename(imgPath);
-            var rel = p
-                .relative(imgPath, from: folderPath)
-                .replaceAll(r'\', '/');
-            if (rel.startsWith('..')) rel = name;
-            imageItems.add(
-              WorkImageItem(name: name, path: imgPath, relativePath: rel),
-            );
-          }
+          final imageItems = _imageItems(candidateImages, folderPath);
           setState(() => _localImageFiles = imageItems);
         } catch (_) {
           // Text discovery can still complete independently.
@@ -213,11 +262,34 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
       }(),
     ]);
     if (isCurrent()) setState(() => _loadingLocal = false);
+    if (isCurrent()) {
+      if (hadTextCache) unawaited(textService.refreshWorkTextFiles(folderPath));
+      if (hadImageCache) {
+        unawaited(textService.refreshWorkImageFiles(folderPath));
+      }
+    }
   }
+
+  List<WorkImageItem> _imageItems(List<String> paths, String folder) => paths
+      .map((image) {
+        final source = ref
+            .read(workTextServiceProvider)
+            .sourcePathForWorkImage(folder, image);
+        final name = PathDisplay.folderName(source);
+        final relative = PathMatcher.relativeWithin(source, folder) ?? name;
+        return WorkImageItem(
+          name: name,
+          path: image,
+          relativePath: relative.startsWith('..') ? name : relative,
+        );
+      })
+      .toList(growable: false);
 
   @override
   void dispose() {
+    unawaited(_directorySubscription?.cancel());
     UiInteractionCoordinator.instance.cancelCommit(_localFilesCommitKey);
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -227,7 +299,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
       setState(() => _loadingAsmr = false);
       return;
     }
-    setState(() => _loadingAsmr = true);
+    setState(() => _loadingAsmr = _asmrTree == null);
     try {
       await controller.initializeForVisiblePage();
       final tree = await controller.ensureTrackTree(widget.asmrWork!);
@@ -236,6 +308,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
         _asmrTree = tree;
         _loadingAsmr = false;
       });
+      unawaited(controller.refreshWorkInBackground(widget.asmrWork!));
     } catch (_) {
       if (!mounted) return;
       setState(() => _loadingAsmr = false);
@@ -246,6 +319,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
     setState(() {
       _currentPathSegments.add(folderName);
     });
+    _saveDirectory();
   }
 
   // Navigate back to specific level in breadcrumbs
@@ -260,6 +334,45 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
         );
       }
     });
+    _saveDirectory();
+  }
+
+  void _saveDirectory() => ref.read(browsePageStateStoreProvider).update(
+    _browseKey,
+    {'directory': List<String>.of(_currentPathSegments)},
+    epoch: _browseEpoch,
+  );
+
+  void _reconcileDirectory() {
+    var depth = 0;
+    while (depth < _currentPathSegments.length) {
+      final parents = _currentPathSegments.take(depth).toList();
+      final entries = widget.isLocal
+          ? buildLocalWorkEntries(
+              root: _localFolderNode,
+              pathSegments: parents,
+              textFiles: _localTextFiles,
+              imageFiles: _localImageFiles,
+              isHidden: (_) => false,
+            )
+          : buildAsmrWorkEntries(
+              tree: _asmrTree,
+              pathSegments: parents,
+              isHidden: (_) => false,
+            );
+      if (!entries.any(
+        (entry) =>
+            entry.type == WorkEntryType.folder &&
+            entry.name == _currentPathSegments[depth],
+      )) {
+        break;
+      }
+      depth++;
+    }
+    if (depth < _currentPathSegments.length) {
+      _currentPathSegments.removeRange(depth, _currentPathSegments.length);
+      _saveDirectory();
+    }
   }
 
   // Current entries in directory
@@ -427,8 +540,16 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
   Future<void> _renameLocalEntry(WorkEntryItem item) async {
     if (!widget.isLocal || item.fullPathOrUrl.isEmpty) return;
     final i18n = ref.read(appLanguageProviderInstanceProvider);
+    final sourcePath = item.type == WorkEntryType.image
+        ? ref
+              .read(workTextServiceProvider)
+              .sourcePathForWorkImage(
+                _localTarget!.targetPath,
+                item.fullPathOrUrl,
+              )
+        : item.fullPathOrUrl;
     var name = PathDisplay.fileName(
-      item.fullPathOrUrl,
+      sourcePath,
       withoutExtension: item.type != WorkEntryType.folder,
     );
     final targetName = await showAppDialog<String>(
@@ -459,7 +580,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
     );
     if (targetName == null || !mounted) return;
     try {
-      final oldPath = item.fullPathOrUrl;
+      final oldPath = sourcePath;
       final renamedPath = await ref
           .read(libraryFacadeProvider)
           .renameWorkEntryToName(
@@ -561,13 +682,19 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
   }
 
   Future<void> _refreshLocalTree() async {
-    if (_localFolderNode == null) return;
     final request = _localLoadRequest;
     final tree = await ref
         .read(libraryFacadeProvider)
         .loadLibraryFolderTree(_localTarget!.targetPath);
-    if (mounted && request == _localLoadRequest) {
+    if (mounted &&
+        request == _localLoadRequest &&
+        _browseEpoch == ref.read(browsePageStateStoreProvider).epoch) {
       setState(() => _localFolderNode = tree);
+      final texts = ref.read(workTextServiceProvider);
+      await Future.wait([
+        texts.refreshWorkTextFiles(_localTarget!.targetPath),
+        texts.refreshWorkImageFiles(_localTarget!.targetPath),
+      ]);
     }
   }
 
@@ -632,6 +759,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
     await Navigator.of(context).push<void>(
       MaterialPageRoute(
         builder: (_) => WorkImageViewerPage(
+          browseKey: 'images:$_browseKey',
           images: allImages,
           initialIndex: initialIndex,
           onSetAsCover: widget.isLocal
@@ -708,6 +836,8 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
     if (!mounted || savedDetail == null) return;
     setState(() {
       _localTarget = savedDetail.target;
+      _browseKey =
+          'work-local:${PathMatcher.equivalenceKey(savedDetail.target.targetPath)}';
       _localDetail = savedDetail;
       _currentPathSegments.clear();
     });
@@ -801,7 +931,15 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
         },
       );
     } else {
-      ref.watch(asmrTrackTreeStateProvider(widget.asmrWork!.id));
+      final currentTree = ref
+          .watch(asmrTrackTreeStateProvider(widget.asmrWork!.id))
+          .value
+          ?.tree;
+      if (currentTree != null) _asmrTree = currentTree;
+    }
+    if ((widget.isLocal && !_loadingLocal && _localFolderNode != null) ||
+        (widget.isAsmr && !_loadingAsmr && _asmrTree != null)) {
+      _reconcileDirectory();
     }
     final i18n = ref.watch(appLanguageProviderInstanceProvider);
     final cs = Theme.of(context).colorScheme;
@@ -841,7 +979,12 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
               .watch(libraryFacadeProvider)
               .resolvedCoverPathForFolder(_localTarget!.targetPath);
     } else {
-      final work = widget.asmrWork!;
+      final work =
+          ref
+              .read(asmrLibraryControllerProvider)
+              ?.cachedWorkDetail(widget.asmrWork!.id)
+              ?.work ??
+          widget.asmrWork!;
       displayTitle = work.title;
       displayRj = work.rjCode;
       displayCircle = work.circleName;
@@ -872,6 +1015,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
             trimmedCover.startsWith('https://') ||
             widget.isAsmr);
 
+    ref.watch(coverGenerationProvider);
     final Widget coverWidget;
     if (isRemoteCover) {
       final remoteUrl = trimmedCover;
@@ -880,6 +1024,10 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
       final coverResolution = ref.watch(coverImageResolutionProvider);
       final cacheWidth = coverCacheWidthForResolution(coverResolution);
       coverWidget = AsyncRemoteCoverImage(
+        onImageError: ref
+            .read(libraryFacadeProvider)
+            .coverArtworkCacheService
+            .reportArtworkReadFailure,
         url: remoteUrl,
         future: coverUi.deferredRemoteCover(remoteUrl),
         initialPath: library.resolvedCoverPathForRemoteCover(remoteUrl),
@@ -894,23 +1042,47 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
         ),
         fallbackBuilder: (_) => CoverFallbackArtwork(seed: displayTitle),
       );
+    } else if (widget.isLocal) {
+      final library = ref.read(libraryFacadeProvider);
+      final resolved =
+          library.resolvedCoverPathForFolder(_localTarget!.targetPath) ??
+          coverPath;
+      Future<String?> retryCover() async {
+        final path = await ref
+            .read(libraryCoverUiControllerProvider)
+            .deferredFolderCover(_localTarget!.targetPath);
+        if (mounted) setState(() => _localManualCover = path);
+        return path;
+      }
+
+      coverWidget = AsyncLocalCoverImage(
+        onImageError: library.coverArtworkCacheService.reportArtworkReadFailure,
+        future: Future.value(resolved),
+        requestKey: resolved,
+        initialPath: resolved,
+        retryFutureBuilder: retryCover,
+        seed: coverPath ?? displayTitle,
+        fit: BoxFit.cover,
+        showIcon: true,
+        icon: Icons.album_rounded,
+      );
     } else {
       coverWidget = LocalCoverImage(
-        path: coverPath,
-        seed: coverPath ?? displayTitle,
+        seed: displayTitle,
         fit: BoxFit.cover,
         showIcon: true,
         icon: Icons.album_rounded,
       );
     }
 
-    return Scaffold(
+    final page = Scaffold(
       backgroundColor: Colors.transparent,
       body: Stack(
         children: [
           AppPageContentTransition(
             backgroundColor: cs.surface,
             child: CustomScrollView(
+              controller: _scrollController,
               slivers: [
                 // 1. Collapsible Sticky Header
                 SliverPersistentHeader(
@@ -1036,7 +1208,10 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
                                 ? Duration.zero
                                 : const Duration(milliseconds: 300),
                             curve: Curves.easeOutCubic,
-                            child: tile,
+                            child: BrowseAnchor(
+                              id: item.relativePath,
+                              child: tile,
+                            ),
                             builder: (context, opacity, child) =>
                                 Opacity(opacity: opacity, child: child),
                           );
@@ -1137,6 +1312,12 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
             ),
         ],
       ),
+    );
+    return BrowsePageScroll(
+      pageKey: '$_browseKey:${_currentPathSegments.join('/')}',
+      controller: _scrollController,
+      anchorIds: currentEntries.map((item) => item.relativePath).toList(),
+      child: page,
     );
   }
 

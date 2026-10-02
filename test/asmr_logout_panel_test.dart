@@ -101,6 +101,12 @@ class _LogoutFailureAsmrLibraryController extends AsmrLibraryController {
   );
 
   @override
+  Future<void> ensureCategoryLoaded(
+    AsmrCategoryType category, {
+    String searchQuery = '',
+    bool refreshInBackground = true,
+  }) async {}
+  @override
   Future<void> initialize({AsmrContentLanguage? defaultLanguage}) async {
     notifyListeners();
   }

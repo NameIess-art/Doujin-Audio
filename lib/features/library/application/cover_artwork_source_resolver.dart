@@ -62,6 +62,10 @@ final class CoverArtworkSourceResolver {
   final Map<String, String> _folderImageSourceByDisplayKey = <String, String>{};
   final Map<String, String> _folderImageDisplayBySourceKey = <String, String>{};
 
+  final Map<String, Future<String?>> _platformCoverFutures = {};
+  Iterable<Future<String?>> get pendingPlatformCovers =>
+      _platformCoverFutures.values;
+
   String? coverScopeFolderForTrack(MusicTrack? track, {String? trackPath}) {
     final pathValue = trackPath ?? track?.path;
     if (pathValue == null || pathValue.isEmpty) return null;
@@ -205,6 +209,7 @@ final class CoverArtworkSourceResolver {
       _folderImageDisplayBySourceKey[PathMatcher.equivalenceKey(value)];
   void invalidateAll() {
     _folderImageIndexFutures.clear();
+    _platformCoverFutures.clear();
     _folderImageSourceByDisplayKey.clear();
     _folderImageDisplayBySourceKey.clear();
   }
@@ -287,6 +292,42 @@ final class CoverArtworkSourceResolver {
     MusicTrack track, {
     String? rootFolder,
     bool includeGroupCoverFallback = true,
+  }) {
+    final grouped = includeGroupCoverFallback && !track.isSingle;
+    final nativeKey =
+        'native:${_trackSourceFingerprint(track)}${grouped ? '|group' : ''}';
+    final requestKey =
+        '${PathMatcher.equivalenceKey(track.path)}|${track.fileSizeBytes ?? 0}|${track.modifiedAt?.millisecondsSinceEpoch ?? 0}|$grouped|${rootFolder == null ? '' : PathMatcher.equivalenceKey(rootFolder)}';
+    return _platformCoverFutures.putIfAbsent(requestKey, () {
+      late final Future<String?> task;
+      task =
+          (() async {
+            final stored =
+                await _artworkStore.validatedPath(nativeKey) ??
+                await _artworkStore.validatedPath(
+                  'embedded:${_trackSourceFingerprint(track)}',
+                );
+            if (stored != null) return stored;
+            return _loadPlatformCoverPathForTrack(
+              track,
+              nativeKey: nativeKey,
+              rootFolder: rootFolder,
+              includeGroupCoverFallback: grouped,
+            );
+          })().whenComplete(() {
+            if (identical(_platformCoverFutures[requestKey], task)) {
+              _platformCoverFutures.remove(requestKey);
+            }
+          });
+      return task;
+    });
+  }
+
+  Future<String?> _loadPlatformCoverPathForTrack(
+    MusicTrack track, {
+    required String nativeKey,
+    String? rootFolder,
+    required bool includeGroupCoverFallback,
   }) async {
     try {
       final nativeCover = await _fileCacheGateway.resolveTrackCover(
@@ -296,7 +337,7 @@ final class CoverArtworkSourceResolver {
       );
       if (nativeCover != null && nativeCover.isNotEmpty) {
         return await persistBridgeCover(
-          logicalKey: 'native:${_trackSourceFingerprint(track)}',
+          logicalKey: nativeKey,
           sourcePath: nativeCover,
           namespace: includeGroupCoverFallback
               ? CoverArtworkNamespace.generated
@@ -447,12 +488,16 @@ final class CoverArtworkSourceResolver {
     String folderPath, {
     bool includeVideoFrames = true,
     bool includeEmbeddedCovers = true,
+    bool propagateFailure = false,
   }) async {
     final candidates = <String>[];
     final seenPaths = <String>{};
     final seenContentKeys = <String>{};
 
-    for (final imagePath in await discoverFolderImages(folderPath)) {
+    for (final imagePath in await discoverFolderImages(
+      folderPath,
+      propagateFailure: propagateFailure,
+    )) {
       final candidate = imagePath.trim();
       if (candidate.isEmpty) continue;
       final pathKey = PathMatcher.equivalenceKey(candidate);
@@ -577,6 +622,19 @@ final class CoverArtworkSourceResolver {
   Future<List<String>> discoverFolderImages(
     String folderPath, {
     bool recursive = true,
+    bool propagateFailure = false,
+  }) async => List<String>.unmodifiable(
+    (await discoverFolderImageReferences(
+      folderPath,
+      recursive: recursive,
+      propagateFailure: propagateFailure,
+    )).map((image) => image.displayPath),
+  );
+
+  Future<List<CoverImageReference>> discoverFolderImageReferences(
+    String folderPath, {
+    bool recursive = true,
+    bool propagateFailure = false,
   }) async {
     final normalizedFolder = PathMatcher.normalize(folderPath);
     final isContent = PathMatcher.isContentUri(normalizedFolder);
@@ -586,17 +644,12 @@ final class CoverArtworkSourceResolver {
     final key = (rootPath: indexRoot, recursive: recursive);
     final lookup = _folderImageIndexFutures.putIfAbsent(key, () {
       late final Future<List<CoverImageReference>> task;
-      task = buildFolderImageIndex(indexRoot, recursive: recursive)
-          .then((images) {
-            // The SAF gateway also returns an empty list for native failures.
-            if (isContent &&
-                images.isEmpty &&
-                identical(_folderImageIndexFutures[key], task)) {
-              _folderImageIndexFutures.remove(key);
-            }
-            return images;
-          })
-          .catchError((Object error, StackTrace stackTrace) {
+      task =
+          _buildFolderImageIndex(
+            indexRoot,
+            recursive: recursive,
+            isCurrent: () => identical(_folderImageIndexFutures[key], task),
+          ).catchError((Object error, StackTrace stackTrace) {
             if (identical(_folderImageIndexFutures[key], task)) {
               _folderImageIndexFutures.remove(key);
             }
@@ -607,28 +660,32 @@ final class CoverArtworkSourceResolver {
                 stackTrace: stackTrace,
               );
             }
-            return const <CoverImageReference>[];
+            Error.throwWithStackTrace(error, stackTrace);
           });
       return task;
     });
-    final indexedImages = await lookup;
+    final List<CoverImageReference> indexedImages;
+    try {
+      indexedImages = await lookup;
+      if (!identical(_folderImageIndexFutures[key], lookup)) {
+        throw StateError('folder_image_index_invalidated');
+      }
+    } catch (_) {
+      if (propagateFailure) rethrow;
+      return const <CoverImageReference>[];
+    }
     if (isContent && identical(_folderImageIndexFutures[key], lookup)) {
       for (final image in indexedImages) {
         rememberFolderImageSource(image.displayPath, image.sourcePath);
       }
     }
-    return List<String>.unmodifiable(
-      indexedImages
-          .where(
-            (image) =>
-                isContent ||
-                !recursive ||
-                PathMatcher.isWithinOrEqual(
-                  image.displayPath,
-                  normalizedFolder,
-                ),
-          )
-          .map((image) => image.displayPath),
+    return List<CoverImageReference>.unmodifiable(
+      indexedImages.where(
+        (image) =>
+            isContent ||
+            !recursive ||
+            PathMatcher.isWithinOrEqual(image.displayPath, normalizedFolder),
+      ),
     );
   }
 
@@ -640,9 +697,10 @@ final class CoverArtworkSourceResolver {
     return mostSpecificContainingCoverRoot(roots, folderPath) ?? folderPath;
   }
 
-  Future<List<CoverImageReference>> buildFolderImageIndex(
+  Future<List<CoverImageReference>> _buildFolderImageIndex(
     String rootPath, {
-    bool recursive = true,
+    required bool recursive,
+    required bool Function() isCurrent,
   }) async {
     if (PathMatcher.isContentUri(rootPath)) {
       final discovered = await _fileCacheGateway.discoverRootImages(
@@ -650,7 +708,26 @@ final class CoverArtworkSourceResolver {
         rootFolder: rootPath,
         recursive: recursive,
       );
-      return List<CoverImageReference>.unmodifiable(discovered);
+      final durable = <CoverImageReference>[];
+      for (final image in discovered) {
+        // Removing this request from the index retires its generation. A native
+        // discovery can finish after cache clearing, without repopulating it.
+        if (!isCurrent()) return const [];
+        final display = await persistBridgeCover(
+          logicalKey:
+              'source-image:${PathMatcher.equivalenceKey(image.sourcePath)}',
+          sourcePath: image.displayPath,
+          namespace: CoverArtworkNamespace.embedded,
+        );
+        if (!isCurrent()) return const [];
+        durable.add(
+          CoverImageReference(
+            displayPath: display,
+            sourcePath: image.sourcePath,
+          ),
+        );
+      }
+      return List<CoverImageReference>.unmodifiable(durable);
     }
     final scanner = _filesystemImageScanner;
     final images = scanner == null
@@ -665,6 +742,7 @@ final class CoverArtworkSourceResolver {
                   recursive: false,
                 ))
         : await scanner(rootPath, recursive);
+    if (!isCurrent()) return const [];
     for (final imagePath in images) {
       rememberFolderImageSource(imagePath, imagePath);
     }
@@ -726,8 +804,6 @@ Future<List<String>> _scanFilesystemFolderImages(
   ({String rootPath, bool recursive}) request,
 ) async {
   final directory = Directory(request.rootPath);
-  if (!await directory.exists()) return const <String>[];
-
   final images = <String>[];
   await for (final entity in directory.list(
     recursive: request.recursive,

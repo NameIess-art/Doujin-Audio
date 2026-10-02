@@ -160,6 +160,22 @@ void main() {
         ),
       );
       expect(find.text('audio'), findsNothing);
+      // Initialization starts in the widget's fake zone. Pump between real IO
+      // turns so each SQLite continuation can run before awaiting its tail.
+      var loaded = false;
+      final loading = reopened.initializeForVisiblePage().then((_) async {
+        await reopened.ensureTrackTree(_work);
+        await reopened.flushBrowseCaches();
+        loaded = true;
+      });
+      for (var i = 0; i < 100 && !loaded; i++) {
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 10)),
+        );
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+      expect(loaded, isTrue);
+      await loading;
       await settleIo(tester);
       expect(find.text('audio'), findsNothing);
       expect(find.text('video'), findsOneWidget);
@@ -186,6 +202,19 @@ final _nodes = [
 ];
 
 class _TrackApi extends AsmrApiService {
+  @override
+  Future<AsmrWorkDetail> fetchWorkDetail(
+    int workId, {
+    String? token,
+    AsmrContentLanguage language = AsmrContentLanguage.zh,
+  }) async => AsmrWorkDetail(
+    work: _work,
+    description: '',
+    ageCategory: '',
+    languageEditionLabels: const [],
+    userRating: null,
+  );
+
   @override
   Future<List<AsmrTrackFile>> fetchTrackTree(
     int workId, {

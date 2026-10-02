@@ -231,7 +231,11 @@ void main() {
     AppInteractionFeedback.hapticFeedbackEnabled = true;
 
     expect(find.byType(MainScreen), findsOneWidget);
-    for (final destination in ['music_library', 'nav_sessions', 'nav_settings']) {
+    for (final destination in [
+      'music_library',
+      'nav_sessions',
+      'nav_settings',
+    ]) {
       expect(
         find.byKey(ValueKey<String>('main_destination_$destination')),
         findsOneWidget,
@@ -1805,12 +1809,14 @@ void main() {
       isA<GlassRefreshIndicatorScrollPhysics>(),
     );
     expect(
-      tester.widget<GlassRefreshIndicator>(
-        find.descendant(
-          of: find.byKey(const ValueKey(AsmrCategoryType.collected)),
-          matching: find.byType(GlassRefreshIndicator),
-        ),
-      ).lockChildWhileRefreshing,
+      tester
+          .widget<GlassRefreshIndicator>(
+            find.descendant(
+              of: find.byKey(const ValueKey(AsmrCategoryType.collected)),
+              matching: find.byType(GlassRefreshIndicator),
+            ),
+          )
+          .lockChildWhileRefreshing,
       isTrue,
     );
 
@@ -1818,7 +1824,9 @@ void main() {
       of: find.byKey(const ValueKey(AsmrCategoryType.collected)),
       matching: find.byKey(const PageStorageKey(AsmrCategoryType.collected)),
     );
-    final pull = await tester.startGesture(tester.getCenter(collectedListFinder));
+    final pull = await tester.startGesture(
+      tester.getCenter(collectedListFinder),
+    );
     await pull.moveBy(const Offset(0, 60));
     await tester.pump();
     expect(
@@ -2487,8 +2495,7 @@ void main() {
   ) async {
     final controller = _QueuedEmptyAsmrLibraryController(
       services: createTestAsmrServices(),
-      sharedSearchState: true,
-      delaySearchRestore: true,
+      separateSearchResults: true,
     );
     addTearDown(controller.dispose);
     final harness = AppRuntimeWidgetTestFixture();
@@ -2523,16 +2530,8 @@ void main() {
     ).pop();
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 550));
-    expect(
-      controller.refreshRequests,
-      contains((AsmrCategoryType.collected, '')),
-    );
-    expect(find.text('Second loaded work', findRichText: true), findsNothing);
-    expect(find.byType(LibraryLikeSkeletonCard), findsWidgets);
-
-    controller.completeSearchRestore();
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 700));
+    expect(controller.refreshRequests, [(AsmrCategoryType.collected, 'sleep')]);
+    expect(find.byType(LibraryLikeSkeletonCard), findsNothing);
     expect(find.text('Loaded work', findRichText: true), findsOneWidget);
     expect(find.text('Second loaded work', findRichText: true), findsNothing);
     expect(tester.takeException(), isNull);
@@ -4976,6 +4975,17 @@ final class _AppShellNativePlaybackRepository extends NativePlaybackRepository {
 }
 
 final class _QueuedEmptyAsmrLibraryController extends AsmrLibraryController {
+  @override
+  Future<void> ensureCategoryLoaded(
+    AsmrCategoryType category, {
+    String searchQuery = '',
+    bool refreshInBackground = true,
+  }) => separateSearchResults && searchQuery.isEmpty
+      ? Future<void>.value()
+      : refreshCategory(category, searchQuery: searchQuery);
+
+  @override
+  Future<void> refreshWorkInBackground(AsmrWork work) async {}
   _QueuedEmptyAsmrLibraryController({
     required TestAsmrServices services,
     this.collectedHasMore = false,
@@ -4983,8 +4993,7 @@ final class _QueuedEmptyAsmrLibraryController extends AsmrLibraryController {
     this.delayCollectedSearch = false,
     this.emptyCollectedOnInitialLoad = false,
     this.delayInitialCollectedRefresh = false,
-    this.sharedSearchState = false,
-    this.delaySearchRestore = false,
+    this.separateSearchResults = false,
     this.trackTree,
   }) : super(
          preferencesStore: services.preferencesStore,
@@ -4997,19 +5006,17 @@ final class _QueuedEmptyAsmrLibraryController extends AsmrLibraryController {
   final refreshRequests = <(AsmrCategoryType, String)>[];
   final List<Completer<void>> _collectedSearchRefreshes = <Completer<void>>[];
   final Completer<void> _initialCollectedRefresh = Completer<void>();
-  final Completer<void> _searchRestore = Completer<void>();
   final bool collectedHasMore;
   final bool delayCollectedSearch;
   final bool emptyCollectedOnInitialLoad;
   final bool delayInitialCollectedRefresh;
-  final bool sharedSearchState;
-  final bool delaySearchRestore;
+  final bool separateSearchResults;
+  final Set<String> _loadedCollectedQueries = {};
   final List<AsmrTrackFile>? trackTree;
   bool needsRetry;
   bool _recommendationLoading = false;
   bool _collectedLoading = false;
   bool _isLoadingMore = false;
-  String _sharedQuery = '';
   int _revision = 0;
   int recommendationRefreshCount = 0;
   int collectedSearchRefreshCount = 0;
@@ -5121,11 +5128,7 @@ final class _QueuedEmptyAsmrLibraryController extends AsmrLibraryController {
   @override
   List<AsmrWork> worksFor(AsmrCategoryType category) {
     if (category != AsmrCategoryType.collected) return const <AsmrWork>[];
-    if (sharedSearchState) {
-      return <AsmrWork>[
-        _sharedQuery.isEmpty ? _collectedWork : _secondCollectedWork,
-      ];
-    }
+    if (separateSearchResults) return <AsmrWork>[_collectedWork];
     if (emptyCollectedOnInitialLoad) return const <AsmrWork>[];
     return <AsmrWork>[_collectedWork, _secondCollectedWork];
   }
@@ -5140,10 +5143,7 @@ final class _QueuedEmptyAsmrLibraryController extends AsmrLibraryController {
   int totalCountFor(AsmrCategoryType category) => worksFor(category).length;
 
   @override
-  String activeQueryFor(AsmrCategoryType category) =>
-      sharedSearchState && category == AsmrCategoryType.collected
-      ? _sharedQuery
-      : '';
+  String activeQueryFor(AsmrCategoryType category) => '';
 
   @override
   AsmrCategoryViewState categoryViewState(
@@ -5151,8 +5151,20 @@ final class _QueuedEmptyAsmrLibraryController extends AsmrLibraryController {
     String searchQuery = '',
   }) {
     categoryViewReadCount++;
-    final works = worksFor(category);
+    final isSearch =
+        category == AsmrCategoryType.collected && searchQuery.isNotEmpty;
+    final searchPending =
+        isSearch &&
+        delayCollectedSearch &&
+        _collectedSearchRefreshes.any((task) => !task.isCompleted);
+    final searchLoaded = _loadedCollectedQueries.contains(searchQuery);
+    final works = separateSearchResults && isSearch
+        ? <AsmrWork>[_secondCollectedWork]
+        : isSearch && delayCollectedSearch && !searchLoaded
+        ? const <AsmrWork>[]
+        : worksFor(category);
     final isLoading =
+        searchPending ||
         (category == AsmrCategoryType.recommendation &&
             _recommendationLoading) ||
         (category == AsmrCategoryType.collected && _collectedLoading);
@@ -5165,11 +5177,13 @@ final class _QueuedEmptyAsmrLibraryController extends AsmrLibraryController {
       isLoadingMore: isPaginated && _isLoadingMore,
       isRefreshing: isLoading && works.isNotEmpty,
       isStale: isLoading && works.isNotEmpty,
-      hasAttemptedLoad: true,
+      hasAttemptedLoad: isSearch && delayCollectedSearch
+          ? searchLoaded || searchPending
+          : true,
       hasMore: isPaginated,
       needsLoadMoreRetry: isPaginated && needsRetry,
       totalCount: isPaginated ? works.length + 1 : works.length,
-      activeQuery: sharedSearchState ? activeQueryFor(category) : searchQuery,
+      activeQuery: searchQuery,
       lastError: null,
       operationError: null,
       revision: _revision,
@@ -5199,17 +5213,6 @@ final class _QueuedEmptyAsmrLibraryController extends AsmrLibraryController {
     String searchQuery = '',
   }) async {
     refreshRequests.add((category, searchQuery));
-    if (sharedSearchState && category == AsmrCategoryType.collected) {
-      if (delaySearchRestore &&
-          searchQuery.isEmpty &&
-          _sharedQuery.isNotEmpty) {
-        await _searchRestore.future;
-      }
-      _sharedQuery = searchQuery;
-      _revision++;
-      notifyListeners();
-      return;
-    }
     if (category == AsmrCategoryType.collected &&
         searchQuery.isEmpty &&
         delayInitialCollectedRefresh) {
@@ -5228,7 +5231,9 @@ final class _QueuedEmptyAsmrLibraryController extends AsmrLibraryController {
       collectedSearchRefreshCount++;
       final refresh = Completer<void>();
       _collectedSearchRefreshes.add(refresh);
+      notifyListeners();
       await refresh.future;
+      _loadedCollectedQueries.add(searchQuery);
       _revision++;
       notifyListeners();
       return;
@@ -5253,10 +5258,6 @@ final class _QueuedEmptyAsmrLibraryController extends AsmrLibraryController {
     if (!_initialCollectedRefresh.isCompleted) {
       _initialCollectedRefresh.complete();
     }
-  }
-
-  void completeSearchRestore() {
-    if (!_searchRestore.isCompleted) _searchRestore.complete();
   }
 
   void completeCollectedSearchRefresh() {

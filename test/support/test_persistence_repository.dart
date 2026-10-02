@@ -113,5 +113,20 @@ class TestPersistenceRepository extends SqliteLibraryRepository
   @override
   Future<List<MusicTrack>> loadTracksForRecommendations() => loadAllTracks();
   @override
+  Future<Map<String, Object?>?> loadBrowseSnapshot(
+    String kind,
+    String scope,
+    String key,
+  ) => _asmr.loadBrowseSnapshot(kind, scope, key);
+  @override
+  Future<void> saveBrowseSnapshot(
+    String kind,
+    String scope,
+    String key,
+    Map<String, Object?> payload,
+  ) => _asmr.saveBrowseSnapshot(kind, scope, key, payload);
+  @override
+  Future<void> clearBrowseSnapshots() => _asmr.clearBrowseSnapshots();
+  @override
   Future<void> clearForTest() => _asmr.clearForTest();
 }

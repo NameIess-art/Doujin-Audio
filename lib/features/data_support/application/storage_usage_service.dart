@@ -36,12 +36,15 @@ class StorageUsageService {
     required FileCachePlatformGateway fileCacheGateway,
     required List<MusicTrack> Function() libraryTracks,
     Future<int> Function()? persistentCoverCacheBytes,
-  }) : _fileCacheGateway = fileCacheGateway,
+    Future<int> Function()? persistentBrowseCacheBytes,
+  }) : _persistentBrowseCacheBytes = persistentBrowseCacheBytes,
+       _fileCacheGateway = fileCacheGateway,
        _libraryTracks = libraryTracks,
        _persistentCoverCacheBytes =
            persistentCoverCacheBytes ??
            AppCacheService.estimatePersistentCoverCacheBytes;
 
+  final Future<int> Function()? _persistentBrowseCacheBytes;
   final FileCachePlatformGateway _fileCacheGateway;
   final List<MusicTrack> Function() _libraryTracks;
   final Future<int> Function() _persistentCoverCacheBytes;
@@ -61,8 +64,9 @@ class StorageUsageService {
     final audioLibraryBytes = _sumLocalAudioBytes().clamp(0, usedBytes);
     final remainingAfterAudio = usedBytes - audioLibraryBytes;
     final persistentCoverBytes = await _persistentCoverCacheBytes();
+    final browseBytes = await _persistentBrowseCacheBytes?.call() ?? 0;
     final applicationCacheBytes =
-        (platformUsage.cacheBytes + persistentCoverBytes).clamp(
+        (platformUsage.cacheBytes + persistentCoverBytes + browseBytes).clamp(
           0,
           remainingAfterAudio,
         );

@@ -305,6 +305,40 @@ void registerAsmrControllerStateTests({
     expect(api.fetchWorkRequests, <String>['release:desc:1', 'release:desc:1']);
   });
 
+  test(
+    'returning to a content language preserves its previously loaded pages',
+    () async {
+      await resetPrefs();
+      final api = _BrowseChangingApi();
+      final controller = createTestAsmrController(
+        preferencesStore: preferences,
+        apiService: api,
+        persistenceRepository: persistenceRepository(),
+      );
+      await controller.initializeForVisiblePage();
+      await controller.refreshCategory(AsmrCategoryType.release);
+      await controller.loadMoreCategory(AsmrCategoryType.release);
+      final original = controller
+          .categoryViewState(AsmrCategoryType.release)
+          .works;
+      api.shift = 10;
+      await controller.setContentLanguage(AsmrContentLanguage.en);
+      expect(
+        controller
+            .categoryViewState(AsmrCategoryType.release)
+            .works
+            .map((work) => work.id),
+        [11, 12],
+      );
+      api.shift = 0;
+      await controller.setContentLanguage(AsmrContentLanguage.zh);
+      expect(
+        controller.categoryViewState(AsmrCategoryType.release).works,
+        same(original),
+      );
+    },
+  );
+
   test('ASMR work parser uses selected locale for localizable tag names', () {
     final work = AsmrWork.fromJson(const <String, dynamic>{
       'id': 1,
@@ -667,55 +701,61 @@ void registerAsmrControllerStateTests({
     },
   );
 
-  test('ASMR detail cache keeps the most recently used 128 works', () async {
-    await resetPrefs();
-    final api = _FakeAsmrApiService();
-    final controller = createTestAsmrController(
-      preferencesStore: preferences,
-      apiService: api,
-      persistenceRepository: persistenceRepository(),
-    );
-    final works = <AsmrWork>[
-      for (var id = 1; id <= 129; id++) _work(id: id, title: 'Work $id'),
-    ];
+  test(
+    'ASMR detail memory eviction falls back to permanent disk cache',
+    () async {
+      await resetPrefs();
+      final api = _FakeAsmrApiService();
+      final controller = createTestAsmrController(
+        preferencesStore: preferences,
+        apiService: api,
+        persistenceRepository: persistenceRepository(),
+      );
+      final works = <AsmrWork>[
+        for (var id = 1; id <= 129; id++) _work(id: id, title: 'Work $id'),
+      ];
 
-    for (final work in works.take(128)) {
-      await controller.loadWorkDetail(work);
-    }
-    await controller.loadWorkDetail(works.first);
-    await controller.loadWorkDetail(works.last);
-    await controller.loadWorkDetail(works.first);
-    await controller.loadWorkDetail(works[1]);
+      for (final work in works.take(128)) {
+        await controller.loadWorkDetail(work);
+      }
+      await controller.loadWorkDetail(works.first);
+      await controller.loadWorkDetail(works.last);
+      await controller.loadWorkDetail(works.first);
+      await controller.loadWorkDetail(works[1]);
 
-    expect(api.detailFetchWorkIds.where((id) => id == 1), hasLength(1));
-    expect(api.detailFetchWorkIds.where((id) => id == 2), hasLength(2));
-  });
+      expect(api.detailFetchWorkIds.where((id) => id == 1), hasLength(1));
+      expect(api.detailFetchWorkIds.where((id) => id == 2), hasLength(1));
+    },
+  );
 
-  test('ASMR track cache keeps the most recently used 32 works', () async {
-    await resetPrefs();
-    final api = _FakeAsmrApiService(
-      trackTree: <AsmrTrackFile>[_trackFile('track.mp3', 'track.mp3')],
-    );
-    final controller = createTestAsmrController(
-      preferencesStore: preferences,
-      apiService: api,
-      persistenceRepository: persistenceRepository(),
-    );
-    final works = <AsmrWork>[
-      for (var id = 1; id <= 33; id++) _work(id: id, title: 'Work $id'),
-    ];
+  test(
+    'ASMR track memory eviction falls back to permanent disk cache',
+    () async {
+      await resetPrefs();
+      final api = _FakeAsmrApiService(
+        trackTree: <AsmrTrackFile>[_trackFile('track.mp3', 'track.mp3')],
+      );
+      final controller = createTestAsmrController(
+        preferencesStore: preferences,
+        apiService: api,
+        persistenceRepository: persistenceRepository(),
+      );
+      final works = <AsmrWork>[
+        for (var id = 1; id <= 33; id++) _work(id: id, title: 'Work $id'),
+      ];
 
-    for (final work in works.take(32)) {
-      await controller.ensureTrackTree(work);
-    }
-    await controller.ensureTrackTree(works.first);
-    await controller.ensureTrackTree(works.last);
-    await controller.ensureTrackTree(works.first);
-    await controller.ensureTrackTree(works[1]);
+      for (final work in works.take(32)) {
+        await controller.ensureTrackTree(work);
+      }
+      await controller.ensureTrackTree(works.first);
+      await controller.ensureTrackTree(works.last);
+      await controller.ensureTrackTree(works.first);
+      await controller.ensureTrackTree(works[1]);
 
-    expect(api.trackFetchWorkIds.where((id) => id == 1), hasLength(1));
-    expect(api.trackFetchWorkIds.where((id) => id == 2), hasLength(2));
-  });
+      expect(api.trackFetchWorkIds.where((id) => id == 1), hasLength(1));
+      expect(api.trackFetchWorkIds.where((id) => id == 2), hasLength(1));
+    },
+  );
 
   test('ASMR track tree view state caches visible browsable nodes', () async {
     await resetPrefs();
@@ -993,6 +1033,351 @@ void registerAsmrControllerStateTests({
     },
   );
 
+  test(
+    'ASMR root and search snapshots survive controller recreation',
+    () async {
+      await resetPrefs();
+      final api = _FakeAsmrApiService(
+        largeRecommendationPool: true,
+        recommendationPageCount: 3,
+      );
+      final first = createTestAsmrController(
+        preferencesStore: preferences,
+        apiService: api,
+        persistenceRepository: persistenceRepository(),
+      );
+      await first.initializeForVisiblePage();
+      await first.refreshCategory(AsmrCategoryType.release);
+      await first.loadMoreCategory(AsmrCategoryType.release);
+      final rootIds = first
+          .categoryViewState(AsmrCategoryType.release)
+          .works
+          .map((work) => work.id)
+          .toList();
+      await first.refreshCategory(
+        AsmrCategoryType.release,
+        searchQuery: 'saved search',
+      );
+      final searchIds = first
+          .categoryViewState(
+            AsmrCategoryType.release,
+            searchQuery: 'saved search',
+          )
+          .works
+          .map((work) => work.id)
+          .toList();
+      expect(
+        first
+            .categoryViewState(AsmrCategoryType.release)
+            .works
+            .map((work) => work.id),
+        rootIds,
+      );
+      await first.flushBrowseCaches();
+      first.dispose();
+      final restored = createTestAsmrController(
+        preferencesStore: preferences,
+        apiService: api,
+        persistenceRepository: persistenceRepository(),
+      );
+      await restored.initializeForVisiblePage();
+      final requests =
+          api.fetchWorkRequests.length + api.searchWorkRequests.length;
+      await restored.ensureCategoryLoaded(
+        AsmrCategoryType.release,
+        refreshInBackground: false,
+      );
+      await restored.ensureCategoryLoaded(
+        AsmrCategoryType.release,
+        searchQuery: 'saved search',
+        refreshInBackground: false,
+      );
+      expect(
+        restored
+            .categoryViewState(AsmrCategoryType.release)
+            .works
+            .map((work) => work.id),
+        rootIds,
+      );
+      expect(
+        restored
+            .categoryViewState(
+              AsmrCategoryType.release,
+              searchQuery: 'saved search',
+            )
+            .works
+            .map((work) => work.id),
+        searchIds,
+      );
+      expect(
+        api.fetchWorkRequests.length + api.searchWorkRequests.length,
+        requests,
+      );
+      await restored.loadMoreCategory(AsmrCategoryType.release);
+      expect(api.fetchWorkRequests.last, endsWith(':3'));
+    },
+  );
+
+  test(
+    'ASMR background checks only first page and acceptance resets pagination',
+    () async {
+      await resetPrefs();
+      final api = _BrowseChangingApi();
+      final controller = createTestAsmrController(
+        preferencesStore: preferences,
+        apiService: api,
+        persistenceRepository: persistenceRepository(),
+      );
+      await controller.initializeForVisiblePage();
+      await controller.refreshCategory(AsmrCategoryType.release);
+      await controller.loadMoreCategory(AsmrCategoryType.release);
+      final before = controller
+          .categoryViewState(AsmrCategoryType.release)
+          .works;
+      api.shift = 10;
+      final finished = Completer<void>();
+      void listen() {
+        if (controller.categoryViewState(AsmrCategoryType.release).hasUpdates &&
+            !finished.isCompleted) {
+          finished.complete();
+        }
+      }
+
+      controller.addListener(listen);
+      await controller.ensureCategoryLoaded(AsmrCategoryType.release);
+      await finished.future;
+      expect(
+        controller.categoryViewState(AsmrCategoryType.release).works,
+        same(before),
+      );
+      expect(api.pages, [1, 2, 1]);
+      controller.acceptCategoryUpdates(AsmrCategoryType.release);
+      expect(
+        controller
+            .categoryViewState(AsmrCategoryType.release)
+            .works
+            .map((work) => work.id),
+        [11, 12],
+      );
+      expect(
+        controller.categoryViewState(AsmrCategoryType.release).hasUpdates,
+        isFalse,
+      );
+      await controller.loadMoreCategory(AsmrCategoryType.release);
+      expect(api.pages.last, 2);
+      controller.removeListener(listen);
+    },
+  );
+
+  test(
+    'ASMR clearing caches prevents a pending response from recreating snapshots',
+    () async {
+      await resetPrefs();
+      final started = Completer<void>();
+      final release = Completer<void>();
+      final api = _FakeAsmrApiService(
+        beforeFetchWorkResponse: (_) async {
+          if (!started.isCompleted) started.complete();
+          await release.future;
+        },
+      );
+      final controller = createTestAsmrController(
+        preferencesStore: preferences,
+        apiService: api,
+        persistenceRepository: persistenceRepository(),
+      );
+      await controller.initializeForVisiblePage();
+      final request = controller.refreshCategory(AsmrCategoryType.release);
+      await started.future;
+      await controller.clearBrowseCaches();
+      release.complete();
+      await request;
+      await controller.flushBrowseCaches();
+      expect(controller.hasLoadedCategory(AsmrCategoryType.release), isFalse);
+      expect(
+        await persistenceRepository().loadBrowseSnapshot(
+          'asmr_category',
+          controller.browseCacheScope,
+          jsonEncode(['release', '']),
+        ),
+        isNull,
+      );
+    },
+  );
+
+  test(
+    'ASMR total changes prompt updates without replacing the loaded range',
+    () async {
+      await resetPrefs();
+      final api = _BrowseChangingApi();
+      final controller = createTestAsmrController(
+        preferencesStore: preferences,
+        apiService: api,
+        persistenceRepository: persistenceRepository(),
+      );
+      await controller.initializeForVisiblePage();
+      await controller.refreshCategory(AsmrCategoryType.release);
+      await controller.loadMoreCategory(AsmrCategoryType.release);
+      final before = controller
+          .categoryViewState(AsmrCategoryType.release)
+          .works;
+      api.total = 12;
+      final updated = Completer<void>();
+      void listen() {
+        final state = controller.categoryViewState(AsmrCategoryType.release);
+        if (state.hasUpdates && !state.isRefreshing && !updated.isCompleted) {
+          updated.complete();
+        }
+      }
+
+      controller.addListener(listen);
+      await controller.ensureCategoryLoaded(AsmrCategoryType.release);
+      await updated.future;
+      expect(
+        controller.categoryViewState(AsmrCategoryType.release).works,
+        same(before),
+      );
+      expect(controller.totalCountFor(AsmrCategoryType.release), 8);
+      controller.acceptCategoryUpdates(AsmrCategoryType.release);
+      expect(controller.totalCountFor(AsmrCategoryType.release), 12);
+      expect(
+        controller.categoryViewState(AsmrCategoryType.release).works,
+        hasLength(2),
+      );
+      controller.removeListener(listen);
+    },
+  );
+
+  test('ASMR reads entering during cache clear wait for deletion', () async {
+    await resetPrefs();
+    final work = _work(id: 72, title: 'Work');
+    final first = createTestAsmrController(
+      preferencesStore: preferences,
+      apiService: _FakeAsmrApiService(),
+      persistenceRepository: persistenceRepository(),
+    );
+    await first.initializeForVisiblePage();
+    await first.loadWorkDetail(work);
+    await first.flushBrowseCaches();
+    final blocked = _BlockedBrowseClearPreferences(
+      repository: persistenceRepository(),
+    );
+    final api = _FakeAsmrApiService();
+    final controller = createTestAsmrController(
+      preferencesStore: blocked,
+      apiService: api,
+      persistenceRepository: persistenceRepository(),
+    );
+    await controller.initializeForVisiblePage();
+    final clearing = controller.clearBrowseCaches();
+    await blocked.started.future;
+    final detail = controller.loadWorkDetail(work);
+    await Future<void>.delayed(Duration.zero);
+    expect(api.detailFetchWorkIds, isEmpty);
+    blocked.release.complete();
+    await clearing;
+    await detail;
+    expect(api.detailFetchWorkIds, [72]);
+  });
+
+  test(
+    'ASMR detail and trees survive restart including confirmed empty trees',
+    () async {
+      await resetPrefs();
+      final work = _work(id: 72, title: 'Persistent work');
+      final firstApi = _FakeAsmrApiService();
+      final first = createTestAsmrController(
+        preferencesStore: preferences,
+        apiService: firstApi,
+        persistenceRepository: persistenceRepository(),
+      );
+      await first.initializeForVisiblePage();
+      final detail = await first.loadWorkDetail(work);
+      expect(await first.ensureTrackTree(work), isEmpty);
+      await first.flushBrowseCaches();
+      first.dispose();
+      final nextApi = _FakeAsmrApiService();
+      final diskReads = _BrowseReadCountingPreferences(
+        repository: persistenceRepository(),
+      );
+      final restored = createTestAsmrController(
+        preferencesStore: diskReads,
+        apiService: nextApi,
+        persistenceRepository: persistenceRepository(),
+      );
+      await restored.initializeForVisiblePage();
+      expect(diskReads.kinds, everyElement('asmr_category'));
+      expect(restored.cachedWorkDetail(work.id), isNull);
+      expect(restored.trackTreeFor(work.id), isNull);
+      expect(
+        (await restored.loadWorkDetail(work)).work.title,
+        detail.work.title,
+      );
+      expect(await restored.ensureTrackTree(work), isEmpty);
+      expect(nextApi.detailFetchWorkIds, isEmpty);
+      expect(nextApi.trackFetchWorkIds, isEmpty);
+      expect(
+        diskReads.kinds.where((kind) => kind == 'asmr_detail'),
+        hasLength(1),
+      );
+      expect(
+        diskReads.kinds.where((kind) => kind == 'asmr_tree'),
+        hasLength(1),
+      );
+    },
+  );
+
+  test(
+    'ASMR corrupt snapshots stay isolated and detail trees load only on demand',
+    () async {
+      await resetPrefs();
+      const scope = '["","zh"]';
+      await persistenceRepository().saveBrowseSnapshot(
+        'asmr_category',
+        scope,
+        '["release",""]',
+        {
+          'version': 1,
+          'works': [_work(id: 99, title: 'Broken').toJson()],
+          'page': 'invalid',
+          'total': 1,
+          'hasMore': false,
+        },
+      );
+      await persistenceRepository().saveBrowseSnapshot(
+        'asmr_category',
+        scope,
+        '["collected",""]',
+        {
+          'version': 1,
+          'works': [],
+          'page': 1,
+          'total': 0,
+          'hasMore': false,
+          'firstPageIds': [],
+        },
+      );
+      final api = _FakeAsmrApiService();
+      final controller = createTestAsmrController(
+        preferencesStore: preferences,
+        apiService: api,
+        persistenceRepository: persistenceRepository(),
+      );
+      await controller.initializeForVisiblePage();
+      expect(controller.hasLoadedCategory(AsmrCategoryType.collected), isTrue);
+      expect(controller.hasLoadedCategory(AsmrCategoryType.release), isFalse);
+      expect(controller.trackTreeFor(99), isNull);
+      expect(controller.cachedWorkDetail(99), isNull);
+      await controller.ensureCategoryLoaded(
+        AsmrCategoryType.collected,
+        refreshInBackground: false,
+      );
+      expect(api.fetchWorkRequests, isEmpty);
+      await controller.ensureCategoryLoaded(AsmrCategoryType.release);
+      expect(api.fetchWorkRequests, isNotEmpty);
+    },
+  );
+
   test('pagination data commits despite UI generation changes', () async {
     await resetPrefs();
     final coordinator = UiInteractionCoordinator.instance;
@@ -1228,5 +1613,57 @@ class _FailingHiddenTrackPreferences extends AsmrPreferencesStore {
   @override
   Future<void> saveHiddenTracks(Set<String> keys) async {
     throw const FileSystemException('forced hidden-track write failure');
+  }
+}
+
+class _BrowseChangingApi extends AsmrApiService {
+  int shift = 0;
+  int total = 8;
+  final List<int> pages = [];
+  @override
+  Future<AsmrWorkPage> fetchWorks({
+    required String order,
+    required String sort,
+    int page = 1,
+    int pageSize = 40,
+    String? token,
+    AsmrContentLanguage language = AsmrContentLanguage.zh,
+  }) async {
+    pages.add(page);
+    return AsmrWorkPage(
+      works: [
+        for (var id = (page - 1) * 2 + 1; id <= page * 2; id++)
+          _work(id: id + shift, title: 'Work ${id + shift}'),
+      ],
+      currentPage: page,
+      pageSize: 2,
+      totalCount: total,
+    );
+  }
+}
+
+class _BlockedBrowseClearPreferences extends AsmrPreferencesStore {
+  _BlockedBrowseClearPreferences({required super.repository});
+  final started = Completer<void>();
+  final release = Completer<void>();
+  @override
+  Future<void> clearBrowseSnapshots() async {
+    started.complete();
+    await release.future;
+    await super.clearBrowseSnapshots();
+  }
+}
+
+class _BrowseReadCountingPreferences extends AsmrPreferencesStore {
+  _BrowseReadCountingPreferences({required super.repository});
+  final kinds = <String>[];
+  @override
+  Future<Map<String, Object?>?> loadBrowseSnapshot(
+    String kind,
+    String scope,
+    String key,
+  ) {
+    kinds.add(kind);
+    return super.loadBrowseSnapshot(kind, scope, key);
   }
 }

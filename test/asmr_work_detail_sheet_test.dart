@@ -426,7 +426,7 @@ void main() {
   });
 
   testWidgets(
-    'ASMR search restores separate query positions without resetting the root',
+    'ASMR search reopens empty at the top without resetting the root',
     (tester) async {
       SharedPreferences.setMockInitialValues(const <String, Object>{});
       final fixture = AppRuntimeWidgetTestFixture();
@@ -453,10 +453,20 @@ void main() {
           .controller!;
       rootScroll.jumpTo(320);
       await tester.pump();
+      final rootLoads = controller.ensureLanguages.length;
       await tester.tap(
         find.byKey(const ValueKey<String>('asmr_search_button')),
       );
+      await tester.pump();
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey<String>('asmr_search_favorites')),
+          matching: find.text('Shared work 1'),
+        ),
+        findsOneWidget,
+      );
       await tester.pumpAndSettle();
+      expect(controller.ensureLanguages, hasLength(rootLoads));
       await tester.tap(find.text('收藏'));
       await tester.pumpAndSettle();
       Future<void> query(String value) async {
@@ -483,13 +493,35 @@ void main() {
       searchScroll.jumpTo(760);
       await tester.pump();
       await query('shared');
-      expect(searchScroll.offset, closeTo(480, 1));
+      expect(searchScroll.offset, closeTo(0, 1));
       await query('work');
-      expect(searchScroll.offset, closeTo(760, 1));
+      expect(searchScroll.offset, closeTo(0, 1));
       Navigator.of(tester.element(find.byType(TextField))).pop();
       await tester.pumpAndSettle();
       expect(rootScroll.offset, closeTo(320, 1));
       expect(controller.refreshRequests, isEmpty);
+      await tester.tap(
+        find.byKey(const ValueKey<String>('asmr_search_button')),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<TextField>(find.byType(TextField)).controller!.text,
+        isEmpty,
+      );
+      await tester.tap(find.text('收藏'));
+      await tester.pumpAndSettle();
+      final reopenedScroll = tester
+          .widget<ListView>(
+            find.descendant(
+              of: find.byKey(const ValueKey<String>('asmr_search_favorites')),
+              matching: find.byKey(
+                const PageStorageKey(AsmrCategoryType.favorites),
+              ),
+            ),
+          )
+          .controller!;
+      expect(reopenedScroll.offset, 0);
+      expect(controller.ensureLanguages, hasLength(rootLoads));
     },
   );
 
@@ -1210,8 +1242,12 @@ class _TestFavoritesAsmrLibraryController extends AsmrLibraryController {
   int _revision = 0;
 
   @override
-  Future<List<AsmrTrackFile>> ensureTrackTree(AsmrWork work) =>
-      pendingTrackTree ?? super.ensureTrackTree(work);
+  Future<List<AsmrTrackFile>> ensureTrackTree(
+    AsmrWork work, {
+    bool forceRefresh = false,
+  }) =>
+      pendingTrackTree ??
+      super.ensureTrackTree(work, forceRefresh: forceRefresh);
 
   void updateFavorites(List<AsmrWork> next) {
     favoriteWorks = List.of(next);
@@ -1249,10 +1285,8 @@ class _TestFavoritesAsmrLibraryController extends AsmrLibraryController {
   Future<void> ensureCategoryLoaded(
     AsmrCategoryType category, {
     String searchQuery = '',
-    bool refreshInBackground = true,
+    bool searchSession = false,
   }) async {}
-  @override
-  Future<void> refreshWorkInBackground(AsmrWork work) async {}
   @override
   Future<void> initialize({AsmrContentLanguage? defaultLanguage}) async {}
 
@@ -1260,6 +1294,7 @@ class _TestFavoritesAsmrLibraryController extends AsmrLibraryController {
   Future<void> refreshCategory(
     AsmrCategoryType category, {
     String searchQuery = '',
+    bool searchSession = false,
   }) async {}
 
   @override
@@ -1284,7 +1319,12 @@ class _TestFavoritesAsmrLibraryController extends AsmrLibraryController {
   List<AsmrWork> filteredWorksFor(
     AsmrCategoryType category, {
     String searchQuery = '',
-  }) => categoryViewState(category, searchQuery: searchQuery).works;
+    bool searchSession = false,
+  }) => categoryViewState(
+    category,
+    searchQuery: searchQuery,
+    searchSession: searchSession,
+  ).works;
 
   @override
   int totalCountFor(AsmrCategoryType category) => worksFor(category).length;
@@ -1296,6 +1336,7 @@ class _TestFavoritesAsmrLibraryController extends AsmrLibraryController {
   AsmrCategoryViewState categoryViewState(
     AsmrCategoryType category, {
     String searchQuery = '',
+    bool searchSession = false,
   }) {
     final works = worksFor(category);
     return AsmrCategoryViewState(
@@ -1349,7 +1390,7 @@ class _LoadedTabAsmrController extends _TestFavoritesAsmrLibraryController {
   Future<void> ensureCategoryLoaded(
     AsmrCategoryType category, {
     String searchQuery = '',
-    bool refreshInBackground = true,
+    bool searchSession = false,
   }) async {
     ensureLanguages.add(pageLanguage);
   }
@@ -1371,6 +1412,7 @@ class _LoadedTabAsmrController extends _TestFavoritesAsmrLibraryController {
   Future<void> refreshCategory(
     AsmrCategoryType category, {
     String searchQuery = '',
+    bool searchSession = false,
   }) async {
     refreshRequests.add(category);
   }

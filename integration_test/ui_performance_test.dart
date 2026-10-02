@@ -1408,6 +1408,7 @@ final class _ProfileAsmrController extends AsmrLibraryController {
   AsmrCategoryViewState categoryViewState(
     AsmrCategoryType category, {
     String searchQuery = '',
+    bool searchSession = false,
   }) => AsmrCategoryViewState(
     category: category,
     works: worksFor(category),

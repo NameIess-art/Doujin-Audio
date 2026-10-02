@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -56,13 +54,8 @@ class _BrowsePageScrollState extends ConsumerState<BrowsePageScroll>
     _store = ref.read(browsePageStateStoreProvider);
     _epoch = _store.epoch;
     WidgetsBinding.instance.addObserver(this);
-    unawaited(
-      _store.initialize().then((_) {
-        if (!mounted) return;
-        _store.update(widget.pageKey, widget.displayState, epoch: _epoch);
-        _scheduleRestore();
-      }),
-    );
+    _store.update(widget.pageKey, widget.displayState, epoch: _epoch);
+    _scheduleRestore();
   }
 
   @override
@@ -202,7 +195,6 @@ class _BrowsePageScrollState extends ConsumerState<BrowsePageScroll>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state != AppLifecycleState.resumed) {
       _save();
-      unawaited(_store.flush());
     }
   }
 

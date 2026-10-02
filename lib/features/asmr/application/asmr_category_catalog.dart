@@ -1,5 +1,4 @@
 import 'dart:collection';
-import 'dart:convert';
 
 import '../../../core/immutable_collections.dart';
 import '../../../core/media/search_query_utils.dart';
@@ -18,6 +17,7 @@ typedef _CategoryKey = ({
   String scope,
   AsmrCategoryType category,
   String query,
+  int searchEpoch,
 });
 typedef _CategoryRequestKey = ({
   AsmrCategoryRequestContext context,
@@ -31,9 +31,6 @@ typedef _FilteredWorksKey = ({
 
 final class _CategoryState {
   List<AsmrWork>? works;
-  List<AsmrWork>? pendingWorks;
-  AsmrWorkPage? pendingPage;
-  List<int> firstPageIds = const [];
   bool isLoading = false;
   bool isLoadingMore = false;
   int page = 1;
@@ -53,8 +50,6 @@ final class _CategoryState {
     needsLoadMoreRetry = false;
     refreshTask = null;
     loadMoreTask = null;
-    pendingWorks = null;
-    pendingPage = null;
   }
 }
 
@@ -67,22 +62,21 @@ final class AsmrCategoryCatalog {
     required AsmrCategoryRequestContext Function() currentContext,
     required List<AsmrWork> Function(AsmrCategoryType) localWorks,
     required AsmrWork Function(AsmrWork) decorateWork,
-    required void Function(String, String, Map<String, Object?>) persist,
   }) : _remoteCatalogService = remoteCatalogService,
        _onChanged = onChanged,
        _isContextCurrent = isContextCurrent,
        _currentContext = currentContext,
        _localWorks = localWorks,
-       _decorateWork = decorateWork,
-       _persist = persist;
+       _decorateWork = decorateWork;
   final AsmrRemoteCatalogService _remoteCatalogService;
   final void Function() _onChanged;
   final bool Function(AsmrCategoryRequestContext) _isContextCurrent;
   final AsmrCategoryRequestContext Function() _currentContext;
   final List<AsmrWork> Function(AsmrCategoryType) _localWorks;
   final AsmrWork Function(AsmrWork) _decorateWork;
-  final void Function(String, String, Map<String, Object?>) _persist;
   final Map<_CategoryKey, _CategoryState> _categories = {};
+  int _searchEpoch = 1;
+  int get searchEpoch => _searchEpoch;
   final Map<AsmrCategoryType, String> _lastQueries = {};
   final Map<AsmrCategoryType, String> _pendingAuthRefreshes = {};
   final LinkedHashMap<_FilteredWorksKey, List<AsmrWork>> _filteredWorksCache =
@@ -91,22 +85,47 @@ final class AsmrCategoryCatalog {
     AsmrCategoryType category,
     String query, [
     AsmrCategoryRequestContext? context,
+    bool searchSession = false,
   ]) => (
     scope: (context ?? _currentContext()).scope,
     category: category,
     query: normalizeSearchQuery(query),
+    // An empty search displays the same loaded pages as the root category.
+    searchEpoch: searchSession && normalizeSearchQuery(query).isNotEmpty
+        ? _searchEpoch
+        : 0,
   );
-  _CategoryState _state(AsmrCategoryType category, [String? query]) =>
-      _categories.putIfAbsent(
-        _key(category, query ?? _lastQueries[category] ?? ''),
-        _CategoryState.new,
-      );
+  _CategoryState _state(
+    AsmrCategoryType category, [
+    String? query,
+    bool searchSession = false,
+  ]) => _categories.putIfAbsent(
+    _key(category, query ?? _lastQueries[category] ?? '', null, searchSession),
+    _CategoryState.new,
+  );
   static bool isRemote(AsmrCategoryType category) =>
       category != AsmrCategoryType.favorites &&
       category != AsmrCategoryType.history;
   bool isLoading(AsmrCategoryType category) => _state(category).isLoading;
-  bool hasLoaded(AsmrCategoryType category, {String searchQuery = ''}) =>
-      _state(category, searchQuery).works != null;
+  bool hasLoaded(
+    AsmrCategoryType category, {
+    String searchQuery = '',
+    bool searchSession = false,
+  }) => _state(category, searchQuery, searchSession).works != null;
+  bool hasAttemptedLoad(
+    AsmrCategoryType category, {
+    String searchQuery = '',
+    bool searchSession = false,
+  }) {
+    final state = _state(category, searchQuery, searchSession);
+    return state.query != null || state.error != null || state.isLoading;
+  }
+
+  Future<void>? pendingRefresh(
+    AsmrCategoryType category, {
+    String searchQuery = '',
+    bool searchSession = false,
+  }) => _state(category, searchQuery, searchSession).refreshTask;
   bool isLoadingMore(AsmrCategoryType category) =>
       _state(category).isLoadingMore;
   bool hasMore(AsmrCategoryType category) => _state(category).hasMore;
@@ -120,9 +139,14 @@ final class AsmrCategoryCatalog {
   AsmrCategoryViewState viewState(
     AsmrCategoryType category, {
     String searchQuery = '',
+    bool searchSession = false,
   }) {
-    final state = _state(category, searchQuery);
-    final works = filteredWorksFor(category, searchQuery: searchQuery);
+    final state = _state(category, searchQuery, searchSession);
+    final works = filteredWorksFor(
+      category,
+      searchQuery: searchQuery,
+      searchSession: searchSession,
+    );
     return AsmrCategoryViewState(
       category: category,
       works: works,
@@ -140,7 +164,6 @@ final class AsmrCategoryCatalog {
       lastError: state.error,
       operationError: state.error,
       revision: state.revision,
-      hasUpdates: state.pendingWorks != null,
     );
   }
 
@@ -150,9 +173,10 @@ final class AsmrCategoryCatalog {
   List<AsmrWork> filteredWorksFor(
     AsmrCategoryType category, {
     String searchQuery = '',
+    bool searchSession = false,
   }) {
     if (isRemote(category)) {
-      return _state(category, searchQuery).works ?? const [];
+      return _state(category, searchQuery, searchSession).works ?? const [];
     }
     final works = _localWorks(category);
     final query = normalizeSearchQuery(searchQuery);
@@ -160,7 +184,7 @@ final class AsmrCategoryCatalog {
     final key = (
       category: category,
       query: query,
-      revision: _state(category, query).revision,
+      revision: _state(category, query, searchSession).revision,
     );
     final cached = _filteredWorksCache.remove(key);
     if (cached != null) {
@@ -230,13 +254,15 @@ final class AsmrCategoryCatalog {
   Map<AsmrCategoryType, String> get loadedRemoteQueries => {
     for (final entry in _categories.entries)
       if (entry.key.scope == _currentContext().scope &&
+          entry.key.searchEpoch == 0 &&
           isRemote(entry.key.category) &&
           entry.value.query != null)
         entry.key.category: entry.key.query,
   };
   void invalidateForAuthChange() {
     for (final entry in _categories.entries) {
-      if (isRemote(entry.key.category) &&
+      if (entry.key.searchEpoch == 0 &&
+          isRemote(entry.key.category) &&
           (entry.value.works != null || entry.value.isLoading)) {
         _pendingAuthRefreshes[entry.key.category] = entry.key.query;
       }
@@ -271,52 +297,14 @@ final class AsmrCategoryCatalog {
     _filteredWorksCache.clear();
   }
 
-  void restore(String scope, Map<String, Map<String, Object?>> snapshots) {
-    for (final entry in snapshots.entries) {
-      final payload = entry.value;
-      if (payload['version'] != 1) continue;
-      final key = jsonDecode(entry.key) as List;
-      final category = AsmrCategoryType.values.byName(key[0] as String);
-      final query = key[1] as String;
-      final state = _categories.putIfAbsent((
-        scope: scope,
-        category: category,
-        query: query,
-      ), _CategoryState.new);
-      if (state.works != null || state.isLoading) continue;
-      final works = immutableList(
-        (payload['works'] as List).map(
-          (item) => _decorateWork(
-            AsmrWork.fromJson(Map<String, dynamic>.from(item as Map)),
-          ),
-        ),
-      );
-      final page = payload['page'] as int;
-      final total = payload['total'] as int;
-      final hasMore = payload['hasMore'] as bool;
-      final firstPageIds =
-          (payload['firstPageIds'] as List?)?.cast<int>().toList() ??
-          works.map((work) => work.id).toList();
-      state.works = works;
-      state.page = page;
-      state.totalCount = total;
-      state.hasMore = hasMore;
-      state.query = query;
-      state.firstPageIds = firstPageIds;
-      state.revision++;
-    }
-  }
-
-  void _save(_CategoryKey key, _CategoryState state) {
-    if (state.works == null || !isRemote(key.category)) return;
-    _persist(key.scope, jsonEncode([key.category.name, key.query]), {
-      'version': 1,
-      'works': state.works!.map((work) => work.toJson()).toList(),
-      'page': state.page,
-      'total': state.totalCount,
-      'hasMore': state.hasMore,
-      'firstPageIds': state.firstPageIds,
+  void clearSearchQueries() {
+    _searchEpoch++;
+    _categories.removeWhere((key, state) {
+      if (key.searchEpoch == 0) return false;
+      state.invalidateRequest();
+      return true;
     });
+    _filteredWorksCache.clear();
   }
 
   bool _isCurrent(_CategoryKey key, _CategoryRequestKey request) =>
@@ -327,19 +315,22 @@ final class AsmrCategoryCatalog {
     AsmrCategoryType category, {
     required String searchQuery,
     required AsmrCategoryRequestContext context,
-    bool background = false,
+    bool searchSession = false,
   }) async {
     final query = normalizeSearchQuery(searchQuery);
-    _lastQueries[category] = query;
-    final cacheKey = _key(category, query, context);
+    if (!searchSession) _lastQueries[category] = query;
+    final cacheKey = _key(category, query, context, searchSession);
     final state = _categories.putIfAbsent(cacheKey, _CategoryState.new);
     final pagination = state.loadMoreTask;
     if (pagination != null) await pagination;
-    if (!_isContextCurrent(context)) return;
+    if (!_isContextCurrent(context) ||
+        (cacheKey.searchEpoch != 0 && cacheKey.searchEpoch != _searchEpoch)) {
+      return;
+    }
     if (state.refreshTask != null) return state.refreshTask;
     final request = (context: context, serial: ++state.requestSerial);
     late final Future<void> task;
-    task = _refresh(cacheKey, state, request, background).whenComplete(() {
+    task = _refresh(cacheKey, state, request).whenComplete(() {
       if (identical(state.refreshTask, task)) state.refreshTask = null;
     });
     state.refreshTask = task;
@@ -381,7 +372,6 @@ final class AsmrCategoryCatalog {
     _CategoryKey cacheKey,
     _CategoryState state,
     _CategoryRequestKey request,
-    bool background,
   ) async {
     state.isLoading = true;
     state.needsLoadMoreRetry = false;
@@ -400,27 +390,8 @@ final class AsmrCategoryCatalog {
       final frozen = immutableList(
         result.works.where((work) => ids.add(work.id)).map(_decorateWork),
       );
-      if (background && state.works != null) {
-        final oldFirstPage = state.works!
-            .take(state.firstPageIds.length)
-            .toList();
-        if (state.totalCount != result.totalCount ||
-            jsonEncode(oldFirstPage.map((work) => work.toJson()).toList()) !=
-                jsonEncode(frozen.map((work) => work.toJson()).toList())) {
-          // Background checks do not replace the user's loaded range or position.
-          state.pendingWorks = frozen;
-          state.pendingPage = result;
-        } else {
-          state.pendingWorks = null;
-          state.pendingPage = null;
-        }
-      } else {
-        state.works = frozen;
-        state.pendingWorks = null;
-        state.pendingPage = null;
-        _applyPageResult(state, cacheKey.query, result);
-        _save(cacheKey, state);
-      }
+      state.works = frozen;
+      _applyPageResult(state, cacheKey.query, result);
       state.revision++;
       _onChanged();
     } catch (error) {
@@ -433,33 +404,29 @@ final class AsmrCategoryCatalog {
     }
   }
 
-  void acceptUpdates(AsmrCategoryType category, {String searchQuery = ''}) {
-    final key = _key(category, searchQuery);
-    final state = _state(category, searchQuery);
-    if (state.pendingWorks == null) return;
-    state.works = state.pendingWorks;
-    _applyPageResult(state, key.query, state.pendingPage!);
-    state.pendingWorks = null;
-    state.pendingPage = null;
-    state.revision++;
-    _save(key, state);
-    _onChanged();
-  }
-
   Future<void> loadMore(
     AsmrCategoryType category, {
     required String searchQuery,
     required AsmrCategoryRequestContext context,
+    bool searchSession = false,
   }) async {
-    final state = _state(category, searchQuery);
+    final state = _state(category, searchQuery, searchSession);
     final refresh = state.refreshTask;
     if (refresh != null) await refresh;
-    if (!_isContextCurrent(context)) return;
+    if (!_isContextCurrent(context) ||
+        (searchSession && !_categories.containsValue(state))) {
+      return;
+    }
     final existing = state.loadMoreTask;
     if (existing != null) return existing;
     late final Future<void> task;
-    task = _loadMore(category, searchQuery: searchQuery, context: context)
-        .whenComplete(() {
+    task =
+        _loadMore(
+          category,
+          searchQuery: searchQuery,
+          context: context,
+          searchSession: searchSession,
+        ).whenComplete(() {
           if (identical(state.loadMoreTask, task)) state.loadMoreTask = null;
         });
     state.loadMoreTask = task;
@@ -470,9 +437,10 @@ final class AsmrCategoryCatalog {
     AsmrCategoryType category, {
     required String searchQuery,
     required AsmrCategoryRequestContext context,
+    bool searchSession = false,
   }) async {
     final query = normalizeSearchQuery(searchQuery);
-    final state = _state(category, query);
+    final state = _state(category, query, searchSession);
     final refreshTask = state.refreshTask;
     if (refreshTask != null) await refreshTask;
     if (!isRemote(category) ||
@@ -482,11 +450,16 @@ final class AsmrCategoryCatalog {
       return;
     }
     if (state.works == null) {
-      await refresh(category, searchQuery: query, context: context);
+      await refresh(
+        category,
+        searchQuery: query,
+        context: context,
+        searchSession: searchSession,
+      );
       return;
     }
-    if (!state.hasMore || state.pendingWorks != null) return;
-    final key = _key(category, query, context);
+    if (!state.hasMore) return;
+    final key = _key(category, query, context, searchSession);
     final request = (context: context, serial: state.requestSerial);
     state.isLoadingMore = true;
     state.needsLoadMoreRetry = false;
@@ -504,7 +477,6 @@ final class AsmrCategoryCatalog {
       state.revision++;
       _applyPageResult(state, query, result);
       state.needsLoadMoreRetry = additions.isEmpty && state.hasMore;
-      _save(key, state);
       _onChanged();
     } catch (error) {
       if (_isCurrent(key, request)) {
@@ -526,9 +498,6 @@ final class AsmrCategoryCatalog {
   ) {
     state.query = query;
     state.page = result.currentPage;
-    if (result.currentPage == 1) {
-      state.firstPageIds = state.works!.map((work) => work.id).toList();
-    }
     state.totalCount = result.totalCount;
     state.hasMore =
         result.hasMore && (state.works?.length ?? 0) < result.totalCount;

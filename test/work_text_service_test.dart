@@ -9,75 +9,10 @@ import 'package:doujin_audio/core/platform/file_cache_platform_gateway.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_library_controller.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
 import 'package:doujin_audio/features/library/application/work_text_service.dart';
-import 'package:doujin_audio/features/library/domain/local_directory_cache_repository.dart';
-
-class _DirectoryCache implements LocalDirectoryCacheRepository {
-  final snapshots = <(String, String), Map<String, Object?>>{};
-  int writes = 0;
-
-  @override
-  Future<Map<String, Object?>?> loadDirectorySnapshot({
-    required String kind,
-    required String key,
-  }) async => snapshots[(kind, key)];
-
-  @override
-  Future<void> saveDirectorySnapshot({
-    required String kind,
-    required String key,
-    required Map<String, Object?> payload,
-  }) async {
-    writes++;
-    snapshots[(kind, key)] = payload;
-  }
-
-  @override
-  Future<void> clearDirectorySnapshots() async => snapshots.clear();
-}
 
 List<CoverImageReference> _images(List<String> paths) => paths
     .map((path) => CoverImageReference(displayPath: path, sourcePath: path))
     .toList(growable: false);
-
-class _DelayedDirectoryCache extends _DirectoryCache {
-  final writeStarted = Completer<void>();
-  final allowWrite = Completer<void>();
-
-  @override
-  Future<void> saveDirectorySnapshot({
-    required String kind,
-    required String key,
-    required Map<String, Object?> payload,
-  }) async {
-    writeStarted.complete();
-    await allowWrite.future;
-    await super.saveDirectorySnapshot(kind: kind, key: key, payload: payload);
-  }
-}
-
-class _DelayedClearDirectoryCache extends _DirectoryCache {
-  final clearStarted = Completer<void>();
-  final allowClear = Completer<void>();
-  int reads = 0;
-  int clears = 0;
-
-  @override
-  Future<Map<String, Object?>?> loadDirectorySnapshot({
-    required String kind,
-    required String key,
-  }) {
-    reads++;
-    return super.loadDirectorySnapshot(kind: kind, key: key);
-  }
-
-  @override
-  Future<void> clearDirectorySnapshots() async {
-    clears++;
-    clearStarted.complete();
-    await allowClear.future;
-    await super.clearDirectorySnapshots();
-  }
-}
 
 class _FakeFileCacheGateway extends Fake implements FileCachePlatformGateway {
   _FakeFileCacheGateway({
@@ -209,41 +144,6 @@ void main() {
       },
     );
 
-    test(
-      'revision changes replace pending scans without restoring stale data',
-      () async {
-        var revision = 0;
-        final stale = Completer<List<Map<String, String>>>();
-        final current = Completer<List<Map<String, String>>>();
-        var scan = 0;
-        final gateway = _FakeFileCacheGateway(
-          discover: (_) => scan++ == 0 ? stale.future : current.future,
-        );
-        final service = WorkTextService(
-          platformGateway: gateway,
-          directoryRevision: () => revision,
-        );
-        final first = service.findWorkTextFiles('content://library/work');
-        revision++;
-        final second = service.findWorkTextFiles('content://library/work');
-        current.complete([
-          {
-            'name': '新台本.md',
-            'relativePath': '新台本.md',
-            'path': 'content://library/new',
-          },
-        ]);
-        final files = await second;
-        stale.complete([]);
-        await first;
-        expect(
-          await service.findWorkTextFiles('content://library/work'),
-          same(files),
-        );
-        expect(gateway.discoverCalls, 2);
-      },
-    );
-
     test('failed scans retry and successful empty scans are reused', () async {
       var scan = 0;
       final gateway = _FakeFileCacheGateway(
@@ -271,166 +171,6 @@ void main() {
       expect(gateway.discoverCalls, 3);
     });
 
-    test('restores persisted text before a failed background scan', () async {
-      final cache = _DirectoryCache();
-      final gateway = _FakeFileCacheGateway(
-        discoverResult: [
-          {'name': '台本.txt', 'relativePath': '台本.txt', 'path': r'E:\作品\台本.txt'},
-        ],
-      );
-      final first = WorkTextService(
-        platformGateway: gateway,
-        directoryCache: cache,
-      );
-      final files = await first.findWorkTextFiles(r'E:\作品');
-      final failingGateway = _FakeFileCacheGateway(
-        discover: (_) async {
-          throw const FileSystemException('Access denied');
-        },
-      );
-      final restored = WorkTextService(
-        platformGateway: failingGateway,
-        directoryCache: cache,
-      );
-      expect(await restored.findWorkTextFiles('e:/作品/'), files);
-      expect(await restored.refreshWorkTextFiles('e:/作品/'), files);
-      expect(cache.writes, 1);
-      expect(restored.cachedWorkTextFiles(r'E:\作品'), files);
-    });
-
-    test(
-      'persisted empty discovery restores without waiting for scan',
-      () async {
-        final cache = _DirectoryCache();
-        await WorkTextService(
-          platformGateway: _FakeFileCacheGateway(),
-          directoryCache: cache,
-        ).findWorkTextFiles('/empty');
-        final scan = Completer<List<Map<String, String>>>();
-        final gateway = _FakeFileCacheGateway(discover: (_) => scan.future);
-        final restored = WorkTextService(
-          platformGateway: gateway,
-          directoryCache: cache,
-        );
-        expect(await restored.findWorkTextFiles('/empty'), isEmpty);
-        expect(gateway.discoverCalls, 1);
-        scan.complete([]);
-        await restored.refreshWorkTextFiles('/empty');
-      },
-    );
-
-    test(
-      'image discovery shares equivalent paths and preserves failed refresh',
-      () async {
-        final cache = _DirectoryCache();
-        var fail = false;
-        var calls = 0;
-        final service = WorkTextService(
-          directoryCache: cache,
-          discoverImages: (_) async {
-            calls++;
-            if (fail) throw const FileSystemException('Directory unavailable');
-            return _images([r'E:\作品\cover.jpg']);
-          },
-        );
-        final files = await service.findWorkImageFiles(r'E:\作品');
-        expect(await service.findWorkImageFiles('e:/作品/'), files);
-        expect(calls, 1);
-        fail = true;
-        expect(await service.refreshWorkImageFiles(r'E:\作品'), files);
-        expect(cache.writes, 1);
-        final restored = WorkTextService(
-          directoryCache: cache,
-          discoverImages: (_) async =>
-              throw const FileSystemException('offline'),
-        );
-        expect(await restored.findWorkImageFiles(r'E:\作品'), files);
-        expect(restored.cachedWorkImageFiles('e:/作品/'), files);
-      },
-    );
-
-    test('memory eviction retains persistent directory snapshots', () async {
-      final cache = _DirectoryCache();
-      final pending = Completer<List<CoverImageReference>>();
-      var restored = false;
-      final service = WorkTextService(
-        directoryCache: cache,
-        discoverImages: (folder) async =>
-            restored ? pending.future : _images(['$folder/cover.jpg']),
-      );
-      for (var index = 0; index < 33; index++) {
-        await service.findWorkImageFiles('/work/$index');
-      }
-      expect(service.cachedWorkImageFiles('/work/0'), isNull);
-      restored = true;
-      expect(await service.findWorkImageFiles('/work/0'), [
-        '/work/0/cover.jpg',
-      ]);
-      expect(cache.snapshots, hasLength(33));
-      pending.complete(_images(['/work/0/cover.jpg']));
-      await service.refreshWorkImageFiles('/work/0');
-    });
-
-    test(
-      'clear prevents in-flight discoveries from repopulating snapshots',
-      () async {
-        final cache = _DirectoryCache();
-        final scan = Completer<List<CoverImageReference>>();
-        final service = WorkTextService(
-          directoryCache: cache,
-          discoverImages: (_) => scan.future,
-        );
-        final pending = service.findWorkImageFiles('/work');
-        await Future<void>.delayed(Duration.zero);
-        await service.clearDirectoryCache();
-        scan.complete(_images(['/work/cover.jpg']));
-        await pending;
-        expect(service.cachedWorkImageFiles('/work'), isNull);
-        expect(cache.snapshots, isEmpty);
-        expect(cache.writes, 0);
-      },
-    );
-
-    test(
-      'new reads wait for a shared clear before restoring disk snapshots',
-      () async {
-        final cache = _DelayedClearDirectoryCache();
-        cache.snapshots[('work_images', 'file:/work')] = {
-          'version': 1,
-          'files': [
-            {'path': '/old.jpg', 'sourcePath': '/old.jpg'},
-          ],
-        };
-        var discoveries = 0;
-        final service = WorkTextService(
-          directoryCache: cache,
-          discoverImages: (_) async {
-            discoveries++;
-            return _images(['/work/new.jpg']);
-          },
-        );
-        final clear = service.clearDirectoryCache();
-        await cache.clearStarted.future;
-        expect(identical(service.clearDirectoryCache(), clear), isTrue);
-        final first = service.findWorkImageFiles('/work');
-        final second = service.findWorkImageFiles('/work');
-        await Future<void>.delayed(Duration.zero);
-        expect(cache.reads, 0);
-        expect(discoveries, 0);
-        cache.allowClear.complete();
-        await clear;
-        expect(await first, ['/work/new.jpg']);
-        expect(await second, ['/work/new.jpg']);
-        expect(cache.clears, 1);
-        expect(discoveries, 1);
-        expect(service.cachedWorkImageFiles('/work'), ['/work/new.jpg']);
-        expect(cache.snapshots.values.single['files'], [
-          {'path': '/work/new.jpg', 'sourcePath': '/work/new.jpg'},
-        ]);
-        await service.dispose();
-      },
-    );
-
     test('findWorkTextFiles returns mapped WorkTextFile list', () async {
       final gateway = _FakeFileCacheGateway(
         discoverResult: [
@@ -457,70 +197,12 @@ void main() {
       expect(files[1].name, 'readme.txt');
     });
 
-    test(
-      'background refresh notifies changed lists and disposal drains persistence',
-      () async {
-        final cache = _DirectoryCache();
-        var files = <String>['/work/first.jpg'];
-        final service = WorkTextService(
-          directoryCache: cache,
-          discoverImages: (_) async => _images(files),
-        );
-        final changes = <String>[];
-        final subscription = service.directoryChanges.listen(changes.add);
-        await service.findWorkImageFiles('/work');
-        await service.refreshWorkImageFiles('/work');
-        files = ['/work/second.jpg'];
-        await service.refreshWorkImageFiles('/work');
-        await service.dispose();
-        expect(changes, ['file:/work', 'file:/work']);
-        expect(cache.snapshots.values.single['files'], [
-          {'path': '/work/second.jpg', 'sourcePath': '/work/second.jpg'},
-        ]);
-        await subscription.cancel();
-      },
-    );
-
     test('findWorkTextFiles returns empty list for blank folder', () async {
       final gateway = _FakeFileCacheGateway();
       final service = WorkTextService(platformGateway: gateway);
       final files = await service.findWorkTextFiles('   ');
       expect(files, isEmpty);
     });
-
-    test(
-      'persisted gallery retains source names alongside durable display paths',
-      () async {
-        final cache = _DirectoryCache();
-        final service = WorkTextService(
-          directoryCache: cache,
-          discoverImages: (_) async => [
-            const CoverImageReference(
-              displayPath: '/support/cover_artwork/hash.jpg',
-              sourcePath: r'E:\作品\画册\原图.jpg',
-            ),
-          ],
-        );
-        final files = await service.findWorkImageFiles(r'E:\作品');
-        expect(
-          service.sourcePathForWorkImage(r'E:\作品', files.single),
-          r'E:\作品\画册\原图.jpg',
-        );
-        final restored = WorkTextService(
-          directoryCache: cache,
-          discoverImages: (_) async =>
-              throw const FileSystemException('offline'),
-        );
-        final persisted = await restored.findWorkImageFiles('e:/作品/');
-        expect(persisted, files);
-        expect(
-          restored.sourcePathForWorkImage('e:/作品/', persisted.single),
-          r'E:\作品\画册\原图.jpg',
-        );
-        await service.dispose();
-        await restored.dispose();
-      },
-    );
 
     test('readDecodedText reads bytes and decodes properly', () async {
       const original = '音声作品台本テスト';
@@ -540,51 +222,6 @@ void main() {
       expect(result.text, original);
       expect(result.encoding, WorkTextEncoding.shiftJis);
     });
-
-    test(
-      'clear waits for already-started writes before deleting snapshots',
-      () async {
-        final cache = _DelayedDirectoryCache();
-        final service = WorkTextService(
-          directoryCache: cache,
-          discoverImages: (_) async => _images(['/work/cover.jpg']),
-        );
-        final pending = service.findWorkImageFiles('/work');
-        await cache.writeStarted.future;
-        final clear = service.clearDirectoryCache();
-        cache.allowWrite.complete();
-        await Future.wait([pending, clear]);
-        expect(cache.snapshots, isEmpty);
-        expect(service.cachedWorkImageFiles('/work'), isNull);
-        await service.dispose();
-      },
-    );
-
-    test(
-      'lifecycle flush waits for discovery and persistence without disposing',
-      () async {
-        final cache = _DelayedDirectoryCache();
-        final scan = Completer<List<CoverImageReference>>();
-        final service = WorkTextService(
-          directoryCache: cache,
-          discoverImages: (_) => scan.future,
-        );
-        final discovery = service.findWorkImageFiles('/work');
-        await Future<void>.delayed(Duration.zero);
-        var flushed = false;
-        final flush = service.flushDirectoryCache().then((_) => flushed = true);
-        scan.complete(_images(['/work/cover.jpg']));
-        await cache.writeStarted.future;
-        expect(flushed, isFalse);
-        cache.allowWrite.complete();
-        await Future.wait([discovery, flush]);
-        expect(cache.snapshots.values.single['files'], [
-          {'path': '/work/cover.jpg', 'sourcePath': '/work/cover.jpg'},
-        ]);
-        expect(await service.findWorkImageFiles('/work'), ['/work/cover.jpg']);
-        await service.dispose();
-      },
-    );
 
     test(
       'readDecodedText returns empty string when readDocumentBytes fails',
@@ -646,6 +283,104 @@ void main() {
         expect(requestedPaths, ['/unavailable', '/script']);
         expect(result.text, '台本：おはようございます。');
         expect(result.encoding, WorkTextEncoding.shiftJis);
+      },
+    );
+
+    test(
+      'concurrent image refresh shares equivalent Windows paths and later refresh scans again',
+      () async {
+        final scan = Completer<List<CoverImageReference>>();
+        var scans = 0;
+        final service = WorkTextService(
+          discoverImages: (_) {
+            scans++;
+            return scan.future;
+          },
+        );
+        final first = service.refreshWorkImageFiles(r'E:\作品');
+        final second = service.refreshWorkImageFiles('e:/作品/');
+        expect(scans, 1);
+        scan.complete(_images(['/support/cover.jpg']));
+        expect(await first, ['/support/cover.jpg']);
+        expect(await second, ['/support/cover.jpg']);
+        await service.refreshWorkImageFiles(r'E:\作品');
+        expect(scans, 2);
+        await service.dispose();
+      },
+    );
+
+    test(
+      'explicit failed refresh retains the previous successful snapshot',
+      () async {
+        var fail = false;
+        final service = WorkTextService(
+          discoverImages: (_) async {
+            if (fail) throw const FileSystemException('Access denied');
+            return _images(['/work/cover.jpg']);
+          },
+        );
+        final files = await service.refreshWorkImageFiles('/work');
+        fail = true;
+        expect(await service.refreshWorkImageFiles('/work'), files);
+        await service.dispose();
+      },
+    );
+
+    test(
+      'new service scans again and runtime gallery retains original source paths',
+      () async {
+        var scans = 0;
+        WorkTextService create() => WorkTextService(
+          discoverImages: (_) async {
+            scans++;
+            return [
+              const CoverImageReference(
+                displayPath: '/support/hash.jpg',
+                sourcePath: r'E:\作品\画册\原图.jpg',
+              ),
+            ];
+          },
+        );
+        final first = create();
+        await first.refreshWorkImageFiles(r'E:\作品');
+        expect(
+          first.sourcePathForWorkImage('e:/作品/', '/support/hash.jpg'),
+          r'E:\作品\画册\原图.jpg',
+        );
+        await first.dispose();
+        final restarted = create();
+        expect(
+          restarted.sourcePathForWorkImage(r'E:\作品', '/support/hash.jpg'),
+          '/support/hash.jpg',
+        );
+        await restarted.refreshWorkImageFiles(r'E:\作品');
+        expect(scans, 2);
+        await restarted.dispose();
+      },
+    );
+
+    test(
+      'clear retires old discoveries while allowing a new explicit scan',
+      () async {
+        final old = Completer<List<CoverImageReference>>();
+        var scans = 0;
+        final service = WorkTextService(
+          discoverImages: (_) {
+            final request = scans++;
+            if (request == 0) return old.future;
+            if (request == 1) {
+              return Future.value(_images(['/work/new.jpg']));
+            }
+            return Future.error(const FileSystemException('Access denied'));
+          },
+        );
+        final pending = service.refreshWorkImageFiles('/work');
+        await service.clearDirectoryCache();
+        expect(await service.refreshWorkImageFiles('/work'), ['/work/new.jpg']);
+        old.complete(_images(['/work/old.jpg']));
+        await pending;
+        expect(await service.refreshWorkImageFiles('/work'), ['/work/new.jpg']);
+        await service.dispose();
       },
     );
   });

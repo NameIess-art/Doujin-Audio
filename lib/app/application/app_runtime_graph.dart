@@ -1,5 +1,4 @@
 import '../../features/library/application/work_text_service.dart';
-import '../../features/library/domain/local_directory_cache_repository.dart';
 import 'dart:io';
 import '../localization/app_language_provider.dart';
 import 'windows_runtime_binding.dart';
@@ -94,18 +93,11 @@ AppRuntimeGraph createAppRuntimeGraph({
   PlaybackTrackCache? asmrPlaybackCacheService,
   FileCachePlatformGateway? fileCacheGateway,
   bool persistenceEnabled = true,
-  Future<void> Function()? flushAsmrBrowseCaches,
 }) {
-  final browsePageStates = BrowsePageStateStore(persistent: persistenceEnabled);
+  final browsePageStates = BrowsePageStateStore();
   final workTexts = WorkTextService(
-    directoryCache:
-        persistenceEnabled &&
-            library.databaseRepository is LocalDirectoryCacheRepository
-        ? library.databaseRepository as LocalDirectoryCacheRepository
-        : null,
     discoverImages: (folder) =>
         library.discoverCoverImageReferencesInFolder(folder, refresh: true),
-    directoryRevision: () => (library.structureRevision, library.scanRevision),
   );
   final audioPaths = AudioPathCoordinator(library: library, playback: playback);
   final subtitles = PlaybackSubtitleService(
@@ -251,12 +243,7 @@ AppRuntimeGraph createAppRuntimeGraph({
     keepAlive: keepAlive,
     playbackCommands: playbackCommands,
     asmrDownloads: asmrDownloads,
-    flushBrowseCaches: () async {
-      await browsePageStates.flush();
-      await workTexts.flushDirectoryCache();
-      await flushAsmrBrowseCaches?.call();
-    },
-    disposeBrowseCaches: workTexts.dispose,
+    disposeWorkTexts: workTexts.dispose,
     bindings: bindings,
   );
   syncAllState();
@@ -338,13 +325,11 @@ ProductionAppRuntime createProductionAppRuntime() {
     notifications: notificationFacade,
     settings: settingsRepository,
     asmrDownloads: asmrDownloadManager,
-    flushAsmrBrowseCaches: asmrLibraryController.flushBrowseCaches,
   );
 
   Future<void> initializeRuntimeData() async {
     await appLanguageProvider.initialized;
     await Future.wait<void>([
-      runtimeGraph.browsePageStates.initialize(),
       runtimeGraph.runtime.start(),
       asmrDownloadManager.initialize(),
       asmrLibraryController.initialize(

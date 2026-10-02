@@ -1104,6 +1104,56 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('library search reopens with an empty query at the top', (
+    tester,
+  ) async {
+    final fixture = AppRuntimeWidgetTestFixture();
+    addTearDown(fixture.dispose);
+    final tracks = List.generate(
+      30,
+      (index) => testMusicTrack(
+        name: 'Search audio $index',
+        path: '/library/search-$index.mp3',
+        groupKey: '/library/search-$index.mp3',
+        groupTitle: 'Search audio $index',
+        isSingle: true,
+      ),
+    );
+    fixture.library.addTracks(tracks, notify: false, persist: false);
+    fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 0);
+    await tester.runAsync(fixture.library.audioLibraryCategorySnapshot);
+    await tester.pumpWidget(fixture.build(const LibraryTab()));
+    await tester.pump();
+    await pumpUntilLibraryTreeReady(tester, fixture.library);
+    Future<void> openSearch() async {
+      await tester.tap(
+        find.byKey(const ValueKey<String>('library_search_button')),
+      );
+      await pumpUntilFound(
+        tester,
+        find.byKey(const ValueKey<String>('app_search_field')),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    await openSearch();
+    final field = find.byKey(const ValueKey<String>('app_search_field'));
+    await tester.enterText(field, 'Search');
+    await tester.pump(const Duration(milliseconds: 250));
+    await tester.pumpAndSettle();
+    final list = find.byKey(
+      const ValueKey<String>('library_search_results_all'),
+    );
+    tester.widget<ListView>(list).controller!.jumpTo(500);
+    await tester.pump();
+    Navigator.of(tester.element(field)).pop();
+    await tester.pumpAndSettle();
+    await openSearch();
+    expect(tester.widget<TextField>(field).controller!.text, isEmpty);
+    expect(tester.widget<ListView>(list).controller!.offset, 0);
+    expect(tester.takeException(), isNull);
+  });
+
   for (final count in [100, 1000, 5000]) {
     testWidgets('$count search results only build visible track rows', (
       WidgetTester tester,

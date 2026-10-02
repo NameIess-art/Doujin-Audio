@@ -39,7 +39,7 @@ void main() {
   testWidgets('recreated page restores position and visible anchor', (
     tester,
   ) async {
-    final store = BrowsePageStateStore(persistent: false);
+    final store = BrowsePageStateStore();
     final first = ScrollController();
     await tester.pumpWidget(page(store, first));
     await tester.pumpAndSettle();
@@ -60,7 +60,7 @@ void main() {
   testWidgets(
     'restoration waits for asynchronous content and clamps removed rows',
     (tester) async {
-      final store = BrowsePageStateStore(persistent: false);
+      final store = BrowsePageStateStore();
       store.update('page', {'offset': 2600.0});
       final controller = ScrollController();
       await tester.pumpWidget(page(store, controller, count: 0));
@@ -76,13 +76,13 @@ void main() {
   testWidgets(
     'cleared page state is not resurrected by mounted scroll widgets',
     (tester) async {
-      final store = BrowsePageStateStore(persistent: false);
+      final store = BrowsePageStateStore();
       final controller = ScrollController();
       await tester.pumpWidget(page(store, controller));
       await tester.pumpAndSettle();
       controller.jumpTo(480);
       await tester.pumpAndSettle();
-      await store.clear();
+      store.clear();
       controller.jumpTo(720);
       await tester.pumpAndSettle();
       await tester.pumpWidget(const SizedBox());
@@ -93,13 +93,13 @@ void main() {
   testWidgets(
     'fresh user scrolling resumes persistence after clearing a retained page',
     (tester) async {
-      final store = BrowsePageStateStore(persistent: false);
+      final store = BrowsePageStateStore();
       final controller = ScrollController();
       await tester.pumpWidget(page(store, controller));
       await tester.pumpAndSettle();
       controller.jumpTo(480);
       await tester.pumpAndSettle();
-      await store.clear();
+      store.clear();
       await tester.drag(find.byType(ListView), const Offset(0, -240));
       await tester.pumpAndSettle();
       expect(store.stateFor('page')['offset'], controller.offset);
@@ -111,7 +111,7 @@ void main() {
   testWidgets(
     'stable item restores outside old lazy window after layout and list changes',
     (tester) async {
-      final store = BrowsePageStateStore(persistent: false);
+      final store = BrowsePageStateStore();
       store.update('page', {
         'offset': 1600.0,
         'anchor': '20',
@@ -131,7 +131,7 @@ void main() {
   testWidgets(
     'page key switch retains registered anchors for reused children',
     (tester) async {
-      final store = BrowsePageStateStore(persistent: false);
+      final store = BrowsePageStateStore();
       final controller = ScrollController();
       await tester.pumpWidget(page(store, controller));
       await tester.pumpAndSettle();
@@ -147,7 +147,7 @@ void main() {
   testWidgets('mounted page preserves stable row when layout height changes', (
     tester,
   ) async {
-    final store = BrowsePageStateStore(persistent: false);
+    final store = BrowsePageStateStore();
     final controller = ScrollController();
     await tester.pumpWidget(page(store, controller));
     await tester.pumpAndSettle();
@@ -162,7 +162,7 @@ void main() {
   testWidgets('queued layout restoration yields to a user scroll', (
     tester,
   ) async {
-    final store = BrowsePageStateStore(persistent: false);
+    final store = BrowsePageStateStore();
     final controller = ScrollController();
     await tester.pumpWidget(page(store, controller));
     await tester.pumpAndSettle();

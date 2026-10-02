@@ -1,7 +1,9 @@
 part of 'asmr_tab.dart';
 
 class _AsmrSearchPage extends ConsumerStatefulWidget {
-  const _AsmrSearchPage();
+  const _AsmrSearchPage({required this.initialCategory});
+
+  final AsmrCategoryType initialCategory;
 
   @override
   ConsumerState<_AsmrSearchPage> createState() => _AsmrSearchPageState();
@@ -12,43 +14,30 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
   final FocusNode _focusNode = FocusNode();
   final Map<AsmrCategoryType, ScrollController> _scrollControllers = {
     for (final category in kAsmrSelectableCategories)
-      category: ScrollController(),
+      category: ScrollController(keepScrollOffset: false),
   };
   Timer? _debounceTimer;
-  AsmrCategoryType _category = AsmrCategoryType.collected;
+  late AsmrCategoryType _category;
   String _query = '';
   bool _showSearchPlaceholder = false;
   bool _isSelectionMode = false;
   final Set<int> _selectedWorkIds = <int>{};
   int _requestSerial = 0;
   late final AppLanguageProvider _languageProvider;
+  AsmrLibraryController? _searchController;
 
   @override
   void initState() {
     super.initState();
-    final saved = ref.read(browsePageStateStoreProvider).stateFor(_stateKey);
-    _query = saved['query'] as String? ?? '';
-    _controller.text = _query;
-    final category = saved['category'];
-    if (category is String) {
-      final restored = kAsmrSelectableCategories.where(
-        (value) => value.name == category,
-      );
-      if (restored.isNotEmpty) _category = restored.first;
-    }
+    _category = widget.initialCategory;
+    _searchController = ref.read(asmrLibraryControllerProvider);
+    _searchController?.beginSearchSession();
     _languageProvider = ref.read(appLanguageProviderInstanceProvider);
     _languageProvider.addListener(_handleLanguageChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) unawaited(_refresh());
     });
   }
-
-  String get _stateKey =>
-      'asmr_search:${ref.read(asmrLibraryControllerProvider)?.browseCacheScope ?? ''}';
-  void _saveSearchState() => ref.read(browsePageStateStoreProvider).update(
-    _stateKey,
-    {'category': _category.name, 'query': _query},
-  );
 
   void _handleLanguageChanged() {
     if (!mounted) return;
@@ -58,12 +47,18 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
     unawaited(_refresh());
   }
 
+  void _resetScroll() {
+    final controller = _scrollControllers[_category]!;
+    if (controller.hasClients) controller.jumpTo(0);
+  }
+
   void _onChanged(String value) {
     _debounceTimer?.cancel();
     _debounceTimer = Timer(const Duration(milliseconds: 240), () {
       if (!mounted) return;
       final query = value.trim();
       if (_query == query) return;
+      _resetScroll();
       setState(() {
         _query = query;
         _clearSelection();
@@ -76,6 +71,7 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
     _debounceTimer?.cancel();
     final query = value.trim();
     if (_query != query) {
+      _resetScroll();
       setState(() {
         _query = query;
         _clearSelection();
@@ -92,6 +88,7 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
     }
     _debounceTimer?.cancel();
     _controller.clear();
+    _resetScroll();
     setState(() {
       _query = '';
       _showSearchPlaceholder = false;
@@ -144,6 +141,7 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
     ref,
     category: _category,
     searchQuery: _query,
+    searchSession: true,
     selectedWorkIds: _selectedWorkIds,
   );
 
@@ -175,20 +173,22 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
     bool showSearchPlaceholder = false,
     bool force = false,
   }) async {
-    _saveSearchState();
     final query = _query;
     final category = _category;
     final requestSerial = ++_requestSerial;
+    final controller = ref.read(asmrLibraryControllerProvider);
+    final cached = controller?.categoryViewState(
+      category,
+      searchQuery: query,
+      searchSession: true,
+    );
     setState(() {
-      final cached = ref
-          .read(asmrLibraryControllerProvider)
-          ?.categoryViewState(category, searchQuery: query);
       _showSearchPlaceholder =
           showSearchPlaceholder &&
           query.isNotEmpty &&
           !(cached?.hasAttemptedLoad ?? false);
     });
-    final controller = ref.read(asmrLibraryControllerProvider);
+    if (!force && (cached?.hasAttemptedLoad ?? false)) return;
     if (controller == null) {
       if (mounted && requestSerial == _requestSerial) {
         setState(() => _showSearchPlaceholder = false);
@@ -207,8 +207,16 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
       ),
       labelKey: 'loading_dot',
       task: (_) => force
-          ? controller.refreshCategory(category, searchQuery: query)
-          : controller.ensureCategoryLoaded(category, searchQuery: query),
+          ? controller.refreshCategory(
+              category,
+              searchQuery: query,
+              searchSession: true,
+            )
+          : controller.ensureCategoryLoaded(
+              category,
+              searchQuery: query,
+              searchSession: true,
+            ),
     );
     if (!mounted || requestSerial != _requestSerial) return;
     setState(() => _showSearchPlaceholder = false);
@@ -217,6 +225,7 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
   @override
   void dispose() {
     _debounceTimer?.cancel();
+    _searchController?.endSearchSession();
     _languageProvider.removeListener(_handleLanguageChanged);
     _controller.dispose();
     _focusNode.dispose();
@@ -251,6 +260,7 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
       isLoadPending: _showSearchPlaceholder,
       scrollController: _scrollControllers[_category]!,
       searchQuery: _query,
+      searchSession: true,
       topInset: _isSelectionMode
           ? AppPageHeaderMetrics.expandedToolbarHeight +
                 MediaQuery.paddingOf(context).top +

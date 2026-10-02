@@ -89,34 +89,30 @@ void main() {
     },
   );
 
-  test(
-    'adds persistent covers and browser snapshots without double counting',
-    () async {
-      messenger.setMockMethodCallHandler(channel, (call) async {
-        return <String, Object?>{
-          'ok': true,
-          'value': <String, Object?>{
-            'totalBytes': 1000,
-            'availableBytes': 500,
-            'cacheBytes': 100,
-          },
-        };
-      });
-      final service = StorageUsageService(
-        fileCacheGateway: FileCachePlatformGateway(
-          channel: channel,
-          scanEvents: scanEvents,
-          isAndroid: () => true,
-        ),
-        libraryTracks: () => const <MusicTrack>[],
-        persistentCoverCacheBytes: () async => 25,
-        persistentBrowseCacheBytes: () async => 15,
-      );
+  test('adds persistent covers without double counting', () async {
+    messenger.setMockMethodCallHandler(channel, (call) async {
+      return <String, Object?>{
+        'ok': true,
+        'value': <String, Object?>{
+          'totalBytes': 1000,
+          'availableBytes': 500,
+          'cacheBytes': 100,
+        },
+      };
+    });
+    final service = StorageUsageService(
+      fileCacheGateway: FileCachePlatformGateway(
+        channel: channel,
+        scanEvents: scanEvents,
+        isAndroid: () => true,
+      ),
+      libraryTracks: () => const <MusicTrack>[],
+      persistentCoverCacheBytes: () async => 25,
+    );
 
-      final snapshot = await service.load();
+    final snapshot = await service.load();
 
-      expect(snapshot.applicationCacheBytes, 140);
-      expect(snapshot.otherUsedBytes, 360);
-    },
-  );
+    expect(snapshot.applicationCacheBytes, 125);
+    expect(snapshot.otherUsedBytes, 375);
+  });
 }

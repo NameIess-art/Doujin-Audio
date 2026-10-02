@@ -10,7 +10,7 @@ typedef AsmrWorkRequestKey = ({
   int workId,
   int contentEpoch,
   int authEpoch,
-  int cacheEpoch,
+  int runtimeCacheEpoch,
 });
 
 /// Owns work content caches; the library controller coordinates account state.
@@ -18,10 +18,8 @@ final class AsmrWorkContentStore {
   AsmrWorkContentStore({required VoidCallback onChanged})
     : _onChanged = onChanged;
 
-  static const int _detailCacheLimit = 128;
   static const int _trackCacheLimit = 32;
   final VoidCallback _onChanged;
-  final LinkedHashMap<int, AsmrWorkDetail> _detailCache = LinkedHashMap();
   final LinkedHashMap<int, List<AsmrTrackFile>> _trackCache = LinkedHashMap();
   final LinkedHashMap<int, List<AsmrTrackFile>> _visibleTrackCache =
       LinkedHashMap();
@@ -38,13 +36,6 @@ final class AsmrWorkContentStore {
 
   Set<String> get hiddenTracks => UnmodifiableSetView(_hiddenTracks);
   bool isLoading(int workId) => _loadingTrackWorkIds.contains(workId);
-  AsmrWorkDetail? takeDetail(int workId) => _detailCache.remove(workId);
-  AsmrWorkDetail? cachedDetail(int workId) {
-    final cached = _detailCache.remove(workId);
-    if (cached != null) _detailCache[workId] = cached;
-    return cached;
-  }
-
   List<MusicTrack>? cachedPlayableTracks(AsmrWork work) {
     final cached = _playableTrackCache[work.id];
     return cached != null && identical(cached.work, work)
@@ -57,86 +48,6 @@ final class AsmrWorkContentStore {
     _playableTrackCache[work.id] = (work: work, tracks: frozen);
     return frozen;
   }
-
-  void restoreDetails(Map<String, Map<String, Object?>> snapshots) {
-    for (final payload in snapshots.values) {
-      if (payload['version'] != 1) continue;
-      storeDetail(
-        AsmrWorkDetail(
-          work: AsmrWork.fromJson(
-            Map<String, dynamic>.from(payload['work'] as Map),
-          ),
-          description: payload['description'] as String,
-          ageCategory: payload['ageCategory'] as String,
-          languageEditionLabels: (payload['editions'] as List).cast<String>(),
-          userRating: (payload['userRating'] as num?)?.toDouble(),
-        ),
-      );
-    }
-  }
-
-  void restoreTrees(Map<String, Map<String, Object?>> snapshots) {
-    for (final entry in snapshots.entries) {
-      if (entry.value['version'] != 1) continue;
-      storeTrackTree(
-        int.parse(entry.key),
-        (entry.value['tree'] as List)
-            .map(
-              (node) => _trackFromCache(Map<String, Object?>.from(node as Map)),
-            )
-            .toList(),
-      );
-    }
-  }
-
-  static Map<String, Object?> detailPayload(AsmrWorkDetail detail) => {
-    'version': 1,
-    'work': detail.work.toJson(),
-    'description': detail.description,
-    'ageCategory': detail.ageCategory,
-    'editions': detail.languageEditionLabels,
-    'userRating': detail.userRating,
-  };
-  static Map<String, Object?> treePayload(List<AsmrTrackFile> tree) => {
-    'version': 1,
-    'tree': tree.map(_trackToCache).toList(),
-  };
-  static Map<String, Object?> _trackToCache(AsmrTrackFile node) => {
-    'hash': node.hash,
-    'title': node.title,
-    'type': node.type,
-    'stream': node.streamUrl,
-    'download': node.downloadUrl,
-    'lowQuality': node.lowQualityUrl,
-    'durationMs': node.duration.inMilliseconds,
-    'size': node.size,
-    'workId': node.workId,
-    'workTitle': node.workTitle,
-    'sourceId': node.sourceId,
-    'relativePath': node.relativePath,
-    'children': node.children.map(_trackToCache).toList(),
-  };
-  static AsmrTrackFile _trackFromCache(Map<String, Object?> node) =>
-      AsmrTrackFile(
-        hash: node['hash'] as String,
-        title: node['title'] as String,
-        type: node['type'] as String,
-        streamUrl: node['stream'] as String?,
-        downloadUrl: node['download'] as String?,
-        lowQualityUrl: node['lowQuality'] as String?,
-        duration: Duration(milliseconds: node['durationMs'] as int),
-        size: node['size'] as int,
-        workId: node['workId'] as int,
-        workTitle: node['workTitle'] as String,
-        sourceId: node['sourceId'] as String,
-        relativePath: node['relativePath'] as String,
-        children: (node['children'] as List)
-            .map(
-              (child) =>
-                  _trackFromCache(Map<String, Object?>.from(child as Map)),
-            )
-            .toList(),
-      );
 
   void replaceHiddenTracks(Set<String> tracks, {int? changedWorkId}) {
     _hiddenTracks = tracks;
@@ -151,7 +62,6 @@ final class AsmrWorkContentStore {
   }
 
   void clearCaches({bool clearErrors = false}) {
-    _detailCache.clear();
     _trackCache.clear();
     _visibleTrackCache.clear();
     _playableTrackCache.clear();
@@ -229,14 +139,6 @@ final class AsmrWorkContentStore {
   void bumpAllTrackRevisions() {
     for (final workId in _trackRevisions.keys.toList(growable: false)) {
       bumpTrackRevision(workId);
-    }
-  }
-
-  void storeDetail(AsmrWorkDetail detail) {
-    _detailCache.remove(detail.work.id);
-    _detailCache[detail.work.id] = detail;
-    while (_detailCache.length > _detailCacheLimit) {
-      _detailCache.remove(_detailCache.keys.first);
     }
   }
 

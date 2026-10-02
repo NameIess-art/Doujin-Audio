@@ -104,7 +104,7 @@ class _LogoutFailureAsmrLibraryController extends AsmrLibraryController {
   Future<void> ensureCategoryLoaded(
     AsmrCategoryType category, {
     String searchQuery = '',
-    bool refreshInBackground = true,
+    bool searchSession = false,
   }) async {}
   @override
   Future<void> initialize({AsmrContentLanguage? defaultLanguage}) async {
@@ -115,6 +115,7 @@ class _LogoutFailureAsmrLibraryController extends AsmrLibraryController {
   Future<void> refreshCategory(
     AsmrCategoryType category, {
     String searchQuery = '',
+    bool searchSession = false,
   }) async {}
 
   @override

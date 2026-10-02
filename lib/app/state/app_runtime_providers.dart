@@ -1,5 +1,4 @@
 import '../../features/library/application/work_text_service.dart';
-import '../../core/persistence/app_database.dart';
 import '../../features/asmr/presentation/asmr_providers.dart';
 import '../../features/library/presentation/library_providers.dart';
 import '../../features/player/presentation/playback_providers.dart';
@@ -49,8 +48,7 @@ final themeProviderInstanceProvider = ChangeNotifierProvider<ThemeProvider>(
 );
 
 final browsePageStateStoreProvider = Provider<BrowsePageStateStore>((ref) {
-  // Isolated previews and widget fixtures have no application database.
-  return BrowsePageStateStore(persistent: false);
+  return BrowsePageStateStore();
 });
 
 final appLanguageProviderInstanceProvider = Provider<AppLanguageProvider>((
@@ -123,7 +121,6 @@ final dataSupportStorageUsageServiceProvider = Provider<StorageUsageService>((
   return StorageUsageService(
     fileCacheGateway: FileCachePlatformGateway.instance,
     libraryTracks: () => library.library,
-    persistentBrowseCacheBytes: AppDatabase.instance.logicalBrowseCacheBytes,
   );
 });
 
@@ -194,8 +191,8 @@ final settingsCommandControllerProvider = Provider<SettingsCommandController>((
     playback: ref.watch(playbackFacadeProvider),
     library: ref.watch(libraryFacadeProvider),
     clearBrowseCaches: () async {
-      await ref.read(browsePageStateStoreProvider).clear();
-      await ref.read(asmrLibraryControllerProvider)?.clearBrowseCaches();
+      ref.read(browsePageStateStoreProvider).clear();
+      ref.read(asmrLibraryControllerProvider)?.clearRuntimeCaches();
       await ref.read(workTextServiceProvider).clearDirectoryCache();
     },
   );

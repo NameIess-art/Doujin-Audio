@@ -39,6 +39,7 @@ final asmrLibraryGlobalStateProvider =
 typedef AsmrCategoryStateRequest = ({
   AsmrCategoryType category,
   String searchQuery,
+  bool searchSession,
 });
 
 final asmrCategoryStateProvider = StreamProvider.autoDispose
@@ -50,6 +51,7 @@ final asmrCategoryStateProvider = StreamProvider.autoDispose
         read: () => controller.categoryViewState(
           request.category,
           searchQuery: request.searchQuery,
+          searchSession: request.searchSession,
         ),
       );
     });

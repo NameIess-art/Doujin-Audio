@@ -80,12 +80,17 @@ List<AsmrWork> _selectedAsmrWorks(
   WidgetRef ref, {
   required AsmrCategoryType category,
   required String searchQuery,
+  bool searchSession = false,
   required Set<int> selectedWorkIds,
 }) {
   final controller = ref.read(asmrLibraryControllerProvider);
   if (controller == null) return const <AsmrWork>[];
   return controller
-      .filteredWorksFor(category, searchQuery: searchQuery)
+      .filteredWorksFor(
+        category,
+        searchQuery: searchQuery,
+        searchSession: searchSession,
+      )
       .where((work) => selectedWorkIds.contains(work.id))
       .toList(growable: false);
 }
@@ -747,7 +752,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
     Navigator.of(context).push(
       buildAppPageRoute<void>(
         context: context,
-        child: const _AsmrSearchPage(),
+        child: _AsmrSearchPage(initialCategory: _selectedCategory),
         duration: Duration.zero,
       ),
     );
@@ -803,7 +808,11 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
     final headerContentHeight = effectiveHeaderHeight + 4.0;
     final globalInitialized = globalState?.initialized ?? false;
     final categoryState = _readOrWatch(
-      asmrCategoryStateProvider((category: _selectedCategory, searchQuery: '')),
+      asmrCategoryStateProvider((
+        category: _selectedCategory,
+        searchQuery: '',
+        searchSession: false,
+      )),
     ).value;
     final totalWorks = (categoryState?.totalCount ?? 0) > 0
         ? categoryState!.totalCount

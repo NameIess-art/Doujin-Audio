@@ -33,82 +33,69 @@ void main() {
 
   tearDown(() => db.close());
 
-  test('schema starts from version 10', () {
-    expect(AppDatabase.schemaVersion, 10);
+  test('schema starts from version 11', () {
+    expect(AppDatabase.schemaVersion, 11);
   });
 
-  test(
-    'version 10 snapshots isolate kind, account scope and query keys',
-    () async {
-      await db.execute('DROP TABLE browse_snapshots');
-      await AppDatabase.upgradeSchemaForTest(db, 9, 10);
-      await appDatabase.saveBrowseSnapshot(
-        kind: 'category',
-        scope: 'alice:zh',
-        key: 'root',
-        payload: {'version': 1, 'works': [], 'page': 2},
-      );
-      await appDatabase.saveBrowseSnapshot(
-        kind: 'category',
-        scope: 'bob:zh',
-        key: 'root',
-        payload: {
-          'version': 1,
-          'works': [7],
-        },
-      );
-      await appDatabase.saveBrowseSnapshot(
-        kind: 'tree',
-        scope: 'alice:zh',
-        key: 'root',
-        payload: {'version': 1, 'tree': []},
-      );
-      expect(
-        await appDatabase.loadBrowseSnapshot(
-          kind: 'category',
-          scope: 'alice:zh',
-          key: 'root',
-        ),
-        {'version': 1, 'works': <Object?>[], 'page': 2},
-      );
-      expect(
-        await appDatabase.loadBrowseSnapshot(
-          kind: 'category',
-          scope: 'alice:en',
-          key: 'root',
-        ),
-        isNull,
-      );
-      await appDatabase.clearBrowseSnapshots(
-        kind: 'category',
-        scope: 'alice:zh',
-      );
-      expect(
-        await appDatabase.loadBrowseSnapshot(
-          kind: 'category',
-          scope: 'alice:zh',
-          key: 'root',
-        ),
-        isNull,
-      );
-      expect(
-        await appDatabase.loadBrowseSnapshot(
-          kind: 'category',
-          scope: 'bob:zh',
-          key: 'root',
-        ),
-        isNotNull,
-      );
-      expect(
-        await appDatabase.loadBrowseSnapshot(
-          kind: 'tree',
-          scope: 'alice:zh',
-          key: 'root',
-        ),
-        isNotNull,
-      );
-    },
-  );
+  for (final previousVersion in [9, 10]) {
+    test(
+      'version $previousVersion migration removes only rebuildable browser caches',
+      () async {
+        await db.execute('CREATE TABLE browse_snapshots (payload TEXT)');
+        await db.insert('browse_snapshots', {'payload': '{"cached":true}'});
+        await appDatabase.saveAppSetting(
+          'browse_page_state_v1',
+          '{"offset":120}',
+        );
+        await appDatabase.saveAppSetting('user_setting', 'keep');
+        await repository.seedSessions([_playbackSession('kept')]);
+        await db.insert('asmr_works', {'id': 72, 'title': 'Favorite work'});
+        await db.insert('tracks', {
+          'path': '/audio/one.mp3',
+          'display_name': 'One',
+          'group_key': '/audio',
+          'group_title': 'Audio',
+          'group_subtitle': '',
+        });
+        await db.insert('track_assets', {
+          'path': '/audio/one.mp3',
+          'manual_cover_path': '/audio/selected.jpg',
+          'cover_cache_path': '/support/durable.jpg',
+        });
+        await db.insert('track_playback_state', {
+          'path': '/audio/one.mp3',
+          'last_played_at_ms': 42,
+          'is_favorite': 1,
+        });
+        await AppDatabase.upgradeSchemaForTest(db, previousVersion, 11);
+        expect(
+          await db.rawQuery(
+            "SELECT name FROM sqlite_master WHERE name = 'browse_snapshots'",
+          ),
+          isEmpty,
+        );
+        expect(
+          await appDatabase.loadAppSetting('browse_page_state_v1'),
+          isNull,
+        );
+        expect(await appDatabase.loadAppSetting('user_setting'), 'keep');
+        expect(await db.query('sessions'), hasLength(1));
+        expect(await db.query('asmr_works'), hasLength(1));
+        expect(
+          (await db.query('track_assets')).single['manual_cover_path'],
+          '/audio/selected.jpg',
+        );
+        expect(
+          (await db.query('track_assets')).single['cover_cache_path'],
+          '/support/durable.jpg',
+        );
+        expect(
+          (await db.query('track_playback_state')).single['is_favorite'],
+          1,
+        );
+      },
+    );
+  }
 
   test(
     'version 9 drops only redundant indexes and preserves all table data',
@@ -209,63 +196,24 @@ void main() {
   );
 
   test(
-    'portable backups omit browser caches and restore removes legacy cached data',
+    'portable backups preserve user settings and playback without browser tables',
     () async {
-      final directory = await Directory.systemTemp.createTemp('browse_backup_');
+      final directory = await Directory.systemTemp.createTemp('player_backup_');
       addTearDown(() => directory.delete(recursive: true));
-      await appDatabase.saveBrowseSnapshot(
-        kind: 'asmr_tree',
-        scope: 'alice:zh',
-        key: '72',
-        payload: {'version': 1, 'tree': <Object?>[]},
-      );
-      await appDatabase.saveAppSetting(
-        'browse_page_state_v1',
-        '{"pages":{"library":{"offset":120}}}',
-      );
       await appDatabase.saveAppSetting('user_setting', 'keep');
       await repository.seedSessions([_playbackSession('kept')]);
       await db.insert('asmr_works', {'id': 72, 'title': 'Favorite work'});
       final candidate = await appDatabase.createPortableSnapshot(
         '${directory.path}/candidate.db',
       );
-      final snapshot = await databaseFactoryFfi.openDatabase(
-        candidate.path,
-        options: OpenDatabaseOptions(singleInstance: false),
-      );
-      expect(await snapshot.query('browse_snapshots'), isEmpty);
-      expect(
-        await snapshot.query(
-          'app_kv_settings',
-          where: 'key = ?',
-          whereArgs: ['browse_page_state_v1'],
-        ),
-        isEmpty,
-      );
-      expect(await snapshot.query('sessions'), hasLength(1));
-      expect(await snapshot.query('asmr_works'), hasLength(1));
-      await snapshot.insert('browse_snapshots', {
-        'kind': 'asmr_tree',
-        'scope': 'alice:zh',
-        'cache_key': '72',
-        'payload': '{}',
-      });
-      await snapshot.insert('app_kv_settings', {
-        'key': 'browse_page_state_v1',
-        'value': '{}',
-      });
-      await snapshot.close();
       await appDatabase.validateAndMigrateRestoreCandidate(candidate.path);
       final restored = await databaseFactoryFfi.openDatabase(
         candidate.path,
         options: OpenDatabaseOptions(singleInstance: false),
       );
-      expect(await restored.query('browse_snapshots'), isEmpty);
       expect(
-        await restored.query(
-          'app_kv_settings',
-          where: 'key = ?',
-          whereArgs: ['browse_page_state_v1'],
+        await restored.rawQuery(
+          "SELECT name FROM sqlite_master WHERE name = 'browse_snapshots'",
         ),
         isEmpty,
       );
@@ -282,18 +230,6 @@ void main() {
       expect(await restored.query('sessions'), hasLength(1));
       expect(await restored.query('asmr_works'), hasLength(1));
       await restored.close();
-      expect(
-        await appDatabase.loadBrowseSnapshot(
-          kind: 'asmr_tree',
-          scope: 'alice:zh',
-          key: '72',
-        ),
-        isNotNull,
-      );
-      expect(
-        await appDatabase.loadAppSetting('browse_page_state_v1'),
-        isNotNull,
-      );
     },
   );
 

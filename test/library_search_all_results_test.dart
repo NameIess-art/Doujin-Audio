@@ -5,6 +5,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/features/library/presentation/library_search_all_results.dart';
+import 'package:doujin_audio/features/library/presentation/library_search_page.dart';
+import 'package:doujin_audio/features/library/presentation/library_tab_empty_scan.dart';
 import 'package:doujin_audio/features/library/presentation/library_tab_tree_widgets.dart';
 
 import 'support/app_runtime_test_fixture.dart';
@@ -53,6 +55,164 @@ void main() {
     onEnterSelectionMode: (_) {},
     onToggleSelection: (_) {},
     onTreeChanged: onTreeChanged,
+  );
+
+  testWidgets(
+    'cached empty tree displays immediately without starting a build',
+    (tester) async {
+      var builds = 0;
+      final fixture = AppRuntimeWidgetTestFixture(
+        libraryTreeSnapshotBuilder: (_) async {
+          builds++;
+          return LibraryTreeSnapshot(tree: const [], leafFolderCount: 0);
+        },
+      );
+      addTearDown(fixture.dispose);
+      final controller = ScrollController();
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(
+        fixture.build(
+          results(
+            fixture: fixture,
+            scrollController: controller,
+            query: '',
+            onTreeChanged: (_) {},
+          ),
+        ),
+      );
+      expect(
+        find.byKey(const ValueKey('library_search_empty')),
+        findsOneWidget,
+      );
+      expect(find.byType(LibraryLoadingSkeleton), findsNothing);
+      expect(builds, 0);
+    },
+  );
+
+  testWidgets('cached root cards display before the full tree finishes', (
+    tester,
+  ) async {
+    final fullTree = Completer<LibraryTreeSnapshot>();
+    var builds = 0;
+    final fixture = AppRuntimeWidgetTestFixture(
+      libraryTreeSnapshotBuilder: (_) {
+        builds++;
+        return fullTree.future;
+      },
+    );
+    addTearDown(fixture.dispose);
+    final track = testMusicTrack(
+      name: 'Nested audio',
+      path: '/work/01.mp3',
+      groupKey: '/work',
+      groupTitle: 'Cached work',
+    );
+    fixture.library.addTracks([track], notify: false, persist: false);
+    final card = FolderNode('Cached work', '/work');
+    fixture.library.snapshotCacheService.adoptCardSnapshot(
+      LibraryTreeSnapshot(tree: [card], leafFolderCount: 1),
+    );
+    await tester.runAsync(fixture.library.coverArtworkCacheService.initialize);
+    final controller = ScrollController();
+    addTearDown(controller.dispose);
+    final published = <List<LibraryNode>>[];
+    await tester.pumpWidget(
+      fixture.build(
+        results(
+          fixture: fixture,
+          scrollController: controller,
+          query: '',
+          onTreeChanged: published.add,
+        ),
+      ),
+    );
+    expect(find.text('Cached work', findRichText: true), findsWidgets);
+    expect(find.byType(LibraryLoadingSkeleton), findsNothing);
+    expect(published.last.single, same(card));
+    expect(builds, 1);
+    final folder = FolderNode('Cached work', '/work')
+      ..addChildren([TrackNode(track)]);
+    fullTree.complete(LibraryTreeSnapshot(tree: [folder], leafFolderCount: 1));
+    await tester.pumpAndSettle();
+    expect(published.last.single, same(folder));
+    expect(builds, 1);
+  });
+
+  testWidgets(
+    'warm search reopens immediately at the top without rebuilding the tree',
+    (tester) async {
+      var builds = 0;
+      final tracks = List.generate(
+        40,
+        (index) => testMusicTrack(
+          name: 'Warm audio $index',
+          path: '/library/$index.mp3',
+          groupKey: '/library/$index.mp3',
+          groupTitle: 'Warm audio $index',
+          isSingle: true,
+        ),
+      );
+      final fixture = AppRuntimeWidgetTestFixture(
+        libraryTreeSnapshotBuilder: (_) async {
+          builds++;
+          return LibraryTreeSnapshot(
+            tree: tracks.map(TrackNode.new).toList(),
+            leafFolderCount: 0,
+          );
+        },
+      );
+      addTearDown(fixture.dispose);
+      fixture.library.addTracks(tracks, notify: false, persist: false);
+      await tester.runAsync(
+        () => fixture.library.detailCacheService.loadMany(
+          tracks.map((track) => AudioDetailTarget.singleAudioFile(track.path)),
+        ),
+      );
+      await fixture.library.loadLibraryTree();
+      await tester.pumpWidget(
+        fixture.build(
+          Builder(
+            builder: (context) => Scaffold(
+              body: TextButton(
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const LibrarySearchPage(),
+                  ),
+                ),
+                child: const Text('Open search'),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('Open search'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 1));
+      expect(find.text('Warm audio 0', findRichText: true), findsWidgets);
+      expect(find.byType(LibraryLoadingSkeleton), findsNothing);
+      await tester.pumpAndSettle();
+      await tester.drag(
+        find.byKey(const ValueKey('library_search_results_all')),
+        const Offset(0, -600),
+      );
+      await tester.pumpAndSettle();
+      final firstList = tester.widget<ListView>(
+        find.byKey(const ValueKey('library_search_results_all')),
+      );
+      expect(firstList.controller!.offset, greaterThan(0));
+      Navigator.of(tester.element(find.byType(LibrarySearchPage))).pop();
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Open search'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 1));
+      expect(find.text('Warm audio 0', findRichText: true), findsWidgets);
+      final reopened = tester.widget<ListView>(
+        find.byKey(const ValueKey('library_search_results_all')),
+      );
+      expect(reopened.controller!.offset, 0);
+      expect(builds, 1);
+      expect(tester.takeException(), isNull);
+    },
   );
 
   testWidgets('late earlier query cannot replace the latest result', (
@@ -170,13 +330,19 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('library_search_error')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('library_search_stale_error')),
+      findsOneWidget,
+    );
 
     queryRevision.value++;
     await tester.pumpAndSettle();
 
     expect(requests, 2);
-    expect(find.byKey(const ValueKey('library_search_error')), findsNothing);
+    expect(
+      find.byKey(const ValueKey('library_search_stale_error')),
+      findsNothing,
+    );
     expect(find.text('Recovered audio', findRichText: true), findsWidgets);
     expect(tester.takeException(), isNull);
   });
@@ -277,63 +443,77 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('inactive categories retain result and folder expansion', (
-    tester,
-  ) async {
-    final track = testMusicTrack(
-      name: 'Nested audio',
-      path: '/library/work/nested.mp3',
-      groupKey: '/library/work',
-      groupTitle: 'Work',
-    );
-    final folder = FolderNode('Work', '/library/work')
-      ..addChildren([TrackNode(track)]);
-    var requests = 0;
-    final fixture = AppRuntimeWidgetTestFixture(
-      libraryTreeSnapshotBuilder: (_) async {
-        requests++;
-        return LibraryTreeSnapshot(tree: [folder], leafFolderCount: 1);
-      },
-    );
-    addTearDown(fixture.dispose);
-    final scrollController = ScrollController();
-    addTearDown(scrollController.dispose);
-    final active = ValueNotifier(true);
-    addTearDown(active.dispose);
-    fixture.library.addTracks([track], notify: false, persist: false);
-    await tester.runAsync(fixture.library.audioLibraryCategorySnapshot);
-    await tester.pumpWidget(
-      fixture.build(
-        ValueListenableBuilder<bool>(
-          valueListenable: active,
-          builder: (_, value, _) => results(
+  testWidgets(
+    'folder expansion survives category switches and clears when search reopens',
+    (tester) async {
+      final track = testMusicTrack(
+        name: 'Nested audio',
+        path: '/library/work/nested.mp3',
+        groupKey: '/library/work',
+        groupTitle: 'Work',
+      );
+      final folder = FolderNode('Work', '/library/work')
+        ..addChildren([TrackNode(track)]);
+      var requests = 0;
+      final fixture = AppRuntimeWidgetTestFixture(
+        libraryTreeSnapshotBuilder: (_) async {
+          requests++;
+          return LibraryTreeSnapshot(tree: [folder], leafFolderCount: 1);
+        },
+      );
+      addTearDown(fixture.dispose);
+      final scrollController = ScrollController();
+      addTearDown(scrollController.dispose);
+      final active = ValueNotifier(true);
+      addTearDown(active.dispose);
+      fixture.library.addTracks([track], notify: false, persist: false);
+      await tester.runAsync(fixture.library.audioLibraryCategorySnapshot);
+      await tester.pumpWidget(
+        fixture.build(
+          ValueListenableBuilder<bool>(
+            valueListenable: active,
+            builder: (_, value, _) => results(
+              fixture: fixture,
+              scrollController: scrollController,
+              active: value,
+              query: '',
+              onTreeChanged: (_) {},
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Nested audio', findRichText: true), findsNothing);
+      final folderTile = tester.widget<LibraryTreeItem>(
+        find.byType(LibraryTreeItem).first,
+      );
+      folderTile.onFolderExpansionChanged!(folder, true);
+      await tester.pumpAndSettle();
+      expect(find.text('Nested audio', findRichText: true), findsWidgets);
+      final loadedRequests = requests;
+
+      active.value = false;
+      await tester.pumpAndSettle();
+      expect(scrollController.positions, isEmpty);
+      active.value = true;
+      await tester.pumpAndSettle();
+
+      expect(requests, loadedRequests);
+      expect(find.text('Nested audio', findRichText: true), findsWidgets);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpWidget(
+        fixture.build(
+          results(
             fixture: fixture,
             scrollController: scrollController,
-            active: value,
             query: '',
             onTreeChanged: (_) {},
           ),
         ),
-      ),
-    );
-    await tester.pumpAndSettle();
-    expect(find.text('Nested audio', findRichText: true), findsNothing);
-    final folderTile = tester.widget<LibraryTreeItem>(
-      find.byType(LibraryTreeItem).first,
-    );
-    folderTile.onFolderExpansionChanged!(folder, true);
-    await tester.pumpAndSettle();
-    expect(find.text('Nested audio', findRichText: true), findsWidgets);
-    final loadedRequests = requests;
-
-    active.value = false;
-    await tester.pumpAndSettle();
-    expect(scrollController.positions, isEmpty);
-    active.value = true;
-    await tester.pumpAndSettle();
-
-    expect(requests, loadedRequests);
-    expect(find.text('Nested audio', findRichText: true), findsWidgets);
-    expect(tester.takeException(), isNull);
-  });
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Nested audio', findRichText: true), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
 }

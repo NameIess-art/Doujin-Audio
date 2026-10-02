@@ -1,6 +1,4 @@
 const Map<String, String> appLanguageEn = {
-  'browse_updates_available': 'List updates available',
-  'browse_apply_updates': 'Update list',
   'keyboard_shortcuts_title': 'Keyboard shortcuts',
   'keyboard_shortcuts_local':
       'In the app\nSpace / Ctrl + Space: Play or pause\nCtrl + ← / →: Previous / next track\n← / →: Seek backward / forward 5 seconds\nAlt + ↑ / ↓: Volume up / down 5%\nCtrl + 1–4: Library / Playback / ASMR / Settings\nTab / Shift + Tab: Next / previous control\nEnter / Space: Activate focused control\nArrow keys: Adjust sliders or change options\nEsc: Go back or close dialog\nF1: Show this help\nEditing keys are preserved in text inputs.',
@@ -653,7 +651,7 @@ const Map<String, String> appLanguageEn = {
   'exact_alarm_permission_missing':
       'Exact alarms are disabled, so auto-resume after long background time may be unreliable.',
   'clear_app_cache': 'Clear app cache',
-  'clear_app_cache_confirm': 'Clear covers, browsed pages and temporary caches, and reset browsing positions? Source files, selected covers, favorites, history and playback records are retained.',
+  'clear_app_cache_confirm': 'Clear covers and temporary caches? Source files, selected covers, favorites, history and playback records are retained.',
   'app_cache_cleaned': 'Cleared {size} of cached files.',
   'app_cache_none': 'No app cache to clear.',
   'max_cache_size': 'Temporary cache limit',

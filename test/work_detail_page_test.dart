@@ -1173,11 +1173,11 @@ void main() {
 
   group('WorkImageViewerPage', () {
     testWidgets(
-      'image browsing restores stable identity while explicit first image wins',
+      'image browsing starts at the requested entry without restoring cache',
       (tester) async {
         final fixture = AppRuntimeWidgetTestFixture();
         addTearDown(fixture.dispose);
-        final store = BrowsePageStateStore(persistent: false);
+        final store = BrowsePageStateStore();
         store.update('images:work', {'image': '02.jpg'});
         const images = [
           WorkImageItem(
@@ -1191,23 +1191,19 @@ void main() {
             relativePath: '02.jpg',
           ),
         ];
-        Widget page({int? index}) => fixture.build(
-          WorkImageViewerPage(
-            images: images,
-            browseKey: 'images:work',
-            initialIndex: index,
-          ),
+        Widget page({int index = 0}) => fixture.build(
+          WorkImageViewerPage(images: images, initialIndex: index),
           overrides: [browsePageStateStoreProvider.overrideWithValue(store)],
         );
         await tester.pumpWidget(page());
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 100));
-        expect(find.text('2 / 2'), findsOneWidget);
+        expect(find.text('1 / 2'), findsOneWidget);
         await tester.pumpWidget(const SizedBox());
-        await tester.pumpWidget(page(index: 0));
+        await tester.pumpWidget(page(index: 1));
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 100));
-        expect(find.text('1 / 2'), findsOneWidget);
+        expect(find.text('2 / 2'), findsOneWidget);
       },
     );
 

@@ -112,7 +112,6 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
       _segmentPanelExpanded = true;
     });
     widget.segmentPanelExpandedNotifier?.value = true;
-    _saveDisplayState();
   }
 
   void collapseSegmentPanel() {
@@ -122,17 +121,11 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
       _clearSegmentDraft();
     });
     widget.segmentPanelExpandedNotifier?.value = false;
-    _saveDisplayState();
   }
 
   @override
   void initState() {
     super.initState();
-    _segmentPanelExpanded =
-        ref
-            .read(browsePageStateStoreProvider)
-            .stateFor('session:${widget.session.id}')['segmentsExpanded'] ==
-        true;
     widget.segmentPanelExpandedNotifier?.value = _segmentPanelExpanded;
     widget.transitionActive?.addListener(_scheduleSegmentResult);
     widget.transitionActive?.addListener(_scheduleSiblingQuery);
@@ -145,11 +138,6 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
     });
     _segmentNameController.addListener(_handleSegmentNameChanged);
   }
-
-  void _saveDisplayState() => ref.read(browsePageStateStoreProvider).update(
-    'session:${widget.session.id}',
-    {'segmentsExpanded': _segmentPanelExpanded},
-  );
 
   @override
   void didUpdateWidget(covariant SessionDetailContent oldWidget) {

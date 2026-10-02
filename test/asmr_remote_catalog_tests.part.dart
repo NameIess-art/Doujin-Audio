@@ -644,7 +644,11 @@ void registerAsmrRemoteCatalogTests({
         AsmrCategoryType category,
         String searchQuery,
       ) async {
-        final request = (category: category, searchQuery: searchQuery);
+        final request = (
+          category: category,
+          searchQuery: searchQuery,
+          searchSession: false,
+        );
         final subscription = container.listen(
           asmrCategoryStateProvider(request),
           (_, _) {},

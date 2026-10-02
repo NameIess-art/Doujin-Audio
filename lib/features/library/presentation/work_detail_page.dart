@@ -1,4 +1,3 @@
-import '../../../app/presentation/browse_page_scroll.dart';
 import 'work_detail_breadcrumbs.dart';
 import 'work_detail_actions.dart';
 import 'library_download_actions.dart';
@@ -74,9 +73,6 @@ class WorkDetailPage extends ConsumerStatefulWidget {
 
 class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
   final ScrollController _scrollController = ScrollController();
-  late String _browseKey;
-  late final int _browseEpoch;
-  StreamSubscription<String>? _directorySubscription;
   // Local state
   AudioDetailTarget? _localTarget;
   AudioDetail? _localDetail;
@@ -102,53 +98,12 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
   void initState() {
     super.initState();
     _localTarget = widget.localTarget;
-    _browseEpoch = ref.read(browsePageStateStoreProvider).epoch;
-    _browseKey = widget.isLocal
-        ? 'work-local:${PathMatcher.equivalenceKey(_localTarget!.targetPath)}'
-        : 'work-asmr:${ref.read(asmrLibraryControllerProvider)?.browseCacheScope ?? ''}:${widget.asmrWork!.id}';
-    final savedPath = ref
-        .read(browsePageStateStoreProvider)
-        .stateFor(_browseKey)['directory'];
-    if (savedPath is List) {
-      _currentPathSegments.addAll(savedPath.whereType<String>());
-    }
     if (widget.isLocal) {
       final library = ref.read(libraryFacadeProvider);
       _localDetail = library.resolvedAudioDetail(_localTarget!);
-      _localFolderNode = library.resolvedLibraryFolderTree(
-        _localTarget!.targetPath,
-      );
       _localManualCover =
           library.resolvedCoverPathForFolder(_localTarget!.targetPath) ??
           _localDetail?.cardCoverPath;
-      _localTextFiles =
-          ref
-              .read(workTextServiceProvider)
-              .cachedWorkTextFiles(_localTarget!.targetPath) ??
-          const [];
-      _localImageFiles = _imageItems(
-        ref
-                .read(workTextServiceProvider)
-                .cachedWorkImageFiles(_localTarget!.targetPath) ??
-            const [],
-        _localTarget!.targetPath,
-      );
-      final textService = ref.read(workTextServiceProvider);
-      _directorySubscription = textService.directoryChanges.listen((key) {
-        final folder = _localTarget!.targetPath;
-        if (!mounted || key != PathMatcher.equivalenceKey(folder)) return;
-        setState(() {
-          _localTextFiles =
-              textService.cachedWorkTextFiles(folder) ?? _localTextFiles;
-          final images = textService.cachedWorkImageFiles(folder);
-          if (images != null) _localImageFiles = _imageItems(images, folder);
-        });
-      });
-    } else {
-      _asmrTree = ref
-          .read(asmrLibraryControllerProvider)
-          ?.trackTreeFor(widget.asmrWork!.id);
-      _loadingAsmr = _asmrTree == null;
     }
     if (widget.isLocal) {
       _loadLocalData();
@@ -164,13 +119,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
     final folderPath = target.targetPath;
     final library = ref.read(libraryFacadeProvider);
 
-    final files = ref.read(workTextServiceProvider);
-    setState(
-      () => _loadingLocal =
-          _localFolderNode == null ||
-          files.cachedWorkTextFiles(folderPath) == null ||
-          files.cachedWorkImageFiles(folderPath) == null,
-    );
+    setState(() => _loadingLocal = true);
 
     try {
       final detailResult = await library.loadAudioDetail(target);
@@ -187,9 +136,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
       UiInteractionCoordinator.instance.scheduleCommit(
         key: _localFilesCommitKey,
         commit: () {
-          if (mounted &&
-              request == _localLoadRequest &&
-              _browseEpoch == ref.read(browsePageStateStoreProvider).epoch) {
+          if (mounted && request == _localLoadRequest) {
             unawaited(_loadLocalFiles(request, folderPath));
           }
         },
@@ -205,13 +152,8 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
   Future<void> _loadLocalFiles(int request, String folderPath) async {
     final library = ref.read(libraryFacadeProvider);
     final textService = ref.read(workTextServiceProvider);
-    final hadTextCache = textService.cachedWorkTextFiles(folderPath) != null;
-    final hadImageCache = textService.cachedWorkImageFiles(folderPath) != null;
     final previousCover = _localManualCover;
-    bool isCurrent() =>
-        mounted &&
-        request == _localLoadRequest &&
-        _browseEpoch == ref.read(browsePageStateStoreProvider).epoch;
+    bool isCurrent() => mounted && request == _localLoadRequest;
 
     if (previousCover == null || previousCover.trim().isEmpty) {
       unawaited(() async {
@@ -241,7 +183,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
       }(),
       () async {
         try {
-          final texts = await textService.findWorkTextFiles(folderPath);
+          final texts = await textService.refreshWorkTextFiles(folderPath);
           if (!isCurrent()) return;
           setState(() => _localTextFiles = texts);
         } catch (_) {
@@ -250,7 +192,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
       }(),
       () async {
         try {
-          final candidateImages = await textService.findWorkImageFiles(
+          final candidateImages = await textService.refreshWorkImageFiles(
             folderPath,
           );
           if (!isCurrent()) return;
@@ -262,12 +204,6 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
       }(),
     ]);
     if (isCurrent()) setState(() => _loadingLocal = false);
-    if (isCurrent()) {
-      if (hadTextCache) unawaited(textService.refreshWorkTextFiles(folderPath));
-      if (hadImageCache) {
-        unawaited(textService.refreshWorkImageFiles(folderPath));
-      }
-    }
   }
 
   List<WorkImageItem> _imageItems(List<String> paths, String folder) => paths
@@ -287,7 +223,6 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
 
   @override
   void dispose() {
-    unawaited(_directorySubscription?.cancel());
     UiInteractionCoordinator.instance.cancelCommit(_localFilesCommitKey);
     _scrollController.dispose();
     super.dispose();
@@ -302,13 +237,15 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
     setState(() => _loadingAsmr = _asmrTree == null);
     try {
       await controller.initializeForVisiblePage();
-      final tree = await controller.ensureTrackTree(widget.asmrWork!);
+      final tree = await controller.ensureTrackTree(
+        widget.asmrWork!,
+        forceRefresh: true,
+      );
       if (!mounted) return;
       setState(() {
         _asmrTree = tree;
         _loadingAsmr = false;
       });
-      unawaited(controller.refreshWorkInBackground(widget.asmrWork!));
     } catch (_) {
       if (!mounted) return;
       setState(() => _loadingAsmr = false);
@@ -319,7 +256,6 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
     setState(() {
       _currentPathSegments.add(folderName);
     });
-    _saveDirectory();
   }
 
   // Navigate back to specific level in breadcrumbs
@@ -334,14 +270,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
         );
       }
     });
-    _saveDirectory();
   }
-
-  void _saveDirectory() => ref.read(browsePageStateStoreProvider).update(
-    _browseKey,
-    {'directory': List<String>.of(_currentPathSegments)},
-    epoch: _browseEpoch,
-  );
 
   void _reconcileDirectory() {
     var depth = 0;
@@ -371,7 +300,6 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
     }
     if (depth < _currentPathSegments.length) {
       _currentPathSegments.removeRange(depth, _currentPathSegments.length);
-      _saveDirectory();
     }
   }
 
@@ -681,23 +609,6 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
     };
   }
 
-  Future<void> _refreshLocalTree() async {
-    final request = _localLoadRequest;
-    final tree = await ref
-        .read(libraryFacadeProvider)
-        .loadLibraryFolderTree(_localTarget!.targetPath);
-    if (mounted &&
-        request == _localLoadRequest &&
-        _browseEpoch == ref.read(browsePageStateStoreProvider).epoch) {
-      setState(() => _localFolderNode = tree);
-      final texts = ref.read(workTextServiceProvider);
-      await Future.wait([
-        texts.refreshWorkTextFiles(_localTarget!.targetPath),
-        texts.refreshWorkImageFiles(_localTarget!.targetPath),
-      ]);
-    }
-  }
-
   // Open text file
   Future<void> _openTextFile(WorkEntryItem item) async {
     List<WorkTextFile> allTexts = const [];
@@ -759,7 +670,6 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
     await Navigator.of(context).push<void>(
       MaterialPageRoute(
         builder: (_) => WorkImageViewerPage(
-          browseKey: 'images:$_browseKey',
           images: allImages,
           initialIndex: initialIndex,
           onSetAsCover: widget.isLocal
@@ -836,8 +746,6 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
     if (!mounted || savedDetail == null) return;
     setState(() {
       _localTarget = savedDetail.target;
-      _browseKey =
-          'work-local:${PathMatcher.equivalenceKey(savedDetail.target.targetPath)}';
       _localDetail = savedDetail;
       _currentPathSegments.clear();
     });
@@ -922,20 +830,9 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
   Widget build(BuildContext context) {
     if (widget.isLocal) {
       ref.watch(undoableRemovalStateProvider);
-      ref.listen(
-        libraryStateProvider.select((state) => state.value?.structureRevision),
-        (previous, next) {
-          if (previous != null && next != previous) {
-            unawaited(_refreshLocalTree());
-          }
-        },
-      );
     } else {
-      final currentTree = ref
-          .watch(asmrTrackTreeStateProvider(widget.asmrWork!.id))
-          .value
-          ?.tree;
-      if (currentTree != null) _asmrTree = currentTree;
+      // Observe user removals and undo without replacing this page's file tree.
+      ref.watch(asmrTrackTreeStateProvider(widget.asmrWork!.id));
     }
     if ((widget.isLocal && !_loadingLocal && _localFolderNode != null) ||
         (widget.isAsmr && !_loadingAsmr && _asmrTree != null)) {
@@ -979,12 +876,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
               .watch(libraryFacadeProvider)
               .resolvedCoverPathForFolder(_localTarget!.targetPath);
     } else {
-      final work =
-          ref
-              .read(asmrLibraryControllerProvider)
-              ?.cachedWorkDetail(widget.asmrWork!.id)
-              ?.work ??
-          widget.asmrWork!;
+      final work = widget.asmrWork!;
       displayTitle = work.title;
       displayRj = work.rjCode;
       displayCircle = work.circleName;
@@ -1075,7 +967,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
       );
     }
 
-    final page = Scaffold(
+    return Scaffold(
       backgroundColor: Colors.transparent,
       body: Stack(
         children: [
@@ -1208,10 +1100,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
                                 ? Duration.zero
                                 : const Duration(milliseconds: 300),
                             curve: Curves.easeOutCubic,
-                            child: BrowseAnchor(
-                              id: item.relativePath,
-                              child: tile,
-                            ),
+                            child: tile,
                             builder: (context, opacity, child) =>
                                 Opacity(opacity: opacity, child: child),
                           );
@@ -1312,12 +1201,6 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
             ),
         ],
       ),
-    );
-    return BrowsePageScroll(
-      pageKey: '$_browseKey:${_currentPathSegments.join('/')}',
-      controller: _scrollController,
-      anchorIds: currentEntries.map((item) => item.relativePath).toList(),
-      child: page,
     );
   }
 

@@ -1,6 +1,4 @@
 const Map<String, String> appLanguageZh = {
-  'browse_updates_available': '发现列表更新',
-  'browse_apply_updates': '更新列表',
   'keyboard_shortcuts_title': '键盘快捷键',
   'keyboard_shortcuts_local':
       '窗口内\nSpace / Ctrl + Space：播放或暂停\nCtrl + ← / →：上一曲 / 下一曲\n← / →：快退 / 快进 5 秒\nAlt + ↑ / ↓：音量增加 / 减少 5%\nCtrl + 1–4：媒体库 / 播放 / ASMR / 设置\nTab / Shift + Tab：下一个 / 上一个控件\nEnter / Space：激活当前控件\n方向键：调整滑块或切换选项\nEsc：返回或关闭对话框\nF1：显示本帮助\n文本输入时保留编辑按键。',
@@ -592,7 +590,7 @@ const Map<String, String> appLanguageZh = {
   'exact_alarm_permission_ready': '精确定时已可用，长时间后台定时恢复会更稳定。',
   'exact_alarm_permission_missing': '精确定时未开启，长时间后台后的自动恢复可能不可靠。',
   'clear_app_cache': '清理应用缓存',
-  'clear_app_cache_confirm': '将清理封面、已浏览页面与临时缓存，并重置浏览位置；保留音乐库源文件、手选封面、收藏、历史和播放记录。是否继续？',
+  'clear_app_cache_confirm': '将清理封面与临时缓存；保留音乐库源文件、手选封面、收藏、历史和播放记录。是否继续？',
   'app_cache_cleaned': '已清理 {size} 缓存。',
   'app_cache_none': '没有可清理的应用缓存。',
   'max_cache_size': '临时缓存上限',

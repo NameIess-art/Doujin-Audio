@@ -55,7 +55,6 @@ class AsmrCategoryViewState {
     required this.lastError,
     required this.operationError,
     required this.revision,
-    this.hasUpdates = false,
   }) : works = immutableList(works);
 
   final AsmrCategoryType category;
@@ -72,7 +71,6 @@ class AsmrCategoryViewState {
   final Object? lastError;
   final Object? operationError;
   final int revision;
-  final bool hasUpdates;
 
   @override
   bool operator ==(Object other) {
@@ -90,8 +88,7 @@ class AsmrCategoryViewState {
         activeQuery == other.activeQuery &&
         lastError == other.lastError &&
         operationError == other.operationError &&
-        revision == other.revision &&
-        hasUpdates == other.hasUpdates;
+        revision == other.revision;
   }
 
   @override
@@ -110,7 +107,6 @@ class AsmrCategoryViewState {
     lastError,
     operationError,
     revision,
-    hasUpdates,
   );
 }
 

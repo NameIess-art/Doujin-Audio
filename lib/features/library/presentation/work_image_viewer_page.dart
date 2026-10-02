@@ -38,14 +38,12 @@ class WorkImageViewerPage extends ConsumerStatefulWidget {
   const WorkImageViewerPage({
     super.key,
     required this.images,
-    this.initialIndex,
-    this.browseKey,
+    this.initialIndex = 0,
     this.onSetAsCover,
   });
 
   final List<WorkImageItem> images;
-  final int? initialIndex;
-  final String? browseKey;
+  final int initialIndex;
   final Future<void> Function(WorkImageItem image)? onSetAsCover;
 
   @override
@@ -61,45 +59,17 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage> {
   double _headerHeight = 0;
   double _switcherHeight = 0;
   late int _currentIndex;
-  late final int _browseEpoch;
   late final PageController _pageController;
   bool _isSettingCover = false;
   bool _isCurrentZoomed = false;
 
-  String get _browseKey =>
-      widget.browseKey ??
-      'images:${widget.images.map((image) => image.path).join('\u0000')}';
-
-  String _imageIdentity(int index) {
-    final image = widget.images[index];
-    return image.relativePath.isEmpty ? image.path : image.relativePath;
-  }
-
-  void _saveImage(int index) => ref.read(browsePageStateStoreProvider).update(
-    _browseKey,
-    {'image': _imageIdentity(index)},
-    epoch: _browseEpoch,
-  );
-
   @override
   void initState() {
     super.initState();
-    _browseEpoch = ref.read(browsePageStateStoreProvider).epoch;
-    _currentIndex = (widget.initialIndex ?? 0).clamp(
+    _currentIndex = widget.initialIndex.clamp(
       0,
       widget.images.isEmpty ? 0 : widget.images.length - 1,
     );
-    final path = ref
-        .read(browsePageStateStoreProvider)
-        .stateFor(_browseKey)['image'];
-    final restored = widget.images.indexWhere(
-      (image) =>
-          (image.relativePath.isEmpty ? image.path : image.relativePath) ==
-          path,
-    );
-    if (restored >= 0 && widget.initialIndex == null) _currentIndex = restored;
-
-    if (widget.images.isNotEmpty) _saveImage(_currentIndex);
     _pageController = PageController(initialPage: _currentIndex);
   }
 
@@ -115,7 +85,6 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage> {
       _currentIndex = index;
       _isCurrentZoomed = false;
     });
-    _saveImage(index);
   }
 
   void _goToPrevious() {

@@ -1,6 +1,4 @@
 const Map<String, String> appLanguageJa = {
-  'browse_updates_available': '一覧の更新があります',
-  'browse_apply_updates': '一覧を更新',
   'keyboard_shortcuts_title': 'キーボードショートカット',
   'keyboard_shortcuts_local':
       'アプリ内\nSpace / Ctrl + Space：再生 / 一時停止\nCtrl + ← / →：前 / 次の曲\n← / →：5 秒戻る / 進む\nAlt + ↑ / ↓：音量を 5% 上げる / 下げる\nCtrl + 1–4：ライブラリ / 再生 / ASMR / 設定\nTab / Shift + Tab：次 / 前の操作項目\nEnter / Space：選択中の項目を実行\n矢印キー：スライダー調整・項目選択\nEsc：戻る・ダイアログを閉じる\nF1：このヘルプを表示\nテキスト入力中は編集キーを優先します。',
@@ -600,7 +598,7 @@ const Map<String, String> appLanguageJa = {
   'exact_alarm_permission_missing':
       '正確なアラームが無効です。長時間バックグラウンド後の自動再開が不安定になる場合があります。',
   'clear_app_cache': 'アプリキャッシュを削除',
-  'clear_app_cache_confirm': 'カバー、閲覧済みページ、一時キャッシュと閲覧位置を削除しますか？元ファイル、選択したカバー、お気に入り、履歴、再生記録は保持されます。',
+  'clear_app_cache_confirm': 'カバーと一時キャッシュを削除しますか？元ファイル、選択したカバー、お気に入り、履歴、再生記録は保持されます。',
   'app_cache_cleaned': '{size} のキャッシュファイルを削除しました。',
   'app_cache_none': '削除できるアプリキャッシュはありません。',
   'max_cache_size': '一時キャッシュ上限',

@@ -118,6 +118,51 @@ void main() {
   );
 
   testWidgets(
+    'reopening details loads a fresh tree instead of restoring a cached page',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      final api = _TrackApi();
+      final services = createTestAsmrServices(
+        persistenceRepository: fixture.persistenceRepository,
+        apiService: api,
+      );
+      await tester.runAsync(services.preferencesStore.clearForTest);
+      final controller = AsmrLibraryController(
+        preferencesStore: services.preferencesStore,
+        remoteCatalogService: services.remoteCatalogService,
+        accountSyncService: services.accountSyncService,
+      );
+      addTearDown(controller.dispose);
+      await tester.runAsync(() async {
+        await controller.initializeForVisiblePage();
+        await controller.ensureTrackTree(_work);
+      });
+      expect(api.treeRequests, 1);
+      Widget page() => fixture.build(
+        WorkDetailPage.forAsmr(work: _work),
+        overrides: [
+          asmrLibraryControllerProvider.overrideWithValue(controller),
+        ],
+      );
+      await tester.pumpWidget(page());
+      expect(find.text('audio'), findsNothing);
+      await settleIo(tester);
+      expect(find.text('audio'), findsOneWidget);
+      expect(api.treeRequests, 2);
+      await tester.pump(const Duration(seconds: 60));
+      expect(api.treeRequests, 2);
+      await tester.pumpWidget(const SizedBox());
+      await tester.pumpWidget(page());
+      expect(find.text('audio'), findsNothing);
+      await settleIo(tester);
+      expect(api.treeRequests, 3);
+      expect(find.text('audio'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
     'reopened online details respect persisted hidden tracks and retain other files',
     (tester) async {
       SharedPreferences.setMockInitialValues({});
@@ -165,7 +210,6 @@ void main() {
       var loaded = false;
       final loading = reopened.initializeForVisiblePage().then((_) async {
         await reopened.ensureTrackTree(_work);
-        await reopened.flushBrowseCaches();
         loaded = true;
       });
       for (var i = 0; i < 100 && !loaded; i++) {
@@ -202,6 +246,7 @@ final _nodes = [
 ];
 
 class _TrackApi extends AsmrApiService {
+  int treeRequests = 0;
   @override
   Future<AsmrWorkDetail> fetchWorkDetail(
     int workId, {
@@ -219,5 +264,8 @@ class _TrackApi extends AsmrApiService {
   Future<List<AsmrTrackFile>> fetchTrackTree(
     int workId, {
     String? token,
-  }) async => _nodes;
+  }) async {
+    treeRequests++;
+    return _nodes;
+  }
 }

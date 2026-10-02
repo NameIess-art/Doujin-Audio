@@ -1,5 +1,4 @@
 import 'dart:async';
-import '../../../app/presentation/browse_page_scroll.dart';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -102,14 +101,21 @@ class _LibrarySearchAllResultsState
     required int structureRevision,
     required int detailRevision,
   }) {
-    final categorySnapshot = currentLibraryCategorySnapshot(
+    final resolvedCategorySnapshot = currentLibraryCategorySnapshot(
       snapshot: libraryFacade.categorySnapshot,
       detailRevision: detailRevision,
     );
+    final categorySnapshot =
+        resolvedCategorySnapshot?.structureRevision == structureRevision
+        ? resolvedCategorySnapshot
+        : null;
     final categoryRevision = detailRevision;
     if (_visibleSearchQuery == query &&
         _visibleSearchRevision == structureRevision &&
-        _visibleSearchDetailRevision == categoryRevision) {
+        _visibleSearchDetailRevision == categoryRevision &&
+        (query.isNotEmpty ||
+            libraryFacade.snapshotCacheService.treeSnapshotRevision ==
+                structureRevision)) {
       widget.onTreeChanged(_visibleSearchResult?.tree ?? const []);
       return;
     }
@@ -128,8 +134,15 @@ class _LibrarySearchAllResultsState
     }
 
     if (query.isEmpty) {
-      final currentTree = libraryFacade.snapshotCacheService.tree;
-      if (currentTree.isNotEmpty) {
+      final snapshots = libraryFacade.snapshotCacheService;
+      final hasCompleteTree =
+          snapshots.treeSnapshotRevision == structureRevision;
+      final currentTree = hasCompleteTree
+          ? snapshots.tree
+          : snapshots.cardSnapshotRevision == structureRevision
+          ? snapshots.cards
+          : null;
+      if (currentTree != null) {
         _visibleSearchResult = FilteredLibraryTreeResult(
           tree: currentTree,
           matchCount: libraryTreeTrackCount(currentTree),
@@ -138,10 +151,9 @@ class _LibrarySearchAllResultsState
         _visibleSearchRevision = structureRevision;
         _visibleSearchDetailRevision = categoryRevision;
         _expandedSearchFolderPaths.clear();
-        _restoreExpandedFolders();
         _visibleSearchItemsVersion++;
         widget.onTreeChanged(currentTree);
-        return;
+        if (hasCompleteTree) return;
       }
 
       _pendingSearchKey = requestKey;
@@ -166,7 +178,6 @@ class _LibrarySearchAllResultsState
                   _pendingSearchKey = null;
                   _clearSearchError();
                   _expandedSearchFolderPaths.clear();
-                  _restoreExpandedFolders();
                   _visibleSearchItemsVersion++;
                 });
               },
@@ -232,7 +243,6 @@ class _LibrarySearchAllResultsState
                   ..addAll(
                     result.expandedFolderPaths.map(PathMatcher.normalize),
                   );
-                _restoreExpandedFolders();
                 _visibleSearchItemsVersion++;
               });
             },
@@ -267,28 +277,12 @@ class _LibrarySearchAllResultsState
     });
   }
 
-  String get _expansionKey => 'library-search-expanded:${widget.query}';
-
-  void _restoreExpandedFolders() {
-    final saved = ref
-        .read(browsePageStateStoreProvider)
-        .stateFor(_expansionKey)['expanded'];
-    if (saved is List) {
-      _expandedSearchFolderPaths
-        ..clear()
-        ..addAll(saved.whereType<String>());
-    }
-  }
-
   void _handleSearchFolderExpansionChanged(FolderNode folder, bool expanded) {
     final normalizedPath = PathMatcher.normalize(folder.path);
     final changed = expanded
         ? _expandedSearchFolderPaths.add(normalizedPath)
         : _expandedSearchFolderPaths.remove(normalizedPath);
     if (changed) {
-      ref.read(browsePageStateStoreProvider).update(_expansionKey, {
-        'expanded': _expandedSearchFolderPaths.toList(),
-      });
       setState(() => _visibleSearchItemsVersion++);
     }
   }
@@ -378,10 +372,6 @@ class _LibrarySearchAllResultsState
       );
     } else {
       final visibleItems = _flattenVisibleSearchTree(tree);
-      BrowsePageScroll.setAnchorIds(
-        context,
-        visibleItems.map((item) => PathMatcher.equivalenceKey(item.node.path)),
-      );
       final errorItemCount = hasCurrentError ? 1 : 0;
       content = SearchHighlightScope(
         query: widget.query,
@@ -413,34 +403,30 @@ class _LibrarySearchAllResultsState
             }
             final item = visibleItems[index - errorItemCount];
             final node = item.node;
-            return BrowseAnchor(
-              id: PathMatcher.equivalenceKey(node.path),
-              child: Padding(
-                padding: EdgeInsets.only(left: item.depth * 8.0),
-                child: RepaintBoundary(
-                  key: ValueKey<String>('search_${node.path}'),
-                  child: LibraryTreeItem(
-                    node: node,
-                    initiallyExpanded:
-                        node is FolderNode &&
-                        _expandedSearchFolderPaths.contains(
-                          PathMatcher.normalize(node.path),
-                        ),
-                    onFolderExpansionChanged:
-                        _handleSearchFolderExpansionChanged,
-                    renderChildrenInline: false,
-                    searchQuery: widget.query,
-                    isSelectionMode: item.depth == 0 && widget.isSelectionMode,
-                    isSelected: widget.selectedPaths.contains(
-                      selectionKeyForLibraryNode(node),
-                    ),
-                    onLongPress: item.depth == 0
-                        ? () => widget.onEnterSelectionMode(node)
-                        : null,
-                    onToggleSelect: item.depth == 0
-                        ? () => widget.onToggleSelection(node)
-                        : null,
+            return Padding(
+              padding: EdgeInsets.only(left: item.depth * 8.0),
+              child: RepaintBoundary(
+                key: ValueKey<String>('search_${node.path}'),
+                child: LibraryTreeItem(
+                  node: node,
+                  initiallyExpanded:
+                      node is FolderNode &&
+                      _expandedSearchFolderPaths.contains(
+                        PathMatcher.normalize(node.path),
+                      ),
+                  onFolderExpansionChanged: _handleSearchFolderExpansionChanged,
+                  renderChildrenInline: false,
+                  searchQuery: widget.query,
+                  isSelectionMode: item.depth == 0 && widget.isSelectionMode,
+                  isSelected: widget.selectedPaths.contains(
+                    selectionKeyForLibraryNode(node),
                   ),
+                  onLongPress: item.depth == 0
+                      ? () => widget.onEnterSelectionMode(node)
+                      : null,
+                  onToggleSelect: item.depth == 0
+                      ? () => widget.onToggleSelection(node)
+                      : null,
                 ),
               ),
             );

@@ -4979,13 +4979,11 @@ final class _QueuedEmptyAsmrLibraryController extends AsmrLibraryController {
   Future<void> ensureCategoryLoaded(
     AsmrCategoryType category, {
     String searchQuery = '',
-    bool refreshInBackground = true,
+    bool searchSession = false,
   }) => separateSearchResults && searchQuery.isEmpty
       ? Future<void>.value()
       : refreshCategory(category, searchQuery: searchQuery);
 
-  @override
-  Future<void> refreshWorkInBackground(AsmrWork work) async {}
   _QueuedEmptyAsmrLibraryController({
     required TestAsmrServices services,
     this.collectedHasMore = false,
@@ -5046,12 +5044,15 @@ final class _QueuedEmptyAsmrLibraryController extends AsmrLibraryController {
   );
 
   @override
-  Future<List<AsmrTrackFile>> ensureTrackTree(AsmrWork work) {
+  Future<List<AsmrTrackFile>> ensureTrackTree(
+    AsmrWork work, {
+    bool forceRefresh = false,
+  }) {
     final resolvedTree = trackTree;
     if (resolvedTree != null) {
       return SynchronousFuture<List<AsmrTrackFile>>(resolvedTree);
     }
-    return super.ensureTrackTree(work);
+    return super.ensureTrackTree(work, forceRefresh: forceRefresh);
   }
 
   static final AsmrWork _secondCollectedWork = AsmrWork(
@@ -5137,7 +5138,12 @@ final class _QueuedEmptyAsmrLibraryController extends AsmrLibraryController {
   List<AsmrWork> filteredWorksFor(
     AsmrCategoryType category, {
     String searchQuery = '',
-  }) => categoryViewState(category, searchQuery: searchQuery).works;
+    bool searchSession = false,
+  }) => categoryViewState(
+    category,
+    searchQuery: searchQuery,
+    searchSession: searchSession,
+  ).works;
 
   @override
   int totalCountFor(AsmrCategoryType category) => worksFor(category).length;
@@ -5149,6 +5155,7 @@ final class _QueuedEmptyAsmrLibraryController extends AsmrLibraryController {
   AsmrCategoryViewState categoryViewState(
     AsmrCategoryType category, {
     String searchQuery = '',
+    bool searchSession = false,
   }) {
     categoryViewReadCount++;
     final isSearch =
@@ -5211,6 +5218,7 @@ final class _QueuedEmptyAsmrLibraryController extends AsmrLibraryController {
   Future<void> refreshCategory(
     AsmrCategoryType category, {
     String searchQuery = '',
+    bool searchSession = false,
   }) async {
     refreshRequests.add((category, searchQuery));
     if (category == AsmrCategoryType.collected &&
@@ -5277,6 +5285,7 @@ final class _QueuedEmptyAsmrLibraryController extends AsmrLibraryController {
   Future<void> loadMoreCategory(
     AsmrCategoryType category, {
     String searchQuery = '',
+    bool searchSession = false,
   }) async {
     if (!collectedHasMore ||
         category != AsmrCategoryType.collected ||

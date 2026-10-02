@@ -15,7 +15,6 @@ part 'app_database_sessions.dart';
 part 'app_database_audio_details.dart';
 part 'app_database_library_entries.dart';
 part 'app_database_asmr.dart';
-part 'app_database_browse_cache.dart';
 part 'app_database_schema.dart';
 part 'app_database_row_codecs.dart';
 
@@ -24,7 +23,7 @@ const int _sqliteInClauseBatchSize = 900;
 class AppDatabase {
   AppDatabase._();
 
-  static const int schemaVersion = 10;
+  static const int schemaVersion = 11;
   static const String fileName = 'audio_player.db';
 
   @visibleForTesting

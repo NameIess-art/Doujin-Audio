@@ -36,6 +36,7 @@ class _AsmrCategoryList extends ConsumerStatefulWidget {
     required this.isLoadPending,
     required this.scrollController,
     required this.searchQuery,
+    this.searchSession = false,
     required this.topInset,
     required this.bottomInset,
     required this.onRefresh,
@@ -50,6 +51,7 @@ class _AsmrCategoryList extends ConsumerStatefulWidget {
   final bool isLoadPending;
   final ScrollController scrollController;
   final String searchQuery;
+  final bool searchSession;
   final double topInset;
   final double bottomInset;
   final Future<void> Function() onRefresh;
@@ -108,6 +110,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
     final categoryProvider = asmrCategoryStateProvider((
       category: widget.category,
       searchQuery: normalizedSearchQuery,
+      searchSession: widget.searchSession,
     ));
     final providerState =
         (widget.isActive
@@ -120,6 +123,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
             ?.categoryViewState(
               widget.category,
               searchQuery: normalizedSearchQuery,
+              searchSession: widget.searchSession,
             ) ??
         providerState ??
         AsmrCategoryViewState(
@@ -199,20 +203,20 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
     }
 
     Widget buildWorkCard(AsmrWork work) {
+      final card = _AsmrWorkTreeCard(
+        work: work,
+        searchQuery: widget.searchQuery,
+        isActive: widget.isActive,
+        isSelectionMode: widget.isSelectionMode,
+        isSelected: widget.selectedWorkIds.contains(work.id),
+        onLongPress: () => widget.onEnterSelectionMode(work),
+        onToggleSelect: () => widget.onToggleSelection(work),
+      );
       final workCard = RepaintBoundary(
         key: ValueKey<String>('asmr-work-${work.id}'),
-        child: BrowseAnchor(
-          id: '${work.id}',
-          child: _AsmrWorkTreeCard(
-            work: work,
-            searchQuery: widget.searchQuery,
-            isActive: widget.isActive,
-            isSelectionMode: widget.isSelectionMode,
-            isSelected: widget.selectedWorkIds.contains(work.id),
-            onLongPress: () => widget.onEnterSelectionMode(work),
-            onToggleSelect: () => widget.onToggleSelection(work),
-          ),
-        ),
+        child: widget.searchSession
+            ? card
+            : BrowseAnchor(id: '${work.id}', child: card),
       );
       final collapsing = _collapsingWorks[work.id];
       if (collapsing == null) return workCard;
@@ -247,13 +251,182 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     final theme = Theme.of(context);
     final asmrBlue = AppDesignTokens.of(context).asmrAccent;
+    final content = ScrollActivityGate(
+      child: MediaQuery(
+        data: MediaQuery.of(context).copyWith(
+          padding: EdgeInsets.only(
+            top: widget.topInset,
+            bottom: widget.bottomInset,
+            right: 4,
+          ),
+        ),
+        child: NotificationListener<ScrollNotification>(
+          onNotification: (notification) {
+            if (notification is ScrollUpdateNotification) {
+              final nearBottom =
+                  notification.metrics.extentAfter <=
+                  notification.metrics.viewportDimension;
+              final isManualUpwardDrag =
+                  notification.dragDetails != null &&
+                  (notification.scrollDelta ?? 0) > 0;
+              if (nearBottom &&
+                  (!state.needsLoadMoreRetry || isManualUpwardDrag)) {
+                _loadMoreOncePerScroll(state);
+              }
+            } else if (notification is OverscrollNotification) {
+              final isManualBottomOverscroll =
+                  notification.dragDetails != null &&
+                  notification.overscroll > 0;
+              if (state.needsLoadMoreRetry && isManualBottomOverscroll) {
+                _loadMoreOncePerScroll(state);
+              }
+            } else if (notification is ScrollEndNotification) {
+              _loadMoreTriggeredInCurrentScroll = false;
+            }
+            return false;
+          },
+          child: GlassRefreshIndicator(
+            key: _refreshIndicatorKey,
+            lockChildWhileRefreshing: true,
+            color: asmrBlue,
+            backgroundColor: Theme.of(
+              context,
+            ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
+            edgeOffset: widget.topInset,
+            displacement: 32,
+            triggerMode: GlassRefreshIndicatorTriggerMode.anywhere,
+            onRefresh: widget.onRefresh,
+            child: PlaceholderContentTransition(
+              showPlaceholder: showPlaceholder,
+              placeholder: LibrarySkeletonListView(
+                key: const ValueKey('loading'),
+                topInset: widget.topInset,
+                bottomInset: widget.bottomInset + 24,
+              ),
+              content: LayoutBuilder(
+                builder: (context, constraints) {
+                  final columnCount = responsiveLibraryCardColumnCount(
+                    constraints.maxWidth,
+                  );
+                  final rowCount = (visibleWorks.length / columnCount).ceil();
+                  final hasLoadMore = state.isLoadingMore || state.hasMore;
+                  return ListView.builder(
+                    key: PageStorageKey(widget.category),
+                    controller: widget.scrollController,
+                    cacheExtent: 520,
+                    physics: AlwaysScrollableScrollPhysics(
+                      parent: GlassRefreshIndicatorScrollPhysics(
+                        isIndicatorVisible: () =>
+                            _refreshIndicatorKey
+                                .currentState
+                                ?.isIndicatorVisible ??
+                            false,
+                      ),
+                    ),
+                    padding: EdgeInsets.fromLTRB(
+                      LibraryLikeCardMetrics.listHorizontalPadding,
+                      widget.topInset,
+                      LibraryLikeCardMetrics.listHorizontalPadding,
+                      widget.bottomInset + 24,
+                    ),
+                    itemCount: visibleWorks.isEmpty
+                        ? 1
+                        : rowCount + (hasLoadMore ? 1 : 0),
+                    itemBuilder: (context, rowIndex) {
+                      if (visibleWorks.isEmpty) {
+                        final errorText = state.lastError == null
+                            ? null
+                            : localizedAsmrCatalogErrorText(
+                                i18n,
+                                state.lastError,
+                              );
+                        return Padding(
+                          padding: const EdgeInsets.only(top: 80),
+                          child: AppEmptyState(
+                            icon: state.lastError != null
+                                ? Icons.error_outline_rounded
+                                : Icons.search_off_rounded,
+                            title: state.lastError != null
+                                ? i18n.tr('error')
+                                : i18n.tr('asmr_empty_category'),
+                            message: errorText ?? '',
+                          ),
+                        );
+                      }
+                      if (rowIndex >= rowCount) {
+                        if (!state.needsLoadMoreRetry) {
+                          _scheduleAutomaticLoadMore(state);
+                        }
+                        return Padding(
+                          padding: const EdgeInsets.only(top: 4, bottom: 4),
+                          child: Center(
+                            child: state.needsLoadMoreRetry
+                                ? Text(
+                                    i18n.tr('asmr_load_more_hint'),
+                                    key: const ValueKey<String>(
+                                      'asmr_load_more_retry_hint',
+                                    ),
+                                    style: theme.textTheme.bodySmall?.copyWith(
+                                      color: theme.colorScheme.onSurfaceVariant,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  )
+                                : SizedBox(
+                                    key: const ValueKey<String>(
+                                      'asmr_load_more_progress',
+                                    ),
+                                    width: 22,
+                                    height: 22,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2.2,
+                                      color: asmrBlue,
+                                    ),
+                                  ),
+                          ),
+                        );
+                      }
+                      if (columnCount == 1) {
+                        return buildWorkCard(visibleWorks[rowIndex]);
+                      }
+                      return Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          for (
+                            var column = 0;
+                            column < columnCount;
+                            column++
+                          ) ...[
+                            if (column > 0)
+                              const SizedBox(
+                                width: kResponsiveLibraryCardSpacing,
+                              ),
+                            Expanded(
+                              child:
+                                  rowIndex * columnCount + column <
+                                      visibleWorks.length
+                                  ? buildWorkCard(
+                                      visibleWorks[rowIndex * columnCount +
+                                          column],
+                                    )
+                                  : const SizedBox.shrink(),
+                            ),
+                          ],
+                        ],
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
     return Theme(
       data: theme.copyWith(
         scrollbarTheme: theme.scrollbarTheme.copyWith(
           thumbColor: WidgetStateProperty.resolveWith((states) {
-            if (states.contains(WidgetState.dragged)) {
-              return asmrBlue;
-            }
+            if (states.contains(WidgetState.dragged)) return asmrBlue;
             if (states.contains(WidgetState.hovered)) {
               return asmrBlue.withValues(alpha: 0.7);
             }
@@ -261,234 +434,20 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
           }),
         ),
       ),
-      child: Stack(
-        children: [
-          BrowsePageScroll(
-            pageKey:
-                'asmr_list:${ref.read(asmrLibraryControllerProvider)?.browseCacheScope ?? ''}:${widget.category.name}:$normalizedSearchQuery',
-            controller: widget.scrollController,
-            anchorIds: visibleWorks.map((work) => '${work.id}').toList(),
-            child: ScrollActivityGate(
-              child: MediaQuery(
-                data: MediaQuery.of(context).copyWith(
-                  padding: EdgeInsets.only(
-                    top: widget.topInset,
-                    bottom: widget.bottomInset,
-                    right: 4,
-                  ),
-                ),
-                child: NotificationListener<ScrollNotification>(
-                  onNotification: (notification) {
-                    if (notification is ScrollUpdateNotification) {
-                      final nearBottom =
-                          notification.metrics.extentAfter <=
-                          notification.metrics.viewportDimension;
-                      final isManualUpwardDrag =
-                          notification.dragDetails != null &&
-                          (notification.scrollDelta ?? 0) > 0;
-                      if (nearBottom &&
-                          (!state.needsLoadMoreRetry || isManualUpwardDrag)) {
-                        _loadMoreOncePerScroll(state);
-                      }
-                    } else if (notification is OverscrollNotification) {
-                      final isManualBottomOverscroll =
-                          notification.dragDetails != null &&
-                          notification.overscroll > 0;
-                      if (state.needsLoadMoreRetry &&
-                          isManualBottomOverscroll) {
-                        _loadMoreOncePerScroll(state);
-                      }
-                    } else if (notification is ScrollEndNotification) {
-                      _loadMoreTriggeredInCurrentScroll = false;
-                    }
-                    return false;
-                  },
-                  child: GlassRefreshIndicator(
-                    key: _refreshIndicatorKey,
-                    lockChildWhileRefreshing: true,
-                    color: asmrBlue,
-                    backgroundColor: Theme.of(context)
-                        .colorScheme
-                        .surfaceContainerHighest
-                        .withValues(alpha: 0.6),
-                    edgeOffset: widget.topInset,
-                    displacement: 32,
-                    triggerMode: GlassRefreshIndicatorTriggerMode.anywhere,
-                    onRefresh: widget.onRefresh,
-                    child: PlaceholderContentTransition(
-                      showPlaceholder: showPlaceholder,
-                      placeholder: LibrarySkeletonListView(
-                        key: const ValueKey('loading'),
-                        topInset: widget.topInset,
-                        bottomInset: widget.bottomInset + 24,
-                      ),
-                      content: LayoutBuilder(
-                        builder: (context, constraints) {
-                          final columnCount = responsiveLibraryCardColumnCount(
-                            constraints.maxWidth,
-                          );
-                          final rowCount = (visibleWorks.length / columnCount)
-                              .ceil();
-                          final hasLoadMore =
-                              !state.hasUpdates &&
-                              (state.isLoadingMore || state.hasMore);
-                          return ListView.builder(
-                            key: PageStorageKey(widget.category),
-                            controller: widget.scrollController,
-                            cacheExtent: 520,
-                            physics: AlwaysScrollableScrollPhysics(
-                              parent: GlassRefreshIndicatorScrollPhysics(
-                                isIndicatorVisible: () =>
-                                    _refreshIndicatorKey
-                                        .currentState
-                                        ?.isIndicatorVisible ??
-                                    false,
-                              ),
-                            ),
-                            padding: EdgeInsets.fromLTRB(
-                              LibraryLikeCardMetrics.listHorizontalPadding,
-                              widget.topInset,
-                              LibraryLikeCardMetrics.listHorizontalPadding,
-                              widget.bottomInset + 24,
-                            ),
-                            itemCount: visibleWorks.isEmpty
-                                ? 1
-                                : rowCount + (hasLoadMore ? 1 : 0),
-                            itemBuilder: (context, rowIndex) {
-                              if (visibleWorks.isEmpty) {
-                                final errorText = state.lastError == null
-                                    ? null
-                                    : localizedAsmrCatalogErrorText(
-                                        i18n,
-                                        state.lastError,
-                                      );
-                                return Padding(
-                                  padding: const EdgeInsets.only(top: 80),
-                                  child: AppEmptyState(
-                                    icon: state.lastError != null
-                                        ? Icons.error_outline_rounded
-                                        : Icons.search_off_rounded,
-                                    title: state.lastError != null
-                                        ? i18n.tr('error')
-                                        : i18n.tr('asmr_empty_category'),
-                                    message: errorText ?? '',
-                                  ),
-                                );
-                              }
-                              if (rowIndex >= rowCount) {
-                                if (!state.needsLoadMoreRetry) {
-                                  _scheduleAutomaticLoadMore(state);
-                                }
-                                return Padding(
-                                  padding: const EdgeInsets.only(
-                                    top: 4,
-                                    bottom: 4,
-                                  ),
-                                  child: Center(
-                                    child: state.needsLoadMoreRetry
-                                        ? Text(
-                                            i18n.tr('asmr_load_more_hint'),
-                                            key: const ValueKey<String>(
-                                              'asmr_load_more_retry_hint',
-                                            ),
-                                            style: theme.textTheme.bodySmall
-                                                ?.copyWith(
-                                                  color: theme
-                                                      .colorScheme
-                                                      .onSurfaceVariant,
-                                                  fontWeight: FontWeight.w600,
-                                                ),
-                                          )
-                                        : SizedBox(
-                                            key: const ValueKey<String>(
-                                              'asmr_load_more_progress',
-                                            ),
-                                            width: 22,
-                                            height: 22,
-                                            child: CircularProgressIndicator(
-                                              strokeWidth: 2.2,
-                                              color: asmrBlue,
-                                            ),
-                                          ),
-                                  ),
-                                );
-                              }
-                              if (columnCount == 1) {
-                                return buildWorkCard(visibleWorks[rowIndex]);
-                              }
-                              return Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  for (
-                                    var column = 0;
-                                    column < columnCount;
-                                    column++
-                                  ) ...[
-                                    if (column > 0)
-                                      const SizedBox(
-                                        width: kResponsiveLibraryCardSpacing,
-                                      ),
-                                    Expanded(
-                                      child:
-                                          rowIndex * columnCount + column <
-                                              visibleWorks.length
-                                          ? buildWorkCard(
-                                              visibleWorks[rowIndex *
-                                                      columnCount +
-                                                  column],
-                                            )
-                                          : const SizedBox.shrink(),
-                                    ),
-                                  ],
-                                ],
-                              );
-                            },
-                          );
-                        },
-                      ),
-                    ),
-                  ),
-                ),
-              ),
+      child: widget.searchSession
+          ? content
+          : BrowsePageScroll(
+              pageKey:
+                  'asmr_list:${ref.read(asmrLibraryControllerProvider)?.browseCacheScope ?? ''}:${widget.category.name}',
+              controller: widget.scrollController,
+              anchorIds: visibleWorks.map((work) => '${work.id}').toList(),
+              child: content,
             ),
-          ),
-          if (state.hasUpdates)
-            Positioned(
-              top: widget.topInset + 4,
-              left: 24,
-              right: 24,
-              child: Center(
-                child: Material(
-                  elevation: 3,
-                  borderRadius: BorderRadius.circular(24),
-                  color: theme.colorScheme.surfaceContainerHigh,
-                  child: TextButton.icon(
-                    key: const ValueKey('asmr_browse_updates'),
-                    icon: const Icon(Icons.refresh_rounded),
-                    label: Text(i18n.tr('browse_updates_available')),
-                    onPressed: () {
-                      ref
-                          .read(asmrLibraryControllerProvider)
-                          ?.acceptCategoryUpdates(
-                            widget.category,
-                            searchQuery: normalizedSearchQuery,
-                          );
-                      if (widget.scrollController.hasClients) {
-                        widget.scrollController.jumpTo(0);
-                      }
-                    },
-                  ),
-                ),
-              ),
-            ),
-        ],
-      ),
     );
   }
 
   void _loadMoreOncePerScroll(AsmrCategoryViewState state) {
-    if (state.hasUpdates ||
-        _loadMoreTriggeredInCurrentScroll ||
+    if (_loadMoreTriggeredInCurrentScroll ||
         state.isLoadingMore ||
         !state.hasMore) {
       return;
@@ -514,6 +473,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
           ?.categoryViewState(
             widget.category,
             searchQuery: normalizeSearchQuery(widget.searchQuery),
+            searchSession: widget.searchSession,
           );
       if (currentState == null ||
           currentState.isLoadingMore ||
@@ -531,6 +491,10 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
   Future<void> _loadMore() async {
     await ref
         .read(asmrLibraryControllerProvider)
-        ?.loadMoreCategory(widget.category, searchQuery: widget.searchQuery);
+        ?.loadMoreCategory(
+          widget.category,
+          searchQuery: widget.searchQuery,
+          searchSession: widget.searchSession,
+        );
   }
 }

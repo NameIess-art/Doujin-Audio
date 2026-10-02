@@ -16,17 +16,5 @@ abstract interface class AsmrPersistenceRepository {
     required List<AsmrSyncOperation> operations,
   });
   Future<List<MusicTrack>> loadTracksForRecommendations();
-  Future<Map<String, Object?>?> loadBrowseSnapshot(
-    String kind,
-    String scope,
-    String key,
-  );
-  Future<void> saveBrowseSnapshot(
-    String kind,
-    String scope,
-    String key,
-    Map<String, Object?> payload,
-  );
-  Future<void> clearBrowseSnapshots();
   Future<void> clearForTest();
 }

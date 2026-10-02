@@ -1,7 +1,6 @@
 import 'package:doujin_audio/features/asmr/presentation/asmr_providers.dart';
 import 'support/asmr_controller_test_fixture.dart';
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter/foundation.dart';
@@ -195,10 +194,12 @@ void main() {
       final alphaProvider = asmrCategoryStateProvider((
         category: AsmrCategoryType.favorites,
         searchQuery: 'Alpha',
+        searchSession: false,
       ));
       final betaProvider = asmrCategoryStateProvider((
         category: AsmrCategoryType.favorites,
         searchQuery: 'Beta',
+        searchSession: false,
       ));
       expect(container.read(asmrLibraryControllerProvider), same(controller));
       final alphaSubscription = container.listen(alphaProvider, (_, _) {});
@@ -273,6 +274,7 @@ class _FakeAsmrApiService extends AsmrApiService {
     this.transientFetchFailuresRemaining = 0,
     this.emptyCheckSessionUserName = false,
     this.beforeFetchWorkResponse,
+    this.beforeFetchSearchResponse,
     this.beforeFetchWorkDetail,
     this.beforeFetchTrackTree,
   }) : remoteReviewRecords = List<AsmrReviewRecord>.of(remoteReviewRecords),
@@ -299,6 +301,7 @@ class _FakeAsmrApiService extends AsmrApiService {
   final Set<String> failingFetchOrders;
   final bool emptyCheckSessionUserName;
   final Future<void> Function(String request)? beforeFetchWorkResponse;
+  final Future<void> Function(String request)? beforeFetchSearchResponse;
   final Future<void> Function(int workId, AsmrContentLanguage language)?
   beforeFetchWorkDetail;
   final Future<void> Function(int workId)? beforeFetchTrackTree;
@@ -484,26 +487,26 @@ class _FakeAsmrApiService extends AsmrApiService {
   }) {
     searchKeywords.add(keyword);
     searchWorkRequests.add('$order:$sort:$page');
-    if (pagedSearchWorks) {
-      return SynchronousFuture<AsmrWorkPage>(
-        _buildFetchWorksPage(
-          order: order,
-          page: page,
-          pageSize: pageSize,
-          token: token,
-        ),
-      );
+    final response = pagedSearchWorks
+        ? _buildFetchWorksPage(
+            order: order,
+            page: page,
+            pageSize: pageSize,
+            token: token,
+          )
+        : AsmrWorkPage(
+            works: <AsmrWork>[
+              _work(id: 21, title: 'Search Sleep', tags: <String>['sleep']),
+            ],
+            currentPage: page,
+            pageSize: pageSize,
+            totalCount: 1,
+          );
+    final beforeResponse = beforeFetchSearchResponse;
+    if (beforeResponse != null) {
+      return beforeResponse('$order:$sort:$page').then((_) => response);
     }
-    return SynchronousFuture<AsmrWorkPage>(
-      AsmrWorkPage(
-        works: <AsmrWork>[
-          _work(id: 21, title: 'Search Sleep', tags: <String>['sleep']),
-        ],
-        currentPage: page,
-        pageSize: pageSize,
-        totalCount: 1,
-      ),
-    );
+    return SynchronousFuture<AsmrWorkPage>(response);
   }
 
   @override

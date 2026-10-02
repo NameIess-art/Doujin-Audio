@@ -675,7 +675,7 @@ class _PlaybackSecondaryControlsState
 
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final blurEnabled = ref.watch(
-      settingsStateProvider.select((s) => s.value?.uiBlurEffectEnabled ?? true),
+      settingsStateProvider.select((s) => s.value?.uiBlurEffectEnabled ?? false),
     );
     final background = isDark ? cs.surfaceBright : cs.surfaceContainerHigh;
     const double capsuleHeight = 52;

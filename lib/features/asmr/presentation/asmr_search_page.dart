@@ -255,7 +255,7 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
     final accent = AppDesignTokens.of(context).asmrAccent;
     final blurEnabled = ref.watch(
       settingsStateProvider.select(
-        (state) => state.value?.uiBlurEffectEnabled ?? true,
+        (state) => state.value?.uiBlurEffectEnabled ?? false,
       ),
     );
     final categories = kAsmrSelectableCategories

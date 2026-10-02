@@ -2066,6 +2066,7 @@ void main() {
       await tester.tap(asmrDestination);
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 400));
+      await tester.pump(const Duration(milliseconds: 400));
       await tester.pump();
 
       expect(
@@ -2084,6 +2085,7 @@ void main() {
       expect(libraryDestination, findsOneWidget);
       await tester.tap(libraryDestination);
       await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
       await tester.pump(const Duration(milliseconds: 400));
       await tester.pump();
 
@@ -4987,9 +4989,19 @@ final class _QueuedEmptyAsmrLibraryController extends AsmrLibraryController {
     AsmrCategoryType category, {
     String searchQuery = '',
     bool searchSession = false,
-  }) => separateSearchResults && searchQuery.isEmpty
-      ? Future<void>.value()
-      : refreshCategory(category, searchQuery: searchQuery);
+  }) {
+    final state = categoryViewState(
+      category,
+      searchQuery: searchQuery,
+      searchSession: searchSession,
+    );
+    if (state.hasAttemptedLoad) return Future<void>.value();
+    return refreshCategory(
+      category,
+      searchQuery: searchQuery,
+      searchSession: searchSession,
+    );
+  }
 
   _QueuedEmptyAsmrLibraryController({
     required TestAsmrServices services,
@@ -5191,8 +5203,13 @@ final class _QueuedEmptyAsmrLibraryController extends AsmrLibraryController {
       isLoadingMore: isPaginated && _isLoadingMore,
       isRefreshing: isLoading && works.isNotEmpty,
       isStale: isLoading && works.isNotEmpty,
-      hasAttemptedLoad: isSearch && delayCollectedSearch
+      hasAttemptedLoad: isSearch
           ? searchLoaded || searchPending
+          : category == AsmrCategoryType.recommendation
+          ? recommendationRefreshCount > 0
+          : category == AsmrCategoryType.collected &&
+                delayInitialCollectedRefresh
+          ? _collectedLoading || _initialCollectedRefresh.isCompleted
           : true,
       hasMore: isPaginated,
       needsLoadMoreRetry: isPaginated && needsRetry,
@@ -5253,7 +5270,14 @@ final class _QueuedEmptyAsmrLibraryController extends AsmrLibraryController {
       notifyListeners();
       return;
     }
-    if (category != AsmrCategoryType.recommendation) return;
+    if (category != AsmrCategoryType.recommendation) {
+      if (category == AsmrCategoryType.collected && searchQuery.isNotEmpty) {
+        _loadedCollectedQueries.add(searchQuery);
+        _revision++;
+        notifyListeners();
+      }
+      return;
+    }
     recommendationRefreshCount++;
     _recommendationLoading = true;
     notifyListeners();
@@ -5442,7 +5466,7 @@ Future<void> _pumpMainScreenAnimations(
     await tester.pump(const Duration(milliseconds: 900));
   } else {
     await tester.pump(kAppMotionSlow);
-    await tester.pump(const Duration(milliseconds: 180));
+    await tester.pump(kAppMotionSlow);
   }
   await tester.pump();
 }

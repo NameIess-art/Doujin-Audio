@@ -675,9 +675,9 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
       if (idx >= 0) initialIndex = idx;
     }
     await Navigator.of(context).push<void>(
-      MaterialPageRoute(
-        builder: (_) =>
-            WorkTextViewerPage(files: allTexts, initialIndex: initialIndex),
+      buildAppPageRoute(
+        context: context,
+        child: WorkTextViewerPage(files: allTexts, initialIndex: initialIndex),
       ),
     );
   }
@@ -704,8 +704,9 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
     }
 
     await Navigator.of(context).push<void>(
-      MaterialPageRoute(
-        builder: (_) => WorkImageViewerPage(
+      buildAppPageRoute(
+        context: context,
+        child: WorkImageViewerPage(
           images: allImages,
           initialIndex: initialIndex,
           onSetAsCover: widget.isLocal
@@ -757,8 +758,9 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
       return;
     }
     await Navigator.of(context).push<void>(
-      MaterialPageRoute(
-        builder: (_) => DlsiteMetadataReviewPage(
+      buildAppPageRoute(
+        context: context,
+        child: DlsiteMetadataReviewPage(
           detail: detail,
           rjCode: query.rjCode,
           searchTitles: query.searchTitles,
@@ -774,8 +776,9 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
     final detail = _localDetail;
     if (detail == null) return;
     final result = await Navigator.of(context).push<DlsiteMetadataReviewResult>(
-      MaterialPageRoute(
-        builder: (_) => DlsiteMetadataReviewPage.edit(detail: detail),
+      buildAppPageRoute(
+        context: context,
+        child: DlsiteMetadataReviewPage.edit(detail: detail),
       ),
     );
     final savedDetail = result?.detail;
@@ -799,8 +802,9 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
   // ASMR actions: Download, Toggle favorite
   Future<void> _handleAsmrDownload() async {
     await Navigator.of(context).push<void>(
-      MaterialPageRoute(
-        builder: (_) => AsmrDownloadPage(work: widget.asmrWork!),
+      buildAppPageRoute(
+        context: context,
+        child: AsmrDownloadPage(work: widget.asmrWork!),
       ),
     );
   }

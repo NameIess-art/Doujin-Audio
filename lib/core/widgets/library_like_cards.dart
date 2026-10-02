@@ -411,16 +411,6 @@ List<LibraryLikeInfoLineData> buildLibraryLikeInfoLines({
   if (circle.isNotEmpty) {
     result.add(LibraryLikeInfoLineData(circleLabel, circle));
   }
-  if (metadata.tags.isNotEmpty) {
-    final remainingLines = (5 - result.length).clamp(1, 5);
-    result.add(
-      LibraryLikeInfoLineData(
-        tagsLabel,
-        _normalizeLibraryLikeList(metadata.tags).join(listSeparator),
-        lines: remainingLines,
-      ),
-    );
-  }
   final releaseDate = formatLibraryLikeDate(metadata.releaseDate);
   final rating = formatLibraryLikeRating(metadata.rating);
   if (releaseDate.isNotEmpty && rating.isNotEmpty) {
@@ -436,6 +426,20 @@ List<LibraryLikeInfoLineData> buildLibraryLikeInfoLines({
     result.add(LibraryLikeInfoLineData(releaseDateLabel, releaseDate));
   } else if (rating.isNotEmpty) {
     result.add(LibraryLikeInfoLineData(ratingLabel, rating));
+  }
+  if (metadata.tags.isNotEmpty) {
+    final remainingLines =
+        (LibraryLikeInfoLineData.maxLines - result.length).clamp(
+          1,
+          LibraryLikeInfoLineData.maxLines,
+        );
+    result.add(
+      LibraryLikeInfoLineData(
+        tagsLabel,
+        _normalizeLibraryLikeList(metadata.tags).join(listSeparator),
+        lines: remainingLines,
+      ),
+    );
   }
   return result;
 }

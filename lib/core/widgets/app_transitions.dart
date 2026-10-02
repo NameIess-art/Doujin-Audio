@@ -20,14 +20,17 @@ class _AppPageMotionScope extends InheritedWidget {
     super.key,
     required this.contentBuilder,
     required this.headerBuilder,
+    this.configuration,
     required super.child,
   });
 
   final _PageTransitionBuilder contentBuilder;
   final _PageTransitionBuilder headerBuilder;
+  final Object? configuration;
 
   @override
-  bool updateShouldNotify(_AppPageMotionScope oldWidget) => true;
+  bool updateShouldNotify(_AppPageMotionScope oldWidget) =>
+      configuration == null || configuration != oldWidget.configuration;
 }
 
 class AppPageContentTransition extends StatelessWidget {
@@ -86,6 +89,12 @@ Widget _buildCoveringPageTransition({
         child: RepaintBoundary(
           child: _AppPageMotionScope(
             key: contentKey,
+            configuration: (
+              animation,
+              secondaryAnimation,
+              constraints.maxWidth,
+              fadeHeader,
+            ),
             contentBuilder: (context, content) =>
                 RepaintBoundary(child: content),
             headerBuilder: (context, header) => AnimatedBuilder(
@@ -593,7 +602,9 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
   bool _isAnimating = false;
   late List<Widget?> _lazyChildren;
   late List<GlobalKey> _pageKeys;
-  final Object _lazyTransitionInteraction = Object();
+  final Object _transitionInteraction = Object();
+  final Set<int> _preparedPages = {};
+  int? _pendingIndex;
 
   bool get _isLazy => widget.itemBuilder != null;
   int get _itemCount => widget.itemCount;
@@ -617,6 +628,20 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
   @override
   void didUpdateWidget(covariant AppFadeThroughIndexedStack oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (!_isLazy && oldWidget.itemBuilder == null) {
+      for (
+        var index = 0;
+        index < math.min(_itemCount, oldWidget.itemCount);
+        index++
+      ) {
+        if (!Widget.canUpdate(
+          oldWidget.children[index],
+          widget.children[index],
+        )) {
+          _preparedPages.remove(index);
+        }
+      }
+    }
     if (oldWidget.duration != widget.duration) {
       _controller.duration = widget.duration;
       _controller.reverseDuration = widget.duration;
@@ -628,6 +653,9 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
     }
     if (_isLazy != (oldWidget.itemBuilder != null) ||
         _itemCount != oldWidget.itemCount) {
+      if (_isLazy != (oldWidget.itemBuilder != null)) {
+        _preparedPages.clear();
+      }
       _resetLazyChildren();
       _handleIndexChanged();
     }
@@ -651,15 +679,13 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
           index < previousKeys.length ? previousKeys[index] : GlobalKey(),
     );
     _controller.stop();
+    _pendingIndex = null;
+    _preparedPages.removeWhere((index) => index >= _itemCount);
     _isAnimating = false;
     _currentIndex = _safeIndex(widget.indexListenable.value);
     _targetIndex = _currentIndex;
     _controller.value = 1;
-    if (_isLazy) {
-      UiInteractionCoordinator.instance.cancelInteraction(
-        _lazyTransitionInteraction,
-      );
-    }
+    UiInteractionCoordinator.instance.cancelInteraction(_transitionInteraction);
     widget.onTransitionCompleted?.call(_currentIndex);
   }
 
@@ -671,18 +697,16 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
   void _handleIndexChanged() {
     if (!mounted || _itemCount == 0) return;
     final nextIndex = _safeIndex(widget.indexListenable.value);
+    if (_pendingIndex != null) setState(() => _pendingIndex = null);
     if (nextIndex == _targetIndex) {
       if (widget.style == AppIndexedStackTransitionStyle.slide &&
-          _isAnimating) {
+          _isAnimating &&
+          _preparedPages.contains(nextIndex)) {
         _controller.forward();
       }
       return;
     }
-    if (_isLazy) {
-      UiInteractionCoordinator.instance.beginInteraction(
-        _lazyTransitionInteraction,
-      );
-    }
+    UiInteractionCoordinator.instance.beginInteraction(_transitionInteraction);
     if (widget.style == AppIndexedStackTransitionStyle.none ||
         widget.duration == Duration.zero ||
         MediaQuery.disableAnimationsOf(context)) {
@@ -693,11 +717,19 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
         _controller.value = 1;
       });
       widget.onTransitionCompleted?.call(_currentIndex);
-      if (_isLazy) {
-        UiInteractionCoordinator.instance.endInteraction(
-          _lazyTransitionInteraction,
-        );
-      }
+      UiInteractionCoordinator.instance.endInteraction(_transitionInteraction);
+      return;
+    }
+
+    // Keep the current two pages in place while a new target lays out outside
+    // the viewport. Retarget only after that frame, preserving slide continuity.
+    if (_isAnimating && !_preparedPages.contains(_targetIndex)) {
+      _controller.stop();
+      _isAnimating = false;
+    }
+    if (_isAnimating && !_preparedPages.contains(nextIndex)) {
+      _controller.stop();
+      setState(() => _pendingIndex = nextIndex);
       return;
     }
 
@@ -742,11 +774,7 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
         _controller.value = 1;
       });
       widget.onTransitionCompleted?.call(_currentIndex);
-      if (_isLazy) {
-        UiInteractionCoordinator.instance.endInteraction(
-          _lazyTransitionInteraction,
-        );
-      }
+      UiInteractionCoordinator.instance.endInteraction(_transitionInteraction);
       return;
     }
 
@@ -756,7 +784,16 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
       _transitionDirection = _targetIndex > _currentIndex ? 1 : -1;
       _isAnimating = true;
     });
-    _controller.forward(from: 0);
+    if (_preparedPages.contains(nextIndex)) {
+      _controller.forward(from: 0);
+    } else {
+      _controller.animateWith(
+        _PreparedPageSimulation(
+          duration: widget.duration,
+          isPrepared: () => _preparedPages.contains(_targetIndex),
+        ),
+      );
+    }
   }
 
   void _handleStatusChanged(AnimationStatus status) {
@@ -771,26 +808,15 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
       _isAnimating = false;
     });
     widget.onTransitionCompleted?.call(_currentIndex);
-    if (_isLazy) {
-      UiInteractionCoordinator.instance.endInteraction(
-        _lazyTransitionInteraction,
-      );
-    }
+    UiInteractionCoordinator.instance.endInteraction(_transitionInteraction);
   }
 
   Widget _childAt(int index) {
     if (!_isLazy) return widget.children[index];
-    // Sliding pages need their shell before entering the viewport. Their
-    // expensive activation stays deferred by the interaction coordinator.
-    if (widget.style != AppIndexedStackTransitionStyle.slide &&
-        _lazyChildren[index] == null &&
-        _isAnimating &&
-        index == _targetIndex) {
-      return ColoredBox(color: Theme.of(context).colorScheme.surface);
-    }
     if (_lazyChildren[index] == null &&
         index != _currentIndex &&
-        index != _targetIndex) {
+        index != _targetIndex &&
+        index != _pendingIndex) {
       return const SizedBox.shrink();
     }
     return _lazyChildren[index] ??= widget.itemBuilder!(context, index);
@@ -799,25 +825,26 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
   @override
   void dispose() {
     widget.indexListenable.removeListener(_handleIndexChanged);
-    if (_isLazy) {
-      UiInteractionCoordinator.instance.cancelInteraction(
-        _lazyTransitionInteraction,
-      );
-    }
+    UiInteractionCoordinator.instance.cancelInteraction(_transitionInteraction);
     _controller.dispose();
     super.dispose();
   }
 
-  Widget _pageHost({required Widget child, required bool visible}) {
+  Widget _pageHost({
+    required Widget child,
+    required bool visible,
+    required bool preparing,
+  }) {
+    final interactive = visible && !preparing;
     return _AppPageOffstage(
       offstage: !visible,
       child: TickerMode(
-        enabled: visible,
+        enabled: interactive,
         child: ExcludeFocus(
-          excluding: !visible,
+          excluding: !interactive,
           child: ExcludeSemantics(
-            excluding: !visible,
-            child: IgnorePointer(ignoring: !visible, child: child),
+            excluding: !interactive,
+            child: IgnorePointer(ignoring: !interactive, child: child),
           ),
         ),
       ),
@@ -829,9 +856,31 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
     required bool outgoing,
     required bool incoming,
   }) {
+    final preparing = index == _pendingIndex;
     final visible =
-        outgoing || incoming || (!_isAnimating && index == _currentIndex);
-    final page = _pageHost(child: _childAt(index), visible: visible);
+        preparing ||
+        outgoing ||
+        incoming ||
+        (!_isAnimating && index == _currentIndex);
+    if (visible && !_preparedPages.contains(index)) {
+      final pageKey = _pageKeys[index];
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || index >= _itemCount || _pageKeys[index] != pageKey) {
+          return;
+        }
+        final boundary = pageKey.currentContext?.findRenderObject();
+        if (boundary is! RenderBox || !boundary.hasSize) return;
+        _preparedPages.add(index);
+        if (_pendingIndex == index) {
+          _handleIndexChanged();
+        }
+      });
+    }
+    final page = _pageHost(
+      child: _childAt(index),
+      visible: visible,
+      preparing: preparing,
+    );
     if (widget.style == AppIndexedStackTransitionStyle.none ||
         widget.duration == Duration.zero) {
       return KeyedSubtree(
@@ -839,7 +888,9 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
         child: RepaintBoundary(key: _pageKeys[index], child: page),
       );
     }
-    final animation = outgoing || incoming
+    final animation = preparing
+        ? const AlwaysStoppedAnimation<double>(0)
+        : outgoing || incoming
         ? _controller
         : const AlwaysStoppedAnimation<double>(1);
     if (widget.style == AppIndexedStackTransitionStyle.slide) {
@@ -847,7 +898,7 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
       final direction = _transitionDirection.toDouble();
       final position = progress.drive(
         Tween<Offset>(
-          begin: incoming ? Offset(direction, 0) : Offset.zero,
+          begin: incoming || preparing ? Offset(direction, 0) : Offset.zero,
           end: outgoing ? Offset(-direction, 0) : Offset.zero,
         ),
       );
@@ -871,7 +922,9 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
             ),
           ),
           headerBuilder: (_, header) => FadeTransition(
-            opacity: outgoing
+            opacity: preparing
+                ? const AlwaysStoppedAnimation<double>(0)
+                : outgoing
                 ? ReverseAnimation(progress)
                 : incoming
                 ? progress
@@ -882,60 +935,74 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
         ),
       );
     }
+    final boundary = RepaintBoundary(key: _pageKeys[index], child: page);
+    Widget animateContent(BuildContext context, Widget content) =>
+        AnimatedBuilder(
+          animation: animation,
+          child: content,
+          builder: (_, child) {
+            final progress = Curves.easeOutCubic.transform(animation.value);
+            final direction = _transitionDirection.toDouble();
+            final crossFade =
+                widget.style == AppIndexedStackTransitionStyle.crossFade;
+            final translation = !outgoing && !incoming
+                ? Offset.zero
+                : crossFade
+                ? Offset.zero
+                : outgoing
+                ? Offset(-direction * _outgoingOffset * progress, 0)
+                : Offset(direction * _incomingOffset * (1 - progress), 0);
+            final opacity = !outgoing && !incoming
+                ? 1.0
+                : crossFade
+                ? outgoing
+                      ? 1 - progress
+                      : progress
+                : outgoing
+                ? (1 - progress * (1 - _outgoingOpacityFloor)).clamp(0.0, 1.0)
+                : 1.0;
+            return FractionalTranslation(
+              translation: translation,
+              child: Opacity(opacity: opacity, child: child),
+            );
+          },
+        );
+    Widget result;
+    if (widget.separateHeader) {
+      result = _AppPageMotionScope(
+        contentBuilder: animateContent,
+        headerBuilder: (_, header) => AnimatedBuilder(
+          animation: animation,
+          child: header,
+          builder: (_, child) {
+            final progress = Curves.easeOutCubic.transform(
+              (animation.value / 0.6).clamp(0.0, 1.0),
+            );
+            final opacity = !outgoing && !incoming
+                ? 1.0
+                : outgoing
+                ? 1 - progress
+                : progress;
+            return Opacity(opacity: opacity, child: child);
+          },
+        ),
+        child: boundary,
+      );
+    } else {
+      result = animateContent(context, boundary);
+    }
     return AnimatedBuilder(
       key: ValueKey<String>('app_indexed_page_$index'),
       animation: animation,
-      child: RepaintBoundary(key: _pageKeys[index], child: page),
-      builder: (context, child) {
-        final rawProgress = _isAnimating ? _controller.value : 1.0;
-        final progress = Curves.easeOutCubic.transform(rawProgress);
-        final direction = _transitionDirection.toDouble();
-        final crossFade =
-            widget.style == AppIndexedStackTransitionStyle.crossFade;
-        final translation = !outgoing && !incoming
-            ? Offset.zero
-            : crossFade
-            ? Offset.zero
-            : outgoing
-            ? Offset(-direction * _outgoingOffset * progress, 0)
-            : Offset(direction * _incomingOffset * (1 - progress), 0);
-        final opacity = !outgoing && !incoming
-            ? 1.0
-            : crossFade
-            ? outgoing
-                  ? 1 - progress
-                  : progress
-            : outgoing
-            ? (1 - progress * (1 - _outgoingOpacityFloor)).clamp(0.0, 1.0)
-            : 1.0;
-        if (!widget.separateHeader) {
-          return FractionalTranslation(
-            translation: translation,
-            child: Opacity(opacity: opacity, child: child),
-          );
-        }
-        return Opacity(
-          opacity: incoming ? (rawProgress / 0.2).clamp(0.0, 1.0) : 1,
-          child: _AppPageMotionScope(
-            contentBuilder: (context, content) => FractionalTranslation(
-              translation: translation,
-              child: Opacity(opacity: opacity, child: content),
-            ),
-            headerBuilder: (context, header) {
-              final headerProgress = Curves.easeOutCubic.transform(
-                (rawProgress / 0.6).clamp(0.0, 1.0),
-              );
-              final headerOpacity = !outgoing && !incoming
-                  ? 1.0
-                  : outgoing
-                  ? 1 - headerProgress
-                  : headerProgress;
-              return Opacity(opacity: headerOpacity, child: header);
-            },
-            child: child!,
-          ),
-        );
-      },
+      child: result,
+      builder: (_, child) => Opacity(
+        opacity: preparing || (incoming && !_preparedPages.contains(index))
+            ? 0
+            : widget.separateHeader && incoming
+            ? (animation.value / 0.2).clamp(0.0, 1.0)
+            : 1,
+        child: child,
+      ),
     );
   }
 
@@ -946,13 +1013,18 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
       for (var index = 0; index < _itemCount; index++)
         if (index != _currentIndex &&
             index != _targetIndex &&
+            index != _pendingIndex &&
             (!_isLazy || _lazyChildren[index] != null))
           index,
       _currentIndex,
       if (_isAnimating && _targetIndex != _currentIndex) _targetIndex,
+      if (_pendingIndex != null &&
+          _pendingIndex != _targetIndex &&
+          _pendingIndex != _currentIndex)
+        _pendingIndex!,
     ];
     return IgnorePointer(
-      ignoring: _isAnimating,
+      ignoring: _isAnimating || _pendingIndex != null,
       child: ClipRect(
         child: Stack(
           fit: StackFit.expand,
@@ -1025,16 +1097,19 @@ PageRouteBuilder<T> buildAppPageRoute<T>({
   RouteSettings? settings,
   bool fadeHeader = true,
   Duration duration = kAppMotionSlow,
+  bool fullscreenDialog = false,
 }) {
   final reducedMotion = MediaQuery.disableAnimationsOf(context);
   final contentKey = GlobalKey();
-  return PageRouteBuilder<T>(
+  return _PreparedAppPageRoute<T>(
     settings: settings,
+    fullscreenDialog: fullscreenDialog,
     transitionDuration: reducedMotion ? Duration.zero : duration,
     reverseTransitionDuration: reducedMotion ? Duration.zero : duration,
     pageBuilder: (context, animation, secondaryAnimation) => child,
     transitionsBuilder: (context, animation, secondaryAnimation, routedChild) {
       if (duration == Duration.zero) return routedChild;
+      if (MediaQuery.disableAnimationsOf(context)) return routedChild;
       return _buildCoveringPageTransition(
         context: context,
         contentKey: contentKey,
@@ -1045,6 +1120,73 @@ PageRouteBuilder<T> buildAppPageRoute<T>({
       );
     },
   );
+}
+
+class _PreparedAppPageRoute<T> extends PageRouteBuilder<T> {
+  _PreparedAppPageRoute({
+    required super.pageBuilder,
+    required super.transitionsBuilder,
+    required super.transitionDuration,
+    required super.reverseTransitionDuration,
+    super.settings,
+    super.fullscreenDialog,
+  });
+
+  bool _prepared = false;
+
+  @override
+  Widget buildPage(
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+  ) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (isActive) _prepared = true;
+    });
+    return super.buildPage(context, animation, secondaryAnimation);
+  }
+
+  @override
+  Simulation? createSimulation({required bool forward}) {
+    if (!forward || _prepared || transitionDuration == Duration.zero) {
+      return null;
+    }
+    return _PreparedPageSimulation(
+      duration: transitionDuration,
+      isPrepared: () => _prepared,
+    );
+  }
+}
+
+// Keep one continuous TickerFuture/status sequence while the first page frame
+// lays out. A long preparation frame does not consume the visible animation.
+class _PreparedPageSimulation extends Simulation {
+  _PreparedPageSimulation({
+    required Duration duration,
+    required this.isPrepared,
+  }) : _duration = duration.inMicroseconds / Duration.microsecondsPerSecond;
+
+  final double _duration;
+  final bool Function() isPrepared;
+  double? _visibleStartTime;
+
+  @override
+  double x(double time) {
+    if (!isPrepared()) {
+      return 0;
+    }
+    // Anchor to the first prepared tick, not the preceding vsync: that gap
+    // includes the actual first layout cost, which must not skip the entrance.
+    _visibleStartTime ??= time;
+    return ((time - _visibleStartTime!) / _duration).clamp(0.0, 1.0);
+  }
+
+  @override
+  double dx(double time) => isPrepared() ? 1 / _duration : 0;
+
+  @override
+  bool isDone(double time) =>
+      _visibleStartTime != null && time - _visibleStartTime! >= _duration;
 }
 
 class AppRollingNumber extends StatefulWidget {

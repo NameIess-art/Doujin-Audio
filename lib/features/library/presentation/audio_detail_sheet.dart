@@ -420,8 +420,9 @@ class _AudioDetailSheetState extends ConsumerState<AudioDetailSheet> {
       return;
     }
     await Navigator.of(context).push<void>(
-      MaterialPageRoute(
-        builder: (_) => WorkTextViewerPage(files: files),
+      buildAppPageRoute(
+        context: context,
+        child: WorkTextViewerPage(files: files),
       ),
     );
   }

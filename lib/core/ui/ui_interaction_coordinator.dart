@@ -330,6 +330,12 @@ class UiInteractionNavigatorObserver extends NavigatorObserver {
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!identical(_routeInteractions[route], interaction)) return;
+      // A route popped before its first layout can retain ModalRoute's
+      // offstage proxy status (completed), even though its controller stopped.
+      if (!route.isActive && !animation.isAnimating) {
+        _releaseRoute(route);
+        return;
+      }
       final status = animation.status;
       if (terminalStatuses.contains(status)) {
         _scheduleStableRouteRelease(route, interaction, status);

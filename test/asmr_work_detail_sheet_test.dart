@@ -42,6 +42,9 @@ void main() {
   testWidgets(
     'ASMR tab loads covers nearest the viewport focus before cached offscreen cards',
     (tester) async {
+      final coordinator = UiInteractionCoordinator.instance;
+      coordinator.resetForTest();
+      addTearDown(coordinator.resetForTest);
       SharedPreferences.setMockInitialValues(const <String, Object>{});
       tester.view.physicalSize = const Size(600, 800);
       tester.view.devicePixelRatio = 1;
@@ -73,6 +76,11 @@ void main() {
       );
       await tester.pumpAndSettle();
       await tester.tap(find.text('收藏'));
+      await tester.pumpAndSettle();
+      if (coordinator.isInteracting) {
+        expect(cache.started, isEmpty);
+      }
+      await tester.pump(coordinator.idleDelay);
       await tester.pumpAndSettle();
 
       String nearestVisibleCover({Set<String> excluded = const {}}) {
@@ -988,6 +996,9 @@ void main() {
   testWidgets(
     'unfavoriting a work in favorites category animates card collapse and shifts items below upward',
     (WidgetTester tester) async {
+      final coordinator = UiInteractionCoordinator.instance;
+      coordinator.resetForTest();
+      addTearDown(coordinator.resetForTest);
       SharedPreferences.setMockInitialValues(const <String, Object>{});
       final fixture = AppRuntimeWidgetTestFixture();
       addTearDown(fixture.dispose);
@@ -1012,6 +1023,8 @@ void main() {
       await tester.pumpAndSettle();
 
       await tester.tap(find.text('收藏'));
+      await tester.pumpAndSettle();
+      await tester.pump(coordinator.idleDelay);
       await tester.pumpAndSettle();
 
       expect(find.text('First Favorite Work'), findsOneWidget);

@@ -1698,6 +1698,8 @@ void main() {
         ),
       ),
     );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 350));
     await tester.pump(const Duration(milliseconds: 350));
     expect(find.text('展开'), findsOneWidget);
     expect(find.text('收起'), findsNothing);
@@ -1709,6 +1711,7 @@ void main() {
         ),
       ),
     );
+    await tester.pump();
     await tester.pump(const Duration(milliseconds: 350));
     expect(find.text('展开'), findsOneWidget);
     expect(find.text('收起'), findsNothing);
@@ -3045,11 +3048,13 @@ void main() {
         ),
       ),
     );
+    await tester.pump();
     await tester.pump(const Duration(milliseconds: 350));
     await pumpUntilFound(
       tester,
       find.byKey(const ValueKey<String>('library_category_tags')),
     );
+    await tester.pump(const Duration(milliseconds: 350));
     expect(find.text('healing-work', findRichText: true), findsOneWidget);
     expect(find.text('whisper-work', findRichText: true), findsOneWidget);
 

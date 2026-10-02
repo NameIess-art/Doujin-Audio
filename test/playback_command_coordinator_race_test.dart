@@ -521,19 +521,19 @@ void main() {
       expect(playCalls, 1);
     });
 
-    test('ASMR.ONE playback cache setting is disabled by default', () async {
-      expect(runtimeGraph.settings.asmrPlaybackCacheEnabled, isFalse);
-
-      await runtimeGraph.settings.setAsmrPlaybackCacheEnabled(true);
-
+    test('ASMR.ONE playback cache setting is enabled by default', () async {
       expect(runtimeGraph.settings.asmrPlaybackCacheEnabled, isTrue);
+
+      await runtimeGraph.settings.setAsmrPlaybackCacheEnabled(false);
+
+      expect(runtimeGraph.settings.asmrPlaybackCacheEnabled, isFalse);
       expect(
         runtimeGraph.settings.slice.stream,
         emits(
           isA<SettingsState>().having(
             (state) => state.asmrPlaybackCacheEnabled,
             'asmr playback cache',
-            isTrue,
+            isFalse,
           ),
         ),
       );

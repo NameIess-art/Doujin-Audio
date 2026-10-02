@@ -13,6 +13,9 @@ Future<void> main() => integrationDriver(
       data,
       testOutputFilename: report is Map && report['scenario'] == 'playback'
           ? 'playback_profile_${report['runtime'] == 'Media3' ? 'android' : 'windows'}'
+          : report is Map &&
+                '${report['scenario']}'.startsWith('page-transitions')
+          ? 'page_transitions_${report['platform']}_${report['playing'] == true ? 'playing' : 'idle'}'
           : 'integration_response_data',
     );
     if (report is! Map || report['scenario'] != 'playback') return;

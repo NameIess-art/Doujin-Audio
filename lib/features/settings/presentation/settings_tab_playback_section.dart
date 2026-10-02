@@ -36,7 +36,7 @@ List<Widget> _buildSettingsPlaybackSection({
           builder: (context, ref, _) {
             final asmrPlaybackCacheEnabled = ref.watch(
               settingsStateProvider.select(
-                (s) => s.value?.asmrPlaybackCacheEnabled ?? false,
+                (s) => s.value?.asmrPlaybackCacheEnabled ?? true,
               ),
             );
             return SwitchListTile(

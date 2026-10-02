@@ -21,7 +21,271 @@ class _StateProbeState extends State<_StateProbe> {
   Widget build(BuildContext context) => Center(child: Text(widget.label));
 }
 
+class _BuildCountingContent extends AppPageContentTransition {
+  const _BuildCountingContent({required this.onBuild, required super.child});
+
+  final VoidCallback onBuild;
+
+  @override
+  Widget build(BuildContext context) {
+    onBuild();
+    return super.build(context);
+  }
+}
+
 void main() {
+  setUp(UiInteractionCoordinator.instance.resetForTest);
+  tearDown(UiInteractionCoordinator.instance.resetForTest);
+
+  testWidgets('route preparation preserves the full visible animation', (
+    tester,
+  ) async {
+    final navigatorKey = GlobalKey<NavigatorState>();
+    await tester.pumpWidget(
+      MaterialApp(navigatorKey: navigatorKey, home: const SizedBox()),
+    );
+    final route = buildAppPageRoute<void>(
+      context: navigatorKey.currentContext!,
+      child: const _StateProbe(label: 'prepared-route'),
+    );
+    unawaited(navigatorKey.currentState!.push(route));
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(find.text('prepared-route', skipOffstage: false), findsOneWidget);
+    expect(route.animation!.value, 0);
+    expect(route.animation!.status, AnimationStatus.forward);
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(route.animation!.value, 0);
+    await tester.pump(const Duration(milliseconds: 150));
+    expect(route.animation!.value, closeTo(0.5, 0.001));
+    await tester.pump(const Duration(milliseconds: 149));
+    expect(route.animation!.status, AnimationStatus.forward);
+    await tester.pump(const Duration(milliseconds: 1));
+    expect(route.animation!.status, AnimationStatus.completed);
+    navigatorKey.currentState!.pop();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 301));
+    expect(route.animation!.status, AnimationStatus.dismissed);
+    await tester.pumpAndSettle();
+    expect(find.text('prepared-route'), findsNothing);
+  });
+
+  for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+    testWidgets('route preserves content and restores input on $platform', (
+      tester,
+    ) async {
+      final navigatorKey = GlobalKey<NavigatorState>();
+      final focus = FocusNode();
+      final text = TextEditingController();
+      addTearDown(focus.dispose);
+      addTearDown(text.dispose);
+      var builds = 0;
+      var presses = 0;
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData(platform: platform),
+          navigatorKey: navigatorKey,
+          home: const SizedBox(),
+        ),
+      );
+      unawaited(
+        navigatorKey.currentState!.push(
+          buildAppPageRoute<void>(
+            context: navigatorKey.currentContext!,
+            child: Scaffold(
+              body: _BuildCountingContent(
+                onBuild: () => builds++,
+                child: Column(
+                  children: [
+                    TextField(
+                      key: const ValueKey('route-input'),
+                      focusNode: focus,
+                      controller: text,
+                    ),
+                    TextButton(
+                      onPressed: () => presses++,
+                      child: const Text('route-action'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 30));
+      final preparedBuilds = builds;
+      expect(preparedBuilds, greaterThan(0));
+      for (var i = 0; i < 5; i++) {
+        await tester.pump(const Duration(milliseconds: 30));
+      }
+      expect(builds, preparedBuilds);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('route-action'));
+      await tester.pump();
+      expect(presses, 1);
+      final input = find.byKey(const ValueKey('route-input'));
+      await tester.tap(input);
+      await tester.pump();
+      expect(focus.hasFocus, isTrue);
+      expect(tester.testTextInput.isVisible, isTrue);
+      tester.testTextInput.enterText('作品搜索');
+      await tester.pump();
+      expect(text.text, '作品搜索');
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  for (final lazy in [false, true]) {
+    for (final style in [
+      AppIndexedStackTransitionStyle.slide,
+      AppIndexedStackTransitionStyle.directional,
+      AppIndexedStackTransitionStyle.crossFade,
+    ]) {
+      testWidgets('first page frame prepares once ($style, lazy: $lazy)', (
+        tester,
+      ) async {
+        final index = ValueNotifier<int>(0);
+        addTearDown(index.dispose);
+        final completed = <int>[];
+        Widget page(int i) => Text('prepared-$i');
+        await tester.pumpWidget(
+          MaterialApp(
+            home: lazy
+                ? AppFadeThroughIndexedStack.lazy(
+                    indexListenable: index,
+                    itemCount: 2,
+                    itemBuilder: (_, i) => page(i),
+                    duration: kAppMotionSlow,
+                    style: style,
+                    onTransitionCompleted: completed.add,
+                  )
+                : AppFadeThroughIndexedStack(
+                    indexListenable: index,
+                    duration: kAppMotionSlow,
+                    style: style,
+                    onTransitionCompleted: completed.add,
+                    children: [page(0), page(1)],
+                  ),
+          ),
+        );
+        index.value = 1;
+        await tester.pump(const Duration(milliseconds: 500));
+        expect(find.text('prepared-1'), findsOneWidget);
+        expect(completed, isEmpty);
+        expect(UiInteractionCoordinator.instance.isInteracting, isTrue);
+        await tester.pump(const Duration(milliseconds: 500));
+        expect(completed, isEmpty);
+        await tester.pump(const Duration(milliseconds: 299));
+        expect(completed, isEmpty);
+        await tester.pump(const Duration(milliseconds: 1));
+        expect(completed, [1]);
+        await tester.pumpAndSettle();
+        index.value = 0;
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 150));
+        if (style != AppIndexedStackTransitionStyle.crossFade) {
+          expect(_translationFor(tester, 'prepared-0'), isNot(Offset.zero));
+        }
+        await tester.pump(const Duration(milliseconds: 151));
+        expect(completed, [1, 0]);
+        await tester.pump(UiInteractionCoordinator.instance.idleDelay);
+        await tester.pumpAndSettle();
+        expect(UiInteractionCoordinator.instance.isInteracting, isFalse);
+      });
+    }
+  }
+
+  for (final style in [
+    AppIndexedStackTransitionStyle.directional,
+    AppIndexedStackTransitionStyle.crossFade,
+  ]) {
+    testWidgets('separate header reuses content between frames ($style)', (
+      tester,
+    ) async {
+      final index = ValueNotifier<int>(0);
+      addTearDown(index.dispose);
+      final builds = [0, 0];
+      await tester.pumpWidget(
+        MaterialApp(
+          home: AppFadeThroughIndexedStack.lazy(
+            indexListenable: index,
+            itemCount: 2,
+            duration: kAppMotionSlow,
+            style: style,
+            separateHeader: true,
+            itemBuilder: (_, page) => Column(
+              children: [
+                AppPageHeaderTransition(child: Text('header-$page')),
+                Expanded(
+                  child: _BuildCountingContent(
+                    onBuild: () => builds[page]++,
+                    child: Text('content-$page'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      index.value = 1;
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 30));
+      final preparedBuilds = List<int>.of(builds);
+      for (var i = 0; i < 5; i++) {
+        await tester.pump(const Duration(milliseconds: 30));
+      }
+      expect(builds, preparedBuilds);
+      await tester.pumpAndSettle();
+    });
+  }
+
+  testWidgets('preparing pages follow newest choice and release on dispose', (
+    tester,
+  ) async {
+    final index = ValueNotifier<int>(0);
+    addTearDown(index.dispose);
+    final created = <int>[];
+    final completed = <int>[];
+    final coordinator = UiInteractionCoordinator.instance;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AppFadeThroughIndexedStack.lazy(
+          indexListenable: index,
+          itemCount: 3,
+          style: AppIndexedStackTransitionStyle.slide,
+          duration: kAppMotionSlow,
+          onTransitionCompleted: completed.add,
+          itemBuilder: (_, page) {
+            created.add(page);
+            return Text('rapid-prepared-$page');
+          },
+        ),
+      ),
+    );
+    index.value = 1;
+    index.value = 2;
+    await tester.pump();
+    expect(created, [0, 2]);
+    expect(completed, isEmpty);
+    index.value = 0;
+    await tester.pumpAndSettle();
+    expect(completed.last, 0);
+    await tester.pump(coordinator.idleDelay);
+    expect(coordinator.isInteracting, isFalse);
+    index.value = 1;
+    var committed = false;
+    coordinator.scheduleCommit(
+      key: 'disposed-preparation',
+      commit: () => committed = true,
+    );
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump();
+    expect(coordinator.isInteracting, isFalse);
+    expect(committed, isTrue);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('page routes open and close in 300 ms', (tester) async {
     final navigatorKey = GlobalKey<NavigatorState>();
     await tester.pumpWidget(
@@ -168,6 +432,7 @@ void main() {
         ),
       );
       await tester.pump();
+      await tester.pump();
       await tester.pump(const Duration(milliseconds: 75));
       final header = find.byKey(const ValueKey('detail-header'));
       final body = find.byKey(const ValueKey('detail-body'));
@@ -253,6 +518,7 @@ void main() {
         ),
       ),
     );
+    await tester.pump();
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 60));
 
@@ -497,6 +763,7 @@ void main() {
         );
         expect(completed, isEmpty);
         expect(coordinator.isInteracting, isTrue);
+        await tester.pump();
         await tester.pump(const Duration(milliseconds: 150));
         final outgoing = tester.getRect(body);
         final incoming = tester.getRect(
@@ -594,6 +861,7 @@ void main() {
         index.value = 3;
         await tester.pump();
         expect(tester.getRect(newHeader), headerRect);
+        await tester.pump();
         await tester.pump(const Duration(milliseconds: 150));
         expect(tester.getRect(oldHeader), headerRect);
         expect(tester.getRect(newHeader), headerRect);
@@ -664,6 +932,7 @@ void main() {
       );
       index.value = 1;
       await tester.pump();
+      await tester.pump();
       await tester.pump(Duration(milliseconds: elapsed));
       final before = _translationFor(tester, 'slide-0');
       index.value = 3;
@@ -723,6 +992,7 @@ void main() {
     );
     index.value = 3;
     await tester.pump();
+    await tester.pump();
     await tester.pump(const Duration(milliseconds: 80));
     final before = _translationFor(tester, 'opposite-3');
     index.value = 0;
@@ -731,6 +1001,7 @@ void main() {
       _translationFor(tester, 'opposite-3').dx,
       closeTo(before.dx, 0.0001),
     );
+    await tester.pump();
     expect(find.text('opposite-1'), findsNothing);
     await tester.pump(const Duration(milliseconds: 40));
     final beforeReverse = _translationFor(tester, 'opposite-3');
@@ -871,6 +1142,7 @@ void main() {
       expect(find.text('first'), findsOneWidget);
       expect(find.text('second'), findsOneWidget);
 
+      await tester.pump();
       await tester.pump(const Duration(milliseconds: 80));
       final outgoingTranslation = _translationFor(tester, 'first');
       final incomingTranslation = _translationFor(tester, 'second');
@@ -905,6 +1177,7 @@ void main() {
       );
 
       index.value = 2;
+      await tester.pump();
       await tester.pump();
       expect(find.text('second'), findsNothing);
       expect(find.text('third'), findsOneWidget);
@@ -945,9 +1218,9 @@ void main() {
       expect(_paintOrder(tester), [const ValueKey('app_indexed_page_0')]);
       index.value = 1;
       await tester.pump();
-      expect(buildCounts, <int>[1, 0, 0]);
+      expect(buildCounts, <int>[1, 1, 0]);
       await tester.pump(const Duration(milliseconds: 200));
-      expect(buildCounts, <int>[1, 0, 0]);
+      expect(buildCounts, <int>[1, 1, 0]);
 
       await tester.pumpAndSettle();
       expect(buildCounts[2], 0);
@@ -985,9 +1258,9 @@ void main() {
     await tester.pump(const Duration(milliseconds: 200));
     index.value = 2;
     await tester.pumpAndSettle();
-    expect(created, [0, 2]);
+    expect(created, [0, 1, 2]);
     expect(find.text('lazy-2'), findsOneWidget);
-    expect(find.text('lazy-1', skipOffstage: false), findsNothing);
+    expect(find.text('lazy-1', skipOffstage: false), findsOneWidget);
   });
 
   testWidgets('cached hidden pages do not layout during switching or resize', (
@@ -1207,6 +1480,7 @@ void main() {
     );
 
     index.value = 0;
+    await tester.pump();
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 80));
 
@@ -1496,10 +1770,10 @@ Offset _translationFor(WidgetTester tester, String label) {
 
 double _opacityFor(WidgetTester tester, String label) {
   return tester
-      .widget<Opacity>(
+      .widgetList<Opacity>(
         find.ancestor(of: find.text(label), matching: find.byType(Opacity)),
       )
-      .opacity;
+      .fold(1.0, (opacity, widget) => opacity * widget.opacity);
 }
 
 List<Key?> _paintOrder(WidgetTester tester) {

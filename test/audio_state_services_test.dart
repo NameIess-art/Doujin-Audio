@@ -350,8 +350,8 @@ void main() {
       expect(state.reduceAnimations, isFalse);
       expect(state.portraitLockEnabled, isFalse);
       expect(state.coverImageDisplayMode, CoverImageDisplayMode.fill);
-      expect(state.preferEmbeddedCover, isTrue);
-      expect(state.blurPlayerBackgroundEnabled, isTrue);
+      expect(state.preferEmbeddedCover, isFalse);
+      expect(state.blurPlayerBackgroundEnabled, isFalse);
     });
 
     test('own cover preference is restored from the legacy stored key', () async {
@@ -427,9 +427,9 @@ void main() {
       final repository = SettingsRepository();
       addTearDown(repository.dispose);
 
-      await repository.setBlurPlayerBackgroundEnabled(false);
+      await repository.setBlurPlayerBackgroundEnabled(true);
 
-      expect(repository.slice.state.blurPlayerBackgroundEnabled, isFalse);
+      expect(repository.slice.state.blurPlayerBackgroundEnabled, isTrue);
       final saved =
           json.decode(
                 (await SharedPreferences.getInstance()).getString(
@@ -437,12 +437,12 @@ void main() {
                 )!,
               )
               as Map<String, dynamic>;
-      expect(saved['blurPlayerBackgroundEnabled'], isFalse);
+      expect(saved['blurPlayerBackgroundEnabled'], isTrue);
 
       final restored = SettingsRepository();
       addTearDown(restored.dispose);
       await restored.loadPersistedState();
-      expect(restored.blurPlayerBackgroundEnabled, isFalse);
+      expect(restored.blurPlayerBackgroundEnabled, isTrue);
     });
 
     test('cover display mode persists with safe fallback', () async {
@@ -672,14 +672,14 @@ void main() {
       expect(saved['asmrDownloadDestinationRoot'], '/downloads/asmr');
     });
 
-    test('ASMR.ONE playback cache defaults to disabled', () {
+    test('ASMR.ONE playback cache defaults to enabled', () {
       final state = SettingsState();
       final repository = SettingsRepository();
       addTearDown(repository.dispose);
 
-      expect(state.asmrPlaybackCacheEnabled, isFalse);
+      expect(state.asmrPlaybackCacheEnabled, isTrue);
       repository.syncSlice();
-      expect(repository.slice.state.asmrPlaybackCacheEnabled, isFalse);
+      expect(repository.slice.state.asmrPlaybackCacheEnabled, isTrue);
     });
 
     test('converter settings validate, publish, and persist once', () async {
@@ -742,10 +742,10 @@ void main() {
         addTearDown(repository.dispose);
 
         await repository.setStartupPage(StartupPage.playlist);
-        await repository.setAsmrPlaybackCacheEnabled(true);
+        await repository.setAsmrPlaybackCacheEnabled(false);
 
         expect(repository.slice.state.startupPage, StartupPage.playlist);
-        expect(repository.slice.state.asmrPlaybackCacheEnabled, isTrue);
+        expect(repository.slice.state.asmrPlaybackCacheEnabled, isFalse);
         final saved =
             json.decode(
                   (await SharedPreferences.getInstance()).getString(
@@ -754,7 +754,7 @@ void main() {
                 )
                 as Map<String, dynamic>;
         expect(saved['startupPage'], 'playlist');
-        expect(saved['asmrPlaybackCacheEnabled'], isTrue);
+        expect(saved['asmrPlaybackCacheEnabled'], isFalse);
       },
     );
   });

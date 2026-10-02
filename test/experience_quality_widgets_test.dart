@@ -272,8 +272,8 @@ void main() {
       <String>[
         '声优:Alice，Bob:null:null:1',
         'Circle:Circle:null:null:1',
-        'Tags:sleep，voice:null:null:3',
         'Release:2026-07-02:Rating:4:1',
+        'Tags:sleep，voice:null:null:3',
       ],
     );
   });
@@ -323,8 +323,8 @@ void main() {
       <String>[
         '声優:Voice A、Voice B:null:null:1',
         'Circle:Circle:null:null:1',
-        'Tags:ASMR、Sleep:null:null:3',
         'Release:2026-06-09:Rating:4.5:1',
+        'Tags:ASMR、Sleep:null:null:3',
       ],
     );
   });
@@ -359,7 +359,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('release date and rating share the final card info row', (
+  testWidgets('release date and rating share one row below circle', (
     tester,
   ) async {
     final lines = buildLibraryLikeInfoLines(
@@ -387,14 +387,18 @@ void main() {
       ),
     );
 
-    expect(lines.last.secondaryLabel, 'Rating');
+    expect(lines[2].secondaryLabel, 'Rating');
     expect(
       tester.getTopLeft(find.text('Release')).dy,
       tester.getTopLeft(find.text('Rating')).dy,
     );
     expect(
       tester.getTopLeft(find.text('Release')).dy,
-      greaterThan(tester.getTopLeft(find.text('Tags')).dy),
+      lessThan(tester.getTopLeft(find.text('Tags')).dy),
+    );
+    expect(
+      tester.getTopLeft(find.text('Release')).dy,
+      greaterThan(tester.getTopLeft(find.text('Circle label')).dy),
     );
     expect(find.text('2026-06-09'), findsOneWidget);
     expect(find.text('4.5'), findsOneWidget);

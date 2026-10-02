@@ -33,11 +33,11 @@ class SettingsRepository {
   List<String> pinnedPlaylistSessionIds = <String>[];
   List<EqPreset> customEqPresets = const <EqPreset>[];
   int maxCacheBytes = AppCacheService.defaultMaxCacheBytes;
-  bool asmrPlaybackCacheEnabled = false;
+  bool asmrPlaybackCacheEnabled = true;
   bool recordPlaybackProgress = true;
   bool allowVideoPlayback = true;
-  bool blurPlayerBackgroundEnabled = true;
-  bool uiBlurEffectEnabled = true;
+  bool blurPlayerBackgroundEnabled = false;
+  bool uiBlurEffectEnabled = false;
   bool hapticFeedbackEnabled = true;
   bool showLocalLibrary = true;
   bool showAsmrOne = true;
@@ -46,7 +46,7 @@ class SettingsRepository {
   bool portraitLockEnabled = false;
   CoverImageResolution coverImageResolution = CoverImageResolution.balanced;
   CoverImageDisplayMode coverImageDisplayMode = CoverImageDisplayMode.fill;
-  bool preferEmbeddedCover = true;
+  bool preferEmbeddedCover = false;
   String? asmrDownloadDestinationRoot;
   AsmrDownloadConflictPolicy asmrDownloadConflictPolicy =
       AsmrDownloadConflictPolicy.overwrite;
@@ -88,10 +88,10 @@ class SettingsRepository {
           playback['recordPlaybackProgress'] as bool? ?? true;
       allowVideoPlayback = playback['allowVideoPlayback'] as bool? ?? true;
       asmrPlaybackCacheEnabled =
-          playback['asmrPlaybackCacheEnabled'] as bool? ?? false;
+          playback['asmrPlaybackCacheEnabled'] as bool? ?? true;
       blurPlayerBackgroundEnabled =
-          playback['blurPlayerBackgroundEnabled'] as bool? ?? true;
-      uiBlurEffectEnabled = playback['uiBlurEffectEnabled'] as bool? ?? true;
+          playback['blurPlayerBackgroundEnabled'] as bool? ?? false;
+      uiBlurEffectEnabled = playback['uiBlurEffectEnabled'] as bool? ?? false;
       hapticFeedbackEnabled =
           playback['hapticFeedbackEnabled'] as bool? ?? true;
       AppInteractionFeedbackSettings.hapticFeedbackEnabled =
@@ -117,7 +117,7 @@ class SettingsRepository {
       preferEmbeddedCover =
           playback['preferEmbeddedCover'] as bool? ??
           playback['preferEmbeddedAudioCover'] as bool? ??
-          true;
+          false;
       asmrDownloadDestinationRoot = _optionalString(
         playback['asmrDownloadDestinationRoot'],
       );
@@ -776,11 +776,11 @@ class SettingsRepository {
     pinnedPlaylistSessionIds = <String>[];
     customEqPresets = const <EqPreset>[];
     maxCacheBytes = AppCacheService.defaultMaxCacheBytes;
-    asmrPlaybackCacheEnabled = false;
+    asmrPlaybackCacheEnabled = true;
     recordPlaybackProgress = true;
     allowVideoPlayback = true;
-    blurPlayerBackgroundEnabled = true;
-    uiBlurEffectEnabled = true;
+    blurPlayerBackgroundEnabled = false;
+    uiBlurEffectEnabled = false;
     hapticFeedbackEnabled = true;
     AppInteractionFeedbackSettings.hapticFeedbackEnabled = true;
     showLocalLibrary = true;
@@ -790,7 +790,7 @@ class SettingsRepository {
     portraitLockEnabled = false;
     coverImageResolution = CoverImageResolution.balanced;
     coverImageDisplayMode = CoverImageDisplayMode.fill;
-    preferEmbeddedCover = true;
+    preferEmbeddedCover = false;
     asmrDownloadDestinationRoot = null;
     asmrDownloadConflictPolicy = AsmrDownloadConflictPolicy.overwrite;
     asmrDownloadRetryCount = kDefaultAsmrDownloadRetryCount;

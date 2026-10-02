@@ -24,7 +24,7 @@ class AppDockGlassPanel extends ConsumerWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final bgColor = isDark ? cs.surfaceContainer : cs.surfaceContainerHigh;
     final blurEnabled = ref.watch(
-      settingsStateProvider.select((s) => s.value?.uiBlurEffectEnabled ?? true),
+      settingsStateProvider.select((s) => s.value?.uiBlurEffectEnabled ?? false),
     );
 
     Widget buildPanel(bool useBlur) => DecoratedBox(

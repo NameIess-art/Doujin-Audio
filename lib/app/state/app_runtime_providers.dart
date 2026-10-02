@@ -304,7 +304,7 @@ List<Override> createAppRuntimeOverrides({
     uiBlurEnabledProvider.overrideWith((ref) {
       return ref.watch(
         settingsStateProvider.select(
-          (state) => state.value?.uiBlurEffectEnabled ?? true,
+          (state) => state.value?.uiBlurEffectEnabled ?? false,
         ),
       );
     }),

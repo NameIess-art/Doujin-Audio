@@ -133,6 +133,7 @@ void main() {
       await tester.tap(find.text('Open Bedtime Canvas'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 400));
+      await tester.pump(const Duration(milliseconds: 400));
 
       expect(powerService.keepScreenOnCalls, equals([true]));
       expect(find.byType(BedtimeCanvasPage), findsOneWidget);

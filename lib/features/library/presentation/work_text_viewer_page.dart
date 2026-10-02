@@ -212,13 +212,15 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
         child: Stack(
           children: [
             Positioned.fill(
-              child: AppPageContentTransition(child: _buildContent(
-                context,
-                theme,
-                cs,
-                contentTopInset,
-                bottomPadding,
-              )),
+              child: AppPageContentTransition(
+                child: _buildContent(
+                  context,
+                  theme,
+                  cs,
+                  contentTopInset,
+                  bottomPadding,
+                ),
+              ),
             ),
             Positioned(
               top: 0,
@@ -342,6 +344,28 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
     );
   }
 
+  Widget _buildFadeInContent({
+    required BuildContext context,
+    required Widget child,
+  }) {
+    final disableAnimations = MediaQuery.disableAnimationsOf(context);
+    return TweenAnimationBuilder<double>(
+      key: ValueKey<int>(_loadGeneration),
+      tween: Tween<double>(begin: disableAnimations ? 1.0 : 0.0, end: 1.0),
+      duration: disableAnimations
+          ? Duration.zero
+          : const Duration(milliseconds: 300),
+      curve: Curves.easeOutCubic,
+      builder: (context, opacity, child) {
+        return Opacity(
+          opacity: opacity,
+          child: child,
+        );
+      },
+      child: child,
+    );
+  }
+
   Widget _buildPdfContent(
     BuildContext context,
     ThemeData theme,
@@ -367,29 +391,32 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
             child: Center(
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 960),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: PdfView(
-                    controller: controller,
-                    scrollDirection: Axis.vertical,
-                    pageSnapping: false,
-                    builders: PdfViewBuilders<DefaultBuilderOptions>(
-                      options: const DefaultBuilderOptions(),
-                      documentLoaderBuilder: (_) => const Center(
-                        child: CircularProgressIndicator.adaptive(),
-                      ),
-                      pageLoaderBuilder: (_) => const Center(
-                        child: CircularProgressIndicator.adaptive(),
-                      ),
-                      errorBuilder: (context, _) => Center(
-                        child: Padding(
-                          padding: const EdgeInsets.all(24),
-                          child: Text(
-                            ref
-                                .read(appLanguageProviderInstanceProvider)
-                                .tr('text_file_load_failed'),
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: cs.error,
+                child: _buildFadeInContent(
+                  context: context,
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: PdfView(
+                      controller: controller,
+                      scrollDirection: Axis.vertical,
+                      pageSnapping: false,
+                      builders: PdfViewBuilders<DefaultBuilderOptions>(
+                        options: const DefaultBuilderOptions(),
+                        documentLoaderBuilder: (_) => const Center(
+                          child: CircularProgressIndicator.adaptive(),
+                        ),
+                        pageLoaderBuilder: (_) => const Center(
+                          child: CircularProgressIndicator.adaptive(),
+                        ),
+                        errorBuilder: (context, _) => Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(24),
+                            child: Text(
+                              ref
+                                  .read(appLanguageProviderInstanceProvider)
+                                  .tr('text_file_load_failed'),
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                color: cs.error,
+                              ),
                             ),
                           ),
                         ),
@@ -455,37 +482,40 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
             constraints: const BoxConstraints(maxWidth: 960),
             child: SizedBox(
               width: double.infinity,
-              child: MarkdownBody(
-                data: _visibleContent,
-                styleSheet: MarkdownStyleSheet.fromTheme(theme).copyWith(
-                  p: theme.textTheme.bodyLarge?.copyWith(
-                    height: 1.65,
-                    letterSpacing: 0.2,
-                    fontFamilyFallback: const [
-                      'Noto Sans CJK SC',
-                      'Noto Sans CJK JP',
-                      'sans-serif',
-                    ],
-                  ),
-                  h1: theme.textTheme.headlineMedium?.copyWith(
-                    fontWeight: FontWeight.w700,
-                    color: cs.onSurface,
-                  ),
-                  h2: theme.textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.w700,
-                    color: cs.onSurface,
-                  ),
-                  h3: theme.textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.w700,
-                    color: cs.onSurface,
-                  ),
-                  code: theme.textTheme.bodyMedium?.copyWith(
-                    fontFamily: 'monospace',
-                    backgroundColor: cs.surfaceContainerHighest,
-                  ),
-                  codeblockDecoration: BoxDecoration(
-                    color: cs.surfaceContainerHighest,
-                    borderRadius: BorderRadius.circular(8),
+              child: _buildFadeInContent(
+                context: context,
+                child: MarkdownBody(
+                  data: _visibleContent,
+                  styleSheet: MarkdownStyleSheet.fromTheme(theme).copyWith(
+                    p: theme.textTheme.bodyLarge?.copyWith(
+                      height: 1.65,
+                      letterSpacing: 0.2,
+                      fontFamilyFallback: const [
+                        'Noto Sans CJK SC',
+                        'Noto Sans CJK JP',
+                        'sans-serif',
+                      ],
+                    ),
+                    h1: theme.textTheme.headlineMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: cs.onSurface,
+                    ),
+                    h2: theme.textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: cs.onSurface,
+                    ),
+                    h3: theme.textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: cs.onSurface,
+                    ),
+                    code: theme.textTheme.bodyMedium?.copyWith(
+                      fontFamily: 'monospace',
+                      backgroundColor: cs.surfaceContainerHighest,
+                    ),
+                    codeblockDecoration: BoxDecoration(
+                      color: cs.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
                   ),
                 ),
               ),
@@ -518,16 +548,19 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
             constraints: const BoxConstraints(maxWidth: 960),
             child: SizedBox(
               width: double.infinity,
-              child: Text(
-                _visibleContent,
-                style: theme.textTheme.bodyLarge?.copyWith(
-                  height: 1.65,
-                  letterSpacing: 0.2,
-                  fontFamilyFallback: const [
-                    'Noto Sans CJK SC',
-                    'Noto Sans CJK JP',
-                    'sans-serif',
-                  ],
+              child: _buildFadeInContent(
+                context: context,
+                child: Text(
+                  _visibleContent,
+                  style: theme.textTheme.bodyLarge?.copyWith(
+                    height: 1.65,
+                    letterSpacing: 0.2,
+                    fontFamilyFallback: const [
+                      'Noto Sans CJK SC',
+                      'Noto Sans CJK JP',
+                      'sans-serif',
+                    ],
+                  ),
                 ),
               ),
             ),

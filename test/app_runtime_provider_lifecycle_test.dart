@@ -82,18 +82,18 @@ void main() {
       states.add(SettingsState(converterFormat: 'flac'));
       await container.pump();
       for (final consumerValues in values) {
-        expect(consumerValues, [true]);
+        expect(consumerValues, [false]);
       }
       states.add(
         SettingsState(
-          uiBlurEffectEnabled: false,
+          uiBlurEffectEnabled: true,
           coverImageResolution: CoverImageResolution.high,
           coverImageDisplayMode: CoverImageDisplayMode.tile,
         ),
       );
       await container.pump();
       for (final consumerValues in values) {
-        expect(consumerValues, [true, false]);
+        expect(consumerValues, [false, true]);
       }
       expect(resolutions, [
         CoverImageResolution.balanced,

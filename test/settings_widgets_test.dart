@@ -167,7 +167,7 @@ void main() {
     );
     final categoryHeader = find.byType(TopPageHeader);
     final categoryHeaderWidget = tester.widget<TopPageHeader>(categoryHeader);
-    expect(find.byType(BackdropFilter), findsWidgets);
+    expect(find.byType(BackdropFilter), findsNothing);
     expect(categoryHeaderWidget.padding, AppPageHeaderMetrics.padding);
     expect(
       categoryHeaderWidget.bottomSpacing,
@@ -1130,12 +1130,12 @@ void main() {
     );
     await Scrollable.ensureVisible(tester.element(toggle), alignment: 0.5);
     await tester.pumpAndSettle();
-    expect(harness.settingsRepository.blurPlayerBackgroundEnabled, isTrue);
+    expect(harness.settingsRepository.blurPlayerBackgroundEnabled, isFalse);
 
     await tester.tap(toggle);
     await tester.pumpAndSettle();
 
-    expect(harness.settingsRepository.blurPlayerBackgroundEnabled, isFalse);
+    expect(harness.settingsRepository.blurPlayerBackgroundEnabled, isTrue);
   });
 
   testWidgets('appearance offers the 1200px cover resolution', (tester) async {
@@ -1244,14 +1244,14 @@ void main() {
     );
     await Scrollable.ensureVisible(tester.element(toggle), alignment: 0.5);
     await tester.pumpAndSettle();
-    expect(harness.settingsRepository.preferEmbeddedCover, isTrue);
+    expect(harness.settingsRepository.preferEmbeddedCover, isFalse);
     final initialCoverGeneration =
         harness.runtimeGraph.library.coverArtworkCacheService.generation;
 
     await tester.tap(toggle);
     await tester.pumpAndSettle();
 
-    expect(harness.settingsRepository.preferEmbeddedCover, isFalse);
+    expect(harness.settingsRepository.preferEmbeddedCover, isTrue);
     expect(
       harness.runtimeGraph.library.coverArtworkCacheService.generation,
       initialCoverGeneration + 1,

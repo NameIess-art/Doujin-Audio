@@ -57,9 +57,10 @@ Future<void> showSessionVideoFullscreen(
     return;
   }
   try {
-    final route = MaterialPageRoute<void>(
+    final route = buildAppPageRoute<void>(
+      context: context,
       fullscreenDialog: true,
-      builder: (_) => SessionVideoFullscreenPage(
+      child: SessionVideoFullscreenPage(
         sessionId: sessionId,
         trackPath: trackPath,
         fullscreenLease: lease,

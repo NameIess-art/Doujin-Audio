@@ -3,9 +3,87 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
+import 'package:doujin_audio/core/widgets/app_transitions.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  testWidgets('prepared routes gate commits until their animation finishes', (
+    tester,
+  ) async {
+    final coordinator = UiInteractionCoordinator(idleDelay: Duration.zero);
+    final observer = UiInteractionNavigatorObserver(coordinator: coordinator);
+    final navigatorKey = GlobalKey<NavigatorState>();
+    addTearDown(() {
+      observer.resetForTest();
+      coordinator.dispose();
+    });
+    await tester.pumpWidget(
+      MaterialApp(
+        navigatorKey: navigatorKey,
+        navigatorObservers: [observer],
+        home: const SizedBox(),
+      ),
+    );
+    final route = buildAppPageRoute<void>(
+      context: navigatorKey.currentContext!,
+      child: const SizedBox(key: ValueKey('prepared-route')),
+    );
+    unawaited(navigatorKey.currentState!.push(route));
+    var committed = false;
+    coordinator.scheduleCommit(
+      key: 'route-data',
+      commit: () => committed = true,
+    );
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(route.animation!.value, 0);
+    expect(coordinator.isInteracting, isTrue);
+    expect(committed, isFalse);
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(route.animation!.value, 0);
+    expect(coordinator.isInteracting, isTrue);
+    expect(committed, isFalse);
+    await tester.pump(const Duration(milliseconds: 299));
+    expect(coordinator.isInteracting, isTrue);
+    expect(committed, isFalse);
+    await tester.pumpAndSettle();
+    expect(coordinator.isInteracting, isFalse);
+    expect(committed, isTrue);
+  });
+
+  testWidgets('route pop before preparation completes releases observers', (
+    tester,
+  ) async {
+    final coordinator = UiInteractionCoordinator(idleDelay: Duration.zero);
+    final observer = UiInteractionNavigatorObserver(coordinator: coordinator);
+    final navigatorKey = GlobalKey<NavigatorState>();
+    addTearDown(() {
+      observer.resetForTest();
+      coordinator.dispose();
+    });
+    await tester.pumpWidget(
+      MaterialApp(
+        navigatorKey: navigatorKey,
+        navigatorObservers: [observer],
+        home: const SizedBox(),
+      ),
+    );
+    final route = buildAppPageRoute<String>(
+      context: navigatorKey.currentContext!,
+      settings: const RouteSettings(name: '/prepared', arguments: 'work-id'),
+      child: const SizedBox(key: ValueKey('never-prepared-route')),
+    );
+    expect(route.settings.name, '/prepared');
+    expect(route.settings.arguments, 'work-id');
+    final result = navigatorKey.currentState!.push(route);
+    expect(coordinator.isInteracting, isTrue);
+    navigatorKey.currentState!.pop('cancelled');
+    await tester.pumpAndSettle();
+    expect(await result, 'cancelled');
+    expect(coordinator.isInteracting, isFalse);
+    expect(find.byKey(const ValueKey('never-prepared-route')), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets('defers commits while interaction is active', (tester) async {
     final coordinator = UiInteractionCoordinator(
@@ -283,10 +361,10 @@ void main() {
         home: const SizedBox(),
       ),
     );
-    final route = PageRouteBuilder<void>(
-      transitionDuration: Duration.zero,
-      reverseTransitionDuration: Duration.zero,
-      pageBuilder: (_, _, _) => const SizedBox(),
+    final route = buildAppPageRoute<void>(
+      context: navigatorKey.currentContext!,
+      duration: Duration.zero,
+      child: const SizedBox(),
     );
     unawaited(navigatorKey.currentState!.push(route));
     await tester.pumpAndSettle();

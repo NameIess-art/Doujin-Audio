@@ -14,14 +14,19 @@ import 'package:doujin_audio/app/presentation/main_screen.dart';
 import 'package:doujin_audio/app/presentation/app_presentation_providers.dart';
 import 'package:doujin_audio/core/app_language.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
+import 'package:doujin_audio/core/media/audio_detail.dart';
 import 'package:doujin_audio/core/persistence/app_database.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
+import 'package:doujin_audio/core/widgets/top_page_header.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_library_controller.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_tab.dart';
 import 'package:doujin_audio/features/data_support/application/data_backup_service.dart';
 import 'package:doujin_audio/features/library/presentation/library_tab.dart';
+import 'package:doujin_audio/features/library/presentation/work_detail_page.dart';
+import 'package:doujin_audio/features/settings/presentation/about_page.dart';
+import 'package:doujin_audio/features/settings/application/app_update_service.dart';
 import 'package:doujin_audio/features/player/application/native_playback_bridge.dart';
 import 'package:doujin_audio/features/player/application/native_playback_repository.dart';
 import 'package:doujin_audio/features/player/application/windows_playback_bridge.dart';
@@ -74,7 +79,7 @@ int get _backupByteCount => _backupByteOverride > 0
 
 void main() {
   final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
-  if (_scenario == 'playback') {
+  if (_scenario == 'playback' || _scenario.startsWith('page-transitions')) {
     binding.framePolicy =
         LiveTestWidgetsFlutterBindingFramePolicy.benchmarkLive;
   }
@@ -88,6 +93,8 @@ void main() {
         'backup',
         'detail-compare',
         'playback',
+        'page-transitions',
+        'page-transitions-playing',
       },
       contains(_scenario),
       reason: 'Unsupported PERF_SCENARIO=$_scenario',
@@ -95,7 +102,7 @@ void main() {
     SharedPreferences.setMockInitialValues(const <String, Object>{
       AppPreferences.onboardingCompletedKey: true,
     });
-    if (_scenario == 'playback') {
+    if (_scenario == 'playback' || _scenario == 'page-transitions-playing') {
       await _measureRealPlayback(tester, binding);
       return;
     }
@@ -144,6 +151,15 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+
+    if (_scenario == 'page-transitions') {
+      final rounds = await _measurePageTransitions(tester);
+      final report = _pageTransitionReport(rounds, playing: false);
+      binding.reportData = {'uiPerformance': report};
+      debugPrint('UI_PERFORMANCE ${jsonEncode(report)}');
+      _expectFrameBudgets(rounds);
+      return;
+    }
 
     if (_scenario == 'detail-compare') {
       final rounds = await _measureDetailComparison(tester, fixture);
@@ -297,6 +313,28 @@ Future<void> _measureRealPlayback(
     ),
   );
   await _switchMainPage(tester, MainDestinationType.library);
+  if (_scenario == 'page-transitions-playing') {
+    expect(
+      await fixture.playback.spawnSessionWithQueue(
+        [tracks.first],
+        autoPlay: false,
+        loopMode: SessionLoopMode.single,
+      ),
+      true,
+    );
+    final id = fixture.playback.sessions.keys.single;
+    await _toggleRuntimeSession(tester, fixture, id, playing: true);
+    final rounds = await _measurePageTransitions(
+      tester,
+      localPath: tracks.first.path,
+    );
+    expect(fixture.playback.sessionById(id)!.state.playing, true);
+    final report = _pageTransitionReport(rounds, playing: true);
+    binding.reportData = {'uiPerformance': report};
+    debugPrint('UI_PERFORMANCE ${jsonEncode(report)}');
+    _expectFrameBudgets(rounds);
+    return;
+  }
   final rounds = <Map<String, Object>>[];
   Map<String, Object>? idleObservation;
   final report = <String, Object>{
@@ -805,6 +843,193 @@ List<PlaybackSession> _seedRuntime(
     isInitialized: true,
   );
   return sessions;
+}
+
+Map<String, Object> _pageTransitionReport(
+  List<Map<String, Object>> rounds, {
+  required bool playing,
+}) => {
+  'scenario': _scenario,
+  'platform': Platform.isWindows ? 'windows' : 'android',
+  'mode': kProfileMode ? 'profile' : (kReleaseMode ? 'release' : 'debug'),
+  'runtime': playing ? (Platform.isWindows ? 'libmpv' : 'Media3') : 'fixture',
+  'playing': playing,
+  'libraryItems': playing ? 100 : _libraryItemCount,
+  'asmrItems': playing ? 100 : _asmrItemCount,
+  'frameBudgetUs': _frameBudget.inMicroseconds,
+  'frameTimingDeliveryWaitMs': 2000,
+  'frameSampleWindow':
+      'Action invocation through 25 pumps at 16 ms; preparation and trailing UI frames included',
+  'firstVisibleFrameMeasurement':
+      'UI frame commit with route progress > 0 or incoming slide within viewport; not display presentation time',
+  'rounds': rounds,
+};
+
+Future<List<Map<String, Object>>> _measurePageTransitions(
+  WidgetTester tester, {
+  String localPath = '/profile/audio_1.mp3',
+}) async {
+  final navigator = tester.state<NavigatorState>(find.byType(Navigator).first);
+  final rounds = <Map<String, Object>>[];
+  final target = AudioDetailTarget.singleAudioFile(localPath);
+  final localDetail = AudioDetail(
+    target: target,
+    rjCode: 'RJ100000',
+    workTitle: 'Performance album 1',
+    circleName: 'Profile circle',
+    voiceActors: const ['Profile voice'],
+    tags: const ['offline', 'profile'],
+    duration: const Duration(minutes: 20),
+  );
+  Future<void> settleTransition() async {
+    // Real playback keeps scheduling progress frames, so pumpAndSettle cannot
+    // define the end of a navigation animation in the playing scenario.
+    for (var frame = 0; frame < 40; frame++) {
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+  }
+
+  Future<void> measure(
+    String name,
+    int opening,
+    VoidCallback action,
+    bool Function() visible,
+  ) async {
+    final timings = <FrameTiming>[];
+    void collect(List<FrameTiming> values) => timings.addAll(values);
+    WidgetsBinding.instance.addTimingsCallback(collect);
+    final started = DateTime.now().microsecondsSinceEpoch;
+    int? firstVisible;
+    var sampling = true;
+    void observeVisibleFrame(Duration _) {
+      if (!sampling) return;
+      if (visible()) {
+        firstVisible = DateTime.now().microsecondsSinceEpoch;
+      } else {
+        WidgetsBinding.instance.addPostFrameCallback(observeVisibleFrame);
+      }
+    }
+
+    late int finished;
+    try {
+      action();
+      WidgetsBinding.instance.addPostFrameCallback(observeVisibleFrame);
+      // Observe every frame rather than jumping over the preparation interval.
+      for (var frame = 0; frame < 25; frame++) {
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      finished = DateTime.now().microsecondsSinceEpoch;
+      await Future<void>.delayed(const Duration(seconds: 2));
+    } finally {
+      sampling = false;
+      WidgetsBinding.instance.removeTimingsCallback(collect);
+    }
+    timings.retainWhere(
+      (timing) => _frameStartedWithin(timing, started, finished),
+    );
+    final result = <String, Object>{
+      ..._summarizeRound(opening, timings),
+      'transition': name,
+      'opening': opening,
+      'pass': opening == 1 ? 'initial' : 'repeat',
+      'firstVisibleUiFrameLatencyUs': firstVisible == null
+          ? -1
+          : firstVisible! - started,
+      'actionWindowUs': finished - started,
+    };
+    rounds.add(result);
+    debugPrint('PAGE_TRANSITION_PERFORMANCE ${jsonEncode(result)}');
+    expect(
+      firstVisible,
+      isNotNull,
+      reason: '$name must produce a visible animation frame',
+    );
+  }
+
+  bool slideVisible(String stackKey) => find
+      .descendant(
+        of: find.byKey(ValueKey<String>(stackKey)),
+        matching: find.byType(SlideTransition),
+      )
+      .evaluate()
+      .any((element) {
+        final dx = (element.widget as SlideTransition).position.value.dx;
+        return dx.abs() > 0.001 && dx.abs() < 0.999;
+      });
+
+  for (var opening = 1; opening <= 3; opening++) {
+    // Start each pass from Library, so first visits to the other tabs are measured.
+    await _switchMainPage(tester, MainDestinationType.library);
+    for (final destination in [
+      MainDestinationType.playlist,
+      MainDestinationType.settings,
+      MainDestinationType.asmrOne,
+    ]) {
+      await measure('main-${destination.name}', opening, () {
+        final index = switch (destination) {
+          MainDestinationType.asmrOne => 0,
+          MainDestinationType.playlist => 2,
+          MainDestinationType.settings => 3,
+          MainDestinationType.library => 1,
+        };
+        final rail = find.byType(NavigationRail);
+        if (rail.evaluate().isNotEmpty) {
+          tester.widget<NavigationRail>(rail).onDestinationSelected!(index);
+        } else {
+          final key = switch (destination) {
+            MainDestinationType.asmrOne => 'show_asmr_one',
+            MainDestinationType.playlist => 'nav_sessions',
+            MainDestinationType.settings => 'nav_settings',
+            MainDestinationType.library => 'music_library',
+          };
+          final ink = find.byKey(ValueKey<String>('main_destination_ink_$key'));
+          tester.widget<InkResponse>(ink).onTap!();
+        }
+      }, () => slideVisible('main_page_stack'));
+      await settleTransition();
+    }
+    for (final category in [
+      AsmrCategoryType.recommendation,
+      AsmrCategoryType.collected,
+    ]) {
+      await measure('asmr-${category.name}', opening, () {
+        tester
+            .widget<HeaderSegmentedCategoryBar<AsmrCategoryType>>(
+              find.byType(HeaderSegmentedCategoryBar<AsmrCategoryType>),
+            )
+            .onSelected(category);
+      }, () => slideVisible('asmr_category_stack'));
+      await settleTransition();
+    }
+    await _switchMainPage(tester, MainDestinationType.library);
+    for (final (name, page) in <(String, Widget)>[
+      (
+        'ordinary-about',
+        AboutPage(
+          versionFuture: Future.value(
+            const AppVersionInfo(versionName: 'profile', buildNumber: 1),
+          ),
+        ),
+      ),
+      (
+        'work-local',
+        WorkDetailPage.forLocal(target: target, initialDetail: localDetail),
+      ),
+      ('work-asmr', WorkDetailPage.forAsmr(work: _buildAsmrWorks(1).first)),
+    ]) {
+      late PageRoute<void> route;
+      await measure(name, opening, () {
+        route = buildAppPageRoute<void>(
+          context: navigator.context,
+          child: page,
+        );
+        unawaited(navigator.push(route));
+      }, () => route.animation!.value > 0);
+      navigator.pop();
+      await settleTransition();
+    }
+  }
+  return rounds;
 }
 
 Future<List<Map<String, Object>>> _measureDetailComparison(
@@ -1372,6 +1597,12 @@ final class _ProfileAsmrController extends AsmrLibraryController {
 
   final List<AsmrWork> works;
   final List<AsmrTrackFile> trackTree;
+
+  @override
+  Future<List<AsmrTrackFile>> ensureTrackTree(
+    AsmrWork work, {
+    bool forceRefresh = false,
+  }) async => trackTree;
 
   @override
   bool get initialized => true;

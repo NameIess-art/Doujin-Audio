@@ -186,7 +186,7 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
     final cs = detailTheme.colorScheme;
     final blurEnabled = ref.watch(
       settingsStateProvider.select(
-        (state) => state.value?.blurPlayerBackgroundEnabled ?? true,
+        (state) => state.value?.blurPlayerBackgroundEnabled ?? false,
       ),
     );
     return Theme(

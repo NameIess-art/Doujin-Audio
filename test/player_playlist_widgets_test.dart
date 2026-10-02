@@ -5058,6 +5058,16 @@ void main() {
       );
       expect(
         find.byKey(const ValueKey('session_detail_background_blur')),
+        findsNothing,
+      );
+      await settingsRepository.setBlurPlayerBackgroundEnabled(true);
+      expect(
+        settingsRepository.slice.state.blurPlayerBackgroundEnabled,
+        isTrue,
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('session_detail_background_blur')),
         findsOneWidget,
       );
       expect(
@@ -6585,8 +6595,8 @@ void main() {
 
       await tester.tap(workDetailButton);
       await tester.pump();
-      await tester.pump(const Duration(milliseconds: 600));
-      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pump(const Duration(milliseconds: 400));
       expect(find.byType(WorkDetailPage), findsOneWidget);
       expect(find.byType(SessionDetailPage, skipOffstage: false), findsWidgets);
 
@@ -6594,7 +6604,8 @@ void main() {
       final backButton = find.byKey(const ValueKey('work_detail_back_button'));
       expect(backButton, findsOneWidget);
       await tester.tap(backButton);
-      await tester.pumpAndSettle();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
       expect(find.byType(WorkDetailPage), findsNothing);
       expect(find.byType(SessionDetailPage, skipOffstage: false), findsWidgets);
       expect(find.byType(SessionDetailPage), findsOneWidget);
@@ -6631,7 +6642,7 @@ void main() {
       );
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 450));
-      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 450));
       expect(find.byType(WorkDetailPage), findsOneWidget);
       await tester.runAsync(
         () => Future<void>.delayed(const Duration(milliseconds: 200)),
@@ -6639,11 +6650,13 @@ void main() {
       await tester.pump();
 
       await tester.tap(find.byKey(const ValueKey('work_detail_back_button')));
-      await tester.pumpAndSettle();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 450));
       expect(find.byType(SessionDetailPage), findsOneWidget);
       expect(find.byType(PlaylistTab, skipOffstage: false), findsOneWidget);
       navigator.pop();
-      await tester.pumpAndSettle();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 450));
       expect(find.text('Intermediate page'), findsOneWidget);
       expect(find.byType(SessionDetailPage, skipOffstage: false), findsWidgets);
       // Wait for SQLite-backed directory cache work in real async time before

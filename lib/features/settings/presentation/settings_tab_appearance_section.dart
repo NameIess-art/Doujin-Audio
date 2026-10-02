@@ -211,7 +211,7 @@ List<Widget> _buildSettingsAppearanceSection({
           builder: (context, ref, _) {
             final enabled = ref.watch(
               settingsStateProvider.select(
-                (state) => state.value?.preferEmbeddedCover ?? true,
+                (state) => state.value?.preferEmbeddedCover ?? false,
               ),
             );
             return SwitchListTile(
@@ -231,7 +231,7 @@ List<Widget> _buildSettingsAppearanceSection({
           builder: (context, ref, _) {
             final enabled = ref.watch(
               settingsStateProvider.select(
-                (state) => state.value?.uiBlurEffectEnabled ?? true,
+                (state) => state.value?.uiBlurEffectEnabled ?? false,
               ),
             );
             return SwitchListTile(
@@ -255,7 +255,7 @@ List<Widget> _buildSettingsAppearanceSection({
           builder: (context, ref, _) {
             final enabled = ref.watch(
               settingsStateProvider.select(
-                (state) => state.value?.blurPlayerBackgroundEnabled ?? true,
+                (state) => state.value?.blurPlayerBackgroundEnabled ?? false,
               ),
             );
             return SwitchListTile(

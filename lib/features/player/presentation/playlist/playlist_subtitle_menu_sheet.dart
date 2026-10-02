@@ -9,6 +9,7 @@ import '../../../../app/state/subtitle_settings_provider.dart';
 import '../../../../core/media/path_matcher.dart';
 import '../../../../core/widgets/app_bottom_sheet.dart';
 import '../../../../core/widgets/app_feedback.dart';
+import '../../../../core/widgets/app_transitions.dart';
 import '../../../library/application/work_text_service.dart';
 import '../../../library/presentation/library_providers.dart';
 import '../../application/playback_session_snapshot.dart';
@@ -734,9 +735,9 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
                     onTap: !canEditSubtitle
                         ? null
                         : () => Navigator.of(context).push(
-                            MaterialPageRoute<void>(
-                              builder: (_) =>
-                                  SubtitleEditorPage(trackPath: trackPath),
+                            buildAppPageRoute<void>(
+                              context: context,
+                              child: SubtitleEditorPage(trackPath: trackPath),
                             ),
                           ),
                   ),

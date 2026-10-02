@@ -557,4 +557,62 @@ void main() {
       }
     },
   );
+
+  testWidgets(
+    'WorkTextViewerPage fades in text content smoothly over 300ms',
+    (tester) async {
+      SharedPreferences.setMockInitialValues(const <String, Object>{});
+      final language = AppLanguageProvider();
+      addTearDown(language.dispose);
+      await language.setLanguage(AppLanguage.zh);
+
+      final fakeGateway = _FakeFileCacheGateway({
+        file1.path: Uint8List.fromList(utf8.encode('台本文本淡入测试')),
+      });
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            appLanguageProviderInstanceProvider.overrideWithValue(language),
+            workTextServiceProvider.overrideWithValue(
+              WorkTextService(platformGateway: fakeGateway),
+            ),
+          ],
+          child: const MaterialApp(home: WorkTextViewerPage(files: [file1])),
+        ),
+      );
+
+      // Initially loading
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+
+      // Pump to complete async loading and build first frame of text content
+      await tester.pump();
+      await tester.pump();
+
+      // Find Opacity ancestor of the Text widget
+      final textFinder = find.text('台本文本淡入测试');
+      expect(textFinder, findsOneWidget);
+
+      final opacityFinder = find.ancestor(
+        of: textFinder,
+        matching: find.byType(Opacity),
+      );
+      expect(opacityFinder, findsOneWidget);
+
+      final initialOpacity = tester.widget<Opacity>(opacityFinder).opacity;
+      expect(initialOpacity, lessThan(0.5));
+
+      // Advance by 150ms
+      await tester.pump(const Duration(milliseconds: 150));
+      final midOpacity = tester.widget<Opacity>(opacityFinder).opacity;
+      expect(midOpacity, greaterThan(initialOpacity));
+      expect(midOpacity, lessThan(1.0));
+
+      // Advance past 300ms
+      await tester.pump(const Duration(milliseconds: 200));
+      final finalOpacity = tester.widget<Opacity>(opacityFinder).opacity;
+      expect(finalOpacity, equals(1.0));
+    },
+  );
 }
+

@@ -74,7 +74,7 @@ class _ActiveSessionCard extends ConsumerWidget {
     final isTinyWindow = screenSize.width < 300 || screenSize.height < 300;
 
     final blurEnabled = ref.watch(
-      settingsStateProvider.select((s) => s.value?.uiBlurEffectEnabled ?? true),
+      settingsStateProvider.select((s) => s.value?.uiBlurEffectEnabled ?? false),
     );
 
     if (circularCover) {

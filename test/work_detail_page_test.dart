@@ -31,6 +31,17 @@ import 'package:doujin_audio/features/library/application/library_service.dart';
 import 'package:doujin_audio/features/library/application/library_organizer.dart';
 import 'support/app_runtime_test_fixture.dart';
 import 'support/test_playback_commands.dart';
+import 'support/test_persistence_repository.dart';
+
+class _CountingDetailRepository extends TestPersistenceRepository {
+  int detailRequests = 0;
+
+  @override
+  Future<AudioDetail?> load(AudioDetailTarget target) {
+    detailRequests++;
+    return super.load(target);
+  }
+}
 
 class _WorkDetailAsmrMetadataService extends AsmrMetadataService {
   @override
@@ -135,6 +146,100 @@ void main() {
 
   group('WorkDetailPage', () {
     for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+      testWidgets(
+        'reuses main-page metadata snapshot without reloading on $platform',
+        (tester) async {
+          SharedPreferences.setMockInitialValues(const <String, Object>{});
+          final repository = _CountingDetailRepository();
+          final covers = _ControlledWorkDetailCoverService()
+            ..images.complete([])
+            ..cover.complete(null);
+          final fixture = AppRuntimeWidgetTestFixture(
+            providedPersistenceRepository: repository,
+            coverArtworkCacheService: covers,
+            libraryTreeSnapshotBuilder: (payload) async =>
+                const LibraryOrganizer().buildTree(
+                  tracks: payload.tracks,
+                  watchedFolders: payload.watchedFolders,
+                  watchedLibraries: payload.watchedLibraries,
+                ),
+          );
+          addTearDown(fixture.dispose);
+          const folder = 'C:/works/card-snapshot';
+          final target = AudioDetailTarget.libraryRootFolder(folder);
+          fixture.library.addWatchedFolder(folder, notify: false);
+          fixture.library.addTracks([
+            MusicTrack(
+              path: '$folder/audio.mp3',
+              displayName: 'audio.mp3',
+              groupKey: folder,
+              groupTitle: 'Card snapshot',
+              groupSubtitle: '',
+              isSingle: false,
+            ),
+          ], persist: false);
+          await tester.runAsync(() async {
+            await fixture.library.saveAudioDetail(
+              AudioDetail.empty(target).copyWith(
+                workTitle: 'Card title',
+                circleName: 'Card circle',
+                voiceActors: ['Card CV'],
+                tags: ['Card tag'],
+              ),
+            );
+            await fixture.library.audioLibraryCategorySnapshot();
+          });
+          // The main page still owns its snapshot after the detail cache clears.
+          fixture.library.detailCacheService.clear();
+          expect(fixture.library.resolvedAudioDetail(target), isNull);
+          expect(
+            fixture.library.categorySnapshot?.detailFor(target)?.workTitle,
+            'Card title',
+          );
+          repository.detailRequests = 0;
+          final interaction = UiInteractionCoordinator.instance;
+          final source = Object();
+          interaction.beginInteraction(source);
+          addTearDown(() => interaction.cancelInteraction(source));
+
+          await tester.pumpWidget(
+            fixture.build(
+              WorkDetailPage.forLocal(target: target),
+              overrides: [
+                workTextServiceProvider.overrideWithValue(
+                  WorkTextService(
+                    discoverImages:
+                        fixture.library.discoverCoverImageReferencesInFolder,
+                    platformGateway: _NestedWorkDetailFileGateway([]),
+                  ),
+                ),
+              ],
+            ),
+          );
+          await tester.pump();
+          for (final value in [
+            'Card title',
+            'Card circle',
+            'Card CV',
+            '#Card tag',
+          ]) {
+            expect(find.text(value), findsOneWidget);
+          }
+          await tester.pump(const Duration(milliseconds: 500));
+          expect(repository.detailRequests, 0);
+          expect(covers.imageRequests, 0);
+          expect(find.text('audio.mp3'), findsNothing);
+
+          interaction.cancelInteraction(source);
+          await tester.pumpAndSettle();
+          expect(find.text('audio.mp3'), findsOneWidget);
+          expect(covers.imageRequests, 1);
+          expect(repository.detailRequests, 0);
+          expect(tester.takeException(), isNull);
+        },
+        variant: TargetPlatformVariant({platform}),
+      );
+
       testWidgets(
         'defers file trees during navigation and fades entries in on $platform',
         (tester) async {

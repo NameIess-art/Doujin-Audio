@@ -4,11 +4,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_api_service.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_library_controller.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_playback_coordinator.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_providers.dart';
+import 'package:doujin_audio/features/asmr/presentation/asmr_work_detail_sheet.dart';
 import 'package:doujin_audio/features/library/presentation/work_detail_page.dart';
 import 'package:doujin_audio/features/player/application/playback_session_launcher.dart';
 import 'support/app_runtime_test_fixture.dart';
@@ -30,6 +32,90 @@ void main() {
       await tester.pump(const Duration(milliseconds: 50));
     }
     await tester.pumpAndSettle();
+  }
+
+  for (final closeDuringTransition in [false, true]) {
+    testWidgets(
+      closeDuringTransition
+          ? 'closing online details during opening skips file-tree requests'
+          : 'online details reuse card metadata and defer the tree until open',
+      (tester) async {
+        SharedPreferences.setMockInitialValues({});
+        final interaction = UiInteractionCoordinator.instance;
+        interaction.resetForTest();
+        addTearDown(interaction.resetForTest);
+        final fixture = AppRuntimeWidgetTestFixture();
+        addTearDown(fixture.dispose);
+        final api = _TrackApi();
+        final services = createTestAsmrServices(
+          persistenceRepository: fixture.persistenceRepository,
+          apiService: api,
+        );
+        await tester.runAsync(services.preferencesStore.clearForTest);
+        final controller = AsmrLibraryController(
+          preferencesStore: services.preferencesStore,
+          remoteCatalogService: services.remoteCatalogService,
+          accountSyncService: services.accountSyncService,
+        );
+        addTearDown(controller.dispose);
+        await tester.runAsync(() => controller.initializeForVisiblePage());
+        final work = AsmrWork.fromJson({
+          ..._work.toJson(),
+          'sourceId': 'RJ008001',
+          'circleName': 'Card circle',
+          'voiceActors': const ['Card voice'],
+          'tags': const ['Card tag'],
+        });
+        await tester.pumpWidget(
+          fixture.build(
+            Builder(
+              builder: (context) => TextButton(
+                onPressed: () => showAsmrWorkDetailSheet(context, work),
+                child: const Text('Open detail'),
+              ),
+            ),
+            navigatorObservers: [UiInteractionNavigatorObserver()],
+            overrides: [
+              asmrLibraryControllerProvider.overrideWithValue(controller),
+            ],
+          ),
+        );
+        await tester.tap(find.text('Open detail'));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(interaction.isInteracting, isTrue);
+        for (final text in [
+          work.title,
+          'RJ008001',
+          'Card circle',
+          'Card voice',
+          '#Card tag',
+        ]) {
+          expect(find.text(text), findsOneWidget);
+        }
+        expect(api.treeRequests, 0);
+        expect(api.detailRequests, 0);
+        expect(find.text('audio'), findsNothing);
+
+        if (closeDuringTransition) {
+          Navigator.of(tester.element(find.byType(WorkDetailPage))).pop();
+        }
+        await tester.pumpAndSettle();
+        await tester.pump(interaction.idleDelay);
+        await settleIo(tester);
+        expect(api.detailRequests, 0);
+        expect(api.treeRequests, closeDuringTransition ? 0 : 1);
+        expect(
+          find.text('audio'),
+          closeDuringTransition ? findsNothing : findsOneWidget,
+        );
+        expect(tester.takeException(), isNull);
+      },
+      variant: const TargetPlatformVariant({
+        TargetPlatform.android,
+        TargetPlatform.windows,
+      }),
+    );
   }
 
   testWidgets(
@@ -247,18 +333,22 @@ final _nodes = [
 
 class _TrackApi extends AsmrApiService {
   int treeRequests = 0;
+  int detailRequests = 0;
   @override
   Future<AsmrWorkDetail> fetchWorkDetail(
     int workId, {
     String? token,
     AsmrContentLanguage language = AsmrContentLanguage.zh,
-  }) async => AsmrWorkDetail(
-    work: _work,
-    description: '',
-    ageCategory: '',
-    languageEditionLabels: const [],
-    userRating: null,
-  );
+  }) async {
+    detailRequests++;
+    return AsmrWorkDetail(
+      work: _work,
+      description: '',
+      ageCategory: '',
+      languageEditionLabels: const [],
+      userRating: null,
+    );
+  }
 
   @override
   Future<List<AsmrTrackFile>> fetchTrackTree(

@@ -82,7 +82,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
   String? _localManualCover;
   bool _loadingLocal = true;
   int _localLoadRequest = 0;
-  late final String _localFilesCommitKey =
+  late final String _filesCommitKey =
       'work_detail_files_${identityHashCode(this)}';
 
   // ASMR state
@@ -100,21 +100,36 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
     _localTarget = widget.localTarget;
     if (widget.isLocal) {
       final library = ref.read(libraryFacadeProvider);
-      _localDetail = library.resolvedAudioDetail(_localTarget!);
+      _localDetail =
+          library.resolvedAudioDetail(_localTarget!) ??
+          library.categorySnapshot?.detailFor(_localTarget!);
       _localManualCover =
           library.resolvedCoverPathForFolder(_localTarget!.targetPath) ??
           _localDetail?.cardCoverPath;
     }
-    if (widget.isLocal) {
-      _loadLocalData();
-    } else {
-      _loadAsmrData();
-    }
+    // Reuse card metadata immediately; start I/O after the opening transition.
+    UiInteractionCoordinator.instance.scheduleCommit(
+      key: _filesCommitKey,
+      commit: () {
+        if (!mounted) return;
+        if (widget.isLocal) {
+          if (_localDetail == null) {
+            unawaited(_loadLocalData());
+          } else {
+            unawaited(
+              _loadLocalFiles(++_localLoadRequest, _localTarget!.targetPath),
+            );
+          }
+        } else {
+          unawaited(_loadAsmrData());
+        }
+      },
+    );
   }
 
   Future<void> _loadLocalData() async {
     final request = ++_localLoadRequest;
-    UiInteractionCoordinator.instance.cancelCommit(_localFilesCommitKey);
+    UiInteractionCoordinator.instance.cancelCommit(_filesCommitKey);
     final target = _localTarget!;
     final folderPath = target.targetPath;
     final library = ref.read(libraryFacadeProvider);
@@ -134,7 +149,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
 
       // File trees, directory scans and cover discovery wait for navigation.
       UiInteractionCoordinator.instance.scheduleCommit(
-        key: _localFilesCommitKey,
+        key: _filesCommitKey,
         commit: () {
           if (mounted && request == _localLoadRequest) {
             unawaited(_loadLocalFiles(request, folderPath));
@@ -223,7 +238,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
 
   @override
   void dispose() {
-    UiInteractionCoordinator.instance.cancelCommit(_localFilesCommitKey);
+    UiInteractionCoordinator.instance.cancelCommit(_filesCommitKey);
     _scrollController.dispose();
     super.dispose();
   }

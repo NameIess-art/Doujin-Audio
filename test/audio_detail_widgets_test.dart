@@ -1325,6 +1325,7 @@ void main() {
     WidgetTester tester,
   ) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+    addTearDown(() => debugDefaultTargetPlatformOverride = null);
     final fixture = AppRuntimeWidgetTestFixture(
       coverArtworkCacheService: _DetailCoverCacheService(
         currentCoverPath: '/covers/first.jpg',
@@ -1349,8 +1350,8 @@ void main() {
     await tester.pump();
 
     final pageView = tester.widget<PageView>(find.byType(PageView));
-    expect(pageView.childrenDelegate.estimatedChildCount, 2);
-    expect(pageView.controller!.page, 0);
+    expect(pageView.childrenDelegate.estimatedChildCount, isNull);
+    final initialPage = pageView.controller!.page!;
     await tester.sendEventToBinding(
       PointerScrollEvent(
         position: tester.getCenter(
@@ -1362,7 +1363,21 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
     expect(find.text('2 / 2'), findsOneWidget);
     await tester.pump(const Duration(milliseconds: 300));
-    expect(pageView.controller!.page, 1);
+    expect(pageView.controller!.page, initialPage + 1);
+
+    // Wheel down again cycles from last image back to first image
+    await tester.sendEventToBinding(
+      PointerScrollEvent(
+        position: tester.getCenter(
+          find.byKey(const ValueKey('audio_detail_cover_content')),
+        ),
+        scrollDelta: const Offset(0, 120),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text('1 / 2'), findsOneWidget);
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(pageView.controller!.page, initialPage + 2);
     debugDefaultTargetPlatformOverride = null;
   });
 
@@ -1473,17 +1488,36 @@ void main() {
         expect(nextButtonFinder, findsOneWidget);
         expect(prevButtonFinder, findsOneWidget);
 
-        // Initially at index 0: prev is disabled, next is enabled
+        // Initially at index 0: both prev and next are enabled for cycling
         final prevBtn0 = tester.widget<IconButton>(prevButtonFinder);
         final nextBtn0 = tester.widget<IconButton>(nextButtonFinder);
-        expect(prevBtn0.onPressed, isNull);
+        expect(prevBtn0.onPressed, isNotNull);
         expect(nextBtn0.onPressed, isNotNull);
+
+        // Tap prev button at index 0 -> cycles to last cover (index 2) with animation
+        await tester.tap(prevButtonFinder);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
+
+        expect(find.text('3 / 3'), findsOneWidget);
+        final prevBtnLast = tester.widget<IconButton>(prevButtonFinder);
+        final nextBtnLast = tester.widget<IconButton>(nextButtonFinder);
+        expect(prevBtnLast.onPressed, isNotNull);
+        expect(nextBtnLast.onPressed, isNotNull);
+
+        // Tap next button at last cover -> cycles back to first cover (index 0) with animation
+        await tester.tap(nextButtonFinder);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
+
+        expect(find.text('1 / 3'), findsOneWidget);
 
         // Tap next button -> index 1
         await tester.tap(nextButtonFinder);
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 300));
 
+        expect(find.text('2 / 3'), findsOneWidget);
         final prevBtn1 = tester.widget<IconButton>(prevButtonFinder);
         final nextBtn1 = tester.widget<IconButton>(nextButtonFinder);
         expect(prevBtn1.onPressed, isNotNull);
@@ -1494,20 +1528,11 @@ void main() {
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 300));
 
+        expect(find.text('3 / 3'), findsOneWidget);
         final prevBtn2 = tester.widget<IconButton>(prevButtonFinder);
         final nextBtn2 = tester.widget<IconButton>(nextButtonFinder);
         expect(prevBtn2.onPressed, isNotNull);
-        expect(nextBtn2.onPressed, isNull);
-
-        // Tap prev button -> back to index 1
-        await tester.tap(prevButtonFinder);
-        await tester.pump();
-        await tester.pump(const Duration(milliseconds: 300));
-
-        final prevBtn3 = tester.widget<IconButton>(prevButtonFinder);
-        final nextBtn3 = tester.widget<IconButton>(nextButtonFinder);
-        expect(prevBtn3.onPressed, isNotNull);
-        expect(nextBtn3.onPressed, isNotNull);
+        expect(nextBtn2.onPressed, isNotNull);
       } finally {
         await tester.pumpWidget(const SizedBox.shrink());
         debugDefaultTargetPlatformOverride = null;

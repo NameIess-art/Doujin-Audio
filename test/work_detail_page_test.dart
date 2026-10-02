@@ -1335,22 +1335,35 @@ void main() {
           lessThanOrEqualTo(tester.getTopRight(prevBtn).dy - 10),
         );
 
-        // Previous button is disabled at first image (no loop)
-        expect(tester.widget<IconButton>(prevBtn).onPressed, isNull);
+        // Previous button is enabled at first image and cycles to last image with animation
+        expect(tester.widget<IconButton>(prevBtn).onPressed, isNotNull);
+        await tester.tap(prevBtn);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 400));
+        expect(find.text('2 / 2'), findsOneWidget);
+        expect(find.text('02.jpg'), findsOneWidget);
 
-        // Swipe left switches to next image
+        // Next button cycles from last image back to first image with animation
+        expect(tester.widget<IconButton>(nextBtn).onPressed, isNotNull);
+        await tester.tap(nextBtn);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 400));
+        expect(find.text('1 / 2'), findsOneWidget);
+        expect(find.text('01.jpg'), findsOneWidget);
+
+        // Swipe right from first image cycles to last image
         await tester.drag(
           find.byKey(const ValueKey<String>('work_image_viewport')),
-          const Offset(-500, 0),
+          const Offset(500, 0),
         );
         await tester.pump(const Duration(milliseconds: 400));
         expect(find.text('2 / 2'), findsOneWidget);
         expect(find.text('02.jpg'), findsOneWidget);
 
-        // Swipe right switches back to previous image
+        // Swipe left from last image cycles back to first image
         await tester.drag(
           find.byKey(const ValueKey<String>('work_image_viewport')),
-          const Offset(500, 0),
+          const Offset(-500, 0),
         );
         await tester.pump(const Duration(milliseconds: 400));
         expect(find.text('1 / 2'), findsOneWidget);
@@ -1359,13 +1372,13 @@ void main() {
         // Next button animates to next image
         await tester.tap(nextBtn);
         await tester.pump();
-        await tester.pump(const Duration(milliseconds: 300));
+        await tester.pump(const Duration(milliseconds: 400));
 
         expect(find.text('2 / 2'), findsOneWidget);
         expect(find.text('02.jpg'), findsOneWidget);
 
-        // Next button is disabled at last image (no loop)
-        expect(tester.widget<IconButton>(nextBtn).onPressed, isNull);
+        // Next button is still enabled at last image
+        expect(tester.widget<IconButton>(nextBtn).onPressed, isNotNull);
 
         // Set as cover button
         final setCoverBtn = find.byKey(

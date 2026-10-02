@@ -53,6 +53,11 @@ class AsmrDownloadTransferService {
     final normalizedRelativePath = _planner.validatedDownloadRelativePath(
       item.relativePath,
     );
+    // The task commits its own work metadata after all transfers finish.
+    if (task.saveMetadata &&
+        normalizedRelativePath.toLowerCase() == 'doujin-audio.json') {
+      return DownloadWriteResult.skipped(bytesDownloaded: item.size);
+    }
     final preserveExistingJson =
         path.extension(normalizedRelativePath).toLowerCase() == '.json';
     final jsonLocation = preserveExistingJson

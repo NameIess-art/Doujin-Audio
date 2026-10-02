@@ -380,8 +380,9 @@ void main() {
       await tester.pump();
       await tester.tap(find.text('推荐'));
       await tester.pump();
-      expect(find.byType(ListView), findsOneWidget);
+      expect(find.byType(ListView), findsNWidgets(2));
       await tester.pumpAndSettle();
+      expect(find.byType(ListView), findsOneWidget);
       await tester.tap(find.text('收藏'));
       await tester.pumpAndSettle();
       expect(

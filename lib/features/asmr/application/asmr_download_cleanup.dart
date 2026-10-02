@@ -30,14 +30,10 @@ class AsmrDownloadOutputStore {
   static const _audioDetailJsonCodec = AudioDetailJsonCodec();
   JsonDocumentStore get jsonDocuments => _jsonDocumentStore;
   FileCachePlatformGateway get gateway => _fileCacheGateway;
-  Future<bool> prepareTask(
-    AsmrDownloadTaskSnapshot task, {
-    AudioDetail? backup,
-  }) async {
+  Future<void> prepareTask(AsmrDownloadTaskSnapshot task) async {
     final workId = task.work.id;
     final normalizedDestination = task.destinationRoot;
     final workFolderName = task.workFolderName;
-    final workRootPath = task.workRootPath;
     final conflictPolicy = task.conflictPolicy;
     createdOutputPaths.putIfAbsent(workId, () => <String>{});
     createdJsonDocuments.putIfAbsent(
@@ -52,25 +48,27 @@ class AsmrDownloadOutputStore {
     if (!rootReady) {
       throw const FileSystemException('Unable to create download folder.');
     }
+  }
 
-    if (backup != null) {
-      final backupPath = _planner.joinFolderPath(
-        workRootPath,
-        'doujin-audio.json',
-      );
-      final location = JsonDocumentLocation.folderChild(
-        folder: workRootPath,
-        name: 'doujin-audio.json',
-      );
-      final write = await writeWorkDetailBackup(backup, location);
-      final metadataCreated = write.status == JsonDocumentWriteStatus.created;
-      if (metadataCreated) {
-        createdOutputPaths[workId]?.add(backupPath);
-        recordCreatedJson(workId, backupPath, location, write);
-      }
-      return metadataCreated;
+  Future<bool> saveTaskMetadata(
+    AsmrDownloadTaskSnapshot task,
+    AudioDetail backup,
+  ) async {
+    final backupPath = _planner.joinFolderPath(
+      task.workRootPath,
+      'doujin-audio.json',
+    );
+    final location = JsonDocumentLocation.folderChild(
+      folder: task.workRootPath,
+      name: 'doujin-audio.json',
+    );
+    final write = await writeWorkDetailBackup(backup, location);
+    final metadataCreated = write.status == JsonDocumentWriteStatus.created;
+    if (metadataCreated) {
+      createdOutputPaths[task.work.id]?.add(backupPath);
+      recordCreatedJson(task.work.id, backupPath, location, write);
     }
-    return false;
+    return metadataCreated;
   }
 
   Future<void> deleteTaskDownloadedFiles(

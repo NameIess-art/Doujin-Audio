@@ -88,8 +88,15 @@ class _RoutedPlaybackDockHostState
     final workDetailRoute = _routeObserver.lastRouteNamed(workDetailRouteName);
     if (workDetailRoute == null) {
       final departingRoute = _routedPlaybackDockRoute;
-      _routedPlaybackDockEntry?.markNeedsBuild();
       if (departingRoute != null) {
+        final isDismissed =
+            departingRoute.animation?.status == AnimationStatus.dismissed ||
+            !_routeObserver.isWorkDetailDeparting;
+        if (isDismissed) {
+          _removeRoutedPlaybackDock();
+          return;
+        }
+        _routedPlaybackDockEntry?.markNeedsBuild();
         unawaited(
           departingRoute.completed.then((_) {
             if (!mounted ||
@@ -101,6 +108,8 @@ class _RoutedPlaybackDockHostState
             setState(() {});
           }),
         );
+      } else {
+        _removeRoutedPlaybackDock();
       }
       return;
     }
@@ -111,6 +120,10 @@ class _RoutedPlaybackDockHostState
       if (overlay != null && entry.mounted) {
         final orderedEntries = <OverlayEntry>[];
         for (final route in _routeObserver.routes) {
+          orderedEntries.addAll(route.overlayEntries);
+          if (identical(route, workDetailRoute)) orderedEntries.add(entry);
+        }
+        for (final route in _routeObserver._departingWorkDetailRoutes) {
           orderedEntries.addAll(route.overlayEntries);
           if (identical(route, workDetailRoute)) orderedEntries.add(entry);
         }
@@ -159,6 +172,7 @@ class _RoutedPlaybackDockHostState
           final routeAboveWorkDetail = _routeObserver.hasRouteAboveNamed(
             workDetailRouteName,
           );
+          final routeDeparting = _routeObserver.isWorkDetailDeparting;
           return Consumer(
             builder: (context, ref, _) => Opacity(
               opacity: _routeObserver.suppressDockForSessionDetail ? 0 : 1,
@@ -172,6 +186,7 @@ class _RoutedPlaybackDockHostState
                       ),
                     ),
                 covered: routeAboveWorkDetail,
+                departing: routeDeparting,
                 navigatorKey: widget.navigatorKey,
                 currentRoute: _routeObserver.topRoute,
                 geometry: _playbackDockGeometry,
@@ -193,7 +208,8 @@ class _RoutedPlaybackDockHostState
       child: child,
       builder: (context, revision, navigatorChild) {
         final isWorkDetailRoute =
-            _routeObserver.topRoute?.settings.name == workDetailRouteName;
+            _routeObserver.topRoute?.settings.name == workDetailRouteName ||
+            _routeObserver.isWorkDetailDeparting;
         final supportsRoutedDock =
             mediaQuery.size.width >= 300 && mediaQuery.size.height >= 300;
         final reserveWorkDetailDockInset =
@@ -231,6 +247,7 @@ class _RootPageRouteObserver extends NavigatorObserver {
   final Map<PageRoute<dynamic>, (Animation<double>, AnimationStatusListener)>
   _routeAnimationListeners = {};
   final Set<PageRoute<dynamic>> _departingRoutes = {};
+  final Set<PageRoute<dynamic>> _departingWorkDetailRoutes = {};
   // A popup makes Navigator move the work detail dock above the detail page.
   bool _suppressDockForSessionDetail = false;
   bool _syncScheduled = false;
@@ -239,24 +256,35 @@ class _RootPageRouteObserver extends NavigatorObserver {
   PageRoute<dynamic>? get topRoute => _routes.lastOrNull;
   List<PageRoute<dynamic>> get routes => List.unmodifiable(_routes);
   bool get suppressDockForSessionDetail => _suppressDockForSessionDetail;
+  bool get isWorkDetailDeparting => _departingWorkDetailRoutes.isNotEmpty;
 
   PageRoute<dynamic>? lastRouteNamed(String name) {
     for (var index = _routes.length - 1; index >= 0; index--) {
       final route = _routes[index];
       if (route.settings.name == name) return route;
     }
+    if (name == workDetailRouteName && _departingWorkDetailRoutes.isNotEmpty) {
+      return _departingWorkDetailRoutes.last;
+    }
     return null;
   }
 
   bool containsRouteNamed(String name) =>
-      _routes.any((route) => route.settings.name == name);
+      _routes.any((route) => route.settings.name == name) ||
+      (name == workDetailRouteName && _departingWorkDetailRoutes.isNotEmpty);
 
   bool hasRouteAboveNamed(String name) {
     final routeIndex = _routes.lastIndexWhere(
       (route) => route.settings.name == name,
     );
-    if (routeIndex < 0) return false;
-    return routeIndex < _routes.length - 1 || _departingRoutes.isNotEmpty;
+    if (routeIndex < 0) {
+      return (name == workDetailRouteName &&
+              _departingWorkDetailRoutes.isNotEmpty) ||
+          _departingRoutes.isNotEmpty;
+    }
+    return routeIndex < _routes.length - 1 ||
+        _departingRoutes.isNotEmpty ||
+        (name != workDetailRouteName && _departingWorkDetailRoutes.isNotEmpty);
   }
 
   void _sync() {
@@ -279,6 +307,7 @@ class _RootPageRouteObserver extends NavigatorObserver {
     }
     _routeAnimationListeners.clear();
     _departingRoutes.clear();
+    _departingWorkDetailRoutes.clear();
   }
 
   void _trackAnimation(PageRoute<dynamic> route) {
@@ -291,6 +320,7 @@ class _RootPageRouteObserver extends NavigatorObserver {
           status == AnimationStatus.dismissed) {
         if (status == AnimationStatus.dismissed) {
           _departingRoutes.remove(route);
+          _departingWorkDetailRoutes.remove(route);
         }
         _sync();
       }
@@ -336,10 +366,13 @@ class _RootPageRouteObserver extends NavigatorObserver {
       if (route is SessionDetailRoute) {
         _suppressDockForSessionDetail = false;
       }
+      final isWorkDetail = route.settings.name == workDetailRouteName;
       final workDetailIndex = _routes.lastIndexWhere(
         (candidate) => candidate.settings.name == workDetailRouteName,
       );
-      if (workDetailIndex >= 0 &&
+      if (isWorkDetail && route.reverseTransitionDuration > Duration.zero) {
+        _departingWorkDetailRoutes.add(route);
+      } else if (workDetailIndex >= 0 &&
           _routes.indexOf(route) > workDetailIndex &&
           route.reverseTransitionDuration > Duration.zero) {
         _departingRoutes.add(route);
@@ -349,6 +382,7 @@ class _RootPageRouteObserver extends NavigatorObserver {
       unawaited(
         route.completed.then((_) {
           _departingRoutes.remove(route);
+          _departingWorkDetailRoutes.remove(route);
           _untrackAnimation(route);
           _syncImmediately();
         }),
@@ -364,6 +398,7 @@ class _RootPageRouteObserver extends NavigatorObserver {
       }
       _routes.remove(route);
       _departingRoutes.remove(route);
+      _departingWorkDetailRoutes.remove(route);
       _untrackAnimation(route);
       _sync();
     }
@@ -376,6 +411,8 @@ class _RootPageRouteObserver extends NavigatorObserver {
     }
     if (oldRoute is PageRoute<dynamic>) {
       _untrackAnimation(oldRoute);
+      _departingRoutes.remove(oldRoute);
+      _departingWorkDetailRoutes.remove(oldRoute);
       final index = _routes.indexOf(oldRoute);
       if (index >= 0) {
         if (newRoute is PageRoute<dynamic>) {
@@ -400,10 +437,12 @@ class _RoutedPlaybackDock extends ConsumerStatefulWidget {
     required this.navigatorKey,
     required this.currentRoute,
     required this.geometry,
+    this.departing = false,
   });
 
   final bool active;
   final bool covered;
+  final bool departing;
   final GlobalKey<NavigatorState> navigatorKey;
   final Route<dynamic>? currentRoute;
   final PlaybackDockGeometryController geometry;
@@ -438,6 +477,9 @@ class _RoutedPlaybackDockState extends ConsumerState<_RoutedPlaybackDock> {
     if (oldWidget.geometry != widget.geometry) {
       oldWidget.geometry.removeListener(_handleGeometryChanged);
       widget.geometry.addListener(_handleGeometryChanged);
+    }
+    if (widget.departing != oldWidget.departing && widget.departing) {
+      _expanded = false;
     }
     if (widget.active == oldWidget.active) return;
     _hideTimer?.cancel();
@@ -554,9 +596,10 @@ class _RoutedPlaybackDockState extends ConsumerState<_RoutedPlaybackDock> {
             fallbackWidth,
             kActiveSessionCarouselDockHeight,
           );
-      final dockRect = _expanded || !widget.geometry.mainDockCollapsed
-          ? expandedRect
-          : sourceRect;
+      final dockRect =
+          (_expanded && !widget.departing) || !widget.geometry.mainDockCollapsed
+              ? expandedRect
+              : sourceRect;
       return SizedBox(
         width: size.width,
         height: size.height,
@@ -611,7 +654,7 @@ class _RoutedPlaybackDockState extends ConsumerState<_RoutedPlaybackDock> {
                           key: _dockBoundsKey,
                           duration: duration,
                           curve: Curves.easeOutCubic,
-                          width: _expanded
+                          width: (_expanded && !widget.departing)
                               ? constraints.maxWidth
                               : _transitionWidth(constraints.maxWidth),
                           height: kActiveSessionCarouselDockHeight,

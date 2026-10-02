@@ -34,17 +34,35 @@ class LibrarySearchPage extends ConsumerStatefulWidget {
   ConsumerState<LibrarySearchPage> createState() => _LibrarySearchPageState();
 }
 
+class _CategoryFilterCache {
+  AudioLibraryCategorySnapshot? snapshot;
+  String? filterKey;
+  List<AudioLibraryCategoryEntry> result = const [];
+}
+
 class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
+  static const _categories = <AudioLibraryCategoryType>[
+    AudioLibraryCategoryType.all,
+    AudioLibraryCategoryType.tags,
+    AudioLibraryCategoryType.voiceActors,
+    AudioLibraryCategoryType.circles,
+  ];
+
   final TextEditingController _controller = TextEditingController();
   final FocusNode _focusNode = FocusNode();
-  final ScrollController _scrollController = ScrollController(
-    keepScrollOffset: false,
-  );
+  final Map<AudioLibraryCategoryType, ScrollController> _scrollControllers = {
+    for (final category in _categories)
+      category: ScrollController(keepScrollOffset: false),
+  };
   final Set<String> _selectedTagTerms = <String>{};
   final Set<String> _selectedVoiceActorTerms = <String>{};
   final Set<String> _selectedCircleTerms = <String>{};
   final Set<String> _selectedLibraryPaths = <String>{};
   final Map<AudioLibraryCategoryType, String> _termSearchQueries = {};
+
+  late final ValueNotifier<int> _activeCategoryIndex;
+  late final Set<AudioLibraryCategoryType> _visitedCategories;
+  bool _animatingFromAll = false;
 
   Timer? _debounceTimer;
   AudioLibraryCategoryType _categoryType = AudioLibraryCategoryType.all;
@@ -55,30 +73,31 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
 
   List<LibraryNode> _searchSelectionTree = const [];
 
-  AudioLibraryCategorySnapshot? _lastCategoryFilterSnapshot;
-  AudioLibraryCategoryType? _lastCategoryFilterType;
-  String? _lastCategoryFilterKey;
-  List<AudioLibraryCategoryEntry> _lastCategoryFilterResult = const [];
+  final Map<AudioLibraryCategoryType, _CategoryFilterCache>
+      _categoryFilterCaches = {};
   Future<AudioLibraryCategorySnapshot>? _categorySnapshotFuture;
   int? _categorySnapshotStructureRevision;
   int? _categorySnapshotDetailRevision;
 
   String get _effectiveSearchQuery => _query;
 
-  String get _termSearchQuery => _termSearchQueries[_categoryType] ?? '';
-
-  set _termSearchQuery(String value) {
-    if (value.isEmpty) {
-      _termSearchQueries.remove(_categoryType);
-    } else {
-      _termSearchQueries[_categoryType] = value;
-    }
+  @override
+  void initState() {
+    super.initState();
+    final initialIndex = _categories.indexOf(_categoryType);
+    _activeCategoryIndex = ValueNotifier<int>(
+      initialIndex >= 0 ? initialIndex : 0,
+    );
+    _visitedCategories = <AudioLibraryCategoryType>{_categoryType};
   }
 
   void _setLocalState(VoidCallback fn) => setState(fn);
 
   void _resetScroll() {
-    if (_scrollController.hasClients) _scrollController.jumpTo(0);
+    final controller = _scrollControllers[_categoryType];
+    if (controller != null && controller.hasClients) {
+      controller.jumpTo(0);
+    }
   }
 
   void _onChanged(String value) {
@@ -132,10 +151,19 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
     if (_categoryType == category) return;
     FocusManager.instance.primaryFocus?.unfocus();
     _resetScroll();
+    _visitedCategories.add(category);
+    final targetIndex = _categories.indexOf(category);
+    if (targetIndex >= 0) {
+      _activeCategoryIndex.value = targetIndex;
+    }
+    final fromAll = _categoryType == AudioLibraryCategoryType.all;
     setState(() {
       _categoryType = category;
       _hasSwitchedCategory = true;
       _clearSelection();
+      if (fromAll) {
+        _animatingFromAll = true;
+      }
     });
   }
 
@@ -267,7 +295,10 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
     _debounceTimer?.cancel();
     _controller.dispose();
     _focusNode.dispose();
-    _scrollController.dispose();
+    _activeCategoryIndex.dispose();
+    for (final controller in _scrollControllers.values) {
+      controller.dispose();
+    }
     super.dispose();
   }
 
@@ -313,35 +344,51 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
         )
         .toSet();
 
-    final isAll = _categoryType == AudioLibraryCategoryType.all;
-    final body = Stack(
-      fit: StackFit.expand,
+    final body = AppFadeThroughIndexedStack(
+      key: const ValueKey<String>('library_search_category_stack'),
+      indexListenable: _activeCategoryIndex,
+      style: AppIndexedStackTransitionStyle.slide,
+      duration: kAppMotionSlow,
+      onTransitionCompleted: (index) {
+        if (_animatingFromAll && mounted) {
+          setState(() => _animatingFromAll = false);
+        }
+      },
       children: [
-        LibrarySearchAllResults(
-          active: isAll,
-          query: _query,
-          queryRevision: _queryRevision,
-          structureRevision: structureRevision,
-          detailRevision: detailRevision,
-          scrollController: _scrollController,
-          topPadding: topInset,
-          isSelectionMode: _isSelectionMode,
-          selectedPaths: _selectedLibraryPaths,
-          onEnterSelectionMode: _enterSelectionMode,
-          onToggleSelection: _toggleLibrarySelection,
-          onTreeChanged: (tree) => _searchSelectionTree = tree,
-        ),
-        if (!isAll)
-          _buildCategoryBody(
-            libraryFacade: libraryFacade,
-            i18n: i18n,
-            topPadding: topInset,
-            bottomPadding: MediaQuery.paddingOf(context).bottom + 16,
-            cacheExtent: 320,
+        if (_visitedCategories.contains(AudioLibraryCategoryType.all))
+          LibrarySearchAllResults(
+            active: _categoryType == AudioLibraryCategoryType.all ||
+                _animatingFromAll,
+            query: _query,
+            queryRevision: _queryRevision,
             structureRevision: structureRevision,
             detailRevision: detailRevision,
-            pinnedPaths: pinnedLibraryPaths,
-          ),
+            scrollController:
+                _scrollControllers[AudioLibraryCategoryType.all]!,
+            topPadding: topInset,
+            isSelectionMode: _isSelectionMode,
+            selectedPaths: _selectedLibraryPaths,
+            onEnterSelectionMode: _enterSelectionMode,
+            onToggleSelection: _toggleLibrarySelection,
+            onTreeChanged: (tree) => _searchSelectionTree = tree,
+          )
+        else
+          const SizedBox.shrink(),
+        for (final category in _categories.skip(1))
+          if (_visitedCategories.contains(category))
+            _buildCategoryBody(
+              categoryType: category,
+              libraryFacade: libraryFacade,
+              i18n: i18n,
+              topPadding: topInset,
+              bottomPadding: MediaQuery.paddingOf(context).bottom + 16,
+              cacheExtent: 320,
+              structureRevision: structureRevision,
+              detailRevision: detailRevision,
+              pinnedPaths: pinnedLibraryPaths,
+            )
+          else
+            const SizedBox.shrink(),
       ],
     );
 
@@ -391,8 +438,8 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
     );
   }
 
-  Set<String> get _selectedTermsForCurrentCategory {
-    return switch (_categoryType) {
+  Set<String> _selectedTermsForCategory(AudioLibraryCategoryType category) {
+    return switch (category) {
       AudioLibraryCategoryType.tags => _selectedTagTerms,
       AudioLibraryCategoryType.voiceActors => _selectedVoiceActorTerms,
       AudioLibraryCategoryType.circles => _selectedCircleTerms,
@@ -400,22 +447,28 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
     };
   }
 
-  List<String> get _termSearchKeywords {
-    return _termSearchQuery
+  List<String> _termSearchKeywordsForCategory(
+    AudioLibraryCategoryType category,
+  ) {
+    final query = _termSearchQueries[category] ?? '';
+    return query
         .toLowerCase()
         .split(_categoryTermSplitRegex)
         .where((s) => s.isNotEmpty)
         .toList(growable: false);
   }
 
-  List<String> _termsForCategory(AudioLibraryCategorySnapshot snapshot) {
-    final terms = switch (_categoryType) {
+  List<String> _termsForCategory(
+    AudioLibraryCategorySnapshot snapshot,
+    AudioLibraryCategoryType category,
+  ) {
+    final terms = switch (category) {
       AudioLibraryCategoryType.tags => snapshot.tagTerms,
       AudioLibraryCategoryType.voiceActors => snapshot.voiceActorTerms,
       AudioLibraryCategoryType.circles => snapshot.circleTerms,
       AudioLibraryCategoryType.all => const <String>[],
     };
-    final keywords = _termSearchKeywords;
+    final keywords = _termSearchKeywordsForCategory(category);
     if (keywords.isEmpty) return terms;
     return terms.where((term) {
       final t = term.toLowerCase();
@@ -423,8 +476,8 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
     }).toList();
   }
 
-  IconData _categoryIcon() {
-    return switch (_categoryType) {
+  IconData _categoryIcon(AudioLibraryCategoryType category) {
+    return switch (category) {
       AudioLibraryCategoryType.tags => Icons.sell_rounded,
       AudioLibraryCategoryType.voiceActors => Icons.record_voice_over_rounded,
       AudioLibraryCategoryType.circles => Icons.groups_rounded,
@@ -435,8 +488,9 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
   String _entrySecondaryText(
     AppLanguageProvider i18n,
     AudioLibraryCategoryEntry entry,
+    AudioLibraryCategoryType category,
   ) {
-    final values = switch (_categoryType) {
+    final values = switch (category) {
       AudioLibraryCategoryType.tags => entry.tagTerms,
       AudioLibraryCategoryType.voiceActors => entry.voiceActorTerms,
       AudioLibraryCategoryType.circles => entry.circleTerms,
@@ -450,28 +504,30 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
     return values.isEmpty ? i18n.tr('audio_detail_empty') : values.join(', ');
   }
 
-  String _noTermsText(AppLanguageProvider i18n) {
-    return switch (_categoryType) {
+  String _noTermsText(
+    AppLanguageProvider i18n,
+    AudioLibraryCategoryType category,
+  ) {
+    return switch (category) {
       AudioLibraryCategoryType.tags => i18n.tr('library_category_no_tags'),
-      AudioLibraryCategoryType.voiceActors => i18n.tr(
-        'library_category_no_voice_actors',
-      ),
-      AudioLibraryCategoryType.circles => i18n.tr(
-        'library_category_no_circles',
-      ),
+      AudioLibraryCategoryType.voiceActors =>
+        i18n.tr('library_category_no_voice_actors'),
+      AudioLibraryCategoryType.circles =>
+        i18n.tr('library_category_no_circles'),
       AudioLibraryCategoryType.all => '',
     };
   }
 
   List<AudioLibraryCategoryEntry> _filterCategoryEntries(
-    AudioLibraryCategorySnapshot snapshot, {
+    AudioLibraryCategorySnapshot snapshot,
+    AudioLibraryCategoryType category, {
     Set<String> pinnedPaths = const <String>{},
   }) {
-    final selectedTerms = _selectedTermsForCurrentCategory;
+    final selectedTerms = _selectedTermsForCategory(category);
     final queryTerms = extractSearchTerms(
       _effectiveSearchQuery,
     ).map((term) => term.toLowerCase()).toList(growable: false);
-    final termKeywords = _termSearchKeywords;
+    final termKeywords = _termSearchKeywordsForCategory(category);
     final normalizedSelectedTerms =
         selectedTerms.map((term) => term.toLowerCase()).toList(growable: false)
           ..sort();
@@ -481,10 +537,13 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
       normalizedSelectedTerms.join('\n'),
       pinnedPaths.join('\n'),
     ].join('|');
-    if (identical(snapshot, _lastCategoryFilterSnapshot) &&
-        _categoryType == _lastCategoryFilterType &&
-        filterKey == _lastCategoryFilterKey) {
-      return _lastCategoryFilterResult;
+    final cache = _categoryFilterCaches.putIfAbsent(
+      category,
+      _CategoryFilterCache.new,
+    );
+    if (identical(snapshot, cache.snapshot) &&
+        filterKey == cache.filterKey) {
+      return cache.result;
     }
 
     final hasTextQuery = queryTerms.isNotEmpty;
@@ -493,7 +552,7 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
 
     final filtered = snapshot.entries
         .where((entry) {
-          final entryTerms = entry.normalizedTermsForCategory(_categoryType);
+          final entryTerms = entry.normalizedTermsForCategory(category);
           final matchesSelected = normalizedSelectedTerms.every(
             entryTerms.contains,
           );
@@ -531,16 +590,18 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
       });
     }
     final result = List<AudioLibraryCategoryEntry>.unmodifiable(filtered);
-    _lastCategoryFilterSnapshot = snapshot;
-    _lastCategoryFilterType = _categoryType;
-    _lastCategoryFilterKey = filterKey;
-    _lastCategoryFilterResult = result;
+    cache.snapshot = snapshot;
+    cache.filterKey = filterKey;
+    cache.result = result;
     return result;
   }
 
-  String _termSearchHintText(AppLanguageProvider i18n) {
+  String _termSearchHintText(
+    AppLanguageProvider i18n,
+    AudioLibraryCategoryType category,
+  ) {
     final searchPrefix = i18n.tr('search');
-    return switch (_categoryType) {
+    return switch (category) {
       AudioLibraryCategoryType.tags =>
         '$searchPrefix${i18n.tr('library_category_tags')}...',
       AudioLibraryCategoryType.voiceActors =>
@@ -552,6 +613,7 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
   }
 
   Widget _buildCategoryBody({
+    required AudioLibraryCategoryType categoryType,
     required LibraryFacade libraryFacade,
     required AppLanguageProvider i18n,
     required double topPadding,
@@ -571,7 +633,7 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
     }
     return FutureBuilder<AudioLibraryCategorySnapshot>(
       key: ValueKey(
-        'category_future_${_categoryType.name}_${structureRevision}_$detailRevision',
+        'category_future_${categoryType.name}_${structureRevision}_$detailRevision',
       ),
       future: _categorySnapshotFuture,
       initialData:
@@ -592,9 +654,10 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
           );
         }
 
-        final terms = _termsForCategory(snapshot);
+        final terms = _termsForCategory(snapshot, categoryType);
         final entries = _filterCategoryEntries(
           snapshot,
+          categoryType,
           pinnedPaths: pinnedPaths,
         );
         Map<String, FolderNode>? foldersByPath;
@@ -608,20 +671,22 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
           return foldersByPath![PathMatcher.normalize(entry.path)];
         }
 
-        final hasTermBox = _categoryType != AudioLibraryCategoryType.all;
+        final hasTermBox = categoryType != AudioLibraryCategoryType.all;
         final itemCount = entries.length + (hasTermBox ? 1 : 0) + 1;
+        final selectedTerms = _selectedTermsForCategory(categoryType);
+        final termQuery = _termSearchQueries[categoryType] ?? '';
 
         final highlightTerms = <String>{
           ...extractSearchTerms(_effectiveSearchQuery),
-          ..._selectedTermsForCurrentCategory,
-          ..._termSearchKeywords,
+          ...selectedTerms,
+          ..._termSearchKeywordsForCategory(categoryType),
         }.where((t) => t.trim().isNotEmpty).toList(growable: false);
 
         final list = SearchHighlightScope.withTerms(
           terms: highlightTerms,
           child: ListView.builder(
-            key: ValueKey('library_category_${_categoryType.name}'),
-            controller: _scrollController,
+            key: ValueKey('library_category_${categoryType.name}'),
+            controller: _scrollControllers[categoryType]!,
             padding: EdgeInsets.fromLTRB(
               LibraryLikeCardMetrics.listHorizontalPadding,
               topPadding,
@@ -637,31 +702,34 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
               if (hasTermBox && index == 0) {
                 return LibraryCategoryTermBox(
                   key: ValueKey(
-                    'library_category_term_box_${_categoryType.name}',
+                    'library_category_term_box_${categoryType.name}',
                   ),
-                  categoryType: _categoryType,
+                  categoryType: categoryType,
                   collapseOnMount: _hasSwitchedCategory,
                   terms: terms,
-                  selectedTerms: _selectedTermsForCurrentCategory,
-                  emptyText: _noTermsText(i18n),
+                  selectedTerms: selectedTerms,
+                  emptyText: _noTermsText(i18n, categoryType),
                   clearLabel: i18n.tr('clear'),
                   collapseLabel: i18n.tr('collapse'),
                   expandLabel: i18n.tr('expand'),
-                  searchHintText: _termSearchHintText(i18n),
-                  searchQuery: _termSearchQuery,
+                  searchHintText: _termSearchHintText(i18n, categoryType),
+                  searchQuery: termQuery,
                   onSearchQueryChanged: (val) {
-                    _setLocalState(() => _termSearchQuery = val);
+                    _setLocalState(() {
+                      if (val.isEmpty) {
+                        _termSearchQueries.remove(categoryType);
+                      } else {
+                        _termSearchQueries[categoryType] = val;
+                      }
+                    });
                   },
                   onToggle: (term) {
                     _setLocalState(() {
-                      final selected = _selectedTermsForCurrentCategory;
-                      if (!selected.remove(term)) selected.add(term);
+                      if (!selectedTerms.remove(term)) selectedTerms.add(term);
                     });
                   },
                   onClear: () {
-                    _setLocalState(
-                      () => _selectedTermsForCurrentCategory.clear(),
-                    );
+                    _setLocalState(() => selectedTerms.clear());
                   },
                 );
               }
@@ -690,8 +758,8 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
                 child: AudioLibraryCategoryEntryCard(
                   entry: entry,
                   folder: folderForEntry(entry),
-                  secondaryIcon: _categoryIcon(),
-                  secondaryText: _entrySecondaryText(i18n, entry),
+                  secondaryIcon: _categoryIcon(categoryType),
+                  secondaryText: _entrySecondaryText(i18n, entry, categoryType),
                   isSelectionMode: _isSelectionMode,
                   isSelected: _selectedLibraryPaths.contains(
                     PathMatcher.normalize(entry.path),

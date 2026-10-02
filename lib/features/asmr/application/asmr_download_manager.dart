@@ -520,20 +520,19 @@ class AsmrDownloadManager {
     final workRootPath = taskSnapshot.workRootPath;
     final conflictPolicy = taskSnapshot.conflictPolicy;
 
-    final saveMetadata = taskSnapshot.saveMetadata && !isManualRetryRun;
-    final backup = saveMetadata
+    final backup = taskSnapshot.saveMetadata
         ? _planner.buildBackupDetail(work, workRootPath)
         : null;
     final backupBytes = backup == null
         ? 0
         : _audioDetailJsonCodec.encodeNew(backup).length;
-    var metadataCreated = false;
+    // Restored tasks may already include metadata in their aggregate counters.
+    final metadataAccounted =
+        taskSnapshot.completedFiles + taskSnapshot.skippedFiles >
+        taskSnapshot.completedFilePaths.length;
 
     try {
-      metadataCreated = await _outputs.prepareTask(
-        taskSnapshot,
-        backup: backup,
-      );
+      await _outputs.prepareTask(taskSnapshot);
       _transfers.throwIfCancelled(workId);
 
       final resumedTask = _store[workId]!;
@@ -541,21 +540,13 @@ class AsmrDownloadManager {
       var skipped = resumedTask.skippedFiles;
       var failed = isManualRetryRun ? resumedTask.failedFiles : 0;
       var downloadedBytes = resumedTask.downloadedBytes;
-      if (saveMetadata && completed == 0) {
-        if (metadataCreated) {
-          completed = 1;
-          downloadedBytes += backupBytes;
-        } else {
-          skipped++;
-        }
-      }
       final fileDownloadedBytes = Map<String, int>.from(
         resumedTask.fileDownloadedBytes,
       );
       if (resumedTask.totalBytes > 0 &&
           downloadedBytes > resumedTask.totalBytes) {
         final calculated = fileDownloadedBytes.values.fold<int>(
-          saveMetadata && completed > 0 ? backupBytes : 0,
+          backup != null && metadataAccounted ? backupBytes : 0,
           (sum, b) => sum + b,
         );
         downloadedBytes = calculated.clamp(0, resumedTask.totalBytes);
@@ -577,7 +568,7 @@ class AsmrDownloadManager {
         downloadedBytes: downloadedBytes,
         failedFilePaths: failedFilePaths,
         manuallyRetryingFilePaths: manuallyRetryingFilePaths,
-        message: saveMetadata ? 'downloading_work_detail' : 'downloading',
+        message: 'downloading',
       );
       _store.notifyTaskChanged();
       _store.setLiveDownloadedBytes(workId, downloadedBytes);
@@ -630,6 +621,26 @@ class AsmrDownloadManager {
       }
 
       _transfers.throwIfCancelled(workId);
+      if (backup != null) {
+        _store[workId] = _store[workId]!.copyWith(
+          currentItemPath: 'doujin-audio.json',
+          message: 'downloading_work_detail',
+        );
+        _store.notifyTaskChanged();
+        final metadataCreated = await _outputs.saveTaskMetadata(
+          taskSnapshot,
+          backup,
+        );
+        _transfers.throwIfCancelled(workId);
+        if (!metadataAccounted) {
+          if (metadataCreated) {
+            completed++;
+            downloadedBytes += backupBytes;
+          } else {
+            skipped++;
+          }
+        }
+      }
       final finalDownloadedBytes = failed > 0
           ? downloadedBytes
           : _store[workId]!.totalBytes;

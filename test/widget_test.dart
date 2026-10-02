@@ -1299,11 +1299,18 @@ void main() {
     await tester.pump(const Duration(milliseconds: 140));
     expect(tester.getSize(routeWidth).width, lessThan(expandedWidth));
     expect(tester.getSize(routeWidth).width, greaterThan(48));
-    await tester.pump(const Duration(milliseconds: 200));
-    expect(routeDock, findsNothing);
+    expect(tester.getCenter(routeCover).dx, greaterThan(collapsedCenter.dx - 120));
+    expect(routeDock, findsOneWidget);
+    await tester.pump(const Duration(milliseconds: 60));
+    expect(routeDock, findsOneWidget);
     await routeFuture;
     await tester.pump(const Duration(milliseconds: 200));
     await tester.pump(const Duration(milliseconds: 200));
+    expect(routeDock, findsNothing);
+    expect(
+      find.byKey(const ValueKey<String>('mobile_bottom_capsule_surface')),
+      findsOneWidget,
+    );
   });
 
   testWidgets(

@@ -302,6 +302,8 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
   ];
 
   AsmrCategoryType _selectedCategory = AsmrCategoryType.collected;
+  late final ValueNotifier<int> _activeCategoryIndex;
+  late final Set<AsmrCategoryType> _visitedCategories;
   late final Map<AsmrCategoryType, ScrollController> _scrollControllers;
   final GlobalKey _headerKey = GlobalKey();
   double _headerHeight = 0;
@@ -378,6 +380,11 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
     _scrollControllers = {
       for (final category in _headerCategories) category: ScrollController(),
     };
+    final initialIndex = _headerCategories.indexOf(_selectedCategory);
+    _activeCategoryIndex = ValueNotifier<int>(
+      initialIndex >= 0 ? initialIndex : 0,
+    );
+    _visitedCategories = <AsmrCategoryType>{_selectedCategory};
     _languageProvider = ref.read(appLanguageProviderInstanceProvider);
     _languageProvider.addListener(_handleAppLanguageChanged);
     widget.activeTabIndexListenable?.addListener(_handleActiveStateChanged);
@@ -467,7 +474,13 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
           (value) => value.name == savedCategory,
         );
         if (restored.isNotEmpty && _headerCategories.contains(restored.first)) {
-          setState(() => _selectedCategory = restored.first);
+          final restoredCategory = restored.first;
+          _visitedCategories.add(restoredCategory);
+          final restoredIndex = _headerCategories.indexOf(restoredCategory);
+          if (restoredIndex >= 0) {
+            _activeCategoryIndex.value = restoredIndex;
+          }
+          setState(() => _selectedCategory = restoredCategory);
         }
       }
       await _ensureCategoryLoaded(_selectedCategory);
@@ -609,6 +622,11 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
 
   void _selectCategory(AsmrCategoryType category) {
     if (_selectedCategory == category) return;
+    _visitedCategories.add(category);
+    final targetIndex = _headerCategories.indexOf(category);
+    if (targetIndex >= 0) {
+      _activeCategoryIndex.value = targetIndex;
+    }
     setState(() {
       _selectedCategory = category;
       _isSelectionMode = false;
@@ -776,6 +794,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
 
   @override
   void dispose() {
+    _activeCategoryIndex.dispose();
     _languageProvider.removeListener(_handleAppLanguageChanged);
     widget.activeTabIndexListenable?.removeListener(_handleActiveStateChanged);
     widget.activeSectionListenable?.removeListener(_handleActiveStateChanged);
@@ -839,20 +858,32 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
                   topInset: headerContentHeight,
                   bottomInset: bottomInset + 24,
                 ),
-                content: _AsmrCategoryList(
-                  key: ValueKey(_selectedCategory),
-                  isActive: _isActive,
-                  category: _selectedCategory,
-                  isLoadPending: !_activationCompleted,
-                  scrollController: _scrollController,
-                  searchQuery: '',
-                  topInset: headerContentHeight,
-                  bottomInset: bottomInset,
-                  onRefresh: _refreshCategoryWithFeedback,
-                  isSelectionMode: _isSelectionMode,
-                  selectedWorkIds: _selectedWorkIds,
-                  onEnterSelectionMode: _enterSelectionMode,
-                  onToggleSelection: _toggleWorkSelection,
+                content: AppFadeThroughIndexedStack(
+                  key: const ValueKey<String>('asmr_category_stack'),
+                  indexListenable: _activeCategoryIndex,
+                  style: AppIndexedStackTransitionStyle.slide,
+                  duration: kAppMotionSlow,
+                  children: [
+                    for (final category in _headerCategories)
+                      if (_visitedCategories.contains(category))
+                        _AsmrCategoryList(
+                          key: ValueKey(category),
+                          isActive: _isActive && category == _selectedCategory,
+                          category: category,
+                          isLoadPending: !_activationCompleted,
+                          scrollController: _scrollControllers[category]!,
+                          searchQuery: '',
+                          topInset: headerContentHeight,
+                          bottomInset: bottomInset,
+                          onRefresh: _refreshCategoryWithFeedback,
+                          isSelectionMode: _isSelectionMode,
+                          selectedWorkIds: _selectedWorkIds,
+                          onEnterSelectionMode: _enterSelectionMode,
+                          onToggleSelection: _toggleWorkSelection,
+                        )
+                      else
+                        const SizedBox.shrink(),
+                  ],
                 ),
               ),
             ),

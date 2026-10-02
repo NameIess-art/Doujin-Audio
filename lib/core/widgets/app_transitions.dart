@@ -655,9 +655,11 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
     _currentIndex = _safeIndex(widget.indexListenable.value);
     _targetIndex = _currentIndex;
     _controller.value = 1;
-    UiInteractionCoordinator.instance.cancelInteraction(
-      _lazyTransitionInteraction,
-    );
+    if (_isLazy) {
+      UiInteractionCoordinator.instance.cancelInteraction(
+        _lazyTransitionInteraction,
+      );
+    }
     widget.onTransitionCompleted?.call(_currentIndex);
   }
 
@@ -676,9 +678,11 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
       }
       return;
     }
-    UiInteractionCoordinator.instance.beginInteraction(
-      _lazyTransitionInteraction,
-    );
+    if (_isLazy) {
+      UiInteractionCoordinator.instance.beginInteraction(
+        _lazyTransitionInteraction,
+      );
+    }
     if (widget.style == AppIndexedStackTransitionStyle.none ||
         widget.duration == Duration.zero ||
         MediaQuery.disableAnimationsOf(context)) {
@@ -689,9 +693,11 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
         _controller.value = 1;
       });
       widget.onTransitionCompleted?.call(_currentIndex);
-      UiInteractionCoordinator.instance.endInteraction(
-        _lazyTransitionInteraction,
-      );
+      if (_isLazy) {
+        UiInteractionCoordinator.instance.endInteraction(
+          _lazyTransitionInteraction,
+        );
+      }
       return;
     }
 
@@ -736,9 +742,11 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
         _controller.value = 1;
       });
       widget.onTransitionCompleted?.call(_currentIndex);
-      UiInteractionCoordinator.instance.endInteraction(
-        _lazyTransitionInteraction,
-      );
+      if (_isLazy) {
+        UiInteractionCoordinator.instance.endInteraction(
+          _lazyTransitionInteraction,
+        );
+      }
       return;
     }
 
@@ -763,9 +771,11 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
       _isAnimating = false;
     });
     widget.onTransitionCompleted?.call(_currentIndex);
-    UiInteractionCoordinator.instance.endInteraction(
-      _lazyTransitionInteraction,
-    );
+    if (_isLazy) {
+      UiInteractionCoordinator.instance.endInteraction(
+        _lazyTransitionInteraction,
+      );
+    }
   }
 
   Widget _childAt(int index) {
@@ -789,9 +799,11 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
   @override
   void dispose() {
     widget.indexListenable.removeListener(_handleIndexChanged);
-    UiInteractionCoordinator.instance.cancelInteraction(
-      _lazyTransitionInteraction,
-    );
+    if (_isLazy) {
+      UiInteractionCoordinator.instance.cancelInteraction(
+        _lazyTransitionInteraction,
+      );
+    }
     _controller.dispose();
     super.dispose();
   }

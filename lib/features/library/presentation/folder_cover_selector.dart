@@ -35,12 +35,27 @@ class FolderCoverSelector extends ConsumerStatefulWidget {
 }
 
 class _FolderCoverSelectorState extends ConsumerState<FolderCoverSelector> {
+  static const int _loopPageSeed = 100000;
+
   PageController? _pageController;
   List<String> _images = const <String>[];
   String? _currentCoverPath;
   bool _loading = true;
   bool _saving = false;
   int _currentIndex = 0;
+  int? _targetVirtualPage;
+
+  static int _pageForIndex(int index, int length) {
+    if (length <= 1) return index;
+    final base = (_loopPageSeed ~/ length) * length;
+    return base + index;
+  }
+
+  static int _indexForPage(int page, int length) {
+    if (length <= 1) return 0;
+    final remainder = page % length;
+    return remainder < 0 ? remainder + length : remainder;
+  }
 
   @override
   void initState() {
@@ -93,12 +108,14 @@ class _FolderCoverSelectorState extends ConsumerState<FolderCoverSelector> {
         final foundIndex = images.indexOf(currentCover);
         if (foundIndex >= 0) initialIndex = foundIndex;
       }
-      final controller = PageController(initialPage: initialIndex);
+      final initialPage = _pageForIndex(initialIndex, images.length);
+      final controller = PageController(initialPage: initialPage);
       _pageController?.dispose();
       setState(() {
         _images = images;
         _currentCoverPath = currentCover ?? widget.initialCoverPath;
         _currentIndex = initialIndex;
+        _targetVirtualPage = initialPage;
         _pageController = controller;
         _loading = false;
       });
@@ -110,23 +127,43 @@ class _FolderCoverSelectorState extends ConsumerState<FolderCoverSelector> {
     }
   }
 
-  void _handlePageChanged(int index) {
-    if (index < 0 || index >= _images.length || _currentIndex == index) return;
+  void _handlePageChanged(int page) {
+    if (_images.isEmpty) return;
+    _targetVirtualPage = page;
+    final index = _indexForPage(page, _images.length);
+    if (_currentIndex == index) return;
     setState(() => _currentIndex = index);
   }
 
-  void _goToPrevious() => _goToPage(_currentIndex - 1);
+  void _goToPrevious() => _goToDelta(-1);
 
-  void _goToNext() => _goToPage(_currentIndex + 1);
+  void _goToNext() => _goToDelta(1);
 
-  void _goToPage(int targetIndex) {
-    if (_saving || targetIndex < 0 || targetIndex >= _images.length) return;
-    setState(() => _currentIndex = targetIndex);
+  void _goToDelta(int delta) {
+    if (_saving || _images.length <= 1) return;
     final controller = _pageController;
-    if (controller != null && controller.hasClients) {
+    if (controller == null || !controller.hasClients) return;
+    final current = controller.page ??
+        _pageForIndex(_currentIndex, _images.length).toDouble();
+    int basePage;
+    if (_targetVirtualPage != null &&
+        (current - _targetVirtualPage!).abs() <= 1.0) {
+      basePage = _targetVirtualPage!;
+    } else {
+      basePage = current.round();
+    }
+    final targetPage = basePage + delta;
+    _targetVirtualPage = targetPage;
+    setState(() => _currentIndex = _indexForPage(targetPage, _images.length));
+    final duration = MediaQuery.disableAnimationsOf(context)
+        ? Duration.zero
+        : const Duration(milliseconds: 250);
+    if (duration == Duration.zero) {
+      controller.jumpToPage(targetPage);
+    } else {
       controller.animateToPage(
-        targetIndex,
-        duration: const Duration(milliseconds: 250),
+        targetPage,
+        duration: duration,
         curve: Curves.easeOutCubic,
       );
     }
@@ -135,14 +172,20 @@ class _FolderCoverSelectorState extends ConsumerState<FolderCoverSelector> {
   void _handleWindowsWheel(PointerSignalEvent signal) {
     if (defaultTargetPlatform != TargetPlatform.windows ||
         signal is! PointerScrollEvent ||
-        signal.scrollDelta.dy == 0) {
+        signal.scrollDelta.dy == 0 ||
+        _saving ||
+        _images.length <= 1) {
       return;
     }
-    final target = _currentIndex + (signal.scrollDelta.dy > 0 ? 1 : -1);
-    if (_saving || target < 0 || target >= _images.length) return;
     GestureBinding.instance.pointerSignalResolver.register(
       signal,
-      (_) => _goToPage(target),
+      (_) {
+        if (signal.scrollDelta.dy > 0) {
+          _goToNext();
+        } else {
+          _goToPrevious();
+        }
+      },
     );
   }
 
@@ -231,7 +274,7 @@ class _FolderCoverSelectorState extends ConsumerState<FolderCoverSelector> {
             key: const ValueKey<String>('audio_detail_cover_prev_button'),
             icon: Icons.chevron_left_rounded,
             tooltip: i18n.tr('previous'),
-            enabled: _currentIndex > 0 && !_saving,
+            enabled: _images.length > 1 && !_saving,
             onPressed: _goToPrevious,
             transparent: true,
           ),
@@ -248,7 +291,7 @@ class _FolderCoverSelectorState extends ConsumerState<FolderCoverSelector> {
             key: const ValueKey<String>('audio_detail_cover_next_button'),
             icon: Icons.chevron_right_rounded,
             tooltip: i18n.tr('next'),
-            enabled: _currentIndex < _images.length - 1 && !_saving,
+            enabled: _images.length > 1 && !_saving,
             onPressed: _goToNext,
             transparent: true,
           ),
@@ -377,17 +420,36 @@ class _FolderCoverSelectorState extends ConsumerState<FolderCoverSelector> {
               children: [
                 DecoratedBox(
                   decoration: BoxDecoration(color: cs.surfaceContainerHighest),
-                  child: PageView.builder(
-                    controller: _pageController,
-                    itemCount: _images.length,
-                    onPageChanged: _handlePageChanged,
-                    itemBuilder: (context, index) => RetryingFileImage(
-                      path: _images[index],
-                      fit: BoxFit.cover,
-                      cacheWidth: coverCacheWidth,
-                      useDefaultCacheWidth: coverCacheWidth != null,
-                      fallbackBuilder: (_) =>
-                          CoverFallbackArtwork(seed: _images[index]),
+                  child: ScrollConfiguration(
+                    behavior: ScrollConfiguration.of(context).copyWith(
+                      dragDevices: {
+                        PointerDeviceKind.touch,
+                        PointerDeviceKind.mouse,
+                        PointerDeviceKind.trackpad,
+                        PointerDeviceKind.stylus,
+                      },
+                    ),
+                    child: PageView.builder(
+                      controller: _pageController,
+                      itemCount: _images.length > 1 ? null : _images.length,
+                      physics: _images.length > 1
+                          ? const PageScrollPhysics()
+                          : const NeverScrollableScrollPhysics(),
+                      onPageChanged: _handlePageChanged,
+                      itemBuilder: (context, page) {
+                        final index = _indexForPage(page, _images.length);
+                        return RetryingFileImage(
+                          key: ValueKey<String>(
+                            'cover_item_${_images[index]}_$page',
+                          ),
+                          path: _images[index],
+                          fit: BoxFit.cover,
+                          cacheWidth: coverCacheWidth,
+                          useDefaultCacheWidth: coverCacheWidth != null,
+                          fallbackBuilder: (_) =>
+                              CoverFallbackArtwork(seed: _images[index]),
+                        );
+                      },
                     ),
                   ),
                 ),
@@ -415,7 +477,7 @@ class _FolderCoverSelectorState extends ConsumerState<FolderCoverSelector> {
                           ),
                           icon: Icons.chevron_left_rounded,
                           tooltip: i18n.tr('previous'),
-                          enabled: _currentIndex > 0 && !_saving,
+                          enabled: _images.length > 1 && !_saving,
                           onPressed: _goToPrevious,
                         ),
                       ),
@@ -430,8 +492,7 @@ class _FolderCoverSelectorState extends ConsumerState<FolderCoverSelector> {
                           ),
                           icon: Icons.chevron_right_rounded,
                           tooltip: i18n.tr('next'),
-                          enabled:
-                              _currentIndex < _images.length - 1 && !_saving,
+                          enabled: _images.length > 1 && !_saving,
                           onPressed: _goToNext,
                         ),
                       ),

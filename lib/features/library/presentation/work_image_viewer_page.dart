@@ -52,6 +52,7 @@ class WorkImageViewerPage extends ConsumerStatefulWidget {
 }
 
 class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage> {
+  static const int _loopPageSeed = 100000;
   static const double _imageHeaderGap = 24;
   static const double _imageSwitcherGap = 20;
   final GlobalKey _headerKey = GlobalKey();
@@ -60,17 +61,33 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage> {
   double _switcherHeight = 0;
   late int _currentIndex;
   late final PageController _pageController;
+  int? _targetVirtualPage;
   bool _isSettingCover = false;
   bool _isCurrentZoomed = false;
+
+  static int _pageForIndex(int index, int length) {
+    if (length <= 1) return index;
+    final base = (_loopPageSeed ~/ length) * length;
+    return base + index;
+  }
+
+  static int _indexForPage(int page, int length) {
+    if (length <= 1) return 0;
+    final remainder = page % length;
+    return remainder < 0 ? remainder + length : remainder;
+  }
 
   @override
   void initState() {
     super.initState();
+    final count = widget.images.length;
     _currentIndex = widget.initialIndex.clamp(
       0,
-      widget.images.isEmpty ? 0 : widget.images.length - 1,
+      count == 0 ? 0 : count - 1,
     );
-    _pageController = PageController(initialPage: _currentIndex);
+    final initialPage = _pageForIndex(_currentIndex, count);
+    _targetVirtualPage = initialPage;
+    _pageController = PageController(initialPage: initialPage);
   }
 
   @override
@@ -79,36 +96,53 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage> {
     super.dispose();
   }
 
-  void _onPageChanged(int index) {
-    if (_currentIndex == index) return;
+  void _onPageChanged(int page) {
+    final count = widget.images.length;
+    if (count == 0) return;
+    _targetVirtualPage = page;
+    final index = _indexForPage(page, count);
+    if (_currentIndex != index || _isCurrentZoomed) {
+      setState(() {
+        _currentIndex = index;
+        _isCurrentZoomed = false;
+      });
+    }
+  }
+
+  void _goToPrevious() => _goToDelta(-1);
+
+  void _goToNext() => _goToDelta(1);
+
+  void _goToDelta(int delta) {
+    if (widget.images.length <= 1) return;
+    if (!_pageController.hasClients) return;
+    final current = _pageController.page ??
+        _pageForIndex(_currentIndex, widget.images.length).toDouble();
+    int basePage;
+    if (_targetVirtualPage != null &&
+        (current - _targetVirtualPage!).abs() <= 1.0) {
+      basePage = _targetVirtualPage!;
+    } else {
+      basePage = current.round();
+    }
+    final targetPage = basePage + delta;
+    _targetVirtualPage = targetPage;
     setState(() {
-      _currentIndex = index;
+      _currentIndex = _indexForPage(targetPage, widget.images.length);
       _isCurrentZoomed = false;
     });
-  }
-
-  void _goToPrevious() {
-    if (_currentIndex <= 0) return;
     final duration = MediaQuery.disableAnimationsOf(context)
         ? Duration.zero
         : kAppMotionSlow;
-    _pageController.animateToPage(
-      _currentIndex - 1,
-      duration: duration,
-      curve: Curves.easeInOutCubic,
-    );
-  }
-
-  void _goToNext() {
-    if (_currentIndex >= widget.images.length - 1) return;
-    final duration = MediaQuery.disableAnimationsOf(context)
-        ? Duration.zero
-        : kAppMotionSlow;
-    _pageController.animateToPage(
-      _currentIndex + 1,
-      duration: duration,
-      curve: Curves.easeInOutCubic,
-    );
+    if (duration == Duration.zero) {
+      _pageController.jumpToPage(targetPage);
+    } else {
+      _pageController.animateToPage(
+        targetPage,
+        duration: duration,
+        curve: Curves.easeInOutCubic,
+      );
+    }
   }
 
   Future<void> _handleSetAsCover() async {
@@ -256,13 +290,17 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage> {
                   controller: _pageController,
                   physics: _isCurrentZoomed
                       ? const NeverScrollableScrollPhysics()
-                      : const PageScrollPhysics(),
+                      : (widget.images.length > 1
+                          ? const PageScrollPhysics()
+                          : const NeverScrollableScrollPhysics()),
                   onPageChanged: _onPageChanged,
-                  itemCount: widget.images.length,
-                  itemBuilder: (context, index) {
+                  itemCount:
+                      widget.images.length > 1 ? null : widget.images.length,
+                  itemBuilder: (context, page) {
+                    final index = _indexForPage(page, widget.images.length);
                     final img = widget.images[index];
                     return _WorkImageViewerItem(
-                      key: ValueKey<String>('image_item_${img.path}'),
+                      key: ValueKey<String>('image_item_${img.path}_$page'),
                       isActive: index == _currentIndex,
                       onZoomChanged: (zoomed) {
                         setState(() => _isCurrentZoomed = zoomed);
@@ -366,7 +404,7 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage> {
                         ),
                         icon: const Icon(Icons.chevron_left_rounded),
                         tooltip: i18n.tr('previous'),
-                        onPressed: _currentIndex > 0 ? _goToPrevious : null,
+                        onPressed: _goToPrevious,
                       ),
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 6),
@@ -391,9 +429,7 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage> {
                         ),
                         icon: const Icon(Icons.chevron_right_rounded),
                         tooltip: i18n.tr('next'),
-                        onPressed: _currentIndex < widget.images.length - 1
-                            ? _goToNext
-                            : null,
+                        onPressed: _goToNext,
                       ),
                     ],
                   ),

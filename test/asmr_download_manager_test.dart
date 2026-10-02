@@ -1,10 +1,12 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_download.dart';
 import 'package:doujin_audio/core/media/audio_detail.dart';
+import 'package:doujin_audio/core/persistence/json_document_store.dart';
 import 'package:doujin_audio/core/platform/file_cache_platform_gateway.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_download_manager.dart';
@@ -1259,6 +1261,210 @@ void main() {
       expect(await target.readAsBytes(), <int>[7, 8, 9]);
       expect(await backup.exists(), isFalse);
       expect(await staging.exists(), isFalse);
+    },
+  );
+
+  for (final usesSaf in [false, true]) {
+    test(
+      'metadata commits after files and before completion (SAF: $usesSaf)',
+      () async {
+        final tempDir = await Directory.systemTemp.createTemp(
+          'asmr_metadata_commit_',
+        );
+        final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+        var requests = 0;
+        server.listen((request) async {
+          requests++;
+          request.response
+            ..contentLength = 1
+            ..add([7]);
+          await request.response.close();
+        });
+        final gateway = _StatefulSafGateway();
+        final documents = _CompletionMetadataStore(tempDir.path);
+        final manager = AsmrDownloadManager(
+          fileCacheGateway: gateway,
+          jsonDocumentStore: documents,
+          persistTasks: false,
+          stagingDirectoryProvider: () async => tempDir,
+        );
+        final destination = usesSaf
+            ? 'content://downloads/tree/root'
+            : tempDir.path;
+        final metadata = File(path.join(tempDir.path, 'doujin-audio.json'));
+        try {
+          await manager.startDownload(
+            work: _work(),
+            selectedRoots: [
+              _file(
+                downloadUrl:
+                    'http://${server.address.host}:${server.port}/track.mp3',
+              ),
+            ],
+            destinationRoot: destination,
+            conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
+          );
+          await documents.writeStarted.future.timeout(
+            const Duration(seconds: 5),
+          );
+          expect(manager.getTask(1)?.completedFilePaths, contains('Track.mp3'));
+          if (usesSaf) {
+            expect(gateway.copiedRelativePaths, ['Track.mp3']);
+          } else {
+            expect(
+              await File(
+                path.join(tempDir.path, 'Work', 'Track.mp3'),
+              ).readAsBytes(),
+              [7],
+            );
+          }
+          expect(
+            documents.location?.basePath,
+            manager.getTask(1)?.workRootPath,
+          );
+          expect(documents.location?.usesSaf, usesSaf);
+          expect(
+            manager.getTask(1)?.status,
+            AsmrDownloadTaskStatus.downloading,
+          );
+          expect(await metadata.exists(), isFalse);
+
+          documents.rejectWrite = true;
+          documents.releaseWrite.complete();
+          await _waitForTaskStatus(
+            manager,
+            1,
+            AsmrDownloadTaskStatus.failed,
+            allowFailure: true,
+          );
+          expect(manager.getTask(1)?.error, contains('metadata_write_failed'));
+          expect(manager.getTask(1)?.completedFiles, 1);
+
+          documents.rejectWrite = false;
+          await manager.resumeTask(1);
+          await _waitForTaskStatus(
+            manager,
+            1,
+            AsmrDownloadTaskStatus.completed,
+          );
+          expect(requests, 1);
+          expect(manager.getTask(1)?.completedFiles, 2);
+          expect(
+            manager.getTask(1)?.downloadedBytes,
+            manager.getTask(1)?.totalBytes,
+          );
+          final detail = const AudioDetailJsonCodec().decode(
+            await metadata.readAsBytes(),
+            AudioDetailTarget.libraryRootFolder(
+              manager.getTask(1)!.workRootPath,
+            ),
+          );
+          expect(detail.rjCode, 'RJ123456');
+          expect(detail.workTitle, 'Work');
+        } finally {
+          if (!documents.releaseWrite.isCompleted) {
+            documents.releaseWrite.complete();
+          }
+          await manager.shutdown();
+          await server.close(force: true);
+          await tempDir.delete(recursive: true);
+        }
+      },
+    );
+  }
+
+  test(
+    'manual file retry saves missing metadata without double counting',
+    () async {
+      final tempDir = await Directory.systemTemp.createTemp(
+        'asmr_retry_metadata_',
+      );
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      var failDownload = true;
+      server.listen((request) async {
+        if (failDownload) {
+          request.response.statusCode = HttpStatus.serviceUnavailable;
+        } else {
+          request.response
+            ..contentLength = 1
+            ..add([7]);
+        }
+        await request.response.close();
+      });
+      final manager = _manager();
+      final metadata = File(
+        path.join(tempDir.path, 'Work', 'doujin-audio.json'),
+      );
+      try {
+        await manager.startDownload(
+          work: _work(),
+          selectedRoots: [
+            _file(
+              downloadUrl:
+                  'http://${server.address.host}:${server.port}/track.mp3',
+            ),
+          ],
+          destinationRoot: tempDir.path,
+          conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
+          automaticFileRetryCount: 0,
+        );
+        await _waitForTaskStatus(
+          manager,
+          1,
+          AsmrDownloadTaskStatus.failed,
+          allowFailure: true,
+        );
+        expect(await metadata.exists(), isTrue);
+        expect(manager.getTask(1)?.completedFiles, 1);
+        await metadata.delete();
+        failDownload = false;
+        expect(await manager.retryFailedFile(1, 'Track.mp3'), isTrue);
+        await _waitForTaskStatus(manager, 1, AsmrDownloadTaskStatus.completed);
+        expect(await metadata.exists(), isTrue);
+        expect(manager.getTask(1)?.completedFiles, 2);
+        expect(manager.getTask(1)?.skippedFiles, 0);
+        expect(manager.getTask(1)?.failedFiles, 0);
+      } finally {
+        await manager.shutdown();
+        await server.close(force: true);
+        await tempDir.delete(recursive: true);
+      }
+    },
+  );
+
+  test(
+    'generated metadata takes priority over a remote file with the same name',
+    () async {
+      final tempDir = await Directory.systemTemp.createTemp(
+        'asmr_metadata_name_',
+      );
+      final manager = _manager();
+      try {
+        await manager.startDownload(
+          work: _work(),
+          selectedRoots: [
+            _file(
+              downloadUrl: 'https://example.invalid/metadata.json',
+              title: 'doujin-audio.json',
+            ),
+          ],
+          destinationRoot: tempDir.path,
+          conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
+        );
+        await _waitForTaskStatus(manager, 1, AsmrDownloadTaskStatus.completed);
+        final workRoot = manager.getTask(1)!.workRootPath;
+        final detail = const AudioDetailJsonCodec().decode(
+          await File(path.join(workRoot, 'doujin-audio.json')).readAsBytes(),
+          AudioDetailTarget.libraryRootFolder(workRoot),
+        );
+        expect(detail.rjCode, 'RJ123456');
+        expect(detail.workTitle, 'Work');
+        expect(manager.getTask(1)?.completedFiles, 1);
+        expect(manager.getTask(1)?.skippedFiles, 1);
+      } finally {
+        await manager.shutdown();
+        await tempDir.delete(recursive: true);
+      }
     },
   );
 
@@ -3910,6 +4116,57 @@ AsmrDownloadTaskSnapshot _failedTaskSnapshot(
     downloadedBytes: 3,
     startedAt: DateTime(2026),
     completedFilePaths: completedFilePaths,
+  );
+}
+
+final class _CompletionMetadataStore implements JsonDocumentStore {
+  _CompletionMetadataStore(this.folder);
+
+  final String folder;
+  final _delegate = DefaultJsonDocumentStore();
+  final writeStarted = Completer<void>();
+  final releaseWrite = Completer<void>();
+  JsonDocumentLocation? location;
+  bool rejectWrite = false;
+
+  JsonDocumentLocation _local(JsonDocumentLocation value) =>
+      JsonDocumentLocation.folderChild(folder: folder, name: value.name);
+
+  @override
+  Future<JsonDocumentReadResult> read(JsonDocumentLocation location) =>
+      _delegate.read(_local(location));
+
+  @override
+  Future<JsonDocumentWriteResult> write({
+    required JsonDocumentLocation location,
+    required Uint8List bytes,
+    required JsonDocumentWriteMode mode,
+    String? expectedRevision,
+  }) async {
+    this.location = location;
+    if (!writeStarted.isCompleted) writeStarted.complete();
+    await releaseWrite.future;
+    if (rejectWrite) {
+      return const JsonDocumentWriteResult(
+        status: JsonDocumentWriteStatus.conflict,
+        error: 'metadata_write_failed',
+      );
+    }
+    return _delegate.write(
+      location: _local(location),
+      bytes: bytes,
+      mode: mode,
+      expectedRevision: expectedRevision,
+    );
+  }
+
+  @override
+  Future<JsonDocumentDeleteResult> delete({
+    required JsonDocumentLocation location,
+    required String expectedRevision,
+  }) => _delegate.delete(
+    location: _local(location),
+    expectedRevision: expectedRevision,
   );
 }
 

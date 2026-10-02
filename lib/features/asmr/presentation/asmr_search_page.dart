@@ -18,6 +18,8 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
   };
   Timer? _debounceTimer;
   late AsmrCategoryType _category;
+  late final ValueNotifier<int> _activeCategoryIndex;
+  late final Set<AsmrCategoryType> _visitedCategories;
   String _query = '';
   bool _showSearchPlaceholder = false;
   bool _isSelectionMode = false;
@@ -30,6 +32,11 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
   void initState() {
     super.initState();
     _category = widget.initialCategory;
+    final initialIndex = kAsmrSelectableCategories.indexOf(_category);
+    _activeCategoryIndex = ValueNotifier<int>(
+      initialIndex >= 0 ? initialIndex : 0,
+    );
+    _visitedCategories = <AsmrCategoryType>{_category};
     _searchController = ref.read(asmrLibraryControllerProvider);
     _searchController?.beginSearchSession();
     _languageProvider = ref.read(appLanguageProviderInstanceProvider);
@@ -100,6 +107,11 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
 
   void _selectCategory(AsmrCategoryType category) {
     if (_category == category) return;
+    _visitedCategories.add(category);
+    final targetIndex = kAsmrSelectableCategories.indexOf(category);
+    if (targetIndex >= 0) {
+      _activeCategoryIndex.value = targetIndex;
+    }
     setState(() {
       _category = category;
       _clearSelection();
@@ -224,6 +236,7 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
 
   @override
   void dispose() {
+    _activeCategoryIndex.dispose();
     _debounceTimer?.cancel();
     _searchController?.endSearchSession();
     _languageProvider.removeListener(_handleLanguageChanged);
@@ -253,25 +266,37 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
           ),
         )
         .toList(growable: false);
-    final body = _AsmrCategoryList(
-      key: ValueKey<String>('asmr_search_${_category.name}'),
-      isActive: true,
-      category: _category,
-      isLoadPending: _showSearchPlaceholder,
-      scrollController: _scrollControllers[_category]!,
-      searchQuery: _query,
-      searchSession: true,
-      topInset: _isSelectionMode
-          ? AppPageHeaderMetrics.expandedToolbarHeight +
-                MediaQuery.paddingOf(context).top +
-                AppPageHeaderMetrics.bottomSpacing
-          : AppSearchPageScaffold.controlsTopInset(context),
-      bottomInset: MediaQuery.paddingOf(context).bottom + 16,
-      onRefresh: () => _refresh(force: true),
-      isSelectionMode: _isSelectionMode,
-      selectedWorkIds: _selectedWorkIds,
-      onEnterSelectionMode: _enterSelectionMode,
-      onToggleSelection: _toggleWorkSelection,
+    final body = AppFadeThroughIndexedStack(
+      key: const ValueKey<String>('asmr_search_category_stack'),
+      indexListenable: _activeCategoryIndex,
+      style: AppIndexedStackTransitionStyle.slide,
+      duration: kAppMotionSlow,
+      children: [
+        for (final category in kAsmrSelectableCategories)
+          if (_visitedCategories.contains(category))
+            _AsmrCategoryList(
+              key: ValueKey<String>('asmr_search_${category.name}'),
+              isActive: category == _category,
+              category: category,
+              isLoadPending: _showSearchPlaceholder,
+              scrollController: _scrollControllers[category]!,
+              searchQuery: _query,
+              searchSession: true,
+              topInset: _isSelectionMode
+                  ? AppPageHeaderMetrics.expandedToolbarHeight +
+                        MediaQuery.paddingOf(context).top +
+                        AppPageHeaderMetrics.bottomSpacing
+                  : AppSearchPageScaffold.controlsTopInset(context),
+              bottomInset: MediaQuery.paddingOf(context).bottom + 16,
+              onRefresh: () => _refresh(force: true),
+              isSelectionMode: _isSelectionMode,
+              selectedWorkIds: _selectedWorkIds,
+              onEnterSelectionMode: _enterSelectionMode,
+              onToggleSelection: _toggleWorkSelection,
+            )
+          else
+            const SizedBox.shrink(),
+      ],
     );
     final selectedWorks = _selectedWorks();
     return AppSearchPageScaffold<AsmrCategoryType>(

@@ -138,16 +138,10 @@ class WorkDetailMetadata extends StatelessWidget {
   ) {
     return _buildMetadataScroller(
       context,
-      cs,
       keyPrefix: 'tag',
-      children: tags
-          .map(
-            (tag) => Padding(
-              padding: const EdgeInsets.only(right: 6),
-              child: _buildTagCapsule(context, cs, tag),
-            ),
-          )
-          .toList(growable: false),
+      items: tags,
+      gap: 6,
+      itemBuilder: (tag) => _buildTagCapsule(context, cs, tag),
     );
   }
 
@@ -158,25 +152,26 @@ class WorkDetailMetadata extends StatelessWidget {
   ) {
     return _buildMetadataScroller(
       context,
-      cs,
       keyPrefix: 'voice_actor',
-      children: voiceActors
-          .map(
-            (voiceActor) => Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: _buildVoiceActorCapsule(context, cs, voiceActor),
-            ),
-          )
-          .toList(growable: false),
+      items: voiceActors,
+      gap: 8,
+      itemBuilder: (voiceActor) =>
+          _buildVoiceActorCapsule(context, cs, voiceActor),
     );
   }
 
   Widget _buildMetadataScroller(
-    BuildContext context,
-    ColorScheme cs, {
+    BuildContext context, {
     required String keyPrefix,
-    required List<Widget> children,
+    required List<String> items,
+    required double gap,
+    required Widget Function(String) itemBuilder,
   }) {
+    final lineHeight = Theme.of(context).textTheme.bodyMedium?.height ?? 1.5;
+    final height =
+        MediaQuery.textScalerOf(context).scale(12) * lineHeight +
+        _workMetadataCapsulePadding.vertical +
+        2;
     return ShaderMask(
       key: ValueKey<String>('work_detail_${keyPrefix}_edge_fade'),
       blendMode: BlendMode.dstIn,
@@ -190,12 +185,19 @@ class WorkDetailMetadata extends StatelessWidget {
         stops: [0, 0.06, 0.94, 1],
       ).createShader(bounds),
       child: WindowsHorizontalWheelScroll(
-        builder: (scrollController) => SingleChildScrollView(
-          key: ValueKey<String>('work_detail_${keyPrefix}_scroller'),
-          controller: scrollController,
-          scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          child: Row(children: children),
+        builder: (scrollController) => SizedBox(
+          height: height,
+          child: ListView.builder(
+            key: ValueKey<String>('work_detail_${keyPrefix}_scroller'),
+            controller: scrollController,
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            itemCount: items.length,
+            itemBuilder: (context, index) => Padding(
+              padding: EdgeInsets.only(right: gap),
+              child: itemBuilder(items[index]),
+            ),
+          ),
         ),
       ),
     );

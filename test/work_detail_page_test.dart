@@ -3,6 +3,7 @@ import 'package:doujin_audio/app/state/app_runtime_providers.dart';
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -15,13 +16,18 @@ import 'package:doujin_audio/core/media/dlsite_metadata.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
 import 'package:doujin_audio/core/platform/file_cache_platform_gateway.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
+import 'package:doujin_audio/core/widgets/app_feedback.dart';
 import 'package:doujin_audio/core/widgets/async_cover_image.dart';
 import 'package:doujin_audio/core/widgets/mobile_overlay_inset.dart';
+import 'package:doujin_audio/core/widgets/drag_only_scrollbar.dart';
 import 'package:doujin_audio/core/widgets/top_page_header.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_metadata_service.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
 import 'package:doujin_audio/features/library/presentation/dlsite_metadata_review_page.dart';
+import 'package:doujin_audio/features/library/presentation/work_detail_entries.dart';
+import 'package:doujin_audio/features/library/presentation/work_detail_entry_tile.dart';
 import 'package:doujin_audio/features/library/presentation/work_detail_page.dart';
+import 'package:doujin_audio/features/library/presentation/audio_detail_sheet.dart';
 import 'package:doujin_audio/features/library/presentation/library_providers.dart';
 import 'package:doujin_audio/features/library/presentation/work_image_viewer_page.dart';
 import 'package:doujin_audio/features/settings/application/settings_state.dart';
@@ -92,6 +98,16 @@ class _ControlledWorkDetailCoverService extends CoverArtworkCacheService {
   final cover = Completer<String?>();
   int imageRequests = 0;
   int coverRequests = 0;
+  int remoteCoverRequests = 0;
+
+  @override
+  String? resolvedForRemoteCover(String url) => cachedCover;
+
+  @override
+  Future<String?> futureForRemoteCover(String url) {
+    remoteCoverRequests++;
+    return cover.future;
+  }
 
   @override
   String? resolvedForFolder(String folderPath) => cachedCover;
@@ -146,6 +162,119 @@ void main() {
 
   group('WorkDetailPage', () {
     for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+      testWidgets(
+        'opens with card data after shared caches clear on $platform',
+        (tester) async {
+          SharedPreferences.setMockInitialValues({});
+          final repository = _CountingDetailRepository();
+          final covers = _ControlledWorkDetailCoverService()
+            ..images.complete([]);
+          final fixture = AppRuntimeWidgetTestFixture(
+            providedPersistenceRepository: repository,
+            coverArtworkCacheService: covers,
+          );
+          addTearDown(fixture.dispose);
+          final target = AudioDetailTarget.libraryRootFolder('C:/works/card');
+          final detail = AudioDetail.empty(target).copyWith(
+            target: AudioDetailTarget.libraryRootFolder('c:/works/card'),
+            workTitle: 'Card data title',
+            circleName: 'Card data circle',
+            voiceActors: ['Card data voice'],
+            tags: ['Card data tag'],
+          );
+          final interaction = UiInteractionCoordinator.instance;
+          interaction.resetForTest();
+          addTearDown(interaction.resetForTest);
+          await tester.pumpWidget(
+            fixture.build(
+              Builder(
+                builder: (context) => TextButton(
+                  onPressed: () => showAudioDetailSheet(
+                    context,
+                    target,
+                    initialDetail: detail,
+                    initialCoverPath: 'C:/works/card/cover.jpg',
+                  ),
+                  child: const Text('Open card'),
+                ),
+              ),
+              navigatorObservers: [UiInteractionNavigatorObserver()],
+            ),
+          );
+          fixture.library.detailCacheService.clear();
+          fixture.library.snapshotCacheService.clear();
+          await tester.tap(find.text('Open card'));
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 100));
+          for (final text in [
+            detail.workTitle,
+            detail.circleName,
+            detail.voiceActors.single,
+            '#${detail.tags.single}',
+          ]) {
+            expect(find.text(text), findsOneWidget);
+          }
+          final image = tester.widget<LocalCoverImage>(
+            find.byType(LocalCoverImage),
+          );
+          expect(image.path, 'C:/works/card/cover.jpg');
+          expect(repository.detailRequests, 0);
+          expect(covers.imageRequests, 0);
+          expect(covers.coverRequests, 0);
+          Navigator.of(tester.element(find.byType(WorkDetailPage))).pop();
+          await tester.pumpAndSettle();
+          await tester.pump(interaction.idleDelay);
+          expect(covers.imageRequests, 0);
+          expect(repository.detailRequests, 0);
+          expect(tester.takeException(), isNull);
+        },
+        variant: TargetPlatformVariant({platform}),
+      );
+
+      testWidgets(
+        'reuses remote card cover and keeps its future stable on $platform',
+        (tester) async {
+          SharedPreferences.setMockInitialValues({});
+          final covers = _ControlledWorkDetailCoverService()
+            ..cachedCover = 'C:/works/remote/cover.jpg';
+          final fixture = AppRuntimeWidgetTestFixture(
+            coverArtworkCacheService: covers,
+          );
+          addTearDown(fixture.dispose);
+          final work = AsmrWork.fromJson(const {
+            'id': 321,
+            'title': 'Cached remote card',
+            'mainCoverUrl': 'https://example.com/cover.jpg',
+          });
+          Widget page() => fixture.build(WorkDetailPage.forAsmr(work: work));
+          await tester.pumpWidget(page());
+          final initial = tester.widget<AsyncRemoteCoverImage>(
+            find.byType(AsyncRemoteCoverImage),
+          );
+          expect(initial.initialPath, covers.cachedCover);
+          await tester.pump();
+          await tester.pumpWidget(page());
+          final rebuilt = tester.widget<AsyncRemoteCoverImage>(
+            find.byType(AsyncRemoteCoverImage),
+          );
+          expect(identical(initial.future, rebuilt.future), isTrue);
+          expect(covers.remoteCoverRequests, 0);
+          // Invalidation must still resolve a missing cover through the gateway.
+          covers.cachedCover = null;
+          covers.invalidateAll();
+          covers.cover.complete('C:/works/remote/repaired.jpg');
+          await tester.pumpWidget(page());
+          await tester.pumpAndSettle();
+          expect(covers.remoteCoverRequests, 1);
+          final image = tester.widget<RetryingFileImage>(
+            find.byType(RetryingFileImage),
+          );
+          expect(image.path, 'C:/works/remote/repaired.jpg');
+          expect(tester.takeException(), isNull);
+        },
+        variant: TargetPlatformVariant({platform}),
+      );
+
       testWidgets(
         'reuses main-page metadata snapshot without reloading on $platform',
         (tester) async {
@@ -1274,6 +1403,88 @@ void main() {
         expect(copied, contains('癒やし'));
       },
     );
+
+    for (final platform in [TargetPlatform.windows, TargetPlatform.android]) {
+      testWidgets(
+        'WorkDetailPage hides scrollbars on $platform and remains scrollable',
+        (tester) async {
+          SharedPreferences.setMockInitialValues(const <String, Object>{});
+          final fixture = AppRuntimeWidgetTestFixture();
+          addTearDown(fixture.dispose);
+
+          const folderPath = 'C:/works/no-scrollbar';
+          const target = AudioDetailTarget(
+            targetType: AudioDetailTargetType.libraryRootFolder,
+            targetPath: folderPath,
+          );
+          final tracks = [
+            for (var i = 1; i <= 30; i++)
+              MusicTrack(
+                path: '$folderPath/track_$i.mp3',
+                displayName: 'Track $i',
+                groupKey: folderPath,
+                groupTitle: 'No Scrollbar Work',
+                groupSubtitle: '',
+                isSingle: false,
+              ),
+          ];
+          fixture.library.addWatchedFolder(folderPath, notify: false);
+          fixture.library.addTracks(tracks, persist: false);
+
+          await tester.pumpWidget(
+            fixture.build(const WorkDetailPage.forLocal(target: target)),
+          );
+          for (
+            var i = 0;
+            i < 40 && find.text('Track 1').evaluate().isEmpty;
+            i++
+          ) {
+            await tester.pump(const Duration(milliseconds: 50));
+            await tester.runAsync(
+              () => Future<void>.delayed(const Duration(milliseconds: 10)),
+            );
+          }
+
+          expect(find.byType(WorkDetailPage), findsOneWidget);
+          expect(
+            find.descendant(
+              of: find.byType(WorkDetailPage),
+              matching: find.byType(RawScrollbar),
+            ),
+            findsNothing,
+          );
+          expect(
+            find.descendant(
+              of: find.byType(WorkDetailPage),
+              matching: find.byType(DragOnlyScrollbar),
+            ),
+            findsNothing,
+          );
+
+          final customScrollView = find.descendant(
+            of: find.byType(WorkDetailPage),
+            matching: find.byType(CustomScrollView),
+          );
+          expect(customScrollView, findsOneWidget);
+
+          final scrollable = tester.widget<Scrollable>(
+            find
+                .descendant(
+                  of: customScrollView,
+                  matching: find.byType(Scrollable),
+                )
+                .first,
+          );
+          final scrollController = scrollable.controller!;
+          expect(scrollController.offset, 0);
+
+          await tester.drag(customScrollView, const Offset(0, -400));
+          await tester.pumpAndSettle();
+          expect(scrollController.offset, greaterThan(0));
+        },
+        variant: TargetPlatformVariant({platform}),
+      );
+    }
   });
 
   group('WorkImageViewerPage', () {
@@ -1712,6 +1923,96 @@ void main() {
         await tester.tapAt(Offset.zero);
         await tester.pump(const Duration(milliseconds: 500));
         expect(menuItem, findsNothing);
+      },
+    );
+
+    testWidgets(
+      'WorkDetailEntryTile renders transparent Material and provides feedback colors and action on tap',
+      (WidgetTester tester) async {
+        debugDefaultTargetPlatformOverride = TargetPlatform.android;
+        addTearDown(() => debugDefaultTargetPlatformOverride = null);
+
+        try {
+          final calls = <MethodCall>[];
+          final prevHaptics = AppInteractionFeedback.hapticFeedbackEnabled;
+          AppInteractionFeedback.hapticFeedbackEnabled = true;
+          tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+            SystemChannels.platform,
+            (call) async {
+              calls.add(call);
+              return null;
+            },
+          );
+          addTearDown(() {
+            AppInteractionFeedback.hapticFeedbackEnabled = prevHaptics;
+            tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+              SystemChannels.platform,
+              null,
+            );
+          });
+
+          WorkEntryAction? performedAction;
+          const item = WorkEntryItem(
+            type: WorkEntryType.folder,
+            name: 'Voices',
+            relativePath: 'Voices',
+            fullPathOrUrl: '/work/Voices',
+          );
+
+          await tester.pumpWidget(
+            MaterialApp(
+              home: Scaffold(
+                body: WorkDetailEntryTile(
+                  item: item,
+                  accentColor: Colors.blue,
+                  menuEntries: const [],
+                  moreLabel: 'More',
+                  onAction: (action) => performedAction = action,
+                ),
+              ),
+            ),
+          );
+
+          final materialFinder = find.descendant(
+            of: find.byType(WorkDetailEntryTile),
+            matching: find.byWidgetPredicate(
+              (w) => w is Material && w.shape is RoundedRectangleBorder,
+            ),
+          );
+          expect(materialFinder, findsOneWidget);
+          final material = tester.widget<Material>(materialFinder);
+          expect(material.color, Colors.transparent);
+          expect(material.clipBehavior, Clip.antiAlias);
+          expect(
+            material.shape,
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          );
+
+          final listTileFinder = find.descendant(
+            of: find.byType(WorkDetailEntryTile),
+            matching: find.byType(ListTile),
+          );
+          expect(listTileFinder, findsOneWidget);
+          final listTile = tester.widget<ListTile>(listTileFinder);
+          expect(listTile.splashColor, isNotNull);
+          expect(listTile.hoverColor, isNotNull);
+
+          await tester.tap(listTileFinder);
+          await tester.pump();
+
+          expect(performedAction, WorkEntryAction.open);
+          expect(
+            calls.any(
+              (call) =>
+                  call.method == 'SystemSound.play' ||
+                  call.method == 'HapticFeedback.vibrate',
+            ),
+            isTrue,
+          );
+          await tester.pumpWidget(const SizedBox.shrink());
+        } finally {
+          debugDefaultTargetPlatformOverride = null;
+        }
       },
     );
   });

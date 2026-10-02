@@ -53,16 +53,24 @@ bool _containsAsmrSubtitle(Iterable<AsmrTrackFile> nodes) {
 }
 
 class WorkDetailPage extends ConsumerStatefulWidget {
-  const WorkDetailPage.forLocal({super.key, required AudioDetailTarget target})
-    : localTarget = target,
-      asmrWork = null;
+  const WorkDetailPage.forLocal({
+    super.key,
+    required AudioDetailTarget target,
+    this.initialDetail,
+    this.initialCoverPath,
+  }) : localTarget = target,
+       asmrWork = null;
 
   const WorkDetailPage.forAsmr({super.key, required AsmrWork work})
     : asmrWork = work,
-      localTarget = null;
+      localTarget = null,
+      initialDetail = null,
+      initialCoverPath = null;
 
   final AudioDetailTarget? localTarget;
   final AsmrWork? asmrWork;
+  final AudioDetail? initialDetail;
+  final String? initialCoverPath;
 
   bool get isLocal => localTarget != null;
   bool get isAsmr => asmrWork != null;
@@ -89,6 +97,8 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
   List<AsmrTrackFile>? _asmrTree;
   bool _loadingAsmr = true;
   int _playRequest = 0;
+  Object? _coverRequestKey;
+  Future<String?>? _coverFuture;
 
   // Breadcrumb navigation state
   // Path stack: e.g. [] for root, ['EXデータ'] for subfolder
@@ -97,13 +107,24 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
   @override
   void initState() {
     super.initState();
+    assert(
+      widget.initialDetail == null ||
+          (widget.initialDetail!.target.targetType ==
+                  widget.localTarget!.targetType &&
+              PathMatcher.equalsNormalized(
+                widget.initialDetail!.target.targetPath,
+                widget.localTarget!.targetPath,
+              )),
+    );
     _localTarget = widget.localTarget;
     if (widget.isLocal) {
       final library = ref.read(libraryFacadeProvider);
       _localDetail =
+          widget.initialDetail ??
           library.resolvedAudioDetail(_localTarget!) ??
           library.categorySnapshot?.detailFor(_localTarget!);
       _localManualCover =
+          widget.initialCoverPath ??
           library.resolvedCoverPathForFolder(_localTarget!.targetPath) ??
           _localDetail?.cardCoverPath;
     }
@@ -922,7 +943,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
             trimmedCover.startsWith('https://') ||
             widget.isAsmr);
 
-    ref.watch(coverGenerationProvider);
+    final coverGeneration = ref.watch(coverGenerationProvider);
     final Widget coverWidget;
     if (isRemoteCover) {
       final remoteUrl = trimmedCover;
@@ -930,15 +951,24 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
       final coverUi = ref.read(libraryCoverUiControllerProvider);
       final coverResolution = ref.watch(coverImageResolutionProvider);
       final cacheWidth = coverCacheWidthForResolution(coverResolution);
+      final resolved = library.resolvedCoverPathForRemoteCover(remoteUrl);
+      final requestKey = (remoteUrl, resolved, coverGeneration);
+      if (_coverRequestKey != requestKey) {
+        _coverRequestKey = requestKey;
+        _coverFuture = resolved != null
+            ? Future.value(resolved)
+            : coverUi.deferredRemoteCover(remoteUrl, context: context);
+      }
       coverWidget = AsyncRemoteCoverImage(
         onImageError: ref
             .read(libraryFacadeProvider)
             .coverArtworkCacheService
             .reportArtworkReadFailure,
         url: remoteUrl,
-        future: coverUi.deferredRemoteCover(remoteUrl),
-        initialPath: library.resolvedCoverPathForRemoteCover(remoteUrl),
-        retryFutureBuilder: () => coverUi.deferredRemoteCover(remoteUrl),
+        future: _coverFuture!,
+        initialPath: resolved,
+        retryFutureBuilder: () =>
+            coverUi.deferredRemoteCover(remoteUrl, context: context),
         retryDelay: const Duration(seconds: 3),
         maxRetryAttempts: 3,
         fit: BoxFit.cover,
@@ -954,17 +984,25 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
       final resolved =
           library.resolvedCoverPathForFolder(_localTarget!.targetPath) ??
           coverPath;
+      final requestKey = (_localTarget, resolved, coverGeneration);
+      if (_coverRequestKey != requestKey) {
+        _coverRequestKey = requestKey;
+        _coverFuture = Future.value(resolved);
+      }
       Future<String?> retryCover() async {
+        final request = _localLoadRequest;
         final path = await ref
             .read(libraryCoverUiControllerProvider)
-            .deferredFolderCover(_localTarget!.targetPath);
-        if (mounted) setState(() => _localManualCover = path);
+            .deferredFolderCover(_localTarget!.targetPath, context: context);
+        if (mounted && request == _localLoadRequest) {
+          setState(() => _localManualCover = path);
+        }
         return path;
       }
 
       coverWidget = AsyncLocalCoverImage(
         onImageError: library.coverArtworkCacheService.reportArtworkReadFailure,
-        future: Future.value(resolved),
+        future: _coverFuture!,
         requestKey: resolved,
         initialPath: resolved,
         retryFutureBuilder: retryCover,
@@ -988,9 +1026,13 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
         children: [
           AppPageContentTransition(
             backgroundColor: cs.surface,
-            child: CustomScrollView(
-              controller: _scrollController,
-              slivers: [
+            child: ScrollConfiguration(
+              behavior: ScrollConfiguration.of(
+                context,
+              ).copyWith(scrollbars: false),
+              child: CustomScrollView(
+                controller: _scrollController,
+                slivers: [
                 // 1. Collapsible Sticky Header
                 SliverPersistentHeader(
                   pinned: true,
@@ -1027,7 +1069,9 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
                           builder: (context, ref, _) {
                             final isFavorite = widget.isAsmr
                                 ? ref
-                                          .watch(asmrLibraryControllerProvider)
+                                          .watch(
+                                            asmrLibraryControllerProvider,
+                                          )
                                           ?.isFavorite(widget.asmrWork!.id) ??
                                       widget.asmrWork!.isFavorite
                                 : false;
@@ -1099,13 +1143,14 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
                           final item = currentEntries[index];
                           final tile = WorkDetailEntryTile(
                             item: item,
-                            accentColor: widget.isAsmr ? asmrBlue : cs.primary,
+                            accentColor: widget.isAsmr
+                                ? asmrBlue
+                                : cs.primary,
                             menuEntries: _entryMenuItems(item),
                             moreLabel: i18n.tr('more_actions'),
                             onAction: (action) =>
                                 _handleEntryAction(item, action),
                           );
-                          if (!widget.isLocal) return tile;
                           return TweenAnimationBuilder<double>(
                             key: ValueKey(
                               '${item.type.name}:${item.relativePath}',
@@ -1121,31 +1166,32 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
                           );
                         },
                         childCount: currentEntries.length,
-                        findChildIndexCallback: widget.isLocal
-                            ? (key) {
-                                final index = currentEntries.indexWhere(
-                                  (item) =>
-                                      key ==
-                                      ValueKey(
-                                        '${item.type.name}:${item.relativePath}',
-                                      ),
-                                );
-                                return index < 0 ? null : index;
-                              }
-                            : null,
+                        findChildIndexCallback: (key) {
+                          final index = currentEntries.indexWhere(
+                            (item) =>
+                                key ==
+                                ValueKey(
+                                  '${item.type.name}:${item.relativePath}',
+                                ),
+                          );
+                          return index < 0 ? null : index;
+                        },
                       ),
                     ),
                   ),
                 if (bottomOverlayInset > 0)
                   SliverToBoxAdapter(
                     child: SizedBox(
-                      key: const ValueKey<String>('work_detail_playback_inset'),
+                      key: const ValueKey<String>(
+                        'work_detail_playback_inset',
+                      ),
                       height: bottomOverlayInset,
                     ),
                   ),
               ],
             ),
           ),
+        ),
           // Floating Back Button (top-left)
           Positioned(
             top: topSafeArea + 6,

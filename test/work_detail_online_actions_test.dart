@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -313,6 +314,84 @@ void main() {
       expect(find.text('cover.png'), findsOneWidget);
     },
   );
+
+  testWidgets(
+    'online details file tree entries fade in over 300ms',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      final api = _TrackApi();
+      final treeCompleter = Completer<List<AsmrTrackFile>>();
+      api.treeResponseBuilder = () => treeCompleter.future;
+
+      final services = createTestAsmrServices(
+        persistenceRepository: fixture.persistenceRepository,
+        apiService: api,
+      );
+      await tester.runAsync(services.preferencesStore.clearForTest);
+      final controller = AsmrLibraryController(
+        preferencesStore: services.preferencesStore,
+        remoteCatalogService: services.remoteCatalogService,
+        accountSyncService: services.accountSyncService,
+      );
+      addTearDown(controller.dispose);
+      await tester.runAsync(() => controller.initializeForVisiblePage());
+
+      await tester.pumpWidget(
+        fixture.build(
+          WorkDetailPage.forAsmr(work: _work),
+          overrides: [
+            asmrLibraryControllerProvider.overrideWithValue(controller),
+          ],
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+      for (var i = 0; i < 20 && api.treeRequests == 0; i++) {
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 10)),
+        );
+        await tester.pump();
+      }
+      expect(api.treeRequests, 1);
+
+      treeCompleter.complete(_nodes);
+      await tester.pump();
+      await tester.pump();
+
+      final entryKeys = [
+        const ValueKey('audio:audio.mp3'),
+        const ValueKey('audio:video.mp4'),
+        const ValueKey('text:notes.txt'),
+        const ValueKey('image:cover.png'),
+      ];
+
+      double opacity(Key key) => tester
+          .widget<Opacity>(
+            find
+                .descendant(
+                  of: find.byKey(key),
+                  matching: find.byType(Opacity),
+                )
+                .first,
+          )
+          .opacity;
+
+      for (final key in entryKeys) {
+        expect(opacity(key), 0);
+      }
+      await tester.pump(const Duration(milliseconds: 150));
+      for (final key in entryKeys) {
+        expect(opacity(key), allOf(greaterThan(0), lessThan(1)));
+      }
+      await tester.pump(const Duration(milliseconds: 150));
+      await tester.pumpAndSettle();
+      for (final key in entryKeys) {
+        expect(opacity(key), 1);
+      }
+    },
+  );
 }
 
 final _work = AsmrWork.fromJson(const {'id': 8001, 'title': 'Online actions'});
@@ -334,6 +413,8 @@ final _nodes = [
 class _TrackApi extends AsmrApiService {
   int treeRequests = 0;
   int detailRequests = 0;
+  Future<List<AsmrTrackFile>> Function()? treeResponseBuilder;
+
   @override
   Future<AsmrWorkDetail> fetchWorkDetail(
     int workId, {
@@ -356,6 +437,8 @@ class _TrackApi extends AsmrApiService {
     String? token,
   }) async {
     treeRequests++;
-    return _nodes;
+    return treeResponseBuilder != null
+        ? await treeResponseBuilder!()
+        : _nodes;
   }
 }

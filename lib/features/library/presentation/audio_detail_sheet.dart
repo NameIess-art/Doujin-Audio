@@ -93,12 +93,18 @@ Future<void> showAudioDetailSheet(
   BuildContext context,
   AudioDetailTarget target, {
   bool replace = false,
+  AudioDetail? initialDetail,
+  String? initialCoverPath,
 }) {
   final navigator = Navigator.of(context);
   final route = buildAppPageRoute<void>(
     context: context,
     settings: const RouteSettings(name: workDetailRouteName),
-    child: WorkDetailPage.forLocal(target: target),
+    child: WorkDetailPage.forLocal(
+      target: target,
+      initialDetail: initialDetail,
+      initialCoverPath: initialCoverPath,
+    ),
   );
   if (replace && navigator.canPop()) {
     return navigator.pushReplacement(route);

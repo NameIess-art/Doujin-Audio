@@ -122,9 +122,11 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
       ..removeListener(_handlePageTick)
       ..dispose();
     _pageNotifier.dispose();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _visibleSessionNotifier.setVisible(null);
-    });
+    if (widget.presentation == ActiveSessionCarouselPresentation.card) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _visibleSessionNotifier.setVisible(null);
+      });
+    }
     super.dispose();
   }
 
@@ -151,9 +153,11 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
     _lastVisibleSessionId = sessionId;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || _lastVisibleSessionId != sessionId) return;
-      ref
-          .read(activeVisibleSessionCardIdProvider.notifier)
-          .setVisible(sessionId);
+      if (widget.presentation == ActiveSessionCarouselPresentation.card) {
+        ref
+            .read(activeVisibleSessionCardIdProvider.notifier)
+            .setVisible(sessionId);
+      }
       ref.read(notificationFacadeProvider).setFocusedSession(sessionId);
       widget.onVisibleSessionChanged?.call(sessionId);
     });

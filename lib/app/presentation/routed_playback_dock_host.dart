@@ -5,6 +5,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/ui/ui_interaction_coordinator.dart';
 import '../state/app_runtime_providers.dart';
 import '../presentation/app_presentation_providers.dart';
 import '../presentation/main_screen.dart';
@@ -118,6 +119,9 @@ class _RoutedPlaybackDockHostState
       final overlay = widget.navigatorKey.currentState?.overlay;
       final entry = _routedPlaybackDockEntry!;
       if (overlay != null && entry.mounted) {
+        if (_routeObserver.isWorkDetailDeparting) {
+          return;
+        }
         final orderedEntries = <OverlayEntry>[];
         for (final route in _routeObserver.routes) {
           orderedEntries.addAll(route.overlayEntries);
@@ -163,37 +167,39 @@ class _RoutedPlaybackDockHostState
       left: 0,
       right: 0,
       bottom: 0,
-      child: ValueListenableBuilder<int>(
-        valueListenable: _routeRevision,
-        builder: (context, _, _) {
-          final routeActive = _routeObserver.containsRouteNamed(
-            workDetailRouteName,
-          );
-          final routeAboveWorkDetail = _routeObserver.hasRouteAboveNamed(
-            workDetailRouteName,
-          );
-          final routeDeparting = _routeObserver.isWorkDetailDeparting;
-          return Consumer(
-            builder: (context, ref, _) => Opacity(
-              opacity: _routeObserver.suppressDockForSessionDetail ? 0 : 1,
-              child: _RoutedPlaybackDock(
-                active:
-                    routeActive &&
-                    supportsRoutedDock &&
-                    ref.watch(
-                      mainOverlayUiProvider.select(
-                        (state) => state.overlaySessions.isNotEmpty,
+      child: RepaintBoundary(
+        child: ValueListenableBuilder<int>(
+          valueListenable: _routeRevision,
+          builder: (context, _, _) {
+            final routeActive = _routeObserver.containsRouteNamed(
+              workDetailRouteName,
+            );
+            final routeAboveWorkDetail = _routeObserver.hasRouteAboveNamed(
+              workDetailRouteName,
+            );
+            final routeDeparting = _routeObserver.isWorkDetailDeparting;
+            return Consumer(
+              builder: (context, ref, _) => Opacity(
+                opacity: _routeObserver.suppressDockForSessionDetail ? 0 : 1,
+                child: _RoutedPlaybackDock(
+                  active:
+                      routeActive &&
+                      supportsRoutedDock &&
+                      ref.watch(
+                        mainOverlayUiProvider.select(
+                          (state) => state.overlaySessions.isNotEmpty,
+                        ),
                       ),
-                    ),
-                covered: routeAboveWorkDetail,
-                departing: routeDeparting,
-                navigatorKey: widget.navigatorKey,
-                currentRoute: _routeObserver.topRoute,
-                geometry: _playbackDockGeometry,
+                  covered: routeAboveWorkDetail,
+                  departing: routeDeparting,
+                  navigatorKey: widget.navigatorKey,
+                  currentRoute: _routeObserver.topRoute,
+                  geometry: _playbackDockGeometry,
+                ),
               ),
-            ),
-          );
-        },
+            );
+          },
+        ),
       ),
     );
   }
@@ -468,7 +474,9 @@ class _RoutedPlaybackDockState extends ConsumerState<_RoutedPlaybackDock> {
   }
 
   void _handleGeometryChanged() {
-    if (mounted && _visible) setState(() {});
+    if (mounted && _visible && !UiInteractionCoordinator.instance.isInteracting) {
+      setState(() {});
+    }
   }
 
   @override
@@ -505,13 +513,17 @@ class _RoutedPlaybackDockState extends ConsumerState<_RoutedPlaybackDock> {
   }
 
   void _reportDockBounds() {
+    if (_expanded && !widget.departing) return;
+    if (UiInteractionCoordinator.instance.isInteracting) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
+      if (_expanded && !widget.departing) return;
+      if (UiInteractionCoordinator.instance.isInteracting) return;
       final box =
           _dockBoundsKey.currentContext?.findRenderObject() as RenderBox?;
       if (box == null || !box.hasSize) return;
       final right = box.localToGlobal(Offset.zero).dx + box.size.width;
-      if (_dockRight == right) return;
+      if (_dockRight != null && (_dockRight! - right).abs() < 1.0) return;
       setState(() => _dockRight = right);
     });
   }
@@ -618,7 +630,7 @@ class _RoutedPlaybackDockState extends ConsumerState<_RoutedPlaybackDock> {
                 height: dockRect.height,
                 child: SizedBox.expand(
                   key: const ValueKey<String>('routed_playback_dock_width'),
-                  child: dockContent(),
+                  child: RepaintBoundary(child: dockContent()),
                 ),
               ),
             ],
@@ -658,7 +670,7 @@ class _RoutedPlaybackDockState extends ConsumerState<_RoutedPlaybackDock> {
                               ? constraints.maxWidth
                               : _transitionWidth(constraints.maxWidth),
                           height: kActiveSessionCarouselDockHeight,
-                          child: dockContent(),
+                          child: RepaintBoundary(child: dockContent()),
                         ),
                       ),
                     );

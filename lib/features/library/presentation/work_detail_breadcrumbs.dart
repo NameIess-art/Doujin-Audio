@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import '../../../app/localization/app_language_provider.dart';
+import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/windows_horizontal_wheel_scroll.dart';
 
 class WorkDetailBreadcrumbs extends StatefulWidget {
@@ -47,68 +50,87 @@ class _WorkDetailBreadcrumbsState extends State<WorkDetailBreadcrumbs> {
     return Row(
       children: [
         Expanded(
-          child: WindowsHorizontalWheelScroll(
-            controller: _scrollController,
-            builder: (scrollController) => SingleChildScrollView(
-              controller: scrollController,
-              scrollDirection: Axis.horizontal,
-              physics: const BouncingScrollPhysics(
-                parent: AlwaysScrollableScrollPhysics(),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  InkWell(
-                    borderRadius: BorderRadius.circular(8),
-                    onTap: () => widget.onNavigate(-1),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 6,
-                        vertical: 4,
+          child: Material(
+            color: Colors.transparent,
+            child: WindowsHorizontalWheelScroll(
+              controller: _scrollController,
+              builder: (scrollController) => SingleChildScrollView(
+                controller: scrollController,
+                scrollDirection: Axis.horizontal,
+                physics: const BouncingScrollPhysics(
+                  parent: AlwaysScrollableScrollPhysics(),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    InkWell(
+                      borderRadius: BorderRadius.circular(8),
+                      onTap: () {
+                        unawaited(
+                          AppInteractionFeedback.trigger(
+                            AppInteractionFeedbackType.tap,
+                            context: context,
+                          ),
+                        );
+                        widget.onNavigate(-1);
+                      },
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 4,
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.home_rounded, size: 18, color: cs.primary),
+                            const SizedBox(width: 4),
+                            Text(
+                              widget.i18n.tr('root_directory'),
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: cs.primary,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.home_rounded, size: 18, color: cs.primary),
-                          const SizedBox(width: 4),
-                          Text(
-                            widget.i18n.tr('root_directory'),
+                    ),
+                    for (var i = 0; i < widget.segments.length; i++) ...[
+                      const Text(' > ', style: TextStyle(color: Colors.grey)),
+                      InkWell(
+                        borderRadius: BorderRadius.circular(8),
+                        onTap: () {
+                          unawaited(
+                            AppInteractionFeedback.trigger(
+                              AppInteractionFeedbackType.tap,
+                              context: context,
+                            ),
+                          );
+                          widget.onNavigate(i);
+                        },
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 4,
+                            vertical: 4,
+                          ),
+                          child: Text(
+                            widget.segments[i],
                             style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color: cs.primary,
+                              fontWeight: i == widget.segments.length - 1
+                                  ? FontWeight.bold
+                                  : FontWeight.normal,
+                              color: i == widget.segments.length - 1
+                                  ? cs.onSurface
+                                  : cs.primary,
                               fontSize: 13,
                             ),
                           ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  for (var i = 0; i < widget.segments.length; i++) ...[
-                    const Text(' > ', style: TextStyle(color: Colors.grey)),
-                    InkWell(
-                      borderRadius: BorderRadius.circular(8),
-                      onTap: () => widget.onNavigate(i),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 4,
-                          vertical: 4,
-                        ),
-                        child: Text(
-                          widget.segments[i],
-                          style: TextStyle(
-                            fontWeight: i == widget.segments.length - 1
-                                ? FontWeight.bold
-                                : FontWeight.normal,
-                            color: i == widget.segments.length - 1
-                                ? cs.onSurface
-                                : cs.primary,
-                            fontSize: 13,
-                          ),
                         ),
                       ),
-                    ),
+                    ],
                   ],
-                ],
+                ),
               ),
             ),
           ),

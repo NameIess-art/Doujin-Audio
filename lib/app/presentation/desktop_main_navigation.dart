@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
+import '../../core/ui/ui_interaction_coordinator.dart';
 import '../localization/app_language_provider.dart';
 import '../theme/app_styles.dart';
 import '../../features/player/application/playback_session_snapshot.dart';
@@ -351,11 +352,14 @@ class DesktopMainNavigation extends StatelessWidget {
               padding: const EdgeInsets.only(top: AppSpacing.sm),
               child: LayoutBuilder(
                 builder: (context, constraints) {
-                  void reportPlaybackRect() => onReportPlaybackRect(
-                    dockCollapsed: isMenuCollapsed,
-                    dockAreaWidth: constraints.maxWidth,
-                    expandedDockWidth: railMinExtendedWidth,
-                  );
+                  void reportPlaybackRect() {
+                    if (UiInteractionCoordinator.instance.isInteracting) return;
+                    onReportPlaybackRect(
+                      dockCollapsed: isMenuCollapsed,
+                      dockAreaWidth: constraints.maxWidth,
+                      expandedDockWidth: railMinExtendedWidth,
+                    );
+                  }
 
                   reportPlaybackRect();
                   return Align(
@@ -371,24 +375,26 @@ class DesktopMainNavigation extends StatelessWidget {
                           ? kActiveSessionCarouselDockHeight
                           : constraints.maxWidth,
                       height: kActiveSessionCarouselDockHeight,
-                      child: AppDockGlassPanel(
-                        shadowOpacity: 0.12,
-                        showTopHighlight: false,
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(
-                            kActiveSessionCarouselDockHeight / 2,
-                          ),
-                          child: ActiveSessionCarousel(
-                            sessions: overlaySessions,
-                            i18n: i18n,
-                            viewportFraction: 1,
-                            presentation:
-                                ActiveSessionCarouselPresentation.embedded,
-                            onOpenSession: (sessionId) {
-                              Navigator.of(context).push(
-                                buildSessionDetailRoute(sessionId: sessionId),
-                              );
-                            },
+                      child: RepaintBoundary(
+                        child: AppDockGlassPanel(
+                          shadowOpacity: 0.12,
+                          showTopHighlight: false,
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(
+                              kActiveSessionCarouselDockHeight / 2,
+                            ),
+                            child: ActiveSessionCarousel(
+                              sessions: overlaySessions,
+                              i18n: i18n,
+                              viewportFraction: 1,
+                              presentation:
+                                  ActiveSessionCarouselPresentation.embedded,
+                              onOpenSession: (sessionId) {
+                                Navigator.of(context).push(
+                                  buildSessionDetailRoute(sessionId: sessionId),
+                                );
+                              },
+                            ),
                           ),
                         ),
                       ),

@@ -615,6 +615,10 @@ class _FolderNodeWidgetState extends ConsumerState<LibraryFolderNodeWidget> {
                       showAudioDetailSheet(
                         context,
                         AudioDetailTarget.libraryRootFolder(folder.path),
+                        initialDetail: rootDetail,
+                        initialCoverPath: ref
+                            .read(libraryFacadeProvider)
+                            .resolvedCoverPathForFolder(folder.path),
                       ),
                     ),
               child: content,
@@ -841,6 +845,8 @@ class _TrackNodeWidget extends ConsumerWidget {
                     showAudioDetailSheet(
                       context,
                       AudioDetailTarget.singleAudioFile(track.path),
+                      initialDetail: singleDetail,
+                      initialCoverPath: resolvedCoverPath,
                     ),
                   ),
             child: useFeaturedCard

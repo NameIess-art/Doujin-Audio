@@ -1,5 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+
+import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/mobile_overlay_inset.dart';
 import '../../../core/widgets/unified_popup_menu.dart';
 import 'work_detail_entries.dart';
@@ -77,34 +81,49 @@ class WorkDetailEntryTile extends StatelessWidget {
               }
             }
           : null,
-      child: ListTile(
-        dense: true,
-        contentPadding: const EdgeInsets.only(left: 16),
+      child: Material(
+        color: Colors.transparent,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-        leading: Icon(icon, color: color),
-        title: Text(
-          item.name,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: isFolder ? const TextStyle(fontWeight: FontWeight.w600) : null,
-        ),
-        trailing: SizedBox.square(
-          dimension: 44,
-          child: Builder(
-            builder: (buttonContext) => IconButton(
-              key: ValueKey<String>('work_entry_more_${item.relativePath}'),
-              padding: EdgeInsets.zero,
-              iconSize: 22,
-              icon: const Icon(Icons.more_vert_rounded),
-              tooltip: moreLabel,
-              onPressed: () => _showButtonMenu(buttonContext),
+        clipBehavior: Clip.antiAlias,
+        child: ListTile(
+          dense: true,
+          contentPadding: const EdgeInsets.only(left: 16),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          splashColor: color.withValues(alpha: 0.16),
+          hoverColor: color.withValues(alpha: 0.08),
+          leading: Icon(icon, color: color),
+          title: Text(
+            item.name,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: isFolder ? const TextStyle(fontWeight: FontWeight.w600) : null,
+          ),
+          trailing: SizedBox.square(
+            dimension: 44,
+            child: Builder(
+              builder: (buttonContext) => IconButton(
+                key: ValueKey<String>('work_entry_more_${item.relativePath}'),
+                padding: EdgeInsets.zero,
+                iconSize: 22,
+                icon: const Icon(Icons.more_vert_rounded),
+                tooltip: moreLabel,
+                onPressed: () => _showButtonMenu(buttonContext),
+              ),
             ),
           ),
-        ),
-        onTap: () => onAction(
-          item.type == WorkEntryType.audio
-              ? WorkEntryAction.play
-              : WorkEntryAction.open,
+          onTap: () {
+            unawaited(
+              AppInteractionFeedback.trigger(
+                AppInteractionFeedbackType.tap,
+                context: context,
+              ),
+            );
+            onAction(
+              item.type == WorkEntryType.audio
+                  ? WorkEntryAction.play
+                  : WorkEntryAction.open,
+            );
+          },
         ),
       ),
     );

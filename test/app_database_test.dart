@@ -37,6 +37,53 @@ void main() {
     expect(AppDatabase.schemaVersion, 11);
   });
 
+  test('track chunks roll back together when a later chunk fails', () async {
+    await db.execute('''
+      CREATE TRIGGER reject_late_track BEFORE INSERT ON tracks
+      WHEN NEW.path = '/audio/240.mp3'
+      BEGIN SELECT RAISE(ABORT, 'late track failure'); END;
+    ''');
+    final tracks = List<MusicTrack>.generate(
+      241,
+      (index) => MusicTrack(
+        path: '/audio/$index.mp3',
+        displayName: '$index',
+        groupKey: '/audio',
+        groupTitle: 'Audio',
+        groupSubtitle: '',
+        isSingle: false,
+      ),
+    );
+    await expectLater(
+      repository.upsertTracks(tracks),
+      throwsA(isA<DatabaseException>()),
+    );
+    expect(await db.query('tracks'), isEmpty);
+    expect(await db.query('track_scan_info'), isEmpty);
+    expect(await db.query('track_playback_state'), isEmpty);
+  });
+
+  test('entry chunks roll back together when a later chunk fails', () async {
+    await db.execute('''
+      CREATE TRIGGER reject_late_entry BEFORE INSERT ON library_entries
+      WHEN NEW.path = '${PathMatcher.normalize('/audio/240')}'
+      BEGIN SELECT RAISE(ABORT, 'late entry failure'); END;
+    ''');
+    final entries = List<LibraryEntry>.generate(
+      241,
+      (index) => LibraryEntry.folder(
+        libraryPath: '/audio',
+        path: '/audio/$index',
+        state: LibraryEntryState.active,
+      ),
+    );
+    await expectLater(
+      repository.upsertLibraryEntries(entries),
+      throwsA(isA<DatabaseException>()),
+    );
+    expect(await db.query('library_entries'), isEmpty);
+  });
+
   for (final previousVersion in [9, 10]) {
     test(
       'version $previousVersion migration removes only rebuildable browser caches',

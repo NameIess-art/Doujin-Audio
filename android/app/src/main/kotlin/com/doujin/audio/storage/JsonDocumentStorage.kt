@@ -1,8 +1,10 @@
 package com.doujin.audio.storage
 
 import android.content.Context
+import android.provider.DocumentsContract
 import androidx.documentfile.provider.DocumentFile
 import org.json.JSONTokener
+import java.io.IOException
 import java.security.MessageDigest
 import java.util.Locale
 
@@ -15,19 +17,18 @@ internal class JsonDocumentStorage(
         locationKind: String,
         basePath: String,
         name: String
-    ): Map<String, Any?> = JsonDocumentOperationLocks.withLock(
-        jsonDocumentLockKey(locationKind, basePath, name)
-    ) {
-        readJsonDocumentLocked(locationKind, basePath, name)
-    }
-
-    private fun readJsonDocumentLocked(
-        locationKind: String,
-        basePath: String,
-        name: String
     ): Map<String, Any?> {
         val folder = resolveJsonDocumentFolder(locationKind, basePath)
             ?: return mapOf("status" to "unreadable", "error" to "folder_unavailable")
+        return JsonDocumentOperationLocks.withLock(jsonDocumentLockKey(folder, name)) {
+            readJsonDocumentLocked(folder, name)
+        }
+    }
+
+    private fun readJsonDocumentLocked(
+        folder: DocumentFile,
+        name: String
+    ): Map<String, Any?> {
         val recovery = recoverJsonDocument(folder, name).getOrElse {
             return mapOf("status" to "unreadable", "error" to it.toString())
         }
@@ -55,22 +56,16 @@ internal class JsonDocumentStorage(
         bytes: ByteArray,
         mode: String,
         expectedRevision: String?
-    ): Map<String, Any?> = JsonDocumentOperationLocks.withLock(
-        jsonDocumentLockKey(locationKind, basePath, name)
-    ) {
-        writeJsonDocumentLocked(
-            locationKind,
-            basePath,
-            name,
-            bytes,
-            mode,
-            expectedRevision
-        )
+    ): Map<String, Any?> {
+        val folder = resolveJsonDocumentFolder(locationKind, basePath)
+            ?: return jsonWriteConflict("folder_unavailable")
+        return JsonDocumentOperationLocks.withLock(jsonDocumentLockKey(folder, name)) {
+            writeJsonDocumentLocked(folder, name, bytes, mode, expectedRevision)
+        }
     }
 
     private fun writeJsonDocumentLocked(
-        locationKind: String,
-        basePath: String,
+        folder: DocumentFile,
         name: String,
         bytes: ByteArray,
         mode: String,
@@ -85,8 +80,6 @@ internal class JsonDocumentStorage(
         if (mode == "replaceIfRevision" && expectedRevision.isNullOrBlank()) {
             throw IllegalArgumentException("expectedRevision is required")
         }
-        val folder = resolveJsonDocumentFolder(locationKind, basePath)
-            ?: return jsonWriteConflict("folder_unavailable")
         val recovery = recoverJsonDocument(folder, name).getOrElse {
             return jsonWriteConflict(it.toString())
         }
@@ -135,9 +128,12 @@ internal class JsonDocumentStorage(
             return jsonWriteConflict("staging_validation_failed")
         }
 
-        val current = runCatching { folder.listFiles().firstOrNull {
-            it.isFile && paths.sameDocumentName(it.name, name)
-        } }.getOrNull()
+        val current = runCatching {
+            findJsonDocument(listReadableDirectoryDocuments(context, folder.uri), name)
+        }.getOrElse {
+            deleteTemporary()
+            return jsonWriteConflict("document_query_failed")
+        }
         if (mode == "createIfAbsent" && current != null) {
             deleteTemporary()
             return jsonPreserved(current)
@@ -176,20 +172,19 @@ internal class JsonDocumentStorage(
         basePath: String,
         name: String,
         expectedRevision: String
-    ): Map<String, Any?> = JsonDocumentOperationLocks.withLock(
-        jsonDocumentLockKey(locationKind, basePath, name)
-    ) {
-        deleteJsonDocumentLocked(locationKind, basePath, name, expectedRevision)
-    }
-
-    private fun deleteJsonDocumentLocked(
-        locationKind: String,
-        basePath: String,
-        name: String,
-        expectedRevision: String
     ): Map<String, Any?> {
         val folder = resolveJsonDocumentFolder(locationKind, basePath)
             ?: return mapOf("status" to "conflict", "error" to "folder_unavailable")
+        return JsonDocumentOperationLocks.withLock(jsonDocumentLockKey(folder, name)) {
+            deleteJsonDocumentLocked(folder, name, expectedRevision)
+        }
+    }
+
+    private fun deleteJsonDocumentLocked(
+        folder: DocumentFile,
+        name: String,
+        expectedRevision: String
+    ): Map<String, Any?> {
         val recovery = recoverJsonDocument(folder, name).getOrElse {
             return mapOf("status" to "conflict", "error" to it.toString())
         }
@@ -219,37 +214,38 @@ internal class JsonDocumentStorage(
     }
 
     private fun jsonDocumentLockKey(
-        locationKind: String,
-        basePath: String,
+        folder: DocumentFile,
         name: String
     ): String = buildString {
-        append(locationKind)
+        append(folder.uri.authority)
         append('\u0000')
-        append(basePath.trim().trimEnd('/'))
+        append(DocumentsContract.getDocumentId(folder.uri))
         append('\u0000')
         append(name.lowercase(Locale.US))
     }
+
+    private fun findJsonDocument(documents: List<DirectoryDocument>, name: String): DocumentFile? =
+        documents.firstOrNull {
+            it.mime != DocumentsContract.Document.MIME_TYPE_DIR && paths.sameDocumentName(it.name, name)
+        }?.let {
+            DocumentFile.fromSingleUri(context, it.uri)
+                ?: throw IOException("Document URI is unavailable: ${it.uri}")
+        }
 
     private fun recoverJsonDocument(
         folder: DocumentFile,
         name: String
     ): Result<SafDocumentRecovery<DocumentFile>> = runCatching {
-        val documents = folder.listFiles().toList()
+        val documents = listReadableDirectoryDocuments(context, folder.uri)
         recoverSafDocument(
             targetName = name,
-            existing = documents.firstOrNull {
-                it.isFile && paths.sameDocumentName(it.name, name)
-            },
-            staleBackup = documents.firstOrNull {
-                it.isFile && paths.sameDocumentName(it.name, "$name.doujin.bak")
-            },
-            staleTemp = documents.firstOrNull {
-                it.isFile && paths.sameDocumentName(it.name, "$name.doujin.part")
-            },
+            existing = findJsonDocument(documents, name),
+            staleBackup = findJsonDocument(documents, "$name.doujin.bak"),
+            staleTemp = findJsonDocument(documents, "$name.doujin.part"),
             isValid = { document ->
                 contentResolver.openInputStream(document.uri)?.use { input ->
                     isValidJson(input.readBytes())
-                } == true
+                } ?: throw IOException("Document cannot be opened: ${document.uri}")
             },
             rename = { document, targetName ->
                 paths.renameDocumentFile(document, targetName)

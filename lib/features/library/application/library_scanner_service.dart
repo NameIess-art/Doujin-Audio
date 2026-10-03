@@ -52,9 +52,12 @@ class LibraryScannerService {
           )
           .map((track) => track.path),
     );
-    if (overwrittenTracks.isNotEmpty) {
+    final tracksToRestore = overwrittenTracks.values
+        .where((track) => !identical(provider.trackByPath(track.path), track))
+        .toList(growable: false);
+    if (tracksToRestore.isNotEmpty) {
       provider.addOrReplaceTracks(
-        overwrittenTracks.values.toList(growable: false),
+        tracksToRestore,
         notify: false,
         mergeExistingState: false,
       );
@@ -299,10 +302,6 @@ class LibraryScannerService {
     );
   }
 
-  Future<List<String>> _listImmediateChildFolders(String folderPath) async {
-    return (await _dataSource.listImmediateChildFolders(folderPath)).folders;
-  }
-
   String _displaySourceName(String source) {
     if (PathMatcher.isContentUri(source)) {
       final decoded = Uri.decodeFull(source);
@@ -323,6 +322,16 @@ class LibraryScannerService {
       );
     } catch (_) {
       // Metadata prefill is optional and must not block adding the library.
+    }
+  }
+
+  Future<void> _prefillRjDetailsForFolders(
+    LibraryCatalog provider,
+    Iterable<String> folders,
+  ) async {
+    for (final folder in folders) {
+      await _prefillRjDetailForFolder(provider, folder);
+      await Future<void>.delayed(Duration.zero);
     }
   }
 
@@ -445,9 +454,11 @@ class LibraryScannerService {
         source: 'import_folder',
       );
     }
-    final existingTrackPaths = provider.library
-        .map((track) => PathMatcher.normalize(track.path))
-        .toSet();
+    final initialTracksByPath = <String, MusicTrack>{
+      for (final track in provider.library)
+        PathMatcher.normalize(track.path): track,
+    };
+    final existingTrackPaths = initialTracksByPath.keys.toSet();
     final existingEntryPaths = provider
         .libraryEntriesForLibrary(normalizedFolderPath)
         .map((entry) => PathMatcher.normalize(entry.path))
@@ -534,6 +545,7 @@ class LibraryScannerService {
           _rollbackScanAdditions(
             provider: provider,
             existingTrackPaths: existingTrackPaths,
+            overwrittenTracks: initialTracksByPath,
             existingEntryPathsByRoot: <String, Set<String>>{
               normalizedFolderPath: existingEntryPaths,
             },
@@ -634,11 +646,12 @@ class LibraryScannerService {
         source: 'import_library',
       );
     }
-    final childFolders = await _listImmediateChildFolders(normalizedFolderPath);
-    final importTargets = childFolders;
-    final existingTrackPaths = provider.library
-        .map((track) => PathMatcher.normalize(track.path))
-        .toSet();
+    var childFolders = const <String>[];
+    final initialTracksByPath = <String, MusicTrack>{
+      for (final track in provider.library)
+        PathMatcher.normalize(track.path): track,
+    };
+    final existingTrackPaths = initialTracksByPath.keys.toSet();
     final existingEntryPaths = provider
         .libraryEntriesForLibrary(normalizedFolderPath)
         .map((entry) => PathMatcher.normalize(entry.path))
@@ -648,6 +661,18 @@ class LibraryScannerService {
     var completed = false;
     var wasCancelled = false;
     try {
+      final listing = await _dataSource.listImmediateChildFolders(
+        normalizedFolderPath,
+      );
+      if (!listing.complete || !provider.isScanGenerationActive(generation)) {
+        return LibraryScanOutcome(
+          code: provider.isScanGenerationActive(generation)
+              ? LibraryScanOutcomeCode.failed
+              : LibraryScanOutcomeCode.cancelled,
+          source: 'import_library',
+        );
+      }
+      childFolders = listing.folders;
       final outcome = await _importer.importLibrary(
         normalizedFolderPath,
         provider,
@@ -659,7 +684,8 @@ class LibraryScannerService {
         generation: generation,
       );
       added = outcome.added;
-      completed = outcome.complete;
+      completed =
+          outcome.complete && provider.isScanGenerationActive(generation);
       if (completed) {
         provider.setScanProgress(
           generation: generation,
@@ -674,7 +700,7 @@ class LibraryScannerService {
           const <MusicTrack>[],
           folderPaths: childFolders,
         );
-        for (final childFolder in importTargets) {
+        for (final childFolder in childFolders) {
           if (provider.isLibraryPathExcluded(
             normalizedFolderPath,
             childFolder,
@@ -692,6 +718,7 @@ class LibraryScannerService {
           _rollbackScanAdditions(
             provider: provider,
             existingTrackPaths: existingTrackPaths,
+            overwrittenTracks: initialTracksByPath,
             existingEntryPathsByRoot: <String, Set<String>>{
               normalizedFolderPath: existingEntryPaths,
             },
@@ -705,14 +732,15 @@ class LibraryScannerService {
         }
       }
       if (completed) {
-        for (final childFolder in importTargets) {
-          if (!provider.isLibraryPathExcluded(
-            normalizedFolderPath,
-            childFolder,
-          )) {
-            unawaited(_prefillRjDetailForFolder(provider, childFolder));
-          }
-        }
+        unawaited(
+          _prefillRjDetailsForFolders(
+            provider,
+            childFolders.where(
+              (folder) =>
+                  !provider.isLibraryPathExcluded(normalizedFolderPath, folder),
+            ),
+          ),
+        );
       }
     }
     if (!completed) {
@@ -728,7 +756,7 @@ class LibraryScannerService {
       source: 'import_library',
       details: <String, Object?>{
         'count': added,
-        'folderCount': importTargets.length,
+        'folderCount': childFolders.length,
       },
     );
   }

@@ -113,7 +113,9 @@ final class LibraryMetadataCoordinator {
         .firstOrNull;
     if (track == null) return true;
     try {
-      return await _detailCacheService.exportTimeSegments(targetForTrack(track));
+      return await _detailCacheService.exportTimeSegments(
+        targetForTrack(track),
+      );
     } on AudioDetailOperationCancelled {
       return false;
     }
@@ -137,32 +139,63 @@ final class LibraryMetadataCoordinator {
   Future<AudioDetailBackupImportResult> importBackups({
     bool onlyMissing = false,
   }) async {
+    final epoch = _epoch;
     final targetsByKey = <String, AudioDetailTarget>{};
-    for (final track in _service.library) {
-      final target = canonicalTarget(targetForTrack(track));
+    final folderTargets = <String, AudioDetailTarget>{};
+    final tracks = List<MusicTrack>.of(_service.library);
+    for (var index = 0; index < tracks.length; index++) {
+      final track = tracks[index];
+      final target = track.isSingle
+          ? targetForTrack(track)
+          : folderTargets.putIfAbsent(
+              track.groupKey,
+              () => canonicalTarget(targetForTrack(track)),
+            );
       targetsByKey[AudioLibraryDetailKey.forTarget(target)] = target;
+      if ((index + 1) % 120 == 0) {
+        await Future<void>.delayed(Duration.zero);
+        if (!_isCurrent(epoch)) throw const AudioDetailOperationCancelled();
+      }
     }
-    Iterable<AudioDetailTarget> targets = targetsByKey.values;
-    if (onlyMissing && targetsByKey.isNotEmpty) {
-      final orderedTargets = targetsByKey.values.toList(growable: false);
-      final databaseDetails = await _detailCacheService.loadMany(
-        orderedTargets,
+    final targets = targetsByKey.values.toList(growable: false);
+    final changedDetails = <AudioDetail>[];
+    var importedCount = 0;
+    var failureCount = 0;
+    const batchSize = 32;
+    for (var start = 0; start < targets.length; start += batchSize) {
+      await Future<void>.delayed(Duration.zero);
+      if (!_isCurrent(epoch)) throw const AudioDetailOperationCancelled();
+      var batch = targets.sublist(
+        start,
+        (start + batchSize).clamp(0, targets.length),
       );
-      targets = <AudioDetailTarget>[
-        for (var index = 0; index < orderedTargets.length; index++)
-          if (databaseDetails[index].detail.isEmpty) orderedTargets[index],
-      ];
+      if (onlyMissing) {
+        final loaded = await _detailCacheService.loadMany(batch);
+        if (!_isCurrent(epoch)) throw const AudioDetailOperationCancelled();
+        batch = <AudioDetailTarget>[
+          for (var index = 0; index < batch.length; index++)
+            if (loaded[index].detail.isEmpty) batch[index],
+        ];
+      }
+      final result = await _detailCacheService.importBackupsMany(batch);
+      if (!_isCurrent(epoch)) throw const AudioDetailOperationCancelled();
+      changedDetails.addAll(result.changedDetails);
+      importedCount += result.importedCount;
+      failureCount += result.failureCount;
     }
-    final result = await _detailCacheService.importBackupsMany(targets);
     await _databaseRepository.saveAppSetting(
       _backupRestoreAuthoritativeKey,
       '0',
     );
-    if (result.changedDetails.isNotEmpty) {
+    if (changedDetails.isNotEmpty) {
       _snapshotCacheService.markDetailChanged();
       _syncState();
     }
-    return result;
+    return AudioDetailBackupImportResult(
+      changedDetails: changedDetails,
+      importedCount: importedCount,
+      failureCount: failureCount,
+    );
   }
 
   AudioDetailTarget targetForTrack(MusicTrack track) {

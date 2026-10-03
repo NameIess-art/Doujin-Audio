@@ -97,27 +97,29 @@ internal fun scanDocumentChildren(
     query: () -> Cursor?,
     observer: FolderScanObserver,
     onDocument: (ScannedDocument) -> Unit
-): Int = try {
-    val cursor = query() ?: throw IllegalStateException("Document query returned no cursor")
-    cursor.use {
-        val idIndex = it.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
-        val nameIndex = it.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
-        val mimeIndex = it.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_MIME_TYPE)
-        val sizeIndex = it.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_SIZE)
-        val modifiedIndex = it.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_LAST_MODIFIED)
-        while (!observer.isCancelled() && it.moveToNext()) {
-            observer.onEntryProcessed()
-            onDocument(
-                ScannedDocument(
-                    id = requireNotNull(it.getString(idIndex)),
-                    name = requireNotNull(it.getString(nameIndex)),
-                    mime = requireNotNull(it.getString(mimeIndex)),
-                    size = it.getLong(sizeIndex).takeIf { value -> value > 0L },
-                    modifiedAt = it.getLong(modifiedIndex).takeIf { value -> value > 0L }
-                )
+): Int = scanFolderQuery(query) {
+    val idIndex = it.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
+    val nameIndex = it.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
+    val mimeIndex = it.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_MIME_TYPE)
+    val sizeIndex = it.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_SIZE)
+    val modifiedIndex = it.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_LAST_MODIFIED)
+    while (!observer.isCancelled() && it.moveToNext()) {
+        observer.onEntryProcessed()
+        onDocument(
+            ScannedDocument(
+                id = requireNotNull(it.getString(idIndex)),
+                name = requireNotNull(it.getString(nameIndex)),
+                mime = requireNotNull(it.getString(mimeIndex)),
+                size = it.getLong(sizeIndex).takeIf { value -> value > 0L },
+                modifiedAt = it.getLong(modifiedIndex).takeIf { value -> value > 0L }
             )
-        }
+        )
     }
+}
+
+internal fun scanFolderQuery(query: () -> Cursor?, consume: (Cursor) -> Unit): Int = try {
+    val cursor = query() ?: throw IllegalStateException("Folder query returned no cursor")
+    cursor.use(consume)
     0
 } catch (_: Exception) {
     1
@@ -309,58 +311,55 @@ internal class FolderScanOperations(
             folder = folder,
             primaryExternalStorageRoot = Environment.getExternalStorageDirectory().absolutePath
         )
-        return try {
+        return scanFolderQuery(query = {
             resolver.query(
                 collection,
                 projection.toTypedArray(),
                 folderQuery.selection,
                 folderQuery.selectionArgs.takeIf { it.isNotEmpty() }?.toTypedArray(),
                 null
-            )?.use { cursor ->
-                val idIndex = cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns._ID)
-                val nameIndex = cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns.DISPLAY_NAME)
-                val mimeIndex = cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns.MIME_TYPE)
-                val sizeIndex = cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns.SIZE)
-                val modifiedIndex = cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns.DATE_MODIFIED)
-                val pathColumn = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    MediaStore.Files.FileColumns.RELATIVE_PATH
-                } else {
-                    MediaStore.Files.FileColumns.DATA
-                }
-                val pathIndex = cursor.getColumnIndexOrThrow(pathColumn)
-                while (cursor.moveToNext() && !observer.isCancelled()) {
-                    observer.onEntryProcessed()
-                    val name = normalized(cursor.getString(nameIndex))
-                    val mime = cursor.getString(mimeIndex)
-                    val media = MediaNameMetadata.mediaNameInfoOrNull(name, mime) ?: continue
-                    val storedPath = cursor.getString(pathIndex).orEmpty().replace('\\', '/')
-                    val directory = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                        storedPath.trimEnd('/')
-                    } else {
-                        File(storedPath).parent.orEmpty().replace('\\', '/')
-                    }
-                    if (!mediaStoreDirectoryMatches(directory, folderQuery.directoryFilter)) continue
-                    val path = ContentUris.withAppendedId(collection, cursor.getLong(idIndex)).toString()
-                    val groupTitle = directory.substringAfterLast('/').ifBlank { "Media" }
-                    remember(
-                        tracks,
-                        ScannedTrack(
-                            path = path,
-                            title = media.title,
-                            groupKey = directory.ifBlank { folderQuery.directoryFilter },
-                            groupTitle = groupTitle,
-                            groupSubtitle = directory.ifBlank { groupTitle },
-                            isVideo = media.isVideo,
-                            fileSizeBytes = cursor.getLong(sizeIndex).takeIf { it > 0L },
-                            modifiedAtMs = cursor.getLong(modifiedIndex).takeIf { it > 0L }?.times(1000L)
-                        ),
-                        observer
-                    )
-                }
+            )
+        }) { cursor ->
+            val idIndex = cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns._ID)
+            val nameIndex = cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns.DISPLAY_NAME)
+            val mimeIndex = cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns.MIME_TYPE)
+            val sizeIndex = cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns.SIZE)
+            val modifiedIndex = cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns.DATE_MODIFIED)
+            val pathColumn = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                MediaStore.Files.FileColumns.RELATIVE_PATH
+            } else {
+                MediaStore.Files.FileColumns.DATA
             }
-            0
-        } catch (_: Exception) {
-            1
+            val pathIndex = cursor.getColumnIndexOrThrow(pathColumn)
+            while (cursor.moveToNext() && !observer.isCancelled()) {
+                observer.onEntryProcessed()
+                val name = normalized(cursor.getString(nameIndex))
+                val mime = cursor.getString(mimeIndex)
+                val media = MediaNameMetadata.mediaNameInfoOrNull(name, mime) ?: continue
+                val storedPath = cursor.getString(pathIndex).orEmpty().replace('\\', '/')
+                val directory = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    storedPath.trimEnd('/')
+                } else {
+                    File(storedPath).parent.orEmpty().replace('\\', '/')
+                }
+                if (!mediaStoreDirectoryMatches(directory, folderQuery.directoryFilter)) continue
+                val path = ContentUris.withAppendedId(collection, cursor.getLong(idIndex)).toString()
+                val groupTitle = directory.substringAfterLast('/').ifBlank { "Media" }
+                remember(
+                    tracks,
+                    ScannedTrack(
+                        path = path,
+                        title = media.title,
+                        groupKey = directory.ifBlank { folderQuery.directoryFilter },
+                        groupTitle = groupTitle,
+                        groupSubtitle = directory.ifBlank { groupTitle },
+                        isVideo = media.isVideo,
+                        fileSizeBytes = cursor.getLong(sizeIndex).takeIf { it > 0L },
+                        modifiedAtMs = cursor.getLong(modifiedIndex).takeIf { it > 0L }?.times(1000L)
+                    ),
+                    observer
+                )
+            }
         }
     }
 

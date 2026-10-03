@@ -19,14 +19,20 @@ internal fun <T> recoverSafDocument(
     fun remove(document: T?): Boolean = document == null ||
         runCatching { delete(document) }.getOrDefault(false)
 
-    if (existing != null && runCatching { isValid(existing) }.getOrDefault(false)) {
+    val existingValid = existing != null && runCatching { isValid(existing) }.getOrElse {
+        return SafDocumentRecovery(document = null, failed = true)
+    }
+    if (existingValid) {
         if (!remove(staleBackup) || !remove(staleTemp)) {
             return SafDocumentRecovery(document = existing, failed = true)
         }
         return SafDocumentRecovery(document = existing)
     }
 
-    if (staleBackup != null && runCatching { isValid(staleBackup) }.getOrDefault(false)) {
+    val backupValid = staleBackup != null && runCatching { isValid(staleBackup) }.getOrElse {
+        return SafDocumentRecovery(document = null, failed = true)
+    }
+    if (backupValid) {
         if (!remove(existing) || !remove(staleTemp)) {
             return SafDocumentRecovery(document = null, failed = true)
         }
@@ -37,7 +43,10 @@ internal fun <T> recoverSafDocument(
         )
     }
 
-    if (staleTemp != null && runCatching { isValid(staleTemp) }.getOrDefault(false)) {
+    val temporaryValid = staleTemp != null && runCatching { isValid(staleTemp) }.getOrElse {
+        return SafDocumentRecovery(document = null, failed = true)
+    }
+    if (temporaryValid) {
         if (!remove(existing) || !remove(staleBackup)) {
             return SafDocumentRecovery(document = null, failed = true)
         }

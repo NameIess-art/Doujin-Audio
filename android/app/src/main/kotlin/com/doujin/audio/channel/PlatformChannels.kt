@@ -106,6 +106,7 @@ internal object FileCacheMethods {
     const val SCAN_FOLDER = "scanFolder"
     const val START_FOLDER_SCAN = "startFolderScan"
     const val CANCEL_FOLDER_SCAN = "cancelFolderScan"
+    const val ACKNOWLEDGE_FOLDER_SCAN_CHUNK = "acknowledgeFolderScanChunk"
     const val SET_APPLICATION_CACHE_LIMIT = "setApplicationCacheLimit"
     const val WRITE_JSON_DOCUMENT = "writeJsonDocument"
     const val WRITE_FILE_BYTES_TO_FOLDER = "writeFileBytesToFolder"

@@ -12,10 +12,56 @@ import 'package:doujin_audio/features/library/application/library_scan_models.da
 import 'package:doujin_audio/features/library/application/library_service.dart';
 import 'package:doujin_audio/features/library/domain/library_entry.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+// ignore: depend_on_referenced_packages
+import 'package:shared_preferences_platform_interface/shared_preferences_platform_interface.dart';
 
 void main() {
   setUp(() {
     SharedPreferences.setMockInitialValues(const <String, Object>{});
+  });
+
+  test('import batch saves only the final watched directory lists', () async {
+    final preferences = _CountingPreferences();
+    SharedPreferencesStorePlatform.instance = preferences;
+    addTearDown(() => SharedPreferences.setMockInitialValues({}));
+    final facade = LibraryFacade.create(
+      databaseRepository: _RestoredLibraryRepository(),
+    );
+    addTearDown(facade.dispose);
+    facade.beginLibraryBatch();
+    facade.addWatchedLibrary('/library', notify: false);
+    for (var index = 0; index < 500; index++) {
+      facade.addWatchedFolder('/library/$index', notify: false);
+    }
+    expect(preferences.writes, isEmpty);
+    await facade.endLibraryBatch();
+    expect(
+      preferences.writes.where((key) => key == 'watched_folders_v1'),
+      hasLength(1),
+    );
+    expect(
+      preferences.writes.where((key) => key == 'watched_libraries_v1'),
+      hasLength(1),
+    );
+    final stored = await SharedPreferences.getInstance();
+    expect(
+      (jsonDecode(stored.getString('watched_folders_v1')!) as List),
+      hasLength(500),
+    );
+    expect(jsonDecode(stored.getString('watched_libraries_v1')!), ['/library']);
+  });
+
+  test('batch close reports a rejected watched-directory save', () async {
+    final preferences = _CountingPreferences(reject: true);
+    SharedPreferencesStorePlatform.instance = preferences;
+    addTearDown(() => SharedPreferences.setMockInitialValues({}));
+    final facade = LibraryFacade.create(
+      databaseRepository: _RestoredLibraryRepository(),
+    );
+    addTearDown(facade.dispose);
+    facade.beginLibraryBatch();
+    facade.addWatchedLibrary('/library', notify: false);
+    await expectLater(facade.endLibraryBatch(), throwsStateError);
   });
 
   test('facade owns scan generation and rejects stale progress', () async {
@@ -203,6 +249,17 @@ void main() {
       expect(facade.isScanning, isFalse);
     },
   );
+}
+
+class _CountingPreferences extends InMemorySharedPreferencesStore {
+  _CountingPreferences({this.reject = false}) : super.empty();
+  final bool reject;
+  final writes = <String>[];
+  @override
+  Future<bool> setValue(String valueType, String key, Object value) async {
+    writes.add(key.replaceFirst(RegExp(r'^flutter\.'), ''));
+    return reject ? false : super.setValue(valueType, key, value);
+  }
 }
 
 final class _RestoredLibraryRepository extends TestPersistenceRepository {

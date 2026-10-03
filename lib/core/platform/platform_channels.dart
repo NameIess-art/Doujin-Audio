@@ -113,6 +113,7 @@ abstract final class FileCacheMethod {
   static const String cacheFromUri = 'cacheFromUri';
   static const String scanFolder = 'scanFolder';
   static const String startFolderScan = 'startFolderScan';
+  static const String acknowledgeFolderScanChunk = 'acknowledgeFolderScanChunk';
   static const String cancelFolderScan = 'cancelFolderScan';
   static const String listChildFolders = 'listChildFolders';
   static const String renameDocument = 'renameDocument';

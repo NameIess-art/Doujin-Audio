@@ -301,12 +301,21 @@ final class LibraryCatalogWriteCoordinator {
 
     final didChangeLibrary = _service.libraryBatchChanged;
     final entriesToPersist = List<LibraryEntry>.from(
-      _service.libraryBatchPersistEntriesByKey.values,
+      _service.libraryBatchPersistEntriesByKey.values
+          .map(
+            (entry) =>
+                _service.libraryEntryForPath(entry.libraryPath, entry.path),
+          )
+          .whereType<LibraryEntry>(),
     );
     if (!didChangeLibrary && entriesToPersist.isEmpty) return;
-    final tracksToPersist = List<MusicTrack>.from(
-      _service.libraryBatchPersistTracks,
-    );
+    // Rollback/removal may invalidate queued additions. Persist only the final
+    // version still in the catalog so cancelled scans cannot reappear on restart.
+    final tracksToPersist = <String, MusicTrack>{
+      for (final track in _service.libraryBatchPersistTracks)
+        if (_service.libraryByPath.containsKey(track.path))
+          track.path: _service.libraryByPath[track.path]!,
+    }.values.toList(growable: false);
     final didChangeGroupOrder = _service.libraryBatchChangedGroupOrder;
     _service
       ..libraryBatchChanged = false
@@ -342,6 +351,10 @@ final class LibraryCatalogWriteCoordinator {
 
     final persistenceTasks = <Future<void>>[];
     if (_persistenceCoordinator.enabled) {
+      if (didChangeLibrary) {
+        persistenceTasks.add(_persistenceCoordinator.saveWatchedFolders());
+        persistenceTasks.add(_persistenceCoordinator.saveWatchedLibraries());
+      }
       if (tracksToPersist.isNotEmpty) {
         persistenceTasks.add(databaseRepository.upsertTracks(tracksToPersist));
       }

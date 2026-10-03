@@ -263,10 +263,14 @@ final class AudioDetailJsonCodec {
     Map<String, Object?> existing,
     AudioDetail detail,
     Map<String, Object?> additionalFields,
-  ) => <String, Object?>{
-    ...existing,
-    ..._detailToJson(detail, additionalFields),
-  };
+  ) {
+    _detailFromJson(detail.target, existing);
+    _labelsFromJson(existing, detail.target);
+    return <String, Object?>{
+      ...existing,
+      ..._detailToJson(detail, additionalFields),
+    };
+  }
 
   AudioDetail _detailFromJson(
     AudioDetailTarget fallbackTarget,

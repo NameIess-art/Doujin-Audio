@@ -11,6 +11,8 @@ import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.locks.ReentrantLock
+import kotlin.concurrent.withLock
 
 internal class FileCacheScanStreamHandler(
     private val activity: Activity,
@@ -27,11 +29,11 @@ internal class FileCacheScanStreamHandler(
     private var sink: EventChannel.EventSink? = null
     @Volatile
     private var listenerGenerationId: String? = null
-    private val cancellations = ConcurrentHashMap<String, AtomicBoolean>()
-    private val taskGenerations = ConcurrentHashMap<String, String>()
+    private val tasks = ConcurrentHashMap<String, FolderScanTask>()
     private val closed = AtomicBoolean(false)
 
     override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
+        cancelAll()
         val raw = arguments as? Map<*, *>
         listenerGenerationId = raw?.get("generationId") as? String
         sink = events
@@ -50,28 +52,29 @@ internal class FileCacheScanStreamHandler(
         folder: String,
         chunkSize: Int
     ): Boolean {
-        if (closed.get() || cancellations.isNotEmpty() || sink == null) return false
+        if (closed.get() || tasks.isNotEmpty() || sink == null) return false
         if (listenerGenerationId != generationId) return false
         val safeChunkSize = chunkSize.coerceIn(20, 500)
-        val cancelled = AtomicBoolean(false)
-        if (cancellations.putIfAbsent(taskId, cancelled) != null) return false
-        taskGenerations[taskId] = generationId
+        val task = FolderScanTask(generationId)
+        if (tasks.putIfAbsent(taskId, task) != null) return false
 
         return try {
             executor.execute {
-                runFolderScan(taskId, generationId, folder, safeChunkSize, cancelled)
+                runFolderScan(taskId, generationId, folder, safeChunkSize, task)
             }
             true
         } catch (_: RejectedExecutionException) {
-            cancellations.remove(taskId)
-            taskGenerations.remove(taskId)
+            tasks.remove(taskId, task)
             false
         }
     }
 
     fun cancelFolderScan(taskId: String) {
-        cancellations[taskId]?.set(true)
+        tasks[taskId]?.cancel()
     }
+
+    fun acknowledgeFolderScanChunk(taskId: String, chunkSequence: Long): Boolean =
+        tasks[taskId]?.acknowledgeChunk(chunkSequence) == true
 
     fun <T> submitLegacyTask(
         block: () -> T,
@@ -106,7 +109,7 @@ internal class FileCacheScanStreamHandler(
         generationId: String,
         folder: String,
         chunkSize: Int,
-        cancelled: AtomicBoolean
+        task: FolderScanTask
     ) {
         val chunk = ArrayList<HashMap<String, Any?>>(chunkSize)
         val paths = ArrayList<String>(chunkSize)
@@ -130,22 +133,27 @@ internal class FileCacheScanStreamHandler(
         )
 
         fun flushChunk() {
-            if (chunk.isEmpty() || cancelled.get()) return
+            if (chunk.isEmpty() || task.cancelled) return
+            val sequence = task.beginChunk() ?: return
             val event = baseEvent("chunk")
+            event["chunkSequence"] = sequence
             event["tracks"] = ArrayList(chunk)
             event["paths"] = ArrayList(paths)
-            send(taskId, generationId, cancelled, event)
+            send(taskId, generationId, task, event)
             chunk.clear()
             paths.clear()
+            // The worker waits for Dart to finish merging, so platform messages
+            // cannot grow into an unbounded backlog on the UI isolate.
+            task.awaitChunkAcknowledgement()
         }
 
         val observer = object : FolderScanObserver {
-            override fun isCancelled(): Boolean = cancelled.get() || closed.get()
+            override fun isCancelled(): Boolean = task.cancelled || closed.get()
 
             override fun onStage(stage: String) {
                 if (isCancelled() || stage == currentStage) return
                 currentStage = stage
-                send(taskId, generationId, cancelled, baseEvent("stageChanged"))
+                send(taskId, generationId, task, baseEvent("stageChanged"))
             }
 
             override fun onEntryProcessed(total: Int?) {
@@ -155,7 +163,7 @@ internal class FileCacheScanStreamHandler(
                 val now = SystemClock.elapsedRealtime()
                 if (now - lastProgressAt >= progressIntervalMs) {
                     lastProgressAt = now
-                    send(taskId, generationId, cancelled, baseEvent("progress"))
+                    send(taskId, generationId, task, baseEvent("progress"))
                 }
             }
 
@@ -168,57 +176,65 @@ internal class FileCacheScanStreamHandler(
         }
 
         try {
-            send(taskId, generationId, cancelled, baseEvent("started"))
+            send(taskId, generationId, task, baseEvent("started"))
             val scanResult = operations.scanFolder(
                 folder,
                 observer,
                 collectTracks = false
             )
-            if (cancelled.get() || closed.get()) {
+            if (task.cancelled || closed.get()) {
                 return
             }
             flushChunk()
+            if (task.cancelled || closed.get()) return
             val event = baseEvent("completed")
             event["failureCount"] = scanResult.failureCount
             event["complete"] = scanResult.complete
-            send(taskId, generationId, cancelled, event)
+            send(taskId, generationId, task, event)
         } catch (error: Exception) {
-            if (!cancelled.get() && !closed.get()) {
+            if (!task.cancelled && !closed.get()) {
                 val event = baseEvent("failed")
                 event["errorCode"] = scanErrorCode(error)
                 event["error"] = error.message ?: "unknown error"
                 event["details"] = mapOf("exception" to error.javaClass.simpleName)
                 event["failureCount"] = 1
-                send(taskId, generationId, cancelled, event)
+                send(taskId, generationId, task, event)
             }
         } finally {
-            cancellations.remove(taskId, cancelled)
-            taskGenerations.remove(taskId, generationId)
+            tasks.remove(taskId, task)
         }
     }
 
     private fun cancelAll() {
-        cancellations.values.forEach { it.set(true) }
+        tasks.values.forEach { it.cancel() }
     }
 
     private fun send(
         taskId: String,
         generationId: String,
-        cancelled: AtomicBoolean,
+        task: FolderScanTask,
         event: HashMap<String, Any?>
     ) {
-        if (!canPublish(taskId, generationId, cancelled)) return
-        val scheduledSink = sink ?: return
+        if (!canPublish(taskId, generationId, task)) {
+            task.cancel()
+            return
+        }
+        val scheduledSink = sink ?: run {
+            task.cancel()
+            return
+        }
         activity.runOnUiThread {
             if (shouldDeliverQueuedFolderScanEvent(
                     closed = closed.get(),
-                    cancelled = cancelled.get(),
+                    cancelled = task.cancelled,
                     listenerGenerationId = listenerGenerationId,
                     eventGenerationId = generationId,
                     listenerStillCurrent = sink === scheduledSink
                 )
             ) {
                 scheduledSink.success(event)
+            } else {
+                task.cancel()
             }
         }
     }
@@ -226,11 +242,11 @@ internal class FileCacheScanStreamHandler(
     private fun canPublish(
         taskId: String,
         generationId: String,
-        cancelled: AtomicBoolean
+        task: FolderScanTask
     ): Boolean = !closed.get() &&
-        !cancelled.get() &&
-        cancellations[taskId] === cancelled &&
-        taskGenerations[taskId] == generationId &&
+        !task.cancelled &&
+        tasks[taskId] === task &&
+        task.generationId == generationId &&
         listenerGenerationId == generationId &&
         sink != null
 
@@ -240,6 +256,39 @@ internal class FileCacheScanStreamHandler(
             is IllegalStateException -> "scan_provider_error"
             else -> "scan_unknown_error"
         }
+    }
+}
+
+internal class FolderScanTask(val generationId: String) {
+    private val lock = ReentrantLock()
+    private val acknowledged = lock.newCondition()
+    private var chunkSequence = 0L
+    private var pendingSequence: Long? = null
+
+    @Volatile
+    var cancelled = false
+        private set
+
+    fun beginChunk(): Long? = lock.withLock {
+        if (cancelled) return null
+        check(pendingSequence == null) { "Previous scan chunk has not been acknowledged" }
+        (++chunkSequence).also { pendingSequence = it }
+    }
+
+    fun awaitChunkAcknowledgement() = lock.withLock {
+        while (pendingSequence != null && !cancelled) acknowledged.await()
+    }
+
+    fun acknowledgeChunk(sequence: Long): Boolean = lock.withLock {
+        if (cancelled || pendingSequence != sequence) return false
+        pendingSequence = null
+        acknowledged.signalAll()
+        true
+    }
+
+    fun cancel() = lock.withLock {
+        cancelled = true
+        acknowledged.signalAll()
     }
 }
 

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
@@ -156,7 +157,7 @@ final class DefaultJsonDocumentStore implements JsonDocumentStore {
         );
         return _decodePlatformRead(value);
       }
-      return _readLocal(location);
+      return Isolate.run(() => _readLocal(location));
     });
   }
 
@@ -168,7 +169,24 @@ final class DefaultJsonDocumentStore implements JsonDocumentStore {
     String? expectedRevision,
   }) {
     return _serialized(location, () async {
-      final validationError = _validate(bytes);
+      if (!location.usesSaf) {
+        try {
+          return await Isolate.run(
+            () => _writeLocal(
+              location: location,
+              bytes: bytes,
+              mode: mode,
+              expectedRevision: expectedRevision,
+            ),
+          );
+        } on Object catch (error) {
+          return JsonDocumentWriteResult(
+            status: JsonDocumentWriteStatus.conflict,
+            error: error.toString(),
+          );
+        }
+      }
+      final validationError = await Isolate.run(() => _validate(bytes));
       if (validationError != null) {
         return JsonDocumentWriteResult(
           status: JsonDocumentWriteStatus.conflict,
@@ -182,21 +200,13 @@ final class DefaultJsonDocumentStore implements JsonDocumentStore {
           error: 'expected_revision_required',
         );
       }
-      if (location.usesSaf) {
-        final value = await _platformGateway.writeJsonDocument(
-          location: location.toPlatformArguments(),
-          bytes: bytes,
-          mode: mode.name,
-          expectedRevision: expectedRevision,
-        );
-        return _decodePlatformWrite(value);
-      }
-      return _writeLocal(
-        location: location,
+      final value = await _platformGateway.writeJsonDocument(
+        location: location.toPlatformArguments(),
         bytes: bytes,
-        mode: mode,
+        mode: mode.name,
         expectedRevision: expectedRevision,
       );
+      return _decodePlatformWrite(value);
     });
   }
 
@@ -219,37 +229,44 @@ final class DefaultJsonDocumentStore implements JsonDocumentStore {
         );
         return _decodePlatformDelete(value);
       }
-      try {
-        final recovered = await _recoverLocal(location);
-        if (recovered.error != null) {
-          return JsonDocumentDeleteResult(
-            status: JsonDocumentDeleteStatus.conflict,
-            error: recovered.error,
-          );
-        }
-        final target = recovered.target;
-        if (target == null) {
-          return const JsonDocumentDeleteResult(
-            status: JsonDocumentDeleteStatus.missing,
-          );
-        }
-        if (_revision(recovered.bytes!) != expectedRevision) {
-          return const JsonDocumentDeleteResult(
-            status: JsonDocumentDeleteStatus.conflict,
-            error: 'revision_mismatch',
-          );
-        }
-        await target.delete();
-        return const JsonDocumentDeleteResult(
-          status: JsonDocumentDeleteStatus.deleted,
-        );
-      } on Object catch (error) {
+      return Isolate.run(() => _deleteLocal(location, expectedRevision));
+    });
+  }
+
+  static Future<JsonDocumentDeleteResult> _deleteLocal(
+    JsonDocumentLocation location,
+    String expectedRevision,
+  ) async {
+    try {
+      final recovered = await _recoverLocal(location);
+      if (recovered.error != null) {
         return JsonDocumentDeleteResult(
           status: JsonDocumentDeleteStatus.conflict,
-          error: error.toString(),
+          error: recovered.error,
         );
       }
-    });
+      final target = recovered.target;
+      if (target == null) {
+        return const JsonDocumentDeleteResult(
+          status: JsonDocumentDeleteStatus.missing,
+        );
+      }
+      if (_revision(recovered.bytes!) != expectedRevision) {
+        return const JsonDocumentDeleteResult(
+          status: JsonDocumentDeleteStatus.conflict,
+          error: 'revision_mismatch',
+        );
+      }
+      await target.delete();
+      return const JsonDocumentDeleteResult(
+        status: JsonDocumentDeleteStatus.deleted,
+      );
+    } on Object catch (error) {
+      return JsonDocumentDeleteResult(
+        status: JsonDocumentDeleteStatus.conflict,
+        error: error.toString(),
+      );
+    }
   }
 
   Future<T> _serialized<T>(
@@ -257,7 +274,7 @@ final class DefaultJsonDocumentStore implements JsonDocumentStore {
     Future<T> Function() action,
   ) => _JsonDocumentOperationCoordinator.run(location.lockKey, action);
 
-  Future<JsonDocumentReadResult> _readLocal(
+  static Future<JsonDocumentReadResult> _readLocal(
     JsonDocumentLocation location,
   ) async {
     try {
@@ -275,12 +292,26 @@ final class DefaultJsonDocumentStore implements JsonDocumentStore {
     }
   }
 
-  Future<JsonDocumentWriteResult> _writeLocal({
+  static Future<JsonDocumentWriteResult> _writeLocal({
     required JsonDocumentLocation location,
     required Uint8List bytes,
     required JsonDocumentWriteMode mode,
     required String? expectedRevision,
   }) async {
+    final validationError = _validate(bytes);
+    if (validationError != null) {
+      return JsonDocumentWriteResult(
+        status: JsonDocumentWriteStatus.conflict,
+        error: validationError,
+      );
+    }
+    if (mode == JsonDocumentWriteMode.replaceIfRevision &&
+        (expectedRevision == null || expectedRevision.isEmpty)) {
+      return const JsonDocumentWriteResult(
+        status: JsonDocumentWriteStatus.conflict,
+        error: 'expected_revision_required',
+      );
+    }
     final target = _localTarget(location);
     final parent = target.parent;
     await parent.create(recursive: true);
@@ -386,9 +417,8 @@ final class DefaultJsonDocumentStore implements JsonDocumentStore {
     }
   }
 
-  Future<({File? target, Uint8List? bytes, String? error})> _recoverLocal(
-    JsonDocumentLocation location,
-  ) async {
+  static Future<({File? target, Uint8List? bytes, String? error})>
+  _recoverLocal(JsonDocumentLocation location) async {
     final target = _localTarget(location);
     final files = await _findLocalTransactionFiles(target);
     final actualTarget = files.target;
@@ -431,24 +461,20 @@ final class DefaultJsonDocumentStore implements JsonDocumentStore {
     }
   }
 
-  Future<Uint8List?> _validJsonBytes(File? file) async {
+  static Future<Uint8List?> _validJsonBytes(File? file) async {
     if (file == null) return null;
-    try {
-      final bytes = await file.readAsBytes();
-      return _validate(bytes) == null ? bytes : null;
-    } on Object {
-      return null;
-    }
+    final bytes = await file.readAsBytes();
+    return _validate(bytes) == null ? bytes : null;
   }
 
-  Future<void> _deleteIfPresent(File? file) async {
+  static Future<void> _deleteIfPresent(File? file) async {
     if (file != null && await file.exists()) await file.delete();
   }
 
-  File _transactionFile(File target, String suffix) =>
+  static File _transactionFile(File target, String suffix) =>
       File('${target.path}$suffix');
 
-  File _localTarget(JsonDocumentLocation location) {
+  static File _localTarget(JsonDocumentLocation location) {
     final parentPath = switch (location.kind) {
       JsonDocumentLocationKind.folderChild => location.basePath,
       JsonDocumentLocationKind.fileSibling => path.dirname(location.basePath),
@@ -456,7 +482,7 @@ final class DefaultJsonDocumentStore implements JsonDocumentStore {
     return File(path.join(parentPath, location.name));
   }
 
-  Future<({File? target, File? backup, File? staged})>
+  static Future<({File? target, File? backup, File? staged})>
   _findLocalTransactionFiles(File target) async {
     final expected = <File>[
       target,
@@ -467,7 +493,9 @@ final class DefaultJsonDocumentStore implements JsonDocumentStore {
     final matches = <File?>[
       for (var i = 0; i < expected.length; i++) present[i] ? expected[i] : null,
     ];
-    if (present.any((exists) => !exists) && await target.parent.exists()) {
+    if (!Platform.isWindows &&
+        present.any((exists) => !exists) &&
+        await target.parent.exists()) {
       final names = expected
           .map((file) => path.basename(file.path).toLowerCase())
           .toList(growable: false);

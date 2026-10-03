@@ -70,12 +70,26 @@ extension AppDatabaseTracks on AppDatabase {
     List<MusicTrack> tracks, {
     int? scanGeneration,
   }) async {
+    if (tracks.isEmpty) return;
     await _runDatabaseWrite((db) async {
-      final batch = db.batch();
-      for (final track in tracks) {
-        _writeTrackToBatch(batch, track, scanGeneration: scanGeneration);
-      }
-      await batch.commit(noResult: true);
+      // Keep messages small enough to encode between frames, while a failure
+      // in a later chunk still rolls back every earlier chunk.
+      await db.transaction((txn) async {
+        const chunkSize = 120;
+        for (var start = 0; start < tracks.length; start += chunkSize) {
+          await Future<void>.delayed(Duration.zero);
+          final batch = txn.batch();
+          final end = (start + chunkSize).clamp(0, tracks.length);
+          for (var index = start; index < end; index++) {
+            _writeTrackToBatch(
+              batch,
+              tracks[index],
+              scanGeneration: scanGeneration,
+            );
+          }
+          await batch.commit(noResult: true);
+        }
+      });
     });
   }
 

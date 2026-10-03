@@ -459,61 +459,72 @@ void main() {
   );
 
   for (final collect in [true, false]) {
-    test(
-      'scan preserves valid chunks and completeness (collect=$collect)',
-      () async {
-        messenger.setMockStreamHandler(
-          scanEvents,
-          MockStreamHandler.inline(onListen: (_, _) {}),
-        );
-        messenger.setMockMethodCallHandler(channel, (call) async {
-          calls.add(call);
-          return success(true);
-        });
-        final scan = collect
-            ? gateway.scanFolder('/music')
-            : gateway.scanFolderChunked('/music', (_) => true);
-        await _waitForMethodCall(calls, FileCacheMethod.startFolderScan, 1);
-        final args = Map<String, Object?>.from(
-          calls
-                  .firstWhere(
-                    (call) => call.method == FileCacheMethod.startFolderScan,
-                  )
-                  .arguments
-              as Map,
-        );
-        Future<void> emit(Map<String, Object?> event) async {
-          await messenger.handlePlatformMessage(
-            scanEvents.name,
-            scanEvents.codec.encodeSuccessEnvelope(event),
-            null,
+    for (final failures in [0, 3]) {
+      test(
+        'scan preserves incomplete result (collect=$collect, failures=$failures)',
+        () async {
+          messenger.setMockStreamHandler(
+            scanEvents,
+            MockStreamHandler.inline(onListen: (_, _) {}),
           );
-        }
+          messenger.setMockMethodCallHandler(channel, (call) async {
+            calls.add(call);
+            return success(true);
+          });
+          final scan = collect
+              ? gateway.scanFolder('/music')
+              : gateway.scanFolderChunked('/music', (_) => true);
+          await _waitForMethodCall(calls, FileCacheMethod.startFolderScan, 1);
+          final args = Map<String, Object?>.from(
+            calls
+                    .firstWhere(
+                      (call) => call.method == FileCacheMethod.startFolderScan,
+                    )
+                    .arguments
+                as Map,
+          );
+          Future<void> emit(Map<String, Object?> event) async {
+            await messenger.handlePlatformMessage(
+              scanEvents.name,
+              scanEvents.codec.encodeSuccessEnvelope(event),
+              null,
+            );
+          }
 
-        await emit({
-          ...args,
-          'generationId': 'obsolete',
-          'eventType': 'completed',
-        });
-        expect((await gateway.scanFolder('/other')).errorCode, 'scan_busy');
-        await emit({
-          ...args,
-          'eventType': 'chunk',
-          'tracks': [
-            {'path': '/music/one.mp3'},
-          ],
-          'failureCount': 2,
-        });
-        await emit({...args, 'eventType': 'completed', 'failureCount': 1});
-        final result = await scan;
-        expect(result.ok, isTrue);
-        expect(result.paths, contains(PathMatcher.normalize('/music/one.mp3')));
-        expect(result.failureCount, 3);
-        expect(result.completenessKnown, isTrue);
-        expect(result.isComplete, isFalse);
-        expect(result.tracks, hasLength(collect ? 1 : 0));
-      },
-    );
+          await emit({
+            ...args,
+            'generationId': 'obsolete',
+            'eventType': 'completed',
+          });
+          expect((await gateway.scanFolder('/other')).errorCode, 'scan_busy');
+          await emit({
+            ...args,
+            'eventType': 'chunk',
+            'chunkSequence': 1,
+            'tracks': [
+              {'path': '/music/one.mp3'},
+            ],
+            'failureCount': failures == 0 ? 0 : 2,
+          });
+          await emit({
+            ...args,
+            'eventType': 'completed',
+            'failureCount': failures == 0 ? 0 : 1,
+            'complete': false,
+          });
+          final result = await scan;
+          expect(result.ok, isTrue);
+          expect(
+            result.paths,
+            contains(PathMatcher.normalize('/music/one.mp3')),
+          );
+          expect(result.failureCount, failures);
+          expect(result.completenessKnown, isFalse);
+          expect(result.isComplete, isFalse);
+          expect(result.tracks, hasLength(collect ? 1 : 0));
+        },
+      );
+    }
   }
 
   test('scan completion waits for the pending chunk callback', () async {
@@ -553,6 +564,8 @@ void main() {
         scanEvents.codec.encodeSuccessEnvelope({
           ...args,
           'eventType': eventType,
+          if (eventType == 'chunk') 'chunkSequence': 1,
+          if (eventType == 'completed') 'complete': true,
         }),
         null,
       );
@@ -560,11 +573,276 @@ void main() {
 
     await emit('chunk');
     await entered.future;
+    expect(
+      calls.where(
+        (call) => call.method == FileCacheMethod.acknowledgeFolderScanChunk,
+      ),
+      isEmpty,
+    );
     await emit('completed');
     await Future<void>.delayed(Duration.zero);
     expect(completed, isFalse);
     release.complete();
     expect((await scan).isComplete, isTrue);
+    expect(
+      calls
+          .singleWhere(
+            (call) => call.method == FileCacheMethod.acknowledgeFolderScanChunk,
+          )
+          .arguments,
+      {'taskId': args['taskId'], 'chunkSequence': 1},
+    );
+  });
+
+  for (final outcome in [
+    'false',
+    'throw',
+    'cancel',
+    'ackRejected',
+    'ackError',
+  ]) {
+    test(
+      'chunk processing stops without further acknowledgement ($outcome)',
+      () async {
+        messenger.setMockStreamHandler(
+          scanEvents,
+          MockStreamHandler.inline(onListen: (_, _) {}),
+        );
+        late Map<String, Object?> args;
+        Future<void> emit(String type) => messenger.handlePlatformMessage(
+          scanEvents.name,
+          scanEvents.codec.encodeSuccessEnvelope({
+            ...args,
+            'eventType': type,
+            if (type == 'chunk') 'chunkSequence': 1,
+          }),
+          null,
+        );
+        messenger.setMockMethodCallHandler(channel, (call) async {
+          calls.add(call);
+          if (call.method == FileCacheMethod.acknowledgeFolderScanChunk) {
+            if (outcome == 'ackError') {
+              throw PlatformException(code: 'ack_failed');
+            }
+            return success(outcome != 'ackRejected');
+          }
+          return success(true);
+        });
+        final entered = Completer<void>();
+        final release = Completer<void>();
+        final scan = gateway.scanFolderChunked('/music', (_) async {
+          entered.complete();
+          await release.future;
+          if (outcome == 'throw') throw StateError('merge failed');
+          return outcome != 'false';
+        });
+        await _waitForMethodCall(calls, FileCacheMethod.startFolderScan, 1);
+        args = Map<String, Object?>.from(calls.first.arguments as Map);
+        await emit('chunk');
+        await entered.future;
+        if (outcome == 'cancel') {
+          var completed = false;
+          unawaited(scan.then((_) => completed = true));
+          await gateway.cancelActiveFolderScan();
+          expect(completed, isFalse);
+        }
+        release.complete();
+        final result = await scan;
+        expect(result.wasCancelled, outcome == 'false' || outcome == 'cancel');
+        if (outcome == 'throw') expect(result.errorCode, 'scan_handler_error');
+        if (outcome.startsWith('ack')) {
+          expect(result.errorCode, 'scan_acknowledgement_failed');
+        }
+        expect(
+          calls.where(
+            (call) => call.method == FileCacheMethod.acknowledgeFolderScanChunk,
+          ),
+          hasLength(outcome.startsWith('ack') ? 1 : 0),
+        );
+        expect(
+          calls.where(
+            (call) => call.method == FileCacheMethod.cancelFolderScan,
+          ),
+          hasLength(1),
+        );
+      },
+    );
+  }
+
+  test('idle cancellation completes without a native terminal event', () async {
+    messenger.setMockStreamHandler(
+      scanEvents,
+      MockStreamHandler.inline(onListen: (_, _) {}),
+    );
+    messenger.setMockMethodCallHandler(channel, (call) async {
+      calls.add(call);
+      return success(true);
+    });
+    final scan = gateway.scanFolderChunked('/music', (_) => true);
+    await _waitForMethodCall(calls, FileCacheMethod.startFolderScan, 1);
+    await gateway.cancelActiveFolderScan();
+    final result = await scan;
+    expect(result.ok, isTrue);
+    expect(result.wasCancelled, isTrue);
+    expect(result.isComplete, isFalse);
+    expect(
+      calls.where(
+        (call) => call.method == FileCacheMethod.acknowledgeFolderScanChunk,
+      ),
+      isEmpty,
+    );
+    expect(
+      calls.where((call) => call.method == FileCacheMethod.cancelFolderScan),
+      hasLength(1),
+    );
+  });
+
+  test(
+    'successive chunks acknowledge their own sequence after processing',
+    () async {
+      messenger.setMockStreamHandler(
+        scanEvents,
+        MockStreamHandler.inline(onListen: (_, _) {}),
+      );
+      messenger.setMockMethodCallHandler(channel, (call) async {
+        calls.add(call);
+        return success(true);
+      });
+      final handled = <String>[];
+      final scan = gateway.scanFolderChunked('/music', (chunk) {
+        handled.add(chunk.tracks.single.path);
+        expect(
+          calls.where(
+            (call) => call.method == FileCacheMethod.acknowledgeFolderScanChunk,
+          ),
+          hasLength(handled.length - 1),
+        );
+        return true;
+      });
+      await _waitForMethodCall(calls, FileCacheMethod.startFolderScan, 1);
+      final args = Map<String, Object?>.from(calls.first.arguments as Map);
+      for (var sequence = 1; sequence <= 2; sequence++) {
+        await messenger.handlePlatformMessage(
+          scanEvents.name,
+          scanEvents.codec.encodeSuccessEnvelope({
+            ...args,
+            'eventType': 'chunk',
+            'chunkSequence': sequence,
+            'tracks': [
+              {'path': '/music/$sequence.mp3'},
+            ],
+          }),
+          null,
+        );
+        await _waitForMethodCall(
+          calls,
+          FileCacheMethod.acknowledgeFolderScanChunk,
+          sequence,
+        );
+        expect(calls.last.arguments, {
+          'taskId': args['taskId'],
+          'chunkSequence': sequence,
+        });
+      }
+      await messenger.handlePlatformMessage(
+        scanEvents.name,
+        scanEvents.codec.encodeSuccessEnvelope({
+          ...args,
+          'eventType': 'completed',
+          'complete': true,
+        }),
+        null,
+      );
+      expect((await scan).isComplete, isTrue);
+      expect(
+        handled.map(PathMatcher.normalize),
+        ['/music/1.mp3', '/music/2.mp3'].map(PathMatcher.normalize),
+      );
+    },
+  );
+
+  test('invalid chunk sequence stops scanning before processing', () async {
+    messenger.setMockStreamHandler(
+      scanEvents,
+      MockStreamHandler.inline(onListen: (_, _) {}),
+    );
+    messenger.setMockMethodCallHandler(channel, (call) async {
+      calls.add(call);
+      return success(true);
+    });
+    var handled = false;
+    final scan = gateway.scanFolderChunked('/music', (_) {
+      handled = true;
+      return true;
+    });
+    await _waitForMethodCall(calls, FileCacheMethod.startFolderScan, 1);
+    await messenger.handlePlatformMessage(
+      scanEvents.name,
+      scanEvents.codec.encodeSuccessEnvelope({
+        ...Map<String, Object?>.from(calls.first.arguments as Map),
+        'eventType': 'chunk',
+        'chunkSequence': 2,
+      }),
+      null,
+    );
+    expect((await scan).errorCode, 'scan_protocol_error');
+    expect(handled, isFalse);
+    expect(
+      calls.where(
+        (call) => call.method == FileCacheMethod.acknowledgeFolderScanChunk,
+      ),
+      isEmpty,
+    );
+  });
+
+  testWidgets('slow chunk processing pauses event inactivity timeout', (
+    tester,
+  ) async {
+    messenger.setMockStreamHandler(
+      scanEvents,
+      MockStreamHandler.inline(onListen: (_, _) {}),
+    );
+    messenger.setMockMethodCallHandler(channel, (call) async {
+      calls.add(call);
+      return success(true);
+    });
+    final release = Completer<void>();
+    var entered = false;
+    final scan = gateway.scanFolderChunked('/music', (_) async {
+      entered = true;
+      await release.future;
+      return true;
+    });
+    await tester.pump();
+    final args = Map<String, Object?>.from(calls.first.arguments as Map);
+    await messenger.handlePlatformMessage(
+      scanEvents.name,
+      scanEvents.codec.encodeSuccessEnvelope({
+        ...args,
+        'eventType': 'chunk',
+        'chunkSequence': 1,
+      }),
+      null,
+    );
+    await tester.pump();
+    expect(entered, isTrue);
+    await tester.pump(const Duration(seconds: 121));
+    expect(
+      calls.where((call) => call.method == FileCacheMethod.cancelFolderScan),
+      isEmpty,
+    );
+    release.complete();
+    await tester.pump();
+    await messenger.handlePlatformMessage(
+      scanEvents.name,
+      scanEvents.codec.encodeSuccessEnvelope({
+        ...args,
+        'eventType': 'completed',
+        'complete': true,
+      }),
+      null,
+    );
+    expect((await _pumpFuture(tester, scan)).isComplete, isTrue);
   });
 
   test(

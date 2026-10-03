@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'support/runtime_test_models.dart';
 import 'package:doujin_audio/app/application/audio_path_coordinator.dart';
 import 'package:doujin_audio/core/persistence/app_database.dart';
+import 'package:doujin_audio/core/media/path_matcher.dart';
 import 'support/test_persistence_repository.dart';
 import 'package:doujin_audio/features/library/application/audio_detail_document_repository.dart';
 import 'package:doujin_audio/features/library/data/audio_detail_json_codec.dart';
@@ -844,6 +845,53 @@ void main() {
       },
     );
 
+    test(
+      'rolled back batch additions do not return after database reload',
+      () async {
+        await runtimeGraph.runtime.dispose();
+        runtimeGraph = createTestRuntimeGraph(
+          notificationService: notificationService,
+          persistenceRepository: TestPersistenceRepository(
+            database: AppDatabase.test(db),
+          ),
+          skipPersistence: false,
+        );
+        const root = '/library/cancelled';
+        final track = MusicTrack(
+          path: '$root/01.mp3',
+          displayName: '01',
+          groupKey: root,
+          groupTitle: 'cancelled',
+          groupSubtitle: root,
+          isSingle: false,
+        );
+        runtimeGraph.library.beginLibraryBatch();
+        runtimeGraph.library.recordLibraryEntriesForTracks(root, <MusicTrack>[
+          track,
+        ]);
+        runtimeGraph.library.addOrReplaceTracks(<MusicTrack>[
+          track,
+        ], notify: false);
+        runtimeGraph.library.removeTracksByPath(<String>[track.path]);
+        runtimeGraph.library.removeLibraryEntriesByPaths(root, <String>[
+          track.path,
+        ]);
+        await runtimeGraph.library.endLibraryBatch();
+
+        expect(runtimeGraph.library.library, isEmpty);
+        expect(
+          await runtimeGraph.library.databaseRepository.loadAllTracks(),
+          isEmpty,
+        );
+        expect(
+          await runtimeGraph.library.databaseRepository.loadLibraryEntries(
+            root,
+          ),
+          isEmpty,
+        );
+      },
+    );
+
     test('library entry persistence is deferred until batch close', () async {
       await runtimeGraph.runtime.dispose();
       final countingRepository = _CountingTestPersistenceRepository(
@@ -904,6 +952,89 @@ void main() {
       expect(rows, hasLength(1));
       expect(rows.single['display_name'], '01 renamed');
     });
+
+    test(
+      'cancelled library promotion preserves persisted track classification',
+      () async {
+        await runtimeGraph.runtime.dispose();
+        runtimeGraph = createTestRuntimeGraph(
+          notificationService: notificationService,
+          persistenceRepository: TestPersistenceRepository(
+            database: AppDatabase.test(db),
+          ),
+          skipPersistence: false,
+        );
+        final root = PathMatcher.normalize('C:/music');
+        final trackPath = PathMatcher.normalize('C:/music/existing.mp3');
+        final original = MusicTrack(
+          path: trackPath,
+          displayName: 'Original track',
+          groupKey: root,
+          groupTitle: 'Original folder',
+          groupSubtitle: root,
+          isSingle: false,
+          isFavorite: true,
+          tags: const <String>['keep'],
+        );
+        runtimeGraph.library.beginLibraryBatch();
+        runtimeGraph.library.addWatchedFolder(root, notify: false);
+        runtimeGraph.library.addOrReplaceTracks(<MusicTrack>[
+          original,
+        ], notify: false);
+        await runtimeGraph.library.endLibraryBatch();
+
+        final dataSource = _JsonPreservationScanDataSource()
+          ..configure(
+            selectedPath: root,
+            tracks: <ScannedTrack>[_scannedTrackForPath(trackPath)],
+            afterChunk: () {
+              expect(
+                runtimeGraph.library.trackByPath(trackPath)?.isSingle,
+                isTrue,
+              );
+              runtimeGraph.library.cancelScan();
+            },
+          );
+        final outcome = await LibraryScannerService(dataSource: dataSource)
+            .addLibrary(
+              provider: runtimeGraph.library,
+              labels: const LibraryScanLabels(
+                chooseMusicFolder: 'folder',
+                chooseLibraryFolder: 'library',
+                chooseAudioFiles: 'files',
+                importedFiles: 'imported',
+                manuallySelectedFiles: 'selected',
+              ),
+            );
+
+        expect(outcome?.code, LibraryScanOutcomeCode.cancelled);
+        expect(runtimeGraph.library.trackByPath(trackPath)?.isSingle, isFalse);
+        expect(runtimeGraph.library.watchedLibraries, isEmpty);
+        await runtimeGraph.runtime.dispose();
+        runtimeGraph = createTestRuntimeGraph(
+          notificationService: notificationService,
+          persistenceRepository: TestPersistenceRepository(
+            database: AppDatabase.test(db),
+          ),
+          skipPersistence: false,
+        );
+        await runtimeGraph.library.loadPersistedState();
+        final restored = runtimeGraph.library.trackByPath(trackPath)!;
+        expect(runtimeGraph.library.library, hasLength(1));
+        expect(restored.isSingle, isFalse);
+        expect(restored.groupKey, root);
+        expect(restored.groupTitle, 'Original folder');
+        expect(restored.displayName, 'Original track');
+        expect(restored.isFavorite, isTrue);
+        final detail = await runtimeGraph.library.databaseRepository
+            .loadTrackDetail(trackPath);
+        expect(detail?.tags, const <String>['keep']);
+        expect(
+          runtimeGraph.library.audioDetailTargetForTrack(restored),
+          AudioDetailTarget.libraryRootFolder(root),
+        );
+      },
+    );
 
     test(
       'unchanged watched folder refresh keeps library revision stable',
@@ -1886,15 +2017,18 @@ class _JsonPreservationScanDataSource implements LibraryScanDataSource {
   String _selectedPath = '';
   List<String> _childFolders = const <String>[];
   List<ScannedTrack> _tracks = const <ScannedTrack>[];
+  void Function()? _afterChunk;
 
   void configure({
     required String selectedPath,
     List<String> childFolders = const <String>[],
     required List<ScannedTrack> tracks,
+    void Function()? afterChunk,
   }) {
     _selectedPath = selectedPath;
     _childFolders = childFolders;
     _tracks = tracks;
+    _afterChunk = afterChunk;
   }
 
   @override
@@ -1936,6 +2070,7 @@ class _JsonPreservationScanDataSource implements LibraryScanDataSource {
   }) async {
     final paths = _tracks.map((track) => track.path).toSet();
     await onChunk(FolderScanChunk(tracks: _tracks, paths: paths));
+    _afterChunk?.call();
     return _resultForCurrentTracks();
   }
 

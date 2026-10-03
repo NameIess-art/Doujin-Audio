@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:isolate';
 
 import '../../../core/logging/app_log_service.dart';
 import '../../../core/media/music_track.dart';
@@ -120,15 +121,19 @@ final class LibraryPersistenceCoordinator {
 
   Future<void> flush() => _writeTail;
 
-  Future<void> saveWatchedFolders() => _saveStringList(
-    _watchedFoldersKey,
-    List<String>.of(_service.watchedFolders),
-  );
+  Future<void> saveWatchedFolders() => _service.libraryBatchDepth > 0
+      ? Future<void>.value()
+      : _saveStringList(
+          _watchedFoldersKey,
+          List<String>.of(_service.watchedFolders),
+        );
 
-  Future<void> saveWatchedLibraries() => _saveStringList(
-    _watchedLibrariesKey,
-    List<String>.of(_service.watchedLibraries),
-  );
+  Future<void> saveWatchedLibraries() => _service.libraryBatchDepth > 0
+      ? Future<void>.value()
+      : _saveStringList(
+          _watchedLibrariesKey,
+          List<String>.of(_service.watchedLibraries),
+        );
 
   Future<void> saveGroupOrder() =>
       _saveStringList(_groupOrderKey, List<String>.of(_service.groupOrder));
@@ -149,10 +154,13 @@ final class LibraryPersistenceCoordinator {
     return _queueWrite(() => AppPreferences.setString(_exclusionsKey, value));
   }
 
-  Future<void> _saveStringList(String key, List<String> value) {
-    final encoded = json.encode(value);
-    return _queueWrite(() => AppPreferences.setString(key, encoded));
-  }
+  Future<void> _saveStringList(String key, List<String> value) =>
+      _queueWrite(() async {
+        final encoded = await Isolate.run(() => json.encode(value));
+        if (!await AppPreferences.setString(key, encoded)) {
+          throw StateError('Library preference write failed: $key');
+        }
+      });
 
   Future<void> _queueWrite(Future<void> Function() write) {
     final task = _writeTail.then((_) => write());

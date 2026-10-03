@@ -48,6 +48,7 @@ class PlatformChannelsTest {
             FileCacheMethods.SCAN_FOLDER,
             FileCacheMethods.START_FOLDER_SCAN,
             FileCacheMethods.CANCEL_FOLDER_SCAN,
+            FileCacheMethods.ACKNOWLEDGE_FOLDER_SCAN_CHUNK,
             FileCacheMethods.SET_APPLICATION_CACHE_LIMIT,
             FileCacheMethods.WRITE_JSON_DOCUMENT,
             FileCacheMethods.WRITE_FILE_BYTES_TO_FOLDER,
@@ -62,6 +63,7 @@ class PlatformChannelsTest {
         assertEquals("snapshot", NativePlaybackMethods.SNAPSHOT)
         assertEquals("startFolderScan", FileCacheMethods.START_FOLDER_SCAN)
         assertEquals("cancelFolderScan", FileCacheMethods.CANCEL_FOLDER_SCAN)
+        assertEquals("acknowledgeFolderScanChunk", FileCacheMethods.ACKNOWLEDGE_FOLDER_SCAN_CHUNK)
         assertEquals("exportFile", FileCacheMethods.EXPORT_FILE)
         assertEquals("getAppVersion", UpdateMethods.GET_APP_VERSION)
         assertEquals(

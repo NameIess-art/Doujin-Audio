@@ -242,6 +242,31 @@ class SafDocumentReplacementTest {
     }
 
     @Test
+    fun `read failure during recovery preserves target backup and staged documents`() {
+        val documents = listOf("target", "backup", "staged")
+        for (unreadable in documents) {
+            val files = linkedMapOf("target" to "current", "backup" to "old", "staged" to "new")
+            val recovery = recoverSafDocument(
+                targetName = "target",
+                existing = "target",
+                staleBackup = "backup",
+                staleTemp = "staged",
+                isValid = {
+                    if (it == unreadable) throw java.io.IOException("Provider is unavailable")
+                    documents.indexOf(it) > documents.indexOf(unreadable)
+                },
+                rename = { source, destination ->
+                    files.remove(source)?.let { files[destination] = it; destination }
+                },
+                delete = { files.remove(it) != null }
+            )
+
+            assertTrue(recovery.failed)
+            assertEquals(mapOf("target" to "current", "backup" to "old", "staged" to "new"), files)
+        }
+    }
+
+    @Test
     fun `same target operations are serialized while different targets proceed`() {
         val executor = Executors.newFixedThreadPool(3)
         val firstEntered = CountDownLatch(1)

@@ -20,6 +20,7 @@ final class NativeFolderScanClient {
   int _scanSessionSeed = 0;
   int _scanGenerationSeed = 0;
   String? _activeScanTaskId;
+  void Function()? _completeActiveScanCancellation;
 
   Future<NativeScanResult> scan(String folderPath) async {
     final tracks = <ScannedTrack>[];
@@ -47,6 +48,9 @@ final class NativeFolderScanClient {
     final generationId = 'scan-generation-${_scanGenerationSeed++}';
     final paths = <String>{};
     var failureCount = 0;
+    var chunkSequence = 0;
+    var processingChunk = false;
+    var stopping = false;
     final completer = Completer<NativeScanResult>();
     StreamSubscription<dynamic>? subscription;
     Future<void> pendingChunk = Future<void>.value();
@@ -70,6 +74,19 @@ final class NativeFolderScanClient {
       return pendingChunk;
     }
 
+    NativeScanResult cancelledResult() => NativeScanResult.success(
+      const <ScannedTrack>[],
+      Set<String>.unmodifiable(paths),
+      failureCount: failureCount,
+      completenessKnown: true,
+      wasCancelled: true,
+    );
+
+    _completeActiveScanCancellation = () {
+      stopping = true;
+      unawaited(completeAfterPending(cancelledResult));
+    };
+
     try {
       subscription = _scanEvents
           .receiveBroadcastStream(<String, Object?>{
@@ -86,7 +103,7 @@ final class NativeFolderScanClient {
                   scanEvent.generationId != generationId) {
                 return;
               }
-              eventLifecycle.markActivity();
+              if (!processingChunk) eventLifecycle.markActivity();
               if (scanEvent.isStarted ||
                   scanEvent.isStageChanged ||
                   scanEvent.isProgress) {
@@ -94,27 +111,54 @@ final class NativeFolderScanClient {
                 return;
               }
               if (scanEvent.isChunk) {
+                final sequence = event['chunkSequence'];
+                if (sequence is! int || sequence != chunkSequence + 1) {
+                  stopping = true;
+                  eventLifecycle.fail(
+                    code: 'scan_protocol_error',
+                    message: 'Folder scan chunk sequence is invalid.',
+                  );
+                  return;
+                }
+                chunkSequence = sequence;
                 final chunk = scanEvent.chunk;
                 pendingChunk = pendingChunk
                     .then((_) async {
-                      if (completer.isCompleted) return;
+                      if (completer.isCompleted || stopping) return;
+                      processingChunk = true;
+                      eventLifecycle.pauseActivity();
                       paths.addAll(chunk.paths);
                       failureCount += chunk.failureCount;
                       final keepGoing = await onChunk(chunk);
+                      if (completer.isCompleted || stopping) return;
                       if (!keepGoing) {
-                        eventLifecycle.complete(
-                          NativeScanResult.success(
-                            const <ScannedTrack>[],
-                            Set<String>.unmodifiable(paths),
-                            failureCount: failureCount,
-                            completenessKnown: true,
-                            wasCancelled: true,
-                          ),
-                        );
+                        stopping = true;
+                        eventLifecycle.complete(cancelledResult());
                         unawaited(_cancelFolderScan(taskId));
+                        return;
                       }
+                      final acknowledgement = await _client.invoke<bool>(
+                        FileCacheMethod.acknowledgeFolderScanChunk,
+                        arguments: <String, Object?>{
+                          'taskId': taskId,
+                          'chunkSequence': sequence,
+                        },
+                        decode: (value) => value as bool,
+                      );
+                      if (completer.isCompleted || stopping) return;
+                      if (acknowledgement.valueOrNull != true) {
+                        stopping = true;
+                        eventLifecycle.fail(
+                          code: 'scan_acknowledgement_failed',
+                          message: 'Native scan did not accept the chunk.',
+                        );
+                        return;
+                      }
+                      processingChunk = false;
+                      eventLifecycle.markActivity();
                     })
                     .catchError((Object error, StackTrace stackTrace) {
+                      stopping = true;
                       AppLogService.error(
                         'chunked_library_scan_handler_failed',
                         error: error,
@@ -135,23 +179,15 @@ final class NativeFolderScanClient {
                       const <ScannedTrack>[],
                       Set<String>.unmodifiable(paths),
                       failureCount: failureCount + scanEvent.chunk.failureCount,
-                      completenessKnown: true,
+                      completenessKnown: scanEvent.complete,
                     ),
                   ),
                 );
               } else if (scanEvent.isCancelled) {
-                unawaited(
-                  completeAfterPending(
-                    () => NativeScanResult.success(
-                      const <ScannedTrack>[],
-                      Set<String>.unmodifiable(paths),
-                      failureCount: failureCount,
-                      completenessKnown: true,
-                      wasCancelled: true,
-                    ),
-                  ),
-                );
+                stopping = true;
+                unawaited(completeAfterPending(cancelledResult));
               } else if (scanEvent.isError) {
+                stopping = true;
                 unawaited(
                   completeAfterPending(
                     () => NativeScanResult.failed(
@@ -205,13 +241,19 @@ final class NativeFolderScanClient {
       eventLifecycle.dispose();
       _releaseScanSubscription(subscription);
       if (!eventLifecycle.isCompleted) unawaited(_cancelFolderScan(taskId));
-      if (_activeScanTaskId == taskId) _activeScanTaskId = null;
+      if (_activeScanTaskId == taskId) {
+        _activeScanTaskId = null;
+        _completeActiveScanCancellation = null;
+      }
     }
   }
 
   Future<void> cancelActiveFolderScan() async {
     final taskId = _activeScanTaskId;
-    if (taskId != null) await _cancelFolderScan(taskId);
+    if (taskId != null) {
+      _completeActiveScanCancellation?.call();
+      await _cancelFolderScan(taskId);
+    }
   }
 
   Future<void> _cancelFolderScan(String taskId) async {
@@ -268,6 +310,8 @@ final class _FolderScanEventLifecycle {
       );
     });
   }
+
+  void pauseActivity() => _watchdog?.cancel();
 
   void fail({required String code, required String message}) {
     if (_disposed) return;

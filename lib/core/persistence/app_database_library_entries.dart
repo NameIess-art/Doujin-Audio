@@ -25,20 +25,30 @@ extension AppDatabaseLibraryEntries on AppDatabase {
   }
 
   Future<void> upsertLibraryEntries(
-    List<LibraryEntryRecord> entries, {
+    Iterable<LibraryEntryRecord> entries, {
     int? scanGeneration,
   }) async {
-    if (entries.isEmpty) return;
     await _runDatabaseWrite((db) async {
-      final batch = db.batch();
-      for (final entry in entries) {
-        batch.insert(
-          'library_entries',
-          _libraryEntryToRow(entry, scanGeneration: scanGeneration),
-          conflictAlgorithm: ConflictAlgorithm.replace,
-        );
-      }
-      await batch.commit(noResult: true);
+      await db.transaction((txn) async {
+        final iterator = entries.iterator;
+        while (iterator.moveNext()) {
+          await Future<void>.delayed(Duration.zero);
+          final batch = txn.batch();
+          var count = 0;
+          do {
+            batch.insert(
+              'library_entries',
+              _libraryEntryToRow(
+                iterator.current,
+                scanGeneration: scanGeneration,
+              ),
+              conflictAlgorithm: ConflictAlgorithm.replace,
+            );
+            count++;
+          } while (count < 120 && iterator.moveNext());
+          await batch.commit(noResult: true);
+        }
+      });
     });
   }
 

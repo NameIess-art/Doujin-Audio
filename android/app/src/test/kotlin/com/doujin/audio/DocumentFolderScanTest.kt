@@ -5,12 +5,28 @@ import android.provider.DocumentsContract
 import com.doujin.audio.scanner.NoopFolderScanObserver
 import com.doujin.audio.scanner.ScannedDocument
 import com.doujin.audio.scanner.scanDocumentChildren
+import com.doujin.audio.scanner.scanFolderQuery
 import java.lang.reflect.Proxy
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DocumentFolderScanTest {
+    @Test
+    fun `shared folder query reports unavailable provider without consuming rows`() {
+        var consumed = false
+        assertEquals(1, scanFolderQuery({ null }) { consumed = true })
+        assertEquals(1, scanFolderQuery({ throw SecurityException("Permission revoked") }) {
+            consumed = true
+        })
+        assertTrue(!consumed)
+
+        val empty = FakeCursor(emptyList())
+        assertEquals(0, scanFolderQuery({ empty.cursor }) { consumed = true })
+        assertTrue(consumed)
+        assertTrue(empty.closed)
+    }
+
     @Test
     fun `empty directory is complete but unavailable query is a failure`() {
         val empty = FakeCursor(emptyList())

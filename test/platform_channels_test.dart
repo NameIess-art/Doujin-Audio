@@ -32,6 +32,7 @@ void main() {
       FileCacheMethod.cacheFromUri,
       FileCacheMethod.scanFolder,
       FileCacheMethod.startFolderScan,
+      FileCacheMethod.acknowledgeFolderScanChunk,
       FileCacheMethod.cancelFolderScan,
       FileCacheMethod.listChildFolders,
       FileCacheMethod.renameDocument,
@@ -73,6 +74,10 @@ void main() {
     expect(NativePlaybackMethod.snapshot, 'snapshot');
     expect(NativePlaybackMethod.setTemporarySpeed, 'setTemporarySpeed');
     expect(FileCacheMethod.startFolderScan, 'startFolderScan');
+    expect(
+      FileCacheMethod.acknowledgeFolderScanChunk,
+      'acknowledgeFolderScanChunk',
+    );
     expect(FileCacheMethod.cancelFolderScan, 'cancelFolderScan');
     expect(FileCacheMethod.exportFile, 'exportFile');
     expect(FileCacheMethod.resolveTrackSubtitle, 'resolveTrackSubtitle');

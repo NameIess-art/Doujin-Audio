@@ -139,6 +139,51 @@ void main() {
     expect((await database.load(target))?.workTitle, 'Database wins');
   });
 
+  test(
+    'explicit save preserves incompatible JSON layouts byte for byte',
+    () async {
+      for (final original in <String>[
+        '[{"targetPath":"other.mp3","unknown":"keep"}]\n',
+        '"foreign document"\n',
+        '{"schemaVersion":2,"type":"audio-detail","unknown":7}\n',
+        '{"schemaVersion":1,"type":"audio-detail","tags":{}}\n',
+      ]) {
+        await documentFile.writeAsString(original, flush: true);
+
+        final result = await repository.save(
+          AudioDetail.empty(target).copyWith(workTitle: 'Edited'),
+        );
+
+        expect(result.documentFailed, isTrue);
+        expect(await documentFile.readAsString(), original);
+        expect((await database.load(target))?.workTitle, 'Edited');
+      }
+    },
+  );
+
+  test('concurrent single-file saves keep every sibling entry', () async {
+    final results = await Future.wait([
+      for (var index = 0; index < 8; index++)
+        AudioDetailDocumentRepository(
+          store: DefaultJsonDocumentStore(),
+        ).saveExplicit(
+          AudioDetail.empty(
+            AudioDetailTarget.singleAudioFile(
+              '${directory.path}${Platform.pathSeparator}track$index.mp3',
+            ),
+          ).copyWith(workTitle: 'Track $index'),
+        ),
+    ]);
+
+    expect(results.every((result) => result.committed), isTrue);
+    final entries = jsonDecode(await documentFile.readAsString()) as List;
+    expect(entries, hasLength(8));
+    expect(
+      entries.map((entry) => (entry as Map)['workTitle']),
+      unorderedEquals([for (var index = 0; index < 8; index++) 'Track $index']),
+    );
+  });
+
   test('import does not restore tags when user record cleared tags', () async {
     const originalWithTags = '''{
   "schemaVersion": 1,

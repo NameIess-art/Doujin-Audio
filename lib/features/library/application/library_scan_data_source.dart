@@ -231,6 +231,7 @@ class PlatformLibraryScanDataSource implements LibraryScanDataSource {
     const chunkSize = 120;
     final receivePort = ReceivePort();
     Isolate? worker;
+    SendPort? acknowledgeChunk;
     final discoveredPaths = <String>{};
     try {
       worker = await Isolate.spawn<List<Object?>>(
@@ -240,6 +241,10 @@ class PlatformLibraryScanDataSource implements LibraryScanDataSource {
         onExit: receivePort.sendPort,
       );
       await for (final message in receivePort) {
+        if (message is SendPort) {
+          acknowledgeChunk = message;
+          continue;
+        }
         if (message == null) {
           return NativeScanResult.failed(
             code: 'filesystem_scan_ended',
@@ -278,7 +283,10 @@ class PlatformLibraryScanDataSource implements LibraryScanDataSource {
                 .whereType<String>()
                 .map(path.normalize)
                 .toList(growable: false);
-            if (tracks.isEmpty && folders.isEmpty) continue;
+            if (tracks.isEmpty && folders.isEmpty) {
+              acknowledgeChunk!.send(true);
+              continue;
+            }
             final keepGoing = await onChunk(
               FolderScanChunk(
                 tracks: List<ScannedTrack>.unmodifiable(tracks),
@@ -294,6 +302,7 @@ class PlatformLibraryScanDataSource implements LibraryScanDataSource {
                 wasCancelled: true,
               );
             }
+            acknowledgeChunk!.send(true);
             continue;
           case 'done':
             return NativeScanResult.success(
@@ -403,47 +412,45 @@ class PlatformLibraryScanDataSource implements LibraryScanDataSource {
   }
 }
 
-void _scanFileSystemFolderWorker(List<Object?> arguments) {
+Future<void> _scanFileSystemFolderWorker(List<Object?> arguments) async {
   final folderPath = arguments[0]! as String;
   final sendPort = arguments[1]! as SendPort;
   final chunkSize = arguments[2]! as int;
+  final acknowledgements = ReceivePort();
+  final acknowledgementEvents = StreamIterator<dynamic>(acknowledgements);
+  sendPort.send(acknowledgements.sendPort);
   try {
-    final failureCount = _enumerateFileSystemFolderChunks(
+    for (final event in _enumerateFileSystemFolderChunks(
       folderPath,
       chunkSize: chunkSize,
-      emit: (tracks, folders) {
-        sendPort.send(<String, Object?>{
-          'type': 'chunk',
-          'tracks': tracks,
-          'folders': folders,
-        });
-      },
-    );
-    sendPort.send(<String, Object?>{
-      'type': 'done',
-      'failureCount': failureCount,
-    });
+    )) {
+      sendPort.send(event);
+      if (event['type'] == 'chunk') {
+        // Do not enumerate or transfer another chunk until the UI isolate has
+        // applied this one. Cancellation terminates the worker in the caller.
+        if (!await acknowledgementEvents.moveNext()) return;
+      }
+    }
   } catch (error) {
     sendPort.send(<String, Object?>{
       'type': 'error',
       'message': error.toString(),
     });
+  } finally {
+    await acknowledgementEvents.cancel();
+    acknowledgements.close();
   }
 }
 
-int _enumerateFileSystemFolderChunks(
+Iterable<Map<String, Object?>> _enumerateFileSystemFolderChunks(
   String folderPath, {
   required int chunkSize,
-  required void Function(
-    List<Map<String, Object?>> tracks,
-    List<String> folders,
-  )
-  emit,
-}) {
+}) sync* {
   final folder = Directory(folderPath);
   final normalizedRoot = path.normalize(folderPath);
   if (!folder.existsSync()) {
-    return 1;
+    yield <String, Object?>{'type': 'done', 'failureCount': 1};
+    return;
   }
 
   final pendingDirs = Queue<Directory>()..add(folder);
@@ -451,14 +458,15 @@ int _enumerateFileSystemFolderChunks(
   final trackBuffer = <Map<String, Object?>>[];
   var failures = 0;
 
-  void flush() {
-    if (trackBuffer.isEmpty && folderBuffer.isEmpty) return;
-    emit(
-      List<Map<String, Object?>>.of(trackBuffer),
-      List<String>.of(folderBuffer),
-    );
+  Map<String, Object?> flush() {
+    final event = <String, Object?>{
+      'type': 'chunk',
+      'tracks': List<Map<String, Object?>>.of(trackBuffer),
+      'folders': List<String>.of(folderBuffer),
+    };
     trackBuffer.clear();
     folderBuffer.clear();
+    return event;
   }
 
   while (pendingDirs.isNotEmpty) {
@@ -476,7 +484,9 @@ int _enumerateFileSystemFolderChunks(
         final directoryPath = path.normalize(entity.path);
         pendingDirs.add(Directory(directoryPath));
         folderBuffer.add(directoryPath);
-        if (trackBuffer.length + folderBuffer.length >= chunkSize) flush();
+        if (trackBuffer.length + folderBuffer.length >= chunkSize) {
+          yield flush();
+        }
         continue;
       }
       if (entity is! File) continue;
@@ -526,11 +536,11 @@ int _enumerateFileSystemFolderChunks(
         'fileSizeBytes': fileStat?.size,
         'modifiedAtMs': fileStat?.modified.millisecondsSinceEpoch,
       });
-      if (trackBuffer.length + folderBuffer.length >= chunkSize) flush();
+      if (trackBuffer.length + folderBuffer.length >= chunkSize) yield flush();
     }
   }
-  flush();
-  return failures;
+  if (trackBuffer.isNotEmpty || folderBuffer.isNotEmpty) yield flush();
+  yield <String, Object?>{'type': 'done', 'failureCount': failures};
 }
 
 @visibleForTesting
@@ -538,20 +548,25 @@ Map<String, Object?> scanFileSystemFolderPayloadForTest(String folderPath) {
   final tracks = <Map<String, Object?>>[];
   final folderPaths = <String>[];
   final discoveredPaths = <String>{};
-  final failureCount = _enumerateFileSystemFolderChunks(
+  var failureCount = 0;
+  for (final event in _enumerateFileSystemFolderChunks(
     folderPath,
     chunkSize: 120,
-    emit: (chunkTracks, chunkFolders) {
-      tracks.addAll(chunkTracks);
-      folderPaths.addAll(chunkFolders);
-      discoveredPaths.addAll(
-        chunkTracks
-            .map((track) => track['path'])
-            .whereType<String>()
-            .map(PathMatcher.normalize),
-      );
-    },
-  );
+  )) {
+    if (event['type'] == 'done') {
+      failureCount = event['failureCount']! as int;
+      continue;
+    }
+    final chunkTracks = event['tracks']! as List<Map<String, Object?>>;
+    tracks.addAll(chunkTracks);
+    folderPaths.addAll(event['folders']! as List<String>);
+    discoveredPaths.addAll(
+      chunkTracks
+          .map((track) => track['path'])
+          .whereType<String>()
+          .map(PathMatcher.normalize),
+    );
+  }
   return <String, Object?>{
     'tracks': tracks,
     'folderPaths': folderPaths,

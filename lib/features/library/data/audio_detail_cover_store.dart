@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
@@ -67,16 +68,18 @@ final class AudioDetailCoverStore {
           embeddedKey: null,
         };
       }
-      return <String, Object?>{
-        relativePathKey: null,
-        embeddedKey: <String, Object?>{
-          'encoding': 'base64',
-          'mimeType': mimeType,
-          'sha256': sha256.convert(bytes).toString(),
-          'byteLength': bytes.length,
-          'data': base64Encode(bytes),
+      return await Isolate.run(
+        () => <String, Object?>{
+          relativePathKey: null,
+          embeddedKey: <String, Object?>{
+            'encoding': 'base64',
+            'mimeType': mimeType,
+            'sha256': sha256.convert(bytes).toString(),
+            'byteLength': bytes.length,
+            'data': base64Encode(bytes),
+          },
         },
-      };
+      );
     } on Object {
       return const <String, Object?>{relativePathKey: null, embeddedKey: null};
     }
@@ -119,17 +122,20 @@ final class AudioDetailCoverStore {
         encoded.length > ((maxCoverFileBytes + 2) ~/ 3) * 4) {
       return null;
     }
-    Uint8List bytes;
-    try {
-      bytes = base64Decode(encoded);
-    } on FormatException {
-      return null;
-    }
-    if (bytes.length != expectedLength ||
-        sha256.convert(bytes).toString() != expectedDigest ||
-        detectCoverMimeType('', bytes) != mimeType.toLowerCase()) {
-      return null;
-    }
+    final bytes = await Isolate.run(() {
+      Uint8List decoded;
+      try {
+        decoded = base64Decode(encoded);
+      } on FormatException {
+        return null;
+      }
+      return decoded.length == expectedLength &&
+              sha256.convert(decoded).toString() == expectedDigest &&
+              detectCoverMimeType('', decoded) == mimeType.toLowerCase()
+          ? decoded
+          : null;
+    });
+    if (bytes == null) return null;
     final directory = await _portableDirectory();
     await directory.create(recursive: true);
     final output = File(
@@ -157,7 +163,8 @@ final class AudioDetailCoverStore {
 
   Future<bool> _matches(File file, int length, String digest) async {
     if (!await file.exists() || await file.length() != length) return false;
-    return sha256.convert(await file.readAsBytes()).toString() == digest;
+    final bytes = await file.readAsBytes();
+    return Isolate.run(() => sha256.convert(bytes).toString() == digest);
   }
 
   String? _portableBasePath(AudioDetailTarget target) =>

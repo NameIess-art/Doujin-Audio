@@ -124,7 +124,7 @@ class SqliteLibraryRepository
     List<LibraryEntry> entries, {
     int? scanGeneration,
   }) => _database.upsertLibraryEntries(
-    entries.map(_entryToRecord).toList(growable: false),
+    entries.map(_entryToRecord),
     scanGeneration: scanGeneration,
   );
   @override

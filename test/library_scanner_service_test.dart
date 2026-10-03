@@ -99,6 +99,77 @@ void main() {
   );
 
   test(
+    'incomplete child-folder listing fails without committing a library',
+    () async {
+      final catalog = _RefreshCatalog(watchedFolders: const <String>[]);
+      final source = _ResolvedPickedFolderDataSource(listingComplete: false);
+      final outcome = await LibraryScannerService(
+        dataSource: source,
+      ).addLibrary(provider: catalog, labels: labels);
+      expect(outcome?.code, LibraryScanOutcomeCode.failed);
+      expect(catalog.isScanning, isFalse);
+      expect(catalog.watchedLibraries, isEmpty);
+      expect(source.scannedFolders, isEmpty);
+    },
+  );
+
+  test('child-folder listing errors always finish the scan', () async {
+    final catalog = _RefreshCatalog(watchedFolders: const <String>[]);
+    final source = _ResolvedPickedFolderDataSource(
+      listingError: StateError('unreadable'),
+    );
+    await expectLater(
+      LibraryScannerService(
+        dataSource: source,
+      ).addLibrary(provider: catalog, labels: labels),
+      throwsStateError,
+    );
+    expect(catalog.isScanning, isFalse);
+    expect(catalog.watchedLibraries, isEmpty);
+  });
+
+  for (final cancelled in <bool>[true, false]) {
+    test(
+      '${cancelled ? 'cancelled' : 'incomplete'} library promotion restores existing tracks',
+      () async {
+        final existing = _musicTrack('C:/music/existing.mp3');
+        final catalog = _RefreshCatalog(
+          watchedFolders: <String>['C:/music'],
+          initialTracks: <MusicTrack>[existing],
+          cancelAfterTrackChunk: cancelled ? 1 : null,
+        );
+        final outcome = await LibraryScannerService(
+          dataSource: _ChunkedRefreshDataSource(
+            catalog: catalog,
+            terminalFailureCount: cancelled ? 0 : 1,
+            chunks: <FolderScanChunk>[
+              FolderScanChunk(
+                tracks: <ScannedTrack>[
+                  _scannedTrack(existing.path),
+                  _scannedTrack('C:/music/new.mp3'),
+                ],
+              ),
+            ],
+          ),
+        ).addLibrary(provider: catalog, labels: labels);
+
+        expect(
+          outcome?.code,
+          cancelled
+              ? LibraryScanOutcomeCode.cancelled
+              : LibraryScanOutcomeCode.failed,
+        );
+        expect(catalog.library, hasLength(1));
+        expect(catalog.library.single, same(existing));
+        expect(catalog.library.single.isSingle, isFalse);
+        expect(catalog.watchedFolders, <String>['C:/music']);
+        expect(catalog.watchedLibraries, isEmpty);
+        expect(catalog.isScanning, isFalse);
+      },
+    );
+  }
+
+  test(
     'file import always finishes scan when batch finalization fails',
     () async {
       final catalog = _FailingBatchCatalog();
@@ -443,6 +514,21 @@ class _ChunkedRefreshDataSource implements LibraryScanDataSource {
   var firstChunkWasCommittedBeforeSecond = false;
 
   @override
+  Future<String?> pickAudioFolder({required String dialogTitle}) async =>
+      'C:/music';
+
+  @override
+  Future<String> resolveRestorablePath(String source) async => source;
+
+  @override
+  Future<bool> sourceExists(String source) async => true;
+
+  @override
+  Future<LibraryChildFolderListing> listImmediateChildFolders(
+    String folderPath,
+  ) async => (folders: const <String>[], complete: true);
+
+  @override
   Future<bool> ensureReadPermissionForSources(Iterable<String> sources) async {
     return true;
   }
@@ -713,6 +799,12 @@ class _RefreshCatalog implements LibraryCatalog {
       );
       library.add(track);
     }
+    if (mergeExistingState &&
+        tracks.isNotEmpty &&
+        cancelAfterTrackChunk != null &&
+        ++_appliedTrackChunks == cancelAfterTrackChunk) {
+      isScanning = false;
+    }
   }
 
   @override
@@ -787,9 +879,15 @@ class _PickedFilesDataSource implements LibraryScanDataSource {
 }
 
 class _ResolvedPickedFolderDataSource implements LibraryScanDataSource {
-  _ResolvedPickedFolderDataSource({this.permissionGranted = true});
+  _ResolvedPickedFolderDataSource({
+    this.permissionGranted = true,
+    this.listingComplete = true,
+    this.listingError,
+  });
 
   final bool permissionGranted;
+  final bool listingComplete;
+  final Object? listingError;
   final permissionSources = <String>[];
   final scannedFolders = <String>[];
   final childFolderListings = <String>[];
@@ -818,7 +916,8 @@ class _ResolvedPickedFolderDataSource implements LibraryScanDataSource {
     String folderPath,
   ) async {
     childFolderListings.add(folderPath);
-    return (folders: const <String>[], complete: true);
+    if (listingError != null) throw listingError!;
+    return (folders: const <String>[], complete: listingComplete);
   }
 
   @override

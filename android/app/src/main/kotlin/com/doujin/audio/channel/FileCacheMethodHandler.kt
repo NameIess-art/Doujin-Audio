@@ -161,6 +161,12 @@ internal class FileCacheMethodHandler(
                 scanStreamHandler.cancelFolderScan(taskId)
                 result.success(true)
             }
+            FileCacheMethods.ACKNOWLEDGE_FOLDER_SCAN_CHUNK -> {
+                val taskId = arguments.requiredString("taskId")
+                val chunkSequence = arguments.requiredLong("chunkSequence")
+                require(chunkSequence > 0) { "chunkSequence must be positive" }
+                result.success(scanStreamHandler.acknowledgeFolderScanChunk(taskId, chunkSequence))
+            }
             FileCacheMethods.LIST_CHILD_FOLDERS -> {
                 val folder = arguments.requiredString("folder")
                 runAsync(result, errorCode = { "list_child_folders_failed" }) {

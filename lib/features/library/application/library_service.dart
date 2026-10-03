@@ -823,6 +823,7 @@ class LibraryService {
     var didChangeGroupOrder = false;
     for (final track in newTracks) {
       if (libraryByPath.containsKey(track.path)) continue;
+      libraryIndexByPath[track.path] = library.length;
       library.add(track);
       libraryByPath[track.path] = track;
       addedTracks.add(track);
@@ -885,6 +886,7 @@ class LibraryService {
         didReplaceGroup = true;
       }
       if (existing == null) {
+        libraryIndexByPath[nextTrack.path] = library.length;
         library.add(nextTrack);
       } else {
         final index = libraryIndexByPath[nextTrack.path];

@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'dart:isolate';
 import 'dart:typed_data';
 
 import '../../../core/media/audio_detail.dart';
@@ -35,6 +37,10 @@ final class AudioDetailDocumentRepository {
   final AudioDetailJsonCodec _codec;
   final AudioDetailCoverStore _coverStore;
 
+  // Sibling audio files share one document, so the entire read/merge/write
+  // must be ordered even across repository instances.
+  static final Map<String, Future<void>> _pendingSaves = {};
+
   Future<AudioDetailDocumentReadResult> read(AudioDetailTarget target) async {
     final result = await _store.read(locationFor(target));
     final snapshot = result.snapshot;
@@ -45,7 +51,10 @@ final class AudioDetailDocumentRepository {
       );
     }
     try {
-      final decoded = _codec.decodeDocument(snapshot.bytes, target);
+      final codec = _codec;
+      final decoded = await Isolate.run(
+        () => codec.decodeDocument(snapshot.bytes, target),
+      );
       return AudioDetailDocumentReadResult(
         detail: await _coverStore.restore(
           decoded.detail.copyWith(target: target),
@@ -68,7 +77,34 @@ final class AudioDetailDocumentRepository {
     List<TimeSegmentLabel>? timeSegmentLabels,
     bool onlyTimeSegments = false,
   }) async {
+    final key = locationFor(detail.target).lockKey;
+    final previous = _pendingSaves[key] ?? Future<void>.value();
+    final completion = Completer<void>();
+    _pendingSaves[key] = completion.future;
+    await previous;
+    try {
+      return await _saveExplicit(
+        detail,
+        previousTarget: previousTarget,
+        timeSegmentLabels: timeSegmentLabels,
+        onlyTimeSegments: onlyTimeSegments,
+      );
+    } finally {
+      completion.complete();
+      if (identical(_pendingSaves[key], completion.future)) {
+        final _ = _pendingSaves.remove(key);
+      }
+    }
+  }
+
+  Future<JsonDocumentWriteResult> _saveExplicit(
+    AudioDetail detail, {
+    AudioDetailTarget? previousTarget,
+    List<TimeSegmentLabel>? timeSegmentLabels,
+    required bool onlyTimeSegments,
+  }) async {
     final location = locationFor(detail.target);
+    final codec = _codec;
     final coverFields = <String, Object?>{
       ...await _coverStore.documentFields(detail),
       if (timeSegmentLabels != null)
@@ -80,7 +116,9 @@ final class AudioDetailDocumentRepository {
       if (current.status == JsonDocumentReadStatus.missing) {
         final created = await _store.write(
           location: location,
-          bytes: _codec.encodeNew(detail, additionalFields: coverFields),
+          bytes: await Isolate.run(
+            () => codec.encodeNew(detail, additionalFields: coverFields),
+          ),
           mode: JsonDocumentWriteMode.createIfAbsent,
         );
         if (created.status != JsonDocumentWriteStatus.preserved) return created;
@@ -95,28 +133,25 @@ final class AudioDetailDocumentRepository {
 
       Uint8List bytes;
       try {
-        bytes = onlyTimeSegments
-            ? _codec.mergeTimeSegments(
-                snapshot.bytes,
-                detail,
-                _codec.timeSegmentFields(detail.target, timeSegmentLabels!),
-              )
-            : _codec.merge(
-                snapshot.bytes,
-                detail,
-                previousTarget: previousTarget,
-                additionalFields: coverFields,
-              );
+        bytes = await Isolate.run(
+          () => onlyTimeSegments
+              ? codec.mergeTimeSegments(
+                  snapshot.bytes,
+                  detail,
+                  codec.timeSegmentFields(detail.target, timeSegmentLabels!),
+                )
+              : codec.merge(
+                  snapshot.bytes,
+                  detail,
+                  previousTarget: previousTarget,
+                  additionalFields: coverFields,
+                ),
+        );
       } on FormatException catch (error) {
-        if (onlyTimeSegments) {
-          return JsonDocumentWriteResult(
-            status: JsonDocumentWriteStatus.conflict,
-            error: error.toString(),
-          );
-        }
-        // Explicit user saves may rebuild an empty, truncated or invalid
-        // application-owned document. Automatic imports never call this path.
-        bytes = _codec.encodeNew(detail, additionalFields: coverFields);
+        return JsonDocumentWriteResult(
+          status: JsonDocumentWriteStatus.conflict,
+          error: error.toString(),
+        );
       }
       final replaced = await _store.write(
         location: location,

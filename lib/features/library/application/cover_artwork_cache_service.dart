@@ -135,6 +135,13 @@ class CoverArtworkCacheService {
 
   int get generation => _generation;
 
+  ({int epoch, int revision}) revisionForScope(String scope) {
+    final key = PathMatcher.isRemoteUri(scope)
+        ? remoteCoverSearchKey(scope) ?? scope
+        : _normalizeCoverCacheKey(scope);
+    return (epoch: _cacheEpoch, revision: _coverKeyRevision(key));
+  }
+
   Future<void> initialize() async {
     await Future.wait<void>(<Future<void>>[
       _initializeArtworkStore(),
@@ -878,11 +885,20 @@ class CoverArtworkCacheService {
 
   void invalidateCatalogTracks(Iterable<MusicTrack> tracks) {
     final scopes = <String>{};
+    final scopesByGroup = <String, String?>{};
     for (final track in tracks) {
       final key = coverSearchKeyForTrack(track);
-      if (key != null) scopes.add(key);
-      final scope = coverScopeFolderForTrack(track);
+      final scope = track.groupKey.isEmpty
+          ? coverScopeFolderForTrack(track)
+          : scopesByGroup.putIfAbsent(
+              track.groupKey,
+              () => coverScopeFolderForTrack(track),
+            );
       if (scope != null) scopes.add(scope);
+      if (key != null &&
+          (scope == null || !PathMatcher.isWithinOrEqual(key, scope))) {
+        scopes.add(key);
+      }
     }
     if (scopes.isNotEmpty) invalidateFolders(scopes);
   }
@@ -892,51 +908,13 @@ class CoverArtworkCacheService {
       invalidateAll();
       return;
     }
-    final normalizedScope = _normalizeCoverCacheKey(scope);
-    _invalidateManualCoverChecks(normalizedScope);
-    final trackStoreKeys = <String>[];
-    for (final track in _sourceResolver.tracksInCompleteCoverScope(
-      normalizedScope,
-    )) {
-      final key = coverSearchKeyForTrack(track);
-      if (key != null) {
-        trackStoreKeys.add(_trackStoreKey(key, track));
-      }
-    }
-    unawaited(
-      _artworkStore.invalidate(<String>[
-        _folderStoreKey(normalizedScope),
-        ...trackStoreKeys,
-      ]),
-    );
-    _generation++;
-    _generationSlice.update(_generation);
-    _advanceCoverKeyRevision(normalizedScope);
-    _advanceTrackCoverRevisionsInScope(normalizedScope);
-    _sourceResolver.invalidateFolderImageIndexes(normalizedScope);
-    _folderCoverFutures.remove(normalizedScope);
-    _resolvedFolderCovers.remove(normalizedScope);
-    _resolvedFolderCoverFutures.remove(normalizedScope);
-    _trackCoverFutures.remove(normalizedScope);
-    _resolvedTrackCovers.remove(normalizedScope);
-    _resolvedTrackCoverFutures.remove(normalizedScope);
-    _removeTrackCoverEntriesInScope(normalizedScope);
-    _playbackTrackCoverFutures.removeWhere(
-      (key, _) => _isTrackCoverKeyWithinScope(key, normalizedScope),
-    );
-    _remoteCovers.invalidate(normalizedScope);
+    invalidateFolders([scope], clearRemoteFailure: false);
   }
 
-  void _invalidateManualCoverChecks(String scope) {
-    final selected = _folderCoverSelections[scope];
-    bool affected(String key) =>
-        _isTrackCoverKeyWithinScope(key, scope) ||
-        (selected != null && PathMatcher.equalsNormalized(key, selected));
-    _manualCoverPathValidityCache.removeWhere((key, _) => affected(key));
-    _manualCoverValidationFutures.removeWhere((key, _) => affected(key));
-  }
-
-  void invalidateFolders(Iterable<String?> scopes) {
+  void invalidateFolders(
+    Iterable<String?> scopes, {
+    bool clearRemoteFailure = true,
+  }) {
     final normalizedScopes = scopes
         .whereType<String>()
         .map(_normalizeCoverCacheKey)
@@ -946,40 +924,56 @@ class CoverArtworkCacheService {
       invalidateAll();
       return;
     }
-    _generation++;
-    _generationSlice.update(_generation);
-    final trackStoreKeys = <String>[];
-    for (final scope in normalizedScopes) {
-      _invalidateManualCoverChecks(scope);
-      for (final track in _sourceResolver.tracksInCompleteCoverScope(scope)) {
-        final key = coverSearchKeyForTrack(track);
-        if (key != null) {
-          trackStoreKeys.add(_trackStoreKey(key, track));
-        }
+    final identities = normalizedScopes.map(_coverIdentity).toSet();
+    bool affected(String key) =>
+        _isCoverIdentityInScopes(_coverIdentity(key), identities);
+
+    // Scan the catalog once, rather than once for every imported track/scope.
+    final storeKeys = <String>{...normalizedScopes.map(_folderStoreKey)};
+    for (final track in _libraryService.library) {
+      if (!affected(track.path) &&
+          (track.groupKey.isEmpty || !affected(track.groupKey))) {
+        continue;
       }
+      final key = coverSearchKeyForTrack(track);
+      if (key != null) storeKeys.add(_trackStoreKey(key, track));
     }
-    unawaited(
-      _artworkStore.invalidate(<String>[
-        ...normalizedScopes.map(_folderStoreKey),
-        ...trackStoreKeys,
-      ]),
-    );
+    unawaited(_artworkStore.invalidate(storeKeys));
+
+    final cachedKeys = <String>{
+      ...normalizedScopes,
+      ..._folderCoverFutures.keys,
+      ..._resolvedFolderCovers.keys,
+      ..._resolvedFolderCoverFutures.keys,
+      ..._playbackTrackCoverFutures.keys,
+      ..._trackCoverFutures.keys,
+      ..._resolvedTrackCovers.keys,
+      ..._resolvedTrackCoverFutures.keys,
+    };
+    for (final key in cachedKeys) {
+      if (affected(key)) _advanceCoverKeyRevision(key);
+    }
+    final selectedCovers = <String>{
+      for (final scope in normalizedScopes)
+        if (_folderCoverSelections[scope] case final String selected)
+          _coverIdentity(selected),
+    };
+    bool manualAffected(String key) =>
+        affected(key) || selectedCovers.contains(_coverIdentity(key));
+    _manualCoverPathValidityCache.removeWhere((key, _) => manualAffected(key));
+    _manualCoverValidationFutures.removeWhere((key, _) => manualAffected(key));
+    _folderCoverFutures.removeWhere((key, _) => affected(key));
+    _resolvedFolderCovers.removeWhere((key, _) => affected(key));
+    _resolvedFolderCoverFutures.removeWhere((key, _) => affected(key));
+    _trackCoverFutures.removeWhere((key, _) => affected(key));
+    _resolvedTrackCovers.removeWhere((key, _) => affected(key));
+    _resolvedTrackCoverFutures.removeWhere((key, _) => affected(key));
+    _playbackTrackCoverFutures.removeWhere((key, _) => affected(key));
     for (final scope in normalizedScopes) {
-      _advanceCoverKeyRevision(scope);
-      _advanceTrackCoverRevisionsInScope(scope);
       _sourceResolver.invalidateFolderImageIndexes(scope);
-      _folderCoverFutures.remove(scope);
-      _resolvedFolderCovers.remove(scope);
-      _resolvedFolderCoverFutures.remove(scope);
-      _trackCoverFutures.remove(scope);
-      _resolvedTrackCovers.remove(scope);
-      _resolvedTrackCoverFutures.remove(scope);
-      _removeTrackCoverEntriesInScope(scope);
-      _playbackTrackCoverFutures.removeWhere(
-        (key, _) => _isTrackCoverKeyWithinScope(key, scope),
-      );
-      _remoteCovers.invalidate(scope, clearFailure: true);
+      _remoteCovers.invalidate(scope, clearFailure: clearRemoteFailure);
     }
+    _generationSlice.update(++_generation);
   }
 
   void invalidateAll() {
@@ -1005,20 +999,6 @@ class CoverArtworkCacheService {
 
   void _advanceCoverKeyRevision(String key) {
     _coverKeyRevisions[key] = _coverKeyRevision(key) + 1;
-  }
-
-  void _advanceTrackCoverRevisionsInScope(String normalizedScope) {
-    final keys = <String>{
-      ..._playbackTrackCoverFutures.keys,
-      ..._trackCoverFutures.keys,
-      ..._resolvedTrackCovers.keys,
-      ..._resolvedTrackCoverFutures.keys,
-    };
-    for (final key in keys) {
-      if (_isTrackCoverKeyWithinScope(key, normalizedScope)) {
-        _advanceCoverKeyRevision(key);
-      }
-    }
   }
 
   bool _isCoverKeyCurrent(
@@ -1083,28 +1063,6 @@ class CoverArtworkCacheService {
       futures: _resolvedFolderCoverFutures,
     );
     _remoteCovers.trimMemory();
-  }
-
-  void _removeTrackCoverEntriesInScope(String normalizedScope) {
-    final keys = <String>{
-      ..._trackCoverFutures.keys,
-      ..._resolvedTrackCovers.keys,
-      ..._resolvedTrackCoverFutures.keys,
-    };
-    for (final key in keys) {
-      if (!_isTrackCoverKeyWithinScope(key, normalizedScope)) continue;
-      final trackFuture = _trackCoverFutures.remove(key);
-      if (trackFuture != null) unawaited(trackFuture);
-      final resolvedFuture = _resolvedTrackCoverFutures.remove(key);
-      if (resolvedFuture != null) unawaited(resolvedFuture);
-      _resolvedTrackCovers.remove(key);
-    }
-  }
-
-  bool _isTrackCoverKeyWithinScope(String key, String normalizedScope) {
-    if (key == normalizedScope) return true;
-    if (key.startsWith('remote-cover:')) return false;
-    return PathMatcher.isWithinOrEqual(key, normalizedScope);
   }
 
   void _trimManualCoverValidityCache() {
@@ -1778,4 +1736,23 @@ class CoverArtworkCacheService {
 String _normalizeCoverCacheKey(String value) {
   if (!value.startsWith('remote-cover:')) return PathMatcher.normalize(value);
   return remoteCoverSearchKey(normalizedRemoteUrlFromKey(value)) ?? value;
+}
+
+// Equivalence keys retain path separators and canonicalize SAF aliases/Windows
+// case. Ancestor lookups cost path depth, independently of the number of scopes.
+bool _isCoverIdentityInScopes(String identity, Set<String> scopes) {
+  if (scopes.contains(identity)) return true;
+  if (identity.startsWith('remote-cover:') || identity.startsWith('remote:')) {
+    return false;
+  }
+  for (
+    var at = identity.lastIndexOf('/');
+    at >= 0;
+    at = identity.lastIndexOf('/', at - 1)
+  ) {
+    final parent = identity.substring(0, at);
+    if (scopes.contains(parent) || scopes.contains('$parent/')) return true;
+    if (at == 0) break;
+  }
+  return false;
 }

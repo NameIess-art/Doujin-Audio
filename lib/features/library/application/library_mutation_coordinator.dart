@@ -463,7 +463,7 @@ final class LibraryMutationCoordinator {
           PathMatcher.isWithinOrEqual(track.path, folderPath) ||
           PathMatcher.isWithinOrEqual(track.groupKey, folderPath),
     );
-    await _catalogWrites.endLibraryBatch(waitForPersistence: false);
+    await _catalogWrites.endLibraryBatch();
   }
 
   Future<void> _removeExcludedTrackFromActiveLibrary(
@@ -478,7 +478,7 @@ final class LibraryMutationCoordinator {
     _catalogWrites.removeTracksMatching(
       (track) => PathMatcher.equalsNormalized(track.path, trackPath),
     );
-    await _catalogWrites.endLibraryBatch(waitForPersistence: false);
+    await _catalogWrites.endLibraryBatch();
   }
 
   Future<void> _restoreExcludedTrack(
@@ -565,7 +565,7 @@ final class LibraryMutationCoordinator {
     if (tracks.isEmpty) return;
     _catalogWrites.beginLibraryBatch();
     _catalogWrites.addOrReplaceTracks(tracks, notify: false);
-    await _catalogWrites.endLibraryBatch(waitForPersistence: false);
+    await _catalogWrites.endLibraryBatch();
   }
 
   Future<AudioDetailRenameResult> renameAudioDetailTargetToName(

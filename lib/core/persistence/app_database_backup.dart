@@ -47,7 +47,7 @@ extension AppDatabaseBackup on AppDatabase {
             'cover_cache_path': null,
           });
           await targetTxn.insert('app_kv_settings', <String, Object?>{
-            'key': 'audio_detail_document_read_only_import_v2',
+            'key': 'audio_detail_document_read_only_import_v3',
             'value': '1',
           }, conflictAlgorithm: ConflictAlgorithm.replace);
           await targetTxn.insert('app_kv_settings', <String, Object?>{
@@ -113,7 +113,7 @@ extension AppDatabaseBackup on AppDatabase {
         'cover_cache_path': null,
       });
       await db.insert('app_kv_settings', <String, Object?>{
-        'key': 'audio_detail_document_read_only_import_v2',
+        'key': 'audio_detail_document_read_only_import_v3',
         'value': '1',
       }, conflictAlgorithm: ConflictAlgorithm.replace);
       await db.insert('app_kv_settings', <String, Object?>{

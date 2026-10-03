@@ -6,6 +6,33 @@ import 'package:doujin_audio/features/library/application/audio_detail_repositor
 
 void main() {
   test(
+    'equivalent Windows paths share detail cache and operation queue',
+    () async {
+      final target = AudioDetailTarget.libraryRootFolder('E:/Library/Work');
+      final alias = AudioDetailTarget.libraryRootFolder(r'e:\library\work');
+      final repository = _FakeAudioDetailRepository(
+        AudioDetail.empty(target).copyWith(workTitle: 'Saved work'),
+      );
+      final cache = AudioDetailCacheService(repository: repository);
+      final loaded = await Future.wait([cache.load(target), cache.load(alias)]);
+      expect(
+        loaded.map((result) => result.detail.workTitle),
+        everyElement('Saved work'),
+      );
+      expect(repository.loadCount, 1);
+      await cache.updateDerivedFields(
+        alias,
+        duration: const Duration(seconds: 3),
+      );
+      expect(
+        cache.resolvedDetail(target)?.duration,
+        const Duration(seconds: 3),
+      );
+      expect(cache.resolvedDetail(alias)?.workTitle, 'Saved work');
+    },
+  );
+
+  test(
     'cache deduplicates concurrent loads and retains resolved detail',
     () async {
       final target = AudioDetailTarget.libraryRootFolder('/library/work');
@@ -34,7 +61,8 @@ void main() {
     final cache = AudioDetailCacheService(repository: repository);
 
     final updated = await cache.updateDerivedFields(
-      AudioDetail.empty(target).copyWith(duration: const Duration(seconds: 3)),
+      target,
+      duration: const Duration(seconds: 3),
     );
 
     expect(updated.duration, const Duration(seconds: 3));
@@ -122,7 +150,24 @@ final class _FakeAudioDetailRepository implements AudioDetailRepository {
   ) => save(next);
 
   @override
-  Future<AudioDetail> updateDerivedFields(AudioDetail next) async {
+  Future<AudioDetail> updateDerivedFields(
+    AudioDetailTarget target, {
+    String? rjCode,
+    Duration? duration,
+    String? cardCoverPath,
+    bool? cardCoverSelected,
+  }) async {
+    var next = detail.copyWith(
+      target: target,
+      rjCode: detail.rjCode.isEmpty ? rjCode : null,
+      duration: detail.duration ?? duration,
+    );
+    if (cardCoverPath != null || cardCoverSelected != null) {
+      next = next.copyWith(
+        cardCoverPath: cardCoverPath,
+        cardCoverSelected: cardCoverSelected,
+      );
+    }
     detail = next;
     return next;
   }

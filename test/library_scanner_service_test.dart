@@ -461,10 +461,10 @@ void main() {
       expect(catalog.stagedBatchDepth, 0);
       expect(catalog.stagedBatchBeginCount, 1);
       expect(catalog.stagedBatchFinishCount, 1);
-      expect(catalog.stagedWaitedForPersistence, isTrue);
+
       expect(catalog.rollbackBatchDepth, 0);
-      expect(catalog.rollbackBatchBeginCount, 1);
-      expect(catalog.rollbackBatchEndCount, 1);
+      expect(catalog.rollbackBatchBeginCount, 0);
+      expect(catalog.rollbackBatchEndCount, 0);
     },
   );
 
@@ -687,7 +687,6 @@ class _RefreshCatalog implements LibraryCatalog {
   var stagedBatchDepth = 0;
   var stagedBatchBeginCount = 0;
   var stagedBatchFinishCount = 0;
-  var stagedWaitedForPersistence = false;
   var rollbackBatchDepth = 0;
   var rollbackBatchBeginCount = 0;
   var rollbackBatchEndCount = 0;
@@ -748,12 +747,9 @@ class _RefreshCatalog implements LibraryCatalog {
   }
 
   @override
-  Future<void> finishStagedLibraryRefresh({
-    bool waitForPersistence = false,
-  }) async {
+  Future<void> finishStagedLibraryRefresh() async {
     stagedBatchDepth--;
     stagedBatchFinishCount++;
-    stagedWaitedForPersistence = waitForPersistence;
   }
 
   @override
@@ -826,10 +822,7 @@ class _RefreshCatalog implements LibraryCatalog {
   }
 
   @override
-  Future<void> endLibraryBatch({
-    bool notify = true,
-    bool waitForPersistence = true,
-  }) async {
+  Future<void> endLibraryBatch({bool notify = true}) async {
     rollbackBatchDepth--;
     rollbackBatchEndCount++;
   }
@@ -1026,10 +1019,7 @@ class _FailingBatchCatalog implements LibraryCatalog {
   }
 
   @override
-  Future<void> endLibraryBatch({
-    bool notify = true,
-    bool waitForPersistence = true,
-  }) {
+  Future<void> endLibraryBatch({bool notify = true}) {
     return Future<void>.error(StateError('persistence failed'));
   }
 

@@ -63,16 +63,30 @@ final class LibraryPersistenceCoordinator {
   Future<LibraryPersistedState> load() async {
     final tracksFuture = _repository.loadStartupTracks();
     final entriesFuture = _repository.loadAllLibraryEntries();
+    final catalogValues = await Future.wait([
+      _repository.loadAppSetting(_groupOrderKey),
+      _repository.loadAppSetting(_watchedFoldersKey),
+      _repository.loadAppSetting(_watchedLibrariesKey),
+    ]);
     final preferences = await Future.wait<Object?>(<Future<Object?>>[
-      AppPreferences.readJson<List<String>>(_groupOrderKey, _decodeStringList),
-      AppPreferences.readJson<List<String>>(
-        _watchedFoldersKey,
-        _decodeStringList,
-      ),
-      AppPreferences.readJson<List<String>>(
-        _watchedLibrariesKey,
-        _decodeStringList,
-      ),
+      if (catalogValues[0] == null)
+        AppPreferences.readJson<List<String>>(_groupOrderKey, _decodeStringList)
+      else
+        Future<Object?>.value(),
+      if (catalogValues[1] == null)
+        AppPreferences.readJson<List<String>>(
+          _watchedFoldersKey,
+          _decodeStringList,
+        )
+      else
+        Future<Object?>.value(),
+      if (catalogValues[2] == null)
+        AppPreferences.readJson<List<String>>(
+          _watchedLibrariesKey,
+          _decodeStringList,
+        )
+      else
+        Future<Object?>.value(),
       AppPreferences.readJson<Map<String, dynamic>>(
         _exclusionsKey,
         _decodeStringMap,
@@ -105,12 +119,31 @@ final class LibraryPersistenceCoordinator {
       );
     }
     await AppPreferences.remove(_legacyRemovedFoldersKey);
+    final legacyLists = preferences
+        .take(3)
+        .map((value) => value as List<String>?)
+        .toList();
+    final catalogLists = await Isolate.run(
+      () => <List<String>>[
+        for (var index = 0; index < catalogValues.length; index++)
+          catalogValues[index] == null
+              ? legacyLists[index] ?? <String>[]
+              : _decodeStringList(json.decode(catalogValues[index]!)),
+      ],
+    );
+    if (enabled && catalogValues.any((value) => value == null)) {
+      await _repository.commitLibraryBatch(
+        tracks: const [],
+        entries: const [],
+        catalogSettings: await _encodeCatalogLists(catalogLists),
+      );
+    }
     return LibraryPersistedState(
       tracks: await tracksFuture,
       entries: await entriesFuture,
-      groupOrder: (preferences[0] as List<String>?) ?? const <String>[],
-      watchedFolders: (preferences[1] as List<String>?) ?? const <String>[],
-      watchedLibraries: (preferences[2] as List<String>?) ?? const <String>[],
+      groupOrder: catalogLists[0],
+      watchedFolders: catalogLists[1],
+      watchedLibraries: catalogLists[2],
       folderExclusions: folderExclusions,
       trackExclusions: trackExclusions,
       legacyFolderExclusions: legacyRemovedFolders,
@@ -121,22 +154,45 @@ final class LibraryPersistenceCoordinator {
 
   Future<void> flush() => _writeTail;
 
-  Future<void> saveWatchedFolders() => _service.libraryBatchDepth > 0
-      ? Future<void>.value()
-      : _saveStringList(
-          _watchedFoldersKey,
-          List<String>.of(_service.watchedFolders),
-        );
+  Future<void> saveWatchedFolders() => _saveCatalogLists();
+  Future<void> saveWatchedLibraries() => _saveCatalogLists();
+  Future<void> saveGroupOrder() => _saveCatalogLists();
 
-  Future<void> saveWatchedLibraries() => _service.libraryBatchDepth > 0
+  Future<void> _saveCatalogLists() => _service.libraryBatchDepth > 0
       ? Future<void>.value()
-      : _saveStringList(
-          _watchedLibrariesKey,
-          List<String>.of(_service.watchedLibraries),
-        );
+      : commitLibraryBatch(tracks: const [], entries: const []);
 
-  Future<void> saveGroupOrder() =>
-      _saveStringList(_groupOrderKey, List<String>.of(_service.groupOrder));
+  Future<void> commitLibraryBatch({
+    required List<MusicTrack> tracks,
+    required List<LibraryEntry> entries,
+    List<String> removedTrackPaths = const [],
+    Map<String, List<String>> removedEntryPaths = const {},
+  }) {
+    final lists = <List<String>>[
+      List<String>.of(_service.groupOrder),
+      List<String>.of(_service.watchedFolders),
+      List<String>.of(_service.watchedLibraries),
+    ];
+    return _queueWrite(
+      () async => _repository.commitLibraryBatch(
+        tracks: tracks,
+        entries: entries,
+        removedTrackPaths: removedTrackPaths,
+        removedEntryPaths: removedEntryPaths,
+        catalogSettings: await _encodeCatalogLists(lists),
+      ),
+    );
+  }
+
+  static Future<Map<String, String>> _encodeCatalogLists(
+    List<List<String>> lists,
+  ) => Isolate.run(
+    () => {
+      _groupOrderKey: json.encode(lists[0]),
+      _watchedFoldersKey: json.encode(lists[1]),
+      _watchedLibrariesKey: json.encode(lists[2]),
+    },
+  );
 
   Future<void> saveExclusions() => saveExclusionSnapshot(
     folderExclusions: _service.excludedLibraryFolders,
@@ -153,14 +209,6 @@ final class LibraryPersistenceCoordinator {
     });
     return _queueWrite(() => AppPreferences.setString(_exclusionsKey, value));
   }
-
-  Future<void> _saveStringList(String key, List<String> value) =>
-      _queueWrite(() async {
-        final encoded = await Isolate.run(() => json.encode(value));
-        if (!await AppPreferences.setString(key, encoded)) {
-          throw StateError('Library preference write failed: $key');
-        }
-      });
 
   Future<void> _queueWrite(Future<void> Function() write) {
     final task = _writeTail.then((_) => write());

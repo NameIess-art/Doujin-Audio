@@ -12,6 +12,7 @@ internal fun <T> recoverSafDocument(
     existing: T?,
     staleBackup: T?,
     staleTemp: T?,
+    forRead: Boolean = false,
     isValid: (T) -> Boolean,
     rename: (T, String) -> T?,
     delete: (T) -> Boolean
@@ -24,7 +25,9 @@ internal fun <T> recoverSafDocument(
     }
     if (existingValid) {
         if (!remove(staleBackup) || !remove(staleTemp)) {
-            return SafDocumentRecovery(document = existing, failed = true)
+            // Reading the validated main document does not require stale cleanup.
+            // Mutations must clear artifacts before reusing transaction names.
+            return SafDocumentRecovery(document = existing, failed = !forRead)
         }
         return SafDocumentRecovery(document = existing)
     }

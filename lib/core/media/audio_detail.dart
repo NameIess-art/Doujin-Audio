@@ -200,7 +200,7 @@ class AudioDetail {
       duration: duration,
       salesCount: salesCount,
       rating: rating,
-      createdAt: createdAt ?? now,
+      createdAt: createdAt ?? (touchUpdatedAt ? now : null),
       updatedAt: touchUpdatedAt ? now : updatedAt,
     );
   }

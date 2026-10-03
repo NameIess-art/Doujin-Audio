@@ -64,7 +64,7 @@ final class LibraryStartupMaintenanceCoordinator {
   }
 
   static const _audioDetailDocumentImportKey =
-      'audio_detail_document_read_only_import_v2';
+      'audio_detail_document_read_only_import_v3';
   static const _coverCacheMigrationKey = 'cover_artwork_cache_migration_v1';
 
   static const _quietWindow = Duration(seconds: 3);
@@ -178,8 +178,8 @@ final class LibraryStartupMaintenanceCoordinator {
       _audioDetailDocumentImportKey,
     );
     if (completed == '1') return;
-    await metadataCoordinator.importBackups();
-    if (!_isCurrent(epoch)) return;
+    final result = await metadataCoordinator.importBackups();
+    if (!_isCurrent(epoch) || result.failureCount > 0) return;
     await repository.saveAppSetting(_audioDetailDocumentImportKey, '1');
   }
 

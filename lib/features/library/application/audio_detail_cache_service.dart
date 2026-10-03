@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:collection';
 
 import '../../../core/media/audio_detail.dart';
+import '../../../core/media/path_matcher.dart';
 import 'audio_detail_repository.dart';
 
 class AudioDetailCacheService {
@@ -206,20 +207,29 @@ class AudioDetailCacheService {
     );
   }
 
-  Future<AudioDetail> updateDerivedFields(AudioDetail detail) {
+  Future<AudioDetail> updateDerivedFields(
+    AudioDetailTarget target, {
+    String? rjCode,
+    Duration? duration,
+    String? cardCoverPath,
+    bool? cardCoverSelected,
+  }) {
     final epoch = _cacheEpoch;
-    return _runSerialized<AudioDetail>(
-      <AudioDetailTarget>[detail.target],
-      () async {
-        final result = await _repository.updateDerivedFields(detail);
-        if (epoch != _cacheEpoch) {
-          throw const AudioDetailOperationCancelled();
-        }
-        _store(result);
-        _bumpRevision();
-        return result;
-      },
-    );
+    return _runSerialized<AudioDetail>(<AudioDetailTarget>[target], () async {
+      final result = await _repository.updateDerivedFields(
+        target,
+        rjCode: rjCode,
+        duration: duration,
+        cardCoverPath: cardCoverPath,
+        cardCoverSelected: cardCoverSelected,
+      );
+      if (epoch != _cacheEpoch) {
+        throw const AudioDetailOperationCancelled();
+      }
+      _store(result);
+      _bumpRevision();
+      return result;
+    });
   }
 
   Future<String?> loadCardCoverPath(AudioDetailTarget target) async {
@@ -238,28 +248,57 @@ class AudioDetailCacheService {
     String? coverPath, {
     bool? selected,
     bool writeDocument = false,
-  }) async {
-    final current = (await load(target)).detail;
-    final normalizedPath = coverPath?.trim();
-    final nextPath = normalizedPath == null || normalizedPath.isEmpty
-        ? null
-        : normalizedPath;
-    final nextSelected = nextPath == null
-        ? false
-        : selected ??
-              (current.cardCoverPath == nextPath && current.cardCoverSelected);
-    if (current.cardCoverPath == nextPath &&
-        current.cardCoverSelected == nextSelected) {
-      return current.cardCoverPath;
-    }
-    final next = current.copyWith(
-      cardCoverPath: nextPath,
-      cardCoverSelected: nextSelected,
-    );
-    if (writeDocument) {
-      return (await save(next)).detail.cardCoverPath;
-    }
-    return (await updateDerivedFields(next)).cardCoverPath;
+  }) {
+    final epoch = _cacheEpoch;
+    return _runSerialized<String?>(<AudioDetailTarget>[target], () async {
+      // A cover-only edit must retain authored fields even before startup import.
+      var current = (await _repository.load(target)).detail;
+      var imported = const AudioDetailBackupImportResult();
+      if (writeDocument &&
+          current.updatedAt == null &&
+          current.workTitle.isEmpty &&
+          current.circleName.isEmpty &&
+          current.voiceActors.isEmpty &&
+          current.tags.isEmpty) {
+        imported = await _repository.importBackupsMany([target]);
+        current = (await _repository.load(target)).detail;
+      }
+      if (epoch != _cacheEpoch) throw const AudioDetailOperationCancelled();
+      final normalizedPath = coverPath?.trim();
+      final nextPath = normalizedPath == null || normalizedPath.isEmpty
+          ? null
+          : normalizedPath;
+      final nextSelected = nextPath == null
+          ? false
+          : selected ??
+                (current.cardCoverPath == nextPath &&
+                    current.cardCoverSelected);
+      if (current.cardCoverPath == nextPath &&
+          current.cardCoverSelected == nextSelected) {
+        _store(current);
+        if (imported.changedDetails.isNotEmpty) _bumpRevision();
+        return current.cardCoverPath;
+      }
+      final AudioDetail updated;
+      if (writeDocument) {
+        updated = (await _repository.save(
+          current.copyWith(
+            cardCoverPath: nextPath,
+            cardCoverSelected: nextSelected,
+          ),
+        )).detail;
+      } else {
+        updated = await _repository.updateDerivedFields(
+          target,
+          cardCoverPath: nextPath,
+          cardCoverSelected: nextSelected,
+        );
+      }
+      if (epoch != _cacheEpoch) throw const AudioDetailOperationCancelled();
+      _store(updated);
+      _bumpRevision();
+      return updated.cardCoverPath;
+    });
   }
 
   Future<void> delete(AudioDetailTarget target) async {
@@ -323,7 +362,10 @@ class AudioDetailCacheService {
   }
 
   void trimMemory() {
-    final targetSize = (_maxResolvedEntries ~/ 10).clamp(0, _maxResolvedEntries);
+    final targetSize = (_maxResolvedEntries ~/ 10).clamp(
+      0,
+      _maxResolvedEntries,
+    );
     while (_resolved.length > targetSize) {
       _resolved.remove(_resolved.keys.first);
     }
@@ -424,6 +466,6 @@ class AudioLibraryDetailKey {
   const AudioLibraryDetailKey._();
 
   static String forTarget(AudioDetailTarget target) {
-    return '${target.targetType.dbValue}|${target.targetPath}';
+    return '${target.targetType.dbValue}|${PathMatcher.equivalenceKey(target.targetPath)}';
   }
 }

@@ -37,12 +37,9 @@ abstract interface class LibraryCatalogWriter {
     int? total,
   });
   void beginLibraryBatch();
-  Future<void> endLibraryBatch({
-    bool notify = true,
-    bool waitForPersistence = true,
-  });
+  Future<void> endLibraryBatch({bool notify = true});
   void beginStagedLibraryRefresh();
-  Future<void> finishStagedLibraryRefresh({bool waitForPersistence = false});
+  Future<void> finishStagedLibraryRefresh();
   int applyStagedLibraryRefreshChunk({
     required String sourceFolderPath,
     required String libraryRoot,

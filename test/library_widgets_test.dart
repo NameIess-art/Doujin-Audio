@@ -3517,6 +3517,10 @@ void main() {
         find.textContaining(fixture.languageProvider.tr('undo')),
         findsOneWidget,
       );
+      expect(
+        find.text(fixture.languageProvider.tr('folder_removed')),
+        findsOneWidget,
+      );
 
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.runAsync(

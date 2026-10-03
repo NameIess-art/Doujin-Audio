@@ -8,6 +8,14 @@ abstract interface class LibraryPersistenceRepository {
   Future<MusicTrack?> loadTrackDetail(String path);
   Future<void> saveAllTracks(List<MusicTrack> tracks);
   Future<void> upsertTracks(List<MusicTrack> tracks);
+  Future<void> commitLibraryBatch({
+    required List<MusicTrack> tracks,
+    required List<LibraryEntry> entries,
+    required Map<String, String> catalogSettings,
+    List<String> removedTrackPaths = const <String>[],
+    Map<String, List<String>> removedEntryPaths =
+        const <String, List<String>>{},
+  });
   Future<void> replaceTrackPaths(Map<String, MusicTrack> replacements);
   Future<void> insertTracks(List<MusicTrack> tracks);
   Future<void> deleteTracks(List<String> paths);

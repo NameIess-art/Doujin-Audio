@@ -55,16 +55,16 @@ class LibraryCoverThumbnail extends ConsumerStatefulWidget {
 class _LibraryCoverThumbnailState extends ConsumerState<LibraryCoverThumbnail> {
   Future<String?>? _coverPathFuture;
   String? _lastFolderPath;
-  int _lastCoverGeneration = -1;
+  Object? _lastCoverRevision;
 
   Future<String?> _coverFutureFor(
     LibraryCoverUiController coverUi,
-    int coverGeneration,
+    Object coverRevision,
   ) {
     if (_lastFolderPath != widget.folderPath ||
-        _lastCoverGeneration != coverGeneration) {
+        _lastCoverRevision != coverRevision) {
       _lastFolderPath = widget.folderPath;
-      _lastCoverGeneration = coverGeneration;
+      _lastCoverRevision = coverRevision;
       _coverPathFuture = deferLibraryCardCoverLookup(
         isMounted: () => mounted,
         lookup: () =>
@@ -76,11 +76,17 @@ class _LibraryCoverThumbnailState extends ConsumerState<LibraryCoverThumbnail> {
 
   @override
   Widget build(BuildContext context) {
-    final coverGeneration = ref.watch(coverGenerationProvider);
-    final resolution = ref.watch(coverImageResolutionProvider);
     final libraryFacade = ref.read(libraryFacadeProvider);
+    final coverRevision = ref.watch(
+      coverGenerationProvider.select(
+        (_) => libraryFacade.coverArtworkCacheService.revisionForScope(
+          widget.folderPath,
+        ),
+      ),
+    );
+    final resolution = ref.watch(coverImageResolutionProvider);
     final coverUi = ref.read(libraryCoverUiControllerProvider);
-    final coverPathFuture = _coverFutureFor(coverUi, coverGeneration);
+    final coverPathFuture = _coverFutureFor(coverUi, coverRevision);
     final width = widget.width;
     final height = width / kStandardCoverAspectRatio;
     final coverCacheWidth = coverCacheWidthForResolution(resolution);
@@ -151,16 +157,16 @@ class _LibraryTrackCoverThumbnailState
     extends ConsumerState<LibraryTrackCoverThumbnail> {
   Future<String?>? _coverPathFuture;
   String? _lastTrackPath;
-  int _lastCoverGeneration = -1;
+  Object? _lastCoverRevision;
 
   Future<String?> _coverFutureFor(
     LibraryCoverUiController coverUi,
-    int coverGeneration,
+    Object coverRevision,
   ) {
     if (_lastTrackPath != widget.track.path ||
-        _lastCoverGeneration != coverGeneration) {
+        _lastCoverRevision != coverRevision) {
       _lastTrackPath = widget.track.path;
-      _lastCoverGeneration = coverGeneration;
+      _lastCoverRevision = coverRevision;
       _coverPathFuture = deferLibraryCardCoverLookup(
         isMounted: () => mounted,
         lookup: () =>
@@ -172,11 +178,18 @@ class _LibraryTrackCoverThumbnailState
 
   @override
   Widget build(BuildContext context) {
-    final coverGeneration = ref.watch(coverGenerationProvider);
-    final resolution = ref.watch(coverImageResolutionProvider);
     final libraryFacade = ref.read(libraryFacadeProvider);
+    final cache = libraryFacade.coverArtworkCacheService;
+    final coverRevision = ref.watch(
+      coverGenerationProvider.select(
+        (_) => cache.revisionForScope(
+          cache.coverSearchKeyForTrack(widget.track) ?? widget.track.path,
+        ),
+      ),
+    );
+    final resolution = ref.watch(coverImageResolutionProvider);
     final coverUi = ref.read(libraryCoverUiControllerProvider);
-    final coverPathFuture = _coverFutureFor(coverUi, coverGeneration);
+    final coverPathFuture = _coverFutureFor(coverUi, coverRevision);
     final track = widget.track;
 
     final width = widget.width;

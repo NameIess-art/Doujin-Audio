@@ -315,7 +315,8 @@ final class LibraryMetadataCoordinator {
           _detailCacheService.resolvedDetail(detail.target) ?? detail;
       if (latest.duration == null) {
         final updated = await _detailCacheService.updateDerivedFields(
-          latest.copyWith(duration: probe.totalDuration),
+          latest.target,
+          duration: probe.totalDuration,
         );
         if (!_isCurrent(epoch)) return;
         _snapshotCacheService.markDetailChanged(updated);

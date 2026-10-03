@@ -266,29 +266,20 @@ class LibraryScannerService {
                 unawaited(_prefillRjDetailForFolder(provider, childFolder));
               }
             }
-          }
-          await provider.finishStagedLibraryRefresh(waitForPersistence: true);
-        }
-      }
-    } finally {
-      wasCancelled = !provider.isScanGenerationActive(generation);
-      try {
-        if (wasCancelled) {
-          provider.beginLibraryBatch();
-          try {
+          } else {
             _rollbackScanAdditions(
               provider: provider,
               existingTrackPaths: existingTrackPaths,
               overwrittenTracks: overwrittenTracks,
               existingEntryPathsByRoot: existingEntryPathsByRoot,
             );
-          } finally {
-            await provider.endLibraryBatch();
           }
+          await provider.finishStagedLibraryRefresh();
         }
-      } finally {
-        provider.finishScan(generation);
       }
+    } finally {
+      wasCancelled = !provider.isScanGenerationActive(generation);
+      provider.finishScan(generation);
     }
     if (wasCancelled) {
       return LibraryScanOutcome(

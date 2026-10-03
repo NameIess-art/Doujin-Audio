@@ -735,16 +735,27 @@ void main() {
         return success(true);
       });
       final handled = <String>[];
-      final scan = gateway.scanFolderChunked('/music', (chunk) {
-        handled.add(chunk.tracks.single.path);
-        expect(
-          calls.where(
-            (call) => call.method == FileCacheMethod.acknowledgeFolderScanChunk,
-          ),
-          hasLength(handled.length - 1),
-        );
-        return true;
-      });
+      final progress = <int>[];
+      final scan = gateway.scanFolderChunked(
+        '/music',
+        (chunk) {
+          handled.add(chunk.tracks.single.path);
+          expect(progress.last, handled.length * 120);
+          expect(
+            calls.where(
+              (call) =>
+                  call.method == FileCacheMethod.acknowledgeFolderScanChunk,
+            ),
+            hasLength(handled.length - 1),
+          );
+          return true;
+        },
+        onProgress: (event) async {
+          await Future<void>.delayed(Duration.zero);
+          expect(event.total, 300);
+          progress.add(event.processed);
+        },
+      );
       await _waitForMethodCall(calls, FileCacheMethod.startFolderScan, 1);
       final args = Map<String, Object?>.from(calls.first.arguments as Map);
       for (var sequence = 1; sequence <= 2; sequence++) {
@@ -754,6 +765,8 @@ void main() {
             ...args,
             'eventType': 'chunk',
             'chunkSequence': sequence,
+            'processed': sequence * 120,
+            'total': 300,
             'tracks': [
               {'path': '/music/$sequence.mp3'},
             ],
@@ -780,6 +793,7 @@ void main() {
         null,
       );
       expect((await scan).isComplete, isTrue);
+      expect(progress, [120, 240]);
       expect(
         handled.map(PathMatcher.normalize),
         ['/music/1.mp3', '/music/2.mp3'].map(PathMatcher.normalize),

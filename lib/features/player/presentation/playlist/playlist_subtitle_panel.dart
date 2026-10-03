@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
@@ -6,9 +7,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../app/presentation/app_presentation_providers.dart';
 import '../../../../app/state/app_runtime_providers.dart';
-import '../../../../app/theme/app_design_tokens.dart';
 import '../../../../core/media/subtitle_parser.dart';
 import '../../../../core/logging/app_log_service.dart';
+import '../../../../core/widgets/app_transitions.dart';
+import '../../../../core/widgets/shimmer_loading.dart';
 import '../../../../core/ui/ui_interaction_coordinator.dart';
 import '../../application/playback_session_snapshot.dart';
 import '../../application/playback_subtitle_service.dart';
@@ -204,8 +206,13 @@ class _SessionSubtitlePanelState extends ConsumerState<SessionSubtitlePanel> {
 
   void _applySubtitleTrack(String trackPath, SubtitleTrack? track) {
     if (!mounted || _loadedPath != trackPath) return;
-    _subtitleTrack = track;
-    _updateSubtitleIndex(_positionGate.value.position);
+    setState(() {
+      _subtitleTrack = track;
+      _playbackSubtitleIndex = _timelineSubtitleIndexAt(
+        track,
+        _positionGate.value.position,
+      );
+    });
   }
 
   void _updateSubtitleIndex(Duration position) {
@@ -255,10 +262,24 @@ class _SessionSubtitlePanelState extends ConsumerState<SessionSubtitlePanel> {
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     final transitionDuration = MediaQuery.disableAnimationsOf(context)
         ? Duration.zero
-        : AppDesignTokens.of(context).motionStandard;
+        : kPlaceholderContentTransitionDuration;
 
     late final Widget content;
     final subtitleTrack = _subtitleTrack;
+    final trackPath = widget.session.currentTrackPath;
+    final subtitles = _subtitleService;
+    final hasTrack = trackPath.isNotEmpty;
+    final hasResult = hasTrack && subtitles.hasResult(trackPath);
+    final isSubtitlePending =
+        hasTrack &&
+        (isLoading ||
+            _pendingSubtitle != null ||
+            !hasResult ||
+            (subtitleTrack == null && subtitles.isLoading(trackPath)));
+    final playbackSubtitleIndex =
+        _playbackSubtitleIndex ??
+        (subtitleTrack != null && subtitleTrack.cues.isNotEmpty ? 0 : null);
+
     if (!widget.subtitleEnabled) {
       content = Center(
         key: const ValueKey('subtitle_empty'),
@@ -273,21 +294,6 @@ class _SessionSubtitlePanelState extends ConsumerState<SessionSubtitlePanel> {
               ).colorScheme.onSurface.withValues(alpha: 0.6),
             ),
             fontSize: 14,
-          ),
-        ),
-      );
-    } else if (isLoading) {
-      content = Center(
-        key: const ValueKey('subtitle_loading'),
-        child: Text(
-          i18n.tr('playback_loading'),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-            color: Theme.of(context).colorScheme.onSurfaceVariant,
-            fontWeight: FontWeight.w600,
-            fontSize: 16,
-            height: 1.3,
           ),
         ),
       );
@@ -310,41 +316,42 @@ class _SessionSubtitlePanelState extends ConsumerState<SessionSubtitlePanel> {
           ),
         ),
       );
+    } else if (isSubtitlePending) {
+      content = const SessionSubtitlePlaceholder(
+        key: ValueKey('subtitle_loading'),
+      );
+    } else if (subtitleTrack != null &&
+        subtitleTrack.cues.isNotEmpty &&
+        playbackSubtitleIndex != null) {
+      content = TimelineSubtitleView(
+        key: ValueKey<Object>((widget.session.id, subtitleTrack)),
+        cues: subtitleTrack.cues,
+        playbackSubtitleIndex: playbackSubtitleIndex,
+        onSeek: (position) {
+          final target = position + subtitleTrack.offset;
+          final clamped = target < Duration.zero ? Duration.zero : target;
+          return ref
+              .read(playbackFacadeProvider)
+              .seekSession(widget.session.id, clamped);
+        },
+      );
     } else {
-      final playbackSubtitleIndex = _playbackSubtitleIndex;
-      if (subtitleTrack != null &&
-          subtitleTrack.cues.isNotEmpty &&
-          playbackSubtitleIndex != null) {
-        content = TimelineSubtitleView(
-          key: ValueKey<Object>((widget.session.id, subtitleTrack)),
-          cues: subtitleTrack.cues,
-          playbackSubtitleIndex: playbackSubtitleIndex,
-          onSeek: (position) {
-            final target = position + subtitleTrack.offset;
-            final clamped = target < Duration.zero ? Duration.zero : target;
-            return ref
-                .read(playbackFacadeProvider)
-                .seekSession(widget.session.id, clamped);
-          },
-        );
-      } else {
-        content = Center(
-          key: const ValueKey('subtitle_empty'),
-          child: Text(
-            i18n.tr('no_subtitle_for_track'),
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              color: sessionDetailForeground(
-                Theme.of(context).colorScheme,
-                SessionDetailForegroundLevel.muted,
-                darkFallback: Theme.of(
-                  context,
-                ).colorScheme.onSurface.withValues(alpha: 0.6),
-              ),
-              fontSize: 14,
+      content = Center(
+        key: const ValueKey('subtitle_empty'),
+        child: Text(
+          i18n.tr('no_subtitle_for_track'),
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+            color: sessionDetailForeground(
+              Theme.of(context).colorScheme,
+              SessionDetailForegroundLevel.muted,
+              darkFallback: Theme.of(
+                context,
+              ).colorScheme.onSurface.withValues(alpha: 0.6),
             ),
+            fontSize: 14,
           ),
-        );
-      }
+        ),
+      );
     }
 
     return LayoutBuilder(
@@ -379,6 +386,56 @@ class _SessionSubtitlePanelState extends ConsumerState<SessionSubtitlePanel> {
           curve: Curves.easeOutCubic,
           alignment: Alignment.topCenter,
           child: animatedContent,
+        );
+      },
+    );
+  }
+}
+
+class SessionSubtitlePlaceholder extends StatelessWidget {
+  const SessionSubtitlePlaceholder({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final availableWidth = constraints.maxWidth.isFinite
+            ? max(0.0, constraints.maxWidth - 40.0)
+            : 240.0;
+        final centerWidth = min(240.0, max(80.0, availableWidth * 0.70));
+        final topWidth = min(centerWidth * 0.75, max(60.0, availableWidth * 0.50));
+        final bottomWidth = min(centerWidth * 0.85, max(70.0, availableWidth * 0.58));
+
+        return Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Opacity(
+                opacity: 0.35,
+                child: ShimmerContainer(
+                  width: topWidth,
+                  height: 14,
+                  borderRadius: 4,
+                ),
+              ),
+              const SizedBox(height: 16),
+              ShimmerContainer(
+                width: centerWidth,
+                height: 16,
+                borderRadius: 4,
+              ),
+              const SizedBox(height: 16),
+              Opacity(
+                opacity: 0.35,
+                child: ShimmerContainer(
+                  width: bottomWidth,
+                  height: 14,
+                  borderRadius: 4,
+                ),
+              ),
+            ],
+          ),
         );
       },
     );

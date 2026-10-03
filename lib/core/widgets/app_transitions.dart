@@ -7,7 +7,7 @@ import 'package:flutter/rendering.dart';
 
 import '../ui/ui_interaction_coordinator.dart';
 
-const kPlaceholderContentTransitionDuration = Duration(milliseconds: 300);
+const kPlaceholderContentTransitionDuration = Duration(milliseconds: 450);
 const kAppMotionFast = Duration(milliseconds: 180);
 const kAppMotionStandard = Duration(milliseconds: 220);
 const kAppMotionSlow = Duration(milliseconds: 300);

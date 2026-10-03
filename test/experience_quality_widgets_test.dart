@@ -112,7 +112,7 @@ void main() {
     expect(find.byType(BackdropFilter), findsNothing);
   });
 
-  testWidgets('placeholder content fades over the shared 300ms duration', (
+  testWidgets('placeholder content fades over the shared 450ms duration', (
     tester,
   ) async {
     var showPlaceholder = true;
@@ -140,7 +140,7 @@ void main() {
 
     expect(
       kPlaceholderContentTransitionDuration,
-      const Duration(milliseconds: 300),
+      const Duration(milliseconds: 450),
     );
 
     update(() => showPlaceholder = false);
@@ -159,7 +159,7 @@ void main() {
       unorderedEquals(<double>[0, 1]),
     );
 
-    await tester.pump(const Duration(milliseconds: 150));
+    await tester.pump(const Duration(milliseconds: 225));
     final midpointOpacities = tester
         .widgetList<FadeTransition>(fadeFinder)
         .map((fade) => fade.opacity.value)
@@ -169,7 +169,7 @@ void main() {
     expect(midpointOpacities[1], inInclusiveRange(0.3, 0.7));
     expect(midpointOpacities[0] + midpointOpacities[1], closeTo(1, 0.001));
 
-    await tester.pump(const Duration(milliseconds: 149));
+    await tester.pump(const Duration(milliseconds: 224));
     expect(find.byKey(const ValueKey('placeholder')), findsOneWidget);
 
     await tester.pump(const Duration(milliseconds: 1));

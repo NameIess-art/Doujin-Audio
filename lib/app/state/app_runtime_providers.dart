@@ -219,9 +219,17 @@ final undoableRemovalStateProvider = Provider<UndoableRemovalState>((ref) {
   return ref.watch(undoableRemovalServiceProvider).state;
 });
 
+final _undoableRemovalHiddenChangesProvider = StreamProvider.autoDispose
+    .family<bool, UndoableRemovalKey>((ref, key) {
+      return ref.watch(undoableRemovalServiceProvider).hiddenChangesFor(key);
+    });
+
 final isUndoableRemovalHiddenProvider = Provider.autoDispose
     .family<bool, UndoableRemovalKey>((ref, key) {
-      return ref.watch(undoableRemovalStateProvider).isHidden(key);
+      // Keep a committed row collapsed until its source snapshot removes it.
+      // Only undo or failure should expand the same row again.
+      return ref.watch(_undoableRemovalHiddenChangesProvider(key)).value ??
+          ref.watch(undoableRemovalServiceProvider).state.isHidden(key);
     });
 
 final _uiOperationScopeStateChangesProvider = StreamProvider.autoDispose

@@ -233,6 +233,53 @@ class SafDocumentReplacementTest {
     }
 
     @Test
+    fun `failed stale cleanup keeps validated target readable but blocks mutations`() {
+        for (artifact in listOf("backup", "staged")) {
+            for (throws in listOf(false, true)) {
+                for (forRead in listOf(false, true)) {
+                    val files = linkedMapOf("target" to "current", artifact to "old")
+                    val recovery = recoverSafDocument(
+                        targetName = "target",
+                        existing = "target",
+                        staleBackup = artifact.takeIf { it == "backup" },
+                        staleTemp = artifact.takeIf { it == "staged" },
+                        forRead = forRead,
+                        isValid = { files[it] != "invalid" },
+                        rename = { _, _ -> error("A validated target must not be renamed") },
+                        delete = {
+                            if (throws) throw java.io.IOException("Cleanup denied")
+                            false
+                        }
+                    )
+
+                    assertEquals(!forRead, recovery.failed)
+                    assertEquals("target", recovery.document)
+                    assertEquals(mapOf("target" to "current", artifact to "old"), files)
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `read still fails when cleanup is required to restore a valid backup`() {
+        val files = linkedMapOf("target" to "invalid", "backup" to "old")
+        val recovery = recoverSafDocument(
+            targetName = "target",
+            existing = "target",
+            staleBackup = "backup",
+            staleTemp = null,
+            forRead = true,
+            isValid = { files[it] != "invalid" },
+            rename = { _, _ -> error("Failed cleanup must prevent restoration") },
+            delete = { false }
+        )
+
+        assertTrue(recovery.failed)
+        assertNull(recovery.document)
+        assertEquals(mapOf("target" to "invalid", "backup" to "old"), files)
+    }
+
+    @Test
     fun `valid staged create is promoted when no target or backup exists`() {
         val files = linkedMapOf("metadata.json.doujin.part" to "staged")
 
@@ -274,6 +321,7 @@ class SafDocumentReplacementTest {
                 existing = "target",
                 staleBackup = "backup",
                 staleTemp = "staged",
+                forRead = true,
                 isValid = {
                     if (it == unreadable) throw java.io.IOException("Provider is unavailable")
                     documents.indexOf(it) > documents.indexOf(unreadable)

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
 
@@ -9,6 +10,7 @@ import 'support/test_persistence_repository.dart';
 import 'package:doujin_audio/features/library/application/audio_detail_cache_service.dart';
 import 'package:doujin_audio/features/library/application/audio_detail_repository.dart';
 import 'package:doujin_audio/features/library/application/library_service.dart';
+import 'package:doujin_audio/features/library/application/library_facade.dart';
 import 'package:doujin_audio/core/cache/app_cache_service.dart';
 import 'package:doujin_audio/features/library/application/cover_artwork_cache_service.dart';
 import 'package:doujin_audio/features/library/application/cover_artwork_store.dart';
@@ -17,6 +19,71 @@ import 'package:doujin_audio/core/platform/file_cache_platform_gateway.dart';
 import 'package:doujin_audio/core/media/path_matcher.dart';
 
 void main() {
+  test('import batch invalidates covers only after the final commit', () async {
+    final library = LibraryService();
+    final cache = CoverArtworkCacheService(libraryService: library);
+    final facade = LibraryFacade.create(
+      databaseRepository: _MemoryTestPersistenceRepository(),
+      service: library,
+    )..configurePersistence(enabled: false);
+    facade.attachCoverArtworkCacheService(() => cache);
+    addTearDown(facade.dispose);
+    facade.beginLibraryBatch();
+    for (var batch = 0; batch < 3; batch++) {
+      facade.addOrReplaceTracks([
+        for (var index = 0; index < 120; index++)
+          _track(
+            path: '/library/work/${batch * 120 + index}.mp3',
+            groupKey: '/library/work',
+          ),
+      ]);
+      expect(cache.generation, 0);
+    }
+    await facade.endLibraryBatch();
+    expect(cache.generation, 1);
+    expect(facade.library, hasLength(360));
+  });
+
+  test('catalog invalidation reads the catalog once for a large batch', () {
+    final tracks = [
+      for (var index = 0; index < 2000; index++)
+        _track(path: '/library/work/$index.mp3', groupKey: '/library/work'),
+    ];
+    final counted = _CountingTrackList(tracks);
+    final library = LibraryService()..library = counted;
+    final cache = CoverArtworkCacheService(libraryService: library);
+    addTearDown(cache.dispose);
+    addTearDown(library.dispose);
+
+    cache.invalidateCatalogTracks(tracks.sublist(0, 120));
+
+    expect(counted.reads, tracks.length);
+    expect(cache.generation, 1);
+    expect(cache.revisionForScope('/library/work').revision, 1);
+  });
+
+  test('scope revisions preserve unrelated covers and recognize aliases', () {
+    final library = LibraryService();
+    final cache = CoverArtworkCacheService(libraryService: library);
+    addTearDown(cache.dispose);
+    addTearDown(library.dispose);
+    const saf =
+        'content://com.android.externalstorage.documents/tree/'
+        'primary%3AMusic/document/primary%3AMusic%2FWork';
+    const alias =
+        'content://com.android.externalstorage.documents/tree/'
+        'primary%3AMusic::Work';
+    final other = cache.revisionForScope('/library/other');
+
+    cache.invalidateFolders([r'C:\Music\Work', saf]);
+
+    expect(cache.revisionForScope('c:/music/work').revision, 1);
+    expect(cache.revisionForScope(alias), cache.revisionForScope(saf));
+    expect(cache.revisionForScope('/library/other'), other);
+    cache.invalidateAll();
+    expect(cache.revisionForScope('/library/other'), isNot(other));
+  });
+
   test(
     'clearing retires delayed SAF discoveries without awaiting native IO',
     () async {
@@ -2882,4 +2949,22 @@ class _DelayedManualStatFile implements File {
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _CountingTrackList extends ListBase<MusicTrack> {
+  _CountingTrackList(this.values);
+  final List<MusicTrack> values;
+  int reads = 0;
+  @override
+  int get length => values.length;
+  @override
+  set length(int value) => values.length = value;
+  @override
+  MusicTrack operator [](int index) {
+    reads++;
+    return values[index];
+  }
+
+  @override
+  void operator []=(int index, MusicTrack value) => values[index] = value;
 }

@@ -110,7 +110,7 @@ class LibraryScanImporter {
       }
       duplicates += result.duplicatesCount;
       provider.setScanProgress(
-        currentFolder: '[$end/${scannedTracks.length}] $sourceName',
+        currentFolder: sourceName,
         foundCount: baseFoundCount + added,
         duplicateCount: baseDuplicateCount + duplicates,
         failureCount: baseFailureCount,

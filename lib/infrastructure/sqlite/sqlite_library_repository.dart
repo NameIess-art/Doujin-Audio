@@ -31,6 +31,21 @@ class SqliteLibraryRepository
   Future<void> upsertTracks(List<MusicTrack> tracks) =>
       _database.upsertTracks(tracks);
   @override
+  Future<void> commitLibraryBatch({
+    required List<MusicTrack> tracks,
+    required List<LibraryEntry> entries,
+    required Map<String, String> catalogSettings,
+    List<String> removedTrackPaths = const <String>[],
+    Map<String, List<String>> removedEntryPaths =
+        const <String, List<String>>{},
+  }) => _database.commitLibraryBatch(
+    tracks: tracks,
+    entries: entries.map(_entryToRecord),
+    catalogSettings: catalogSettings,
+    removedTrackPaths: removedTrackPaths,
+    removedEntryPaths: removedEntryPaths,
+  );
+  @override
   Future<void> replaceTrackPaths(Map<String, MusicTrack> replacements) =>
       _database.replaceTrackPaths(replacements);
   @override

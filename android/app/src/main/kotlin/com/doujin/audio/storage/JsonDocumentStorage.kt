@@ -29,7 +29,7 @@ internal class JsonDocumentStorage(
         folder: DocumentFile,
         name: String
     ): Map<String, Any?> {
-        val recovery = recoverJsonDocument(folder, name).getOrElse {
+        val recovery = recoverJsonDocument(folder, name, forRead = true).getOrElse {
             return mapOf("status" to "unreadable", "error" to it.toString())
         }
         if (recovery.failed) {
@@ -234,7 +234,8 @@ internal class JsonDocumentStorage(
 
     private fun recoverJsonDocument(
         folder: DocumentFile,
-        name: String
+        name: String,
+        forRead: Boolean = false
     ): Result<SafDocumentRecovery<DocumentFile>> = runCatching {
         val documents = listReadableDirectoryDocuments(context, folder.uri)
         recoverSafDocument(
@@ -242,6 +243,7 @@ internal class JsonDocumentStorage(
             existing = findJsonDocument(documents, name),
             staleBackup = findJsonDocument(documents, "$name.doujin.bak"),
             staleTemp = findJsonDocument(documents, "$name.doujin.part"),
+            forRead = forRead,
             isValid = { document ->
                 contentResolver.openInputStream(document.uri)?.use { input ->
                     isValidJson(input.readBytes())

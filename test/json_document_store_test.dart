@@ -158,6 +158,66 @@ void main() {
     expect(staged.existsSync(), isFalse);
   });
 
+  for (final suffix in ['.doujin.bak', '.doujin.part']) {
+    test(
+      'locked $suffix cannot hide a valid target or allow mutations',
+      () async {
+        final target = File(
+          '${directory.path}${Platform.pathSeparator}doujin-audio.json',
+        );
+        final artifact = File('${target.path}$suffix');
+        const original = '{"version": 3}';
+        await target.writeAsString(original, flush: true);
+        await artifact.writeAsString('{"version": 1}', flush: true);
+        await _withWindowsFileLock(artifact, 'Read', () async {
+          final read = await store.read(location);
+          expect(read.status, JsonDocumentReadStatus.found);
+          expect(read.snapshot?.text, original);
+          final revision = sha256.convert(utf8.encode(original)).toString();
+          final write = await store.write(
+            location: location,
+            bytes: Uint8List.fromList(utf8.encode('{"version": 4}')),
+            mode: JsonDocumentWriteMode.replaceIfRevision,
+            expectedRevision: revision,
+          );
+          final delete = await store.delete(
+            location: location,
+            expectedRevision: revision,
+          );
+          expect(write.status, JsonDocumentWriteStatus.conflict);
+          expect(delete.status, JsonDocumentDeleteStatus.conflict);
+          expect(await target.readAsString(), original);
+          expect(await artifact.exists(), isTrue);
+        });
+        expect((await store.read(location)).snapshot?.text, original);
+        expect(await artifact.exists(), isFalse);
+      },
+      skip: !Platform.isWindows,
+    );
+  }
+
+  test(
+    'unreadable target is never replaced by an older valid backup',
+    () async {
+      final target = File(
+        '${directory.path}${Platform.pathSeparator}doujin-audio.json',
+      );
+      final backup = File('${target.path}.doujin.bak');
+      await target.writeAsString('{"version": 3}', flush: true);
+      await backup.writeAsString('{"version": 1}', flush: true);
+      await _withWindowsFileLock(target, 'None', () async {
+        expect(
+          (await store.read(location)).status,
+          JsonDocumentReadStatus.unreadable,
+        );
+        expect(await backup.readAsString(), '{"version": 1}');
+      });
+      expect(await target.readAsString(), '{"version": 3}');
+      expect(await backup.exists(), isTrue);
+    },
+    skip: !Platform.isWindows,
+  );
+
   test('valid backup replaces an interrupted invalid target', () async {
     final target = File(
       '${directory.path}${Platform.pathSeparator}doujin-audio.json',
@@ -260,6 +320,41 @@ void main() {
     expect(results.where((result) => result.committed), hasLength(1));
     expect(gateway.maxConcurrentWrites, 1);
   });
+}
+
+Future<void> _withWindowsFileLock(
+  File file,
+  String sharing,
+  Future<void> Function() action,
+) async {
+  final process = await Process.start(
+    'powershell.exe',
+    [
+      '-NoProfile',
+      '-NonInteractive',
+      '-Command',
+      r'$stream = [System.IO.File]::Open($env:JSON_TEST_FILE, '
+          '[System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, '
+          '[System.IO.FileShare]::$sharing); '
+          r'try { [Console]::WriteLine("locked"); '
+          r'$null = [Console]::ReadLine() } finally { $stream.Dispose() }',
+    ],
+    environment: {'JSON_TEST_FILE': file.path},
+  );
+  final errors = process.stderr.transform(utf8.decoder).join();
+  try {
+    final ready = await process.stdout
+        .transform(utf8.decoder)
+        .transform(const LineSplitter())
+        .first
+        .timeout(const Duration(seconds: 10));
+    expect(ready, 'locked');
+    await action();
+  } finally {
+    process.kill();
+    await process.exitCode.timeout(const Duration(seconds: 10));
+    expect(await errors, isEmpty);
+  }
 }
 
 final class _InMemoryJsonGateway extends FileCachePlatformGateway {

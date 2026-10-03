@@ -12,57 +12,137 @@ import 'package:doujin_audio/features/library/application/library_scan_models.da
 import 'package:doujin_audio/features/library/application/library_service.dart';
 import 'package:doujin_audio/features/library/domain/library_entry.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-// ignore: depend_on_referenced_packages
-import 'package:shared_preferences_platform_interface/shared_preferences_platform_interface.dart';
 
 void main() {
   setUp(() {
     SharedPreferences.setMockInitialValues(const <String, Object>{});
   });
 
-  test('import batch saves only the final watched directory lists', () async {
-    final preferences = _CountingPreferences();
-    SharedPreferencesStorePlatform.instance = preferences;
-    addTearDown(() => SharedPreferences.setMockInitialValues({}));
-    final facade = LibraryFacade.create(
-      databaseRepository: _RestoredLibraryRepository(),
-    );
+  test('import batch commits only the final watched directory lists', () async {
+    final repository = _RestoredLibraryRepository();
+    final facade = LibraryFacade.create(databaseRepository: repository);
     addTearDown(facade.dispose);
     facade.beginLibraryBatch();
     facade.addWatchedLibrary('/library', notify: false);
     for (var index = 0; index < 500; index++) {
       facade.addWatchedFolder('/library/$index', notify: false);
     }
-    expect(preferences.writes, isEmpty);
+    expect(repository.commits, 0);
     await facade.endLibraryBatch();
+    expect(repository.commits, 1);
     expect(
-      preferences.writes.where((key) => key == 'watched_folders_v1'),
-      hasLength(1),
-    );
-    expect(
-      preferences.writes.where((key) => key == 'watched_libraries_v1'),
-      hasLength(1),
-    );
-    final stored = await SharedPreferences.getInstance();
-    expect(
-      (jsonDecode(stored.getString('watched_folders_v1')!) as List),
+      jsonDecode(repository.settings['watched_folders_v1']!),
       hasLength(500),
     );
-    expect(jsonDecode(stored.getString('watched_libraries_v1')!), ['/library']);
+    expect(jsonDecode(repository.settings['watched_libraries_v1']!), [
+      '/library',
+    ]);
+    final preferences = await SharedPreferences.getInstance();
+    expect(preferences.getString('watched_folders_v1'), isNull);
   });
 
-  test('batch close reports a rejected watched-directory save', () async {
-    final preferences = _CountingPreferences(reject: true);
-    SharedPreferencesStorePlatform.instance = preferences;
-    addTearDown(() => SharedPreferences.setMockInitialValues({}));
-    final facade = LibraryFacade.create(
-      databaseRepository: _RestoredLibraryRepository(),
-    );
-    addTearDown(facade.dispose);
-    facade.beginLibraryBatch();
-    facade.addWatchedLibrary('/library', notify: false);
-    await expectLater(facade.endLibraryBatch(), throwsStateError);
-  });
+  test(
+    'failed catalog commit restores watched directories and allows retry',
+    () async {
+      final repository = _RestoredLibraryRepository()..rejectCommit = true;
+      final facade = LibraryFacade.create(databaseRepository: repository);
+      addTearDown(facade.dispose);
+      facade.beginLibraryBatch();
+      facade.addWatchedLibrary('/library', notify: false);
+      await expectLater(facade.endLibraryBatch(), throwsStateError);
+      expect(facade.watchedLibraries, isEmpty);
+      expect(repository.settings, isEmpty);
+      repository.rejectCommit = false;
+      facade.beginLibraryBatch();
+      facade.addWatchedLibrary('/retry', notify: false);
+      await facade.endLibraryBatch();
+      expect(facade.watchedLibraries, ['/retry']);
+      expect(jsonDecode(repository.settings['watched_libraries_v1']!), [
+        '/retry',
+      ]);
+    },
+  );
+
+  test(
+    'legacy roots migrate to SQLite and override stale preferences on reload',
+    () async {
+      SharedPreferences.setMockInitialValues({
+        'watched_folders_v1': '["/old"]',
+      });
+      final repository = _RestoredLibraryRepository();
+      final first = LibraryFacade.create(databaseRepository: repository);
+      addTearDown(first.dispose);
+      await first.loadPersistedState();
+      expect(first.watchedFolders, ['/old']);
+      first.beginLibraryBatch();
+      first.removeWatchedFolder('/old');
+      first.addWatchedFolder('/new');
+      await first.endLibraryBatch();
+      final preferences = await SharedPreferences.getInstance();
+      await preferences.setString('watched_folders_v1', '{broken legacy value');
+      final second = LibraryFacade.create(databaseRepository: repository);
+      addTearDown(second.dispose);
+      await second.loadPersistedState();
+      expect(second.watchedFolders, ['/new']);
+    },
+  );
+
+  test(
+    'failed batch restores overwritten and removed tracks and entry tree',
+    () async {
+      final repository = _RestoredLibraryRepository()..rejectCommit = true;
+      final original = MusicTrack(
+        path: '/existing/01.mp3',
+        displayName: 'original',
+        groupKey: '/existing',
+        groupTitle: 'Existing',
+        groupSubtitle: '',
+        isSingle: false,
+      );
+      final service = LibraryService()
+        ..library.add(original)
+        ..watchedFolders.add('/existing');
+      service.rebuildLibraryIndexes();
+      final facade = LibraryFacade.create(
+        databaseRepository: repository,
+        service: service,
+      );
+      addTearDown(facade.dispose);
+      final removedNotifications = <List<String>>[];
+      facade.attachTrackRemovalHandler(removedNotifications.add);
+      facade.recordLibraryEntriesForTracks('/existing', [
+        original,
+      ], persist: false);
+      final entries = facade.libraryEntriesForLibrary('/existing');
+      facade.beginLibraryBatch();
+      facade.addOrReplaceTracks([original.copyWith(isFavorite: true)]);
+      facade.removeTracksByPath([original.path]);
+      facade.removeLibraryEntriesByPaths(
+        '/existing',
+        entries.map((entry) => entry.path),
+      );
+      facade.removeWatchedFolder('/existing');
+      facade.addWatchedLibrary('/new');
+      await expectLater(facade.endLibraryBatch(), throwsStateError);
+      expect(facade.library.single.path, original.path);
+      expect(facade.trackByPath(original.path)?.isFavorite, isFalse);
+      expect(removedNotifications, isEmpty);
+      expect(facade.watchedFolders, ['/existing']);
+      expect(facade.watchedLibraries, isEmpty);
+      expect(
+        facade.libraryEntriesForLibrary('/existing').map((entry) => entry.path),
+        entries.map((entry) => entry.path),
+      );
+      repository.rejectCommit = false;
+      facade.beginLibraryBatch();
+      facade.removeTracksByPath([original.path]);
+      expect(removedNotifications, isEmpty);
+      await facade.endLibraryBatch();
+      expect(removedNotifications, [
+        [original.path],
+      ]);
+    },
+  );
 
   test('facade owns scan generation and rejects stale progress', () async {
     final service = LibraryService();
@@ -251,18 +331,25 @@ void main() {
   );
 }
 
-class _CountingPreferences extends InMemorySharedPreferencesStore {
-  _CountingPreferences({this.reject = false}) : super.empty();
-  final bool reject;
-  final writes = <String>[];
-  @override
-  Future<bool> setValue(String valueType, String key, Object value) async {
-    writes.add(key.replaceFirst(RegExp(r'^flutter\.'), ''));
-    return reject ? false : super.setValue(valueType, key, value);
-  }
-}
-
 final class _RestoredLibraryRepository extends TestPersistenceRepository {
+  final settings = <String, String>{};
+  int commits = 0;
+  bool rejectCommit = false;
+  @override
+  Future<String?> loadAppSetting(String key) async => settings[key];
+  @override
+  Future<void> commitLibraryBatch({
+    required List<MusicTrack> tracks,
+    required List<LibraryEntry> entries,
+    required Map<String, String> catalogSettings,
+    List<String> removedTrackPaths = const [],
+    Map<String, List<String>> removedEntryPaths = const {},
+  }) async {
+    commits++;
+    if (rejectCommit) throw StateError('catalog commit rejected');
+    settings.addAll(catalogSettings);
+  }
+
   @override
   Future<List<MusicTrack>> loadStartupTracks() async {
     return <MusicTrack>[
@@ -306,8 +393,19 @@ final class _RecordingAudioDetailRepository extends AudioDetailRepository {
   }
 
   @override
-  Future<AudioDetail> updateDerivedFields(AudioDetail detail) async {
-    savedTargets.add(detail.target);
-    return detail;
+  Future<AudioDetail> updateDerivedFields(
+    AudioDetailTarget target, {
+    String? rjCode,
+    Duration? duration,
+    String? cardCoverPath,
+    bool? cardCoverSelected,
+  }) async {
+    savedTargets.add(target);
+    return AudioDetail.empty(target).copyWith(
+      rjCode: rjCode,
+      duration: duration,
+      cardCoverPath: cardCoverPath,
+      cardCoverSelected: cardCoverSelected,
+    );
   }
 }

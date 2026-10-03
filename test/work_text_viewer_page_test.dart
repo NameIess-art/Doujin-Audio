@@ -660,7 +660,7 @@ void main() {
   );
 
   testWidgets(
-    'WorkTextViewerPage fades in text content smoothly over 300ms',
+    'WorkTextViewerPage fades in text content smoothly over 450ms',
     (tester) async {
       SharedPreferences.setMockInitialValues(const <String, Object>{});
       final language = AppLanguageProvider();
@@ -703,14 +703,14 @@ void main() {
       final initialOpacity = tester.widget<Opacity>(opacityFinder).opacity;
       expect(initialOpacity, lessThan(0.5));
 
-      // Advance by 150ms
-      await tester.pump(const Duration(milliseconds: 150));
+      // Advance by 200ms
+      await tester.pump(const Duration(milliseconds: 200));
       final midOpacity = tester.widget<Opacity>(opacityFinder).opacity;
       expect(midOpacity, greaterThan(initialOpacity));
       expect(midOpacity, lessThan(1.0));
 
-      // Advance past 300ms
-      await tester.pump(const Duration(milliseconds: 200));
+      // Advance past 450ms (200 + 300 = 500ms > 450ms)
+      await tester.pump(const Duration(milliseconds: 300));
       final finalOpacity = tester.widget<Opacity>(opacityFinder).opacity;
       expect(finalOpacity, equals(1.0));
     },

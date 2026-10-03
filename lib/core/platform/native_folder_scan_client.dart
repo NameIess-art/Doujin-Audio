@@ -127,6 +127,8 @@ final class NativeFolderScanClient {
                       if (completer.isCompleted || stopping) return;
                       processingChunk = true;
                       eventLifecycle.pauseActivity();
+                      await onProgress?.call(scanEvent);
+                      if (completer.isCompleted || stopping) return;
                       paths.addAll(chunk.paths);
                       failureCount += chunk.failureCount;
                       final keepGoing = await onChunk(chunk);

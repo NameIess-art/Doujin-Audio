@@ -49,7 +49,6 @@ class LibraryService {
   int contentRevision = 0;
   int libraryBatchDepth = 0;
   bool libraryBatchChanged = false;
-  bool libraryBatchChangedGroupOrder = false;
   int libraryDerivedGeneration = 0;
   final List<MusicTrack> libraryBatchPersistTracks = <MusicTrack>[];
   final Map<String, LibraryEntry> libraryBatchPersistEntriesByKey =
@@ -842,7 +841,6 @@ class LibraryService {
     if (libraryBatchDepth > 0) {
       libraryBatchChanged = true;
       if (persist) libraryBatchPersistTracks.addAll(addedTracks);
-      if (didChangeGroupOrder) libraryBatchChangedGroupOrder = true;
       return (
         tracks: addedTracks,
         didChangeGroupOrder: didChangeGroupOrder,
@@ -924,9 +922,6 @@ class LibraryService {
     if (libraryBatchDepth > 0) {
       libraryBatchChanged = true;
       if (persist) libraryBatchPersistTracks.addAll(changedTracks);
-      if (didChangeGroupOrder || didReplaceGroup) {
-        libraryBatchChangedGroupOrder = true;
-      }
       return (
         tracks: changedTracks,
         didChangeGroupOrder: didChangeGroupOrder,

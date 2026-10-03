@@ -36,12 +36,14 @@ final class UndoableRemovalAction {
 final class UndoableRemovalState {
   const UndoableRemovalState({
     this.hiddenKeys = const <UndoableRemovalKey>{},
+    this.restoredKeys = const <UndoableRemovalKey>{},
     this.pendingCount = 0,
     this.committingCount = 0,
     this.batchRevision = 0,
   });
 
   final Set<UndoableRemovalKey> hiddenKeys;
+  final Set<UndoableRemovalKey> restoredKeys;
   final int pendingCount;
   final int committingCount;
   final int batchRevision;
@@ -67,6 +69,15 @@ final class UndoableRemovalService {
   UndoableRemovalState get state => _state;
   Stream<UndoableRemovalState> get changes => _changes.stream;
 
+  Stream<bool> hiddenChangesFor(UndoableRemovalKey key) {
+    return changes
+        .where(
+          (state) => state.isHidden(key) || state.restoredKeys.contains(key),
+        )
+        .map((state) => state.isHidden(key))
+        .distinct();
+  }
+
   Future<bool> stage(UndoableRemovalAction action) async {
     if (_disposed || _state.isHidden(action.key)) return false;
     _preparing.add(action.key);
@@ -74,12 +85,12 @@ final class UndoableRemovalService {
     try {
       if (await action.prepare?.call() == false) {
         _preparing.remove(action.key);
-        _emit();
+        _emit(restoredKeys: <UndoableRemovalKey>[action.key]);
         return false;
       }
     } catch (_) {
       _preparing.remove(action.key);
-      _emit();
+      _emit(restoredKeys: <UndoableRemovalKey>[action.key]);
       return false;
     }
     _preparing.remove(action.key);
@@ -96,7 +107,10 @@ final class UndoableRemovalService {
     if (_pending.isEmpty) return 0;
     final actions = _pending.values.toList(growable: false).reversed.toList();
     _pending.clear();
-    _emit(batchChanged: true);
+    _emit(
+      batchChanged: true,
+      restoredKeys: actions.map((action) => action.key),
+    );
     var failures = 0;
     for (final action in actions) {
       try {
@@ -116,9 +130,11 @@ final class UndoableRemovalService {
     _emit(batchChanged: true);
     var failures = 0;
     for (final action in actions) {
+      var failed = false;
       try {
         await action.commit();
       } catch (_) {
+        failed = true;
         failures++;
         try {
           await action.undo();
@@ -127,7 +143,10 @@ final class UndoableRemovalService {
         }
       } finally {
         _committing.remove(action.key);
-        _emit();
+        // Successful commits must not restore rows held by an older UI snapshot.
+        _emit(
+          restoredKeys: failed ? <UndoableRemovalKey>[action.key] : const [],
+        );
       }
     }
     return failures;
@@ -145,7 +164,10 @@ final class UndoableRemovalService {
     return result.future;
   }
 
-  void _emit({bool batchChanged = false}) {
+  void _emit({
+    bool batchChanged = false,
+    Iterable<UndoableRemovalKey> restoredKeys = const [],
+  }) {
     if (_disposed) return;
     _state = UndoableRemovalState(
       hiddenKeys: Set<UndoableRemovalKey>.unmodifiable(<UndoableRemovalKey>{
@@ -153,6 +175,7 @@ final class UndoableRemovalService {
         ..._pending.keys,
         ..._committing,
       }),
+      restoredKeys: Set<UndoableRemovalKey>.unmodifiable(restoredKeys),
       pendingCount: _pending.length,
       committingCount: _committing.length,
       batchRevision: _state.batchRevision + (batchChanged ? 1 : 0),

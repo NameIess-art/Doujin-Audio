@@ -243,7 +243,7 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
 
     beginLibraryBatch();
     _service.libraryBatchChanged = _service.library.isNotEmpty;
-    await endLibraryBatch(notify: false, waitForPersistence: false);
+    await endLibraryBatch(notify: false);
     _service.syncGroupOrderFromLibrary();
     // Startup caches shallow cards; nested trees stay lazy until requested.
     _syncStateSlice(isInitialized: true);
@@ -287,7 +287,6 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
       ..scanFailureCount = 0
       ..libraryBatchDepth = 0
       ..libraryBatchChanged = false
-      ..libraryBatchChangedGroupOrder = false
       ..libraryBatchPersistTracks.clear()
       ..libraryBatchPersistEntriesByKey.clear()
       ..markStructureChanged();
@@ -798,19 +797,12 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
   );
 
   @override
-  Future<void> finishStagedLibraryRefresh({bool waitForPersistence = false}) =>
-      _catalogWrites.finishStagedLibraryRefresh(
-        waitForPersistence: waitForPersistence,
-      );
+  Future<void> finishStagedLibraryRefresh() =>
+      _catalogWrites.finishStagedLibraryRefresh();
 
   @override
-  Future<void> endLibraryBatch({
-    bool notify = true,
-    bool waitForPersistence = true,
-  }) => _catalogWrites.endLibraryBatch(
-    notify: notify,
-    waitForPersistence: waitForPersistence,
-  );
+  Future<void> endLibraryBatch({bool notify = true}) =>
+      _catalogWrites.endLibraryBatch(notify: notify);
 
   @override
   int tryBeginScan({required String source, bool background = false}) {

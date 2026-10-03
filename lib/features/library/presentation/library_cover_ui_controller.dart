@@ -29,9 +29,11 @@ final class LibraryCoverUiController {
     BuildContext? context,
   }) {
     final normalizedPath = PathMatcher.normalize(folderPath);
-    final generation = _library.coverArtworkCacheService.generation;
+    final revision = _library.coverArtworkCacheService.revisionForScope(
+      normalizedPath,
+    );
     return _deferredLookup(
-      key: 'folder:$normalizedPath:$generation',
+      key: 'folder:$normalizedPath:$revision',
       context: context,
       lookup: () => _library.coverPathFutureForFolder(folderPath),
     );
@@ -44,9 +46,11 @@ final class LibraryCoverUiController {
     final coverKey =
         _library.coverArtworkCacheService.coverSearchKeyForTrack(track) ??
         track.path;
-    final generation = _library.coverArtworkCacheService.generation;
+    final revision = _library.coverArtworkCacheService.revisionForScope(
+      coverKey,
+    );
     return _deferredLookup(
-      key: 'track:$coverKey:$generation',
+      key: 'track:$coverKey:$revision',
       context: context,
       lookup: () => _library.coverPathFutureForTrack(track),
     );
@@ -54,9 +58,11 @@ final class LibraryCoverUiController {
 
   Future<String?> deferredRemoteCover(String url, {BuildContext? context}) {
     final normalizedUrl = url.trim();
-    final generation = _library.coverArtworkCacheService.generation;
+    final revision = _library.coverArtworkCacheService.revisionForScope(
+      normalizedUrl,
+    );
     return _deferredLookup(
-      key: 'remote:$normalizedUrl:$generation',
+      key: 'remote:$normalizedUrl:$revision',
       context: context,
       lookup: () => _library.coverPathFutureForRemoteCover(normalizedUrl),
     );

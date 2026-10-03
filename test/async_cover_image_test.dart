@@ -896,7 +896,7 @@ void main() {
     },
   );
 
-  testWidgets('RetryingImage fades the placeholder out over 300ms', (
+  testWidgets('RetryingImage fades the placeholder out over 450ms', (
     tester,
   ) async {
     final provider = _ControlledImageProvider();
@@ -940,7 +940,7 @@ void main() {
     );
     expect(
       kPlaceholderContentTransitionDuration,
-      const Duration(milliseconds: 300),
+      const Duration(milliseconds: 450),
     );
     final fades = find.descendant(
       of: transition,

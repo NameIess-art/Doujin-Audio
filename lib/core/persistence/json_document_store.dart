@@ -278,7 +278,7 @@ final class DefaultJsonDocumentStore implements JsonDocumentStore {
     JsonDocumentLocation location,
   ) async {
     try {
-      final recovered = await _recoverLocal(location);
+      final recovered = await _recoverLocal(location, forRead: true);
       if (recovered.error != null) {
         return JsonDocumentReadResult.unreadable(recovered.error!);
       }
@@ -418,7 +418,7 @@ final class DefaultJsonDocumentStore implements JsonDocumentStore {
   }
 
   static Future<({File? target, Uint8List? bytes, String? error})>
-  _recoverLocal(JsonDocumentLocation location) async {
+  _recoverLocal(JsonDocumentLocation location, {bool forRead = false}) async {
     final target = _localTarget(location);
     final files = await _findLocalTransactionFiles(target);
     final actualTarget = files.target;
@@ -427,8 +427,14 @@ final class DefaultJsonDocumentStore implements JsonDocumentStore {
     try {
       final targetBytes = await _validJsonBytes(actualTarget);
       if (targetBytes != null) {
-        await _deleteIfPresent(backup);
-        await _deleteIfPresent(staged);
+        try {
+          await _deleteIfPresent(backup);
+          await _deleteIfPresent(staged);
+        } on Object {
+          // A validated main document remains readable when stale cleanup fails.
+          // Mutations still require cleanup before reusing transaction names.
+          if (!forRead) rethrow;
+        }
         return (target: actualTarget, bytes: targetBytes, error: null);
       }
       final backupBytes = await _validJsonBytes(backup);

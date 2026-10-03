@@ -1028,7 +1028,7 @@ void main() {
     },
   );
 
-  testWidgets('download skeletons fade out for 300ms as data arrives', (
+  testWidgets('download skeletons fade out for 450ms as data arrives', (
     tester,
   ) async {
     SharedPreferences.setMockInitialValues(const <String, Object>{});
@@ -1072,11 +1072,11 @@ void main() {
       findsOneWidget,
     );
     await tester.pump(const Duration(milliseconds: 1));
-    await tester.pump(const Duration(milliseconds: 150));
+    await tester.pump(const Duration(milliseconds: 225));
     expect(summarySkeleton, findsOneWidget);
-    await tester.pump(const Duration(milliseconds: 149));
+    await tester.pump(const Duration(milliseconds: 223));
     expect(summarySkeleton, findsOneWidget);
-    await tester.pump(const Duration(milliseconds: 1));
+    await tester.pump(const Duration(milliseconds: 2));
     expect(summarySkeleton, findsNothing);
 
     trackTree.complete(const <AsmrTrackFile>[]);
@@ -1092,9 +1092,9 @@ void main() {
     );
     expect(find.byType(OperationSkeletonList), findsOneWidget);
     await tester.pump(const Duration(milliseconds: 1));
-    await tester.pump(const Duration(milliseconds: 150));
+    await tester.pump(const Duration(milliseconds: 225));
     expect(find.byType(OperationSkeletonList), findsOneWidget);
-    await tester.pump(const Duration(milliseconds: 150));
+    await tester.pump(const Duration(milliseconds: 225));
     expect(find.byType(OperationSkeletonList), findsNothing);
     expect(
       find.byKey(const ValueKey<String>('asmr_download_file_list')),

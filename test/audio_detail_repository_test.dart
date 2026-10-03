@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -8,6 +9,8 @@ import 'package:doujin_audio/core/media/path_matcher.dart';
 import 'package:doujin_audio/core/persistence/json_document_store.dart';
 import 'package:doujin_audio/features/library/application/audio_detail_document_repository.dart';
 import 'package:doujin_audio/features/library/application/audio_detail_repository.dart';
+import 'package:doujin_audio/features/library/application/audio_detail_cache_service.dart';
+import 'package:doujin_audio/features/library/data/audio_detail_json_codec.dart';
 import 'package:doujin_audio/features/library/domain/audio_detail_store.dart';
 import 'package:doujin_audio/features/player/domain/time_segment_label.dart';
 
@@ -54,13 +57,145 @@ void main() {
     await documentFile.writeAsString(original, flush: true);
 
     final updated = await repository.updateDerivedFields(
-      AudioDetail.empty(target).copyWith(duration: const Duration(seconds: 9)),
+      target,
+      duration: const Duration(seconds: 9),
     );
 
     expect(updated.duration, const Duration(seconds: 9));
+    expect(updated.createdAt, isNull);
     expect(updated.updatedAt, isNull);
     expect(await documentFile.readAsString(), original);
   });
+
+  for (final writeDocument in [false, true]) {
+    test(
+      '${writeDocument ? 'explicit cover selection' : 'cover discovery'} queued across JSON import preserves imported metadata',
+      () async {
+        const original = '''{
+  "schemaVersion": 1,
+  "type": "audio-detail",
+  "targetType": "library-root-folder",
+  "rjCode": "RJ123456",
+  "workTitle": "Imported work",
+  "circleName": "Imported circle",
+  "voiceActors": ["Imported voice"],
+  "tags": ["Imported tag"],
+  "releaseDate": "2024-01-02T00:00:00.000Z",
+  "durationMs": 123000,
+  "salesCount": 100,
+  "rating": 4.8,
+  "createdAt": "2024-01-01T00:00:00.000Z",
+  "updatedAt": "2024-01-03T00:00:00.000Z",
+  "unknown": {"keep": true}
+}''';
+        await documentFile.writeAsString(original, flush: true);
+        final originalBytes = await documentFile.readAsBytes();
+        final cache = AudioDetailCacheService(repository: repository);
+        final loadGate = Completer<void>();
+        final loadStarted = Completer<void>();
+        database.beforeNextLoad = loadGate.future;
+        database.nextLoadStarted = loadStarted;
+        final coverPath = '${directory.path}${Platform.pathSeparator}cover.png';
+
+        // Submit the cover request while the DB is empty, then queue an import
+        // before that request's first DB read completes. Both persistence modes
+        // must preserve the metadata already present in the source document.
+        final coverSave = cache.saveCardCoverPath(
+          target,
+          coverPath,
+          selected: writeDocument,
+          writeDocument: writeDocument,
+        );
+        final backupImport = cache.importBackupsMany([target]);
+        await loadStarted.future;
+        loadGate.complete();
+        expect((await backupImport).importedCount, 1);
+        expect(await coverSave, coverPath);
+
+        final stored = (await database.load(target))!;
+        final cached = cache.resolvedDetail(target)!;
+        for (final detail in [stored, cached]) {
+          expect(detail.rjCode, 'RJ123456');
+          expect(detail.workTitle, 'Imported work');
+          expect(detail.circleName, 'Imported circle');
+          expect(detail.voiceActors, ['Imported voice']);
+          expect(detail.tags, ['Imported tag']);
+          expect(
+            detail.releaseDate,
+            DateTime.parse('2024-01-02T00:00:00.000Z'),
+          );
+          expect(detail.duration, const Duration(seconds: 123));
+          expect(detail.salesCount, 100);
+          expect(detail.rating, 4.8);
+          expect(detail.createdAt, DateTime.parse('2024-01-01T00:00:00.000Z'));
+          expect(
+            detail.updatedAt,
+            writeDocument
+                ? DateTime.fromMillisecondsSinceEpoch(1000)
+                : DateTime.parse('2024-01-03T00:00:00.000Z'),
+          );
+          expect(detail.cardCoverPath, coverPath);
+        }
+        if (writeDocument) {
+          final fields = jsonDecode(await documentFile.readAsString()) as Map;
+          expect(fields['rjCode'], 'RJ123456');
+          expect(fields['workTitle'], 'Imported work');
+          expect(fields['circleName'], 'Imported circle');
+          expect(fields['voiceActors'], ['Imported voice']);
+          expect(fields['tags'], ['Imported tag']);
+          expect(fields['unknown'], {'keep': true});
+          expect(fields['cardCoverPath'], coverPath);
+          expect(fields['cardCoverSelected'], isTrue);
+        } else {
+          expect(await documentFile.readAsBytes(), originalBytes);
+        }
+      },
+    );
+  }
+
+  test(
+    'queued duration and RJ patches retain newly imported user fields',
+    () async {
+      const original = '''{
+  "schemaVersion": 1,
+  "type": "audio-detail",
+  "targetType": "library-root-folder",
+  "rjCode": "RJ123456",
+  "workTitle": "Imported work",
+  "circleName": "Imported circle",
+  "voiceActors": ["Imported voice"],
+  "tags": ["Imported tag"],
+  "durationMs": 123000,
+  "rating": 4.8,
+  "unknown": {"keep": true}
+}''';
+      await documentFile.writeAsString(original, flush: true);
+      final bytes = await documentFile.readAsBytes();
+      final cache = AudioDetailCacheService(repository: repository);
+      final importing = cache.importBackupsMany([target]);
+      final patching = cache.updateDerivedFields(
+        target,
+        rjCode: 'RJ999999',
+        duration: const Duration(seconds: 4),
+      );
+      expect((await importing).importedCount, 1);
+      final patched = await patching;
+      for (final detail in [
+        patched,
+        (await database.load(target))!,
+        cache.resolvedDetail(target)!,
+      ]) {
+        expect(detail.rjCode, 'RJ123456');
+        expect(detail.duration, const Duration(seconds: 123));
+        expect(detail.workTitle, 'Imported work');
+        expect(detail.circleName, 'Imported circle');
+        expect(detail.voiceActors, ['Imported voice']);
+        expect(detail.tags, ['Imported tag']);
+        expect(detail.rating, 4.8);
+      }
+      expect(await documentFile.readAsBytes(), bytes);
+    },
+  );
 
   test(
     'read-only import updates database without changing source bytes',
@@ -81,6 +216,44 @@ void main() {
       expect(result.importedCount, 1);
       expect((await database.load(target))?.workTitle, 'Imported');
       expect(await documentFile.readAsString(), original);
+    },
+  );
+
+  test(
+    'unchanged explicit cover hydrates the stale cache without rewriting JSON',
+    () async {
+      final coverPath = '${directory.path}${Platform.pathSeparator}cover.png';
+      final source = const AudioDetailJsonCodec().encodeNew(
+        AudioDetail.empty(target).copyWith(
+          workTitle: 'Restored existing cover',
+          voiceActors: ['Restored voice'],
+          tags: ['Restored tag'],
+          cardCoverPath: coverPath,
+          cardCoverSelected: true,
+        ),
+      );
+      await documentFile.writeAsBytes(source, flush: true);
+      final cache = AudioDetailCacheService(repository: repository);
+      expect((await cache.load(target)).detail.workTitle, isEmpty);
+      final revision = cache.revision;
+
+      expect(
+        await cache.saveCardCoverPath(
+          target,
+          coverPath,
+          selected: true,
+          writeDocument: true,
+        ),
+        coverPath,
+      );
+      final cached = cache.resolvedDetail(target)!;
+      expect(cached.workTitle, 'Restored existing cover');
+      expect(cached.voiceActors, ['Restored voice']);
+      expect(cached.tags, ['Restored tag']);
+      expect(cached.cardCoverPath, coverPath);
+      expect(cached.cardCoverSelected, isTrue);
+      expect(cache.revision, greaterThan(revision));
+      expect(await documentFile.readAsBytes(), source);
     },
   );
 
@@ -184,6 +357,37 @@ void main() {
     );
   });
 
+  test('cover edit preserves authored database metadata', () async {
+    await documentFile.writeAsString(
+      jsonEncode({
+        'schemaVersion': 1,
+        'type': 'audio-detail',
+        'targetType': 'library-root-folder',
+        'workTitle': 'External title',
+        'tags': ['External tag'],
+        'updatedAt': '2099-01-01T00:00:00.000Z',
+      }),
+      flush: true,
+    );
+    await database.upsert(
+      AudioDetail.empty(
+        target,
+      ).copyWith(workTitle: 'User title', updatedAt: DateTime.utc(2024)),
+    );
+    final cache = AudioDetailCacheService(repository: repository);
+    await cache.saveCardCoverPath(
+      target,
+      '${directory.path}${Platform.pathSeparator}cover.png',
+      selected: true,
+      writeDocument: true,
+    );
+    expect(cache.resolvedDetail(target)?.workTitle, 'User title');
+    expect(cache.resolvedDetail(target)?.tags, isEmpty);
+    final fields = jsonDecode(await documentFile.readAsString()) as Map;
+    expect(fields['workTitle'], 'User title');
+    expect(fields['tags'], isEmpty);
+  });
+
   test('import does not restore tags when user record cleared tags', () async {
     const originalWithTags = '''{
   "schemaVersion": 1,
@@ -213,6 +417,8 @@ void main() {
 
 final class _MemoryAudioDetailStore implements AudioDetailStore {
   final Map<String, AudioDetail> _values = <String, AudioDetail>{};
+  Future<void>? beforeNextLoad;
+  Completer<void>? nextLoadStarted;
 
   @override
   Future<List<TimeSegmentLabel>> loadTimeSegmentLabelsForTarget(
@@ -241,8 +447,16 @@ final class _MemoryAudioDetailStore implements AudioDetailStore {
   }
 
   @override
-  Future<AudioDetail?> load(AudioDetailTarget target) async =>
-      _values[_key(target)];
+  Future<AudioDetail?> load(AudioDetailTarget target) async {
+    final value = _values[_key(target)];
+    final gate = beforeNextLoad;
+    beforeNextLoad = null;
+    if (gate != null) {
+      nextLoadStarted?.complete();
+      await gate;
+    }
+    return value;
+  }
 
   @override
   Future<List<AudioDetail>> loadMany(

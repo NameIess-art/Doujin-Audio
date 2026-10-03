@@ -64,6 +64,8 @@ void main() {
           generation: 1,
         );
     expect(result!.added, 3);
+    expect(catalog.sourceLabels, ['music', 'music', 'music']);
+    expect(catalog.foundCounts, [1, 2, 3]);
     expect(catalog.snapshotReads, 1);
     expect(
       catalog.entrySnapshots.every(
@@ -186,6 +188,8 @@ class _Catalog implements LibraryCatalog {
   int scanFailureCount = 0;
   final entryBatchSizes = <int>[];
   final entrySnapshots = <LibraryEntrySnapshot?>[];
+  final sourceLabels = <String>[];
+  final foundCounts = <int>[];
   var snapshotReads = 0;
   var cleanupCalls = 0;
   void Function()? onTracksAdded;
@@ -239,6 +243,8 @@ class _Catalog implements LibraryCatalog {
     int? processed,
     int? total,
   }) {
+    if (currentFolder != null) sourceLabels.add(currentFolder);
+    if (foundCount != null) foundCounts.add(foundCount);
     scanFoundCount = foundCount ?? scanFoundCount;
     scanDuplicateCount = duplicateCount ?? scanDuplicateCount;
     scanFailureCount = failureCount ?? scanFailureCount;

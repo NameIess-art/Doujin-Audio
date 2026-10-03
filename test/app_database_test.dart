@@ -37,6 +37,104 @@ void main() {
     expect(AppDatabase.schemaVersion, 11);
   });
 
+  test(
+    'catalog settings failure rolls back tracks, entries and removals',
+    () async {
+      MusicTrack track(String name) => MusicTrack(
+        path: '/audio/$name.mp3',
+        displayName: name,
+        groupKey: '/audio',
+        groupTitle: 'Audio',
+        groupSubtitle: '',
+        isSingle: false,
+      );
+      final original = track('original');
+      final added = track('added');
+      final originalEntry = LibraryEntry.track(
+        libraryPath: '/audio',
+        track: original,
+        state: LibraryEntryState.active,
+      );
+      await repository.upsertTracks([original]);
+      await repository.upsertLibraryEntries([originalEntry]);
+      await repository.saveAppSetting('watched_folders_v1', '["/audio"]');
+      await db.execute('''
+      CREATE TRIGGER reject_catalog_setting BEFORE INSERT ON app_kv_settings
+      WHEN NEW.key = 'watched_folders_v1'
+      BEGIN SELECT RAISE(ABORT, 'catalog setting failure'); END;
+    ''');
+      await expectLater(
+        repository.commitLibraryBatch(
+          tracks: [added],
+          entries: [
+            LibraryEntry.track(
+              libraryPath: '/audio',
+              track: added,
+              state: LibraryEntryState.active,
+            ),
+          ],
+          removedTrackPaths: [original.path],
+          removedEntryPaths: {
+            '/audio': [originalEntry.path],
+          },
+          catalogSettings: {'watched_folders_v1': '["/new"]'},
+        ),
+        throwsA(isA<DatabaseException>()),
+      );
+      expect((await repository.loadAllTracks()).map((track) => track.path), [
+        original.path,
+      ]);
+      expect(
+        (await repository.loadAllLibraryEntries()).map((entry) => entry.path),
+        [PathMatcher.normalize(originalEntry.path)],
+      );
+      expect(
+        await repository.loadAppSetting('watched_folders_v1'),
+        '["/audio"]',
+      );
+    },
+  );
+
+  test('late entry failure rolls back earlier catalog track chunks', () async {
+    await db.execute('''
+      CREATE TRIGGER reject_catalog_entry BEFORE INSERT ON library_entries
+      WHEN NEW.path = '${PathMatcher.normalize('/audio/240')}'
+      BEGIN SELECT RAISE(ABORT, 'catalog entry failure'); END;
+    ''');
+    final tracks = List<MusicTrack>.generate(
+      241,
+      (index) => MusicTrack(
+        path: '/audio/$index.mp3',
+        displayName: '$index',
+        groupKey: '/audio',
+        groupTitle: 'Audio',
+        groupSubtitle: '',
+        isSingle: false,
+      ),
+    );
+    final entries = List<LibraryEntry>.generate(
+      241,
+      (index) => LibraryEntry.folder(
+        libraryPath: '/audio',
+        path: '/audio/$index',
+        parentPath: '/audio',
+        displayName: '$index',
+        state: LibraryEntryState.active,
+      ),
+    );
+    await expectLater(
+      repository.commitLibraryBatch(
+        tracks: tracks,
+        entries: entries,
+        catalogSettings: {'watched_folders_v1': '["/audio"]'},
+      ),
+      throwsA(isA<DatabaseException>()),
+    );
+    expect(await db.query('tracks'), isEmpty);
+    expect(await db.query('library_entries'), isEmpty);
+    expect(await repository.loadAppSetting('watched_folders_v1'), isNull);
+  });
+
   test('track chunks roll back together when a later chunk fails', () async {
     await db.execute('''
       CREATE TRIGGER reject_late_track BEFORE INSERT ON tracks

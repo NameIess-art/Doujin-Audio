@@ -12,6 +12,7 @@ import 'support/test_persistence_repository.dart';
 import 'package:doujin_audio/features/library/application/audio_detail_document_repository.dart';
 import 'package:doujin_audio/features/library/data/audio_detail_json_codec.dart';
 import 'package:doujin_audio/features/library/domain/audio_detail_store.dart';
+import 'package:doujin_audio/features/library/domain/library_persistence_repository.dart';
 import 'package:doujin_audio/features/library/application/library_scan_coordinator.dart';
 import 'package:doujin_audio/features/library/application/library_scan_data_source.dart';
 import 'package:doujin_audio/features/library/application/library_facade.dart';
@@ -42,6 +43,175 @@ void main() {
   tearDown(() async {
     await fixture.dispose(currentGraph: runtimeGraph);
   });
+
+  for (final retryUnreadable in [false, true]) {
+    test(
+      retryUnreadable
+          ? 'startup JSON migration retries unreadable documents after repair'
+          : 'startup JSON migration restores metadata despite completed v2',
+      () async {
+        final work = await Directory.systemTemp.createTemp(
+          'startup_json_repair_',
+        );
+        addTearDown(() => work.delete(recursive: true));
+        final target = AudioDetailTarget.libraryRootFolder(work.path);
+        final file = File(path.join(work.path, audioDetailDocumentName));
+        final source = AudioDetail.empty(target).copyWith(
+          rjCode: 'RJ123456',
+          workTitle: 'Recovered work',
+          circleName: 'Recovered circle',
+          voiceActors: ['Recovered voice'],
+          tags: ['Recovered tag'],
+          releaseDate: DateTime.parse('2024-01-02T00:00:00.000Z'),
+          salesCount: 200,
+          rating: 4.8,
+          createdAt: DateTime.parse('2024-01-01T00:00:00.000Z'),
+          updatedAt: DateTime.parse('2024-01-03T00:00:00.000Z'),
+        );
+        final bytes = const AudioDetailJsonCodec().encodeNew(source);
+        await file.writeAsBytes(
+          retryUnreadable ? utf8.encode('{truncated') : bytes,
+        );
+        final repository = fixture.library.databaseRepository;
+        final detailStore = TestPersistenceRepository(
+          database: AppDatabase.test(db),
+        );
+        await repository.saveAppSetting(
+          'audio_detail_document_read_only_import_v2',
+          '1',
+        );
+        // Cover cache migration is unrelated and must not inspect user caches.
+        await repository.saveAppSetting(
+          'cover_artwork_cache_migration_v1',
+          '1',
+        );
+        final oldCover = path.join(work.path, 'existing-cover.png');
+        await detailStore.upsert(
+          AudioDetail.empty(target).copyWith(
+            cardCoverPath: oldCover,
+            duration: const Duration(seconds: 45),
+          ),
+        );
+        fixture.library.addWatchedFolder(work.path, notify: false);
+        fixture.library.addTracks(
+          [
+            MusicTrack(
+              path: path.join(work.path, 'track.mp3'),
+              displayName: 'Track',
+              groupKey: work.path,
+              groupTitle: 'Work',
+              groupSubtitle: work.path,
+              isSingle: false,
+              duration: const Duration(seconds: 45),
+            ),
+          ],
+          notify: false,
+          persist: false,
+        );
+        await fixture.library.loadAudioDetail(target); // Seed the stale cache.
+        fixture.library.schedulePostStartupMaintenance();
+
+        if (retryUnreadable) {
+          await _waitForLibrarySetting(
+            repository,
+            'backup_restore_authoritative_v1',
+            '0',
+          );
+          await Future<void>.delayed(const Duration(milliseconds: 100));
+          expect(
+            await repository.loadAppSetting(
+              'audio_detail_document_read_only_import_v3',
+            ),
+            isNull,
+          );
+          expect(await file.readAsString(), '{truncated');
+          expect((await detailStore.load(target))?.workTitle, isEmpty);
+          await file.writeAsBytes(bytes, flush: true);
+          // A subsequent startup maintenance run must retry the unmarked import.
+          fixture.library.schedulePostStartupMaintenance();
+        }
+        await _waitForLibrarySetting(
+          repository,
+          'audio_detail_document_read_only_import_v3',
+          '1',
+        );
+        for (final detail in [
+          (await detailStore.load(target))!,
+          (await fixture.library.loadAudioDetail(target)).detail,
+        ]) {
+          expect(detail.rjCode, source.rjCode);
+          expect(detail.workTitle, source.workTitle);
+          expect(detail.circleName, source.circleName);
+          expect(detail.voiceActors, source.voiceActors);
+          expect(detail.tags, source.tags);
+          expect(detail.releaseDate?.toUtc(), source.releaseDate);
+          expect(detail.salesCount, source.salesCount);
+          expect(detail.rating, source.rating);
+          expect(detail.createdAt?.toUtc(), source.createdAt);
+          expect(detail.updatedAt?.toUtc(), source.updatedAt);
+          expect(detail.cardCoverPath, oldCover);
+          expect(detail.duration, const Duration(seconds: 45));
+        }
+        expect(await file.readAsBytes(), bytes);
+      },
+    );
+  }
+
+  test(
+    'import persistence failure restores catalog and permits retry',
+    () async {
+      final repository = TestPersistenceRepository(
+        database: AppDatabase.test(db),
+      );
+      final library = LibraryFacade.create(databaseRepository: repository);
+      addTearDown(library.dispose);
+      final source = _JsonPreservationScanDataSource()
+        ..configure(
+          selectedPath: '/new-library',
+          childFolders: ['/new-library/work'],
+          tracks: [_scannedTrackForPath('/new-library/work/01.mp3')],
+        );
+      final scanner = LibraryScannerService(dataSource: source);
+      const labels = LibraryScanLabels(
+        chooseMusicFolder: 'folder',
+        chooseLibraryFolder: 'library',
+        chooseAudioFiles: 'files',
+        importedFiles: 'imported',
+        manuallySelectedFiles: 'selected',
+      );
+      await db.execute('''
+      CREATE TRIGGER reject_import_catalog BEFORE INSERT ON app_kv_settings
+      WHEN NEW.key = 'watched_libraries_v1'
+      BEGIN SELECT RAISE(ABORT, 'catalog failure'); END;
+    ''');
+      await expectLater(
+        scanner.addLibrary(provider: library, labels: labels),
+        throwsA(isA<DatabaseException>()),
+      );
+      expect(library.library, isEmpty);
+      expect(library.watchedFolders, isEmpty);
+      expect(library.watchedLibraries, isEmpty);
+      expect(library.libraryEntriesForLibrary('/new-library'), isEmpty);
+      expect(library.isScanning, isFalse);
+      expect(await db.query('tracks'), isEmpty);
+      expect(await db.query('library_entries'), isEmpty);
+      expect(await repository.loadAppSetting('watched_libraries_v1'), isNull);
+      await db.execute('DROP TRIGGER reject_import_catalog');
+      final outcome = await scanner.addLibrary(
+        provider: library,
+        labels: labels,
+      );
+      expect(outcome?.code, LibraryScanOutcomeCode.libraryImported);
+      final restored = LibraryFacade.create(databaseRepository: repository);
+      addTearDown(restored.dispose);
+      await restored.loadPersistedState();
+      expect(restored.library, hasLength(1));
+      expect(restored.watchedLibraries, [
+        PathMatcher.normalize('/new-library'),
+      ]);
+      expect(restored.watchedFolders, ['/new-library/work']);
+    },
+  );
 
   test(
     'adding folders and libraries preserves every JSON file byte-for-byte',
@@ -1569,7 +1739,7 @@ void main() {
 
       expect(await db.query('tracks'), isEmpty);
       expect(
-        json.decode((await AppPreferences.getString('group_order_v1'))!),
+        json.decode((await repository.loadAppSetting('group_order_v1'))!),
         <Object?>[],
       );
     });
@@ -1629,7 +1799,7 @@ void main() {
       expect(await db.query('library_entries'), isEmpty);
       expect(await db.query('audio_details'), isEmpty);
       expect(
-        json.decode((await AppPreferences.getString('watched_folders_v1'))!),
+        json.decode((await repository.loadAppSetting('watched_folders_v1'))!),
         <Object?>[],
       );
     });
@@ -1700,11 +1870,11 @@ void main() {
       expect(await db.query('library_entries'), isEmpty);
       expect(await db.query('audio_details'), isEmpty);
       expect(
-        json.decode((await AppPreferences.getString('watched_folders_v1'))!),
+        json.decode((await repository.loadAppSetting('watched_folders_v1'))!),
         <Object?>[],
       );
       expect(
-        json.decode((await AppPreferences.getString('watched_libraries_v1'))!),
+        json.decode((await repository.loadAppSetting('watched_libraries_v1'))!),
         <Object?>[],
       );
       expect(
@@ -2023,6 +2193,18 @@ void main() {
   });
 }
 
+Future<void> _waitForLibrarySetting(
+  LibraryPersistenceRepository repository,
+  String key,
+  String value,
+) async {
+  for (var attempt = 0; attempt < 80; attempt++) {
+    if (await repository.loadAppSetting(key) == value) return;
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+  }
+  fail('Startup maintenance did not save $key=$value.');
+}
+
 ScannedTrack _scannedTrackForPath(String trackPath) {
   final folder = path.dirname(trackPath);
   return ScannedTrack(
@@ -2119,6 +2301,24 @@ class _CountingTestPersistenceRepository extends TestPersistenceRepository {
   }) {
     upsertLibraryEntriesCallCount++;
     return super.upsertLibraryEntries(entries, scanGeneration: scanGeneration);
+  }
+
+  @override
+  Future<void> commitLibraryBatch({
+    required List<MusicTrack> tracks,
+    required List<LibraryEntry> entries,
+    required Map<String, String> catalogSettings,
+    List<String> removedTrackPaths = const [],
+    Map<String, List<String>> removedEntryPaths = const {},
+  }) {
+    if (entries.isNotEmpty) upsertLibraryEntriesCallCount++;
+    return super.commitLibraryBatch(
+      tracks: tracks,
+      entries: entries,
+      catalogSettings: catalogSettings,
+      removedTrackPaths: removedTrackPaths,
+      removedEntryPaths: removedEntryPaths,
+    );
   }
 
   @override

@@ -30,6 +30,9 @@ final class LibraryCatalogWriteCoordinator {
   final CoverArtworkCacheService? Function() _coverArtwork;
   final void Function() _syncStateSlice;
   void Function(List<String>)? _trackRemovalHandler;
+  _LibraryBatchSnapshot? _batchBefore;
+  final _removedTrackPaths = <String>{};
+  final _removedEntryPaths = <String, Set<String>>{};
   void attachTrackRemovalHandler(void Function(List<String>) handler) {
     _trackRemovalHandler ??= handler;
   }
@@ -122,8 +125,8 @@ final class LibraryCatalogWriteCoordinator {
     final mutation = _service.addTracks(tracks, persist: persist);
     if (mutation.tracks.isEmpty) return;
     recordEntriesForTracks(mutation.tracks, persist: persist);
-    _coverArtwork()?.invalidateCatalogTracks(mutation.tracks);
     if (mutation.batched) return;
+    _coverArtwork()?.invalidateCatalogTracks(mutation.tracks);
     _markLibraryStructureChanged();
     if (persist && _persistenceCoordinator.enabled) {
       unawaited(databaseRepository.upsertTracks(mutation.tracks));
@@ -147,8 +150,8 @@ final class LibraryCatalogWriteCoordinator {
     );
     if (mutation.tracks.isEmpty) return;
     recordEntriesForTracks(mutation.tracks, persist: persist);
-    _coverArtwork()?.invalidateCatalogTracks(mutation.tracks);
     if (mutation.batched) return;
+    _coverArtwork()?.invalidateCatalogTracks(mutation.tracks);
     _markLibraryStructureChanged();
     if (persist && _persistenceCoordinator.enabled) {
       unawaited(databaseRepository.upsertTracks(mutation.tracks));
@@ -172,10 +175,16 @@ final class LibraryCatalogWriteCoordinator {
         .map((track) => track.path)
         .toList(growable: false);
     if (removedPaths.isEmpty) return const <String>[];
-    _coverArtwork()?.invalidateCatalogTracks(mutation.tracks);
-    _trackRemovalHandler?.call(removedPaths);
+    if (!mutation.batched) {
+      _coverArtwork()?.invalidateCatalogTracks(mutation.tracks);
+    }
+    if (!mutation.batched) _trackRemovalHandler?.call(removedPaths);
     if (persist && _persistenceCoordinator.enabled) {
-      unawaited(databaseRepository.deleteTracks(removedPaths));
+      if (mutation.batched) {
+        _removedTrackPaths.addAll(removedPaths);
+      } else {
+        unawaited(databaseRepository.deleteTracks(removedPaths));
+      }
     }
     if (!mutation.batched) {
       _markLibraryStructureChanged();
@@ -217,9 +226,7 @@ final class LibraryCatalogWriteCoordinator {
       retainedPaths,
     );
     if (removedPaths.isNotEmpty && _persistenceCoordinator.enabled) {
-      unawaited(
-        databaseRepository.deleteLibraryEntries(libraryPath, removedPaths),
-      );
+      _persistRemovedEntries(libraryPath, removedPaths);
     }
   }
 
@@ -232,6 +239,16 @@ final class LibraryCatalogWriteCoordinator {
       entryPaths,
     );
     if (removedPaths.isNotEmpty && _persistenceCoordinator.enabled) {
+      _persistRemovedEntries(libraryPath, removedPaths);
+    }
+  }
+
+  void _persistRemovedEntries(String libraryPath, List<String> removedPaths) {
+    if (_service.libraryBatchDepth > 0) {
+      _removedEntryPaths
+          .putIfAbsent(libraryPath, () => <String>{})
+          .addAll(removedPaths);
+    } else {
       unawaited(
         databaseRepository.deleteLibraryEntries(libraryPath, removedPaths),
       );
@@ -240,6 +257,7 @@ final class LibraryCatalogWriteCoordinator {
 
   void beginLibraryBatch() {
     if (_service.libraryBatchDepth == 0) {
+      _batchBefore = _LibraryBatchSnapshot(_service);
       _service.libraryDerivedGeneration++;
     }
     _service.libraryBatchDepth++;
@@ -287,92 +305,160 @@ final class LibraryCatalogWriteCoordinator {
     return _service.library.length - beforeCount;
   }
 
-  Future<void> finishStagedLibraryRefresh({bool waitForPersistence = false}) {
-    return endLibraryBatch(waitForPersistence: waitForPersistence);
-  }
+  Future<void> finishStagedLibraryRefresh() => endLibraryBatch();
 
-  Future<void> endLibraryBatch({
-    bool notify = true,
-    bool waitForPersistence = true,
-  }) async {
+  Future<void> endLibraryBatch({bool notify = true}) async {
     if (_service.libraryBatchDepth <= 0) return;
     _service.libraryBatchDepth--;
     if (_service.libraryBatchDepth > 0) return;
-
+    final before = _batchBefore!;
+    _batchBefore = null;
     final didChangeLibrary = _service.libraryBatchChanged;
-    final entriesToPersist = List<LibraryEntry>.from(
-      _service.libraryBatchPersistEntriesByKey.values
-          .map(
-            (entry) =>
-                _service.libraryEntryForPath(entry.libraryPath, entry.path),
-          )
-          .whereType<LibraryEntry>(),
-    );
-    if (!didChangeLibrary && entriesToPersist.isEmpty) return;
-    // Rollback/removal may invalidate queued additions. Persist only the final
-    // version still in the catalog so cancelled scans cannot reappear on restart.
+    final entriesToPersist = _service.libraryBatchPersistEntriesByKey.values
+        .map(
+          (entry) =>
+              _service.libraryEntryForPath(entry.libraryPath, entry.path),
+        )
+        .whereType<LibraryEntry>()
+        .toList(growable: false);
     final tracksToPersist = <String, MusicTrack>{
       for (final track in _service.libraryBatchPersistTracks)
         if (_service.libraryByPath.containsKey(track.path))
           track.path: _service.libraryByPath[track.path]!,
     }.values.toList(growable: false);
-    final didChangeGroupOrder = _service.libraryBatchChangedGroupOrder;
-    _service
-      ..libraryBatchChanged = false
-      ..libraryBatchChangedGroupOrder = false
-      ..libraryBatchPersistTracks.clear()
-      ..libraryBatchPersistEntriesByKey.clear();
-
-    if (didChangeLibrary) {
-      _service.syncGroupOrderFromLibrary();
-      final derivedGeneration = ++_service.libraryDerivedGeneration;
-      final derivedSnapshot = await snapshotCacheService.buildDerivedSnapshot();
-      if (derivedGeneration == _service.libraryDerivedGeneration) {
-        _service
-          ..library = List<MusicTrack>.of(derivedSnapshot.library)
-          ..libraryByPath = Map<String, MusicTrack>.of(
-            derivedSnapshot.libraryByPath,
-          )
-          ..libraryIndexByPath = Map<String, int>.of(
-            derivedSnapshot.libraryIndexByPath,
-          )
-          ..tracksByGroup = Map<String, List<MusicTrack>>.of(
-            derivedSnapshot.tracksByGroup,
-          )
-          ..sortedLibraryTracks = derivedSnapshot.sortedLibraryTracks
-          ..sortedLibraryTrackPaths = derivedSnapshot.sortedLibraryTrackPaths
-          ..markStructureChanged();
-        snapshotCacheService
-          ..markStructureChanged()
-          ..adoptCardSnapshot(derivedSnapshot.cardSnapshot);
-        _syncStateSlice();
-      }
-    }
-
-    final persistenceTasks = <Future<void>>[];
-    if (_persistenceCoordinator.enabled) {
-      if (didChangeLibrary) {
-        persistenceTasks.add(_persistenceCoordinator.saveWatchedFolders());
-        persistenceTasks.add(_persistenceCoordinator.saveWatchedLibraries());
-      }
-      if (tracksToPersist.isNotEmpty) {
-        persistenceTasks.add(databaseRepository.upsertTracks(tracksToPersist));
-      }
-      if (entriesToPersist.isNotEmpty) {
-        persistenceTasks.add(
-          databaseRepository.upsertLibraryEntries(entriesToPersist),
+    final initialPaths = before.tracks.map((track) => track.path).toSet();
+    final removedTracks = <String>[
+      for (final path in _removedTrackPaths)
+        if (initialPaths.contains(path) &&
+            !_service.libraryByPath.containsKey(path))
+          path,
+    ];
+    final removedEntries = <String, List<String>>{
+      for (final entry in _removedEntryPaths.entries)
+        entry.key: <String>[
+          for (final path in entry.value)
+            if (before.entries[PathMatcher.normalize(entry.key)]?.containsKey(
+                      PathMatcher.normalize(path),
+                    ) ==
+                    true &&
+                _service.libraryEntryForPath(entry.key, path) == null)
+              path,
+        ],
+    };
+    if (didChangeLibrary) _service.syncGroupOrderFromLibrary();
+    try {
+      if (_persistenceCoordinator.enabled &&
+          (didChangeLibrary ||
+              entriesToPersist.isNotEmpty ||
+              removedTracks.isNotEmpty ||
+              removedEntries.isNotEmpty)) {
+        await _persistenceCoordinator.commitLibraryBatch(
+          tracks: tracksToPersist,
+          entries: entriesToPersist,
+          removedTrackPaths: removedTracks,
+          removedEntryPaths: removedEntries,
         );
       }
-      if (didChangeLibrary && didChangeGroupOrder) {
-        persistenceTasks.add(_persistenceCoordinator.saveGroupOrder());
-      }
+    } catch (_) {
+      final affected = _affectedTracks(before);
+      before.restore(_service);
+      _clearBatch();
+      await _rebuildDerivedSnapshot();
+      _coverArtwork()?.invalidateCatalogTracks(affected);
+      rethrow;
     }
-    if (waitForPersistence) {
-      await Future.wait(persistenceTasks);
-    } else {
-      for (final task in persistenceTasks) {
-        unawaited(task);
-      }
+    _clearBatch();
+    if (didChangeLibrary) {
+      final affected = _affectedTracks(before);
+      final removedPaths = before.tracks
+          .where((track) => !_service.libraryByPath.containsKey(track.path))
+          .map((track) => track.path)
+          .toList(growable: false);
+      await _rebuildDerivedSnapshot();
+      _coverArtwork()?.invalidateCatalogTracks(affected);
+      if (removedPaths.isNotEmpty) _trackRemovalHandler?.call(removedPaths);
     }
+  }
+
+  List<MusicTrack> _affectedTracks(_LibraryBatchSnapshot before) {
+    final previous = {for (final track in before.tracks) track.path: track};
+    final affected = <MusicTrack>[];
+    for (final track in _service.library) {
+      final original = previous.remove(track.path);
+      if (identical(original, track)) continue;
+      affected.add(track);
+      if (original != null) affected.add(original);
+    }
+    return affected..addAll(previous.values);
+  }
+
+  void _clearBatch() {
+    _service
+      ..libraryBatchChanged = false
+      ..libraryBatchPersistTracks.clear()
+      ..libraryBatchPersistEntriesByKey.clear();
+    _removedTrackPaths.clear();
+    _removedEntryPaths.clear();
+  }
+
+  Future<void> _rebuildDerivedSnapshot() async {
+    final derivedGeneration = ++_service.libraryDerivedGeneration;
+    final snapshot = await snapshotCacheService.buildDerivedSnapshot();
+    if (derivedGeneration != _service.libraryDerivedGeneration) return;
+    _service
+      ..library = List<MusicTrack>.of(snapshot.library)
+      ..libraryByPath = Map<String, MusicTrack>.of(snapshot.libraryByPath)
+      ..libraryIndexByPath = Map<String, int>.of(snapshot.libraryIndexByPath)
+      ..tracksByGroup = Map<String, List<MusicTrack>>.of(snapshot.tracksByGroup)
+      ..sortedLibraryTracks = snapshot.sortedLibraryTracks
+      ..sortedLibraryTrackPaths = snapshot.sortedLibraryTrackPaths
+      ..markStructureChanged();
+    snapshotCacheService
+      ..markStructureChanged()
+      ..adoptCardSnapshot(snapshot.cardSnapshot);
+    _syncStateSlice();
+  }
+}
+
+/// A single batch's original catalog, used only for failure rollback.
+final class _LibraryBatchSnapshot {
+  _LibraryBatchSnapshot(LibraryService service)
+    : tracks = List<MusicTrack>.of(service.library),
+      folders = List<String>.of(service.watchedFolders),
+      libraries = List<String>.of(service.watchedLibraries),
+      order = List<String>.of(service.groupOrder),
+      entries = {
+        for (final entry in service.libraryEntriesByLibrary.entries)
+          entry.key: Map<String, LibraryEntry>.of(entry.value),
+      };
+
+  final List<MusicTrack> tracks;
+  final List<String> folders;
+  final List<String> libraries;
+  final List<String> order;
+  final Map<String, Map<String, LibraryEntry>> entries;
+
+  void restore(LibraryService service) {
+    service.library = List<MusicTrack>.of(tracks);
+    service.libraryByPath = {for (final track in tracks) track.path: track};
+    service.libraryIndexByPath = {
+      for (var index = 0; index < tracks.length; index++)
+        tracks[index].path: index,
+    };
+    service.watchedFolders
+      ..clear()
+      ..addAll(folders);
+    service.watchedLibraries
+      ..clear()
+      ..addAll(libraries);
+    service.groupOrder
+      ..clear()
+      ..addAll(order);
+    service.groupOrderSet
+      ..clear()
+      ..addAll(order);
+    service.libraryEntriesByLibrary
+      ..clear()
+      ..addAll(entries);
   }
 }

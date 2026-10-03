@@ -75,20 +75,7 @@ extension AppDatabaseTracks on AppDatabase {
       // Keep messages small enough to encode between frames, while a failure
       // in a later chunk still rolls back every earlier chunk.
       await db.transaction((txn) async {
-        const chunkSize = 120;
-        for (var start = 0; start < tracks.length; start += chunkSize) {
-          await Future<void>.delayed(Duration.zero);
-          final batch = txn.batch();
-          final end = (start + chunkSize).clamp(0, tracks.length);
-          for (var index = start; index < end; index++) {
-            _writeTrackToBatch(
-              batch,
-              tracks[index],
-              scanGeneration: scanGeneration,
-            );
-          }
-          await batch.commit(noResult: true);
-        }
+        await _upsertTrackChunks(txn, tracks, scanGeneration: scanGeneration);
       });
     });
   }
@@ -205,5 +192,22 @@ extension AppDatabaseTracks on AppDatabase {
       batch.delete('tracks');
       await batch.commit(noResult: true);
     });
+  }
+}
+
+Future<void> _upsertTrackChunks(
+  DatabaseExecutor database,
+  List<MusicTrack> tracks, {
+  int? scanGeneration,
+}) async {
+  const chunkSize = 120;
+  for (var start = 0; start < tracks.length; start += chunkSize) {
+    await Future<void>.delayed(Duration.zero);
+    final batch = database.batch();
+    final end = (start + chunkSize).clamp(0, tracks.length);
+    for (var index = start; index < end; index++) {
+      _writeTrackToBatch(batch, tracks[index], scanGeneration: scanGeneration);
+    }
+    await batch.commit(noResult: true);
   }
 }

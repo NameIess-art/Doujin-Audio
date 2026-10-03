@@ -161,10 +161,29 @@ class AudioDetailRepository {
     );
   }
 
-  Future<AudioDetail> updateDerivedFields(AudioDetail detail) async {
+  Future<AudioDetail> updateDerivedFields(
+    AudioDetailTarget target, {
+    String? rjCode,
+    Duration? duration,
+    String? cardCoverPath,
+    bool? cardCoverSelected,
+  }) async {
+    final normalizedTarget = _normalizeTarget(target);
+    final current =
+        await _store.load(normalizedTarget) ??
+        AudioDetail.empty(normalizedTarget);
+    var next = current.copyWith(
+      rjCode: current.rjCode.isEmpty ? rjCode : null,
+      duration: current.duration ?? duration,
+    );
+    if (cardCoverPath != null || cardCoverSelected != null) {
+      next = next.copyWith(
+        cardCoverPath: cardCoverPath,
+        cardCoverSelected: cardCoverSelected,
+      );
+    }
     final normalized = _coverStore
-        .normalize(detail)
-        .copyWith(target: _normalizeTarget(detail.target))
+        .normalize(next)
         .normalizedForSave(_now(), touchUpdatedAt: false);
     _ensureCanCommit();
     await _store.upsert(normalized);
@@ -223,7 +242,7 @@ class AudioDetailRepository {
     if (rjCode == null) return null;
     final current = (await load(target)).detail;
     if (current.rjCode.isNotEmpty) return null;
-    final updated = await updateDerivedFields(current.copyWith(rjCode: rjCode));
+    final updated = await updateDerivedFields(target, rjCode: rjCode);
     return AudioDetailSaveResult(
       detail: updated,
       documentStatus: JsonDocumentWriteStatus.preserved,

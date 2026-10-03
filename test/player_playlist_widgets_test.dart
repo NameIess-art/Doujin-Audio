@@ -5341,8 +5341,8 @@ void main() {
         subtitleTrack: subtitleTrack,
         initialPosition: Duration.zero,
       );
-      final loadingText = result.fixture.languageProvider.tr(
-        'playback_loading',
+      final placeholderFinder = find.byKey(
+        const ValueKey('subtitle_loading'),
       );
       final cover = find.byKey(
         const ValueKey('session_detail_cover_subtitle-session'),
@@ -5359,7 +5359,7 @@ void main() {
         coverGeneration: 0,
         isInitialized: true,
       );
-      await pumpUntilFound(tester, find.text(loadingText));
+      await pumpUntilFound(tester, placeholderFinder);
       await tester.pump(const Duration(milliseconds: 110));
 
       final fadeIn = tester.widget<FadeTransition>(
@@ -5375,7 +5375,7 @@ void main() {
       final midCoverHeight = tester.getSize(cover).height;
       expect(midCoverHeight, 270.0);
 
-      await tester.pump(const Duration(milliseconds: 220));
+      await tester.pump(const Duration(milliseconds: 350));
       final loadingCoverHeight = tester.getSize(cover).height;
       expect(loadingCoverHeight, 270.0);
 
@@ -5398,7 +5398,7 @@ void main() {
       );
       await tester.pump(const Duration(milliseconds: 110));
 
-      expect(find.text(loadingText), findsOneWidget);
+      expect(placeholderFinder, findsOneWidget);
       final fadeOut = tester.widget<FadeTransition>(
         find.byKey(
           const ValueKey<Object>((
@@ -5410,10 +5410,56 @@ void main() {
       expect(fadeOut.opacity.value, greaterThan(0));
       expect(fadeOut.opacity.value, lessThan(1));
 
-      await tester.pump(const Duration(milliseconds: 250));
-      expect(find.text(loadingText), findsNothing);
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(placeholderFinder, findsNothing);
       await tester.pump(const Duration(milliseconds: 250));
       expect(tester.getSize(cover).height, 270.0);
+    },
+  );
+
+  testWidgets(
+    'detail subtitle prioritizes placeholder while loading and transitions when ready',
+    (tester) async {
+      final pendingSubtitle = Completer<SubtitleTrack?>();
+      await _pumpSubtitleDetail(
+        tester: tester,
+        subtitleTrack: SubtitleTrack(sourcePath: '', cues: []),
+        subtitleResult: pendingSubtitle.future,
+        initialPosition: Duration.zero,
+      );
+
+      final placeholderFinder = find.byKey(
+        const ValueKey('subtitle_loading'),
+      );
+      final emptyFinder = find.byKey(
+        const ValueKey('subtitle_empty'),
+      );
+
+      // Initially, subtitle is pending; placeholder must be shown, not empty text.
+      await pumpUntilFound(tester, placeholderFinder);
+      expect(placeholderFinder, findsOneWidget);
+      expect(emptyFinder, findsNothing);
+
+      // Complete the subtitle with cues
+      pendingSubtitle.complete(
+        SubtitleTrack(
+          sourcePath: '/library/subtitles/ready.srt',
+          cues: const [
+            SubtitleCue(
+              start: Duration.zero,
+              end: Duration(seconds: 4),
+              text: 'Loaded cue line',
+            ),
+          ],
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Loaded cue line'), findsOneWidget);
+      expect(placeholderFinder, findsNothing);
+      expect(emptyFinder, findsNothing);
     },
   );
 

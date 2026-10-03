@@ -1089,7 +1089,18 @@ class _FakeAudioDetailRepository implements AudioDetailRepository {
   ) => save(detail);
 
   @override
-  Future<AudioDetail> updateDerivedFields(AudioDetail detail) async => detail;
+  Future<AudioDetail> updateDerivedFields(
+    AudioDetailTarget target, {
+    String? rjCode,
+    Duration? duration,
+    String? cardCoverPath,
+    bool? cardCoverSelected,
+  }) async => AudioDetail.empty(target).copyWith(
+    rjCode: rjCode,
+    duration: duration,
+    cardCoverPath: cardCoverPath,
+    cardCoverSelected: cardCoverSelected,
+  );
 
   @override
   Future<void> delete(AudioDetailTarget target) async {}

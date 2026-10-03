@@ -1,10 +1,7 @@
-import '../ui/visual_settings_providers.dart';
 import 'dart:async';
-import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 
 import '../../app/theme/app_design_tokens.dart';
@@ -657,7 +654,7 @@ class _FeedbackAnimationWrapperState extends State<_FeedbackAnimationWrapper>
   }
 }
 
-class AppFeedbackSurface extends ConsumerWidget {
+class AppFeedbackSurface extends StatelessWidget {
   const AppFeedbackSurface({
     super.key,
     required this.tone,
@@ -682,22 +679,16 @@ class AppFeedbackSurface extends ConsumerWidget {
   final Color? iconColor;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
     final tokens = AppDesignTokens.of(context);
-    final blurEnabled = ref.watch(uiBlurEnabledProvider);
     final accent = iconColor ?? _accentColor(context, tone);
     final chipBackground = accent.withValues(alpha: 0.14);
     final resolvedBorderRadius = borderRadius ?? tokens.radiusCapsule;
 
     final isDark = theme.brightness == Brightness.dark;
-    final baseSurfaceColor = isDark
-        ? cs.surfaceBright
-        : cs.surfaceContainerHigh;
-    final surfaceColor = blurEnabled
-        ? baseSurfaceColor.withValues(alpha: isDark ? 0.72 : 0.78)
-        : baseSurfaceColor;
+    final surfaceColor = isDark ? cs.surfaceBright : cs.surfaceContainerHigh;
 
     final displayMessage = remainingSeconds != null
         ? '$message (${remainingSeconds}s)'
@@ -796,12 +787,7 @@ class AppFeedbackSurface extends ConsumerWidget {
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(resolvedBorderRadius),
-      child: blurEnabled
-          ? BackdropFilter(
-              filter: ui.ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-              child: surface,
-            )
-          : surface,
+      child: surface,
     );
   }
 }

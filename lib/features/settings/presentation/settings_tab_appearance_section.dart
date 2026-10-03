@@ -227,49 +227,11 @@ List<Widget> _buildSettingsAppearanceSection({
             );
           },
         ),
-        Consumer(
-          builder: (context, ref, _) {
-            final enabled = ref.watch(
-              settingsStateProvider.select(
-                (state) => state.value?.uiBlurEffectEnabled ?? false,
-              ),
-            );
-            return SwitchListTile(
-              value: enabled,
-              onChanged: (value) => saveSettingsWithFeedback(
-                context,
-                () => settings.setUiBlurEffectEnabled(value),
-              ),
-              title: _settingsTitle(i18n.tr('ui_blur_effect')),
-              secondary: _settingsIcon(Icons.blur_linear_rounded, cs.onSurface),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-            );
-          },
-        ),
       ],
     ),
     _SettingsSectionCard(
       title: i18n.tr('settings_group_playback_detail'),
       children: [
-        Consumer(
-          builder: (context, ref, _) {
-            final enabled = ref.watch(
-              settingsStateProvider.select(
-                (state) => state.value?.blurPlayerBackgroundEnabled ?? false,
-              ),
-            );
-            return SwitchListTile(
-              value: enabled,
-              onChanged: (value) => saveSettingsWithFeedback(
-                context,
-                () => settings.setBlurPlayerBackgroundEnabled(value),
-              ),
-              title: _settingsTitle(i18n.tr('blur_player_background')),
-              secondary: _settingsIcon(Icons.blur_on_rounded, cs.onSurface),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-            );
-          },
-        ),
         ListTile(
           title: _settingsTitle(i18n.tr('subtitle_window_settings')),
           leading: _settingsIcon(Icons.subtitles_rounded, cs.onSurface),

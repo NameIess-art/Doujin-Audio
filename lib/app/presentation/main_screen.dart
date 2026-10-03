@@ -41,9 +41,9 @@ import '../../features/player/presentation/bedtime_canvas_page.dart';
 import 'mobile_dock_capsule_content.dart';
 import 'main_destination.dart';
 import 'desktop_main_navigation.dart';
-import 'app_dock_glass_panel.dart';
+import 'app_dock_panel.dart';
 export 'main_destination.dart' show MainDestinationType;
-export 'app_dock_glass_panel.dart';
+export 'app_dock_panel.dart';
 
 part 'main_screen_permissions.dart';
 part 'main_screen_layout.dart';

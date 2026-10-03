@@ -393,7 +393,7 @@ class _SettingsCategoryPageState extends ConsumerState<_SettingsCategoryPage> {
       const <_SettingsStickySection>[];
   int? _pinnedSectionIndex;
   int? _overlappingNextSectionIndex;
-  double? _overlappingNextSectionTop;
+  final _overlappingNextSectionTop = ValueNotifier<double?>(null);
   bool _stickySectionSyncScheduled = false;
 
   @override
@@ -407,6 +407,7 @@ class _SettingsCategoryPageState extends ConsumerState<_SettingsCategoryPage> {
     _scrollController
       ..removeListener(_scheduleStickySectionSync)
       ..dispose();
+    _overlappingNextSectionTop.dispose();
     super.dispose();
   }
 
@@ -519,15 +520,14 @@ class _SettingsCategoryPageState extends ConsumerState<_SettingsCategoryPage> {
         }
       }
 
+      _overlappingNextSectionTop.value = nextOverlappingTop;
       if (nextPinnedIndex == _pinnedSectionIndex &&
-          nextOverlappingIndex == _overlappingNextSectionIndex &&
-          nextOverlappingTop == _overlappingNextSectionTop) {
+          nextOverlappingIndex == _overlappingNextSectionIndex) {
         return;
       }
       setState(() {
         _pinnedSectionIndex = nextPinnedIndex;
         _overlappingNextSectionIndex = nextOverlappingIndex;
-        _overlappingNextSectionTop = nextOverlappingTop;
       });
     });
   }
@@ -602,51 +602,66 @@ class _SettingsCategoryPageState extends ConsumerState<_SettingsCategoryPage> {
                   child: Stack(
                     fit: StackFit.expand,
                     children: [
-                Positioned.fill(
-                  child: ListView(
-                    controller: _scrollController,
-                    padding: EdgeInsets.fromLTRB(16, contentTopInset, 16, 24),
-                    children: [
-                      _SettingsTileTheme(child: Column(children: sections)),
-                    ],
-                  ),
-                ),
-                if (_pinnedSectionIndex != null &&
-                    _pinnedSectionIndex! < _stickySections.length)
-                  Positioned(
-                    top: pinnedTop,
-                    left: 16,
-                    right: 16,
-                    child: IgnorePointer(
-                      child: ExcludeSemantics(
-                        child: _SettingsSectionTitlePill(
-                          key: const ValueKey<String>(
-                            'settings_sticky_section_pill',
+                      Positioned.fill(
+                        child: ListView(
+                          controller: _scrollController,
+                          padding: EdgeInsets.fromLTRB(
+                            16,
+                            contentTopInset,
+                            16,
+                            24,
                           ),
-                          title: _stickySections[_pinnedSectionIndex!].title,
+                          children: [
+                            _SettingsTileTheme(
+                              child: Column(children: sections),
+                            ),
+                          ],
                         ),
                       ),
-                    ),
-                  ),
-                if (_overlappingNextSectionIndex != null &&
-                    _overlappingNextSectionTop != null &&
-                    _overlappingNextSectionIndex! < _stickySections.length)
-                  Positioned(
-                    top: _overlappingNextSectionTop!,
-                    left: 16,
-                    right: 16,
-                    child: IgnorePointer(
-                      child: ExcludeSemantics(
-                        child: _SettingsSectionTitlePill(
-                          key: const ValueKey<String>(
-                            'settings_overlapping_section_pill',
+                      if (_pinnedSectionIndex != null &&
+                          _pinnedSectionIndex! < _stickySections.length)
+                        Positioned(
+                          top: pinnedTop,
+                          left: 16,
+                          right: 16,
+                          child: IgnorePointer(
+                            child: ExcludeSemantics(
+                              child: _SettingsSectionTitlePill(
+                                key: const ValueKey<String>(
+                                  'settings_sticky_section_pill',
+                                ),
+                                title:
+                                    _stickySections[_pinnedSectionIndex!].title,
+                              ),
+                            ),
                           ),
-                          title: _stickySections[_overlappingNextSectionIndex!]
-                              .title,
                         ),
-                      ),
-                    ),
-                  ),
+                      if (_overlappingNextSectionIndex != null &&
+                          _overlappingNextSectionIndex! <
+                              _stickySections.length)
+                        ValueListenableBuilder<double?>(
+                          valueListenable: _overlappingNextSectionTop,
+                          builder: (context, top, child) => top == null
+                              ? const SizedBox.shrink()
+                              : Positioned(
+                                  top: top,
+                                  left: 16,
+                                  right: 16,
+                                  child: child!,
+                                ),
+                          child: IgnorePointer(
+                            child: ExcludeSemantics(
+                              child: _SettingsSectionTitlePill(
+                                key: const ValueKey<String>(
+                                  'settings_overlapping_section_pill',
+                                ),
+                                title:
+                                    _stickySections[_overlappingNextSectionIndex!]
+                                        .title,
+                              ),
+                            ),
+                          ),
+                        ),
                     ],
                   ),
                 ),

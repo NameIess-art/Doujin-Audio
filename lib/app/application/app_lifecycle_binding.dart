@@ -119,8 +119,11 @@ final class AppLifecycleBinding implements RuntimeBinding, AppRuntimeLifecycle {
   Future<void> dispose() => _disposeFuture ??= _dispose();
 
   Future<void> _dispose() async {
-    await _asmrDownloads?.pauseAllTasks();
-    await _runtime.dispose();
+    try {
+      await _asmrDownloads?.pauseAllTasks();
+    } finally {
+      await _runtime.dispose();
+    }
   }
 
   void _handleMemoryPressure() {

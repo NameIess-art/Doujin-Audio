@@ -84,6 +84,7 @@ class LibraryScannerService {
   Future<LibraryScanOutcome> refreshWatchedFolders({
     required LibraryCatalog provider,
     required LibraryScanLabels labels,
+    void Function(int generation)? onScanStarted,
   }) async {
     final watchedFolders = provider.watchedFolders;
     final watchedLibraries = provider.watchedLibraries;
@@ -188,6 +189,13 @@ class LibraryScannerService {
     }
 
     try {
+      onScanStarted?.call(generation);
+      if (!provider.isScanGenerationActive(generation)) {
+        return LibraryScanOutcome(
+          code: LibraryScanOutcomeCode.cancelled,
+          source: 'refresh',
+        );
+      }
       final foldersToRefresh = LinkedHashSet<String>.from(watchedFolders);
       try {
         for (final libraryRoot in watchedLibraries) {

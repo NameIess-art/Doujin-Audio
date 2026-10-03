@@ -66,12 +66,14 @@ extension PlaybackSessionPersistenceCoordinator on PlaybackFacade {
       final customQueueTracks = item.customQueueTracks == null
           ? null
           : List<MusicTrack>.unmodifiable(item.customQueueTracks!);
+      final queueTracks =
+          customQueueTracks ?? item.playbackQueue?.expandedTracks;
       MusicTrack? track;
-      if (customQueueTracks != null && customQueueTracks.isNotEmpty) {
-        track = customQueueTracks.firstWhere(
+      if (queueTracks != null && queueTracks.isNotEmpty) {
+        track = queueTracks.firstWhere(
           (candidate) =>
               PathMatcher.equalsNormalized(candidate.path, item.trackPath),
-          orElse: () => customQueueTracks.first,
+          orElse: () => queueTracks.first,
         );
       }
       track ??= _persistedTrackResolver?.call(item.trackPath);

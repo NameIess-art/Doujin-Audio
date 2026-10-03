@@ -12,6 +12,7 @@ import 'package:doujin_audio/features/asmr/application/asmr_download_manager.dar
 import 'package:doujin_audio/features/asmr/application/asmr_playback_cache_service.dart';
 import 'package:doujin_audio/features/library/application/library_facade.dart';
 import 'package:doujin_audio/features/library/application/library_service.dart';
+import 'package:doujin_audio/features/library/application/library_scan_models.dart';
 import 'package:doujin_audio/features/player/application/notification_facade.dart';
 import 'package:doujin_audio/features/player/application/playback_facade.dart';
 import 'package:doujin_audio/features/player/domain/playback_persistence_repository.dart';
@@ -110,6 +111,62 @@ void main() {
     expect(playback.sessions, isEmpty);
     expect(session.isDisposed, true);
     expect(cache.disposeCount, 1);
+  });
+
+  test('failed download pause persistence still releases runtime', () async {
+    SharedPreferences.setMockInitialValues(const <String, Object>{});
+    final library = _createLibraryFacade();
+    final playback = PlaybackFacade.create(
+      databaseRepository:
+          library.databaseRepository as PlaybackPersistenceRepository,
+    );
+    final cache = _RecordingPlaybackCacheService();
+    final writeError = StateError('download pause persistence failed');
+    final downloads = AsmrDownloadManager(
+      persistenceWriter: (_) async => throw writeError,
+    );
+    final graph = createAppRuntimeGraph(
+      library: library,
+      playback: playback,
+      timer: TimerFacade.create(),
+      notifications: NotificationFacade.create(
+        service: PlaybackNotificationService(),
+      ),
+      settings: SettingsRepository(),
+      asmrDownloads: downloads,
+      libraryScanLabels: () => const LibraryScanLabels(
+        chooseMusicFolder: 'Choose music folder',
+        chooseLibraryFolder: 'Choose library folder',
+        chooseAudioFiles: 'Choose audio files',
+        importedFiles: 'Imported files',
+        manuallySelectedFiles: 'Selected files',
+      ),
+      asmrPlaybackCacheService: cache,
+      persistenceEnabled: false,
+    );
+    final session = playback.createTrackSession(
+      MusicTrack(
+        path: '/audio/exit.mp3',
+        displayName: 'Exit',
+        groupKey: '/audio',
+        groupTitle: 'Audio',
+        groupSubtitle: '',
+        isSingle: true,
+      ),
+    );
+    final completionStreamClosed = downloads.completedTasks.toList();
+    final libraryStreamClosed = library.states.toList();
+
+    await expectLater(graph.runtime.dispose(), throwsA(same(writeError)));
+
+    expect(playback.sessions, isEmpty);
+    expect(session.isDisposed, true);
+    expect(cache.disposeCount, 1);
+    expect(
+      await completionStreamClosed.timeout(const Duration(seconds: 1)),
+      isEmpty,
+    );
+    await libraryStreamClosed.timeout(const Duration(seconds: 1));
   });
 
   test(
@@ -347,6 +404,13 @@ void main() {
       ),
       settings: settings,
       asmrDownloads: downloads,
+      libraryScanLabels: () => const LibraryScanLabels(
+        chooseMusicFolder: 'Choose music folder',
+        chooseLibraryFolder: 'Choose library folder',
+        chooseAudioFiles: 'Choose audio files',
+        importedFiles: 'Imported files',
+        manuallySelectedFiles: 'Selected files',
+      ),
       fileCacheGateway: gateway,
       persistenceEnabled: false,
     );

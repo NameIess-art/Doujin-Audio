@@ -31,13 +31,13 @@ import '../../core/platform/file_cache_platform_gateway.dart';
 import '../../features/asmr/application/asmr_download_manager.dart';
 import '../../features/asmr/application/asmr_playback_cache_service.dart';
 import '../../features/library/application/library_facade.dart';
+import '../../features/library/application/library_scan_models.dart';
 import '../../features/player/application/notification_facade.dart';
 import '../../features/player/application/playback_facade.dart';
 import '../../features/player/domain/playback_track_cache.dart';
 import '../../features/player/application/playback_subtitle_service.dart';
 import '../../features/player/application/timer_facade.dart';
 import '../../features/settings/application/settings_repository.dart';
-import '../../features/settings/application/settings_state.dart';
 import 'app_lifecycle_binding.dart';
 import 'app_persistence_coordinator.dart';
 import 'app_runtime_lifecycle.dart';
@@ -52,6 +52,7 @@ import 'persisted_uri_permission_coordinator.dart';
 import 'runtime_binding.dart';
 import 'browse_page_state_store.dart';
 import 'timer_runtime_binding.dart';
+import 'asmr_download_runtime_binding.dart';
 
 typedef ProductionAppRuntime = ({
   AppRuntimeGraph runtimeGraph,
@@ -90,10 +91,14 @@ AppRuntimeGraph createAppRuntimeGraph({
   required NotificationFacade notifications,
   required SettingsRepository settings,
   AsmrDownloadManager? asmrDownloads,
+  LibraryScanLabels Function()? libraryScanLabels,
   PlaybackTrackCache? asmrPlaybackCacheService,
   FileCachePlatformGateway? fileCacheGateway,
   bool persistenceEnabled = true,
 }) {
+  if (asmrDownloads != null && libraryScanLabels == null) {
+    throw ArgumentError('ASMR downloads require libraryScanLabels.');
+  }
   final browsePageStates = BrowsePageStateStore();
   final workTexts = WorkTextService(
     discoverImages: (folder) =>
@@ -203,9 +208,11 @@ AppRuntimeGraph createAppRuntimeGraph({
   ];
   if (asmrDownloads != null) {
     bindings.add(
-      _AsmrDownloadSettingsBinding.attach(
+      AsmrDownloadRuntimeBinding.attach(
         downloads: asmrDownloads,
         settings: settings,
+        library: library,
+        scanLabels: libraryScanLabels!,
       ),
     );
   }
@@ -325,6 +332,8 @@ ProductionAppRuntime createProductionAppRuntime() {
     notifications: notificationFacade,
     settings: settingsRepository,
     asmrDownloads: asmrDownloadManager,
+    libraryScanLabels: () =>
+        LibraryScanLabels.fromTranslator(appLanguageProvider),
   );
 
   Future<void> initializeRuntimeData() async {
@@ -359,27 +368,4 @@ ProductionAppRuntime createProductionAppRuntime() {
     asmrApiService: asmrApiService,
     initializeRuntimeData: initializeRuntimeData,
   );
-}
-
-final class _AsmrDownloadSettingsBinding implements RuntimeBinding {
-  _AsmrDownloadSettingsBinding._(this._subscription);
-
-  factory _AsmrDownloadSettingsBinding.attach({
-    required AsmrDownloadManager downloads,
-    required SettingsRepository settings,
-  }) {
-    void syncConcurrency() {
-      downloads.setMaxConcurrentDownloads(settings.asmrDownloadThreadCount);
-    }
-
-    syncConcurrency();
-    return _AsmrDownloadSettingsBinding._(
-      settings.slice.stream.listen((_) => syncConcurrency()),
-    );
-  }
-
-  final StreamSubscription<SettingsState> _subscription;
-
-  @override
-  Future<void> dispose() => _subscription.cancel();
 }

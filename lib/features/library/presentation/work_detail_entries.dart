@@ -12,7 +12,7 @@ import 'work_image_viewer_page.dart';
 
 enum WorkEntryType { folder, audio, text, image }
 
-enum WorkEntryAction { open, play, add, remove, rename, setCover }
+enum WorkEntryAction { open, play, add, remove, rename, setCover, copy }
 
 class WorkEntryItem {
   const WorkEntryItem({

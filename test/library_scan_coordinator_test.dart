@@ -47,6 +47,27 @@ void main() {
     expect(coordinator.state.failure, isNull);
   });
 
+  test('refresh forwards the acquired scan generation to its owner', () async {
+    int? acquiredGeneration;
+    final coordinator = LibraryScanCoordinator(
+      scanner: _FakeScanner(
+        (_, _) async => LibraryScanOutcome(
+          code: LibraryScanOutcomeCode.refreshNoChanges,
+          source: 'refresh',
+        ),
+      ),
+    );
+    addTearDown(coordinator.dispose);
+
+    await coordinator.refresh(
+      catalog: _FakeCatalog(),
+      labels: labels,
+      onScanStarted: (generation) => acquiredGeneration = generation,
+    );
+
+    expect(acquiredGeneration, 1);
+  });
+
   test(
     'failure outcome is typed and does not contain localized UI text',
     () async {
@@ -247,7 +268,9 @@ class _FakeScanner extends LibraryScannerService {
   Future<LibraryScanOutcome> refreshWatchedFolders({
     required LibraryCatalog provider,
     required LibraryScanLabels labels,
+    void Function(int generation)? onScanStarted,
   }) {
+    onScanStarted?.call(1);
     return _refresh(provider, labels);
   }
 }

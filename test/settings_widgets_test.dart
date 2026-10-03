@@ -371,103 +371,172 @@ void main() {
     );
   });
 
-  testWidgets('settings category headers become sticky floating pills', (
-    tester,
-  ) async {
-    final harness = AppRuntimeWidgetTestFixture();
-    addTearDown(harness.dispose);
-    await tester.pumpWidget(harness.build(const SettingsTab()));
-    await tester.pump();
+  testWidgets(
+    'settings category headers become sticky floating pills',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(800, 400));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final harness = AppRuntimeWidgetTestFixture();
+      addTearDown(harness.dispose);
+      await tester.pumpWidget(harness.build(const SettingsTab()));
+      await tester.pump();
 
-    final i18n = harness.languageProvider;
-    await tester.tap(find.text(i18n.tr('section_appearance')));
-    await tester.pumpAndSettle();
-    expect(find.text(i18n.tr('settings_group_page_display')), findsNothing);
+      final i18n = harness.languageProvider;
+      await tester.tap(find.text(i18n.tr('section_appearance')));
+      await tester.pumpAndSettle();
+      expect(find.text(i18n.tr('settings_group_page_display')), findsNothing);
 
-    final categoryHeader = find.byType(TopPageHeader);
-    final startupPill = find.byKey(
-      const ValueKey<String>('settings_section_pill_appearance_0'),
-    );
-    expect(startupPill, findsOneWidget);
-    final startupSurface = find.descendant(
-      of: startupPill,
-      matching: find.byType(HeaderFloatingSurface),
-    );
-    expect(startupSurface, findsOneWidget);
-    // Width is determined by text length rather than stretching to full width
-    expect(tester.getSize(startupSurface).width, lessThan(300));
-    expect(tester.getTopLeft(startupSurface).dx, equals(16.0));
-    // Initial distance between title bar capsule bottom and category pill top is 14.0px
-    final initialAppearanceGap =
-        tester.getTopLeft(startupPill).dy -
-        tester.getRect(categoryHeader).bottom;
-    expect(initialAppearanceGap, closeTo(14.0, 0.5));
-    expect(
-      find.byKey(const ValueKey<String>('settings_sticky_section_pill')),
-      findsNothing,
-    );
+      final categoryHeader = find.byType(TopPageHeader);
+      final startupPill = find.byKey(
+        const ValueKey<String>('settings_section_pill_appearance_0'),
+      );
+      expect(startupPill, findsOneWidget);
+      final startupSurface = find.descendant(
+        of: startupPill,
+        matching: find.byType(HeaderFloatingSurface),
+      );
+      expect(startupSurface, findsOneWidget);
+      // Width is determined by text length rather than stretching to full width
+      expect(tester.getSize(startupSurface).width, lessThan(300));
+      expect(tester.getTopLeft(startupSurface).dx, equals(16.0));
+      // Initial distance between title bar capsule bottom and category pill top is 14.0px
+      final initialAppearanceGap =
+          tester.getTopLeft(startupPill).dy -
+          tester.getRect(categoryHeader).bottom;
+      expect(initialAppearanceGap, closeTo(14.0, 0.5));
+      expect(
+        find.byKey(const ValueKey<String>('settings_sticky_section_pill')),
+        findsNothing,
+      );
 
-    final categoryList = find.byType(ListView).last;
-    await tester.drag(categoryList, const Offset(0, -100));
-    await tester.pumpAndSettle();
+      final categoryList = find.byType(ListView).last;
+      await tester.drag(categoryList, const Offset(0, -100));
+      await tester.pumpAndSettle();
 
-    final stickyPill = find.byKey(
-      const ValueKey<String>('settings_sticky_section_pill'),
-    );
-    expect(stickyPill, findsOneWidget);
-    expect(
-      find.descendant(
+      final stickyPill = find.byKey(
+        const ValueKey<String>('settings_sticky_section_pill'),
+      );
+      expect(stickyPill, findsOneWidget);
+      expect(
+        find.descendant(
+          of: stickyPill,
+          matching: find.text(i18n.tr('settings_group_theme_layout')),
+        ),
+        findsOneWidget,
+      );
+      final stickySurface = find.descendant(
         of: stickyPill,
-        matching: find.text(i18n.tr('settings_group_theme_layout')),
-      ),
-      findsOneWidget,
-    );
-    final stickySurface = find.descendant(
-      of: stickyPill,
-      matching: find.byType(HeaderFloatingSurface),
-    );
-    expect(tester.getSize(stickySurface).width, lessThan(300));
-    expect(tester.getTopLeft(stickySurface).dx, equals(16.0));
-    // Pinned gap between title bar capsule bottom and sticky pill top is 6.0px (consistent with main header two rows)
-    expect(
-      tester.getTopLeft(stickyPill).dy - tester.getRect(categoryHeader).bottom,
-      closeTo(6.0, 0.5),
-    );
-    // When section is pinned, its inline pill is hidden to avoid duplicate pills on screen
-    final inlineVisibility = tester.widget<Visibility>(
-      find.ancestor(of: startupPill, matching: find.byType(Visibility)).first,
-    );
-    expect(inlineVisibility.visible, isFalse);
+        matching: find.byType(HeaderFloatingSurface),
+      );
+      expect(tester.getSize(stickySurface).width, lessThan(300));
+      expect(tester.getTopLeft(stickySurface).dx, equals(16.0));
+      // Pinned gap between title bar capsule bottom and sticky pill top is 6.0px (consistent with main header two rows)
+      expect(
+        tester.getTopLeft(stickyPill).dy -
+            tester.getRect(categoryHeader).bottom,
+        closeTo(6.0, 0.5),
+      );
+      // When section is pinned, its inline pill is hidden to avoid duplicate pills on screen
+      final inlineVisibility = tester.widget<Visibility>(
+        find.ancestor(of: startupPill, matching: find.byType(Visibility)).first,
+      );
+      expect(inlineVisibility.visible, isFalse);
 
-    final coverTitle = find.text(i18n.tr('settings_group_cover_background'));
-    await Scrollable.ensureVisible(tester.element(coverTitle), alignment: 0.05);
-    await tester.pumpAndSettle();
-    expect(
-      find.descendant(
-        of: stickyPill,
-        matching: find.text(i18n.tr('settings_group_cover_background')),
-      ),
-      findsOneWidget,
-    );
+      final coverPill = find.byKey(
+        const ValueKey<String>('settings_section_pill_appearance_1'),
+      );
+      final controller = tester.widget<ListView>(categoryList).controller!;
+      final pinnedTop = tester.getTopLeft(stickyPill).dy;
+      controller.jumpTo(
+        controller.offset + tester.getTopLeft(coverPill).dy - pinnedTop - 20,
+      );
+      await tester.pumpAndSettle();
+      final overlappingPill = find.byKey(
+        const ValueKey<String>('settings_overlapping_section_pill'),
+      );
+      expect(overlappingPill, findsOneWidget);
+      expect(
+        tester.getTopLeft(overlappingPill).dy,
+        closeTo(pinnedTop + 20, 0.5),
+      );
+      final contentColumn = find
+          .descendant(of: categoryList, matching: find.byType(Column))
+          .first;
+      final content = tester.widget<Column>(contentColumn);
+      for (final distance in [4.0, 6.0]) {
+        final previousTop = tester.getTopLeft(overlappingPill).dy;
+        controller.jumpTo(controller.offset + distance);
+        await tester.pumpAndSettle();
+        expect(
+          tester.getTopLeft(overlappingPill).dy,
+          closeTo(previousTop - distance, 0.5),
+        );
+        expect(tester.widget<Column>(contentColumn), same(content));
+      }
 
-    await tester.tap(find.byIcon(Icons.arrow_back_rounded));
-    await tester.pumpAndSettle();
+      controller.jumpTo(controller.offset + 20);
+      await tester.pumpAndSettle();
+      expect(overlappingPill, findsNothing);
+      expect(
+        find.descendant(
+          of: stickyPill,
+          matching: find.text(i18n.tr('settings_group_cover_background')),
+        ),
+        findsOneWidget,
+      );
 
-    // Check main settings page content gap
-    final mainSettingsHeader = find.byType(TopPageHeader);
-    final firstMainCard = find
-        .ancestor(
-          of: find.text(i18n.tr('section_common')),
-          matching: find.byType(Card),
-        )
-        .first;
-    final mainPageGap =
-        tester.getTopLeft(firstMainCard).dy -
-        tester.getRect(mainSettingsHeader).bottom;
-    expect(mainPageGap, closeTo(14.0, 0.5));
+      controller.jumpTo(controller.offset - 20);
+      await tester.pumpAndSettle();
+      expect(overlappingPill, findsOneWidget);
+      expect(
+        tester.getTopLeft(overlappingPill).dy,
+        closeTo(pinnedTop + 10, 0.5),
+      );
+      expect(
+        find.descendant(
+          of: stickyPill,
+          matching: find.text(i18n.tr('settings_group_theme_layout')),
+        ),
+        findsOneWidget,
+      );
+      controller.jumpTo(0);
+      await tester.pumpAndSettle();
+      expect(stickyPill, findsNothing);
+      expect(overlappingPill, findsNothing);
+      expect(
+        tester
+            .widget<Visibility>(
+              find
+                  .ancestor(of: startupPill, matching: find.byType(Visibility))
+                  .first,
+            )
+            .visible,
+        isTrue,
+      );
 
-    expect(find.text(i18n.tr('section_language')), findsNothing);
-  });
+      await tester.tap(find.byIcon(Icons.arrow_back_rounded));
+      await tester.pumpAndSettle();
+
+      // Check main settings page content gap
+      final mainSettingsHeader = find.byType(TopPageHeader);
+      final firstMainCard = find
+          .ancestor(
+            of: find.text(i18n.tr('section_common')),
+            matching: find.byType(Card),
+          )
+          .first;
+      final mainPageGap =
+          tester.getTopLeft(firstMainCard).dy -
+          tester.getRect(mainSettingsHeader).bottom;
+      expect(mainPageGap, closeTo(14.0, 0.5));
+
+      expect(find.text(i18n.tr('section_language')), findsNothing);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
 
   testWidgets(
     'data storage category places storage overview above embedded support actions',
@@ -1112,31 +1181,27 @@ void main() {
     },
   );
 
-  testWidgets('appearance toggles the blurred playback detail background', (
-    tester,
-  ) async {
-    final harness = AppRuntimeWidgetTestFixture();
-    addTearDown(harness.dispose);
-    await tester.pumpWidget(harness.build(const SettingsTab()));
-    await tester.pump();
+  testWidgets(
+    'appearance omits the removed blur settings',
+    (tester) async {
+      final harness = AppRuntimeWidgetTestFixture();
+      addTearDown(harness.dispose);
+      await tester.pumpWidget(harness.build(const SettingsTab()));
+      await tester.pump();
 
-    final i18n = harness.languageProvider;
-    await tester.tap(find.text(i18n.tr('section_appearance')));
-    await tester.pumpAndSettle();
+      final i18n = harness.languageProvider;
+      await tester.tap(find.text(i18n.tr('section_appearance')));
+      await tester.pumpAndSettle();
 
-    final toggle = find.widgetWithText(
-      SwitchListTile,
-      i18n.tr('blur_player_background'),
-    );
-    await Scrollable.ensureVisible(tester.element(toggle), alignment: 0.5);
-    await tester.pumpAndSettle();
-    expect(harness.settingsRepository.blurPlayerBackgroundEnabled, isFalse);
-
-    await tester.tap(toggle);
-    await tester.pumpAndSettle();
-
-    expect(harness.settingsRepository.blurPlayerBackgroundEnabled, isTrue);
-  });
+      expect(find.text('界面毛玻璃'), findsNothing);
+      expect(find.text('播放页模糊背景'), findsNothing);
+      expect(find.text(i18n.tr('subtitle_window_settings')), findsOneWidget);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
 
   testWidgets('appearance offers the 1200px cover resolution', (tester) async {
     final harness = AppRuntimeWidgetTestFixture();

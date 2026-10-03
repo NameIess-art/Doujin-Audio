@@ -667,41 +667,6 @@ class AsmrLibraryController extends ChangeNotifier
     return work.copyWith(isFavorite: _favoriteIds.contains(work.id));
   }
 
-  Future<AsmrWorkDetail> loadWorkDetail(AsmrWork work) {
-    final key = _workRequestKey(work.id);
-    return _workContent.requestDetail(
-      key,
-      () => _loadWorkDetailOnce(work, key),
-    );
-  }
-
-  Future<AsmrWorkDetail> _loadWorkDetailOnce(
-    AsmrWork work,
-    AsmrWorkRequestKey key,
-  ) async {
-    final language = _contentLanguage;
-    final detail = await _remoteCatalogService.loadWorkDetail(
-      work.id,
-      token: _authSession?.token,
-      language: language,
-    );
-    if (!_isWorkRequestCurrent(key)) {
-      if (_disposed || key.runtimeCacheEpoch != _runtimeCacheEpoch) {
-        throw StateError('asmr_content_invalidated');
-      }
-      return loadWorkDetail(work);
-    }
-    final merged = AsmrWorkDetail(
-      work: _decorateWork(detail.work),
-      description: detail.description,
-      ageCategory: detail.ageCategory,
-      languageEditionLabels: detail.languageEditionLabels,
-      userRating: detail.userRating,
-    );
-    notifyListeners();
-    return merged;
-  }
-
   bool isTrackHidden(int workId, AsmrTrackFile node) =>
       _workContent.hiddenTracks.contains('$workId:${node.stableKey}');
 

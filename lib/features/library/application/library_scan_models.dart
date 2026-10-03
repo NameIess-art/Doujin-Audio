@@ -1,10 +1,20 @@
 import 'library_catalog.dart';
 import 'library_state_models.dart';
 import '../../../core/immutable_collections.dart';
+import '../../../core/app_language.dart';
 
 export '../../../core/platform/library_scan_wire_models.dart';
 
 class LibraryScanLabels {
+  factory LibraryScanLabels.fromTranslator(AppTextTranslator translator) =>
+      LibraryScanLabels(
+        chooseMusicFolder: translator.tr('choose_music_folder'),
+        chooseLibraryFolder: translator.tr('choose_library_folder'),
+        chooseAudioFiles: translator.tr('choose_audio_files'),
+        importedFiles: translator.tr('imported_files'),
+        manuallySelectedFiles: translator.tr('manually_selected_files'),
+      );
+
   const LibraryScanLabels({
     required this.chooseMusicFolder,
     required this.chooseLibraryFolder,

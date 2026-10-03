@@ -1,5 +1,3 @@
-import 'dart:ui' as ui;
-
 import 'package:flutter/material.dart';
 
 import '../../app/theme/app_design_tokens.dart';
@@ -28,7 +26,6 @@ class AppSearchPageScaffold<T> extends StatelessWidget {
     required this.onChanged,
     required this.onSubmitted,
     required this.onCloseOrClear,
-    required this.blurEnabled,
     required this.body,
     this.accentColor,
     this.controlsOverlay,
@@ -43,7 +40,6 @@ class AppSearchPageScaffold<T> extends StatelessWidget {
   final ValueChanged<String> onChanged;
   final ValueChanged<String> onSubmitted;
   final VoidCallback onCloseOrClear;
-  final bool blurEnabled;
   final Widget body;
   final Color? accentColor;
   final Widget? controlsOverlay;
@@ -110,7 +106,6 @@ class AppSearchPageScaffold<T> extends StatelessWidget {
                           height: 38,
                           child: _SearchFloatingCapsule(
                             radius: 19,
-                            blurEnabled: blurEnabled,
                             child: TextSelectionTheme(
                               data: TextSelectionThemeData(
                                 cursorColor: accent,
@@ -167,7 +162,6 @@ class AppSearchPageScaffold<T> extends StatelessWidget {
                         dimension: 38,
                         child: _SearchFloatingCapsule(
                           radius: 19,
-                          blurEnabled: blurEnabled,
                           child: IconButton(
                             key: const ValueKey<String>('app_search_close'),
                             onPressed: onCloseOrClear,
@@ -192,7 +186,6 @@ class AppSearchPageScaffold<T> extends StatelessWidget {
                     height: 38,
                     child: _SearchFloatingCapsule(
                       radius: 19,
-                      blurEnabled: blurEnabled,
                       child: WindowsHorizontalWheelScroll(
                         builder: (scrollController) => ListView.separated(
                         key: const ValueKey<String>('app_search_categories'),
@@ -264,12 +257,10 @@ class AppSearchPageScaffold<T> extends StatelessWidget {
 class _SearchFloatingCapsule extends StatelessWidget {
   const _SearchFloatingCapsule({
     required this.radius,
-    required this.blurEnabled,
     required this.child,
   });
 
   final double radius;
-  final bool blurEnabled;
   final Widget child;
 
   @override
@@ -280,9 +271,7 @@ class _SearchFloatingCapsule extends StatelessWidget {
     final borderRadius = BorderRadius.circular(radius);
     final capsuleSurface = DecoratedBox(
       decoration: BoxDecoration(
-        color: background.withValues(
-          alpha: blurEnabled ? (isDark ? 0.70 : 0.75) : 1,
-        ),
+        color: background,
         borderRadius: borderRadius,
         border: Border.all(
           color: cs.outlineVariant.withValues(alpha: isDark ? 0.24 : 0.42),
@@ -304,12 +293,7 @@ class _SearchFloatingCapsule extends StatelessWidget {
       ),
       child: ClipRRect(
         borderRadius: borderRadius,
-        child: blurEnabled
-            ? BackdropFilter(
-                filter: ui.ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-                child: capsuleSurface,
-              )
-            : capsuleSurface,
+        child: capsuleSurface,
       ),
     );
   }

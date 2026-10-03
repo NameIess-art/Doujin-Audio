@@ -840,6 +840,122 @@ void main() {
   });
 
   group('custom queue session restore', () {
+    for (final mixed in [false, true]) {
+      test(
+        'restart resumes ${mixed ? 'mixed' : 'ASMR-only'} playback queue from persisted entries',
+        () async {
+          final remote = MusicTrack(
+            path: 'https://example.com/asmr/01.mp3',
+            displayName: '01',
+            groupKey: 'asmr-work-1',
+            groupTitle: 'ASMR Work',
+            groupSubtitle: 'RJ000001',
+            isSingle: false,
+            remoteMetadataKind: MusicTrack.remoteMetadataKindAsmrOne,
+            remoteMetadata: {'trackRelativePath': 'disc/01.mp3'},
+          );
+          final first = mixed
+              ? testMusicTrack(
+                  name: 'Local',
+                  path: '/local/01.mp3',
+                  groupKey: '/local',
+                  groupTitle: 'Local',
+                )
+              : MusicTrack.fromJson({
+                  ...remote.toJson(),
+                  'path': 'https://example.com/asmr/02.mp3',
+                });
+          final tracks = [first, remote, remote];
+          final repository = TestPersistenceRepository(
+            database: AppDatabase.test(db),
+          );
+          await repository.seedSessions([
+            PersistedPlaybackSession(
+              id: 'restored_queue',
+              trackPath: remote.path,
+              loopModeIndex: SessionLoopMode.crossSequential.index,
+              volume: 1,
+              positionMs: 12000,
+              durationMs: 60000,
+              customQueueTracks: tracks,
+              playbackQueue: PlaybackQueueDefinition(
+                name: 'Queue',
+                entries: [
+                  for (final (index, track) in tracks.indexed)
+                    PlaybackQueueEntry(
+                      id: 'entry_$index',
+                      kind: PlaybackQueueEntryKind.track,
+                      title: track.displayName,
+                      tracks: [track],
+                    ),
+                ],
+              ),
+              currentQueueIndex: 2,
+              channelSwapEnabled: false,
+              sortOrder: 0,
+            ),
+          ]);
+          // Normal queue tracks are stored in their entries, not the separate
+          // custom queue used by direct playback and detached occurrences.
+          expect(
+            (await repository.loadAllSessions()).single.customQueueTracks,
+            isNull,
+          );
+          await runtimeGraph.runtime.dispose();
+          runtimeGraph = createTestRuntimeGraph(
+            persistenceRepository: repository,
+          );
+          if (mixed) {
+            runtimeGraph.library.addTracks(
+              [first],
+              notify: false,
+              persist: false,
+            );
+          }
+          final preparations = <Map<Object?, Object?>>[];
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+              .setMockMethodCallHandler(nativePlaybackChannel, (call) async {
+                if (call.method == NativePlaybackMethod.prepareSession) {
+                  preparations.add(call.arguments as Map<Object?, Object?>);
+                }
+                if (call.method == NativePlaybackMethod.snapshot) {
+                  return {
+                    'ok': true,
+                    'value': {'sessions': <Object?>[]},
+                  };
+                }
+                return {'ok': true, 'value': null};
+              });
+
+          await runtimeGraph.playback.loadPersistedState();
+
+          final restored = runtimeGraph.playback.activeSessions.single;
+          expect(restored.currentTrackPath, remote.path);
+          expect(restored.currentQueueIndex, 2);
+          expect(restored.position, const Duration(seconds: 12));
+          expect(restored.playbackRequested, isFalse);
+          expect(preparations, isEmpty);
+          expect(
+            restored.trackForPath(remote.path)?.remoteMetadata,
+            remote.remoteMetadata,
+          );
+
+          await runtimeGraph.playback.toggleSessionPlayPause(restored.id);
+
+          expect(preparations, hasLength(1));
+          expect(preparations.single['path'], remote.path);
+          expect(preparations.single['queueStartIndex'], 2);
+          expect(preparations.single['startPositionMs'], 12000);
+          expect(
+            (preparations.single['queue'] as List).map(
+              (item) => PathMatcher.normalize((item as Map)['path'] as String),
+            ),
+            tracks.map((track) => PathMatcher.normalize(track.path)),
+          );
+        },
+      );
+    }
+
     test('restores ASMR custom queues and exposes sibling tracks', () async {
       const sessionId = 'asmr_session';
       final coverFile = File(

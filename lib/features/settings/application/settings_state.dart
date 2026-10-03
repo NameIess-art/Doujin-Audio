@@ -60,8 +60,6 @@ class SettingsState {
     this.asmrPlaybackCacheEnabled = true,
     this.recordPlaybackProgress = true,
     this.allowVideoPlayback = true,
-    this.blurPlayerBackgroundEnabled = false,
-    this.uiBlurEffectEnabled = false,
     this.hapticFeedbackEnabled = true,
     this.showLocalLibrary = true,
     this.showAsmrOne = true,
@@ -111,8 +109,6 @@ class SettingsState {
   final bool asmrPlaybackCacheEnabled;
   final bool recordPlaybackProgress;
   final bool allowVideoPlayback;
-  final bool blurPlayerBackgroundEnabled;
-  final bool uiBlurEffectEnabled;
   final bool hapticFeedbackEnabled;
   final bool showLocalLibrary;
   final bool showAsmrOne;
@@ -158,8 +154,6 @@ class SettingsState {
         other.asmrPlaybackCacheEnabled == asmrPlaybackCacheEnabled &&
         other.recordPlaybackProgress == recordPlaybackProgress &&
         other.allowVideoPlayback == allowVideoPlayback &&
-        other.blurPlayerBackgroundEnabled == blurPlayerBackgroundEnabled &&
-        other.uiBlurEffectEnabled == uiBlurEffectEnabled &&
         other.hapticFeedbackEnabled == hapticFeedbackEnabled &&
         other.showLocalLibrary == showLocalLibrary &&
         other.showAsmrOne == showAsmrOne &&
@@ -209,8 +203,6 @@ class SettingsState {
     asmrPlaybackCacheEnabled,
     recordPlaybackProgress,
     allowVideoPlayback,
-    blurPlayerBackgroundEnabled,
-    uiBlurEffectEnabled,
     hapticFeedbackEnabled,
     showLocalLibrary,
     showAsmrOne,

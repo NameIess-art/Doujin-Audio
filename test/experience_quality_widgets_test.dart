@@ -1,7 +1,5 @@
 import 'dart:async';
 
-import 'package:doujin_audio/core/ui/visual_settings_providers.dart';
-import 'package:doujin_audio/features/settings/presentation/settings_providers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -18,7 +16,6 @@ import 'package:doujin_audio/core/widgets/marquee_text.dart';
 import 'package:doujin_audio/core/widgets/scroll_activity_gate.dart';
 import 'package:doujin_audio/core/widgets/shimmer_loading.dart';
 import 'package:doujin_audio/core/widgets/top_page_header.dart';
-import 'package:doujin_audio/features/settings/application/settings_state.dart';
 
 Widget _buildSurface(Widget child) => MaterialApp(
   theme: ThemeData.dark(useMaterial3: true),
@@ -27,16 +24,8 @@ Widget _buildSurface(Widget child) => MaterialApp(
   ),
 );
 
-Widget _buildScrollableHeader({required bool blurEnabled}) {
+Widget _buildScrollableHeader() {
   return ProviderScope(
-    overrides: [
-      uiBlurEnabledProvider.overrideWithValue(blurEnabled),
-      settingsStateProvider.overrideWith(
-        (ref) => Stream<SettingsState>.value(
-          SettingsState(uiBlurEffectEnabled: blurEnabled),
-        ),
-      ),
-    ],
     child: MaterialApp(
       theme: ThemeData.light(useMaterial3: true),
       home: Scaffold(
@@ -61,18 +50,9 @@ Widget _buildScrollableHeader({required bool blurEnabled}) {
   );
 }
 
-Widget _buildPageAppBar({required bool blurEnabled}) {
-  return ProviderScope(
-    key: ValueKey<String>('page_app_bar_blur_$blurEnabled'),
-    overrides: [
-      uiBlurEnabledProvider.overrideWithValue(blurEnabled),
-      settingsStateProvider.overrideWith(
-        (ref) => Stream<SettingsState>.value(
-          SettingsState(uiBlurEffectEnabled: blurEnabled),
-        ),
-      ),
-    ],
-    child: const MaterialApp(
+Widget _buildPageAppBar() {
+  return const ProviderScope(
+    child: MaterialApp(
       home: Scaffold(
         appBar: AppPageAppBar(title: Text('Secondary page')),
         body: SizedBox.expand(),
@@ -110,28 +90,8 @@ LibraryLikeWorkCardContent _buildFeaturedCard({
 }
 
 void main() {
-  testWidgets('top header keeps blur while scrolling', (tester) async {
-    await tester.pumpWidget(_buildScrollableHeader(blurEnabled: true));
-    await tester.pump();
-
-    expect(find.byType(BackdropFilter), findsOneWidget);
-
-    await tester.drag(
-      find.byKey(const ValueKey('header_scroll_list')),
-      const Offset(0, -240),
-    );
-    await tester.pump();
-
-    expect(find.byType(BackdropFilter), findsOneWidget);
-
-    await tester.pump(const Duration(milliseconds: 170));
-    expect(find.byType(BackdropFilter), findsOneWidget);
-  });
-
-  testWidgets('top header keeps blur disabled when the setting is off', (
-    tester,
-  ) async {
-    await tester.pumpWidget(_buildScrollableHeader(blurEnabled: false));
+  testWidgets('top header stays opaque while scrolling', (tester) async {
+    await tester.pumpWidget(_buildScrollableHeader());
     await tester.pump();
 
     expect(find.byType(BackdropFilter), findsNothing);
@@ -145,24 +105,11 @@ void main() {
     expect(find.byType(BackdropFilter), findsNothing);
   });
 
-  testWidgets('secondary page app bar follows the glass effect setting', (
-    tester,
-  ) async {
-    await tester.pumpWidget(_buildPageAppBar(blurEnabled: true));
+  testWidgets('secondary page app bar has no backdrop blur', (tester) async {
+    await tester.pumpWidget(_buildPageAppBar());
     await tester.pump();
 
-    expect(
-      find.byKey(const ValueKey<String>('app_page_header_blur')),
-      findsOneWidget,
-    );
-
-    await tester.pumpWidget(_buildPageAppBar(blurEnabled: false));
-    await tester.pump();
-
-    expect(
-      find.byKey(const ValueKey<String>('app_page_header_blur')),
-      findsNothing,
-    );
+    expect(find.byType(BackdropFilter), findsNothing);
   });
 
   testWidgets('placeholder content fades over the shared 300ms duration', (

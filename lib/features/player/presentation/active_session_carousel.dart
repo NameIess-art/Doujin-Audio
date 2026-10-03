@@ -1,8 +1,7 @@
 import '../../library/presentation/library_providers.dart';
 import 'playback_providers.dart';
-import '../../settings/presentation/settings_providers.dart';
 import 'dart:async';
-import 'dart:ui';
+import 'dart:ui' show lerpDouble;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';

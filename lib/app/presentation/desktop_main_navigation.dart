@@ -7,7 +7,7 @@ import '../../features/player/application/playback_session_snapshot.dart';
 import '../../features/player/presentation/active_session_carousel.dart';
 import '../../features/player/presentation/playlist/session_detail_page.dart';
 import 'main_destination.dart';
-import 'app_dock_glass_panel.dart';
+import 'app_dock_panel.dart';
 
 class DesktopMainNavigation extends StatelessWidget {
   const DesktopMainNavigation({
@@ -376,7 +376,7 @@ class DesktopMainNavigation extends StatelessWidget {
                           : constraints.maxWidth,
                       height: kActiveSessionCarouselDockHeight,
                       child: RepaintBoundary(
-                        child: AppDockGlassPanel(
+                        child: AppDockPanel(
                           shadowOpacity: 0.12,
                           showTopHighlight: false,
                           child: ClipRRect(

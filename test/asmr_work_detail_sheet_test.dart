@@ -422,6 +422,11 @@ void main() {
         unawaited(
           showAsmrWorkDetailSheet(tester.element(find.byType(AsmrTab)), work),
         );
+        await pumpUntilFound(tester, find.byType(WorkDetailPage));
+        await pumpUntilNotFound(
+          tester,
+          find.byKey(const ValueKey('work_detail_entries_skeleton')),
+        );
         await tester.pumpAndSettle();
         final detail = find.descendant(
           of: find.byType(WorkDetailPage),
@@ -495,14 +500,6 @@ void main() {
         await tester.pumpAndSettle();
         expect(
           await imageKey(find.byKey(ValueKey<String>('artwork_${session.id}'))),
-          sharedKey,
-        );
-        expect(
-          await imageKey(
-            find.byKey(
-              const ValueKey<String>('session_detail_background_blur'),
-            ),
-          ),
           sharedKey,
         );
         Navigator.of(
@@ -756,6 +753,11 @@ void main() {
         ),
       );
       await tester.tap(find.text('Open detail'));
+      await pumpUntilFound(tester, find.byType(WorkDetailPage));
+      await pumpUntilNotFound(
+        tester,
+        find.byKey(const ValueKey('work_detail_entries_skeleton')),
+      );
       await tester.pumpAndSettle();
       final text = find.text('Test circle');
       await tester.ensureVisible(text);
@@ -790,6 +792,11 @@ void main() {
       ),
     );
     await tester.tap(find.text('Open detail'));
+    await pumpUntilFound(tester, find.byType(WorkDetailPage));
+    await pumpUntilNotFound(
+      tester,
+      find.byKey(const ValueKey('work_detail_entries_skeleton')),
+    );
     await tester.pumpAndSettle();
 
     expect(
@@ -844,6 +851,11 @@ void main() {
       ),
     );
     await tester.tap(find.text('Open detail'));
+    await pumpUntilFound(tester, find.byType(WorkDetailPage));
+    await pumpUntilNotFound(
+      tester,
+      find.byKey(const ValueKey('work_detail_entries_skeleton')),
+    );
     await tester.pumpAndSettle();
 
     final voiceActor = find.byKey(
@@ -884,8 +896,17 @@ void main() {
       find.byKey(const ValueKey<String>('work_detail_circle_copy')),
     );
     await tester.pump();
+    await tester.tap(
+      find.byKey(const ValueKey<String>('work_detail_title_copy')),
+    );
+    await tester.pump();
 
-    expect(copied, const <String>['Voice A', 'RJ000123', 'Test circle']);
+    expect(copied, const <String>[
+      'Voice A',
+      'RJ000123',
+      'Test circle',
+      'Test work',
+    ]);
   });
 
   setUp(UiInteractionCoordinator.instance.resetForTest);
@@ -963,6 +984,11 @@ void main() {
       ),
     );
     await tester.tap(find.text('Open detail'));
+    await pumpUntilFound(tester, find.byType(WorkDetailPage));
+    await pumpUntilNotFound(
+      tester,
+      find.byKey(const ValueKey('work_detail_entries_skeleton')),
+    );
     await tester.pumpAndSettle();
 
     await tester.tap(
@@ -1105,6 +1131,11 @@ void main() {
         ),
       );
       await tester.tap(find.text('Open detail'));
+      await pumpUntilFound(tester, find.byType(WorkDetailPage));
+      await pumpUntilNotFound(
+        tester,
+        find.byKey(const ValueKey('work_detail_entries_skeleton')),
+      );
       await tester.pumpAndSettle();
 
       final favoriteButtonFinder = find.byKey(
@@ -1323,6 +1354,11 @@ void main() {
 
       // Tapping card opens WorkDetailPage
       await tester.tap(card);
+      await pumpUntilFound(tester, find.byType(WorkDetailPage));
+      await pumpUntilNotFound(
+        tester,
+        find.byKey(const ValueKey('work_detail_entries_skeleton')),
+      );
       await tester.pumpAndSettle();
       expect(find.byType(WorkDetailPage), findsOneWidget);
       expect(find.text('Swipe Test Work'), findsOneWidget);
@@ -1449,9 +1485,7 @@ class _TestFavoritesAsmrLibraryController extends AsmrLibraryController {
   Future<List<AsmrTrackFile>> ensureTrackTree(
     AsmrWork work, {
     bool forceRefresh = false,
-  }) =>
-      pendingTrackTree ??
-      super.ensureTrackTree(work, forceRefresh: forceRefresh);
+  }) => pendingTrackTree ?? Future.value(const <AsmrTrackFile>[]);
 
   void updateFavorites(List<AsmrWork> next) {
     favoriteWorks = List.of(next);
@@ -1472,17 +1506,6 @@ class _TestFavoritesAsmrLibraryController extends AsmrLibraryController {
     }
     _revision++;
     notifyListeners();
-  }
-
-  @override
-  Future<AsmrWorkDetail> loadWorkDetail(AsmrWork work) async {
-    return AsmrWorkDetail(
-      work: work,
-      description: 'Test description',
-      ageCategory: 'general',
-      languageEditionLabels: const <String>[],
-      userRating: null,
-    );
   }
 
   @override

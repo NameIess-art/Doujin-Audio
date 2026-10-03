@@ -36,15 +36,13 @@ class SessionDetailPage extends ConsumerStatefulWidget {
 
 // A projection of the existing snapshot; transport changes belong to controls.
 class _DetailStructure {
-  const _DetailStructure(this.session, this.coverGeneration);
+  const _DetailStructure(this.session);
 
   final PlaybackSessionSnapshot? session;
-  final int coverGeneration;
 
   @override
   bool operator ==(Object other) =>
       other is _DetailStructure &&
-      coverGeneration == other.coverGeneration &&
       session?.id == other.session?.id &&
       session?.currentTrackPath == other.session?.currentTrackPath &&
       session?.loadedPath == other.session?.loadedPath &&
@@ -65,7 +63,6 @@ class _DetailStructure {
 
   @override
   int get hashCode => Object.hash(
-    coverGeneration,
     session?.id,
     session?.currentTrackPath,
     session?.loadedPath,
@@ -333,17 +330,14 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
         .watch(
           playbackSessionProvider(
             widget.sessionId,
-          ).select((value) => _DetailStructure(value, 0)),
+          ).select((value) => _DetailStructure(value)),
         )
         .session;
-    final structure = _DetailStructure(
-      session,
-      ref.watch(coverGenerationProvider),
-    );
+    final coverGen = ref.watch(coverGenerationProvider);
     ref.watch(
       libraryStateProvider.select((state) => state.value?.contentRevision),
     );
-    if (structure.session == null) {
+    if (session == null) {
       return const Scaffold(body: SizedBox.shrink());
     }
 
@@ -429,7 +423,6 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
             key: const ValueKey('session_detail_content_cache'),
             child: Builder(
               builder: (context) {
-                final coverGen = ref.watch(coverGenerationProvider);
                 final pageSession = playback.sessionSnapshotById(
                   widget.sessionId,
                 );

@@ -148,18 +148,6 @@ class AsmrRemoteCatalogService {
     );
   }
 
-  Future<AsmrWorkDetail> loadWorkDetail(
-    int workId, {
-    required AsmrContentLanguage language,
-    required String? token,
-  }) {
-    return _apiService.fetchWorkDetail(
-      workId,
-      token: token,
-      language: language,
-    );
-  }
-
   Future<List<AsmrTrackFile>> loadTrackTree(
     int workId, {
     required String? token,

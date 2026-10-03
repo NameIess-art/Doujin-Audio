@@ -1,7 +1,5 @@
-import '../../../settings/presentation/settings_providers.dart';
 import 'dart:async';
 import 'dart:math';
-import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -674,25 +672,16 @@ class _PlaybackSecondaryControlsState
     }
 
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final blurEnabled = ref.watch(
-      settingsStateProvider.select((s) => s.value?.uiBlurEffectEnabled ?? false),
-    );
     final background = isDark ? cs.surfaceBright : cs.surfaceContainerHigh;
     const double capsuleHeight = 52;
     final borderRadius = BorderRadius.circular(capsuleHeight / 2);
 
     final capsuleSurface = DecoratedBox(
       decoration: BoxDecoration(
-        color: background.withValues(
-          alpha: blurEnabled ? (isDark ? 0.70 : 0.75) : 1.0,
-        ),
+        color: background,
         borderRadius: borderRadius,
         border: Border.all(
-          color: cs.outlineVariant.withValues(
-            alpha: blurEnabled
-                ? (isDark ? 0.28 : 0.42)
-                : (isDark ? 0.35 : 0.55),
-          ),
+          color: cs.outlineVariant.withValues(alpha: isDark ? 0.35 : 0.55),
           width: 0.5,
         ),
       ),
@@ -702,28 +691,13 @@ class _PlaybackSecondaryControlsState
       ),
     );
 
-    final Widget styledCapsule = blurEnabled
-        ? RepaintBoundary(
-            child: ClipRRect(
-              borderRadius: borderRadius,
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-                child: capsuleSurface,
-              ),
-            ),
-          )
-        : ClipRRect(
-            borderRadius: borderRadius,
-            child: capsuleSurface,
-          );
-
     return Padding(
       padding: const EdgeInsets.only(top: 8, left: 4, right: 4),
       child: SizedBox(
         key: const ValueKey('playback_secondary_controls'),
         width: _kPlaybackSecondaryControlsWidth,
         height: capsuleHeight,
-        child: styledCapsule,
+        child: ClipRRect(borderRadius: borderRadius, child: capsuleSurface),
       ),
     );
   }

@@ -1,7 +1,6 @@
 import 'package:doujin_audio/features/player/presentation/playback_providers.dart';
 import 'dart:async';
 import 'dart:io';
-import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -4336,14 +4335,6 @@ void main() {
       find.text(fixture.languageProvider.tr('subtitle_global_display')),
       findsOneWidget,
     );
-    expect(
-      tester
-          .widget<ImageFiltered>(
-            find.byKey(const ValueKey('session_detail_background_blur')),
-          )
-          .imageFilter,
-      ui.ImageFilter.blur(sigmaX: 32, sigmaY: 32, tileMode: ui.TileMode.decal),
-    );
     await tester.runAsync(
       () => Future<void>.delayed(const Duration(milliseconds: 200)),
     );
@@ -5191,44 +5182,7 @@ void main() {
         tester.getTopLeft(secondaryButtons.first).dx,
         greaterThanOrEqualTo(tester.getTopLeft(secondaryControls).dx),
       );
-      expect(
-        find.byKey(const ValueKey('session_detail_background_blur')),
-        findsNothing,
-      );
-      await settingsRepository.setBlurPlayerBackgroundEnabled(true);
-      expect(
-        settingsRepository.slice.state.blurPlayerBackgroundEnabled,
-        isTrue,
-      );
-      await tester.pumpAndSettle();
-      expect(
-        find.byKey(const ValueKey('session_detail_background_blur')),
-        findsOneWidget,
-      );
-      expect(
-        tester
-            .widget<ImageFiltered>(
-              find.byKey(const ValueKey('session_detail_background_blur')),
-            )
-            .imageFilter,
-        ui.ImageFilter.blur(
-          sigmaX: 32,
-          sigmaY: 32,
-          tileMode: ui.TileMode.decal,
-        ),
-      );
-
-      await settingsRepository.setBlurPlayerBackgroundEnabled(false);
-      expect(
-        settingsRepository.slice.state.blurPlayerBackgroundEnabled,
-        isFalse,
-      );
-      await tester.pumpAndSettle();
-      expect(
-        find.byKey(const ValueKey('session_detail_background_blur')),
-        findsNothing,
-      );
-
+      expect(find.byType(ImageFiltered), findsNothing);
       await tester.tap(find.byTooltip(languageProvider.tr('switch_audio')));
       await tester.pumpAndSettle();
 
@@ -6317,8 +6271,11 @@ void main() {
           matching: find.byType(SwipeRevealCard),
         ),
       );
-      expect(temporarySwipe.closedColor, theme.colorScheme.surface);
-      expect(temporarySwipe.closedColor, savedSwipe.closedColor);
+      final expectedTemporaryCardColor = isDark
+          ? theme.colorScheme.surfaceBright
+          : theme.colorScheme.surfaceContainerHigh;
+      expect(temporarySwipe.closedColor, expectedTemporaryCardColor);
+      expect(savedSwipe.closedColor, theme.colorScheme.surface);
       expect(temporaryCardWidget.color, Colors.transparent);
       expect(temporaryCardWidget.color, savedCardWidget.color);
       expect(temporarySwipe.onLeadingAction, isNull);
@@ -6766,9 +6723,17 @@ void main() {
       // Returning keeps the live playback detail and its navigation context.
       final backButton = find.byKey(const ValueKey('work_detail_back_button'));
       expect(backButton, findsOneWidget);
-      await tester.tap(backButton);
-      await tester.pump();
+      await pumpUntilFound(
+        tester,
+        find.byWidgetPredicate(
+          (widget) => widget is IconButton &&
+              widget.key == const ValueKey('work_detail_back_button') &&
+              widget.onPressed != null,
+        ),
+      );
       await tester.pump(const Duration(milliseconds: 400));
+      await tester.tap(backButton);
+      await pumpUntilNotFound(tester, find.byType(WorkDetailPage));
       expect(find.byType(WorkDetailPage), findsNothing);
       expect(find.byType(SessionDetailPage, skipOffstage: false), findsWidgets);
       expect(find.byType(SessionDetailPage), findsOneWidget);
@@ -6812,6 +6777,15 @@ void main() {
       );
       await tester.pump();
 
+      await pumpUntilFound(
+        tester,
+        find.byWidgetPredicate(
+          (widget) => widget is IconButton &&
+              widget.key == const ValueKey('work_detail_back_button') &&
+              widget.onPressed != null,
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 450));
       await tester.tap(find.byKey(const ValueKey('work_detail_back_button')));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 450));

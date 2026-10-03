@@ -778,33 +778,6 @@ void registerAsmrControllerStateTests({
     },
   );
 
-  test(
-    'ASMR completed detail reads fetch again without storing page content',
-    () async {
-      await resetPrefs();
-      final api = _FakeAsmrApiService();
-      final controller = createTestAsmrController(
-        preferencesStore: preferences,
-        apiService: api,
-        persistenceRepository: persistenceRepository(),
-      );
-      final works = <AsmrWork>[
-        for (var id = 1; id <= 129; id++) _work(id: id, title: 'Work $id'),
-      ];
-
-      for (final work in works.take(128)) {
-        await controller.loadWorkDetail(work);
-      }
-      await controller.loadWorkDetail(works.first);
-      await controller.loadWorkDetail(works.last);
-      await controller.loadWorkDetail(works.first);
-      await controller.loadWorkDetail(works[1]);
-
-      expect(api.detailFetchWorkIds.where((id) => id == 1), hasLength(3));
-      expect(api.detailFetchWorkIds.where((id) => id == 2), hasLength(2));
-    },
-  );
-
   test('ASMR track memory eviction fetches discarded content again', () async {
     await resetPrefs();
     final api = _FakeAsmrApiService(
@@ -945,17 +918,11 @@ void registerAsmrControllerStateTests({
     },
   );
 
-  test('detail and track tree requests are single flight', () async {
+  test('track tree requests are single flight', () async {
     await resetPrefs();
-    final detailStarted = Completer<void>();
-    final detailRelease = Completer<void>();
     final trackStarted = Completer<void>();
     final trackRelease = Completer<void>();
     final api = _FakeAsmrApiService(
-      beforeFetchWorkDetail: (_, _) async {
-        if (!detailStarted.isCompleted) detailStarted.complete();
-        await detailRelease.future;
-      },
       beforeFetchTrackTree: (_) async {
         if (!trackStarted.isCompleted) trackStarted.complete();
         await trackRelease.future;
@@ -971,15 +938,6 @@ void registerAsmrControllerStateTests({
     await controller.initialize(defaultLanguage: AsmrContentLanguage.en);
     final work = _work(id: 404, title: 'Single flight');
 
-    final details = <Future<AsmrWorkDetail>>[
-      controller.loadWorkDetail(work),
-      controller.loadWorkDetail(work),
-    ];
-    await detailStarted.future;
-    expect(api.detailFetchWorkIds, <int>[404]);
-    detailRelease.complete();
-    await Future.wait(details);
-
     final trees = <Future<List<AsmrTrackFile>>>[
       controller.ensureTrackTree(work),
       controller.ensureTrackTree(work),
@@ -988,38 +946,6 @@ void registerAsmrControllerStateTests({
     expect(api.trackFetchWorkIds, <int>[404]);
     trackRelease.complete();
     await Future.wait(trees);
-  });
-
-  test('language changes discard an in-flight detail result', () async {
-    await resetPrefs();
-    final started = Completer<void>();
-    final release = Completer<void>();
-    var calls = 0;
-    final api = _FakeAsmrApiService(
-      beforeFetchWorkDetail: (_, _) async {
-        calls++;
-        if (calls == 1) {
-          started.complete();
-          await release.future;
-        }
-      },
-    );
-    final controller = createTestAsmrController(
-      preferencesStore: preferences,
-      apiService: api,
-      persistenceRepository: _FakeTestPersistenceRepository(
-        const <MusicTrack>[],
-      ),
-    );
-    await controller.initialize(defaultLanguage: AsmrContentLanguage.en);
-    final future = controller.loadWorkDetail(_work(id: 405, title: 'Language'));
-    await started.future;
-    await controller.setContentLanguage(AsmrContentLanguage.ja);
-    release.complete();
-
-    final detail = await future;
-    expect(detail.work.title, startsWith('ja:'));
-    expect(api.detailFetchWorkIds, <int>[405, 405]);
   });
 
   test(

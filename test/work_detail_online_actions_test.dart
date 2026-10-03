@@ -103,7 +103,6 @@ void main() {
           expect(find.text(text), findsOneWidget);
         }
         expect(api.treeRequests, 0);
-        expect(api.detailRequests, 0);
         expect(find.text('audio'), findsNothing);
 
         if (closeDuringTransition) {
@@ -112,7 +111,6 @@ void main() {
         await tester.pump(const Duration(milliseconds: 500));
         await tester.pump(interaction.idleDelay);
         await settleIo(tester);
-        expect(api.detailRequests, 0);
         expect(api.treeRequests, closeDuringTransition ? 0 : 1);
         expect(
           find.text('audio'),
@@ -256,7 +254,7 @@ void main() {
       await tester.tap(audioMore);
       await tester.pumpAndSettle();
       expect(find.text(fixture.languageProvider.tr('play')), findsOneWidget);
-      expect(find.text(fixture.languageProvider.tr('remove')), findsOneWidget);
+      expect(find.text(fixture.languageProvider.tr('exclude')), findsOneWidget);
       await tester.tap(
         find.text(fixture.languageProvider.tr('detail_add_to_queue')),
       );
@@ -283,7 +281,7 @@ void main() {
         find.text(fixture.languageProvider.tr('detail_add_to_queue')),
         findsOneWidget,
       );
-      await tester.tap(find.text(fixture.languageProvider.tr('remove')));
+      await tester.tap(find.text(fixture.languageProvider.tr('exclude')));
       await settleIo(tester);
       expect(find.text('video'), findsNothing);
       expect(find.text('audio'), findsOneWidget);
@@ -301,12 +299,19 @@ void main() {
   );
 
   testWidgets(
-    'reopening details reuses tree data and refreshes without caching the page',
+    'reopening online details resets folders and reuses tree data',
     (tester) async {
       SharedPreferences.setMockInitialValues({});
       final fixture = AppRuntimeWidgetTestFixture();
       addTearDown(fixture.dispose);
       final api = _TrackApi();
+      api.treeResponseBuilder = () async => [
+        AsmrTrackFile.fromJson(const {
+          'title': 'Disc',
+          'type': 'folder',
+          'hash': 'disc',
+        }).withChildren(_nodes),
+      ];
       final services = createTestAsmrServices(
         persistenceRepository: fixture.persistenceRepository,
         apiService: api,
@@ -332,17 +337,27 @@ void main() {
       await tester.pumpWidget(page());
       expect(api.treeRequests, 1);
       await settleIo(tester);
+      expect(find.text('Disc'), findsOneWidget);
+      expect(find.text('audio'), findsNothing);
+      await tester.tap(find.text('Disc'));
+      await settleIo(tester);
       expect(find.text('audio'), findsOneWidget);
       expect(api.treeRequests, 2);
       await tester.pump(const Duration(seconds: 60));
       expect(api.treeRequests, 2);
       await tester.pumpWidget(const SizedBox());
       await tester.pumpWidget(page());
-      expect(find.text('audio'), findsOneWidget);
+      expect(find.text('Disc'), findsOneWidget);
+      expect(find.text('audio'), findsNothing);
       await settleIo(tester);
       expect(api.treeRequests, 3);
-      expect(find.text('audio'), findsOneWidget);
+      expect(find.text('Disc'), findsOneWidget);
+      expect(find.text('audio'), findsNothing);
     },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
   );
 
   testWidgets(
@@ -496,24 +511,7 @@ final _nodes = [
 
 class _TrackApi extends AsmrApiService {
   int treeRequests = 0;
-  int detailRequests = 0;
   Future<List<AsmrTrackFile>> Function()? treeResponseBuilder;
-
-  @override
-  Future<AsmrWorkDetail> fetchWorkDetail(
-    int workId, {
-    String? token,
-    AsmrContentLanguage language = AsmrContentLanguage.zh,
-  }) async {
-    detailRequests++;
-    return AsmrWorkDetail(
-      work: _work,
-      description: '',
-      ageCategory: '',
-      languageEditionLabels: const [],
-      userRating: null,
-    );
-  }
 
   @override
   Future<List<AsmrTrackFile>> fetchTrackTree(

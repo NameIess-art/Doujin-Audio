@@ -58,14 +58,6 @@ void main() {
           settingsStateProvider.overrideWith((ref) => states.stream),
         ],
       );
-      final values = List.generate(3, (_) => <bool>[]);
-      for (final consumerValues in values) {
-        container.listen(
-          uiBlurEnabledProvider,
-          (_, next) => consumerValues.add(next),
-          fireImmediately: true,
-        );
-      }
       final resolutions = <CoverImageResolution>[];
       final displayModes = <CoverImageDisplayMode>[];
       container.listen(coverImageResolutionProvider, (_, next) {
@@ -81,20 +73,15 @@ void main() {
       await container.pump();
       states.add(SettingsState(converterFormat: 'flac'));
       await container.pump();
-      for (final consumerValues in values) {
-        expect(consumerValues, [false]);
-      }
+      expect(resolutions, [CoverImageResolution.balanced]);
+      expect(displayModes, [CoverImageDisplayMode.fill]);
       states.add(
         SettingsState(
-          uiBlurEffectEnabled: true,
           coverImageResolution: CoverImageResolution.high,
           coverImageDisplayMode: CoverImageDisplayMode.tile,
         ),
       );
       await container.pump();
-      for (final consumerValues in values) {
-        expect(consumerValues, [false, true]);
-      }
       expect(resolutions, [
         CoverImageResolution.balanced,
         CoverImageResolution.high,

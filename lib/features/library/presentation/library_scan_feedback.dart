@@ -18,13 +18,7 @@ class LibraryScanFeedback {
 
 abstract final class LibraryScanPresentationMapper {
   static LibraryScanLabels labels(AppLanguageProvider i18n) =>
-      LibraryScanLabels(
-        chooseMusicFolder: i18n.tr('choose_music_folder'),
-        chooseLibraryFolder: i18n.tr('choose_library_folder'),
-        chooseAudioFiles: i18n.tr('choose_audio_files'),
-        importedFiles: i18n.tr('imported_files'),
-        manuallySelectedFiles: i18n.tr('manually_selected_files'),
-      );
+      LibraryScanLabels.fromTranslator(i18n);
 
   static LibraryScanFeedback? feedback(
     LibraryScanOutcome outcome,

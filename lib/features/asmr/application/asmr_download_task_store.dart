@@ -299,21 +299,20 @@ final class AsmrDownloadTaskStore {
     _publishLiveProgress();
     _cancelPersistenceTimers();
     _persistenceDirty = true;
-    _persistCurrentTasks();
-    await _persistenceTail;
+    await _persistCurrentTasks();
   }
 
   Future<void> runStructuralPersistenceForTesting() async {
     _deferredPersistenceTimer?.cancel();
     _deferredPersistenceTimer = null;
-    _persistCurrentTasks();
+    unawaited(_persistCurrentTasks());
     await _persistenceTail;
   }
 
   Future<void> runProgressCheckpointForTesting() async {
     _progressCheckpointTimer?.cancel();
     _progressCheckpointTimer = null;
-    _persistCurrentTasks();
+    unawaited(_persistCurrentTasks());
     await _persistenceTail;
   }
 
@@ -339,7 +338,7 @@ final class AsmrDownloadTaskStore {
       }
     }
     _persistenceDirty = true;
-    _persistCurrentTasks();
+    unawaited(_persistCurrentTasks());
     _shutdown = true;
     _liveDownloadedBytes.clear();
     _liveFileDownloadedBytes.clear();
@@ -500,41 +499,47 @@ final class AsmrDownloadTaskStore {
     });
   }
 
-  void _persistCurrentTasks({bool force = false}) {
-    if (!_persistTasks || (!_persistenceDirty && !force)) return;
+  Future<void>? _persistCurrentTasks({bool force = false}) {
+    if (!_persistTasks || (!_persistenceDirty && !force)) return null;
     _persistenceDirty = false;
     _operationObserver?.call(AsmrDownloadStoreOperation.persistenceSnapshot);
     final tasks = _tasks.values
         .where((task) => task.status != AsmrDownloadTaskStatus.completed)
         .map(_persistedTaskEncoder)
         .toList(growable: false);
-    _persistenceTail = _persistenceTail.then((_) async {
+    final write = _persistenceTail.then((_) async {
       final payload = tasks.isEmpty
           ? null
           : await compute(_encodePersistedTaskPayload, tasks);
       await _writePersistedTasks(payload);
     });
+    // Keep background writes and later retries usable after a failed write;
+    // explicit flush callers still await the original result.
+    _persistenceTail = write.then<void>(
+      (_) {},
+      onError: (Object error, StackTrace stackTrace) {
+        AppLogService.warning(
+          'asmr_download_persist_failed',
+          error: error,
+          stackTrace: stackTrace,
+        );
+      },
+    );
+    return write;
   }
 
   Future<void> _writePersistedTasks(String? payload) async {
-    try {
-      final writer = _persistenceWriter;
-      if (writer != null) {
-        await writer(payload);
-      } else if (payload == null) {
-        await AppPreferences.remove(AppPreferences.asmrDownloadTasksKey);
-      } else {
-        await AppPreferences.setString(
-          AppPreferences.asmrDownloadTasksKey,
-          payload,
-        );
-      }
-    } catch (error, stackTrace) {
-      AppLogService.warning(
-        'asmr_download_persist_failed',
-        error: error,
-        stackTrace: stackTrace,
-      );
+    final writer = _persistenceWriter;
+    if (writer != null) {
+      await writer(payload);
+    } else {
+      final saved = payload == null
+          ? await AppPreferences.remove(AppPreferences.asmrDownloadTasksKey)
+          : await AppPreferences.setString(
+              AppPreferences.asmrDownloadTasksKey,
+              payload,
+            );
+      if (!saved) throw StateError('asmr_download_persist_failed');
     }
   }
 

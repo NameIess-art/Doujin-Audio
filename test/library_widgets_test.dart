@@ -2119,15 +2119,6 @@ void main() {
         of: searchControls,
         matching: find.byType(BackdropFilter),
       ),
-      findsNWidgets(3),
-    );
-    await settingsRepository.setUiBlurEffectEnabled(false);
-    await tester.pump();
-    expect(
-      find.descendant(
-        of: searchControls,
-        matching: find.byType(BackdropFilter),
-      ),
       findsNothing,
     );
     expect(
@@ -2185,21 +2176,7 @@ void main() {
       ),
       findsNWidgets(2),
     );
-    expect(
-      find.descendant(
-        of: searchContentTransition,
-        matching: find.byType(LibraryLikeSkeletonCard),
-      ),
-      findsWidgets,
-    );
     await tester.pump(const Duration(milliseconds: 350));
-    expect(
-      find.descendant(
-        of: searchContentTransition,
-        matching: find.byType(LibraryLikeSkeletonCard),
-      ),
-      findsWidgets,
-    );
     await pumpUntilNotFound(tester, find.text('Soft Rain', findRichText: true));
 
     expect(find.text('Soft Rain', findRichText: true), findsNothing);

@@ -73,10 +73,6 @@ class _ActiveSessionCard extends ConsumerWidget {
     final screenSize = MediaQuery.sizeOf(context);
     final isTinyWindow = screenSize.width < 300 || screenSize.height < 300;
 
-    final blurEnabled = ref.watch(
-      settingsStateProvider.select((s) => s.value?.uiBlurEffectEnabled ?? false),
-    );
-
     if (circularCover) {
       return Semantics(
         button: true,
@@ -105,7 +101,7 @@ class _ActiveSessionCard extends ConsumerWidget {
       );
     }
 
-    Widget buildCardBody(bool useBlur) => Material(
+    final cardBody = Material(
       color: Colors.transparent,
       child: InkWell(
         key: embedded
@@ -122,10 +118,7 @@ class _ActiveSessionCard extends ConsumerWidget {
           decoration: BoxDecoration(
             color: embedded
                 ? Colors.transparent
-                : (isDark ? cs.surfaceContainer : cs.surfaceContainerHigh)
-                      .withValues(
-                        alpha: useBlur ? (isDark ? 0.72 : 0.78) : 1.0,
-                      ),
+                : (isDark ? cs.surfaceContainer : cs.surfaceContainerHigh),
             borderRadius: BorderRadius.circular(cardRadius),
             border: embedded
                 ? null
@@ -218,20 +211,13 @@ class _ActiveSessionCard extends ConsumerWidget {
       ),
     );
 
-    final useBlur = blurEnabled && !embedded;
     return Semantics(
       container: true,
       value: '${position + 1} / $count',
       child: ClipRRect(
         key: ValueKey<String>('active_session_card_${session.id}'),
         borderRadius: BorderRadius.circular(cardRadius),
-        child: useBlur
-            ? BackdropFilter(
-                key: ValueKey('active_session_blur_${session.id}'),
-                filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-                child: buildCardBody(useBlur),
-              )
-            : buildCardBody(useBlur),
+        child: cardBody,
       ),
     );
   }

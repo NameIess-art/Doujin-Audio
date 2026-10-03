@@ -261,14 +261,14 @@ class _RootPageRouteObserver extends NavigatorObserver {
   _routeAnimationListeners = {};
   final Set<PageRoute<dynamic>> _departingRoutes = {};
   final Set<PageRoute<dynamic>> _departingWorkDetailRoutes = {};
-  // A popup makes Navigator move the work detail dock above the detail page.
-  bool _suppressDockForSessionDetail = false;
+  // Nested dialogs must not restore dock ordering while their menu is open.
+  final Set<PopupRoute<dynamic>> _sessionDetailPopups = {};
   bool _syncScheduled = false;
   bool _disposed = false;
 
   PageRoute<dynamic>? get topRoute => _routes.lastOrNull;
   List<PageRoute<dynamic>> get routes => List.unmodifiable(_routes);
-  bool get suppressDockForSessionDetail => _suppressDockForSessionDetail;
+  bool get suppressDockForSessionDetail => _sessionDetailPopups.isNotEmpty;
   bool get isWorkDetailDeparting => _departingWorkDetailRoutes.isNotEmpty;
 
   bool get workDetailOpenedFromPlayback {
@@ -330,6 +330,7 @@ class _RootPageRouteObserver extends NavigatorObserver {
       listener.$1.removeStatusListener(listener.$2);
     }
     _routeAnimationListeners.clear();
+    _sessionDetailPopups.clear();
     _departingRoutes.clear();
     _departingWorkDetailRoutes.clear();
   }
@@ -368,27 +369,24 @@ class _RootPageRouteObserver extends NavigatorObserver {
     } else if (route is PopupRoute<dynamic> &&
         topRoute is SessionDetailRoute &&
         containsRouteNamed(workDetailRouteName)) {
-      _suppressDockForSessionDetail = true;
+      _sessionDetailPopups.add(route);
+      unawaited(
+        route.completed.then((_) {
+          if (_disposed || !_sessionDetailPopups.remove(route)) return;
+          WidgetsBinding.instance.addPostFrameCallback(
+            (_) => _syncImmediately(),
+          );
+        }),
+      );
       _sync();
     }
   }
 
   @override
   void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
-    if (route is PopupRoute<dynamic> && _suppressDockForSessionDetail) {
-      unawaited(
-        route.completed.then((_) {
-          if (_disposed || topRoute is! SessionDetailRoute) return;
-          _suppressDockForSessionDetail = false;
-          WidgetsBinding.instance.addPostFrameCallback(
-            (_) => _syncImmediately(),
-          );
-        }),
-      );
-    }
     if (route is PageRoute<dynamic>) {
       if (route is SessionDetailRoute) {
-        _suppressDockForSessionDetail = false;
+        _sessionDetailPopups.clear();
       }
       final isWorkDetail = route.settings.name == workDetailRouteName;
       final workDetailIndex = _routes.lastIndexWhere(
@@ -418,7 +416,7 @@ class _RootPageRouteObserver extends NavigatorObserver {
   void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) {
     if (route is PageRoute<dynamic>) {
       if (route is SessionDetailRoute) {
-        _suppressDockForSessionDetail = false;
+        _sessionDetailPopups.clear();
       }
       _routes.remove(route);
       _departingRoutes.remove(route);
@@ -431,7 +429,7 @@ class _RootPageRouteObserver extends NavigatorObserver {
   @override
   void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) {
     if (oldRoute is SessionDetailRoute) {
-      _suppressDockForSessionDetail = false;
+      _sessionDetailPopups.clear();
     }
     if (oldRoute is PageRoute<dynamic>) {
       _untrackAnimation(oldRoute);
@@ -585,7 +583,7 @@ class _RoutedPlaybackDockState extends ConsumerState<_RoutedPlaybackDock> {
         : _duration;
     final i18n = ref.read(appLanguageProviderInstanceProvider);
 
-    Widget dockContent() => AppDockGlassPanel(
+    Widget dockContent() => AppDockPanel(
       shadowOpacity: 0.12,
       showTopHighlight: false,
       child: ClipRRect(

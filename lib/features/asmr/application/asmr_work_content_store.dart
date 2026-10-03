@@ -28,8 +28,6 @@ final class AsmrWorkContentStore {
   _playableTrackCache = {};
   final Set<int> _loadingTrackWorkIds = <int>{};
   final Map<int, Object> _trackTreeErrors = <int, Object>{};
-  final Map<AsmrWorkRequestKey, Future<AsmrWorkDetail>> _detailTasks =
-      <AsmrWorkRequestKey, Future<AsmrWorkDetail>>{};
   final Map<AsmrWorkRequestKey, Future<List<AsmrTrackFile>>> _trackTreeTasks =
       <AsmrWorkRequestKey, Future<List<AsmrTrackFile>>>{};
   final Map<int, int> _trackRevisions = <int, int>{};
@@ -84,20 +82,6 @@ final class AsmrWorkContentStore {
       operationError: _trackTreeErrors[workId],
       revision: _trackRevisions[workId] ?? 0,
     );
-  }
-
-  Future<AsmrWorkDetail> requestDetail(
-    AsmrWorkRequestKey key,
-    Future<AsmrWorkDetail> Function() load,
-  ) {
-    final existing = _detailTasks[key];
-    if (existing != null) return existing;
-    late final Future<AsmrWorkDetail> task;
-    task = load().whenComplete(() {
-      if (identical(_detailTasks[key], task)) _detailTasks.remove(key);
-    });
-    _detailTasks[key] = task;
-    return task;
   }
 
   Future<List<AsmrTrackFile>> requestTrackTree(

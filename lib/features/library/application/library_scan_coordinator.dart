@@ -40,11 +40,16 @@ class LibraryScanCoordinator extends ChangeNotifier {
     required LibraryCatalog catalog,
     required LibraryScanLabels labels,
     bool importAudioDetails = true,
+    void Function(int generation)? onScanStarted,
   }) => _run(
     operation: LibraryScanOperation.refresh,
     task: (generation) => _withBackupImport(
       catalog,
-      () => _scanner.refreshWatchedFolders(provider: catalog, labels: labels),
+      () => _scanner.refreshWatchedFolders(
+        provider: catalog,
+        labels: labels,
+        onScanStarted: onScanStarted,
+      ),
       generation: generation,
       enabled: importAudioDetails,
       skipWhenUnchanged: true,

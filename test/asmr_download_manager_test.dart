@@ -16,6 +16,128 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:path/path.dart' as path;
 
 void main() {
+  for (final outcome in ['success', 'failure', 'shutdown']) {
+    test('completion event waits for persistence and excludes failed writes '
+        '(outcome: $outcome)', () async {
+      SharedPreferences.setMockInitialValues({});
+      await AppPreferences.init();
+      final tempDir = await Directory.systemTemp.createTemp(
+        'asmr_completion_persistence_',
+      );
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      server.listen((request) async {
+        request.response
+          ..contentLength = 1
+          ..add([7]);
+        await request.response.close();
+      });
+      final writeStarted = Completer<void>();
+      final releaseWrite = Completer<void>();
+      var rejectWrite = outcome == 'failure';
+      final manager = AsmrDownloadManager(
+        stagingDirectoryProvider: () async => tempDir,
+        persistenceWriter: (payload) async {
+          if (payload != null) return;
+          if (!writeStarted.isCompleted) writeStarted.complete();
+          await releaseWrite.future;
+          if (rejectWrite) throw StateError('write_failed');
+        },
+      );
+      final completions = <AsmrDownloadTaskSnapshot>[];
+      final completed = Completer<AsmrDownloadTaskSnapshot>();
+      manager.completedTasks.listen((task) {
+        completions.add(task);
+        if (!completed.isCompleted) completed.complete(task);
+      });
+      try {
+        await manager.startDownload(
+          work: _work(),
+          selectedRoots: [
+            _file(
+              downloadUrl:
+                  'http://${server.address.host}:${server.port}/track.mp3',
+            ),
+          ],
+          destinationRoot: tempDir.path,
+          conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
+        );
+        await writeStarted.future.timeout(const Duration(seconds: 5));
+        expect(completions, isEmpty);
+        expect(
+          await File(
+            path.join(tempDir.path, 'Work', 'Track.mp3'),
+          ).readAsBytes(),
+          [7],
+        );
+        expect(
+          await File(
+            path.join(tempDir.path, 'Work', 'doujin-audio.json'),
+          ).exists(),
+          isTrue,
+        );
+        if (outcome == 'shutdown') {
+          final shutdown = manager.shutdown();
+          releaseWrite.complete();
+          await shutdown.timeout(const Duration(seconds: 5));
+          expect(completions, isEmpty);
+          return;
+        }
+        releaseWrite.complete();
+        if (outcome == 'failure') {
+          await _waitForTaskStatus(
+            manager,
+            1,
+            AsmrDownloadTaskStatus.failed,
+            allowFailure: true,
+          );
+          expect(completions, isEmpty);
+          rejectWrite = false;
+          await manager.resumeTask(1);
+        }
+        final snapshot = await completed.future.timeout(
+          const Duration(seconds: 5),
+        );
+        expect(snapshot.status, AsmrDownloadTaskStatus.completed);
+        expect(snapshot.completedFiles, 2);
+        expect(completions, hasLength(1));
+        await manager.flushPersistence();
+        expect(completions, hasLength(1));
+      } finally {
+        if (!releaseWrite.isCompleted) releaseWrite.complete();
+        rejectWrite = false;
+        await manager.shutdown();
+        await server.close(force: true);
+        await tempDir.delete(recursive: true);
+      }
+    });
+  }
+
+  test('completion stream closes without any listeners', () async {
+    final manager = _manager();
+    await manager.shutdown().timeout(const Duration(seconds: 5));
+    expect(await manager.completedTasks.toList(), isEmpty);
+  });
+
+  test('explicit persistence errors do not poison later writes', () async {
+    var rejectWrite = true;
+    final manager = AsmrDownloadManager(
+      persistenceWriter: (_) async {
+        if (rejectWrite) throw StateError('write_failed');
+      },
+    );
+    try {
+      manager.debugSetCurrentTaskForTesting(
+        _failedTaskSnapshot(Directory.systemTemp.path),
+      );
+      await expectLater(manager.flushPersistence(), throwsStateError);
+      rejectWrite = false;
+      await manager.flushPersistence();
+    } finally {
+      rejectWrite = false;
+      await manager.shutdown();
+    }
+  });
+
   test('ASMR media requests include the scoped gateway language header', () {
     final headers = asmrMediaRequestHeadersForUrl(
       'https://raw.kiko-play-niptan.one/media/stream/work/track.mp3',
@@ -226,6 +348,8 @@ void main() {
     () async {
       final manager = _manager();
       final notifications = <AsmrDownloadTaskSnapshot?>[];
+      final completions = <AsmrDownloadTaskSnapshot>[];
+      manager.completedTasks.listen(completions.add);
       manager.taskStream(1).listen((task) {
         if (task != null) notifications.add(task);
       });
@@ -294,6 +418,7 @@ void main() {
       expect(notifications, hasLength(3));
       expect(notifications.last?.status, AsmrDownloadTaskStatus.completed);
       expect(manager.getTask(1)?.status, AsmrDownloadTaskStatus.completed);
+      expect(completions, isEmpty);
       expect(manager.taskIds, isEmpty);
       expect(manager.buttonViewState.visible, isFalse);
       expect(manager.taskShellViewState.hasTask, isFalse);
@@ -1288,6 +1413,12 @@ void main() {
           persistTasks: false,
           stagingDirectoryProvider: () async => tempDir,
         );
+        final completions = <AsmrDownloadTaskSnapshot>[];
+        final completed = Completer<AsmrDownloadTaskSnapshot>();
+        manager.completedTasks.listen((task) {
+          completions.add(task);
+          if (!completed.isCompleted) completed.complete(task);
+        });
         final destination = usesSaf
             ? 'content://downloads/tree/root'
             : tempDir.path;
@@ -1328,6 +1459,7 @@ void main() {
             AsmrDownloadTaskStatus.downloading,
           );
           expect(await metadata.exists(), isFalse);
+          expect(completions, isEmpty);
 
           documents.rejectWrite = true;
           documents.releaseWrite.complete();
@@ -1339,6 +1471,7 @@ void main() {
           );
           expect(manager.getTask(1)?.error, contains('metadata_write_failed'));
           expect(manager.getTask(1)?.completedFiles, 1);
+          expect(completions, isEmpty);
 
           documents.rejectWrite = false;
           await manager.resumeTask(1);
@@ -1347,6 +1480,8 @@ void main() {
             1,
             AsmrDownloadTaskStatus.completed,
           );
+          await completed.future.timeout(const Duration(seconds: 5));
+          expect(completions, hasLength(1));
           expect(requests, 1);
           expect(manager.getTask(1)?.completedFiles, 2);
           expect(
@@ -1395,6 +1530,12 @@ void main() {
       final metadata = File(
         path.join(tempDir.path, 'Work', 'doujin-audio.json'),
       );
+      final completions = <AsmrDownloadTaskSnapshot>[];
+      final completed = Completer<AsmrDownloadTaskSnapshot>();
+      manager.completedTasks.listen((task) {
+        completions.add(task);
+        if (!completed.isCompleted) completed.complete(task);
+      });
       try {
         await manager.startDownload(
           work: _work(),
@@ -1416,10 +1557,13 @@ void main() {
         );
         expect(await metadata.exists(), isTrue);
         expect(manager.getTask(1)?.completedFiles, 1);
+        expect(completions, isEmpty);
         await metadata.delete();
         failDownload = false;
         expect(await manager.retryFailedFile(1, 'Track.mp3'), isTrue);
         await _waitForTaskStatus(manager, 1, AsmrDownloadTaskStatus.completed);
+        await completed.future.timeout(const Duration(seconds: 5));
+        expect(completions, hasLength(1));
         expect(await metadata.exists(), isTrue);
         expect(manager.getTask(1)?.completedFiles, 2);
         expect(manager.getTask(1)?.skippedFiles, 0);
@@ -3223,6 +3367,12 @@ void main() {
           saveMetadata: false,
           saveCover: false,
         );
+        final completions = <AsmrDownloadTaskSnapshot>[];
+        final completed = Completer<AsmrDownloadTaskSnapshot>();
+        manager.completedTasks.listen((task) {
+          completions.add(task);
+          if (!completed.isCompleted) completed.complete(task);
+        });
         try {
           await start();
           await copyStarted.future.timeout(const Duration(seconds: 5));
@@ -3238,6 +3388,7 @@ void main() {
           expect(gateway.deletedPaths, isEmpty);
           releaseCopy.complete();
           await interruption.timeout(const Duration(seconds: 5));
+          expect(completions, isEmpty);
           expect(retryRequests, 1);
           if (cancel) {
             expect(manager.getTask(1), isNull);
@@ -3256,6 +3407,8 @@ void main() {
             1,
             AsmrDownloadTaskStatus.completed,
           );
+          await completed.future.timeout(const Duration(seconds: 5));
+          expect(completions, hasLength(1));
           expect(retryRequests, 2);
           expect(manager.getTask(1)?.completedFiles, 3);
           expect(
@@ -3697,8 +3850,12 @@ void main() {
       payload,
     );
     final manager = AsmrDownloadManager();
+    final completions = <AsmrDownloadTaskSnapshot>[];
+    manager.completedTasks.listen(completions.add);
     try {
       await manager.initialize();
+      await Future<void>.delayed(Duration.zero);
+      expect(completions, isEmpty);
 
       expect(manager.getTask(1)?.status, AsmrDownloadTaskStatus.paused);
       expect(manager.getTask(1)?.workFolderName, 'Work');
@@ -3949,6 +4106,8 @@ void main() {
       final manager = _manager();
       var notificationCount = 0;
       manager.taskIdsStream.skip(1).listen((_) => notificationCount++);
+      final completions = <AsmrDownloadTaskSnapshot>[];
+      manager.completedTasks.listen(completions.add);
       try {
         final downloadUrl =
             'http://${server.address.host}:${server.port}/track.mp3';
@@ -3975,6 +4134,8 @@ void main() {
 
         expect(requestCount, 3);
         expect(notificationCount, notificationsAtDispose);
+        await manager.shutdown();
+        expect(completions, isEmpty);
         for (var workId = 1; workId <= 4; workId++) {
           final title = workId == 1 ? 'Work' : 'Work $workId';
           final output = File(

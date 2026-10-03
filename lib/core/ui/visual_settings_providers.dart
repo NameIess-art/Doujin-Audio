@@ -9,5 +9,3 @@ final coverImageResolutionProvider = Provider<CoverImageResolution>(
 final coverImageDisplayModeProvider = Provider<CoverImageDisplayMode>(
   (_) => CoverImageDisplayMode.fill,
 );
-
-final uiBlurEnabledProvider = Provider<bool>((_) => false);

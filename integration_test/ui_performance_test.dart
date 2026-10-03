@@ -162,7 +162,7 @@ void main() {
     }
 
     if (_scenario == 'detail-compare') {
-      final rounds = await _measureDetailComparison(tester, fixture);
+      final rounds = await _measureDetailComparison(tester);
       final report = <String, Object>{
         'fixture': <String, int>{
           'libraryItems': _libraryItemCount + 2,
@@ -1044,7 +1044,6 @@ Future<List<Map<String, Object>>> _measurePageTransitions(
 
 Future<List<Map<String, Object>>> _measureDetailComparison(
   WidgetTester tester,
-  AppRuntimeWidgetTestFixture fixture,
 ) async {
   final navigator = tester.state<NavigatorState>(find.byType(Navigator).first);
   final rounds = <Map<String, Object>>[];
@@ -1054,44 +1053,38 @@ Future<List<Map<String, Object>>> _measureDetailComparison(
   await tester.pump(const Duration(milliseconds: 350));
   navigator.pop();
   await tester.pump(const Duration(milliseconds: 350));
-  for (final blurEnabled in <bool>[true, false]) {
-    fixture.settingsRepository.blurPlayerBackgroundEnabled = blurEnabled;
-    fixture.settingsRepository.syncSlice(isInitialized: true);
-    await tester.pump(const Duration(milliseconds: 50));
-    for (final (source, sessionId) in <(String, String)>[
-      ('local', 'profile_local_detail'),
-      ('asmr', 'profile_asmr_detail'),
-    ]) {
-      for (var opening = 1; opening <= 3; opening++) {
-        final timings = <FrameTiming>[];
-        void collect(List<FrameTiming> values) => timings.addAll(values);
-        WidgetsBinding.instance.addTimingsCallback(collect);
-        final started = DateTime.now().microsecondsSinceEpoch;
-        late int finished;
-        try {
-          unawaited(
-            navigator.push(buildSessionDetailRoute(sessionId: sessionId)),
-          );
-          for (var frame = 0; frame < 20; frame++) {
-            await tester.pump(const Duration(milliseconds: 16));
-          }
-          finished = DateTime.now().microsecondsSinceEpoch;
-          await Future<void>.delayed(const Duration(seconds: 2));
-        } finally {
-          WidgetsBinding.instance.removeTimingsCallback(collect);
-        }
-        timings.retainWhere(
-          (timing) => _frameStartedWithin(timing, started, finished),
+  for (final (source, sessionId) in <(String, String)>[
+    ('local', 'profile_local_detail'),
+    ('asmr', 'profile_asmr_detail'),
+  ]) {
+    for (var opening = 1; opening <= 3; opening++) {
+      final timings = <FrameTiming>[];
+      void collect(List<FrameTiming> values) => timings.addAll(values);
+      WidgetsBinding.instance.addTimingsCallback(collect);
+      final started = DateTime.now().microsecondsSinceEpoch;
+      late int finished;
+      try {
+        unawaited(
+          navigator.push(buildSessionDetailRoute(sessionId: sessionId)),
         );
-        rounds.add(<String, Object>{
-          ..._summarizeRound(opening, timings),
-          'source': source,
-          'blurEnabled': blurEnabled,
-          'opening': opening,
-        });
-        navigator.pop();
-        await tester.pump(const Duration(milliseconds: 350));
+        for (var frame = 0; frame < 20; frame++) {
+          await tester.pump(const Duration(milliseconds: 16));
+        }
+        finished = DateTime.now().microsecondsSinceEpoch;
+        await Future<void>.delayed(const Duration(seconds: 2));
+      } finally {
+        WidgetsBinding.instance.removeTimingsCallback(collect);
       }
+      timings.retainWhere(
+        (timing) => _frameStartedWithin(timing, started, finished),
+      );
+      rounds.add(<String, Object>{
+        ..._summarizeRound(opening, timings),
+        'source': source,
+        'opening': opening,
+      });
+      navigator.pop();
+      await tester.pump(const Duration(milliseconds: 350));
     }
   }
   return rounds;

@@ -221,19 +221,6 @@ class AsmrApiService {
     return AsmrWorkPage.fromJson(response, language: language);
   }
 
-  Future<AsmrWorkDetail> fetchWorkDetail(
-    int workId, {
-    String? token,
-    AsmrContentLanguage language = AsmrContentLanguage.zh,
-  }) async {
-    final response = await _sendJsonRequest(
-      method: 'GET',
-      path: '/api/workInfo/$workId',
-      token: token,
-    );
-    return AsmrWorkDetail.fromJson(response, language: language);
-  }
-
   Future<List<AsmrTrackFile>> fetchTrackTree(
     int workId, {
     String? token,

@@ -301,13 +301,6 @@ List<Override> createAppRuntimeOverrides({
               .state
               .coverImageDisplayMode;
     }),
-    uiBlurEnabledProvider.overrideWith((ref) {
-      return ref.watch(
-        settingsStateProvider.select(
-          (state) => state.value?.uiBlurEffectEnabled ?? false,
-        ),
-      );
-    }),
     powerPlatformGatewayProvider.overrideWithValue(
       powerPlatformGateway ?? timer.powerPlatformService,
     ),

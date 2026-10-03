@@ -29,6 +29,14 @@ void main() {
 
     final indicator = find.byType(RefreshProgressIndicator);
     expect(indicator, findsOneWidget);
+    expect(
+      find.ancestor(of: indicator, matching: find.byType(BackdropFilter)),
+      findsNothing,
+    );
+    final background = tester.widget<Container>(
+      find.ancestor(of: indicator, matching: find.byType(Container)).first,
+    );
+    expect(background.color!.a, 1);
     final decoratedAncestors = tester.widgetList<DecoratedBox>(
       find.ancestor(of: indicator, matching: find.byType(DecoratedBox)),
     );
@@ -174,10 +182,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 250));
       expect(refreshCount, 1);
 
-      await tester.dragFrom(
-        const Offset(400, 300),
-        const Offset(0, -250),
-      );
+      await tester.dragFrom(const Offset(400, 300), const Offset(0, -250));
       await tester.pump();
       expect(controller.offset, 0);
 

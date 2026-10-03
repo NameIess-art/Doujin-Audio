@@ -154,6 +154,7 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
   CoverArtworkCacheService? _coverArtworkCacheService;
   bool _disposed = false;
   int _scanOperationGeneration = 0;
+  Completer<void>? _scanCompletion;
   bool _interactionPaused = false;
   void Function()? _coverChangeHandler;
   late final LibraryStartupMaintenanceCoordinator
@@ -170,6 +171,8 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
 
   LibraryState get state => _service.slice.state;
   Stream<LibraryState> get states => _service.slice.stream;
+  // Cancellation stops mutations before the scan has released its lease.
+  Future<void> get scanIdle => _scanCompletion?.future ?? Future<void>.value();
   List<LibraryNode> get libraryCards => snapshotCacheService.cards;
   @override
   List<MusicTrack> get library =>
@@ -815,6 +818,7 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
     _service.scanGenerationSeed++;
     final generation = _service.scanGenerationSeed;
     _scanOperationGeneration = generation;
+    _scanCompletion = Completer<void>();
     _setScanning(true, background: background);
     _service
       ..scanGeneration = generation
@@ -838,6 +842,9 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
     if (_scanOperationGeneration != generation) return;
     _scanOperationGeneration = 0;
     if (_service.isScanning) _setScanning(false);
+    final completion = _scanCompletion;
+    _scanCompletion = null;
+    completion?.complete();
   }
 
   @override

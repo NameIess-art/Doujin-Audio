@@ -1,9 +1,6 @@
-import '../../../library/presentation/library_providers.dart';
 import '../playback_providers.dart';
-import '../../../settings/presentation/settings_providers.dart';
 import 'dart:async';
 import 'dart:io';
-import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
@@ -14,10 +11,8 @@ import '../../../../app/state/app_runtime_providers.dart';
 import '../../../../app/state/subtitle_settings_provider.dart';
 import '../../../../app/theme/app_design_tokens.dart';
 import '../../../../core/media/music_track.dart';
-import '../../../../core/ui/visual_settings_providers.dart';
 import '../../../../core/ui/permission_action_controller.dart';
 import '../../../../core/widgets/app_transitions.dart';
-import '../../../../core/widgets/async_cover_image.dart';
 import '../../application/playback_session_snapshot.dart';
 import '../../application/subtitle_overlay_controller.dart';
 import 'playlist_feature_icons.dart';
@@ -26,14 +21,6 @@ import 'playlist_shared_helpers.dart';
 import 'session_detail_content.dart';
 
 import 'session_detail_theme.dart';
-
-const double _kSessionDetailBackgroundBlurSigma = 32;
-const int _kSessionDetailBackgroundCacheWidth = 300;
-final ImageFilter _sessionDetailBackgroundFilter = ImageFilter.blur(
-  sigmaX: _kSessionDetailBackgroundBlurSigma,
-  sigmaY: _kSessionDetailBackgroundBlurSigma,
-  tileMode: TileMode.decal,
-);
 
 class SessionDetailScaffold extends ConsumerStatefulWidget {
   final ValueListenable<bool> transitionActive;
@@ -170,7 +157,6 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
   Widget build(BuildContext context) {
     final session = widget.session;
     final paths = ref.read(audioPathCoordinatorProvider);
-    final library = ref.read(libraryFacadeProvider);
     final coverPathFuture = widget.coverPathFuture;
     final onClose = widget.onClose;
     final onVerticalDragUpdate = widget.onVerticalDragUpdate;
@@ -178,17 +164,8 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
     final onVerticalDragCancel = widget.onVerticalDragCancel;
 
     final track = paths.trackByPath(session.currentTrackPath);
-    // ASMR artwork shares its foreground decode, including original quality.
-    final backgroundCacheWidth = track?.isRemoteAsmr == true
-        ? coverCacheWidthForResolution(ref.watch(coverImageResolutionProvider))
-        : _kSessionDetailBackgroundCacheWidth;
     final detailTheme = _detailThemeForSession(context, session, track);
     final cs = detailTheme.colorScheme;
-    final blurEnabled = ref.watch(
-      settingsStateProvider.select(
-        (state) => state.value?.blurPlayerBackgroundEnabled ?? false,
-      ),
-    );
     return Theme(
       data: detailTheme,
       child: Material(
@@ -238,74 +215,6 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
           child: Stack(
             fit: StackFit.expand,
             children: [
-              if (blurEnabled)
-                Positioned.fill(
-                  child: FadeTransition(
-                    opacity: ReverseAnimation(widget.dismissAnimation),
-                    child: ClipRect(
-                      child: RepaintBoundary(
-                        child: AnimatedSwitcher(
-                          duration: kAppMotionSlow,
-                          reverseDuration: kAppMotionStandard,
-                          transitionBuilder: (child, animation) =>
-                              buildAppFadeTransition(
-                                context: context,
-                                animation: animation,
-                                child: child,
-                              ),
-                          child: KeyedSubtree(
-                            key: ValueKey('session_detail_blur_${session.id}'),
-                            child: ImageFiltered(
-                              key: const ValueKey(
-                                'session_detail_background_blur',
-                              ),
-                              imageFilter: _sessionDetailBackgroundFilter,
-                              child: AsyncCoverImage(
-                                future: coverPathFuture,
-                                requestKey: (
-                                  session.id,
-                                  session.currentTrackPath,
-                                ),
-                                initialPath: library
-                                    .resolvedPlaybackCoverPathForTrack(track),
-                                retryFutureBuilder: () => coverFutureForTrack(
-                                  ref.read(libraryFacadeProvider),
-                                  track,
-                                ),
-                                fallbackBuilder: (_) => CoverFallbackArtwork(
-                                  seed:
-                                      track?.displayName ??
-                                      session.currentTrackPath,
-                                ),
-                                imageBuilder: (context, coverPath) {
-                                  return RetryingFileImage(
-                                    onImageError: library
-                                        .coverArtworkCacheService
-                                        .reportArtworkReadFailure,
-                                    path: coverPath,
-                                    cacheWidth: backgroundCacheWidth,
-                                    useDefaultCacheWidth: false,
-                                    fit: BoxFit.cover,
-                                    filterQuality: FilterQuality.low,
-                                    color: cs.surface.withValues(alpha: 0.45),
-                                    colorBlendMode: BlendMode.darken,
-                                    fallbackBuilder: (_) =>
-                                        CoverFallbackArtwork(
-                                          seed:
-                                              track?.displayName ??
-                                              session.currentTrackPath,
-                                        ),
-                                  );
-                                },
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              // Content
               SafeArea(
                 top: false,
                 child: LayoutBuilder(

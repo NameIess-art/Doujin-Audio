@@ -29,13 +29,12 @@ class _ResolvedCoverCache extends CoverArtworkCacheService {
 
 void main() {
   testWidgets(
-    'detail blur decodes small while foreground keeps original size',
+    'detail has no filtered background and preserves original foreground size',
     (tester) async {
       final fixture = AppRuntimeWidgetTestFixture(
         coverArtworkCacheService: _ResolvedCoverCache(),
         configureSettingsRepository: (settings) {
           settings.coverImageResolution = CoverImageResolution.original;
-          settings.blurPlayerBackgroundEnabled = true;
           settings.syncSlice();
         },
       );
@@ -72,19 +71,12 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 230));
 
-      final blur = find.byKey(
-        const ValueKey<String>('session_detail_background_blur'),
-      );
+      expect(find.byType(ImageFiltered), findsNothing);
+      expect(find.byType(BackdropFilter), findsNothing);
       final backdropGate = find.byKey(
         const ValueKey<String>('session_detail_backdrop_paint_gate'),
       );
       expect(tester.widget<Opacity>(backdropGate).opacity, 0);
-      final backgroundImage = tester.widget<RetryingFileImage>(
-        find.descendant(of: blur, matching: find.byType(RetryingFileImage)),
-      );
-      expect(backgroundImage.cacheWidth, 300);
-      expect(backgroundImage.filterQuality, FilterQuality.low);
-
       final artwork = find.byKey(ValueKey<String>('artwork_${session.id}'));
       final foregroundImage = tester.widget<AsyncLocalCoverImage>(
         find.descendant(
@@ -114,6 +106,12 @@ void main() {
       dismissGesture.onVerticalDragEnd!(DragEndDetails(primaryVelocity: 0));
       await tester.pumpAndSettle();
       expect(tester.widget<Opacity>(backdropGate).opacity, 0);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(seconds: 6));
     },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
   );
 }

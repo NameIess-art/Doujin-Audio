@@ -85,22 +85,41 @@ class WorkDetailHeaderDelegate extends SliverPersistentHeaderDelegate {
                   left: 16,
                   right: 16,
                   bottom: 10,
-                  child: Text(
-                    title,
-                    maxLines: 3,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: progress > 0.5 ? 15 : 17,
-                      fontWeight: FontWeight.bold,
-                      height: 1.25,
-                      shadows: const [
-                        Shadow(
-                          color: Colors.black87,
-                          blurRadius: 4,
-                          offset: Offset(0, 1),
+                  child: Semantics(
+                    button: title.isNotEmpty,
+                    label: title.isNotEmpty ? title : null,
+                    child: InkWell(
+                      key: const ValueKey<String>('work_detail_title_copy'),
+                      onTap: title.isEmpty ? null : () => onCopyMetadata(title),
+                      onSecondaryTap:
+                          title.isEmpty ||
+                              defaultTargetPlatform != TargetPlatform.windows
+                          ? null
+                          : () => onCopyMetadata(title),
+                      onLongPress:
+                          title.isEmpty ||
+                              defaultTargetPlatform != TargetPlatform.android
+                          ? null
+                          : () => onCopyMetadata(title),
+                      borderRadius: BorderRadius.circular(8),
+                      child: Text(
+                        title,
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: progress > 0.5 ? 15 : 17,
+                          fontWeight: FontWeight.bold,
+                          height: 1.25,
+                          shadows: const [
+                            Shadow(
+                              color: Colors.black87,
+                              blurRadius: 4,
+                              offset: Offset(0, 1),
+                            ),
+                          ],
                         ),
-                      ],
+                      ),
                     ),
                   ),
                 ),

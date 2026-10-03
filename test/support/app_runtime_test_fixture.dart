@@ -71,6 +71,7 @@ AppRuntimeGraph createTestRuntimeGraph({
   PlaybackCommandRunner playbackCommandRunner = const PlaybackCommandRunner(),
   PowerPlatformService? powerPlatformService,
   AsmrDownloadManager? asmrDownloads,
+  LibraryScanLabels Function()? libraryScanLabels,
   LibraryService? libraryService,
   LibrarySnapshotCacheService? librarySnapshotCacheService,
   PlaybackSessionService? playbackService,
@@ -130,6 +131,15 @@ AppRuntimeGraph createTestRuntimeGraph({
         ),
     settings: settings ?? settingsRepository ?? SettingsRepository(),
     asmrDownloads: asmrDownloads,
+    libraryScanLabels:
+        libraryScanLabels ??
+        () => const LibraryScanLabels(
+          chooseMusicFolder: 'Choose music folder',
+          chooseLibraryFolder: 'Choose library folder',
+          chooseAudioFiles: 'Choose audio files',
+          importedFiles: 'Imported files',
+          manuallySelectedFiles: 'Selected files',
+        ),
     asmrPlaybackCacheService: asmrPlaybackCacheService,
     persistenceEnabled: !skipPersistence,
   );

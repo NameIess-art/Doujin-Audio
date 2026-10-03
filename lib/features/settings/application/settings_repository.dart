@@ -36,8 +36,6 @@ class SettingsRepository {
   bool asmrPlaybackCacheEnabled = true;
   bool recordPlaybackProgress = true;
   bool allowVideoPlayback = true;
-  bool blurPlayerBackgroundEnabled = false;
-  bool uiBlurEffectEnabled = false;
   bool hapticFeedbackEnabled = true;
   bool showLocalLibrary = true;
   bool showAsmrOne = true;
@@ -89,9 +87,6 @@ class SettingsRepository {
       allowVideoPlayback = playback['allowVideoPlayback'] as bool? ?? true;
       asmrPlaybackCacheEnabled =
           playback['asmrPlaybackCacheEnabled'] as bool? ?? true;
-      blurPlayerBackgroundEnabled =
-          playback['blurPlayerBackgroundEnabled'] as bool? ?? false;
-      uiBlurEffectEnabled = playback['uiBlurEffectEnabled'] as bool? ?? false;
       hapticFeedbackEnabled =
           playback['hapticFeedbackEnabled'] as bool? ?? true;
       AppInteractionFeedbackSettings.hapticFeedbackEnabled =
@@ -236,8 +231,6 @@ class SettingsRepository {
         'recordPlaybackProgress': recordPlaybackProgress,
         'allowVideoPlayback': allowVideoPlayback,
         'asmrPlaybackCacheEnabled': asmrPlaybackCacheEnabled,
-        'blurPlayerBackgroundEnabled': blurPlayerBackgroundEnabled,
-        'uiBlurEffectEnabled': uiBlurEffectEnabled,
         'hapticFeedbackEnabled': hapticFeedbackEnabled,
         'showLocalLibrary': showLocalLibrary,
         'showAsmrOne': showAsmrOne,
@@ -505,16 +498,6 @@ class SettingsRepository {
     update: () => allowVideoPlayback = enabled,
   );
 
-  Future<void> setBlurPlayerBackgroundEnabled(bool enabled) => _setValue(
-    unchanged: () => blurPlayerBackgroundEnabled == enabled,
-    update: () => blurPlayerBackgroundEnabled = enabled,
-  );
-
-  Future<void> setUiBlurEffectEnabled(bool enabled) => _setValue(
-    unchanged: () => uiBlurEffectEnabled == enabled,
-    update: () => uiBlurEffectEnabled = enabled,
-  );
-
   Future<void> setHapticFeedbackEnabled(bool enabled) => _setValue(
     unchanged: () => hapticFeedbackEnabled == enabled,
     update: () {
@@ -732,8 +715,6 @@ class SettingsRepository {
     asmrPlaybackCacheEnabled = snapshot.asmrPlaybackCacheEnabled;
     recordPlaybackProgress = snapshot.recordPlaybackProgress;
     allowVideoPlayback = snapshot.allowVideoPlayback;
-    blurPlayerBackgroundEnabled = snapshot.blurPlayerBackgroundEnabled;
-    uiBlurEffectEnabled = snapshot.uiBlurEffectEnabled;
     hapticFeedbackEnabled = snapshot.hapticFeedbackEnabled;
     showLocalLibrary = snapshot.showLocalLibrary;
     showAsmrOne = snapshot.showAsmrOne;
@@ -779,8 +760,6 @@ class SettingsRepository {
     asmrPlaybackCacheEnabled = true;
     recordPlaybackProgress = true;
     allowVideoPlayback = true;
-    blurPlayerBackgroundEnabled = false;
-    uiBlurEffectEnabled = false;
     hapticFeedbackEnabled = true;
     AppInteractionFeedbackSettings.hapticFeedbackEnabled = true;
     showLocalLibrary = true;
@@ -854,8 +833,6 @@ class SettingsRepository {
       asmrPlaybackCacheEnabled: asmrPlaybackCacheEnabled,
       recordPlaybackProgress: recordPlaybackProgress,
       allowVideoPlayback: allowVideoPlayback,
-      blurPlayerBackgroundEnabled: blurPlayerBackgroundEnabled,
-      uiBlurEffectEnabled: uiBlurEffectEnabled,
       hapticFeedbackEnabled: hapticFeedbackEnabled,
       showLocalLibrary: showLocalLibrary,
       showAsmrOne: showAsmrOne,

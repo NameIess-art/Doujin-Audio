@@ -275,7 +275,6 @@ class _FakeAsmrApiService extends AsmrApiService {
     this.emptyCheckSessionUserName = false,
     this.beforeFetchWorkResponse,
     this.beforeFetchSearchResponse,
-    this.beforeFetchWorkDetail,
     this.beforeFetchTrackTree,
   }) : remoteReviewRecords = List<AsmrReviewRecord>.of(remoteReviewRecords),
        super(baseUri: Uri.parse('https://example.test'));
@@ -288,7 +287,6 @@ class _FakeAsmrApiService extends AsmrApiService {
   final List<String> reviewPuts = <String>[];
   final List<int> deletedReviewWorkIds = <int>[];
   final List<String> calls = <String>[];
-  final List<int> detailFetchWorkIds = <int>[];
   final List<int> trackFetchWorkIds = <int>[];
   final bool largeRecommendationPool;
   final bool repeatPaginatedWorks;
@@ -302,8 +300,6 @@ class _FakeAsmrApiService extends AsmrApiService {
   final bool emptyCheckSessionUserName;
   final Future<void> Function(String request)? beforeFetchWorkResponse;
   final Future<void> Function(String request)? beforeFetchSearchResponse;
-  final Future<void> Function(int workId, AsmrContentLanguage language)?
-  beforeFetchWorkDetail;
   final Future<void> Function(int workId)? beforeFetchTrackTree;
   int failPutReviewCount;
   int transientFetchFailuresRemaining;
@@ -507,23 +503,6 @@ class _FakeAsmrApiService extends AsmrApiService {
       return beforeResponse('$order:$sort:$page').then((_) => response);
     }
     return SynchronousFuture<AsmrWorkPage>(response);
-  }
-
-  @override
-  Future<AsmrWorkDetail> fetchWorkDetail(
-    int workId, {
-    String? token,
-    AsmrContentLanguage language = AsmrContentLanguage.zh,
-  }) async {
-    detailFetchWorkIds.add(workId);
-    await beforeFetchWorkDetail?.call(workId, language);
-    return AsmrWorkDetail(
-      work: _work(id: workId, title: '${language.name}:Work $workId'),
-      description: '',
-      ageCategory: '',
-      languageEditionLabels: const <String>[],
-      userRating: null,
-    );
   }
 
   @override

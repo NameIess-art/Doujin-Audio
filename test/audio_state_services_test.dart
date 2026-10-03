@@ -96,8 +96,6 @@ void main() {
           'autoCheckUpdates': true,
           'recordPlaybackProgress': false,
           'asmrPlaybackCacheEnabled': true,
-          'blurPlayerBackgroundEnabled': false,
-          'uiBlurEffectEnabled': false,
           'hapticFeedbackEnabled': false,
           'coverImageResolution': CoverImageResolution.ultraHigh.name,
           'coverImageDisplayMode': CoverImageDisplayMode.tile.name,
@@ -140,7 +138,6 @@ void main() {
       expect(repository.coverImageResolution, CoverImageResolution.ultraHigh);
       expect(repository.coverImageDisplayMode, CoverImageDisplayMode.tile);
       expect(repository.preferEmbeddedCover, isFalse);
-      expect(repository.blurPlayerBackgroundEnabled, isFalse);
       expect(repository.startupPage, StartupPage.asmrOne);
       expect(repository.asmrDownloadDestinationRoot, '/backup/asmr');
       expect(
@@ -351,7 +348,6 @@ void main() {
       expect(state.portraitLockEnabled, isFalse);
       expect(state.coverImageDisplayMode, CoverImageDisplayMode.fill);
       expect(state.preferEmbeddedCover, isFalse);
-      expect(state.blurPlayerBackgroundEnabled, isFalse);
     });
 
     test('own cover preference is restored from the legacy stored key', () async {
@@ -423,27 +419,31 @@ void main() {
       },
     );
 
-    test('blurred player background setting publishes and persists', () async {
-      final repository = SettingsRepository();
-      addTearDown(repository.dispose);
+    test(
+      'removed blur preferences are ignored and omitted when saving',
+      () async {
+        final preferences = await SharedPreferences.getInstance();
+        await preferences.setString(
+          'playback_settings_v1',
+          json.encode(<String, Object?>{
+            'blurPlayerBackgroundEnabled': true,
+            'uiBlurEffectEnabled': true,
+          }),
+        );
+        final repository = SettingsRepository();
+        addTearDown(repository.dispose);
 
-      await repository.setBlurPlayerBackgroundEnabled(true);
+        await repository.loadPersistedState();
+        expect(repository.slice.state, SettingsState(isInitialized: true));
 
-      expect(repository.slice.state.blurPlayerBackgroundEnabled, isTrue);
-      final saved =
-          json.decode(
-                (await SharedPreferences.getInstance()).getString(
-                  'playback_settings_v1',
-                )!,
-              )
-              as Map<String, dynamic>;
-      expect(saved['blurPlayerBackgroundEnabled'], isTrue);
-
-      final restored = SettingsRepository();
-      addTearDown(restored.dispose);
-      await restored.loadPersistedState();
-      expect(restored.blurPlayerBackgroundEnabled, isTrue);
-    });
+        await repository.persist();
+        final saved =
+            json.decode(preferences.getString('playback_settings_v1')!)
+                as Map<String, dynamic>;
+        expect(saved, isNot(contains('blurPlayerBackgroundEnabled')));
+        expect(saved, isNot(contains('uiBlurEffectEnabled')));
+      },
+    );
 
     test('cover display mode persists with safe fallback', () async {
       final repository = SettingsRepository();

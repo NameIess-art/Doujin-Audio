@@ -344,7 +344,7 @@ extension _MainScreenLayout on _MainScreenState {
                             'mobile_bottom_capsule_panel',
                           ),
                           widthFactor: 0.96,
-                          child: AppDockGlassPanel(
+                          child: AppDockPanel(
                             key: const ValueKey<String>(
                               'mobile_bottom_capsule_surface',
                             ),

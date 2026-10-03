@@ -1,20 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/app/theme/app_design_tokens.dart';
 import 'package:doujin_audio/core/widgets/app_feedback.dart';
 import 'package:doujin_audio/core/widgets/confirm_action_dialog.dart';
 import 'package:doujin_audio/core/ui/undoable_removal_service.dart';
-import 'package:doujin_audio/core/ui/visual_settings_providers.dart';
 
-Widget _feedbackApp({required bool blurEnabled, required Widget home}) {
-  return ProviderScope(
-    key: ValueKey<bool>(blurEnabled),
-    overrides: [uiBlurEnabledProvider.overrideWithValue(blurEnabled)],
-    child: MaterialApp(theme: ThemeData.dark(useMaterial3: true), home: home),
-  );
+Widget _feedbackApp({required Widget home}) {
+  return MaterialApp(theme: ThemeData.dark(useMaterial3: true), home: home);
 }
 
 void main() {
@@ -77,7 +71,6 @@ void main() {
 
     await tester.pumpWidget(
       _feedbackApp(
-        blurEnabled: true,
         home: Scaffold(
           body: Builder(
             builder: (context) => TextButton(
@@ -121,7 +114,6 @@ void main() {
 
     await tester.pumpWidget(
       _feedbackApp(
-        blurEnabled: true,
         home: Scaffold(
           body: Builder(
             builder: (context) => Column(
@@ -207,7 +199,6 @@ void main() {
     var undos = 0;
     await tester.pumpWidget(
       _feedbackApp(
-        blurEnabled: true,
         home: Scaffold(
           body: Builder(
             builder: (context) => TextButton(
@@ -249,7 +240,6 @@ void main() {
     var commits = 0;
     await tester.pumpWidget(
       _feedbackApp(
-        blurEnabled: true,
         home: Scaffold(
           body: Builder(
             builder: (context) => TextButton(
@@ -291,7 +281,6 @@ void main() {
     var commits = 0;
     await tester.pumpWidget(
       _feedbackApp(
-        blurEnabled: true,
         home: Scaffold(
           body: Builder(
             builder: (context) => Column(
@@ -339,7 +328,6 @@ void main() {
   ) async {
     await tester.pumpWidget(
       _feedbackApp(
-        blurEnabled: true,
         home: Scaffold(
           body: Builder(
             builder: (context) => TextButton(
@@ -381,89 +369,65 @@ void main() {
     expect(find.text('Saved successfully.'), findsNothing);
   });
 
-  testWidgets('top feedback follows blur setting and keeps icon on the left', (
-    tester,
-  ) async {
-    Widget buildSurface(bool blurEnabled) {
-      return _feedbackApp(
-        blurEnabled: blurEnabled,
-        home: const Scaffold(
-          body: Center(
-            child: SizedBox(
-              width: 360,
-              child: AppFeedbackSurface(
-                tone: AppFeedbackTone.info,
-                icon: Icons.info_outline_rounded,
-                title: 'Notice',
-                message: 'Operation is still running.',
+  testWidgets(
+    'top feedback uses an opaque surface and keeps icon on the left',
+    (tester) async {
+      Widget buildSurface() {
+        return _feedbackApp(
+          home: const Scaffold(
+            body: Center(
+              child: SizedBox(
+                width: 360,
+                child: AppFeedbackSurface(
+                  tone: AppFeedbackTone.info,
+                  icon: Icons.info_outline_rounded,
+                  title: 'Notice',
+                  message: 'Operation is still running.',
+                ),
               ),
             ),
           ),
-        ),
+        );
+      }
+
+      await tester.pumpWidget(buildSurface());
+      await tester.pumpAndSettle();
+
+      final surface = find.byType(AppFeedbackSurface);
+      final clip = tester.widget<ClipRRect>(
+        find.descendant(of: surface, matching: find.byType(ClipRRect)),
       );
-    }
+      expect(
+        clip.borderRadius,
+        BorderRadius.circular(AppDesignTokens.dark.radiusCapsule),
+      );
+      expect(
+        find.descendant(of: surface, matching: find.byType(BackdropFilter)),
+        findsNothing,
+      );
+      expect(
+        tester.getCenter(find.byIcon(Icons.info_outline_rounded)).dx,
+        lessThan(tester.getCenter(find.text('Operation is still running.')).dx),
+      );
+      final opaqueDecoration =
+          tester
+                  .widget<DecoratedBox>(
+                    find
+                        .descendant(
+                          of: surface,
+                          matching: find.byType(DecoratedBox),
+                        )
+                        .first,
+                  )
+                  .decoration
+              as BoxDecoration;
+      expect(opaqueDecoration.color!.a, 1);
+    },
+  );
 
-    await tester.pumpWidget(buildSurface(true));
-    await tester.pumpAndSettle();
-
-    final surface = find.byType(AppFeedbackSurface);
-    final clip = tester.widget<ClipRRect>(
-      find.descendant(of: surface, matching: find.byType(ClipRRect)),
-    );
-    expect(
-      clip.borderRadius,
-      BorderRadius.circular(AppDesignTokens.dark.radiusCapsule),
-    );
-    expect(
-      find.descendant(of: surface, matching: find.byType(BackdropFilter)),
-      findsOneWidget,
-    );
-    final blurredDecoration =
-        tester
-                .widget<DecoratedBox>(
-                  find
-                      .descendant(
-                        of: surface,
-                        matching: find.byType(DecoratedBox),
-                      )
-                      .first,
-                )
-                .decoration
-            as BoxDecoration;
-    expect(blurredDecoration.color!.a, lessThan(1));
-    expect(
-      tester.getCenter(find.byIcon(Icons.info_outline_rounded)).dx,
-      lessThan(tester.getCenter(find.text('Operation is still running.')).dx),
-    );
-
-    await tester.pumpWidget(buildSurface(false));
-    await tester.pumpAndSettle();
-
-    expect(
-      find.descendant(of: surface, matching: find.byType(BackdropFilter)),
-      findsNothing,
-    );
-    final opaqueDecoration =
-        tester
-                .widget<DecoratedBox>(
-                  find
-                      .descendant(
-                        of: surface,
-                        matching: find.byType(DecoratedBox),
-                      )
-                      .first,
-                )
-                .decoration
-            as BoxDecoration;
-    expect(opaqueDecoration.color!.a, 1);
-  });
-
-  testWidgets('blurred top feedback fades without moving its backdrop filter', (
-    tester,
-  ) async {
+  testWidgets('top feedback fades without moving its surface', (tester) async {
     await tester.pumpWidget(
       _feedbackApp(
-        blurEnabled: true,
         home: Scaffold(
           body: Builder(
             builder: (context) => TextButton(
@@ -491,7 +455,7 @@ void main() {
     );
     expect(
       find.descendant(of: surface, matching: find.byType(BackdropFilter)),
-      findsOneWidget,
+      findsNothing,
     );
 
     final initialTopLeft = tester.getTopLeft(surface);
@@ -508,7 +472,6 @@ void main() {
 
       await tester.pumpWidget(
         _feedbackApp(
-          blurEnabled: true,
           home: Scaffold(
             body: Row(
               children: [
@@ -563,7 +526,6 @@ void main() {
       addTearDown(tester.view.reset);
       await tester.pumpWidget(
         _feedbackApp(
-          blurEnabled: false,
           home: Scaffold(
             body: Row(
               children: [
@@ -621,7 +583,6 @@ void main() {
 
         await tester.pumpWidget(
           _feedbackApp(
-            blurEnabled: false,
             home: Scaffold(
               body: Center(
                 child: SizedBox(
@@ -693,7 +654,6 @@ void main() {
   ) async {
     await tester.pumpWidget(
       _feedbackApp(
-        blurEnabled: false,
         home: Scaffold(
           body: Builder(
             builder: (context) => TextButton(
@@ -734,7 +694,6 @@ void main() {
     (tester) async {
       await tester.pumpWidget(
         _feedbackApp(
-          blurEnabled: true,
           home: Scaffold(
             body: Builder(
               builder: (context) => Column(
@@ -768,7 +727,9 @@ void main() {
       // Trigger first message
       await tester.tap(find.text('First'));
       await tester.pump();
-      await tester.pump(const Duration(milliseconds: 250)); // Finish initial fade-in
+      await tester.pump(
+        const Duration(milliseconds: 250),
+      ); // Finish initial fade-in
 
       expect(find.text('First message'), findsOneWidget);
       final fade = find.ancestor(
@@ -793,7 +754,10 @@ void main() {
       final updatedFadeAnimation =
           tester.widget<FadeTransition>(updatedFade).opacity;
       expect(identical(updatedFadeAnimation, firstFadeAnimation), isTrue);
-      expect(updatedFadeAnimation.value, 1.0); // Kept fully opaque without flashing
+      expect(
+        updatedFadeAnimation.value,
+        1.0,
+      ); // Kept fully opaque without flashing
     },
   );
 }

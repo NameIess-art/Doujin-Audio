@@ -7,8 +7,6 @@ library;
 import 'dart:async';
 import 'dart:math' as math;
 
-import 'dart:ui' as ui;
-
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart' show clampDouble;
 import 'package:flutter/material.dart';
@@ -761,19 +759,10 @@ class GlassRefreshIndicatorState extends State<GlassRefreshIndicator>
 
                   final Widget materialIndicator = RepaintBoundary(
                     child: ClipOval(
-                      child: BackdropFilter(
-                        filter: ui.ImageFilter.blur(
-                          sigmaX: 12,
-                          sigmaY: 12,
-                        ),
-                        child: Container(
-                          color:
-                              widget.backgroundColor ??
-                              cs.surfaceContainerHigh.withValues(
-                                alpha: 0.6,
-                              ),
-                          child: innerIndicator,
-                        ),
+                      child: Container(
+                        color:
+                            widget.backgroundColor ?? cs.surfaceContainerHigh,
+                        child: innerIndicator,
                       ),
                     ),
                   );

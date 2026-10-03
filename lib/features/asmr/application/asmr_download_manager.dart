@@ -83,6 +83,8 @@ class AsmrDownloadManager {
       AudioDetailJsonCodec();
   final bool _persistTasks;
   late final AsmrDownloadTaskStore _store;
+  final StreamController<AsmrDownloadTaskSnapshot> _completedTasksController =
+      StreamController<AsmrDownloadTaskSnapshot>.broadcast();
   final List<int> _queue = [];
   final Set<int> _startingTasks = {};
   final Set<int> _activeTasks = {};
@@ -109,6 +111,8 @@ class AsmrDownloadManager {
       _store.taskStream(workId);
   Stream<AsmrDownloadButtonViewState> get buttonViewStateStream =>
       _store.buttonViewStateStream;
+  Stream<AsmrDownloadTaskSnapshot> get completedTasks =>
+      _completedTasksController.stream;
 
   void setMaxConcurrentDownloads(int count) {
     final normalized = normalizeAsmrDownloadThreadCount(count);
@@ -664,7 +668,13 @@ class AsmrDownloadManager {
         _retainOnlyLatestCompletedTask(workId);
       }
       _store.notifyTaskChanged();
+      final completedTask = failed == 0 ? _store[workId] : null;
       await flushPersistence();
+      if (!_disposed &&
+          completedTask != null &&
+          !_transfers.isCancelled(workId)) {
+        _completedTasksController.add(completedTask);
+      }
     } on DownloadCancelled {
       final currentTask = _store[workId];
       if (!_disposed && currentTask != null) {
@@ -761,6 +771,7 @@ class AsmrDownloadManager {
     final activeCompletions = _transfers.pendingTasks;
     _disposed = true;
     _queue.clear();
+    unawaited(_completedTasksController.close());
 
     _manualRetryOnlyPaths.clear();
     _transfers.shutdown();

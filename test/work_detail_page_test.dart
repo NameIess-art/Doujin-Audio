@@ -23,7 +23,6 @@ import 'package:doujin_audio/core/widgets/mobile_overlay_inset.dart';
 import 'package:doujin_audio/core/widgets/drag_only_scrollbar.dart';
 import 'package:doujin_audio/core/widgets/top_page_header.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
-import 'package:doujin_audio/core/widgets/operation_feedback.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_metadata_service.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
 import 'package:doujin_audio/features/library/presentation/dlsite_metadata_review_page.dart';
@@ -963,7 +962,7 @@ void main() {
 
     for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
       testWidgets(
-        'restores local directory and scroll position with warm or cold tree on $platform',
+        'reopens local details at root with warm or cold tree on $platform',
         (tester) async {
           SharedPreferences.setMockInitialValues(const <String, Object>{});
           final covers = _ControlledWorkDetailCoverService()
@@ -1026,22 +1025,25 @@ void main() {
           expect(offset, greaterThan(0));
           await tester.pumpWidget(build(const SizedBox()));
           await _settleDetail(tester);
+          expect(
+            states.stateFor(
+              'work-detail:libraryRootFolder:c:/works/page-cache',
+            ),
+            isEmpty,
+          );
           final interaction = UiInteractionCoordinator.instance;
           final source = Object();
           interaction.beginInteraction(source);
           addTearDown(() => interaction.cancelInteraction(source));
           await tester.pumpWidget(build(page('second')));
           await tester.pump();
-          expect(
-            tester.widget<CustomScrollView>(scroll).controller!.offset,
-            closeTo(offset, 1),
-          );
+          expect(tester.widget<CustomScrollView>(scroll).controller!.offset, 0);
           expect(
             tester
                 .widgetList<WorkDetailEntryTile>(
                   find.byType(WorkDetailEntryTile),
                 )
-                .every((tile) => tile.item.type == WorkEntryType.audio),
+                .every((tile) => tile.item.type == WorkEntryType.folder),
             isTrue,
           );
           expect(find.byType(CircularProgressIndicator), findsNothing);
@@ -1060,11 +1062,14 @@ void main() {
           await tester.pump();
           await _settleDetail(tester);
           expect(find.byType(WorkDetailEntryTile), findsWidgets);
+          expect(tester.widget<CustomScrollView>(scroll).controller!.offset, 0);
           expect(
-            tester.widget<CustomScrollView>(scroll).controller!.offset,
-            closeTo(offset, 1),
-            reason:
-                'Wait for the cold audio tree before restoring saved scroll.',
+            tester
+                .widgetList<WorkDetailEntryTile>(
+                  find.byType(WorkDetailEntryTile),
+                )
+                .every((tile) => tile.item.type == WorkEntryType.folder),
+            isTrue,
           );
           expect(tester.takeException(), isNull);
         },
@@ -1440,7 +1445,7 @@ void main() {
 
         await tester.tap(more);
         await _settleDetail(tester);
-        await tester.tap(find.text(fixture.languageProvider.tr('remove')));
+        await tester.tap(find.text(fixture.languageProvider.tr('exclude')));
         await _settleDetail(tester);
         expect(find.text('Audio entry'), findsNothing);
         expect(find.text('Video entry'), findsOneWidget);
@@ -2582,6 +2587,11 @@ void main() {
             ),
             isTrue,
           );
+
+          await tester.longPress(listTileFinder);
+          await tester.pump();
+          expect(performedAction, WorkEntryAction.copy);
+
           await tester.pumpWidget(const SizedBox.shrink());
         } finally {
           debugDefaultTargetPlatformOverride = null;

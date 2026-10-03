@@ -12,7 +12,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/presentation/app_presentation_providers.dart';
-import '../../../app/presentation/browse_page_scroll.dart';
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/theme/app_design_tokens.dart';
 import '../../../core/media/audio_detail.dart';
@@ -96,7 +95,6 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
   List<CoverImageReference> _localImageReferences = const [];
   String? _localManualCover;
   bool _loadingLocal = true;
-  bool _localFilesCached = false;
   int _localLoadRequest = 0;
   late final String _filesCommitKey =
       'work_detail_files_${identityHashCode(this)}';
@@ -121,10 +119,6 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
   // Breadcrumb navigation state
   // Path stack: e.g. [] for root, ['EXデータ'] for subfolder
   final List<String> _currentPathSegments = [];
-  late int _pageStateEpoch;
-  String get _localPageKey =>
-      'work-detail:${_localTarget!.targetType.name}:'
-      '${PathMatcher.equivalenceKey(_localTarget!.targetPath)}';
 
   @override
   void initState() {
@@ -155,15 +149,8 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
       _localFolderNode = library.resolvedLibraryFolderTree(folderPath);
       final cachedTexts = textService.resolvedWorkTextFiles(folderPath);
       final cachedImages = textService.resolvedWorkImageFiles(folderPath);
-      _localFilesCached = cachedTexts != null && cachedImages != null;
       _localTextFiles = cachedTexts ?? const [];
       _localImageReferences = cachedImages ?? const [];
-      final pageStates = ref.read(browsePageStateStoreProvider);
-      _pageStateEpoch = pageStates.epoch;
-      _currentPathSegments.addAll(
-        (pageStates.stateFor(_localPageKey)['segments'] as List<String>?) ??
-            const [],
-      );
       _localDetail =
           widget.initialDetail ??
           library.resolvedAudioDetail(_localTarget!) ??
@@ -393,7 +380,6 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
                 depth,
                 _currentPathSegments.length,
               );
-              _saveDirectory();
             }
           }
         });
@@ -488,7 +474,6 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
     setState(() {
       _currentPathSegments.add(folderName);
     });
-    _saveDirectory();
   }
 
   // Navigate back to specific level in breadcrumbs
@@ -503,14 +488,6 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
         );
       }
     });
-    _saveDirectory();
-  }
-
-  void _saveDirectory() {
-    if (!widget.isLocal) return;
-    ref.read(browsePageStateStoreProvider).update(_localPageKey, {
-      'segments': List<String>.of(_currentPathSegments),
-    }, epoch: _pageStateEpoch);
   }
 
   List<WorkEntryItem> _buildCurrentEntries(Object? visibilityKey) {
@@ -674,6 +651,8 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
           await _renameLocalEntry(item);
         case WorkEntryAction.setCover:
           await _setLocalImageAsCover(item.fullPathOrUrl);
+        case WorkEntryAction.copy:
+          _copyText(context, item.name);
       }
     } catch (_) {
       if (mounted) {
@@ -765,6 +744,11 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
           icon: Icons.folder_open_rounded,
           label: i18n.tr('open'),
         ),
+        UnifiedMenuEntry<WorkEntryAction>.action(
+          value: WorkEntryAction.copy,
+          icon: Icons.content_copy_rounded,
+          label: i18n.tr('copy_name'),
+        ),
         if (widget.isLocal)
           UnifiedMenuEntry<WorkEntryAction>.action(
             value: WorkEntryAction.rename,
@@ -783,6 +767,11 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
           icon: Icons.playlist_add_rounded,
           label: i18n.tr('detail_add_to_queue'),
         ),
+        UnifiedMenuEntry<WorkEntryAction>.action(
+          value: WorkEntryAction.copy,
+          icon: Icons.content_copy_rounded,
+          label: i18n.tr('copy_name'),
+        ),
         if (widget.isLocal)
           UnifiedMenuEntry<WorkEntryAction>.action(
             value: WorkEntryAction.rename,
@@ -792,7 +781,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
         UnifiedMenuEntry<WorkEntryAction>.action(
           value: WorkEntryAction.remove,
           icon: Icons.remove_circle_outline_rounded,
-          label: i18n.tr('remove'),
+          label: i18n.tr('exclude'),
         ),
       ],
       WorkEntryType.text => [
@@ -800,6 +789,11 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
           value: WorkEntryAction.open,
           icon: Icons.open_in_new_rounded,
           label: i18n.tr('open'),
+        ),
+        UnifiedMenuEntry<WorkEntryAction>.action(
+          value: WorkEntryAction.copy,
+          icon: Icons.content_copy_rounded,
+          label: i18n.tr('copy_name'),
         ),
         if (widget.isLocal)
           UnifiedMenuEntry<WorkEntryAction>.action(
@@ -813,6 +807,11 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
           value: WorkEntryAction.open,
           icon: Icons.open_in_new_rounded,
           label: i18n.tr('open'),
+        ),
+        UnifiedMenuEntry<WorkEntryAction>.action(
+          value: WorkEntryAction.copy,
+          icon: Icons.content_copy_rounded,
+          label: i18n.tr('copy_name'),
         ),
         if (widget.isLocal) ...[
           UnifiedMenuEntry<WorkEntryAction>.action(
@@ -1090,21 +1089,6 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
     const rjBarHeight = 44.0;
 
     final currentEntries = _buildCurrentEntries(visibilityKey);
-    Widget cacheScroll(Widget child) => widget.isLocal
-        ? BrowsePageScroll(
-            pageKey: _localPageKey,
-            controller: _scrollController,
-            restoreReady:
-                (!_loadingLocal &&
-                    !_preparingDirectory &&
-                    _directory != null) ||
-                (_localFilesCached &&
-                    _localFolderNode != null &&
-                    _directory != null),
-            displayState: {'segments': List<String>.of(_currentPathSegments)},
-            child: child,
-          )
-        : child;
     final isLoading = widget.isLocal
         ? (_loadingLocal || _preparingDirectory || _directory == null) &&
               currentEntries.isEmpty
@@ -1210,183 +1194,179 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
               behavior: ScrollConfiguration.of(
                 context,
               ).copyWith(scrollbars: false),
-              child: cacheScroll(
-                CustomScrollView(
-                  controller: _scrollController,
-                  slivers: [
-                    // 1. Collapsible Sticky Header
-                    SliverPersistentHeader(
-                      pinned: true,
-                      delegate: WorkDetailHeaderDelegate(
-                        topSafeArea: topSafeArea,
-                        coverMaxHeight: coverMaxHeight,
-                        coverMinHeight: coverMinHeight,
-                        rjBarHeight: rjBarHeight,
-                        title: displayTitle,
-                        rjCode: displayRj,
-                        circleName: displayCircle,
-                        coverWidget: coverWidget,
-                        accentColor: widget.isAsmr ? asmrBlue : cs.primary,
-                        surfaceColor: cs.surface,
-                        onCopyMetadata: (value) => _copyText(context, value),
-                      ),
+              child: CustomScrollView(
+                controller: _scrollController,
+                slivers: [
+                  // 1. Collapsible Sticky Header
+                  SliverPersistentHeader(
+                    pinned: true,
+                    delegate: WorkDetailHeaderDelegate(
+                      topSafeArea: topSafeArea,
+                      coverMaxHeight: coverMaxHeight,
+                      coverMinHeight: coverMinHeight,
+                      rjBarHeight: rjBarHeight,
+                      title: displayTitle,
+                      rjCode: displayRj,
+                      circleName: displayCircle,
+                      coverWidget: coverWidget,
+                      accentColor: widget.isAsmr ? asmrBlue : cs.primary,
+                      surfaceColor: cs.surface,
+                      onCopyMetadata: (value) => _copyText(context, value),
                     ),
+                  ),
 
-                    // 2. Collapsible Details: Voice Actors, Tags, Action Buttons
-                    SliverToBoxAdapter(
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            WorkDetailMetadata(
-                              voiceActors: displayVoiceActors,
-                              tags: displayTags,
-                              onCopy: (value) => _copyText(context, value),
-                            ),
-
-                            Consumer(
-                              builder: (context, ref, _) {
-                                final isFavorite = widget.isAsmr
-                                    ? ref
-                                              .watch(
-                                                asmrLibraryControllerProvider,
-                                              )
-                                              ?.isFavorite(
-                                                widget.asmrWork!.id,
-                                              ) ??
-                                          widget.asmrWork!.isFavorite
-                                    : false;
-                                return WorkDetailActions(
-                                  i18n: i18n,
-                                  isLocal: widget.isLocal,
-                                  isFavorite: isFavorite,
-                                  accentColor: asmrBlue,
-                                  onFetchInfo: _handleLocalFetchInfo,
-                                  onDownload: widget.isLocal
-                                      ? _handleLocalDownload
-                                      : _handleAsmrDownload,
-                                  onToggleFavorite: _handleAsmrToggleFavorite,
-                                );
-                              },
-                            ),
-
-                            const SizedBox(height: 12),
-                            const Divider(height: 1),
-                            const SizedBox(height: 8),
-
-                            WorkDetailBreadcrumbs(
-                              segments: List.of(_currentPathSegments),
-                              entryCount: currentEntries.length,
-                              i18n: i18n,
-                              onNavigate: _navigateToBreadcrumbIndex,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-
-                    // 4. Directory File Tree List
-                    if (isLoading)
-                      SliverPadding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 4,
-                        ),
-                        sliver: SliverToBoxAdapter(
-                          child: SizedBox(
-                            key: _loadingSkeletonKey,
-                            child: _directorySkeleton(),
+                  // 2. Collapsible Details: Voice Actors, Tags, Action Buttons
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          WorkDetailMetadata(
+                            voiceActors: displayVoiceActors,
+                            tags: displayTags,
+                            onCopy: (value) => _copyText(context, value),
                           ),
+
+                          Consumer(
+                            builder: (context, ref, _) {
+                              final isFavorite = widget.isAsmr
+                                  ? ref
+                                            .watch(
+                                              asmrLibraryControllerProvider,
+                                            )
+                                            ?.isFavorite(widget.asmrWork!.id) ??
+                                        widget.asmrWork!.isFavorite
+                                  : false;
+                              return WorkDetailActions(
+                                i18n: i18n,
+                                isLocal: widget.isLocal,
+                                isFavorite: isFavorite,
+                                accentColor: asmrBlue,
+                                onFetchInfo: _handleLocalFetchInfo,
+                                onDownload: widget.isLocal
+                                    ? _handleLocalDownload
+                                    : _handleAsmrDownload,
+                                onToggleFavorite: _handleAsmrToggleFavorite,
+                              );
+                            },
+                          ),
+
+                          const SizedBox(height: 12),
+                          const Divider(height: 1),
+                          const SizedBox(height: 8),
+
+                          WorkDetailBreadcrumbs(
+                            segments: List.of(_currentPathSegments),
+                            entryCount: currentEntries.length,
+                            i18n: i18n,
+                            onNavigate: _navigateToBreadcrumbIndex,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+
+                  // 4. Directory File Tree List
+                  if (isLoading)
+                    SliverPadding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      sliver: SliverToBoxAdapter(
+                        child: SizedBox(
+                          key: _loadingSkeletonKey,
+                          child: _directorySkeleton(),
                         ),
-                      )
-                    else
-                      SliverFadeTransition(
-                        key: const ValueKey('work_detail_entries_fade'),
-                        opacity: MediaQuery.disableAnimationsOf(context)
-                            ? const AlwaysStoppedAnimation(1)
-                            : _directoryOpacity,
-                        sliver: currentEntries.isEmpty
-                            ? SliverFillRemaining(
-                                hasScrollBody: false,
-                                child: Center(
-                                  child: Column(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(
-                                        Icons.folder_open_rounded,
-                                        size: 48,
-                                        color: cs.onSurfaceVariant.withValues(
-                                          alpha: 0.5,
-                                        ),
+                      ),
+                    )
+                  else
+                    SliverFadeTransition(
+                      key: const ValueKey('work_detail_entries_fade'),
+                      opacity: MediaQuery.disableAnimationsOf(context)
+                          ? const AlwaysStoppedAnimation(1)
+                          : _directoryOpacity,
+                      sliver: currentEntries.isEmpty
+                          ? SliverFillRemaining(
+                              hasScrollBody: false,
+                              child: Center(
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.folder_open_rounded,
+                                      size: 48,
+                                      color: cs.onSurfaceVariant.withValues(
+                                        alpha: 0.5,
                                       ),
-                                      const SizedBox(height: 8),
-                                      Text(
-                                        i18n.tr('empty_folder'),
-                                        style: TextStyle(
-                                          color: cs.onSurfaceVariant,
-                                        ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      i18n.tr('empty_folder'),
+                                      style: TextStyle(
+                                        color: cs.onSurfaceVariant,
                                       ),
-                                    ],
-                                  ),
-                                ),
-                              )
-                            : SliverPadding(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                  vertical: 4,
-                                ),
-                                sliver: SliverList(
-                                  delegate: SliverChildBuilderDelegate(
-                                    (context, index) {
-                                      final item = currentEntries[index];
-                                      final id =
-                                          '${item.type.name}:${item.relativePath}';
-                                      return FadeTransition(
-                                        key: ValueKey(
-                                          'work_detail_entry_fade_$id',
-                                        ),
-                                        opacity: _entryLoadOpacity(id),
-                                        child: WorkDetailEntryTile(
-                                          key: ValueKey(id),
-                                          item: item,
-                                          accentColor: widget.isAsmr
-                                              ? asmrBlue
-                                              : cs.primary,
-                                          menuEntries: _entryMenuItems(item),
-                                          moreLabel: i18n.tr('more_actions'),
-                                          onAction: (action) =>
-                                              _handleEntryAction(item, action),
-                                        ),
-                                      );
-                                    },
-                                    childCount: currentEntries.length,
-                                    findChildIndexCallback: (key) {
-                                      final index = currentEntries.indexWhere(
-                                        (item) =>
-                                            key ==
-                                            ValueKey(
-                                              'work_detail_entry_fade_${item.type.name}:${item.relativePath}',
-                                            ),
-                                      );
-                                      return index < 0 ? null : index;
-                                    },
-                                  ),
+                                    ),
+                                  ],
                                 ),
                               ),
-                      ),
-                    if (bottomOverlayInset > 0)
-                      SliverToBoxAdapter(
-                        child: SizedBox(
-                          key: const ValueKey<String>(
-                            'work_detail_playback_inset',
-                          ),
-                          height: bottomOverlayInset,
+                            )
+                          : SliverPadding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 4,
+                              ),
+                              sliver: SliverList(
+                                delegate: SliverChildBuilderDelegate(
+                                  (context, index) {
+                                    final item = currentEntries[index];
+                                    final id =
+                                        '${item.type.name}:${item.relativePath}';
+                                    return FadeTransition(
+                                      key: ValueKey(
+                                        'work_detail_entry_fade_$id',
+                                      ),
+                                      opacity: _entryLoadOpacity(id),
+                                      child: WorkDetailEntryTile(
+                                        key: ValueKey(id),
+                                        item: item,
+                                        accentColor: widget.isAsmr
+                                            ? asmrBlue
+                                            : cs.primary,
+                                        menuEntries: _entryMenuItems(item),
+                                        moreLabel: i18n.tr('more_actions'),
+                                        onAction: (action) =>
+                                            _handleEntryAction(item, action),
+                                      ),
+                                    );
+                                  },
+                                  childCount: currentEntries.length,
+                                  findChildIndexCallback: (key) {
+                                    final index = currentEntries.indexWhere(
+                                      (item) =>
+                                          key ==
+                                          ValueKey(
+                                            'work_detail_entry_fade_${item.type.name}:${item.relativePath}',
+                                          ),
+                                    );
+                                    return index < 0 ? null : index;
+                                  },
+                                ),
+                              ),
+                            ),
+                    ),
+                  if (bottomOverlayInset > 0)
+                    SliverToBoxAdapter(
+                      child: SizedBox(
+                        key: const ValueKey<String>(
+                          'work_detail_playback_inset',
                         ),
+                        height: bottomOverlayInset,
                       ),
-                  ],
-                ),
+                    ),
+                ],
               ),
             ),
           ),
@@ -1557,4 +1537,3 @@ class WorkDetailDirectorySkeleton extends StatelessWidget {
     );
   }
 }
-

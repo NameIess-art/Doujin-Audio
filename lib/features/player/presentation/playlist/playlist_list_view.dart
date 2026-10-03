@@ -504,11 +504,14 @@ class SessionListCard extends ConsumerWidget {
     final cardShape = isTemporary
         ? playlistTemporaryRowShape(context)
         : playlistRowShape;
+    final cardColor = isTemporary
+        ? playlistTemporaryCardColor(context)
+        : cs.surface;
 
     final swipeCard = SwipeRevealCard(
       key: ValueKey(sessionId),
       shape: cardShape,
-      closedColor: cs.surface,
+      closedColor: cardColor,
       enabled: !isSelectionMode,
       actionLabel: i18n.tr('remove'),
       removeTooltip: i18n.tr('remove_audio'),

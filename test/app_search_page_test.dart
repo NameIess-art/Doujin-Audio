@@ -41,7 +41,7 @@ void main() {
         onChanged: (_) {},
         onSubmitted: (_) {},
         onCloseOrClear: () => Navigator.of(routeContext).pop(),
-        blurEnabled: false,
+
         body: const SizedBox.expand(
           key: ValueKey<String>('instant_search_body'),
         ),
@@ -127,7 +127,7 @@ void main() {
               onChanged: (_) {},
               onSubmitted: (_) {},
               onCloseOrClear: () => closeCount++,
-              blurEnabled: true,
+
               body: const Center(
                 child: Text(
                   'Direct content',
@@ -160,7 +160,9 @@ void main() {
       );
       expect(
         tester
-            .getSize(find.byKey(const ValueKey<String>('app_search_category_0')))
+            .getSize(
+              find.byKey(const ValueKey<String>('app_search_category_0')),
+            )
             .height,
         32,
       );
@@ -241,7 +243,7 @@ void main() {
           of: find.byKey(const ValueKey<String>('app_search_controls_overlay')),
           matching: find.byType(BackdropFilter),
         ),
-        findsNWidgets(3),
+        findsNothing,
       );
       final inputDecorator = tester.widget<InputDecorator>(
         find.descendant(
@@ -265,7 +267,7 @@ void main() {
     },
   );
 
-  testWidgets('search capsules remove backdrop blur when disabled', (
+  testWidgets('search capsules use opaque surfaces without backdrop filters', (
     tester,
   ) async {
     final controller = TextEditingController();
@@ -287,7 +289,7 @@ void main() {
           onChanged: (_) {},
           onSubmitted: (_) {},
           onCloseOrClear: () {},
-          blurEnabled: false,
+
           body: const SizedBox.expand(),
         ),
       ),
@@ -334,7 +336,7 @@ void main() {
             onChanged: (_) {},
             onSubmitted: (_) {},
             onCloseOrClear: () {},
-            blurEnabled: true,
+
             body: ListView.builder(
               controller: scrollController,
               itemCount: 20,

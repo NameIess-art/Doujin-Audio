@@ -420,46 +420,6 @@ class AsmrWork {
   }
 }
 
-@immutable
-class AsmrWorkDetail {
-  AsmrWorkDetail({
-    required this.work,
-    required this.description,
-    required this.ageCategory,
-    required List<String> languageEditionLabels,
-    required this.userRating,
-  }) : languageEditionLabels = immutableList(languageEditionLabels);
-
-  final AsmrWork work;
-  final String description;
-  final String ageCategory;
-  final List<String> languageEditionLabels;
-  final double? userRating;
-
-  factory AsmrWorkDetail.fromJson(
-    Map<String, dynamic> json, {
-    AsmrContentLanguage language = AsmrContentLanguage.zh,
-  }) {
-    final editions =
-        (json['language_editions'] as List<dynamic>? ?? const <dynamic>[])
-            .map((dynamic item) {
-              if (item is Map<String, dynamic>) {
-                return (item['label'] as String?) ?? '';
-              }
-              return '';
-            })
-            .where((label) => label.isNotEmpty)
-            .toList(growable: false);
-    return AsmrWorkDetail(
-      work: AsmrWork.fromJson(json, language: language),
-      description: _localizedText(json, language, 'description'),
-      ageCategory: (json['age_category_string'] as String?) ?? '',
-      languageEditionLabels: editions,
-      userRating: (json['userRating'] as num?)?.toDouble(),
-    );
-  }
-}
-
 String _localizedText(
   Map<String, dynamic> json,
   AsmrContentLanguage language,

@@ -731,6 +731,28 @@ void main() {
   // 鈹€鈹€ multi-session playback stability 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
   group('library folder restore', () {
+    test(
+      'scanIdle waits for cancelled scan cleanup and ignores stale completion',
+      () async {
+        final facade = runtimeGraph.library;
+        await facade.scanIdle;
+        final generation = facade.tryBeginScan(source: '/music/pending');
+        var released = false;
+        final idle = facade.scanIdle.then((_) => released = true);
+
+        facade.cancelScan();
+        facade.finishScan(generation + 1);
+        await Future<void>.delayed(Duration.zero);
+        expect(facade.isScanning, isFalse);
+        expect(released, isFalse);
+
+        facade.finishScan(generation);
+        await idle;
+        expect(released, isTrue);
+        await facade.scanIdle;
+      },
+    );
+
     test('scan generations reject stale progress and stale completion', () {
       final first = runtimeGraph.library.tryBeginScan(source: '/music/first');
       expect(first, greaterThan(0));

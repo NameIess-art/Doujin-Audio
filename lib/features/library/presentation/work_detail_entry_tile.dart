@@ -111,6 +111,15 @@ class WorkDetailEntryTile extends StatelessWidget {
               ),
             ),
           ),
+          onLongPress: () {
+            unawaited(
+              AppInteractionFeedback.trigger(
+                AppInteractionFeedbackType.selection,
+                context: context,
+              ),
+            );
+            onAction(WorkEntryAction.copy);
+          },
           onTap: () {
             unawaited(
               AppInteractionFeedback.trigger(

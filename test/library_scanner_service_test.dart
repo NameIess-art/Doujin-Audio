@@ -19,6 +19,54 @@ void main() {
   );
 
   test(
+    'refresh owner can cancel at acquisition before any folder scan',
+    () async {
+      final catalog = _RefreshCatalog(watchedFolders: <String>['C:/music']);
+      final source = _ChunkedRefreshDataSource(catalog: catalog);
+      final scanner = LibraryScannerService(dataSource: source);
+      int? acquiredGeneration;
+
+      final outcome = await scanner.refreshWatchedFolders(
+        provider: catalog,
+        labels: labels,
+        onScanStarted: (generation) {
+          acquiredGeneration = generation;
+          catalog.isScanning = false;
+        },
+      );
+
+      expect(acquiredGeneration, 1);
+      expect(outcome.code, LibraryScanOutcomeCode.cancelled);
+      expect(catalog.isScanning, isFalse);
+      expect(source.chunkedScanCalls, 0);
+      expect(source.fullScanCalls, 0);
+      expect(source.filesystemScanCalls, 0);
+      expect(catalog.stagedBatchBeginCount, 0);
+    },
+  );
+
+  test(
+    'refresh acquisition callback failure releases its scan lease',
+    () async {
+      final catalog = _RefreshCatalog(watchedFolders: <String>['C:/music']);
+      final source = _ChunkedRefreshDataSource(catalog: catalog);
+
+      await expectLater(
+        LibraryScannerService(dataSource: source).refreshWatchedFolders(
+          provider: catalog,
+          labels: labels,
+          onScanStarted: (_) => throw StateError('owner disposed'),
+        ),
+        throwsStateError,
+      );
+
+      expect(catalog.isScanning, isFalse);
+      expect(source.chunkedScanCalls, 0);
+      expect(catalog.stagedBatchBeginCount, 0);
+    },
+  );
+
+  test(
     'folder import scans a resolvable SAF source by file-system path',
     () async {
       final catalog = _RefreshCatalog(watchedFolders: const <String>[]);

@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:doujin_audio/app/presentation/app_presentation_providers.dart';
 import 'package:doujin_audio/app/presentation/routed_playback_dock_host.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
+import 'package:doujin_audio/core/widgets/app_bottom_sheet.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/core/widgets/mobile_overlay_inset.dart';
 import 'package:doujin_audio/features/library/presentation/work_detail_page.dart';
@@ -26,6 +27,23 @@ final _content = find.descendant(
   of: _dock,
   matching: find.byType(ActiveSessionCarousel, skipOffstage: false),
 );
+
+class _MenuSessionDetailRoute extends SessionDetailRoute {
+  _MenuSessionDetailRoute() : super(sessionId: 'dock_session');
+
+  @override
+  Duration get transitionDuration => Duration.zero;
+
+  @override
+  Duration get reverseTransitionDuration => Duration.zero;
+
+  @override
+  Widget buildPage(
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+  ) => const Scaffold(body: Text('Playback'));
+}
 
 Future<GlobalKey<NavigatorState>> _pumpHost(
   WidgetTester tester,
@@ -124,6 +142,71 @@ void main() {
   tearDown(UiInteractionCoordinator.instance.resetForTest);
 
   for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+    testWidgets(
+      'page opened from playback menu stays above it after a dialog on $platform',
+      (tester) async {
+        final navigator = await _pumpHost(tester, platform);
+        unawaited(navigator.currentState!.push(_detailRoute(navigator)));
+        await tester.pumpAndSettle();
+        unawaited(navigator.currentState!.push(_MenuSessionDetailRoute()));
+        await tester.pumpAndSettle();
+        unawaited(
+          AppBottomSheet.show<void>(
+            context: navigator.currentContext!,
+            // The fixture wraps the host in another MaterialApp.
+            useRootNavigator: false,
+            builder: (_) => const SizedBox(
+              height: 250,
+              child: Center(child: Text('Subtitle menu')),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        unawaited(
+          showDialog<void>(
+            context: tester.element(find.text('Subtitle menu')),
+            useRootNavigator: false,
+            builder: (_) => const AlertDialog(content: Text('Subtitle import')),
+          ),
+        );
+        await tester.pumpAndSettle();
+        navigator.currentState!.pop();
+        await tester.pumpAndSettle();
+        final editor = buildAppPageRoute<void>(
+          context: tester.element(find.text('Subtitle menu')),
+          child: const Scaffold(body: Center(child: Text('Subtitle editor'))),
+        );
+        unawaited(navigator.currentState!.push(editor));
+        await tester.pumpAndSettle();
+        expect(find.text('Subtitle editor').hitTestable(), findsOneWidget);
+        expect(find.text('Subtitle menu').hitTestable(), findsNothing);
+        expect(tester.takeException(), isNull);
+        navigator.currentState!.pop();
+        await tester.pumpAndSettle();
+        expect(find.text('Subtitle menu').hitTestable(), findsOneWidget);
+        navigator.currentState!.pop();
+        await tester.pumpAndSettle();
+        expect(
+          tester
+              .widget<Opacity>(
+                find.ancestor(
+                  of: _dock,
+                  matching: find.byType(Opacity, skipOffstage: false),
+                ).first,
+              )
+              .opacity,
+          1,
+        );
+        navigator.currentState!.pop();
+        await tester.pumpAndSettle();
+        navigator.currentState!.pop();
+        await tester.pumpAndSettle();
+        await tester.pump(UiInteractionCoordinator.instance.idleDelay);
+        await tester.pumpWidget(const SizedBox.shrink());
+        debugDefaultTargetPlatformOverride = null;
+      },
+    );
+
     testWidgets(
       'work detail opened from playback has no dock or bottom inset on $platform',
       (tester) async {

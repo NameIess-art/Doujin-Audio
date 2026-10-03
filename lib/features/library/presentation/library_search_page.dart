@@ -12,7 +12,6 @@ import '../application/library_facade.dart';
 import '../domain/audio_library_category.dart';
 import '../domain/library_node.dart';
 import '../../../core/media/path_matcher.dart';
-import '../../../core/ui/visual_settings_providers.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/app_search_page.dart';
@@ -309,7 +308,6 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
   Widget build(BuildContext context) {
     ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
-    final blurEnabled = ref.watch(uiBlurEnabledProvider);
     final libraryFacade = ref.read(libraryFacadeProvider);
     ref.watch(libraryListUiProvider.select((state) => state.structureRevision));
     ref.watch(libraryDetailRevisionProvider);
@@ -411,7 +409,6 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
       onChanged: _onChanged,
       onSubmitted: _onSubmitted,
       onCloseOrClear: _closeOrClear,
-      blurEnabled: blurEnabled,
       body: HeroMode(
         key: const ValueKey<String>('library_search_hero_mode'),
         enabled: false,

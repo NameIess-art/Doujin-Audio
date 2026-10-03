@@ -501,10 +501,14 @@ class SessionListCard extends ConsumerWidget {
     final activeColor = isAsmrOne ? asmrBlue : localPlayRose;
     final showCover = shouldShowPlaylistCoverArtwork(track, coverPath);
 
+    final cardShape = isTemporary
+        ? playlistTemporaryRowShape(context)
+        : playlistRowShape;
+
     final swipeCard = SwipeRevealCard(
       key: ValueKey(sessionId),
-      shape: playlistRowShape,
-      closedColor: isTemporary ? cs.surfaceContainerHigh : cs.surface,
+      shape: cardShape,
+      closedColor: cs.surface,
       enabled: !isSelectionMode,
       actionLabel: i18n.tr('remove'),
       removeTooltip: i18n.tr('remove_audio'),
@@ -521,11 +525,9 @@ class SessionListCard extends ConsumerWidget {
           child: Card(
             margin: EdgeInsets.zero,
             clipBehavior: Clip.antiAlias,
-            shape: playlistRowShape,
+            shape: cardShape,
             color: isSelected
                 ? cs.primaryContainer.withValues(alpha: 0.15)
-                : isTemporary
-                ? cs.surfaceContainerHigh
                 : Colors.transparent,
             elevation: 0,
             shadowColor: Colors.transparent,
@@ -722,22 +724,7 @@ class SessionListCard extends ConsumerWidget {
     );
     return UndoableRemovalTransition(
       hidden: isHidden,
-      child: isTemporary
-          ? DecoratedBox(
-              key: ValueKey<String>('playlist_card_raised_$sessionId'),
-              decoration: ShapeDecoration(
-                shape: playlistRowShape,
-                shadows: [
-                  BoxShadow(
-                    color: cs.shadow.withValues(alpha: isDark ? 0.4 : 0.2),
-                    blurRadius: 14,
-                    offset: const Offset(0, 5),
-                  ),
-                ],
-              ),
-              child: swipeCard,
-            )
-          : swipeCard,
+      child: swipeCard,
     );
   }
 }

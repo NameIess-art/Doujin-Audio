@@ -265,11 +265,6 @@ class _PlaybackQueueEditPageState extends ConsumerState<PlaybackQueueEditPage> {
                 ? cs.errorContainer.withValues(alpha: isDark ? 0.22 : 0.4)
                 : cs.surfaceContainer.withValues(alpha: isDark ? 0.6 : 0.85),
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: destructive
-                  ? cs.error.withValues(alpha: 0.22)
-                  : cs.outlineVariant.withValues(alpha: isDark ? 0.25 : 0.45),
-            ),
           ),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),

@@ -58,6 +58,36 @@ class _PlaylistRowShape extends RoundedRectangleBorder {
       RRect.fromRectAndRadius(rect, Radius.circular(rect.height / 2)),
     );
   }
+
+  @override
+  void paint(Canvas canvas, Rect rect, {TextDirection? textDirection}) {
+    switch (side.style) {
+      case BorderStyle.none:
+        break;
+      case BorderStyle.solid:
+        final radius = Radius.circular(rect.height / 2);
+        final borderRRect = RRect.fromRectAndRadius(rect, radius);
+        if (side.width == 0.0) {
+          canvas.drawRRect(borderRRect, side.toPaint());
+        } else {
+          final inner = borderRRect.deflate(side.strokeInset);
+          final outer = borderRRect.inflate(side.strokeOutset);
+          canvas.drawDRRect(outer, inner, side.toPaint());
+        }
+    }
+  }
+}
+
+BorderSide playlistCapsuleBorderSide(BuildContext context) {
+  final cs = Theme.of(context).colorScheme;
+  final isDark = Theme.of(context).brightness == Brightness.dark;
+  return BorderSide(
+    color: cs.outlineVariant.withValues(alpha: isDark ? 0.24 : 0.42),
+  );
+}
+
+RoundedRectangleBorder playlistTemporaryRowShape(BuildContext context) {
+  return playlistRowShape.copyWith(side: playlistCapsuleBorderSide(context));
 }
 
 LinearGradient playlistActiveHighlightGradient(

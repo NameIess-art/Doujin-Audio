@@ -3868,6 +3868,18 @@ void main() {
       (editAudioTileMaterial.shape! as RoundedRectangleBorder).side,
       BorderSide.none,
     );
+    final editAudioTileInk = tester.widget<Ink>(
+      find
+          .descendant(
+            of: find.ancestor(
+              of: find.text(languageProvider.tr('edit_queue_audio')),
+              matching: find.byType(Material),
+            ),
+            matching: find.byType(Ink),
+          )
+          .first,
+    );
+    expect((editAudioTileInk.decoration as BoxDecoration?)?.border, isNull);
     final iconRadius = AppDesignTokens.of(
       tester.element(find.byType(PlaybackQueueEditPage)),
     ).radiusSmall;
@@ -6253,14 +6265,9 @@ void main() {
             .side,
         BorderSide.none,
       );
-      final raised = find.byKey(
-        ValueKey<String>('playlist_card_raised_${temporary.id}'),
-      );
-      expect(raised, findsOneWidget);
       expect(
-        (tester.widget<DecoratedBox>(raised).decoration as ShapeDecoration)
-            .shadows,
-        isNotEmpty,
+        find.byKey(ValueKey<String>('playlist_card_raised_${temporary.id}')),
+        findsNothing,
       );
       expect(
         find.byKey(ValueKey<String>('playlist_card_raised_${saved.id}')),
@@ -6271,16 +6278,49 @@ void main() {
             tester.getBottomLeft(temporaryCard).dy,
         0.0,
       );
+      final temporaryCardWidget = tester.widget<Card>(
+        find.ancestor(
+          of: temporaryCard,
+          matching: find.byType(Card),
+        ),
+      );
+      final savedCardWidget = tester.widget<Card>(
+        find.ancestor(
+          of: savedCard,
+          matching: find.byType(Card),
+        ),
+      );
+      final theme = Theme.of(tester.element(temporaryCard));
+      final isDark = theme.brightness == Brightness.dark;
+      final expectedBorderSide = BorderSide(
+        color: theme.colorScheme.outlineVariant.withValues(
+          alpha: isDark ? 0.24 : 0.42,
+        ),
+      );
+      expect(
+        (temporaryCardWidget.shape! as RoundedRectangleBorder).side,
+        expectedBorderSide,
+      );
+      expect(
+        (savedCardWidget.shape! as RoundedRectangleBorder).side,
+        BorderSide.none,
+      );
       final temporarySwipe = tester.widget<SwipeRevealCard>(
         find.ancestor(
           of: temporaryCard,
           matching: find.byType(SwipeRevealCard),
         ),
       );
-      expect(
-        temporarySwipe.closedColor,
-        Theme.of(tester.element(raised)).colorScheme.surfaceContainerHigh,
+      final savedSwipe = tester.widget<SwipeRevealCard>(
+        find.ancestor(
+          of: savedCard,
+          matching: find.byType(SwipeRevealCard),
+        ),
       );
+      expect(temporarySwipe.closedColor, theme.colorScheme.surface);
+      expect(temporarySwipe.closedColor, savedSwipe.closedColor);
+      expect(temporaryCardWidget.color, Colors.transparent);
+      expect(temporaryCardWidget.color, savedCardWidget.color);
       expect(temporarySwipe.onLeadingAction, isNull);
       await tester.longPress(find.text('Temporary audio'));
       await tester.pumpAndSettle();

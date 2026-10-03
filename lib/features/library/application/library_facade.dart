@@ -327,9 +327,8 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
     return snapshot.tree;
   }
 
-  Future<FolderNode?> loadLibraryFolderTree(String folderPath) async {
-    return resolvedLibraryFolderTree(folderPath);
-  }
+  Future<FolderNode?> loadLibraryFolderTree(String folderPath) =>
+      snapshotCacheService.loadFolderTree(folderPath);
 
   FolderNode? resolvedLibraryFolderTree(String folderPath) =>
       snapshotCacheService.resolvedFolderTree(folderPath);

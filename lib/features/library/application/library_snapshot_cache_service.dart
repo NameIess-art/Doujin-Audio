@@ -166,6 +166,7 @@ class LibrarySnapshotCacheService {
   int _treeFutureRevision = -1;
   final List<VoidCallback> _treeCommitCallbacks = <VoidCallback>[];
   final _folderTrees = <String, FolderNode>{};
+  final _folderTreeFutures = <String, Future<FolderNode?>>{};
   int _folderTreesRevision = -1;
 
   AudioLibraryCategorySnapshot? _categorySnapshot;
@@ -187,50 +188,100 @@ class LibrarySnapshotCacheService {
     final revision = _libraryService.structureRevision;
     if (_folderTreesRevision != revision) {
       _folderTrees.clear();
+      _folderTreeFutures.clear();
       _folderTreesRevision = revision;
-    }
-    FolderNode? find(Iterable<LibraryNode> nodes) {
-      for (final folder in nodes.whereType<FolderNode>()) {
-        if (PathMatcher.equalsNormalized(folder.path, folderPath)) {
-          return folder;
-        }
-        final nested = find(folder.children);
-        if (nested != null) return nested;
-      }
-      return null;
-    }
-
-    if (_cachedTreeRevision == revision) {
-      final folder = find(_cachedTree);
-      if (folder != null) return folder;
     }
     final key = PathMatcher.equivalenceKey(folderPath);
     final cached = _folderTrees[key];
     if (cached != null) return cached;
-    final card = _cachedCardRevision == revision ? find(_cachedCards) : null;
-    final tracks =
-        card?.allTracks ??
-        _libraryService.library
-            .where(
-              (track) =>
-                  !track.isSingle &&
-                  (PathMatcher.isWithinOrEqual(track.path, folderPath) ||
-                      PathMatcher.isWithinOrEqual(track.groupKey, folderPath)),
-            )
-            .toList(growable: false);
-    if (tracks.isEmpty) return null;
-    final folder = find(
-      const LibraryOrganizer()
-          .buildTree(tracks: tracks, watchedFolders: [folderPath])
-          .tree,
-    );
-    if (folder != null) {
-      _folderTrees[key] = folder;
-      if (_folderTrees.length > 32) {
-        _folderTrees.remove(_folderTrees.keys.first);
+    if (_cachedTreeRevision == revision) {
+      final folder = _findFolderTree(_cachedTree, key);
+      if (folder != null) {
+        _cacheFolderTree(key, folder);
+        return folder;
       }
     }
-    return folder;
+    return null;
+  }
+
+  Future<FolderNode?> loadFolderTree(String folderPath) {
+    final cached = resolvedFolderTree(folderPath);
+    if (cached != null) return Future<FolderNode?>.value(cached);
+    final key = PathMatcher.equivalenceKey(folderPath);
+    final inFlight = _folderTreeFutures[key];
+    if (inFlight != null) return inFlight;
+    late final Future<FolderNode?> future;
+    future =
+        Future<FolderNode?>.microtask(
+          () => _loadFolderTree(folderPath, key, future),
+        ).whenComplete(() {
+          if (identical(_folderTreeFutures[key], future)) {
+            _folderTreeFutures.remove(key);
+          }
+        });
+    _folderTreeFutures[key] = future;
+    return future;
+  }
+
+  Future<FolderNode?> _loadFolderTree(
+    String folderPath,
+    String key,
+    Future<FolderNode?> request,
+  ) async {
+    while (true) {
+      final cached = resolvedFolderTree(folderPath);
+      if (cached != null) return cached;
+      final current = _folderTreeFutures[key];
+      if (current != null && !identical(current, request)) return current;
+      _folderTreeFutures[key] = request;
+      final revision = _libraryService.structureRevision;
+      final card = _cachedCardRevision == revision
+          ? _findFolderTree(_cachedCards, key)
+          : null;
+      final tracks =
+          card?.allTracks ??
+          _libraryService.library
+              .where(
+                (track) =>
+                    !track.isSingle &&
+                    (PathMatcher.isWithinOrEqual(track.path, folderPath) ||
+                        PathMatcher.isWithinOrEqual(
+                          track.groupKey,
+                          folderPath,
+                        )),
+              )
+              .toList(growable: false);
+      if (tracks.isEmpty) return null;
+      final snapshot = await _treeSnapshotBuilder(
+        LibraryDerivedSnapshotPayload(
+          tracks: tracks,
+          watchedFolders: [folderPath],
+        ),
+      );
+      if (_libraryService.structureRevision != revision ||
+          !identical(_folderTreeFutures[key], request)) {
+        continue;
+      }
+      final folder = _findFolderTree(snapshot.tree, key);
+      if (folder != null) _cacheFolderTree(key, folder);
+      return folder;
+    }
+  }
+
+  FolderNode? _findFolderTree(Iterable<LibraryNode> nodes, String folderKey) {
+    for (final folder in nodes.whereType<FolderNode>()) {
+      if (PathMatcher.equivalenceKey(folder.path) == folderKey) return folder;
+      final nested = _findFolderTree(folder.children, folderKey);
+      if (nested != null) return nested;
+    }
+    return null;
+  }
+
+  void _cacheFolderTree(String key, FolderNode folder) {
+    _folderTrees[key] = folder;
+    if (_folderTrees.length > 32) {
+      _folderTrees.remove(_folderTrees.keys.first);
+    }
   }
 
   int get leafFolderCount => _cachedCardLeafFolderCount;
@@ -306,7 +357,8 @@ class LibrarySnapshotCacheService {
     late final Future<LibraryTreeSnapshot> future;
     future = buildFuture
         .then((snapshot) {
-          if (_libraryService.structureRevision == revision) {
+          if (_libraryService.structureRevision == revision &&
+              identical(_cardFuture, future)) {
             final callbacks = List<VoidCallback>.of(_cardCommitCallbacks);
             _cacheCardSnapshot(snapshot);
             for (final callback in callbacks) {
@@ -362,7 +414,8 @@ class LibrarySnapshotCacheService {
     late final Future<LibraryTreeSnapshot> future;
     future = buildFuture
         .then((snapshot) {
-          if (_libraryService.structureRevision == revision) {
+          if (_libraryService.structureRevision == revision &&
+              identical(_treeFuture, future)) {
             _cacheTreeSnapshot(snapshot);
             final callbacks = List<VoidCallback>.of(_treeCommitCallbacks);
             for (final callback in callbacks) {
@@ -433,6 +486,9 @@ class LibrarySnapshotCacheService {
   }
 
   void markStructureChanged() {
+    _folderTrees.clear();
+    _folderTreeFutures.clear();
+    _folderTreesRevision = -1;
     _cachedCardRevision = -1;
     _cardFuture = null;
     _cardCommitCallbacks.clear();
@@ -458,6 +514,7 @@ class LibrarySnapshotCacheService {
 
   void clear() {
     _folderTrees.clear();
+    _folderTreeFutures.clear();
     _folderTreesRevision = -1;
     _cachedCards = const <LibraryNode>[];
     _cachedCardRevision = -1;

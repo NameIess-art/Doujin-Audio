@@ -5,6 +5,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -21,6 +22,7 @@ import 'package:doujin_audio/core/widgets/async_cover_image.dart';
 import 'package:doujin_audio/core/widgets/mobile_overlay_inset.dart';
 import 'package:doujin_audio/core/widgets/drag_only_scrollbar.dart';
 import 'package:doujin_audio/core/widgets/top_page_header.dart';
+import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_metadata_service.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
 import 'package:doujin_audio/features/library/presentation/dlsite_metadata_review_page.dart';
@@ -35,9 +37,42 @@ import 'package:doujin_audio/features/library/application/work_text_service.dart
 import 'package:doujin_audio/features/library/application/cover_artwork_cache_service.dart';
 import 'package:doujin_audio/features/library/application/library_service.dart';
 import 'package:doujin_audio/features/library/application/library_organizer.dart';
+import 'package:doujin_audio/features/library/domain/library_node.dart';
 import 'support/app_runtime_test_fixture.dart';
 import 'support/test_playback_commands.dart';
 import 'support/test_persistence_repository.dart';
+
+// compute uses a real isolate; advance real I/O alongside simulated frames.
+Future<void> _settleDetail(WidgetTester tester) async {
+  for (var attempt = 0; attempt < 50; attempt++) {
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 10)),
+    );
+    if (attempt >= 4 &&
+        !tester.binding.hasScheduledFrame &&
+        find
+            .byKey(const ValueKey('work_detail_loading_indicator'))
+            .evaluate()
+            .isEmpty) {
+      break;
+    }
+  }
+  await tester.pumpAndSettle();
+}
+
+Future<void> _prewarmDirectory(
+  AppRuntimeWidgetTestFixture fixture,
+  String folder, [
+  WorkTextService? texts,
+]) async {
+  await WorkDirectoryInput.local(
+    root: fixture.library.resolvedLibraryFolderTree(folder),
+    texts: texts?.resolvedWorkTextFiles(folder) ?? const [],
+    images: texts?.resolvedWorkImageFiles(folder) ?? const [],
+    folderPath: folder,
+  ).load();
+}
 
 class _CountingDetailRepository extends TestPersistenceRepository {
   int detailRequests = 0;
@@ -88,6 +123,15 @@ class _NestedWorkDetailFileGateway extends Fake
   Future<List<Map<String, String>>> discoverWorkTexts(String folderPath) async {
     return entries;
   }
+}
+
+class _PendingWorkDetailFileGateway extends Fake
+    implements FileCachePlatformGateway {
+  final texts = Completer<List<Map<String, String>>>();
+
+  @override
+  Future<List<Map<String, String>>> discoverWorkTexts(String folderPath) =>
+      texts.future;
 }
 
 class _ControlledWorkDetailCoverService extends CoverArtworkCacheService {
@@ -161,6 +205,256 @@ void main() {
   });
 
   group('WorkDetailPage', () {
+    testWidgets('leaving the source frame cancels a pending detail push', (
+      tester,
+    ) async {
+      SharedPreferences.setMockInitialValues({});
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      await tester.pumpWidget(
+        fixture.build(
+          Builder(
+            builder: (context) {
+              return TextButton(
+                onPressed: () {
+                  unawaited(
+                    showAudioDetailSheet(
+                      context,
+                      AudioDetailTarget.libraryRootFolder('C:/cancelled'),
+                    ),
+                  );
+                  unawaited(
+                    Navigator.of(context).push<void>(
+                      MaterialPageRoute<void>(
+                        builder: (_) =>
+                            const Scaffold(body: Text('Other page')),
+                      ),
+                    ),
+                  );
+                },
+                child: const Text('Open and leave'),
+              );
+            },
+          ),
+        ),
+      );
+      await tester.tap(find.text('Open and leave'));
+      await tester.pump();
+      await tester.pumpAndSettle();
+      expect(find.text('Other page'), findsOneWidget);
+      expect(find.byType(WorkDetailPage, skipOffstage: false), findsNothing);
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+
+    for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+      testWidgets(
+        'cold directory preparation waits until the detail route finishes on $platform',
+        (tester) async {
+          SharedPreferences.setMockInitialValues({});
+          final interaction = UiInteractionCoordinator.instance;
+          interaction.resetForTest();
+          addTearDown(interaction.resetForTest);
+          final directory = Completer<LibraryTreeSnapshot>();
+          var treeRequests = 0;
+          final covers = _ControlledWorkDetailCoverService()
+            ..images.complete([])
+            ..cover.complete(null);
+          final fixture = AppRuntimeWidgetTestFixture(
+            coverArtworkCacheService: covers,
+            libraryTreeSnapshotBuilder: (_) {
+              treeRequests++;
+              return directory.future;
+            },
+          );
+          addTearDown(fixture.dispose);
+          const folder = 'C:/works/cold-directory';
+          final target = AudioDetailTarget.libraryRootFolder(folder);
+          final detail = AudioDetail.empty(
+            target,
+          ).copyWith(workTitle: 'Cold directory');
+          fixture.library.addWatchedFolder(folder, notify: false);
+          fixture.library.addTracks([
+            MusicTrack(
+              path: '$folder/audio.mp3',
+              displayName: 'audio.mp3',
+              groupKey: folder,
+              groupTitle: '',
+              groupSubtitle: '',
+              isSingle: false,
+            ),
+          ], persist: false);
+          final texts = WorkTextService(
+            discoverImages: (_) async => [],
+            platformGateway: _NestedWorkDetailFileGateway([]),
+          );
+          addTearDown(texts.dispose);
+          await tester.pumpWidget(
+            fixture.build(
+              Builder(
+                builder: (context) => TextButton(
+                  onPressed: () => showAudioDetailSheet(
+                    context,
+                    target,
+                    initialDetail: detail,
+                  ),
+                  child: const Text('Open cold directory'),
+                ),
+              ),
+              navigatorObservers: [UiInteractionNavigatorObserver()],
+              overrides: [workTextServiceProvider.overrideWithValue(texts)],
+            ),
+          );
+          await tester.tap(find.text('Open cold directory'));
+          await tester.pump();
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 100));
+          expect(find.text('Cold directory'), findsOneWidget);
+          expect(treeRequests, 0);
+          expect(find.text('audio.mp3'), findsNothing);
+          final loader = tester.renderObject<RenderRepaintBoundary>(
+            find.byKey(const ValueKey('work_detail_loading_indicator')),
+          );
+          await tester.pump(const Duration(milliseconds: 20));
+          expect(
+            loader.debugAsymmetricPaintCount,
+            greaterThan(0),
+            reason: 'The spinner must repaint without repainting page content.',
+          );
+          await tester.pump(const Duration(milliseconds: 500));
+          await tester.pump(interaction.idleDelay);
+          await tester.pump();
+          expect(treeRequests, 1);
+          directory.complete(
+            const LibraryOrganizer().buildTree(
+              tracks: fixture.library.library,
+              watchedFolders: [folder],
+            ),
+          );
+          await _settleDetail(tester);
+          expect(find.text('audio.mp3'), findsOneWidget);
+          Navigator.of(tester.element(find.byType(WorkDetailPage))).pop();
+          await _settleDetail(tester);
+          await tester.pump(interaction.idleDelay);
+          await tester.tap(find.text('Open cold directory'));
+          await tester.pump();
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 100));
+          expect(find.text('audio.mp3'), findsOneWidget);
+          expect(
+            treeRequests,
+            1,
+            reason: 'Reopen reuses the prepared subtree.',
+          );
+          await tester.pumpWidget(const SizedBox.shrink());
+          expect(tester.takeException(), isNull);
+        },
+        variant: TargetPlatformVariant({platform}),
+      );
+
+      testWidgets(
+        'in-flight file and cover results wait for the next route transition on $platform',
+        (tester) async {
+          UiInteractionCoordinator.instance.resetForTest();
+          addTearDown(UiInteractionCoordinator.instance.resetForTest);
+          SharedPreferences.setMockInitialValues(const <String, Object>{});
+          final covers = _ControlledWorkDetailCoverService();
+          final gateway = _PendingWorkDetailFileGateway();
+          final fixture = AppRuntimeWidgetTestFixture(
+            coverArtworkCacheService: covers,
+          );
+          addTearDown(fixture.dispose);
+          const folder = 'C:/works/in-flight';
+          final target = AudioDetailTarget.libraryRootFolder(folder);
+          fixture.library.addWatchedFolder(folder, notify: false);
+          fixture.library.addTracks([
+            MusicTrack(
+              path: '$folder/audio.mp3',
+              displayName: 'audio.mp3',
+              groupKey: folder,
+              groupTitle: 'In flight',
+              groupSubtitle: '',
+              isSingle: false,
+            ),
+          ], persist: false);
+          await tester.runAsync(() async {
+            await fixture.library.loadAudioDetail(target);
+            await fixture.library.loadLibraryFolderTree(folder);
+            await _prewarmDirectory(fixture, folder);
+          });
+          final textService = WorkTextService(
+            platformGateway: gateway,
+            discoverImages:
+                fixture.library.discoverCoverImageReferencesInFolder,
+          );
+          addTearDown(textService.dispose);
+          await tester.pumpWidget(
+            fixture.build(
+              WorkDetailPage.forLocal(target: target),
+              navigatorObservers: [UiInteractionNavigatorObserver()],
+              overrides: [
+                workTextServiceProvider.overrideWithValue(textService),
+              ],
+            ),
+          );
+          await _settleDetail(tester);
+          expect(covers.imageRequests, 1);
+          final context = tester.element(find.byType(WorkDetailPage));
+          unawaited(
+            Navigator.of(context).push<void>(
+              buildAppPageRoute<void>(
+                context: context,
+                child: const Scaffold(body: Text('next page')),
+                duration: const Duration(milliseconds: 500),
+              ),
+            ),
+          );
+          await tester.pump();
+          expect(UiInteractionCoordinator.instance.isInteracting, isTrue);
+          gateway.texts.complete([
+            {
+              'name': 'notes.txt',
+              'relativePath': 'notes.txt',
+              'path': '$folder/notes.txt',
+            },
+          ]);
+          covers.images.complete(['$folder/picture.jpg']);
+          covers.cover.complete('$folder/cover.jpg');
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 100));
+          expect(find.text('notes.txt', skipOffstage: false), findsNothing);
+          expect(find.text('picture.jpg', skipOffstage: false), findsNothing);
+          expect(
+            find.byType(LocalCoverImage, skipOffstage: false),
+            findsOneWidget,
+          );
+          expect(
+            tester
+                .widget<LocalCoverImage>(
+                  find.byType(LocalCoverImage, skipOffstage: false),
+                )
+                .path,
+            isNot('$folder/cover.jpg'),
+          );
+          await _settleDetail(tester);
+          await tester.pump(const Duration(milliseconds: 200));
+          await _settleDetail(tester);
+          Navigator.of(context).pop();
+          await _settleDetail(tester);
+          await tester.pump(const Duration(milliseconds: 200));
+          await _settleDetail(tester);
+          expect(find.text('notes.txt'), findsOneWidget);
+          expect(find.text('picture.jpg'), findsOneWidget);
+          expect(
+            tester.widget<LocalCoverImage>(find.byType(LocalCoverImage)).path,
+            '$folder/cover.jpg',
+          );
+          expect(covers.imageRequests, 1);
+          expect(covers.coverRequests, 1);
+          expect(tester.takeException(), isNull);
+        },
+        variant: TargetPlatformVariant({platform}),
+      );
+    }
     for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
       testWidgets(
         'opens with card data after shared caches clear on $platform',
@@ -205,6 +499,7 @@ void main() {
           fixture.library.snapshotCacheService.clear();
           await tester.tap(find.text('Open card'));
           await tester.pump();
+          await tester.pump();
           await tester.pump(const Duration(milliseconds: 100));
           for (final text in [
             detail.workTitle,
@@ -218,11 +513,12 @@ void main() {
             find.byType(LocalCoverImage),
           );
           expect(image.path, 'C:/works/card/cover.jpg');
+          expect(image.deferLoadDuringInteraction, isTrue);
           expect(repository.detailRequests, 0);
           expect(covers.imageRequests, 0);
           expect(covers.coverRequests, 0);
           Navigator.of(tester.element(find.byType(WorkDetailPage))).pop();
-          await tester.pumpAndSettle();
+          await _settleDetail(tester);
           await tester.pump(interaction.idleDelay);
           expect(covers.imageRequests, 0);
           expect(repository.detailRequests, 0);
@@ -252,6 +548,7 @@ void main() {
             find.byType(AsyncRemoteCoverImage),
           );
           expect(initial.initialPath, covers.cachedCover);
+          expect(initial.deferLoadDuringInteraction, isTrue);
           await tester.pump();
           await tester.pumpWidget(page());
           final rebuilt = tester.widget<AsyncRemoteCoverImage>(
@@ -264,7 +561,7 @@ void main() {
           covers.invalidateAll();
           covers.cover.complete('C:/works/remote/repaired.jpg');
           await tester.pumpWidget(page());
-          await tester.pumpAndSettle();
+          await _settleDetail(tester);
           expect(covers.remoteCoverRequests, 1);
           final image = tester.widget<RetryingFileImage>(
             find.byType(RetryingFileImage),
@@ -317,6 +614,8 @@ void main() {
               ),
             );
             await fixture.library.audioLibraryCategorySnapshot();
+            await fixture.library.loadLibraryFolderTree(folder);
+            await _prewarmDirectory(fixture, folder);
           });
           // The main page still owns its snapshot after the detail cache clears.
           fixture.library.detailCacheService.clear();
@@ -360,7 +659,7 @@ void main() {
           expect(find.text('audio.mp3'), findsOneWidget);
 
           interaction.cancelInteraction(source);
-          await tester.pumpAndSettle();
+          await _settleDetail(tester);
           expect(find.text('audio.mp3'), findsOneWidget);
           expect(covers.imageRequests, 1);
           expect(repository.detailRequests, 0);
@@ -370,7 +669,7 @@ void main() {
       );
 
       testWidgets(
-        'shows indexed tree immediately and reuses file snapshots on $platform',
+        'shows cached indexed tree immediately and reuses file snapshots on $platform',
         (tester) async {
           SharedPreferences.setMockInitialValues(const <String, Object>{});
           final covers = _ControlledWorkDetailCoverService();
@@ -407,6 +706,8 @@ void main() {
           ], persist: false);
           await tester.runAsync(() async {
             await fixture.library.loadAudioDetail(target);
+            await fixture.library.loadLibraryFolderTree(folderPath);
+            await _prewarmDirectory(fixture, folderPath);
           });
 
           final textEntries = [
@@ -436,7 +737,7 @@ void main() {
           );
           expect(covers.imageRequests, 0);
           expect(covers.coverRequests, 0);
-          expect(treeRequests, 0);
+          expect(treeRequests, 1);
           expect(find.text('audio.mp3'), findsOneWidget);
           expect(find.text('Extras'), findsOneWidget);
           expect(find.text('notes.txt'), findsNothing);
@@ -444,6 +745,7 @@ void main() {
           interaction.cancelInteraction(source);
           await tester.pump();
           await tester.pump();
+          await _settleDetail(tester);
           final entryKeys = [
             const ValueKey('folder:Extras'),
             const ValueKey('audio:$folderPath/audio.mp3'),
@@ -452,7 +754,7 @@ void main() {
           for (final key in entryKeys) {
             expect(find.byKey(key), findsOneWidget);
           }
-          expect(treeRequests, 0);
+          expect(treeRequests, 1, reason: 'Opening reuses the prepared tree.');
           expect(find.byType(CircularProgressIndicator), findsNothing);
           expect(find.text('audio.mp3'), findsOneWidget);
           expect(covers.imageRequests, 1);
@@ -463,7 +765,7 @@ void main() {
           covers.images.complete(['$folderPath/cover.jpg']);
           await tester.pump();
           await tester.pump();
-          await tester.pumpAndSettle();
+          await _settleDetail(tester);
           expect(find.text('cover.jpg'), findsOneWidget);
           expect(covers.cover.isCompleted, isFalse);
 
@@ -481,13 +783,13 @@ void main() {
               'path': '$folderPath/updated.txt',
             });
           interaction.cancelInteraction(source);
-          await tester.pumpAndSettle();
+          await _settleDetail(tester);
           expect(find.text('notes.txt'), findsNothing);
           expect(find.text('updated.txt'), findsOneWidget);
           expect(covers.imageRequests, 2);
           expect(covers.coverRequests, 1, reason: 'Reuse the resolved cover.');
           covers.cover.complete(null);
-          await tester.pumpAndSettle();
+          await _settleDetail(tester);
           final cover = tester.widget<LocalCoverImage>(
             find.byType(LocalCoverImage),
           );
@@ -500,7 +802,7 @@ void main() {
 
     for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
       testWidgets(
-        'restores local directory and scroll position on $platform',
+        'restores local directory and scroll position with warm or cold tree on $platform',
         (tester) async {
           SharedPreferences.setMockInitialValues(const <String, Object>{});
           final covers = _ControlledWorkDetailCoverService()
@@ -508,6 +810,11 @@ void main() {
             ..cover.complete(null);
           final fixture = AppRuntimeWidgetTestFixture(
             coverArtworkCacheService: covers,
+            libraryTreeSnapshotBuilder: (payload) async =>
+                const LibraryOrganizer().buildTree(
+                  tracks: payload.tracks,
+                  watchedFolders: payload.watchedFolders,
+                ),
           );
           addTearDown(fixture.dispose);
           const folder = 'C:/works/page-cache';
@@ -524,7 +831,11 @@ void main() {
                 isSingle: false,
               ),
           ], persist: false);
-          await tester.runAsync(() => fixture.library.loadAudioDetail(target));
+          await tester.runAsync(() async {
+            await fixture.library.loadAudioDetail(target);
+            await fixture.library.loadLibraryFolderTree(folder);
+            await _prewarmDirectory(fixture, folder);
+          });
           final states = BrowsePageStateStore();
           final textService = WorkTextService(
             discoverImages: (_) async => [],
@@ -541,19 +852,19 @@ void main() {
           Widget page(String key) =>
               WorkDetailPage.forLocal(key: ValueKey(key), target: target);
           await tester.pumpWidget(build(page('first')));
-          await tester.pumpAndSettle();
+          await _settleDetail(tester);
           await tester.tap(find.text('Disc'));
-          await tester.pumpAndSettle();
+          await _settleDetail(tester);
           final scroll = find.byType(CustomScrollView);
           await tester.drag(scroll, const Offset(0, -500));
-          await tester.pumpAndSettle();
+          await _settleDetail(tester);
           final offset = tester
               .widget<CustomScrollView>(scroll)
               .controller!
               .offset;
           expect(offset, greaterThan(0));
           await tester.pumpWidget(build(const SizedBox()));
-          await tester.pumpAndSettle();
+          await _settleDetail(tester);
           final interaction = UiInteractionCoordinator.instance;
           final source = Object();
           interaction.beginInteraction(source);
@@ -575,7 +886,25 @@ void main() {
           expect(find.byType(CircularProgressIndicator), findsNothing);
           expect(find.byType(WorkDetailEntryTile), findsWidgets);
           interaction.cancelInteraction(source);
-          await tester.pumpAndSettle();
+          await _settleDetail(tester);
+          await tester.pumpWidget(build(const SizedBox()));
+          await _settleDetail(tester);
+          fixture.library.snapshotCacheService.clear();
+          interaction.beginInteraction(source);
+          await tester.pumpWidget(build(page('cold-reopen')));
+          await tester.pump();
+          expect(find.byType(WorkDetailEntryTile), findsNothing);
+          expect(tester.widget<CustomScrollView>(scroll).controller!.offset, 0);
+          interaction.cancelInteraction(source);
+          await tester.pump();
+          await _settleDetail(tester);
+          expect(find.byType(WorkDetailEntryTile), findsWidgets);
+          expect(
+            tester.widget<CustomScrollView>(scroll).controller!.offset,
+            closeTo(offset, 1),
+            reason:
+                'Wait for the cold audio tree before restoring saved scroll.',
+          );
           expect(tester.takeException(), isNull);
         },
         variant: TargetPlatformVariant({platform}),
@@ -622,7 +951,7 @@ void main() {
         findsNothing,
       );
       covers.images.complete([]);
-      await tester.pumpAndSettle();
+      await _settleDetail(tester);
       expect(find.byType(CircularProgressIndicator), findsNothing);
       expect(
         find.text(fixture.languageProvider.tr('empty_folder')),
@@ -634,7 +963,7 @@ void main() {
         reason: 'Cover discovery must not hold the file-tree loading state.',
       );
       covers.cover.complete(null);
-      await tester.pumpAndSettle();
+      await _settleDetail(tester);
     });
 
     testWidgets(
@@ -733,15 +1062,15 @@ void main() {
         await tester.pump(const Duration(milliseconds: 500));
 
         await tester.tap(find.text('Scripts'));
-        await tester.pumpAndSettle();
+        await _settleDetail(tester);
         expect(find.text('notes.txt'), findsOneWidget);
 
         await tester.tap(
           find.text(fixture.languageProvider.tr('root_directory')),
         );
-        await tester.pumpAndSettle();
+        await _settleDetail(tester);
         await tester.tap(find.text('Gallery'));
-        await tester.pumpAndSettle();
+        await _settleDetail(tester);
         expect(find.text('cover.jpg'), findsOneWidget);
       },
     );
@@ -912,7 +1241,7 @@ void main() {
           ValueKey('work_entry_more_${tracks.first.path}'),
         );
         await tester.tap(more);
-        await tester.pumpAndSettle();
+        await _settleDetail(tester);
         expect(find.text(fixture.languageProvider.tr('play')), findsOneWidget);
         expect(
           find.text(fixture.languageProvider.tr('rename')),
@@ -921,7 +1250,7 @@ void main() {
         await tester.tap(
           find.text(fixture.languageProvider.tr('detail_add_to_queue')),
         );
-        await tester.pumpAndSettle();
+        await _settleDetail(tester);
         expect(fixture.playback.sessions.length, 1);
         expect(fixture.playback.sessions.values.single.isTemporary, isFalse);
         expect(
@@ -935,7 +1264,7 @@ void main() {
         expect(prepareCount, 0);
 
         await tester.tap(find.text('Video entry'));
-        await tester.pumpAndSettle();
+        await _settleDetail(tester);
         expect(prepareCount, 1);
         expect(fixture.playback.sessions.length, 2);
         final temporary = fixture.playback.sessions.values.singleWhere(
@@ -945,13 +1274,13 @@ void main() {
         expect(temporary.customQueueTracks?.length, 2);
 
         await tester.tap(more);
-        await tester.pumpAndSettle();
+        await _settleDetail(tester);
         await tester.tap(find.text(fixture.languageProvider.tr('remove')));
-        await tester.pumpAndSettle();
+        await _settleDetail(tester);
         expect(find.text('Audio entry'), findsNothing);
         expect(find.text('Video entry'), findsOneWidget);
         await fixture.undoableRemovalService.undoPending();
-        await tester.pumpAndSettle();
+        await _settleDetail(tester);
         expect(find.text('Audio entry'), findsOneWidget);
         playSucceeds = false;
         await tester.tap(find.text('Video entry'));
@@ -1110,7 +1439,7 @@ void main() {
         );
 
         await tester.tap(editButton);
-        await tester.pumpAndSettle();
+        await _settleDetail(tester);
 
         expect(find.byType(DlsiteMetadataReviewPage), findsOneWidget);
         expect(
@@ -1190,7 +1519,7 @@ void main() {
         await tester.tap(
           find.byKey(const ValueKey<String>('work_detail_fetch_info')),
         );
-        await tester.pumpAndSettle();
+        await _settleDetail(tester);
 
         expect(find.byType(DlsiteMetadataReviewPage), findsOneWidget);
         expect(find.text('Fetched work title'), findsOneWidget);
@@ -1555,7 +1884,7 @@ void main() {
           expect(scrollController.offset, 0);
 
           await tester.drag(customScrollView, const Offset(0, -400));
-          await tester.pumpAndSettle();
+          await _settleDetail(tester);
           expect(scrollController.offset, greaterThan(0));
         },
         variant: TargetPlatformVariant({platform}),
@@ -2092,73 +2421,128 @@ void main() {
       },
     );
 
-    testWidgets(
-      'WorkDetailPage local file entries fade in smoothly over 300ms upon loading',
-      (tester) async {
-        SharedPreferences.setMockInitialValues(const <String, Object>{});
-        final covers = _ControlledWorkDetailCoverService()
-          ..images.complete([])
-          ..cover.complete(null);
-        final fixture = AppRuntimeWidgetTestFixture(
-          coverArtworkCacheService: covers,
-        );
-        addTearDown(fixture.dispose);
-        const folder = 'C:/works/fade-test';
-        final target = AudioDetailTarget.libraryRootFolder(folder);
-        fixture.library.addWatchedFolder(folder, notify: false);
-        fixture.library.addTracks([
-          MusicTrack(
-            path: '$folder/track1.mp3',
-            displayName: 'track1.mp3',
-            groupKey: folder,
-            groupTitle: 'Fade test',
-            groupSubtitle: '',
-            isSingle: false,
-          ),
-        ], persist: false);
-        await tester.runAsync(() => fixture.library.loadAudioDetail(target));
+    for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+      testWidgets(
+        'cached file rows are immediately visible without idle animation on $platform',
+        (tester) async {
+          final interaction = UiInteractionCoordinator.instance;
+          interaction.resetForTest();
+          addTearDown(interaction.resetForTest);
+          SharedPreferences.setMockInitialValues(const <String, Object>{});
+          final covers = _ControlledWorkDetailCoverService()
+            ..images.complete([])
+            ..cover.complete(null);
+          final fixture = AppRuntimeWidgetTestFixture(
+            coverArtworkCacheService: covers,
+          );
+          addTearDown(fixture.dispose);
+          const folder = 'C:/works/cached-rows';
+          final target = AudioDetailTarget.libraryRootFolder(folder);
+          fixture.library.addWatchedFolder(folder, notify: false);
+          fixture.library.addTracks(
+            List.generate(
+              80,
+              (index) => MusicTrack(
+                path: '$folder/track$index.mp3',
+                displayName: 'track$index.mp3',
+                groupKey: folder,
+                groupTitle: 'Cached rows',
+                groupSubtitle: '',
+                isSingle: false,
+              ),
+            ),
+            persist: false,
+          );
+          await tester.runAsync(() async {
+            await fixture.library.loadAudioDetail(target);
+            await fixture.library.loadLibraryFolderTree(folder);
+            await _prewarmDirectory(fixture, folder);
+          });
 
-        final textService = WorkTextService(
-          discoverImages: (_) async => [],
-          platformGateway: _NestedWorkDetailFileGateway([]),
-        );
-        addTearDown(textService.dispose);
+          final textService = WorkTextService(
+            discoverImages: (_) async => [],
+            platformGateway: _NestedWorkDetailFileGateway([]),
+          );
+          addTearDown(textService.dispose);
+          interaction.beginInteraction(Object());
+          var theme = ThemeData.light();
+          Widget page() => fixture.build(
+            Theme(
+              data: theme,
+              child: WorkDetailPage.forLocal(target: target),
+            ),
+            overrides: [workTextServiceProvider.overrideWithValue(textService)],
+          );
+          await tester.pumpWidget(page());
 
-        await tester.pumpWidget(
-          fixture.build(
-            WorkDetailPage.forLocal(target: target),
-            overrides: [
-              workTextServiceProvider.overrideWithValue(textService),
-            ],
-          ),
-        );
+          await tester.pump();
+          await tester.pump();
 
-        await tester.pump();
-        await tester.pump();
+          final tileFinder = find.byType(WorkDetailEntryTile);
+          expect(tileFinder, findsWidgets);
+          expect(
+            tester.binding.transientCallbackCount,
+            0,
+            reason: 'Cached rows must not start their own animation on open.',
+          );
+          expect(
+            tester.widgetList<WorkDetailEntryTile>(tileFinder).length,
+            lessThan(80),
+          );
+          final originalItems = tester
+              .widgetList<WorkDetailEntryTile>(tileFinder)
+              .map((tile) => tile.item)
+              .toList();
+          // Preserve the State while changing a presentation dependency.
+          theme = ThemeData.dark();
+          await tester.pumpWidget(page());
+          for (final item in originalItems) {
+            expect(
+              tester
+                  .widget<WorkDetailEntryTile>(
+                    find.byKey(
+                      ValueKey('${item.type.name}:${item.relativePath}'),
+                    ),
+                  )
+                  .item,
+              same(item),
+              reason: 'Theme changes must reuse directory results.',
+            );
+          }
 
-        final tileFinder = find.byType(WorkDetailEntryTile);
-        expect(tileFinder, findsOneWidget);
+          final initialNames = tester
+              .widgetList<WorkDetailEntryTile>(tileFinder)
+              .map((tile) => tile.item.name)
+              .toSet();
+          // Jump to mount a new set of lazy rows, without a scroll animation.
+          final scrollable = tester.state<ScrollableState>(
+            find
+                .descendant(
+                  of: find.byType(CustomScrollView),
+                  matching: find.byType(Scrollable),
+                )
+                .first,
+          );
+          scrollable.position.jumpTo(1600);
+          await tester.pump();
+          expect(
+            tester
+                .widgetList<WorkDetailEntryTile>(tileFinder)
+                .any((tile) => !initialNames.contains(tile.item.name)),
+            isTrue,
+          );
+          expect(
+            find.ancestor(of: tileFinder, matching: find.byType(Opacity)),
+            findsNothing,
+            reason:
+                'Newly visible rows must not restart a fade while scrolling.',
+          );
+          expect(tester.takeException(), isNull);
 
-        final opacityFinder = find.ancestor(
-          of: tileFinder,
-          matching: find.byType(Opacity),
-        );
-        expect(opacityFinder, findsOneWidget);
-
-        final initialOpacity = tester.widget<Opacity>(opacityFinder).opacity;
-        expect(initialOpacity, lessThan(0.5));
-
-        await tester.pump(const Duration(milliseconds: 150));
-        final midOpacity = tester.widget<Opacity>(opacityFinder).opacity;
-        expect(midOpacity, greaterThan(initialOpacity));
-        expect(midOpacity, lessThan(1.0));
-
-        await tester.pump(const Duration(milliseconds: 200));
-        final finalOpacity = tester.widget<Opacity>(opacityFinder).opacity;
-        expect(finalOpacity, equals(1.0));
-
-        await tester.pumpWidget(const SizedBox.shrink());
-      },
-    );
+          await tester.pumpWidget(const SizedBox.shrink());
+        },
+        variant: TargetPlatformVariant({platform}),
+      );
+    }
   });
 }

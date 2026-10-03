@@ -26,7 +26,13 @@ void main() {
   tearDownAll(() => AppRuntimeTestFixture.disposeSharedDatabase(database));
 
   Future<void> settleIo(WidgetTester tester) async {
-    for (var i = 0; i < 8; i++) {
+    // Keep yielding real IO while a route or directory placeholder animates;
+    // FakeAsync's pumpAndSettle alone cannot complete a compute isolate.
+    for (
+      var i = 0;
+      i < 40 && (i < 8 || tester.binding.hasScheduledFrame);
+      i++
+    ) {
       await tester.runAsync(
         () => Future<void>.delayed(const Duration(milliseconds: 15)),
       );
@@ -82,6 +88,8 @@ void main() {
           ),
         );
         await tester.tap(find.text('Open detail'));
+        // Navigation starts at endOfFrame; the next frame mounts the route.
+        await tester.pump();
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 100));
         expect(interaction.isInteracting, isTrue);
@@ -101,7 +109,7 @@ void main() {
         if (closeDuringTransition) {
           Navigator.of(tester.element(find.byType(WorkDetailPage))).pop();
         }
-        await tester.pumpAndSettle();
+        await tester.pump(const Duration(milliseconds: 500));
         await tester.pump(interaction.idleDelay);
         await settleIo(tester);
         expect(api.detailRequests, 0);
@@ -159,24 +167,45 @@ void main() {
       );
       await tester.tap(find.text('Open cached detail'));
       await tester.pump();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
       expect(interaction.isInteracting, isTrue);
-      expect(find.text('audio', skipOffstage: false), findsOneWidget);
       expect(api.treeRequests, 1);
-      await tester.pumpAndSettle();
+      await tester.pump(const Duration(milliseconds: 500));
       await tester.pump(interaction.idleDelay);
       await settleIo(tester);
       expect(api.treeRequests, 2);
+      expect(find.text('audio'), findsOneWidget);
+      Navigator.of(tester.element(find.byType(WorkDetailPage))).pop();
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Open cached detail'));
+      await tester.pump();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(interaction.isInteracting, isTrue);
+      expect(find.text('audio'), findsOneWidget);
+      expect(
+        api.treeRequests,
+        2,
+        reason: 'Prepared directory rows are reused before the refresh starts.',
+      );
+      await tester.pump(const Duration(milliseconds: 500));
+      await tester.pump(interaction.idleDelay);
+      await settleIo(tester);
+      expect(api.treeRequests, 3);
       Navigator.of(tester.element(find.byType(WorkDetailPage))).pop();
       await tester.pumpAndSettle();
       controller.clearRuntimeCaches();
       await tester.tap(find.text('Open cached detail'));
       await tester.pump();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
       expect(find.text('audio'), findsNothing);
-      expect(api.treeRequests, 2);
-      await tester.pumpAndSettle();
+      expect(api.treeRequests, 3);
+      await tester.pump(const Duration(milliseconds: 500));
       await tester.pump(interaction.idleDelay);
       await settleIo(tester);
-      expect(api.treeRequests, 3);
+      expect(api.treeRequests, 4);
       expect(find.text('audio'), findsOneWidget);
       expect(tester.takeException(), isNull);
     },
@@ -301,7 +330,7 @@ void main() {
         ],
       );
       await tester.pumpWidget(page());
-      expect(find.text('audio'), findsOneWidget);
+      expect(api.treeRequests, 1);
       await settleIo(tester);
       expect(find.text('audio'), findsOneWidget);
       expect(api.treeRequests, 2);
@@ -383,7 +412,7 @@ void main() {
   );
 
   testWidgets(
-    'online details file tree entries fade in over 300ms',
+    'online details show loaded file rows without extra animations',
     (tester) async {
       SharedPreferences.setMockInitialValues({});
       final fixture = AppRuntimeWidgetTestFixture();
@@ -424,8 +453,7 @@ void main() {
       expect(api.treeRequests, 1);
 
       treeCompleter.complete(_nodes);
-      await tester.pump();
-      await tester.pump();
+      await settleIo(tester);
 
       final entryKeys = [
         const ValueKey('audio:audio.mp3'),
@@ -434,30 +462,19 @@ void main() {
         const ValueKey('image:cover.png'),
       ];
 
-      double opacity(Key key) => tester
-          .widget<Opacity>(
-            find
-                .descendant(
-                  of: find.byKey(key),
-                  matching: find.byType(Opacity),
-                )
-                .first,
-          )
-          .opacity;
-
       for (final key in entryKeys) {
-        expect(opacity(key), 0);
+        expect(find.byKey(key), findsOneWidget);
       }
-      await tester.pump(const Duration(milliseconds: 150));
-      for (final key in entryKeys) {
-        expect(opacity(key), allOf(greaterThan(0), lessThan(1)));
-      }
-      await tester.pump(const Duration(milliseconds: 150));
-      await tester.pumpAndSettle();
-      for (final key in entryKeys) {
-        expect(opacity(key), 1);
-      }
+      expect(
+        tester.binding.transientCallbackCount,
+        0,
+        reason: 'A loaded file tree must not animate each row separately.',
+      );
     },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
   );
 }
 

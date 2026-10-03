@@ -8,6 +8,7 @@ import '../../../app/localization/app_language_provider.dart';
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../core/media/natural_sort.dart';
 import '../../../core/media/path_matcher.dart';
+import '../../../core/ui/ui_interaction_coordinator.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/page_header_inset.dart';
@@ -49,6 +50,9 @@ class _LibraryEditTreeState extends ConsumerState<LibraryEditTree>
   bool _diskSnapshotError = false;
   int _diskSnapshotGeneration = 0;
   int _diskSnapshotRevision = 0;
+  bool _diskRefreshNeeded = true;
+  late final _diskLoadKey = 'library_edit_load_${identityHashCode(this)}';
+  late final _diskResultKey = 'library_edit_result_${identityHashCode(this)}';
   Timer? _searchDebounceTimer;
   String _searchQuery = '';
   final Map<String, LibraryEditFolderTreeNode> _folderStructureSnapshots =
@@ -69,13 +73,50 @@ class _LibraryEditTreeState extends ConsumerState<LibraryEditTree>
     _entryEditorService =
         widget.entryEditorService ?? LibraryEntryEditorService();
     WidgetsBinding.instance.addObserver(this);
-    _loadDiskLibrarySnapshot();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_diskRefreshNeeded && (ModalRoute.of(context)?.isCurrent ?? true)) {
+      _requestDiskSnapshotRefresh();
+    }
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
+      _requestDiskSnapshotRefresh();
+    }
+  }
+
+  void _requestDiskSnapshotRefresh() {
+    _diskRefreshNeeded = true;
+    void load() {
+      if (!mounted || !(ModalRoute.of(context)?.isCurrent ?? true)) return;
+      _diskRefreshNeeded = false;
       unawaited(_loadDiskLibrarySnapshot());
+    }
+
+    final coordinator = UiInteractionCoordinator.instance;
+    if (coordinator.isInteracting) {
+      coordinator.scheduleCommit(key: _diskLoadKey, commit: load);
+    } else {
+      load();
+    }
+  }
+
+  void _commitDiskSnapshot(int generation, VoidCallback commit) {
+    if (!mounted || generation != _diskSnapshotGeneration) return;
+    void apply() {
+      if (mounted && generation == _diskSnapshotGeneration) commit();
+    }
+
+    final coordinator = UiInteractionCoordinator.instance;
+    if (coordinator.isInteracting) {
+      coordinator.scheduleCommit(key: _diskResultKey, commit: apply);
+    } else {
+      apply();
     }
   }
 
@@ -86,15 +127,25 @@ class _LibraryEditTreeState extends ConsumerState<LibraryEditTree>
       snapshot = await _entryEditorService.loadDiskSnapshot(widget.libraryPath);
     } catch (_) {
       if (!mounted || requestGeneration != _diskSnapshotGeneration) return;
-      _showDiskSnapshotFailure(requestGeneration);
+      _commitDiskSnapshot(
+        requestGeneration,
+        () => _showDiskSnapshotFailure(requestGeneration),
+      );
       return;
     }
     if (!mounted || requestGeneration != _diskSnapshotGeneration) return;
     if (!snapshot.authoritative) {
-      _showDiskSnapshotFailure(requestGeneration);
+      _commitDiskSnapshot(
+        requestGeneration,
+        () => _showDiskSnapshotFailure(requestGeneration),
+      );
       return;
     }
 
+    _commitDiskSnapshot(requestGeneration, () => _applyDiskSnapshot(snapshot));
+  }
+
+  void _applyDiskSnapshot(LibraryEntryDiskSnapshot snapshot) {
     final audioFilePaths = snapshot.audioFilePathSet;
     final liveFolderPaths = _buildLiveDiskFolderPathSet(
       scannedTrackPaths: audioFilePaths,
@@ -138,12 +189,14 @@ class _LibraryEditTreeState extends ConsumerState<LibraryEditTree>
       tone: AppFeedbackTone.warning,
       icon: Icons.warning_amber_rounded,
       actionLabel: i18n.tr('retry'),
-      onAction: () => unawaited(_loadDiskLibrarySnapshot()),
+      onAction: _requestDiskSnapshotRefresh,
     );
   }
 
   @override
   void dispose() {
+    UiInteractionCoordinator.instance.cancelCommit(_diskLoadKey);
+    UiInteractionCoordinator.instance.cancelCommit(_diskResultKey);
     WidgetsBinding.instance.removeObserver(this);
     _searchDebounceTimer?.cancel();
     _searchController.dispose();
@@ -290,8 +343,7 @@ class _LibraryEditTreeState extends ConsumerState<LibraryEditTree>
                           ),
                           const SizedBox(height: 12),
                           FilledButton.tonal(
-                            onPressed: () =>
-                                unawaited(_loadDiskLibrarySnapshot()),
+                            onPressed: _requestDiskSnapshotRefresh,
                             child: Text(i18n.tr('retry')),
                           ),
                         ],

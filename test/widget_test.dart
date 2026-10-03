@@ -448,6 +448,40 @@ void main() {
     );
   });
 
+  testWidgets(
+    'foreground restore defers presentation work past cached first frame',
+    (tester) async {
+      await _pumpAppShell(tester);
+      final stack = find.byKey(const ValueKey<String>('main_page_stack'));
+      final cachedElement = tester.element(stack);
+      final coordinator = UiInteractionCoordinator.instance;
+      WidgetsBinding.instance.handleAppLifecycleStateChanged(
+        AppLifecycleState.hidden,
+      );
+      expect(coordinator.isInteracting, isFalse);
+      WidgetsBinding.instance.handleAppLifecycleStateChanged(
+        AppLifecycleState.resumed,
+      );
+      var commits = 0;
+      coordinator.scheduleCommit(
+        key: 'resume-cache-test',
+        commit: () => commits++,
+      );
+      await tester.pump();
+      expect(tester.element(stack), same(cachedElement));
+      expect(commits, 0);
+      await tester.pump(const Duration(milliseconds: 161));
+      await tester.pump();
+      expect(commits, 1);
+      await tester.pumpWidget(const SizedBox.shrink());
+      expect(coordinator.isInteracting, isFalse);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
   testWidgets('capsule dock toggles between page icons and embedded playback', (
     tester,
   ) async {

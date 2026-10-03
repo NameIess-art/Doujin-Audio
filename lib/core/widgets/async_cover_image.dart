@@ -296,6 +296,7 @@ class LocalCoverImage extends StatelessWidget {
     this.cacheWidth,
     this.cacheHeight,
     this.useDefaultCacheWidth = true,
+    this.deferLoadDuringInteraction = false,
     this.fit,
     this.alignment = Alignment.center,
     this.icon,
@@ -313,6 +314,7 @@ class LocalCoverImage extends StatelessWidget {
   final int? cacheWidth;
   final int? cacheHeight;
   final bool useDefaultCacheWidth;
+  final bool deferLoadDuringInteraction;
   final BoxFit? fit;
   final AlignmentGeometry alignment;
   final IconData? icon;
@@ -348,6 +350,7 @@ class LocalCoverImage extends StatelessWidget {
       cacheWidth: cacheWidth,
       cacheHeight: cacheHeight,
       useDefaultCacheWidth: useDefaultCacheWidth,
+      deferLoadDuringInteraction: deferLoadDuringInteraction,
       fit: fit,
       alignment: alignment,
       color: color,
@@ -371,6 +374,7 @@ class AsyncLocalCoverImage extends StatelessWidget {
     this.cacheWidth,
     this.cacheHeight,
     this.useDefaultCacheWidth = true,
+    this.deferLoadDuringInteraction = false,
     this.fit,
     this.alignment = Alignment.center,
     this.icon,
@@ -393,6 +397,7 @@ class AsyncLocalCoverImage extends StatelessWidget {
   final int? cacheWidth;
   final int? cacheHeight;
   final bool useDefaultCacheWidth;
+  final bool deferLoadDuringInteraction;
   final BoxFit? fit;
   final AlignmentGeometry alignment;
   final IconData? icon;
@@ -414,6 +419,7 @@ class AsyncLocalCoverImage extends StatelessWidget {
       cacheWidth: cacheWidth,
       cacheHeight: cacheHeight,
       useDefaultCacheWidth: useDefaultCacheWidth,
+      deferLoadDuringInteraction: deferLoadDuringInteraction,
       fit: fit,
       alignment: alignment,
       icon: icon,
@@ -666,6 +672,7 @@ class AsyncRemoteCoverImage extends StatelessWidget {
     this.color,
     this.colorBlendMode,
     this.useDefaultCacheWidth = true,
+    this.deferLoadDuringInteraction = false,
     this.filterQuality = FilterQuality.medium,
     this.duration = kCoverImageTransitionDuration,
     this.retryDelay = const Duration(seconds: 2),
@@ -685,6 +692,7 @@ class AsyncRemoteCoverImage extends StatelessWidget {
   final Color? color;
   final BlendMode? colorBlendMode;
   final bool useDefaultCacheWidth;
+  final bool deferLoadDuringInteraction;
   final FilterQuality filterQuality;
   final Duration duration;
   final Duration retryDelay;
@@ -719,6 +727,7 @@ class AsyncRemoteCoverImage extends StatelessWidget {
           color: color,
           colorBlendMode: colorBlendMode,
           useDefaultCacheWidth: useDefaultCacheWidth,
+          deferLoadDuringInteraction: deferLoadDuringInteraction,
           filterQuality: filterQuality,
           fallbackBuilder: fallbackBuilder,
         );
@@ -741,6 +750,7 @@ class RetryingFileImage extends ConsumerWidget {
     this.color,
     this.colorBlendMode,
     this.useDefaultCacheWidth = true,
+    this.deferLoadDuringInteraction = false,
     this.filterQuality = FilterQuality.medium,
     this.gaplessPlayback = true,
     this.retryDelay = const Duration(seconds: 2),
@@ -758,6 +768,7 @@ class RetryingFileImage extends ConsumerWidget {
   final Color? color;
   final BlendMode? colorBlendMode;
   final bool useDefaultCacheWidth;
+  final bool deferLoadDuringInteraction;
   final FilterQuality filterQuality;
   final bool gaplessPlayback;
   final Duration retryDelay;
@@ -798,7 +809,7 @@ class RetryingFileImage extends ConsumerWidget {
       retryDelay: retryDelay,
       maxRetryAttempts: maxRetryAttempts,
       displayMode: effectiveDisplayMode,
-      deferLoadDuringInteraction: false,
+      deferLoadDuringInteraction: deferLoadDuringInteraction,
       retainInImageCache:
           defaultTargetPlatform == TargetPlatform.windows ||
           defaultTargetPlatform == TargetPlatform.android,

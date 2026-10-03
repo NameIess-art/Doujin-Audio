@@ -783,6 +783,10 @@ void main() {
 
     await tester.tap(find.byType(ListTile).first);
     await pumpUntilFound(tester, find.byType(WorkDetailPage));
+    await pumpUntilNotFound(
+      tester,
+      find.byKey(const ValueKey('work_detail_loading_indicator')),
+    );
     await tester.pumpAndSettle();
     final detail = tester.widget<LocalCoverImage>(
       find.byType(LocalCoverImage).first,
@@ -2524,6 +2528,113 @@ void main() {
   });
 
   testWidgets(
+    'library edit defers scans and their results during page transitions',
+    (tester) async {
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      const root = '/deferred-edit';
+      final track = testMusicTrack(
+        name: 'Retained during transition',
+        path: '$root/old.mp3',
+        groupKey: root,
+        groupTitle: 'Library',
+      );
+      fixture.runtimeGraph.library.addWatchedFolder(root, notify: false);
+      fixture.runtimeGraph.library.addTracks(
+        [track],
+        notify: false,
+        persist: false,
+      );
+      fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 0);
+      final scan = Completer<LibraryEntryDiskSnapshot>();
+      final service = _QueuedEntryEditorService([scan.future]);
+      final coordinator = UiInteractionCoordinator.instance;
+      final transition = Object();
+      coordinator.beginInteraction(transition);
+      await tester.pumpWidget(
+        fixture.build(
+          LibraryEditPage(libraryPath: root, entryEditorService: service),
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(service.responses, hasLength(1));
+      coordinator.endInteraction(transition);
+      await tester.pump(const Duration(milliseconds: 161));
+      await tester.pump();
+      expect(service.responses, isEmpty);
+      coordinator.beginInteraction(transition);
+      scan.complete(
+        LibraryEntryDiskSnapshot(
+          audioFilePaths: const [],
+          scannedFolderPaths: const {},
+          authoritative: true,
+        ),
+      );
+      await tester.pump();
+      expect(fixture.runtimeGraph.library.trackByPath(track.path), same(track));
+      coordinator.endInteraction(transition);
+      await tester.pump(const Duration(milliseconds: 161));
+      await tester.pump();
+      expect(fixture.runtimeGraph.library.trackByPath(track.path), isNull);
+      expect(tester.takeException(), isNull);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
+  testWidgets(
+    'covered library edit postpones resume scan until returning',
+    (tester) async {
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      final snapshot = LibraryEntryDiskSnapshot(
+        audioFilePaths: const [],
+        scannedFolderPaths: const {},
+        authoritative: true,
+      );
+      final service = _QueuedEntryEditorService([
+        Future.value(snapshot),
+        Future.value(snapshot),
+      ]);
+      await tester.pumpWidget(
+        fixture.build(
+          LibraryEditPage(
+            libraryPath: '/covered-edit',
+            entryEditorService: service,
+          ),
+        ),
+      );
+      await tester.pump();
+      final navigator = Navigator.of(
+        tester.element(find.byType(LibraryEditPage)),
+      );
+      unawaited(
+        navigator.push(
+          MaterialPageRoute<void>(
+            builder: (_) => const Scaffold(body: Text('covering page')),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      WidgetsBinding.instance.handleAppLifecycleStateChanged(
+        AppLifecycleState.resumed,
+      );
+      await tester.pump();
+      expect(service.responses, hasLength(1));
+      navigator.pop();
+      await tester.pumpAndSettle();
+      expect(service.responses, isEmpty);
+      expect(tester.takeException(), isNull);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
+  testWidgets(
     'standalone library edit retries failure and ignores exit callbacks',
     (tester) async {
       final fixture = AppRuntimeWidgetTestFixture();
@@ -3682,6 +3793,7 @@ void main() {
 
       // Tap card
       await tester.tap(rootFolderFinder);
+      await tester.pump();
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
 

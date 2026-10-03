@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
@@ -58,6 +59,137 @@ void main() {
   });
 
   tearDown(UiInteractionCoordinator.instance.resetForTest);
+
+  final deferredFileCovers = <String, Widget Function(String)>{
+    'RetryingFileImage': (path) => RetryingFileImage(
+      path: path,
+      cacheWidth: 8,
+      deferLoadDuringInteraction: true,
+      fallbackBuilder: (_) => const Text('fallback'),
+    ),
+    'LocalCoverImage': (path) => LocalCoverImage(
+      path: path,
+      seed: 'cover',
+      cacheWidth: 8,
+      deferLoadDuringInteraction: true,
+    ),
+    'AsyncLocalCoverImage': (path) => AsyncLocalCoverImage(
+      future: Completer<String?>().future,
+      initialPath: path,
+      seed: 'cover',
+      cacheWidth: 8,
+      deferLoadDuringInteraction: true,
+    ),
+    'AsyncRemoteCoverImage': (path) => AsyncRemoteCoverImage(
+      url: 'https://example.com/cover.png',
+      future: Completer<String?>().future,
+      initialPath: path,
+      cacheWidth: 8,
+      deferLoadDuringInteraction: true,
+      fallbackBuilder: (_) => const Text('fallback'),
+    ),
+  };
+
+  for (final cover in deferredFileCovers.entries) {
+    for (final cached in [false, true]) {
+      testWidgets(
+        '${cover.key} ${cached ? 'reuses cached file during transition' : 'decodes cold file after transition'}',
+        (tester) async {
+          final directory = await tester.runAsync(
+            () => Directory.systemTemp.createTemp('deferred-cover-'),
+          );
+          final file = File('${directory!.path}/cover.png');
+          await tester.runAsync(
+            () => file.writeAsBytes(
+              base64Decode(
+                'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+              ),
+            ),
+          );
+          final provider = resizeFileImageIfNeeded(
+            path: file.path,
+            cacheWidth: 8,
+            useDefaultCacheWidth: false,
+          );
+          final cacheKey = await provider.obtainKey(ImageConfiguration.empty);
+          addTearDown(() async {
+            releaseRetainedCoverImages();
+            await provider.evict();
+            await tester.runAsync(() => directory.delete(recursive: true));
+          });
+          Widget page() => ProviderScope(
+            overrides: [
+              coverImageResolutionProvider.overrideWithValue(
+                CoverImageResolution.balanced,
+              ),
+              coverImageDisplayModeProvider.overrideWithValue(
+                CoverImageDisplayMode.fill,
+              ),
+            ],
+            child: MaterialApp(
+              home: SizedBox(
+                width: 120,
+                height: 90,
+                child: cover.value(file.path),
+              ),
+            ),
+          );
+          Future<void> finishFileDecode() async {
+            for (var attempt = 0; attempt < 50; attempt++) {
+              await tester.runAsync(
+                () => Future<void>.delayed(const Duration(milliseconds: 10)),
+              );
+              await tester.pump();
+              final images = tester.widgetList<RawImage>(find.byType(RawImage));
+              if (images.any((image) => image.image != null)) return;
+            }
+            fail('File cover did not decode');
+          }
+
+          if (cached) {
+            await tester.pumpWidget(page());
+            await finishFileDecode();
+            await tester.pumpAndSettle();
+            await tester.pumpWidget(const SizedBox.shrink());
+          }
+
+          final interactionSource = Object();
+          UiInteractionCoordinator.instance.beginInteraction(interactionSource);
+          await tester.pumpWidget(page());
+          await tester.pump();
+          if (cached) {
+            expect(find.byType(Image), findsOneWidget);
+            expect(
+              tester.widget<RawImage>(find.byType(RawImage)).image,
+              isNotNull,
+            );
+            expect(find.byType(CoverLoadingArtwork), findsNothing);
+          } else {
+            expect(find.byType(Image), findsNothing);
+            expect(
+              PaintingBinding.instance.imageCache
+                  .statusForKey(cacheKey)
+                  .tracked,
+              isFalse,
+            );
+            UiInteractionCoordinator.instance.cancelInteraction(
+              interactionSource,
+            );
+            await tester.pump();
+            expect(find.byType(Image), findsOneWidget);
+            await finishFileDecode();
+            await tester.pumpAndSettle();
+            expect(
+              tester.widget<RawImage>(find.byType(RawImage)).image,
+              isNotNull,
+            );
+          }
+          await tester.pumpWidget(const SizedBox.shrink());
+          expect(tester.takeException(), isNull);
+        },
+      );
+    }
+  }
 
   test('standalone audio without stored cover hides playlist artwork', () {
     final track = MusicTrack(

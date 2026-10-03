@@ -1,11 +1,189 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:doujin_audio/app/state/app_runtime_providers.dart';
+import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/features/player/presentation/timer_tab.dart';
+import 'package:doujin_audio/features/player/domain/playback_mode.dart';
+import 'package:doujin_audio/features/settings/application/permission_status_service.dart';
 
 import 'support/app_runtime_test_fixture.dart';
 
 void main() {
   AppRuntimeTestFixture.initialize();
+
+  setUp(() {
+    UiInteractionCoordinator.instance.resetForTest();
+  });
+  tearDown(() {
+    UiInteractionCoordinator.instance.resetForTest();
+    UiInteractionNavigatorObserver.instance.resetForTest();
+  });
+
+  testWidgets(
+    'timer permission checks wait for opening and resume interactions',
+    (tester) async {
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      final permissions = _CountingPermissionStatusService();
+      final coordinator = UiInteractionCoordinator.instance;
+      coordinator.beginInteraction(Object());
+      await tester.pumpWidget(
+        fixture.build(
+          const TimerTab(showHeader: false),
+          overrides: [
+            permissionStatusServiceProvider.overrideWithValue(permissions),
+          ],
+        ),
+      );
+      await tester.pump();
+      expect(permissions.checks, isEmpty);
+      coordinator.finishInteractionsForTest();
+      await tester.pump();
+      expect(permissions.checks, [
+        PermissionCapability.exactAlarms,
+        PermissionCapability.backgroundRun,
+      ]);
+
+      coordinator.beginInteraction(Object());
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pump();
+      expect(permissions.checks, hasLength(2));
+      coordinator.finishInteractionsForTest();
+      await tester.pump();
+      expect(permissions.checks, hasLength(4));
+      expect(tester.takeException(), isNull);
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.android),
+  );
+
+  testWidgets(
+    'covered timer refreshes only after its route becomes visible',
+    (tester) async {
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      final permissions = _CountingPermissionStatusService();
+      await tester.pumpWidget(
+        fixture.build(
+          const TimerTab(showHeader: false),
+          navigatorObservers: [UiInteractionNavigatorObserver.instance],
+          overrides: [
+            permissionStatusServiceProvider.overrideWithValue(permissions),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(permissions.checks, hasLength(2));
+      final navigator = tester.state<NavigatorState>(find.byType(Navigator));
+      unawaited(
+        navigator.push<void>(
+          MaterialPageRoute(builder: (_) => const Scaffold()),
+        ),
+      );
+      await tester.pumpAndSettle();
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pump();
+      expect(permissions.checks, hasLength(2));
+
+      navigator.pop();
+      await tester.pump();
+      expect(permissions.checks, hasLength(2));
+      await tester.pumpAndSettle();
+      await tester.pump(const Duration(milliseconds: 200));
+      await tester.pumpAndSettle();
+      expect(permissions.checks, hasLength(4));
+      expect(tester.takeException(), isNull);
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.android),
+  );
+
+  testWidgets(
+    'exiting timer cancels its deferred permission checks',
+    (tester) async {
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      final permissions = _CountingPermissionStatusService();
+      final coordinator = UiInteractionCoordinator.instance;
+      coordinator.beginInteraction(Object());
+      await tester.pumpWidget(
+        fixture.build(
+          const TimerTab(showHeader: false),
+          overrides: [
+            permissionStatusServiceProvider.overrideWithValue(permissions),
+          ],
+        ),
+      );
+      await tester.pumpWidget(const SizedBox.shrink());
+      coordinator.finishInteractionsForTest();
+      await tester.pump();
+      expect(permissions.checks, isEmpty);
+      expect(tester.takeException(), isNull);
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.android),
+  );
+
+  testWidgets(
+    'Windows timer does not query Android permissions',
+    (tester) async {
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      final permissions = _CountingPermissionStatusService();
+      await tester.pumpWidget(
+        fixture.build(
+          const TimerTab(showHeader: false),
+          overrides: [
+            permissionStatusServiceProvider.overrideWithValue(permissions),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pumpAndSettle();
+      expect(permissions.checks, isEmpty);
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.windows),
+  );
+
+  testWidgets(
+    'timer retains cached reliability while checking changed permissions',
+    (tester) async {
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      fixture.timer.configureTimer(
+        TimerMode.manual,
+        const Duration(minutes: 30),
+      );
+      final permissions = _CountingPermissionStatusService()..granted = false;
+      await tester.pumpWidget(
+        fixture.build(
+          const TimerTab(showHeader: false),
+          overrides: [
+            permissionStatusServiceProvider.overrideWithValue(permissions),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+      final missing = fixture.languageProvider.tr('timer_reliability_missing');
+      expect(find.text(missing), findsOneWidget);
+
+      final pending = Completer<bool>();
+      permissions.nextResult = pending.future;
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pump();
+      await tester.pump();
+      expect(find.text(missing), findsOneWidget);
+      pending.complete(true);
+      await tester.pumpAndSettle();
+      expect(find.text(missing), findsNothing);
+      expect(
+        find.text(fixture.languageProvider.tr('timer_reliability_ready')),
+        findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.android),
+  );
 
   testWidgets('timer tab loads reliability status without async setState', (
     tester,
@@ -69,4 +247,19 @@ void main() {
     fixture.timer.cancelTimer();
     await tester.pump();
   });
+}
+
+class _CountingPermissionStatusService extends PermissionStatusService {
+  final checks = <PermissionCapability>[];
+  bool granted = true;
+  Future<bool>? nextResult;
+
+  @override
+  Future<bool> isGranted(
+    PermissionCapability capability, {
+    bool errorDefault = false,
+  }) async {
+    checks.add(capability);
+    return nextResult ?? granted;
+  }
 }

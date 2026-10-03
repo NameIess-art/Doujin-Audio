@@ -18,6 +18,8 @@ import '../../../app/theme/app_design_tokens.dart';
 import '../../../core/media/audio_detail.dart';
 import '../../../core/media/path_display.dart';
 import '../../../core/media/path_matcher.dart';
+import '../../../core/platform/file_cache_platform_gateway.dart'
+    show CoverImageReference;
 import '../../../core/ui/ui_operation_service.dart';
 import '../../../core/ui/visual_settings_providers.dart';
 import '../../../core/ui/undoable_removal_service.dart';
@@ -46,12 +48,6 @@ import 'work_image_viewer_page.dart';
 import 'work_text_viewer_page.dart';
 
 const String workDetailRouteName = '/work-detail';
-bool _containsAsmrSubtitle(Iterable<AsmrTrackFile> nodes) {
-  for (final node in nodes) {
-    if (node.isSubtitle || _containsAsmrSubtitle(node.children)) return true;
-  }
-  return false;
-}
 
 class WorkDetailPage extends ConsumerStatefulWidget {
   const WorkDetailPage.forLocal({
@@ -87,13 +83,16 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
   AudioDetail? _localDetail;
   FolderNode? _localFolderNode;
   List<WorkTextFile> _localTextFiles = const [];
-  List<WorkImageItem> _localImageFiles = const [];
+  List<CoverImageReference> _localImageReferences = const [];
   String? _localManualCover;
   bool _loadingLocal = true;
   bool _localFilesCached = false;
   int _localLoadRequest = 0;
   late final String _filesCommitKey =
       'work_detail_files_${identityHashCode(this)}';
+  late final String _dataCommitKey =
+      'work_detail_data_${identityHashCode(this)}';
+  final List<({int? request, VoidCallback update})> _pendingDataUpdates = [];
 
   // ASMR state
   List<AsmrTrackFile>? _asmrTree;
@@ -101,6 +100,13 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
   int _playRequest = 0;
   Object? _coverRequestKey;
   Future<String?>? _coverFuture;
+  Object? _entriesKey;
+  List<WorkEntryItem> _currentEntries = const [];
+  WorkDirectorySnapshot? _directory;
+  bool _preparingDirectory = false;
+  int _directoryRequest = 0;
+  late final String _directoryCommitKey =
+      'work_detail_directory_${identityHashCode(this)}';
 
   // Breadcrumb navigation state
   // Path stack: e.g. [] for root, ['EXデータ'] for subfolder
@@ -132,7 +138,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
       final cachedImages = textService.resolvedWorkImageFiles(folderPath);
       _localFilesCached = cachedTexts != null && cachedImages != null;
       _localTextFiles = cachedTexts ?? const [];
-      _localImageFiles = _imageItems(cachedImages ?? const [], folderPath);
+      _localImageReferences = cachedImages ?? const [];
       final pageStates = ref.read(browsePageStateStoreProvider);
       _pageStateEpoch = pageStates.epoch;
       _currentPathSegments.addAll(
@@ -153,11 +159,13 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
           ?.trackTreeFor(widget.asmrWork!.id);
       _loadingAsmr = _asmrTree == null;
     }
+    _directory = _directoryInput.resolved;
     // Render indexed files and cached discoveries before starting fresh I/O.
     UiInteractionCoordinator.instance.scheduleCommit(
       key: _filesCommitKey,
       commit: () {
         if (!mounted) return;
+        unawaited(_prepareDirectory());
         if (widget.isLocal) {
           if (_localDetail == null) {
             unawaited(_loadLocalData());
@@ -186,12 +194,12 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
       final detailResult = await library.loadAudioDetail(target);
 
       if (!mounted || request != _localLoadRequest) return;
-      setState(() {
+      _publishDataUpdate(() {
         _localDetail = detailResult.detail;
         _localManualCover =
             library.resolvedCoverPathForFolder(folderPath) ??
             detailResult.detail.cardCoverPath;
-      });
+      }, request: request);
 
       // File trees, directory scans and cover discovery wait for navigation.
       UiInteractionCoordinator.instance.scheduleCommit(
@@ -204,9 +212,9 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
       );
     } catch (_) {
       if (!mounted || request != _localLoadRequest) return;
-      setState(() {
+      _publishDataUpdate(() {
         _loadingLocal = false;
-      });
+      }, request: request);
     }
   }
 
@@ -224,7 +232,11 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
           );
           if (!isCurrent() || _localManualCover != previousCover) return;
           if (_localManualCover != currentCover) {
-            setState(() => _localManualCover = currentCover);
+            _publishDataUpdate(() {
+              if (_localManualCover == previousCover) {
+                _localManualCover = currentCover;
+              }
+            }, request: request);
           }
         } catch (_) {
           // Retain the cover already provided by the library metadata.
@@ -237,7 +249,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
         try {
           final tree = await library.loadLibraryFolderTree(folderPath);
           if (!isCurrent()) return;
-          setState(() => _localFolderNode = tree);
+          _publishDataUpdate(() => _localFolderNode = tree, request: request);
         } catch (_) {
           // Text and image discovery can still complete independently.
         }
@@ -246,7 +258,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
         try {
           final texts = await textService.refreshWorkTextFiles(folderPath);
           if (!isCurrent()) return;
-          setState(() => _localTextFiles = texts);
+          _publishDataUpdate(() => _localTextFiles = texts, request: request);
         } catch (_) {
           // Keep the indexed audio and other files available if discovery fails.
         }
@@ -257,34 +269,91 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
             folderPath,
           );
           if (!isCurrent()) return;
-          final imageItems = _imageItems(candidateImages, folderPath);
-          setState(() => _localImageFiles = imageItems);
+          _publishDataUpdate(
+            () => _localImageReferences = candidateImages,
+            request: request,
+          );
         } catch (_) {
           // Text discovery can still complete independently.
         }
       }(),
     ]);
-    if (isCurrent()) setState(() => _loadingLocal = false);
+    if (isCurrent()) {
+      _publishDataUpdate(() => _loadingLocal = false, request: request);
+    }
   }
 
-  List<WorkImageItem> _imageItems(List<String> paths, String folder) => paths
-      .map((image) {
-        final source = ref
-            .read(workTextServiceProvider)
-            .sourcePathForWorkImage(folder, image);
-        final name = PathDisplay.folderName(source);
-        final relative = PathMatcher.relativeWithin(source, folder) ?? name;
-        return WorkImageItem(
-          name: name,
-          path: image,
-          relativePath: relative.startsWith('..') ? name : relative,
-        );
-      })
-      .toList(growable: false);
+  void _publishDataUpdate(VoidCallback update, {int? request}) {
+    if (!mounted || (request != null && request != _localLoadRequest)) return;
+    _pendingDataUpdates.add((request: request, update: update));
+    // Independent discoveries can finish during the next route transition.
+    // Keep every field's result and publish them together after interaction.
+    UiInteractionCoordinator.instance.scheduleCommit(
+      key: _dataCommitKey,
+      commit: () {
+        if (!mounted) return;
+        final updates = _pendingDataUpdates
+            .where(
+              (item) =>
+                  item.request == null || item.request == _localLoadRequest,
+            )
+            .toList(growable: false);
+        _pendingDataUpdates.clear();
+        if (updates.isEmpty) return;
+        setState(() {
+          for (final item in updates) {
+            item.update();
+          }
+        });
+        unawaited(_prepareDirectory());
+      },
+    );
+  }
+
+  WorkDirectoryInput get _directoryInput => widget.isLocal
+      ? WorkDirectoryInput.local(
+          root: _localFolderNode,
+          texts: _localTextFiles,
+          images: _localImageReferences,
+          folderPath: _localTarget!.targetPath,
+        )
+      : WorkDirectoryInput.asmr(_asmrTree);
+
+  Future<void> _prepareDirectory() async {
+    final request = ++_directoryRequest;
+    final input = _directoryInput;
+    _preparingDirectory = input.resolved != _directory || _directory == null;
+    final directory = input.resolved ?? await input.load();
+    if (!mounted || request != _directoryRequest) return;
+    UiInteractionCoordinator.instance.scheduleCommit(
+      key: _directoryCommitKey,
+      commit: () {
+        if (!mounted || request != _directoryRequest) return;
+        setState(() {
+          _directory = directory;
+          _preparingDirectory = false;
+          if ((widget.isLocal && !_loadingLocal) ||
+              (widget.isAsmr && !_loadingAsmr)) {
+            final depth = directory.validDepth(_currentPathSegments);
+            if (depth < _currentPathSegments.length) {
+              _currentPathSegments.removeRange(
+                depth,
+                _currentPathSegments.length,
+              );
+              _saveDirectory();
+            }
+          }
+        });
+      },
+    );
+  }
 
   @override
   void dispose() {
     UiInteractionCoordinator.instance.cancelCommit(_filesCommitKey);
+    UiInteractionCoordinator.instance.cancelCommit(_dataCommitKey);
+    UiInteractionCoordinator.instance.cancelCommit(_directoryCommitKey);
+    _pendingDataUpdates.clear();
     _scrollController.dispose();
     super.dispose();
   }
@@ -304,13 +373,13 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
         forceRefresh: true,
       );
       if (!mounted) return;
-      setState(() {
+      _publishDataUpdate(() {
         _asmrTree = tree;
         _loadingAsmr = false;
       });
     } catch (_) {
       if (!mounted) return;
-      setState(() => _loadingAsmr = false);
+      _publishDataUpdate(() => _loadingAsmr = false);
     }
   }
 
@@ -343,59 +412,38 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
     }, epoch: _pageStateEpoch);
   }
 
-  void _reconcileDirectory() {
-    var depth = 0;
-    while (depth < _currentPathSegments.length) {
-      final parents = _currentPathSegments.take(depth).toList();
-      final entries = widget.isLocal
-          ? buildLocalWorkEntries(
-              root: _localFolderNode,
-              pathSegments: parents,
-              textFiles: _localTextFiles,
-              imageFiles: _localImageFiles,
-              isHidden: (_) => false,
-            )
-          : buildAsmrWorkEntries(
-              tree: _asmrTree,
-              pathSegments: parents,
-              isHidden: (_) => false,
-            );
-      if (!entries.any(
-        (entry) =>
-            entry.type == WorkEntryType.folder &&
-            entry.name == _currentPathSegments[depth],
-      )) {
-        break;
-      }
-      depth++;
-    }
-    if (depth < _currentPathSegments.length) {
-      _currentPathSegments.removeRange(depth, _currentPathSegments.length);
-      _saveDirectory();
-    }
-  }
-
-  // Current entries in directory
-  List<WorkEntryItem> _buildCurrentEntries() {
+  List<WorkEntryItem> _buildCurrentEntries(Object? visibilityKey) {
+    final key = (_directory, visibilityKey, _currentPathSegments.join('/'));
+    if (_entriesKey == key) return _currentEntries;
+    _entriesKey = key;
+    final entries =
+        _directory?.entriesAt(_currentPathSegments) ?? const <WorkEntryItem>[];
     if (widget.isLocal) {
-      final removalState = ref.read(undoableRemovalStateProvider);
-      return buildLocalWorkEntries(
-        root: _localFolderNode,
-        pathSegments: _currentPathSegments,
-        textFiles: _localTextFiles,
-        imageFiles: _localImageFiles,
-        isHidden: (track) =>
-            removalState.isHidden(libraryRemovalKey(track.path)),
-      );
+      final removals = ref.read(undoableRemovalStateProvider);
+      _currentEntries = removals.hiddenKeys.isEmpty
+          ? entries
+          : entries
+                .where(
+                  (entry) =>
+                      entry.track == null ||
+                      !removals.isHidden(libraryRemovalKey(entry.track!.path)),
+                )
+                .toList(growable: false);
     } else {
       final controller = ref.read(asmrLibraryControllerProvider);
-      return buildAsmrWorkEntries(
-        tree: _asmrTree,
-        pathSegments: _currentPathSegments,
-        isHidden: (node) =>
-            controller?.isTrackHidden(widget.asmrWork!.id, node) ?? false,
-      );
+      _currentEntries = entries
+          .where(
+            (entry) =>
+                entry.type != WorkEntryType.audio ||
+                !(controller?.isTrackHidden(
+                      widget.asmrWork!.id,
+                      entry.asmrNode!,
+                    ) ??
+                    false),
+          )
+          .toList(growable: false);
     }
+    return _currentEntries;
   }
 
   // Set local image as cover
@@ -720,12 +768,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
 
   // Open image file
   Future<void> _openImageFile(WorkEntryItem item) async {
-    List<WorkImageItem> allImages = const [];
-    if (widget.isLocal) {
-      allImages = _localImageFiles;
-    } else {
-      allImages = _collectAsmrImageFiles(_asmrTree ?? const []);
-    }
+    List<WorkImageItem> allImages = _directory?.images ?? const [];
     if (allImages.isEmpty && item.imageItem != null) {
       allImages = [item.imageItem!];
     }
@@ -751,30 +794,6 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
         ),
       ),
     );
-  }
-
-  List<WorkImageItem> _collectAsmrImageFiles(List<AsmrTrackFile> nodes) {
-    final result = <WorkImageItem>[];
-    void visit(AsmrTrackFile node) {
-      if (node.isImage) {
-        final url = node.streamUrl ?? node.downloadUrl ?? '';
-        result.add(
-          WorkImageItem(
-            name: node.title,
-            path: url,
-            relativePath: node.relativePath,
-          ),
-        );
-      }
-      for (final child in node.children) {
-        visit(child);
-      }
-    }
-
-    for (final node in nodes) {
-      visit(node);
-    }
-    return result;
   }
 
   // Local actions: Fetch info, Download, Pin
@@ -904,15 +923,16 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
 
   @override
   Widget build(BuildContext context) {
+    final Object? visibilityKey;
     if (widget.isLocal) {
-      ref.watch(undoableRemovalStateProvider);
+      visibilityKey = ref.watch(undoableRemovalStateProvider).hiddenKeys;
     } else {
       // Observe user removals and undo without replacing this page's file tree.
-      ref.watch(asmrTrackTreeStateProvider(widget.asmrWork!.id));
-    }
-    if ((widget.isLocal && !_loadingLocal) ||
-        (widget.isAsmr && !_loadingAsmr && _asmrTree != null)) {
-      _reconcileDirectory();
+      visibilityKey = ref.watch(
+        asmrTrackTreeStateProvider(
+          widget.asmrWork!.id,
+        ).select((state) => state.value?.revision),
+      );
     }
     final i18n = ref.watch(appLanguageProviderInstanceProvider);
     final cs = Theme.of(context).colorScheme;
@@ -956,9 +976,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
       displayTitle = work.title;
       displayRj = work.rjCode;
       displayCircle = work.circleName;
-      hasSubtitle =
-          work.hasSubtitle ||
-          (_asmrTree != null && _containsAsmrSubtitle(_asmrTree!));
+      hasSubtitle = work.hasSubtitle || (_directory?.hasSubtitle ?? false);
       displayVoiceActors = work.voiceActors;
       displayTags = work.tags;
       coverPath = work.preferredCoverUrl;
@@ -970,19 +988,27 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
     const coverMinHeight = 120.0; // Collapses by half!
     const rjBarHeight = 44.0;
 
-    final currentEntries = _buildCurrentEntries();
+    final currentEntries = _buildCurrentEntries(visibilityKey);
     Widget cacheScroll(Widget child) => widget.isLocal
         ? BrowsePageScroll(
             pageKey: _localPageKey,
             controller: _scrollController,
-            restoreReady: !_loadingLocal || _localFilesCached,
+            restoreReady:
+                (!_loadingLocal &&
+                    !_preparingDirectory &&
+                    _directory != null) ||
+                (_localFilesCached &&
+                    _localFolderNode != null &&
+                    _directory != null),
             displayState: {'segments': List<String>.of(_currentPathSegments)},
             child: child,
           )
         : child;
     final isLoading = widget.isLocal
-        ? _loadingLocal && currentEntries.isEmpty
-        : _loadingAsmr;
+        ? (_loadingLocal || _preparingDirectory || _directory == null) &&
+              currentEntries.isEmpty
+        : (_loadingAsmr || _preparingDirectory || _directory == null) &&
+              currentEntries.isEmpty;
 
     final String? trimmedCover = coverPath?.trim();
     final bool hasValidCover = trimmedCover != null && trimmedCover.isNotEmpty;
@@ -1009,6 +1035,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
             : coverUi.deferredRemoteCover(remoteUrl, context: context);
       }
       coverWidget = AsyncRemoteCoverImage(
+        deferLoadDuringInteraction: true,
         onImageError: ref
             .read(libraryFacadeProvider)
             .coverArtworkCacheService
@@ -1050,6 +1077,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
       }
 
       coverWidget = AsyncLocalCoverImage(
+        deferLoadDuringInteraction: true,
         onImageError: library.coverArtworkCacheService.reportArtworkReadFailure,
         future: _coverFuture!,
         requestKey: resolved,
@@ -1160,7 +1188,12 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
                     if (isLoading)
                       const SliverFillRemaining(
                         hasScrollBody: false,
-                        child: Center(child: CircularProgressIndicator()),
+                        child: Center(
+                          child: RepaintBoundary(
+                            key: ValueKey('work_detail_loading_indicator'),
+                            child: CircularProgressIndicator(),
+                          ),
+                        ),
                       )
                     else if (currentEntries.isEmpty)
                       SliverFillRemaining(
@@ -1195,7 +1228,10 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
                           delegate: SliverChildBuilderDelegate(
                             (context, index) {
                               final item = currentEntries[index];
-                              final tile = WorkDetailEntryTile(
+                              return WorkDetailEntryTile(
+                                key: ValueKey(
+                                  '${item.type.name}:${item.relativePath}',
+                                ),
                                 item: item,
                                 accentColor: widget.isAsmr
                                     ? asmrBlue
@@ -1204,20 +1240,6 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
                                 moreLabel: i18n.tr('more_actions'),
                                 onAction: (action) =>
                                     _handleEntryAction(item, action),
-                              );
-                              return TweenAnimationBuilder<double>(
-                                key: ValueKey(
-                                  '${item.type.name}:${item.relativePath}',
-                                ),
-                                tween: Tween<double>(begin: 0, end: 1),
-                                duration:
-                                    MediaQuery.disableAnimationsOf(context)
-                                    ? Duration.zero
-                                    : const Duration(milliseconds: 300),
-                                curve: Curves.easeOutCubic,
-                                child: tile,
-                                builder: (context, opacity, child) =>
-                                    Opacity(opacity: opacity, child: child),
                               );
                             },
                             childCount: currentEntries.length,

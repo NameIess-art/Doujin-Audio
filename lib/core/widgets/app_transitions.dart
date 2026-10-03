@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
@@ -74,14 +75,34 @@ Widget _buildCoveringPageTransition({
   required Animation<double> secondaryAnimation,
   required Widget child,
   bool fadeHeader = true,
+  bool wholePageTransition = false,
 }) {
   if (MediaQuery.disableAnimationsOf(context)) return child;
   final position = animation.drive(
-    Tween<Offset>(
-      begin: const Offset(1, 0),
-      end: Offset.zero,
-    ).chain(CurveTween(curve: Curves.easeOutCubic)),
+    Tween<Offset>(begin: const Offset(1, 0), end: Offset.zero).chain(
+      CurveTween(
+        curve: wholePageTransition
+            ? const Cubic(0.215, 0.61, 0.355, 1)
+            : Curves.easeOutCubic,
+      ),
+    ),
   );
+  if (wholePageTransition) {
+    return ClipRect(
+      child: SlideTransition(
+        position: position,
+        child: RepaintBoundary(
+          child: _AppPageMotionScope(
+            key: contentKey,
+            configuration: (animation, secondaryAnimation, wholePageTransition),
+            contentBuilder: (_, content) => RepaintBoundary(child: content),
+            headerBuilder: (_, header) => header,
+            child: child,
+          ),
+        ),
+      ),
+    );
+  }
   return ClipRect(
     child: LayoutBuilder(
       builder: (context, constraints) => SlideTransition(
@@ -1154,6 +1175,8 @@ PageRouteBuilder<T> buildAppPageRoute<T>({
   required Widget child,
   RouteSettings? settings,
   bool fadeHeader = true,
+  // Detail pages move their header and body together in one recorded layer.
+  bool wholePageTransition = false,
   Duration duration = kAppMotionSlow,
   bool fullscreenDialog = false,
 }) {
@@ -1162,8 +1185,13 @@ PageRouteBuilder<T> buildAppPageRoute<T>({
   return _PreparedAppPageRoute<T>(
     settings: settings,
     fullscreenDialog: fullscreenDialog,
-    transitionDuration: reducedMotion ? Duration.zero : duration,
-    reverseTransitionDuration: reducedMotion ? Duration.zero : duration,
+    transitionDuration: reducedMotion || duration == Duration.zero
+        ? Duration.zero
+        : duration,
+    reverseTransitionDuration: reducedMotion || duration == Duration.zero
+        ? Duration.zero
+        : duration,
+    deferExitFinalization: wholePageTransition,
     pageBuilder: (context, animation, secondaryAnimation) => child,
     transitionsBuilder: (context, animation, secondaryAnimation, routedChild) {
       if (duration == Duration.zero) return routedChild;
@@ -1175,6 +1203,7 @@ PageRouteBuilder<T> buildAppPageRoute<T>({
         secondaryAnimation: secondaryAnimation,
         child: routedChild,
         fadeHeader: fadeHeader,
+        wholePageTransition: wholePageTransition,
       );
     },
   );
@@ -1188,9 +1217,13 @@ class _PreparedAppPageRoute<T> extends PageRouteBuilder<T> {
     required super.reverseTransitionDuration,
     super.settings,
     super.fullscreenDialog,
+    required this.deferExitFinalization,
   });
 
+  final bool deferExitFinalization;
   bool _prepared = false;
+  bool _disposed = false;
+  Timer? _exitCompletionTimer;
 
   @override
   Widget buildPage(
@@ -1206,6 +1239,25 @@ class _PreparedAppPageRoute<T> extends PageRouteBuilder<T> {
 
   @override
   Simulation? createSimulation({required bool forward}) {
+    if (!forward &&
+        deferExitFinalization &&
+        reverseTransitionDuration != Duration.zero &&
+        controller!.value > 0) {
+      return _PostFrameExitSimulation(
+        initialValue: controller!.value,
+        duration: reverseTransitionDuration,
+        onFinished: () {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (_disposed) return;
+            // Finalize after the offscreen frame has painted, outside the
+            // animation callback that delivered its final position.
+            _exitCompletionTimer = Timer(Duration.zero, () {
+              if (!_disposed) controller!.value = 0;
+            });
+          });
+        },
+      );
+    }
     if (!forward || _prepared || transitionDuration == Duration.zero) {
       return null;
     }
@@ -1214,6 +1266,47 @@ class _PreparedAppPageRoute<T> extends PageRouteBuilder<T> {
       isPrepared: () => _prepared,
     );
   }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    _exitCompletionTimer?.cancel();
+    super.dispose();
+  }
+}
+
+class _PostFrameExitSimulation extends Simulation {
+  _PostFrameExitSimulation({
+    required this.initialValue,
+    required Duration duration,
+    required this.onFinished,
+  }) : _duration =
+           duration.inMicroseconds /
+           Duration.microsecondsPerSecond *
+           initialValue;
+
+  final double initialValue;
+  final double _duration;
+  final VoidCallback onFinished;
+  bool _completionScheduled = false;
+
+  @override
+  double x(double time) {
+    if (time >= _duration) {
+      if (!_completionScheduled) {
+        _completionScheduled = true;
+        onFinished();
+      }
+      return 0;
+    }
+    return initialValue * (1 - time / _duration);
+  }
+
+  @override
+  double dx(double time) => _duration == 0 ? 0 : -initialValue / _duration;
+
+  @override
+  bool isDone(double time) => false;
 }
 
 // Keep one continuous TickerFuture/status sequence while the first page frame

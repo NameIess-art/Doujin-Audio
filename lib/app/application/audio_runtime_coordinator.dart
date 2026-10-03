@@ -46,6 +46,8 @@ final class AudioRuntimeCoordinator implements AppRuntimeLifecycle {
   StreamSubscription<NativePlaybackSnapshot>? _snapshotSubscription;
   StreamSubscription<NativePlaybackProgressUpdate>? _progressSubscription;
   Future<void>? _startFuture;
+  Future<void>? _lifecycleFuture;
+  bool? _lifecycleBackground;
   bool _listenersStarted = false;
   bool _started = false;
   bool _disposed = false;
@@ -75,16 +77,40 @@ final class AudioRuntimeCoordinator implements AppRuntimeLifecycle {
   }
 
   @override
-  Future<void> enterBackground() async {
-    if (!_started || _disposed) return;
-    await _onEnterBackground();
-  }
+  Future<void> enterBackground() => _queueLifecycle(background: true);
 
   @override
-  Future<void> resumeForeground() async {
-    if (!_started || _disposed) return;
-    _startListening();
-    await _onResumeForeground();
+  Future<void> resumeForeground() => _queueLifecycle(background: false);
+
+  Future<void> _queueLifecycle({required bool background}) {
+    if (!_started || _disposed) return Future<void>.value();
+    final active = _lifecycleFuture;
+    if (active != null && _lifecycleBackground == background) return active;
+
+    Future<void> run() async {
+      if (_disposed) return;
+      if (background) {
+        await _onEnterBackground();
+      } else {
+        _startListening();
+        await _onResumeForeground();
+      }
+    }
+
+    late final Future<void> queued;
+    queued = (active ?? Future<void>.value())
+        .then<void>(
+          (_) => run(),
+          // A failed transition reaches its caller without blocking the next.
+          onError: (Object error, StackTrace stackTrace) => run(),
+        )
+        .whenComplete(() {
+          if (!identical(_lifecycleFuture, queued)) return;
+          _lifecycleFuture = null;
+          _lifecycleBackground = null;
+        });
+    _lifecycleBackground = background;
+    return _lifecycleFuture = queued;
   }
 
   @override

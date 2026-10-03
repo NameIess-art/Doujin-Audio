@@ -859,7 +859,7 @@ Map<String, Object> _pageTransitionReport(
   'frameBudgetUs': _frameBudget.inMicroseconds,
   'frameTimingDeliveryWaitMs': 2000,
   'frameSampleWindow':
-      'Action invocation through 25 pumps at 16 ms; preparation and trailing UI frames included',
+      'Action invocation through 36 pumps at 16 ms; preparation and trailing UI frames included',
   'firstVisibleFrameMeasurement':
       'UI frame commit with route progress > 0 or incoming slide within viewport; not display presentation time',
   'rounds': rounds,
@@ -915,7 +915,7 @@ Future<List<Map<String, Object>>> _measurePageTransitions(
       action();
       WidgetsBinding.instance.addPostFrameCallback(observeVisibleFrame);
       // Observe every frame rather than jumping over the preparation interval.
-      for (var frame = 0; frame < 25; frame++) {
+      for (var frame = 0; frame < 36; frame++) {
         await tester.pump(const Duration(milliseconds: 16));
       }
       finished = DateTime.now().microsecondsSinceEpoch;
@@ -1022,8 +1022,18 @@ Future<List<Map<String, Object>>> _measurePageTransitions(
         route = buildAppPageRoute<void>(
           context: navigator.context,
           child: page,
+          settings: page is WorkDetailPage
+              ? const RouteSettings(name: workDetailRouteName)
+              : null,
+          wholePageTransition: page is WorkDetailPage,
         );
-        unawaited(navigator.push(route));
+        if (page is WorkDetailPage) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (navigator.mounted) unawaited(navigator.push(route));
+          });
+        } else {
+          unawaited(navigator.push(route));
+        }
       }, () => route.animation!.value > 0);
       navigator.pop();
       await settleTransition();

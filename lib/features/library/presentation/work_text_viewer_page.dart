@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -6,6 +8,7 @@ import 'package:pdfx/pdfx.dart';
 import '../../../app/localization/app_language_provider.dart';
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/theme/app_styles.dart';
+import '../../../core/ui/ui_interaction_coordinator.dart';
 import '../../../core/widgets/page_header_inset.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/top_page_header.dart';
@@ -39,6 +42,9 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
   PdfController? _pdfController;
   bool _loadFailed = false;
   int _loadGeneration = 0;
+  bool _loadPending = false;
+  late final _loadKey = 'work_text_load_${identityHashCode(this)}';
+  late final _resultKey = 'work_text_result_${identityHashCode(this)}';
 
   @override
   void initState() {
@@ -52,7 +58,16 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_loadPending) _scheduleFileRead();
+  }
+
+  @override
   void dispose() {
+    _loadGeneration++;
+    UiInteractionCoordinator.instance.cancelCommit(_loadKey);
+    UiInteractionCoordinator.instance.cancelCommit(_resultKey);
     _disposePdfController();
     _scrollController.dispose();
     super.dispose();
@@ -66,8 +81,10 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
   WorkTextFile? get _currentFile =>
       widget.files.isNotEmpty ? widget.files[_currentIndex] : null;
 
-  Future<void> _loadFile() async {
-    final gen = ++_loadGeneration;
+  void _loadFile() {
+    _loadGeneration++;
+    UiInteractionCoordinator.instance.cancelCommit(_loadKey);
+    UiInteractionCoordinator.instance.cancelCommit(_resultKey);
     _disposePdfController();
     final file = _currentFile;
     if (file == null) {
@@ -77,6 +94,7 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
         _visibleContentLength = 0;
         _loadFailed = false;
       });
+      _loadPending = false;
       return;
     }
 
@@ -86,41 +104,84 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
       _content = '';
       _visibleContentLength = 0;
     });
+    _loadPending = true;
+    _scheduleFileRead();
+  }
 
+  void _scheduleFileRead() {
+    final gen = _loadGeneration;
+    UiInteractionCoordinator.instance.scheduleCommit(
+      key: _loadKey,
+      commit: () {
+        if (!mounted ||
+            gen != _loadGeneration ||
+            !_loadPending ||
+            ModalRoute.of(context)?.isCurrent == false) {
+          return;
+        }
+        _loadPending = false;
+        unawaited(_readFile(_currentFile!, gen));
+      },
+    );
+  }
+
+  Future<void> _readFile(WorkTextFile file, int gen) async {
     try {
       final service = ref.read(workTextServiceProvider);
-      if (file.isPdf) {
-        final bytes = await service.readDocumentBytes(file);
+      final bytes = await service.readDocumentBytes(file);
+      _publishFileResult(gen, () {
+        if (file.isPdf) {
+          if (bytes == null || bytes.isEmpty) {
+            setState(() {
+              _loading = false;
+              _loadFailed = true;
+            });
+            return;
+          }
+          final controller = PdfController(
+            document: PdfDocument.openData(bytes),
+          );
+          setState(() {
+            _loading = false;
+            _pdfController = controller;
+          });
+        } else {
+          // Decode after navigation, including reads that completed mid-transition.
+          final text = bytes == null ? '' : decodeWorkText(bytes).text;
+          setState(() {
+            _loading = false;
+            _content = text;
+            _visibleContentLength = _nextContentEnd(text, 0);
+          });
+          _scheduleViewportFill(gen);
+        }
+      });
+    } catch (_) {
+      _publishFileResult(gen, () {
+        setState(() {
+          _loading = false;
+          _loadFailed = true;
+        });
+      });
+    }
+  }
+
+  void _publishFileResult(int gen, VoidCallback publish) {
+    if (!mounted || gen != _loadGeneration) return;
+    UiInteractionCoordinator.instance.scheduleCommit(
+      key: _resultKey,
+      commit: () {
         if (!mounted || gen != _loadGeneration) return;
-        if (bytes == null || bytes.isEmpty) {
+        try {
+          publish();
+        } catch (_) {
           setState(() {
             _loading = false;
             _loadFailed = true;
           });
-          return;
         }
-        final controller = PdfController(document: PdfDocument.openData(bytes));
-        setState(() {
-          _loading = false;
-          _pdfController = controller;
-        });
-      } else {
-        final result = await service.readDecodedText(file);
-        if (!mounted || gen != _loadGeneration) return;
-        setState(() {
-          _loading = false;
-          _content = result.text;
-          _visibleContentLength = _nextContentEnd(result.text, 0);
-        });
-        _scheduleViewportFill(gen);
-      }
-    } catch (_) {
-      if (!mounted || gen != _loadGeneration) return;
-      setState(() {
-        _loading = false;
-        _loadFailed = true;
-      });
-    }
+      },
+    );
   }
 
   String get _visibleContent => _content.substring(0, _visibleContentLength);

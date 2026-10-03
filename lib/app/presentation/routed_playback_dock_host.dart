@@ -568,7 +568,6 @@ class _RoutedPlaybackDockState extends ConsumerState<_RoutedPlaybackDock> {
     final i18n = ref.read(appLanguageProviderInstanceProvider);
 
     Widget dockContent() => AppDockGlassPanel(
-      key: const ValueKey<String>('routed_playback_dock'),
       shadowOpacity: 0.12,
       showTopHighlight: false,
       child: ClipRRect(
@@ -630,7 +629,20 @@ class _RoutedPlaybackDockState extends ConsumerState<_RoutedPlaybackDock> {
                 height: dockRect.height,
                 child: SizedBox.expand(
                   key: const ValueKey<String>('routed_playback_dock_width'),
-                  child: RepaintBoundary(child: dockContent()),
+                  child: ClipRRect(
+                    key: const ValueKey<String>('routed_playback_dock'),
+                    borderRadius: BorderRadius.circular(
+                      kActiveSessionCarouselDockHeight / 2,
+                    ),
+                    child: OverflowBox(
+                      alignment: Alignment.centerLeft,
+                      minWidth: expandedRect.width,
+                      maxWidth: expandedRect.width,
+                      minHeight: kActiveSessionCarouselDockHeight,
+                      maxHeight: kActiveSessionCarouselDockHeight,
+                      child: RepaintBoundary(child: dockContent()),
+                    ),
+                  ),
                 ),
               ),
             ],
@@ -670,7 +682,22 @@ class _RoutedPlaybackDockState extends ConsumerState<_RoutedPlaybackDock> {
                               ? constraints.maxWidth
                               : _transitionWidth(constraints.maxWidth),
                           height: kActiveSessionCarouselDockHeight,
-                          child: RepaintBoundary(child: dockContent()),
+                          // Animate the visible window while retaining the
+                          // carousel's final layout throughout the transition.
+                          child: ClipRRect(
+                            key: const ValueKey<String>('routed_playback_dock'),
+                            borderRadius: BorderRadius.circular(
+                              kActiveSessionCarouselDockHeight / 2,
+                            ),
+                            child: OverflowBox(
+                              alignment: Alignment.centerLeft,
+                              minWidth: constraints.maxWidth,
+                              maxWidth: constraints.maxWidth,
+                              minHeight: kActiveSessionCarouselDockHeight,
+                              maxHeight: kActiveSessionCarouselDockHeight,
+                              child: RepaintBoundary(child: dockContent()),
+                            ),
+                          ),
                         ),
                       ),
                     );

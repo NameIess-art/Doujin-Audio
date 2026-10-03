@@ -119,6 +119,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
   bool _isMobilePlaybackExpanded = false;
   late final ValueNotifier<int> _activePageIndex;
   final Object _pageSwitchInteraction = Object();
+  final Object _foregroundInteraction = Object();
   final GlobalKey _dockContentKey = GlobalKey();
   final GlobalKey _mobilePlaybackGeometryKey = GlobalKey();
   final GlobalKey _desktopPlaybackGeometryKey = GlobalKey();
@@ -485,6 +486,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
   void dispose() {
     _pageSwitchCoordinatorGeneration++;
     UiInteractionCoordinator.instance.cancelInteraction(_pageSwitchInteraction);
+    UiInteractionCoordinator.instance.cancelInteraction(_foregroundInteraction);
     _sleepModeAutoEntryTimer?.cancel();
     _sleepModeAutoEntryTimer = null;
     _metricsRecoveryTimer?.cancel();
@@ -607,12 +609,18 @@ class _MainScreenState extends ConsumerState<MainScreen>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.detached) {
       _appInForeground = false;
+      UiInteractionCoordinator.instance.cancelInteraction(
+        _foregroundInteraction,
+      );
       unawaited(ref.read(audioRuntimeCoordinatorProvider).dispose());
       return;
     }
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.hidden) {
       _appInForeground = false;
+      UiInteractionCoordinator.instance.cancelInteraction(
+        _foregroundInteraction,
+      );
       unawaited(ref.read(audioRuntimeCoordinatorProvider).enterBackground());
       _subtitleOverlay.requestRuntimeSync();
       return;
@@ -621,6 +629,16 @@ class _MainScreenState extends ConsumerState<MainScreen>
       return;
     }
     _appInForeground = true;
+    // Keep cached content available for the first restored frame. Coalesced
+    // presentation updates and warmup resume after that frame's idle period.
+    final interaction = UiInteractionCoordinator.instance;
+    interaction.beginInteraction(_foregroundInteraction);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _appInForeground) {
+        interaction.endInteraction(_foregroundInteraction);
+      }
+    });
+    WidgetsBinding.instance.scheduleFrame();
     if (shouldRunGlobalSubtitleOverlay(appInForeground: _appInForeground)) {
       _subtitleOverlay.requestRuntimeSync();
     } else {

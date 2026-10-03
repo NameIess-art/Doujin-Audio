@@ -242,10 +242,8 @@ class WorkTextService {
   List<WorkTextFile>? resolvedWorkTextFiles(String folderPath) =>
       _textSnapshots[PathMatcher.equivalenceKey(folderPath)];
 
-  List<String>? resolvedWorkImageFiles(String folderPath) =>
-      _imageSnapshots[PathMatcher.equivalenceKey(folderPath)]
-          ?.map((image) => image.displayPath)
-          .toList(growable: false);
+  List<CoverImageReference>? resolvedWorkImageFiles(String folderPath) =>
+      _imageSnapshots[PathMatcher.equivalenceKey(folderPath)];
 
   Future<List<WorkTextFile>> refreshWorkTextFiles(String folderPath) =>
       _findWorkTexts(folderPath, refresh: true);
@@ -261,7 +259,7 @@ class WorkTextService {
     refresh: refresh,
   );
 
-  Future<List<String>> refreshWorkImageFiles(String folderPath) =>
+  Future<List<CoverImageReference>> refreshWorkImageFiles(String folderPath) =>
       _findDirectoryFiles(
         folderPath: folderPath,
         requests: _imageRequests,
@@ -273,9 +271,6 @@ class WorkTextService {
               rootFolder: folder,
             ),
         refresh: true,
-      ).then(
-        (images) =>
-            images.map((image) => image.displayPath).toList(growable: false),
       );
 
   Future<void> clearDirectoryCache() async {

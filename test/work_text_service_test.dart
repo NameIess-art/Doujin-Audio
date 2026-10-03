@@ -306,11 +306,10 @@ void main() {
         final second = service.refreshWorkImageFiles('e:/作品/');
         expect(scans, 1);
         scan.complete(_images(['/support/cover.jpg']));
-        expect(await first, ['/support/cover.jpg']);
-        expect(await second, ['/support/cover.jpg']);
-        expect(service.resolvedWorkImageFiles('e:/作品/'), [
-          '/support/cover.jpg',
-        ]);
+        final files = await first;
+        expect(files, _images(['/support/cover.jpg']));
+        expect(await second, same(files));
+        expect(service.resolvedWorkImageFiles('e:/作品/'), same(files));
         await service.refreshWorkImageFiles(r'E:\作品');
         expect(scans, 2);
         await service.dispose();
@@ -351,7 +350,10 @@ void main() {
           },
         );
         final first = create();
-        await first.refreshWorkImageFiles(r'E:\作品');
+        final files = await first.refreshWorkImageFiles(r'E:\作品');
+        expect(files.single.sourcePath, r'E:\作品\画册\原图.jpg');
+        expect(files.single.displayPath, '/support/hash.jpg');
+        expect(first.resolvedWorkImageFiles('e:/作品/'), same(files));
         expect(
           first.sourcePathForWorkImage('e:/作品/', '/support/hash.jpg'),
           r'E:\作品\画册\原图.jpg',
@@ -385,10 +387,16 @@ void main() {
         );
         final pending = service.refreshWorkImageFiles('/work');
         await service.clearDirectoryCache();
-        expect(await service.refreshWorkImageFiles('/work'), ['/work/new.jpg']);
+        expect(
+          await service.refreshWorkImageFiles('/work'),
+          _images(['/work/new.jpg']),
+        );
         old.complete(_images(['/work/old.jpg']));
         await pending;
-        expect(await service.refreshWorkImageFiles('/work'), ['/work/new.jpg']);
+        expect(
+          await service.refreshWorkImageFiles('/work'),
+          _images(['/work/new.jpg']),
+        );
         await service.dispose();
       },
     );

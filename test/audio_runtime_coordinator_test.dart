@@ -118,7 +118,145 @@ void main() {
     await coordinator.dispose();
     expect(listeningStops, 1);
   });
+
+  for (final background in [true, false]) {
+    final transition = background ? 'background' : 'foreground';
+    test(
+      'coalesces concurrent $transition requests and allows later calls',
+      () async {
+        final pending = Completer<void>();
+        var transitions = 0;
+        Future<void> action() async {
+          transitions++;
+          if (transitions == 1) await pending.future;
+        }
+
+        final coordinator = _lifecycleCoordinator(
+          onEnterBackground: background ? action : () {},
+          onResumeForeground: background ? () {} : action,
+        );
+        addTearDown(coordinator.dispose);
+        await coordinator.start();
+        final transitionAction = background
+            ? coordinator.enterBackground
+            : coordinator.resumeForeground;
+        final first = transitionAction();
+        final second = transitionAction();
+        expect(second, same(first));
+        await Future<void>.delayed(Duration.zero);
+        expect(transitions, 1);
+        pending.complete();
+        await Future.wait([first, second]);
+        await transitionAction();
+        expect(transitions, 2);
+      },
+    );
+
+    test('failed $transition request can retry', () async {
+      final pending = Completer<void>();
+      var transitions = 0;
+      Future<void> action() async {
+        transitions++;
+        if (transitions == 1) await pending.future;
+      }
+
+      final coordinator = _lifecycleCoordinator(
+        onEnterBackground: background ? action : () {},
+        onResumeForeground: background ? () {} : action,
+      );
+      addTearDown(coordinator.dispose);
+      await coordinator.start();
+      final transitionAction = background
+          ? coordinator.enterBackground
+          : coordinator.resumeForeground;
+      final first = transitionAction();
+      expect(transitionAction(), same(first));
+      final failure = expectLater(first, throwsStateError);
+      pending.completeError(StateError('native runtime unavailable'));
+      await failure;
+      await transitionAction();
+      expect(transitions, 2);
+    });
+  }
+
+  test(
+    'serializes opposite transitions without discarding later background',
+    () async {
+      final pending = Completer<void>();
+      final events = <String>[];
+      final coordinator = _lifecycleCoordinator(
+        onEnterBackground: () async {
+          events.add('background');
+          if (events.length == 1) await pending.future;
+        },
+        onResumeForeground: () => events.add('foreground'),
+      );
+      addTearDown(coordinator.dispose);
+      await coordinator.start();
+      final first = coordinator.enterBackground();
+      final foreground = coordinator.resumeForeground();
+      final last = coordinator.enterBackground();
+      expect(last, isNot(same(first)));
+      expect(coordinator.enterBackground(), same(last));
+      await Future<void>.delayed(Duration.zero);
+      expect(events, ['background']);
+      pending.complete();
+      await Future.wait([first, foreground, last]);
+      expect(events, ['background', 'foreground', 'background']);
+    },
+  );
+
+  test('queued foreground still runs after background fails', () async {
+    final pending = Completer<void>();
+    var resumes = 0;
+    final coordinator = _lifecycleCoordinator(
+      onEnterBackground: () => pending.future,
+      onResumeForeground: () => resumes++,
+    );
+    addTearDown(coordinator.dispose);
+    await coordinator.start();
+    final first = coordinator.enterBackground();
+    final foreground = coordinator.resumeForeground();
+    final failure = expectLater(first, throwsStateError);
+    pending.completeError(StateError('persistence unavailable'));
+    await failure;
+    await foreground;
+    expect(resumes, 1);
+  });
+
+  test('dispose skips queued foreground work', () async {
+    final pending = Completer<void>();
+    var resumes = 0;
+    final coordinator = _lifecycleCoordinator(
+      onEnterBackground: () => pending.future,
+      onResumeForeground: () => resumes++,
+    );
+    await coordinator.start();
+    final first = coordinator.enterBackground();
+    await Future<void>.delayed(Duration.zero);
+    final foreground = coordinator.resumeForeground();
+    await coordinator.dispose();
+    pending.complete();
+    await Future.wait([first, foreground]);
+    expect(resumes, 0);
+  });
 }
+
+AudioRuntimeCoordinator _lifecycleCoordinator({
+  required AudioRuntimeAction onEnterBackground,
+  required AudioRuntimeAction onResumeForeground,
+}) => AudioRuntimeCoordinator(
+  snapshots: const Stream<NativePlaybackSnapshot>.empty(),
+  progressUpdates: const Stream<NativePlaybackProgressUpdate>.empty(),
+  startListening: () {},
+  stopListening: () async {},
+  onSnapshot: (_) {},
+  onProgress: (_) {},
+  onStart: () {},
+  onEnterBackground: onEnterBackground,
+  onResumeForeground: onResumeForeground,
+  onDispose: () {},
+);
 
 NativePlaybackSnapshot _snapshot(String sessionId) {
   return NativePlaybackSnapshot(

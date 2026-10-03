@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -9,6 +10,8 @@ import 'package:doujin_audio/app/localization/app_language_provider.dart';
 import 'package:doujin_audio/app/state/app_runtime_providers.dart';
 import 'package:flutter/foundation.dart';
 import 'package:doujin_audio/core/platform/file_cache_platform_gateway.dart';
+import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
+import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/core/widgets/app_edge_fade_mask.dart';
 import 'package:doujin_audio/core/widgets/page_header_inset.dart';
 import 'package:doujin_audio/core/widgets/top_page_header.dart';
@@ -24,6 +27,18 @@ class _FakeFileCacheGateway extends Fake implements FileCachePlatformGateway {
   @override
   Future<Uint8List?> readDocumentBytes(String filePath) async {
     return filesMap[filePath];
+  }
+}
+
+class _PendingFileCacheGateway extends Fake
+    implements FileCachePlatformGateway {
+  final bytes = Completer<Uint8List?>();
+  int reads = 0;
+
+  @override
+  Future<Uint8List?> readDocumentBytes(String filePath) {
+    reads++;
+    return bytes.future;
   }
 }
 
@@ -45,6 +60,92 @@ void main() {
     relativePath: 'readme.txt',
     path: '/works/RJ123/readme.txt',
   );
+
+  for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+    for (final exitPage in [false, true]) {
+      testWidgets(
+        'text reads wait for opening and completion waits for ${exitPage ? 'exit' : 'next route'} on $platform',
+        (tester) async {
+          UiInteractionCoordinator.instance.resetForTest();
+          addTearDown(UiInteractionCoordinator.instance.resetForTest);
+          SharedPreferences.setMockInitialValues(const <String, Object>{});
+          final language = AppLanguageProvider();
+          addTearDown(language.dispose);
+          final gateway = _PendingFileCacheGateway();
+          final service = WorkTextService(platformGateway: gateway);
+          addTearDown(service.dispose);
+          final navigator = GlobalKey<NavigatorState>();
+          await tester.pumpWidget(
+            ProviderScope(
+              overrides: [
+                appLanguageProviderInstanceProvider.overrideWithValue(language),
+                workTextServiceProvider.overrideWithValue(service),
+              ],
+              child: MaterialApp(
+                navigatorKey: navigator,
+                navigatorObservers: [UiInteractionNavigatorObserver()],
+                home: const Scaffold(body: Text('home')),
+              ),
+            ),
+          );
+          final homeContext = tester.element(find.text('home'));
+          unawaited(
+            navigator.currentState!.push<void>(
+              buildAppPageRoute<void>(
+                context: homeContext,
+                child: const WorkTextViewerPage(files: [file1]),
+                duration: const Duration(milliseconds: 500),
+              ),
+            ),
+          );
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 100));
+          expect(gateway.reads, 0);
+          await tester.pump(const Duration(milliseconds: 500));
+          await tester.pump(const Duration(milliseconds: 200));
+          await tester.pump();
+          expect(gateway.reads, 1);
+          final viewerContext = tester.element(find.byType(WorkTextViewerPage));
+          if (exitPage) {
+            navigator.currentState!.pop();
+          } else {
+            unawaited(
+              navigator.currentState!.push<void>(
+                buildAppPageRoute<void>(
+                  context: viewerContext,
+                  child: const Scaffold(body: Text('next page')),
+                  duration: const Duration(milliseconds: 500),
+                ),
+              ),
+            );
+          }
+          await tester.pump();
+          gateway.bytes.complete(
+            Uint8List.fromList(utf8.encode('loaded script')),
+          );
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 100));
+          expect(find.text('loaded script', skipOffstage: false), findsNothing);
+          await tester.pumpAndSettle();
+          await tester.pump(const Duration(milliseconds: 200));
+          await tester.pumpAndSettle();
+          if (exitPage) {
+            expect(find.byType(WorkTextViewerPage), findsNothing);
+            expect(UiInteractionCoordinator.instance.pendingCommitCount, 0);
+          } else {
+            navigator.currentState!.pop();
+            await tester.pumpAndSettle();
+            await tester.pump(const Duration(milliseconds: 200));
+            await tester.pumpAndSettle();
+            expect(find.text('loaded script'), findsOneWidget);
+          }
+          expect(gateway.reads, 1);
+          expect(tester.takeException(), isNull);
+        },
+        variant: TargetPlatformVariant({platform}),
+      );
+    }
+  }
 
   testWidgets(
     'WorkTextViewerPage displays title bar with exit button and file name, and bottom-right switcher',

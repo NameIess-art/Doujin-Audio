@@ -19,6 +19,7 @@ import '../../settings/application/permission_status_service.dart';
 import '../../../core/media/time_text_formatters.dart';
 import '../application/timer_runtime_calculator.dart';
 import '../../../core/ui/ui_operation_service.dart';
+import '../../../core/ui/ui_interaction_coordinator.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/confirm_action_dialog.dart';
 import '../../../core/widgets/target_countdown_builder.dart';
@@ -62,6 +63,9 @@ class _TimerTabState extends ConsumerState<TimerTab>
   bool _draftInitialized = false;
   String? _lastSyncedDraftKey;
   Future<_TimerReliabilityStatus>? _reliabilityStatusFuture;
+  bool _reliabilityRefreshNeeded = true;
+  late final String _reliabilityLoadKey =
+      'timer_reliability:${identityHashCode(this)}';
 
   void _setLocalState(VoidCallback fn) => setState(fn);
 
@@ -70,21 +74,20 @@ class _TimerTabState extends ConsumerState<TimerTab>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _showCompactDetail = widget.initialCompactDetail;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted ||
-          defaultTargetPlatform == TargetPlatform.windows ||
-          _reliabilityStatusFuture != null) {
-        return;
-      }
-      final reliabilityStatus = _loadReliabilityStatus();
-      setState(() {
-        _reliabilityStatusFuture = reliabilityStatus;
-      });
-    });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_reliabilityRefreshNeeded &&
+        (ModalRoute.of(context)?.isCurrent ?? true)) {
+      _scheduleReliabilityRefresh();
+    }
   }
 
   @override
   void dispose() {
+    UiInteractionCoordinator.instance.cancelCommit(_reliabilityLoadKey);
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -98,10 +101,27 @@ class _TimerTabState extends ConsumerState<TimerTab>
 
   void _refreshReliabilityStatus() {
     if (!mounted || defaultTargetPlatform == TargetPlatform.windows) return;
-    final reliabilityStatus = _loadReliabilityStatus();
-    setState(() {
-      _reliabilityStatusFuture = reliabilityStatus;
-    });
+    _reliabilityRefreshNeeded = true;
+    _scheduleReliabilityRefresh();
+  }
+
+  void _scheduleReliabilityRefresh() {
+    if (defaultTargetPlatform == TargetPlatform.windows) return;
+    UiInteractionCoordinator.instance.scheduleCommit(
+      key: _reliabilityLoadKey,
+      commit: () {
+        if (!mounted ||
+            !_reliabilityRefreshNeeded ||
+            !(ModalRoute.of(context)?.isCurrent ?? true)) {
+          return;
+        }
+        _reliabilityRefreshNeeded = false;
+        final reliabilityStatus = _loadReliabilityStatus();
+        setState(() {
+          _reliabilityStatusFuture = reliabilityStatus;
+        });
+      },
+    );
   }
 
   Duration get _pickedDuration =>

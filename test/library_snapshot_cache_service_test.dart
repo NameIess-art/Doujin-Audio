@@ -23,6 +23,45 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   test(
+    'clear prevents old card and full tree requests from repopulating folder sources',
+    () async {
+      const root = '/library/work';
+      final library = LibraryService()
+        ..watchedFolders.add(root)
+        ..library.add(_track(path: '$root/old.mp3', groupKey: root))
+        ..markStructureChanged();
+      final cardBuild = Completer<LibraryTreeSnapshot>();
+      final treeBuild = Completer<LibraryTreeSnapshot>();
+      final snapshot = const LibraryOrganizer().buildTree(
+        tracks: library.library,
+        watchedFolders: library.watchedFolders,
+      );
+      final service = LibrarySnapshotCacheService(
+        libraryService: library,
+        detailCacheService: AudioDetailCacheService(
+          repository: _FakeAudioDetailRepository(),
+        ),
+        cardSnapshotBuilder: (_) => cardBuild.future,
+        treeSnapshotBuilder: (_) => treeBuild.future,
+      );
+      var commits = 0;
+      final cardRequest = service.cardSnapshot(onCommitted: () => commits++);
+      final treeRequest = service.treeSnapshot(onCommitted: () => commits++);
+      service.clear();
+      cardBuild.complete(snapshot);
+      treeBuild.complete(snapshot);
+      await Future.wait([cardRequest, treeRequest]);
+
+      expect(service.cards, isEmpty);
+      expect(service.tree, isEmpty);
+      expect(service.cardSnapshotRevision, -1);
+      expect(service.treeSnapshotRevision, -1);
+      expect(service.resolvedFolderTree(root), isNull);
+      expect(commits, 0);
+    },
+  );
+
+  test(
     'tree snapshot reuses the in-flight future for the same revision',
     () async {
       final library = LibraryService();
@@ -534,7 +573,7 @@ void main() {
     },
   );
 
-  test('folder tree resolves one shallow card and reuses its cache', () {
+  test('folder tree loads one shallow card and reuses its cache', () async {
     final library = LibraryService()
       ..watchedLibraries.add('/library')
       ..library.addAll([
@@ -559,7 +598,8 @@ void main() {
           ),
         );
 
-    final folder = service.resolvedFolderTree('/library/first')!;
+    expect(service.resolvedFolderTree('/library/first'), isNull);
+    final folder = (await service.loadFolderTree('/library/first'))!;
 
     expect(folder.children.single, isA<FolderNode>());
     expect((folder.children.single as FolderNode).name, 'Disc');
@@ -567,6 +607,7 @@ void main() {
       '/library/first/Disc/01.mp3',
     ]);
     expect(service.resolvedFolderTree('/library/first'), same(folder));
+    expect(await service.loadFolderTree('/library/first'), same(folder));
     expect(
       service.cards.whereType<FolderNode>().every(
         (card) => card.children.isEmpty,
@@ -577,10 +618,223 @@ void main() {
     expect(service.treeSnapshotRevision, -1);
 
     service.clear();
-    final rebuilt = service.resolvedFolderTree('/library/first');
+    expect(service.resolvedFolderTree('/library/first'), isNull);
+    final rebuilt = await service.loadFolderTree('/library/first');
     expect(rebuilt, isNot(same(folder)));
     expect(rebuilt?.allTracks.single.path, '/library/first/Disc/01.mp3');
   });
+
+  test(
+    'cold folder reads never build and equivalent requests share a build',
+    () async {
+      const root = r'E:\作品 空格\Work';
+      final library = LibraryService()
+        ..library.addAll([
+          _track(path: '$root\\Disc\\01.mp3', groupKey: '$root\\Disc'),
+          _track(path: r'E:\Other\02.mp3', groupKey: r'E:\Other'),
+        ])
+        ..markStructureChanged();
+      final build = Completer<LibraryTreeSnapshot>();
+      LibraryDerivedSnapshotPayload? requested;
+      var buildCount = 0;
+      final service = LibrarySnapshotCacheService(
+        libraryService: library,
+        detailCacheService: AudioDetailCacheService(
+          repository: _FakeAudioDetailRepository(),
+        ),
+        treeSnapshotBuilder: (payload) {
+          buildCount++;
+          requested = payload;
+          return build.future;
+        },
+      );
+
+      expect(service.resolvedFolderTree(root), isNull);
+      expect(service.resolvedFolderTree('e:/作品 空格/work/'), isNull);
+      expect(buildCount, 0);
+      final first = service.loadFolderTree(root);
+      final second = service.loadFolderTree('e:/作品 空格/work/');
+      expect(second, same(first));
+      expect(buildCount, 0);
+      await Future<void>.delayed(Duration.zero);
+      expect(buildCount, 1);
+      expect(requested!.tracks.map((track) => track.path), [
+        '$root\\Disc\\01.mp3',
+      ]);
+      expect(requested!.watchedFolders, [root]);
+      expect(requested!.watchedLibraries, isEmpty);
+      build.complete(
+        const LibraryOrganizer().buildTree(
+          tracks: requested!.tracks,
+          watchedFolders: requested!.watchedFolders,
+        ),
+      );
+      final folder = await first;
+      expect(await second, same(folder));
+      expect(service.resolvedFolderTree('e:/作品 空格/work/'), same(folder));
+      expect(await service.loadFolderTree(root), same(folder));
+      expect(buildCount, 1);
+      expect(service.tree, isEmpty);
+    },
+  );
+
+  for (final clear in [false, true]) {
+    for (final oldCompletesFirst in [false, true]) {
+      test(
+        'folder ${clear ? "clear" : "revision change"} joins the current request when old completes ${oldCompletesFirst ? "first" : "last"}',
+        () async {
+          const root = '/library/work';
+          final library = LibraryService()
+            ..library.add(_track(path: '$root/old.mp3', groupKey: root))
+            ..markStructureChanged();
+          final builds = <Completer<LibraryTreeSnapshot>>[];
+          final snapshots = <LibraryTreeSnapshot>[];
+          final service = LibrarySnapshotCacheService(
+            libraryService: library,
+            detailCacheService: AudioDetailCacheService(
+              repository: _FakeAudioDetailRepository(),
+            ),
+            treeSnapshotBuilder: (payload) {
+              snapshots.add(
+                const LibraryOrganizer().buildTree(
+                  tracks: payload.tracks,
+                  watchedFolders: payload.watchedFolders,
+                ),
+              );
+              final build = Completer<LibraryTreeSnapshot>();
+              builds.add(build);
+              return build.future;
+            },
+          );
+          final oldRequest = service.loadFolderTree(root);
+          await Future<void>.delayed(Duration.zero);
+          library.library
+            ..clear()
+            ..add(_track(path: '$root/new.mp3', groupKey: root));
+          if (clear) {
+            service.clear();
+          } else {
+            library.markStructureChanged();
+          }
+          expect(service.resolvedFolderTree(root), isNull);
+          final currentRequest = service.loadFolderTree(root);
+          await Future<void>.delayed(Duration.zero);
+          expect(builds, hasLength(2));
+          if (oldCompletesFirst) {
+            builds[0].complete(snapshots[0]);
+            await Future<void>.delayed(Duration.zero);
+            expect(service.resolvedFolderTree(root), isNull);
+          }
+          builds[1].complete(snapshots[1]);
+          final current = await currentRequest;
+          if (!oldCompletesFirst) builds[0].complete(snapshots[0]);
+          expect(await oldRequest, same(current));
+          expect(current!.allTracks.single.path, '$root/new.mp3');
+          expect(service.resolvedFolderTree(root), same(current));
+          expect(builds, hasLength(2));
+        },
+      );
+    }
+  }
+
+  test(
+    'folder requests follow multiple revision and clear changes without waiting cycles',
+    () async {
+      const root = '/library/work';
+      final library = LibraryService()
+        ..library.add(_track(path: '$root/0.mp3', groupKey: root))
+        ..markStructureChanged();
+      final builds = <Completer<LibraryTreeSnapshot>>[];
+      final snapshots = <LibraryTreeSnapshot>[];
+      final service = LibrarySnapshotCacheService(
+        libraryService: library,
+        detailCacheService: AudioDetailCacheService(
+          repository: _FakeAudioDetailRepository(),
+        ),
+        treeSnapshotBuilder: (payload) {
+          snapshots.add(
+            const LibraryOrganizer().buildTree(
+              tracks: payload.tracks,
+              watchedFolders: payload.watchedFolders,
+            ),
+          );
+          final build = Completer<LibraryTreeSnapshot>();
+          builds.add(build);
+          return build.future;
+        },
+      );
+      final requests = [service.loadFolderTree(root)];
+      await Future<void>.delayed(Duration.zero);
+      for (var generation = 1; generation <= 3; generation++) {
+        library.library
+          ..clear()
+          ..add(_track(path: '$root/$generation.mp3', groupKey: root));
+        if (generation != 2) library.markStructureChanged();
+        if (generation != 1) service.clear();
+        requests.add(service.loadFolderTree(root));
+        await Future<void>.delayed(Duration.zero);
+        builds[generation - 1].complete(snapshots[generation - 1]);
+        await Future<void>.delayed(Duration.zero);
+        expect(service.resolvedFolderTree(root), isNull);
+        expect(builds, hasLength(generation + 1));
+      }
+      builds.last.complete(snapshots.last);
+      final folders = await Future.wait(
+        requests,
+      ).timeout(const Duration(seconds: 2));
+      expect(
+        folders.every((folder) => identical(folder, folders.last)),
+        isTrue,
+      );
+      expect(folders.last!.allTracks.single.path, '$root/3.mp3');
+      expect(service.resolvedFolderTree(root), same(folders.last));
+      expect(builds, hasLength(4));
+    },
+  );
+
+  test(
+    'invalidated folder request rebuilds without another caller and retries failures',
+    () async {
+      const root = '/library/work';
+      final library = LibraryService()
+        ..library.add(_track(path: '$root/old.mp3', groupKey: root))
+        ..markStructureChanged();
+      final oldBuild = Completer<LibraryTreeSnapshot>();
+      var buildCount = 0;
+      final service = LibrarySnapshotCacheService(
+        libraryService: library,
+        detailCacheService: AudioDetailCacheService(
+          repository: _FakeAudioDetailRepository(),
+        ),
+        treeSnapshotBuilder: (payload) async {
+          buildCount++;
+          if (buildCount == 1) return oldBuild.future;
+          if (buildCount == 2) throw StateError('build failed');
+          return const LibraryOrganizer().buildTree(
+            tracks: payload.tracks,
+            watchedFolders: payload.watchedFolders,
+          );
+        },
+      );
+      final request = service.loadFolderTree(root);
+      await Future<void>.delayed(Duration.zero);
+      service.clear();
+      final failed = expectLater(request, throwsStateError);
+      oldBuild.complete(
+        const LibraryOrganizer().buildTree(
+          tracks: library.library,
+          watchedFolders: [root],
+        ),
+      );
+      await failed;
+      expect(service.resolvedFolderTree(root), isNull);
+      expect(
+        (await service.loadFolderTree(root))!.allTracks.single.path,
+        '$root/old.mp3',
+      );
+      expect(buildCount, 3);
+    },
+  );
 
   test(
     'folder tree ignores an older full tree after replacement and removal',
@@ -609,7 +863,8 @@ void main() {
         ..clear()
         ..add(_track(path: '$root/new.mp3', groupKey: root));
       library.markStructureChanged();
-      final updated = service.resolvedFolderTree(root)!;
+      expect(service.resolvedFolderTree(root), isNull);
+      final updated = (await service.loadFolderTree(root))!;
       expect(updated, isNot(same(oldFolder)));
       expect(updated.allTracks.single.path, '$root/new.mp3');
       expect(service.resolvedFolderTree(root), same(updated));
@@ -617,34 +872,39 @@ void main() {
       library.library.clear();
       library.markStructureChanged();
       expect(service.resolvedFolderTree(root), isNull);
+      expect(await service.loadFolderTree(root), isNull);
     },
   );
 
-  test('folder tree resolves equivalent Windows paths from the same cache', () {
-    const root = r'E:\作品 空格\Work';
-    final library = LibraryService()
-      ..watchedFolders.add(root)
-      ..library.add(
-        _track(path: '$root\\Disc\\01.mp3', groupKey: '$root\\Disc'),
-      )
-      ..markStructureChanged();
-    final service = LibrarySnapshotCacheService(
-      libraryService: library,
-      detailCacheService: AudioDetailCacheService(
-        repository: _FakeAudioDetailRepository(),
-      ),
-    );
+  test(
+    'folder tree resolves equivalent Windows paths from the same cache',
+    () async {
+      const root = r'E:\作品 空格\Work';
+      final library = LibraryService()
+        ..watchedFolders.add(root)
+        ..library.add(
+          _track(path: '$root\\Disc\\01.mp3', groupKey: '$root\\Disc'),
+        )
+        ..markStructureChanged();
+      final service = LibrarySnapshotCacheService(
+        libraryService: library,
+        detailCacheService: AudioDetailCacheService(
+          repository: _FakeAudioDetailRepository(),
+        ),
+      );
 
-    final folder = service.resolvedFolderTree(root)!;
+      expect(service.resolvedFolderTree(root), isNull);
+      final folder = (await service.loadFolderTree(root))!;
 
-    expect((folder.children.single as FolderNode).name, 'Disc');
-    expect(service.resolvedFolderTree('e:/作品 空格/work/'), same(folder));
-    expect(folder.allTracks.single.path, '$root\\Disc\\01.mp3');
-  });
+      expect((folder.children.single as FolderNode).name, 'Disc');
+      expect(service.resolvedFolderTree('e:/作品 空格/work/'), same(folder));
+      expect(folder.allTracks.single.path, '$root\\Disc\\01.mp3');
+    },
+  );
 
   test(
     'folder tree keeps SAF synthetic child paths under an existing work root',
-    () {
+    () async {
       const libraryRoot =
           'content://com.android.externalstorage.documents/tree/primary%3ALibrary';
       const workRoot = '$libraryRoot::作品';
@@ -670,7 +930,10 @@ void main() {
         ),
       );
 
-      final folder = service.resolvedFolderTree(workRoot)!;
+      expect(service.resolvedFolderTree(workRoot), isNull);
+      final request = service.loadFolderTree(workRoot);
+      expect(service.loadFolderTree(documentWorkRoot), same(request));
+      final folder = (await request)!;
       final disc = folder.children.single as FolderNode;
 
       expect(disc.name, 'Disc');

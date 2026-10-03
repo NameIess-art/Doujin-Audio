@@ -33,6 +33,28 @@ class _BuildCountingContent extends AppPageContentTransition {
   }
 }
 
+class _DetailPaintProbe extends SingleChildRenderObjectWidget {
+  const _DetailPaintProbe({required this.onPaint, required super.child});
+
+  final VoidCallback onPaint;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _DetailPaintRenderBox(onPaint);
+}
+
+class _DetailPaintRenderBox extends RenderProxyBox {
+  _DetailPaintRenderBox(this.onPaint);
+
+  final VoidCallback onPaint;
+
+  @override
+  void paint(PaintingContext context, Offset offset) {
+    onPaint();
+    super.paint(context, offset);
+  }
+}
+
 void main() {
   setUp(UiInteractionCoordinator.instance.resetForTest);
   tearDown(UiInteractionCoordinator.instance.resetForTest);
@@ -414,6 +436,191 @@ void main() {
         ),
       ],
     ),
+  );
+
+  for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+    testWidgets(
+      'whole detail paints before moving and exits after its final frame on $platform',
+      (tester) async {
+        final navigatorKey = GlobalKey<NavigatorState>();
+        final surface = GlobalKey();
+        var paints = 0;
+        var builds = 0;
+        await tester.pumpWidget(
+          RepaintBoundary(
+            key: surface,
+            child: MaterialApp(
+              theme: ThemeData(platform: platform),
+              navigatorKey: navigatorKey,
+              home: regions('whole-home', backgroundColor: Colors.red),
+            ),
+          ),
+        );
+        final route = buildAppPageRoute<void>(
+          context: navigatorKey.currentContext!,
+          wholePageTransition: true,
+          child: _DetailPaintProbe(
+            onPaint: () => paints++,
+            child: _BuildCountingContent(
+              onBuild: () => builds++,
+              child: regions('whole-detail', backgroundColor: Colors.blue),
+            ),
+          ),
+        );
+        expect(route.transitionDuration, const Duration(milliseconds: 300));
+        expect(
+          route.reverseTransitionDuration,
+          const Duration(milliseconds: 300),
+        );
+        unawaited(navigatorKey.currentState!.push(route));
+        await tester.pump(const Duration(milliseconds: 500));
+        expect(route.animation!.value, 0);
+        await tester.pump(const Duration(milliseconds: 500));
+        expect(route.animation!.value, 0);
+        expect(
+          paints,
+          1,
+          reason: 'The offscreen page is recorded before moving.',
+        );
+        final preparedBuilds = builds;
+        await tester.pump(const Duration(milliseconds: 75));
+        final header = find.byKey(const ValueKey('whole-detail-header'));
+        final body = find.byKey(const ValueKey('whole-detail-body'));
+        expect(
+          tester.getRect(header).center.dx,
+          closeTo(tester.getRect(body).center.dx, 0.01),
+        );
+        expect(tester.getRect(body).left, greaterThan(0));
+        expect(
+          find.ancestor(of: header, matching: find.byType(Opacity)),
+          findsNothing,
+        );
+        for (var i = 0; i < 3; i++) {
+          await tester.pump(const Duration(milliseconds: 75));
+        }
+        await tester.pump(const Duration(milliseconds: 1));
+        expect(route.animation!.status, AnimationStatus.completed);
+        expect(builds, preparedBuilds);
+        expect(
+          paints,
+          1,
+          reason: 'Translation reuses the recorded page layer.',
+        );
+
+        navigatorKey.currentState!.pop();
+        await tester.pump();
+        var finalFrameRetained = false;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          finalFrameRetained =
+              route.animation!.value == 0 &&
+              route.animation!.status == AnimationStatus.reverse &&
+              find
+                  .byKey(
+                    const ValueKey('whole-detail-body'),
+                    skipOffstage: false,
+                  )
+                  .evaluate()
+                  .isNotEmpty;
+        });
+        await tester.pump(kAppMotionSlow + const Duration(milliseconds: 1));
+        expect(
+          finalFrameRetained,
+          isTrue,
+          reason: 'Pop finalization must not remove the last animated frame.',
+        );
+        final color = await tester.runAsync(() async {
+          final image = await tester
+              .renderObject<RenderRepaintBoundary>(find.byKey(surface))
+              .toImage();
+          final bytes = (await image.toByteData())!;
+          final offset =
+              ((image.height * 0.75).floor() * image.width +
+                  (image.width * 0.5).floor()) *
+              4;
+          final pixel = Color.fromARGB(
+            bytes.getUint8(offset + 3),
+            bytes.getUint8(offset),
+            bytes.getUint8(offset + 1),
+            bytes.getUint8(offset + 2),
+          );
+          image.dispose();
+          return pixel;
+        });
+        expect(color, const Color(0xfff44336));
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(const ValueKey('whole-detail-body'), skipOffstage: false),
+          findsNothing,
+        );
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
+  testWidgets(
+    'whole detail cancels during preparation and honors reduced motion',
+    (tester) async {
+      for (final reduced in [false, true]) {
+        final navigatorKey = GlobalKey<NavigatorState>();
+        await tester.pumpWidget(
+          MediaQuery(
+            data: MediaQueryData(disableAnimations: reduced),
+            child: MaterialApp(
+              navigatorKey: navigatorKey,
+              home: const SizedBox(),
+            ),
+          ),
+        );
+        final route = buildAppPageRoute<void>(
+          context: navigatorKey.currentContext!,
+          wholePageTransition: true,
+          child: const Text('cancel-whole-detail'),
+        );
+        if (reduced) expect(route.transitionDuration, Duration.zero);
+        unawaited(navigatorKey.currentState!.push(route));
+        await tester.pump();
+        navigatorKey.currentState!.pop();
+        await tester.pumpAndSettle();
+        expect(
+          find.text('cancel-whole-detail', skipOffstage: false),
+          findsNothing,
+        );
+        expect(tester.binding.transientCallbackCount, 0);
+        expect(tester.takeException(), isNull);
+      }
+    },
+  );
+
+  testWidgets(
+    'whole detail releases tickers after interrupted entry and removal',
+    (tester) async {
+      final navigatorKey = GlobalKey<NavigatorState>();
+      await tester.pumpWidget(
+        MaterialApp(navigatorKey: navigatorKey, home: const SizedBox()),
+      );
+      for (final remove in [false, true]) {
+        final route = buildAppPageRoute<void>(
+          context: navigatorKey.currentContext!,
+          wholePageTransition: true,
+          child: const Text('interrupted-whole-detail'),
+        );
+        unawaited(navigatorKey.currentState!.push(route));
+        await tester.pump();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 75));
+        expect(route.animation!.value, closeTo(0.25, 0.001));
+        navigatorKey.currentState!.pop();
+        await tester.pump();
+        if (remove) navigatorKey.currentState!.removeRoute(route);
+        await tester.pumpAndSettle();
+        expect(
+          find.text('interrupted-whole-detail', skipOffstage: false),
+          findsNothing,
+        );
+        expect(tester.binding.transientCallbackCount, 0);
+        expect(tester.takeException(), isNull);
+      }
+    },
   );
 
   for (final (platform, materialRoute) in [

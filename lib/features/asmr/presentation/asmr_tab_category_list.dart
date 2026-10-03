@@ -70,6 +70,9 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
       GlobalKey();
   bool _loadMoreTriggeredInCurrentScroll = false;
   bool _automaticLoadMoreScheduled = false;
+  Widget? _inactiveContent;
+  late final String _automaticLoadMoreCommitKey =
+      'asmr_load_more_${identityHashCode(this)}';
   final Map<int, _CollapsingAsmrWork> _collapsingWorks =
       <int, _CollapsingAsmrWork>{};
   List<AsmrWork>? _lastFavoritesWorks;
@@ -78,9 +81,21 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
   @override
   void didUpdateWidget(covariant _AsmrCategoryList oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.isActive != widget.isActive ||
+        oldWidget.category != widget.category) {
+      _inactiveContent = null;
+    }
+    if (!widget.isActive) {
+      UiInteractionCoordinator.instance.cancelCommit(
+        _automaticLoadMoreCommitKey,
+      );
+      _automaticLoadMoreScheduled = false;
+    }
     if (oldWidget.category != widget.category ||
+        oldWidget.searchSession != widget.searchSession ||
         normalizeSearchQuery(oldWidget.searchQuery) !=
             normalizeSearchQuery(widget.searchQuery)) {
+      _inactiveContent = null;
       for (final entry in _collapsingWorks.values) {
         entry.dispose();
       }
@@ -93,6 +108,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
 
   @override
   void dispose() {
+    UiInteractionCoordinator.instance.cancelCommit(_automaticLoadMoreCommitKey);
     for (final entry in _collapsingWorks.values) {
       entry.dispose();
     }
@@ -106,6 +122,9 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
   @override
   Widget build(BuildContext context) {
     super.build(context);
+    // Deactivation builds once to detach subscriptions and pause card work.
+    // Other category switches can then retain this hidden subtree unchanged.
+    if (!widget.isActive && _inactiveContent != null) return _inactiveContent!;
     final normalizedSearchQuery = normalizeSearchQuery(widget.searchQuery);
     final categoryProvider = asmrCategoryStateProvider((
       category: widget.category,
@@ -177,6 +196,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
               onComplete: () {
                 if (!mounted) return;
                 setState(() {
+                  _inactiveContent = null;
                   final entry = _collapsingWorks.remove(workId);
                   entry?.dispose();
                 });
@@ -422,7 +442,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
         ),
       ),
     );
-    return Theme(
+    final result = Theme(
       data: theme.copyWith(
         scrollbarTheme: theme.scrollbarTheme.copyWith(
           thumbColor: WidgetStateProperty.resolveWith((states) {
@@ -444,10 +464,13 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
               child: content,
             ),
     );
+    if (!widget.isActive) _inactiveContent = result;
+    return result;
   }
 
   void _loadMoreOncePerScroll(AsmrCategoryViewState state) {
-    if (_loadMoreTriggeredInCurrentScroll ||
+    if (!widget.isActive ||
+        _loadMoreTriggeredInCurrentScroll ||
         state.isLoadingMore ||
         !state.hasMore) {
       return;
@@ -465,27 +488,34 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
       return;
     }
     _automaticLoadMoreScheduled = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _automaticLoadMoreScheduled = false;
-      if (!mounted || !widget.isActive) return;
-      final currentState = ref
-          .read(asmrLibraryControllerProvider)
-          ?.categoryViewState(
-            widget.category,
-            searchQuery: normalizeSearchQuery(widget.searchQuery),
-            searchSession: widget.searchSession,
-          );
-      if (currentState == null ||
-          currentState.isLoadingMore ||
-          !currentState.hasMore ||
-          currentState.needsLoadMoreRetry) {
-        return;
-      }
-      if (!widget.scrollController.hasClients) return;
-      final position = widget.scrollController.position;
-      if (position.extentAfter > position.viewportDimension) return;
-      unawaited(_loadMore());
-    });
+    UiInteractionCoordinator.instance.scheduleCommit(
+      key: _automaticLoadMoreCommitKey,
+      commit: () {
+        _automaticLoadMoreScheduled = false;
+        if (!mounted ||
+            !widget.isActive ||
+            ModalRoute.of(context)?.isCurrent == false) {
+          return;
+        }
+        final currentState = ref
+            .read(asmrLibraryControllerProvider)
+            ?.categoryViewState(
+              widget.category,
+              searchQuery: normalizeSearchQuery(widget.searchQuery),
+              searchSession: widget.searchSession,
+            );
+        if (currentState == null ||
+            currentState.isLoadingMore ||
+            !currentState.hasMore ||
+            currentState.needsLoadMoreRetry) {
+          return;
+        }
+        if (!widget.scrollController.hasClients) return;
+        final position = widget.scrollController.position;
+        if (position.extentAfter > position.viewportDimension) return;
+        unawaited(_loadMore());
+      },
+    );
   }
 
   Future<void> _loadMore() async {

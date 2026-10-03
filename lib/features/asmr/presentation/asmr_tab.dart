@@ -649,6 +649,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
 
   void _selectCategory(AsmrCategoryType category) {
     if (_selectedCategory == category) return;
+    stopScroll();
     _visitedCategories.add(category);
     final targetIndex = _headerCategories.indexOf(category);
     if (targetIndex >= 0) {

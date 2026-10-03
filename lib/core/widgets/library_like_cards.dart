@@ -95,17 +95,45 @@ class LibraryLikeSkeletonCard extends StatelessWidget {
                           0,
                           LibraryLikeCardMetrics.infoVerticalOffset,
                         ),
-                        child: const SizedBox(
+                        child: SizedBox(
                           height: infoBlockHeight,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              _SkeletonInfoLine(labelWidth: 28, textWidth: 110),
-                              _SkeletonInfoLine(labelWidth: 28, textWidth: 140),
-                              _SkeletonInfoLine(labelWidth: 28, textWidth: 85),
-                              _SkeletonInfoLine(labelWidth: 28, textWidth: 160),
-                              _SkeletonInfoLine(labelWidth: 28, textWidth: 95),
-                            ],
+                          child: LayoutBuilder(
+                            builder: (context, infoConstraints) => FittedBox(
+                              fit: BoxFit.scaleDown,
+                              alignment: Alignment.topLeft,
+                              child: SizedBox(
+                                width: infoConstraints.maxWidth,
+                                child: const Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    _SkeletonInfoLine(
+                                      labelWidth: 28,
+                                      textWidth: 110,
+                                    ),
+                                    _SkeletonInfoLine(
+                                      labelWidth: 28,
+                                      textWidth: 140,
+                                    ),
+                                    _SkeletonInfoLine(
+                                      labelWidth: 28,
+                                      textWidth: 68,
+                                      secondaryLabelWidth: 28,
+                                      secondaryTextWidth: 32,
+                                    ),
+                                    _SkeletonInfoLine(
+                                      labelWidth: 28,
+                                      textWidth: 160,
+                                      lines: 3,
+                                      multiLineTextWidths: <double>[
+                                        160,
+                                        130,
+                                        85,
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
                           ),
                         ),
                       ),
@@ -276,13 +304,67 @@ class _LibraryLikeSkeletonActions extends StatelessWidget {
 }
 
 class _SkeletonInfoLine extends StatelessWidget {
-  const _SkeletonInfoLine({required this.labelWidth, required this.textWidth});
+  const _SkeletonInfoLine({
+    required this.labelWidth,
+    required this.textWidth,
+    this.lines = 1,
+    this.multiLineTextWidths,
+    this.secondaryLabelWidth,
+    this.secondaryTextWidth,
+  });
 
   final double labelWidth;
   final double textWidth;
+  final int lines;
+  final List<double>? multiLineTextWidths;
+  final double? secondaryLabelWidth;
+  final double? secondaryTextWidth;
 
   @override
   Widget build(BuildContext context) {
+    if (lines > 1) {
+      final widths = multiLineTextWidths ?? <double>[textWidth];
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: labelWidth,
+            height: _libraryLikeInfoLineHeight,
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: ShimmerContainer(
+                width: labelWidth,
+                height: 11,
+                borderRadius: 4,
+              ),
+            ),
+          ),
+          const SizedBox(width: 5),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                for (var i = 0; i < lines; i++)
+                  SizedBox(
+                    height: _libraryLikeInfoLineHeight,
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: ShimmerContainer(
+                        width: i < widths.length ? widths[i] : widths.last,
+                        height: 11,
+                        borderRadius: 4,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      );
+    }
+
+    final secondaryLabelWidth = this.secondaryLabelWidth;
+    final secondaryTextWidth = this.secondaryTextWidth;
     return SizedBox(
       height: _libraryLikeInfoLineHeight,
       child: Row(
@@ -290,6 +372,20 @@ class _SkeletonInfoLine extends StatelessWidget {
           ShimmerContainer(width: labelWidth, height: 11, borderRadius: 4),
           const SizedBox(width: 5),
           ShimmerContainer(width: textWidth, height: 11, borderRadius: 4),
+          if (secondaryLabelWidth != null && secondaryTextWidth != null) ...[
+            const SizedBox(width: 8),
+            ShimmerContainer(
+              width: secondaryLabelWidth,
+              height: 11,
+              borderRadius: 4,
+            ),
+            const SizedBox(width: 5),
+            ShimmerContainer(
+              width: secondaryTextWidth,
+              height: 11,
+              borderRadius: 4,
+            ),
+          ],
         ],
       ),
     );

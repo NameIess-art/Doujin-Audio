@@ -604,6 +604,7 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
   late List<GlobalKey> _pageKeys;
   final Object _transitionInteraction = Object();
   final Set<int> _preparedPages = {};
+  BoxConstraints? _preparedConstraints;
   int? _pendingIndex;
 
   bool get _isLazy => widget.itemBuilder != null;
@@ -838,6 +839,7 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
     final interactive = visible && !preparing;
     return _AppPageOffstage(
       offstage: !visible,
+      onVisibleLayout: _handleVisiblePageLayout,
       child: TickerMode(
         enabled: interactive,
         child: ExcludeFocus(
@@ -1057,18 +1059,55 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
       ),
     );
   }
+
+  void _handleVisiblePageLayout(BoxConstraints constraints) {
+    // Hidden pages retain their old layout. After a resize, prepare them at
+    // the new size before consuming their visible animation time.
+    if (_preparedConstraints != constraints) {
+      _preparedConstraints = constraints;
+      _preparedPages.removeWhere(
+        (index) =>
+            index != _currentIndex &&
+            index != _targetIndex &&
+            index != _pendingIndex,
+      );
+    }
+  }
 }
 
 class _AppPageOffstage extends Offstage {
-  const _AppPageOffstage({required super.offstage, required super.child});
+  const _AppPageOffstage({
+    required super.offstage,
+    required this.onVisibleLayout,
+    required super.child,
+  });
+
+  final ValueChanged<BoxConstraints> onVisibleLayout;
 
   @override
   RenderOffstage createRenderObject(BuildContext context) =>
-      _RenderAppPageOffstage(offstage: offstage);
+      _RenderAppPageOffstage(
+        offstage: offstage,
+        onVisibleLayout: onVisibleLayout,
+      );
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    _RenderAppPageOffstage renderObject,
+  ) {
+    super.updateRenderObject(context, renderObject);
+    renderObject.onVisibleLayout = onVisibleLayout;
+  }
 }
 
 class _RenderAppPageOffstage extends RenderOffstage {
-  _RenderAppPageOffstage({required super.offstage});
+  _RenderAppPageOffstage({
+    required super.offstage,
+    required this.onVisibleLayout,
+  });
+
+  ValueChanged<BoxConstraints> onVisibleLayout;
 
   @override
   void performLayout() {
@@ -1076,7 +1115,10 @@ class _RenderAppPageOffstage extends RenderOffstage {
     // element tree (scroll, expansion and provider state) without traversing a
     // cached list on each frame or window resize. Activation lays it out using
     // the latest constraints before painting or accepting input.
-    if (!offstage) super.performLayout();
+    if (!offstage) {
+      onVisibleLayout(constraints);
+      super.performLayout();
+    }
   }
 }
 

@@ -700,6 +700,78 @@ void main() {
   });
 
   testWidgets(
+    'library-like skeleton card renders 6 rows of text with 4 title rows, 2 titles on row 3, and 3 rows on row 4 element',
+    (tester) async {
+      await tester.pumpWidget(_buildSurface(const LibraryLikeSkeletonCard()));
+      expect(tester.takeException(), isNull);
+
+      final titleShimmers = find.byWidgetPredicate(
+        (w) => w is ShimmerContainer && w.width == 28 && w.height == 11,
+      );
+      // Row 1 (1 title) + Row 2 (1 title) + Row 3 (2 titles) + Row 4 (1 title) = 5 title shimmers total
+      expect(titleShimmers, findsNWidgets(5));
+
+      final titlePositions = <double>{};
+      for (final element in tester.elementList(titleShimmers)) {
+        final box = element.renderObject! as RenderBox;
+        titlePositions.add(box.localToGlobal(Offset.zero).dy);
+      }
+      // There are exactly 4 distinct vertical rows with titles (rows 1, 2, 3, 4)
+      expect(titlePositions.length, 4);
+
+      // Verify row 3 has two titles sharing the exact same vertical position
+      final sortedY = titlePositions.toList()..sort();
+      final row3Y = sortedY[2];
+      final row3Titles = <Element>[];
+      for (final element in tester.elementList(titleShimmers)) {
+        final box = element.renderObject! as RenderBox;
+        if ((box.localToGlobal(Offset.zero).dy - row3Y).abs() < 0.5) {
+          row3Titles.add(element);
+        }
+      }
+      expect(row3Titles.length, 2);
+
+      // Verify the 4th title element has 3 rows of text shimmers (160, 130, 85)
+      expect(
+        find.byWidgetPredicate((w) => w is ShimmerContainer && w.width == 160),
+        findsOneWidget,
+      );
+      expect(
+        find.byWidgetPredicate((w) => w is ShimmerContainer && w.width == 130),
+        findsOneWidget,
+      );
+      expect(
+        find.byWidgetPredicate((w) => w is ShimmerContainer && w.width == 85),
+        findsOneWidget,
+      );
+
+      final row4Text = tester.getTopLeft(
+        find.byWidgetPredicate((w) => w is ShimmerContainer && w.width == 160),
+      );
+      final row5Text = tester.getTopLeft(
+        find.byWidgetPredicate((w) => w is ShimmerContainer && w.width == 130),
+      );
+      final row6Text = tester.getTopLeft(
+        find.byWidgetPredicate((w) => w is ShimmerContainer && w.width == 85),
+      );
+
+      // Row 4, 5, 6 are vertically stacked and aligned horizontally
+      expect(row4Text.dx, row5Text.dx);
+      expect(row5Text.dx, row6Text.dx);
+      expect(row4Text.dy, lessThan(row5Text.dy));
+      expect(row5Text.dy, lessThan(row6Text.dy));
+
+      // Confirm there are no titles at row 5 or row 6 vertical level
+      for (final y in [row5Text.dy, row6Text.dy]) {
+        expect(
+          titlePositions.any((titleY) => (titleY - y).abs() < 2),
+          isFalse,
+        );
+      }
+    },
+  );
+
+  testWidgets(
     'compact library-like skeleton matches the compact cover card layout',
     (tester) async {
       const coverKey = ValueKey('compact-skeleton-cover');

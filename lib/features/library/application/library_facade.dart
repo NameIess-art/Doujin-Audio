@@ -328,27 +328,11 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
   }
 
   Future<FolderNode?> loadLibraryFolderTree(String folderPath) async {
-    final tree = await loadLibraryTree();
-    for (final node in tree.whereType<FolderNode>()) {
-      if (PathMatcher.equalsNormalized(node.path, folderPath)) return node;
-    }
-    return null;
+    return resolvedLibraryFolderTree(folderPath);
   }
 
-  FolderNode? resolvedLibraryFolderTree(String folderPath) {
-    FolderNode? find(Iterable<LibraryNode> nodes) {
-      for (final folder in nodes.whereType<FolderNode>()) {
-        if (PathMatcher.equalsNormalized(folder.path, folderPath)) {
-          return folder;
-        }
-        final nested = find(folder.children);
-        if (nested != null) return nested;
-      }
-      return null;
-    }
-
-    return find(snapshotCacheService.tree);
-  }
+  FolderNode? resolvedLibraryFolderTree(String folderPath) =>
+      snapshotCacheService.resolvedFolderTree(folderPath);
 
   String? libraryRootForPath(String entityPath) =>
       _service.libraryRootForPath(entityPath);

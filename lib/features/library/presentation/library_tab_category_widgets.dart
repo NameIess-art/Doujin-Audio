@@ -142,6 +142,12 @@ class _LibraryCategoryTermBoxState extends State<LibraryCategoryTermBox> {
       _wasExpandedBeforeSearch = false;
       unawaited(AppPreferences.setBool(_prefKey, false));
     }
+    if (oldWidget.collapseOnMount && !widget.collapseOnMount) {
+      // Hidden selectors retain their State, so cancel the old pending input.
+      _searchDebounceTimer?.cancel();
+      _searchController.text = widget.searchQuery;
+      _localSearchQuery = widget.searchQuery;
+    }
     if (oldWidget.searchQuery != widget.searchQuery &&
         _searchController.text != widget.searchQuery) {
       _searchController.text = widget.searchQuery;

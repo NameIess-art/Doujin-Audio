@@ -12,6 +12,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/presentation/app_presentation_providers.dart';
+import '../../../app/presentation/browse_page_scroll.dart';
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/theme/app_design_tokens.dart';
 import '../../../core/media/audio_detail.dart';
@@ -89,6 +90,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
   List<WorkImageItem> _localImageFiles = const [];
   String? _localManualCover;
   bool _loadingLocal = true;
+  bool _localFilesCached = false;
   int _localLoadRequest = 0;
   late final String _filesCommitKey =
       'work_detail_files_${identityHashCode(this)}';
@@ -103,6 +105,10 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
   // Breadcrumb navigation state
   // Path stack: e.g. [] for root, ['EXデータ'] for subfolder
   final List<String> _currentPathSegments = [];
+  late int _pageStateEpoch;
+  String get _localPageKey =>
+      'work-detail:${_localTarget!.targetType.name}:'
+      '${PathMatcher.equivalenceKey(_localTarget!.targetPath)}';
 
   @override
   void initState() {
@@ -119,6 +125,20 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
     _localTarget = widget.localTarget;
     if (widget.isLocal) {
       final library = ref.read(libraryFacadeProvider);
+      final folderPath = _localTarget!.targetPath;
+      final textService = ref.read(workTextServiceProvider);
+      _localFolderNode = library.resolvedLibraryFolderTree(folderPath);
+      final cachedTexts = textService.resolvedWorkTextFiles(folderPath);
+      final cachedImages = textService.resolvedWorkImageFiles(folderPath);
+      _localFilesCached = cachedTexts != null && cachedImages != null;
+      _localTextFiles = cachedTexts ?? const [];
+      _localImageFiles = _imageItems(cachedImages ?? const [], folderPath);
+      final pageStates = ref.read(browsePageStateStoreProvider);
+      _pageStateEpoch = pageStates.epoch;
+      _currentPathSegments.addAll(
+        (pageStates.stateFor(_localPageKey)['segments'] as List<String>?) ??
+            const [],
+      );
       _localDetail =
           widget.initialDetail ??
           library.resolvedAudioDetail(_localTarget!) ??
@@ -133,7 +153,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
           ?.trackTreeFor(widget.asmrWork!.id);
       _loadingAsmr = _asmrTree == null;
     }
-    // Reuse card metadata immediately; start I/O after the opening transition.
+    // Render indexed files and cached discoveries before starting fresh I/O.
     UiInteractionCoordinator.instance.scheduleCommit(
       key: _filesCommitKey,
       commit: () {
@@ -298,6 +318,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
     setState(() {
       _currentPathSegments.add(folderName);
     });
+    _saveDirectory();
   }
 
   // Navigate back to specific level in breadcrumbs
@@ -312,6 +333,14 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
         );
       }
     });
+    _saveDirectory();
+  }
+
+  void _saveDirectory() {
+    if (!widget.isLocal) return;
+    ref.read(browsePageStateStoreProvider).update(_localPageKey, {
+      'segments': List<String>.of(_currentPathSegments),
+    }, epoch: _pageStateEpoch);
   }
 
   void _reconcileDirectory() {
@@ -342,6 +371,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
     }
     if (depth < _currentPathSegments.length) {
       _currentPathSegments.removeRange(depth, _currentPathSegments.length);
+      _saveDirectory();
     }
   }
 
@@ -880,7 +910,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
       // Observe user removals and undo without replacing this page's file tree.
       ref.watch(asmrTrackTreeStateProvider(widget.asmrWork!.id));
     }
-    if ((widget.isLocal && !_loadingLocal && _localFolderNode != null) ||
+    if ((widget.isLocal && !_loadingLocal) ||
         (widget.isAsmr && !_loadingAsmr && _asmrTree != null)) {
       _reconcileDirectory();
     }
@@ -941,6 +971,15 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
     const rjBarHeight = 44.0;
 
     final currentEntries = _buildCurrentEntries();
+    Widget cacheScroll(Widget child) => widget.isLocal
+        ? BrowsePageScroll(
+            pageKey: _localPageKey,
+            controller: _scrollController,
+            restoreReady: !_loadingLocal || _localFilesCached,
+            displayState: {'segments': List<String>.of(_currentPathSegments)},
+            child: child,
+          )
+        : child;
     final isLoading = widget.isLocal
         ? _loadingLocal && currentEntries.isEmpty
         : _loadingAsmr;
@@ -1040,168 +1079,175 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
               behavior: ScrollConfiguration.of(
                 context,
               ).copyWith(scrollbars: false),
-              child: CustomScrollView(
-                controller: _scrollController,
-                slivers: [
-                // 1. Collapsible Sticky Header
-                SliverPersistentHeader(
-                  pinned: true,
-                  delegate: WorkDetailHeaderDelegate(
-                    topSafeArea: topSafeArea,
-                    coverMaxHeight: coverMaxHeight,
-                    coverMinHeight: coverMinHeight,
-                    rjBarHeight: rjBarHeight,
-                    title: displayTitle,
-                    rjCode: displayRj,
-                    circleName: displayCircle,
-                    coverWidget: coverWidget,
-                    accentColor: widget.isAsmr ? asmrBlue : cs.primary,
-                    surfaceColor: cs.surface,
-                    onCopyMetadata: (value) => _copyText(context, value),
-                  ),
-                ),
-
-                // 2. Collapsible Details: Voice Actors, Tags, Action Buttons
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        WorkDetailMetadata(
-                          voiceActors: displayVoiceActors,
-                          tags: displayTags,
-                          onCopy: (value) => _copyText(context, value),
-                        ),
-
-                        Consumer(
-                          builder: (context, ref, _) {
-                            final isFavorite = widget.isAsmr
-                                ? ref
-                                          .watch(
-                                            asmrLibraryControllerProvider,
-                                          )
-                                          ?.isFavorite(widget.asmrWork!.id) ??
-                                      widget.asmrWork!.isFavorite
-                                : false;
-                            return WorkDetailActions(
-                              i18n: i18n,
-                              isLocal: widget.isLocal,
-                              isFavorite: isFavorite,
-                              accentColor: asmrBlue,
-                              onFetchInfo: _handleLocalFetchInfo,
-                              onDownload: widget.isLocal
-                                  ? _handleLocalDownload
-                                  : _handleAsmrDownload,
-                              onToggleFavorite: _handleAsmrToggleFavorite,
-                            );
-                          },
-                        ),
-
-                        const SizedBox(height: 12),
-                        const Divider(height: 1),
-                        const SizedBox(height: 8),
-
-                        WorkDetailBreadcrumbs(
-                          segments: List.of(_currentPathSegments),
-                          entryCount: currentEntries.length,
-                          i18n: i18n,
-                          onNavigate: _navigateToBreadcrumbIndex,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-
-                // 4. Directory File Tree List
-                if (isLoading)
-                  const SliverFillRemaining(
-                    hasScrollBody: false,
-                    child: Center(child: CircularProgressIndicator()),
-                  )
-                else if (currentEntries.isEmpty)
-                  SliverFillRemaining(
-                    hasScrollBody: false,
-                    child: Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.folder_open_rounded,
-                            size: 48,
-                            color: cs.onSurfaceVariant.withValues(alpha: 0.5),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            i18n.tr('empty_folder'),
-                            style: TextStyle(color: cs.onSurfaceVariant),
-                          ),
-                        ],
+              child: cacheScroll(
+                CustomScrollView(
+                  controller: _scrollController,
+                  slivers: [
+                    // 1. Collapsible Sticky Header
+                    SliverPersistentHeader(
+                      pinned: true,
+                      delegate: WorkDetailHeaderDelegate(
+                        topSafeArea: topSafeArea,
+                        coverMaxHeight: coverMaxHeight,
+                        coverMinHeight: coverMinHeight,
+                        rjBarHeight: rjBarHeight,
+                        title: displayTitle,
+                        rjCode: displayRj,
+                        circleName: displayCircle,
+                        coverWidget: coverWidget,
+                        accentColor: widget.isAsmr ? asmrBlue : cs.primary,
+                        surfaceColor: cs.surface,
+                        onCopyMetadata: (value) => _copyText(context, value),
                       ),
                     ),
-                  )
-                else
-                  SliverPadding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
-                    ),
-                    sliver: SliverList(
-                      delegate: SliverChildBuilderDelegate(
-                        (context, index) {
-                          final item = currentEntries[index];
-                          final tile = WorkDetailEntryTile(
-                            item: item,
-                            accentColor: widget.isAsmr
-                                ? asmrBlue
-                                : cs.primary,
-                            menuEntries: _entryMenuItems(item),
-                            moreLabel: i18n.tr('more_actions'),
-                            onAction: (action) =>
-                                _handleEntryAction(item, action),
-                          );
-                          return TweenAnimationBuilder<double>(
-                            key: ValueKey(
-                              '${item.type.name}:${item.relativePath}',
+
+                    // 2. Collapsible Details: Voice Actors, Tags, Action Buttons
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            WorkDetailMetadata(
+                              voiceActors: displayVoiceActors,
+                              tags: displayTags,
+                              onCopy: (value) => _copyText(context, value),
                             ),
-                            tween: Tween(begin: 0, end: 1),
-                            duration: MediaQuery.disableAnimationsOf(context)
-                                ? Duration.zero
-                                : const Duration(milliseconds: 300),
-                            curve: Curves.easeOutCubic,
-                            child: tile,
-                            builder: (context, opacity, child) =>
-                                Opacity(opacity: opacity, child: child),
-                          );
-                        },
-                        childCount: currentEntries.length,
-                        findChildIndexCallback: (key) {
-                          final index = currentEntries.indexWhere(
-                            (item) =>
-                                key ==
-                                ValueKey(
+
+                            Consumer(
+                              builder: (context, ref, _) {
+                                final isFavorite = widget.isAsmr
+                                    ? ref
+                                              .watch(
+                                                asmrLibraryControllerProvider,
+                                              )
+                                              ?.isFavorite(
+                                                widget.asmrWork!.id,
+                                              ) ??
+                                          widget.asmrWork!.isFavorite
+                                    : false;
+                                return WorkDetailActions(
+                                  i18n: i18n,
+                                  isLocal: widget.isLocal,
+                                  isFavorite: isFavorite,
+                                  accentColor: asmrBlue,
+                                  onFetchInfo: _handleLocalFetchInfo,
+                                  onDownload: widget.isLocal
+                                      ? _handleLocalDownload
+                                      : _handleAsmrDownload,
+                                  onToggleFavorite: _handleAsmrToggleFavorite,
+                                );
+                              },
+                            ),
+
+                            const SizedBox(height: 12),
+                            const Divider(height: 1),
+                            const SizedBox(height: 8),
+
+                            WorkDetailBreadcrumbs(
+                              segments: List.of(_currentPathSegments),
+                              entryCount: currentEntries.length,
+                              i18n: i18n,
+                              onNavigate: _navigateToBreadcrumbIndex,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+
+                    // 4. Directory File Tree List
+                    if (isLoading)
+                      const SliverFillRemaining(
+                        hasScrollBody: false,
+                        child: Center(child: CircularProgressIndicator()),
+                      )
+                    else if (currentEntries.isEmpty)
+                      SliverFillRemaining(
+                        hasScrollBody: false,
+                        child: Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.folder_open_rounded,
+                                size: 48,
+                                color: cs.onSurfaceVariant.withValues(
+                                  alpha: 0.5,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                i18n.tr('empty_folder'),
+                                style: TextStyle(color: cs.onSurfaceVariant),
+                              ),
+                            ],
+                          ),
+                        ),
+                      )
+                    else
+                      SliverPadding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        sliver: SliverList(
+                          delegate: SliverChildBuilderDelegate(
+                            (context, index) {
+                              final item = currentEntries[index];
+                              final tile = WorkDetailEntryTile(
+                                item: item,
+                                accentColor: widget.isAsmr
+                                    ? asmrBlue
+                                    : cs.primary,
+                                menuEntries: _entryMenuItems(item),
+                                moreLabel: i18n.tr('more_actions'),
+                                onAction: (action) =>
+                                    _handleEntryAction(item, action),
+                              );
+                              return TweenAnimationBuilder<double>(
+                                key: ValueKey(
                                   '${item.type.name}:${item.relativePath}',
                                 ),
-                          );
-                          return index < 0 ? null : index;
-                        },
+                                tween: Tween<double>(begin: 0, end: 1),
+                                duration:
+                                    MediaQuery.disableAnimationsOf(context)
+                                    ? Duration.zero
+                                    : const Duration(milliseconds: 300),
+                                curve: Curves.easeOutCubic,
+                                child: tile,
+                                builder: (context, opacity, child) =>
+                                    Opacity(opacity: opacity, child: child),
+                              );
+                            },
+                            childCount: currentEntries.length,
+                            findChildIndexCallback: (key) {
+                              final index = currentEntries.indexWhere(
+                                (item) =>
+                                    key ==
+                                    ValueKey(
+                                      '${item.type.name}:${item.relativePath}',
+                                    ),
+                              );
+                              return index < 0 ? null : index;
+                            },
+                          ),
+                        ),
                       ),
-                    ),
-                  ),
-                if (bottomOverlayInset > 0)
-                  SliverToBoxAdapter(
-                    child: SizedBox(
-                      key: const ValueKey<String>(
-                        'work_detail_playback_inset',
+                    if (bottomOverlayInset > 0)
+                      SliverToBoxAdapter(
+                        child: SizedBox(
+                          key: const ValueKey<String>(
+                            'work_detail_playback_inset',
+                          ),
+                          height: bottomOverlayInset,
+                        ),
                       ),
-                      height: bottomOverlayInset,
-                    ),
-                  ),
-              ],
+                  ],
+                ),
+              ),
             ),
           ),
-        ),
           // Floating Back Button (top-left)
           Positioned(
             top: topSafeArea + 6,

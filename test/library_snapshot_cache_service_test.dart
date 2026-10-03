@@ -534,6 +534,153 @@ void main() {
     },
   );
 
+  test('folder tree resolves one shallow card and reuses its cache', () {
+    final library = LibraryService()
+      ..watchedLibraries.add('/library')
+      ..library.addAll([
+        _track(
+          path: '/library/first/Disc/01.mp3',
+          groupKey: '/library/first/Disc',
+        ),
+        _track(path: '/library/second/02.mp3', groupKey: '/library/second'),
+      ])
+      ..markStructureChanged();
+    final service =
+        LibrarySnapshotCacheService(
+          libraryService: library,
+          detailCacheService: AudioDetailCacheService(
+            repository: _FakeAudioDetailRepository(),
+          ),
+        )..adoptCardSnapshot(
+          const LibraryOrganizer().buildCardTree(
+            tracks: library.library,
+            watchedFolders: library.watchedFolders,
+            watchedLibraries: library.watchedLibraries,
+          ),
+        );
+
+    final folder = service.resolvedFolderTree('/library/first')!;
+
+    expect(folder.children.single, isA<FolderNode>());
+    expect((folder.children.single as FolderNode).name, 'Disc');
+    expect(folder.allTracks.map((track) => track.path), [
+      '/library/first/Disc/01.mp3',
+    ]);
+    expect(service.resolvedFolderTree('/library/first'), same(folder));
+    expect(
+      service.cards.whereType<FolderNode>().every(
+        (card) => card.children.isEmpty,
+      ),
+      isTrue,
+    );
+    expect(service.tree, isEmpty);
+    expect(service.treeSnapshotRevision, -1);
+
+    service.clear();
+    final rebuilt = service.resolvedFolderTree('/library/first');
+    expect(rebuilt, isNot(same(folder)));
+    expect(rebuilt?.allTracks.single.path, '/library/first/Disc/01.mp3');
+  });
+
+  test(
+    'folder tree ignores an older full tree after replacement and removal',
+    () async {
+      const root = '/library/work';
+      final library = LibraryService()
+        ..watchedFolders.add(root)
+        ..library.add(_track(path: '$root/old.mp3', groupKey: root))
+        ..markStructureChanged();
+      final service = LibrarySnapshotCacheService(
+        libraryService: library,
+        detailCacheService: AudioDetailCacheService(
+          repository: _FakeAudioDetailRepository(),
+        ),
+        treeSnapshotBuilder: (payload) async =>
+            const LibraryOrganizer().buildTree(
+              tracks: payload.tracks,
+              watchedFolders: payload.watchedFolders,
+            ),
+      );
+      final fullSnapshot = await service.treeSnapshot(onCommitted: () {});
+      final oldFolder = fullSnapshot.tree.single as FolderNode;
+      expect(service.resolvedFolderTree(root), same(oldFolder));
+
+      library.library
+        ..clear()
+        ..add(_track(path: '$root/new.mp3', groupKey: root));
+      library.markStructureChanged();
+      final updated = service.resolvedFolderTree(root)!;
+      expect(updated, isNot(same(oldFolder)));
+      expect(updated.allTracks.single.path, '$root/new.mp3');
+      expect(service.resolvedFolderTree(root), same(updated));
+
+      library.library.clear();
+      library.markStructureChanged();
+      expect(service.resolvedFolderTree(root), isNull);
+    },
+  );
+
+  test('folder tree resolves equivalent Windows paths from the same cache', () {
+    const root = r'E:\作品 空格\Work';
+    final library = LibraryService()
+      ..watchedFolders.add(root)
+      ..library.add(
+        _track(path: '$root\\Disc\\01.mp3', groupKey: '$root\\Disc'),
+      )
+      ..markStructureChanged();
+    final service = LibrarySnapshotCacheService(
+      libraryService: library,
+      detailCacheService: AudioDetailCacheService(
+        repository: _FakeAudioDetailRepository(),
+      ),
+    );
+
+    final folder = service.resolvedFolderTree(root)!;
+
+    expect((folder.children.single as FolderNode).name, 'Disc');
+    expect(service.resolvedFolderTree('e:/作品 空格/work/'), same(folder));
+    expect(folder.allTracks.single.path, '$root\\Disc\\01.mp3');
+  });
+
+  test(
+    'folder tree keeps SAF synthetic child paths under an existing work root',
+    () {
+      const libraryRoot =
+          'content://com.android.externalstorage.documents/tree/primary%3ALibrary';
+      const workRoot = '$libraryRoot::作品';
+      const documentWorkRoot =
+          '$libraryRoot/document/primary%3ALibrary%2F%E4%BD%9C%E5%93%81';
+      final library = LibraryService()
+        ..watchedLibraries.add(libraryRoot)
+        ..library.addAll([
+          _track(
+            path: '$libraryRoot/document/opaque-id-1',
+            groupKey: '$workRoot/Disc',
+          ),
+          _track(
+            path: '$libraryRoot/document/opaque-id-2',
+            groupKey: '$libraryRoot::Other',
+          ),
+        ])
+        ..markStructureChanged();
+      final service = LibrarySnapshotCacheService(
+        libraryService: library,
+        detailCacheService: AudioDetailCacheService(
+          repository: _FakeAudioDetailRepository(),
+        ),
+      );
+
+      final folder = service.resolvedFolderTree(workRoot)!;
+      final disc = folder.children.single as FolderNode;
+
+      expect(disc.name, 'Disc');
+      expect(disc.path, '$workRoot/Disc');
+      expect(folder.allTracks.single.path, '$libraryRoot/document/opaque-id-1');
+      expect(service.resolvedFolderTree(documentWorkRoot), same(folder));
+      expect(service.treeSnapshotRevision, -1);
+    },
+  );
+
   test('card snapshot propagates one failure and can retry', () async {
     final library = LibraryService()
       ..watchedFolders.add('/library')

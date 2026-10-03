@@ -25,6 +25,9 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
   bool _isSelectionMode = false;
   final Set<int> _selectedWorkIds = <int>{};
   int _requestSerial = 0;
+  bool _refreshPending = false;
+  late final String _refreshCommitKey =
+      'asmr_search_refresh_${identityHashCode(this)}';
   late final AppLanguageProvider _languageProvider;
   AsmrLibraryController? _searchController;
 
@@ -42,16 +45,21 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
     _languageProvider = ref.read(appLanguageProviderInstanceProvider);
     _languageProvider.addListener(_handleLanguageChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) unawaited(_refresh());
+      if (mounted) _scheduleRefresh();
     });
   }
 
   void _handleLanguageChanged() {
     if (!mounted) return;
-    ref
-        .read(asmrLibraryControllerProvider)
-        ?.setPageLanguage(_languageProvider.language);
-    unawaited(_refresh());
+    _scheduleRefresh();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_refreshPending && ModalRoute.of(context)?.isCurrent != false) {
+      _scheduleRefresh(showSearchPlaceholder: _showSearchPlaceholder);
+    }
   }
 
   void _resetScroll() {
@@ -70,7 +78,7 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
         _query = query;
         _clearSelection();
       });
-      unawaited(_refresh(showSearchPlaceholder: query.isNotEmpty));
+      _scheduleRefresh(showSearchPlaceholder: query.isNotEmpty);
     });
   }
 
@@ -85,7 +93,7 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
       });
     }
     FocusManager.instance.primaryFocus?.unfocus();
-    await _refresh(showSearchPlaceholder: query.isNotEmpty);
+    _scheduleRefresh(showSearchPlaceholder: query.isNotEmpty);
   }
 
   void _closeOrClear() {
@@ -102,11 +110,13 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
       _requestSerial += 1;
       _clearSelection();
     });
-    unawaited(_refresh());
+    _scheduleRefresh();
   }
 
   void _selectCategory(AsmrCategoryType category) {
     if (_category == category) return;
+    final outgoingScroll = _scrollControllers[_category]!;
+    if (outgoingScroll.hasClients) outgoingScroll.jumpTo(outgoingScroll.offset);
     _visitedCategories.add(category);
     final targetIndex = kAsmrSelectableCategories.indexOf(category);
     if (targetIndex >= 0) {
@@ -116,7 +126,7 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
       _category = category;
       _clearSelection();
     });
-    unawaited(_refresh(showSearchPlaceholder: _query.isNotEmpty));
+    _scheduleRefresh(showSearchPlaceholder: _query.isNotEmpty);
   }
 
   void _clearSelection() {
@@ -181,10 +191,40 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
     await _downloadAsmrWorks(context, works);
   }
 
+  void _scheduleRefresh({bool showSearchPlaceholder = false}) {
+    _requestSerial++;
+    _refreshPending = true;
+    if (showSearchPlaceholder) {
+      final cached = ref
+          .read(asmrLibraryControllerProvider)
+          ?.categoryViewState(
+            _category,
+            searchQuery: _query,
+            searchSession: true,
+          );
+      setState(
+        () => _showSearchPlaceholder =
+            _query.isNotEmpty && !(cached?.hasAttemptedLoad ?? false),
+      );
+    }
+    UiInteractionCoordinator.instance.scheduleCommit(
+      key: _refreshCommitKey,
+      commit: () {
+        if (!mounted || ModalRoute.of(context)?.isCurrent == false) return;
+        ref
+            .read(asmrLibraryControllerProvider)
+            ?.setPageLanguage(_languageProvider.language);
+        unawaited(_refresh(showSearchPlaceholder: showSearchPlaceholder));
+      },
+    );
+  }
+
   Future<void> _refresh({
     bool showSearchPlaceholder = false,
     bool force = false,
   }) async {
+    UiInteractionCoordinator.instance.cancelCommit(_refreshCommitKey);
+    _refreshPending = false;
     final query = _query;
     final category = _category;
     final requestSerial = ++_requestSerial;
@@ -212,6 +252,10 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
       defaultLanguage: AsmrContentLanguage.fromAppLanguageName(language.name),
     );
     if (!mounted || requestSerial != _requestSerial) return;
+    if (!force && UiInteractionCoordinator.instance.isInteracting) {
+      _scheduleRefresh(showSearchPlaceholder: showSearchPlaceholder);
+      return;
+    }
     await UiOperationService.instance.run<void>(
       scope: UiOperationScope.asmrCategory(
         AsmrOperationKind.refresh,
@@ -236,6 +280,7 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
 
   @override
   void dispose() {
+    UiInteractionCoordinator.instance.cancelCommit(_refreshCommitKey);
     _activeCategoryIndex.dispose();
     _debounceTimer?.cancel();
     _searchController?.endSearchSession();

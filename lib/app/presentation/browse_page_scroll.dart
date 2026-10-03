@@ -14,12 +14,14 @@ class BrowsePageScroll extends ConsumerStatefulWidget {
     required this.child,
     this.displayState = const {},
     this.anchorIds = const [],
+    this.restoreReady = true,
   });
   final String pageKey;
   final ScrollController controller;
   final Widget child;
   final Map<String, Object?> displayState;
   final List<String> anchorIds;
+  final bool restoreReady;
 
   /// A nested tree can supply its current visible order without owning scroll state.
   static void setAnchorIds(BuildContext context, Iterable<String> ids) {
@@ -47,6 +49,7 @@ class _BrowsePageScrollState extends ConsumerState<BrowsePageScroll>
   late int _epoch;
   List<String> _anchorIds = const [];
   (double, double)? _lastDimensions;
+  Key? _contentKey;
 
   @override
   void initState() {
@@ -70,14 +73,30 @@ class _BrowsePageScrollState extends ConsumerState<BrowsePageScroll>
       _scheduleRestore();
     }
     _store.update(widget.pageKey, widget.displayState, epoch: _epoch);
+    if (!oldWidget.restoreReady &&
+        widget.restoreReady &&
+        !_restored &&
+        ((_store.stateFor(widget.pageKey)['offset'] as num?) ?? 0) > 0) {
+      // Lazy lists can retain their old extent when only offscreen rows change.
+      // Recreate the viewport for pending restoration; retain user scrolling.
+      _contentKey = UniqueKey();
+    }
   }
 
   void _scheduleRestore() {
-    if (!mounted || _restoreScheduled || (_restored && _anchorRestored)) return;
+    if (!mounted ||
+        !widget.restoreReady ||
+        _restoreScheduled ||
+        (_restored && _anchorRestored)) {
+      return;
+    }
     _restoreScheduled = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _restoreScheduled = false;
-      if (!mounted || _epoch != _store.epoch || !widget.controller.hasClients) {
+      if (!mounted ||
+          !widget.restoreReady ||
+          _epoch != _store.epoch ||
+          !widget.controller.hasClients) {
         return;
       }
       final position = widget.controller.position;
@@ -243,7 +262,14 @@ class _BrowsePageScrollState extends ConsumerState<BrowsePageScroll>
             if (notification is ScrollEndNotification) _save();
             return false;
           },
-          child: widget.child,
+          child: Listener(
+            onPointerDown: (_) {
+              if (!widget.restoreReady) {
+                _restored = _anchorRestored = true;
+              }
+            },
+            child: KeyedSubtree(key: _contentKey, child: widget.child),
+          ),
         ),
       ),
     );

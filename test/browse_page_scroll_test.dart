@@ -14,6 +14,7 @@ void main() {
     int count = 40,
     double extent = 80,
     int start = 0,
+    bool restoreReady = true,
   }) => ProviderScope(
     overrides: [browsePageStateStoreProvider.overrideWithValue(store)],
     child: MaterialApp(
@@ -21,6 +22,7 @@ void main() {
         body: BrowsePageScroll(
           pageKey: key,
           controller: controller,
+          restoreReady: restoreReady,
           anchorIds: List.generate(count, (i) => '${i + start}'),
           child: ListView.builder(
             controller: controller,
@@ -68,6 +70,52 @@ void main() {
       await tester.pumpWidget(page(store, controller, count: 15));
       await tester.pumpAndSettle();
       expect(controller.offset, controller.position.maxScrollExtent);
+      await tester.pumpWidget(const SizedBox());
+      controller.dispose();
+    },
+  );
+
+  testWidgets(
+    'incomplete short content preserves the saved offset until restoration is ready',
+    (tester) async {
+      final store = BrowsePageStateStore();
+      store.update('page', {'offset': 1800.0});
+      final controller = ScrollController();
+
+      await tester.pumpWidget(
+        page(store, controller, count: 15, restoreReady: false),
+      );
+      await tester.pumpAndSettle();
+      expect(controller.position.maxScrollExtent, greaterThan(0));
+      expect(controller.position.maxScrollExtent, lessThan(1800));
+      expect(controller.offset, 0);
+      expect(store.stateFor('page')['offset'], 1800.0);
+
+      await tester.pumpWidget(page(store, controller));
+      await tester.pumpAndSettle();
+      expect(controller.offset, 1800);
+      await tester.pumpWidget(const SizedBox());
+      controller.dispose();
+    },
+  );
+
+  testWidgets(
+    'user scrolling takes precedence while delayed content becomes ready',
+    (tester) async {
+      final store = BrowsePageStateStore();
+      store.update('page', {'offset': 1800.0});
+      final controller = ScrollController();
+      await tester.pumpWidget(
+        page(store, controller, count: 15, restoreReady: false),
+      );
+      await tester.pumpAndSettle();
+      controller.jumpTo(400);
+      await tester.pumpAndSettle();
+      final position = controller.position;
+      await tester.pumpWidget(page(store, controller));
+      await tester.pumpAndSettle();
+      expect(controller.position, same(position));
+      expect(controller.offset, 400);
       await tester.pumpWidget(const SizedBox());
       controller.dispose();
     },

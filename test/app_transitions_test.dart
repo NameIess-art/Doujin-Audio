@@ -196,6 +196,76 @@ void main() {
     }
   }
 
+  for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+    for (final style in [
+      AppIndexedStackTransitionStyle.slide,
+      AppIndexedStackTransitionStyle.directional,
+    ]) {
+      testWidgets(
+        'cached pages prepare at the resized viewport ($platform, $style)',
+        (tester) async {
+          final index = ValueNotifier<int>(0);
+          final size = ValueNotifier<double>(300);
+          addTearDown(index.dispose);
+          addTearDown(size.dispose);
+          final completed = <int>[];
+          final builds = [0, 0];
+          await tester.pumpWidget(
+            MaterialApp(
+              home: Center(
+                child: ValueListenableBuilder<double>(
+                  valueListenable: size,
+                  builder: (_, extent, _) => SizedBox(
+                    width: extent,
+                    height: extent,
+                    child: AppFadeThroughIndexedStack.lazy(
+                      indexListenable: index,
+                      itemCount: 2,
+                      duration: kAppMotionSlow,
+                      style: style,
+                      onTransitionCompleted: completed.add,
+                      itemBuilder: (_, page) {
+                        builds[page]++;
+                        return Text('resized-$page');
+                      },
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          );
+          index.value = 1;
+          await tester.pumpAndSettle();
+          completed.clear();
+          size.value = 400;
+          await tester.pump();
+          index.value = 0;
+          await tester.pump(const Duration(milliseconds: 500));
+          expect(completed, isEmpty);
+          await tester.pump(const Duration(milliseconds: 500));
+          expect(completed, isEmpty);
+          await tester.pump(const Duration(milliseconds: 299));
+          expect(completed, isEmpty);
+          await tester.pump(const Duration(milliseconds: 1));
+          expect(completed, [0]);
+          expect(builds, [1, 1]);
+          expect(find.text('resized-0'), findsOneWidget);
+          await tester.pumpAndSettle();
+          index.value = 1;
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 80));
+          size.value = 500;
+          await tester.pump();
+          await tester.pumpAndSettle();
+          expect(completed, [0, 1]);
+          expect(builds, [1, 1]);
+          expect(tester.takeException(), isNull);
+        },
+        variant: TargetPlatformVariant({platform}),
+      );
+    }
+  }
+
   for (final style in [
     AppIndexedStackTransitionStyle.directional,
     AppIndexedStackTransitionStyle.crossFade,

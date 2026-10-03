@@ -130,6 +130,7 @@ void main() {
         final first = service.findWorkTextFiles(r'E:\作品\RJ 123');
         final second = service.findWorkTextFiles('e:/作品/RJ 123/');
         expect(gateway.discoverCalls, 1);
+        expect(service.resolvedWorkTextFiles('e:/作品/RJ 123/'), isNull);
         result.complete([
           {
             'name': '台本.txt',
@@ -138,9 +139,12 @@ void main() {
           },
         ]);
         final files = await first;
+        expect(service.resolvedWorkTextFiles('e:/作品/RJ 123/'), same(files));
         expect(await second, same(files));
         expect(await service.findWorkTextFiles(r'E:\作品\RJ 123'), same(files));
         expect(gateway.discoverCalls, 1);
+        await service.clearDirectoryCache();
+        expect(service.resolvedWorkTextFiles(r'E:\作品\RJ 123'), isNull);
       },
     );
 
@@ -298,14 +302,19 @@ void main() {
           },
         );
         final first = service.refreshWorkImageFiles(r'E:\作品');
+        expect(service.resolvedWorkImageFiles('e:/作品/'), isNull);
         final second = service.refreshWorkImageFiles('e:/作品/');
         expect(scans, 1);
         scan.complete(_images(['/support/cover.jpg']));
         expect(await first, ['/support/cover.jpg']);
         expect(await second, ['/support/cover.jpg']);
+        expect(service.resolvedWorkImageFiles('e:/作品/'), [
+          '/support/cover.jpg',
+        ]);
         await service.refreshWorkImageFiles(r'E:\作品');
         expect(scans, 2);
         await service.dispose();
+        expect(service.resolvedWorkImageFiles(r'E:\作品'), isNull);
       },
     );
 

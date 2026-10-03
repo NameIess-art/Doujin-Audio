@@ -67,7 +67,6 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
   Timer? _debounceTimer;
   AudioLibraryCategoryType _categoryType = AudioLibraryCategoryType.all;
   bool _hasSwitchedCategory = false;
-  int _categorySwitchCount = 0;
   bool _isSelectionMode = false;
   String _query = '';
   int _queryRevision = 0;
@@ -161,7 +160,6 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
     setState(() {
       _categoryType = category;
       _hasSwitchedCategory = true;
-      _categorySwitchCount++;
       _clearSelection();
       if (fromAll) {
         _animatingFromAll = true;
@@ -703,11 +701,10 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
             itemBuilder: (context, index) {
               if (hasTermBox && index == 0) {
                 return LibraryCategoryTermBox(
-                  key: ValueKey(
-                    'library_category_term_box_${categoryType.name}_$_categorySwitchCount',
-                  ),
+                  key: ValueKey('library_category_term_box_${categoryType.name}'),
                   categoryType: categoryType,
-                  collapseOnMount: _hasSwitchedCategory,
+                  collapseOnMount: _hasSwitchedCategory &&
+                      categoryType == _categoryType,
                   terms: terms,
                   selectedTerms: selectedTerms,
                   emptyText: _noTermsText(i18n, categoryType),

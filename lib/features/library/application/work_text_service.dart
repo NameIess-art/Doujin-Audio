@@ -239,6 +239,14 @@ class WorkTextService {
   Future<List<WorkTextFile>> findWorkTextFiles(String folderPath) =>
       _findWorkTexts(folderPath);
 
+  List<WorkTextFile>? resolvedWorkTextFiles(String folderPath) =>
+      _textSnapshots[PathMatcher.equivalenceKey(folderPath)];
+
+  List<String>? resolvedWorkImageFiles(String folderPath) =>
+      _imageSnapshots[PathMatcher.equivalenceKey(folderPath)]
+          ?.map((image) => image.displayPath)
+          .toList(growable: false);
+
   Future<List<WorkTextFile>> refreshWorkTextFiles(String folderPath) =>
       _findWorkTexts(folderPath, refresh: true);
 

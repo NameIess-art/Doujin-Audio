@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 
 import '../../../core/immutable_collections.dart';
 import '../../../core/media/audio_detail.dart';
+import '../../../core/media/path_matcher.dart';
 import '../domain/audio_library_category.dart';
 import '../domain/library_node.dart';
 import '../../../core/media/music_track.dart';
@@ -164,6 +165,8 @@ class LibrarySnapshotCacheService {
   Future<LibraryTreeSnapshot>? _treeFuture;
   int _treeFutureRevision = -1;
   final List<VoidCallback> _treeCommitCallbacks = <VoidCallback>[];
+  final _folderTrees = <String, FolderNode>{};
+  int _folderTreesRevision = -1;
 
   AudioLibraryCategorySnapshot? _categorySnapshot;
   Future<AudioLibraryCategorySnapshot>? _categoryFuture;
@@ -179,6 +182,56 @@ class LibrarySnapshotCacheService {
   List<LibraryNode> get tree => _cachedTree;
 
   int get treeSnapshotRevision => _cachedTreeRevision;
+
+  FolderNode? resolvedFolderTree(String folderPath) {
+    final revision = _libraryService.structureRevision;
+    if (_folderTreesRevision != revision) {
+      _folderTrees.clear();
+      _folderTreesRevision = revision;
+    }
+    FolderNode? find(Iterable<LibraryNode> nodes) {
+      for (final folder in nodes.whereType<FolderNode>()) {
+        if (PathMatcher.equalsNormalized(folder.path, folderPath)) {
+          return folder;
+        }
+        final nested = find(folder.children);
+        if (nested != null) return nested;
+      }
+      return null;
+    }
+
+    if (_cachedTreeRevision == revision) {
+      final folder = find(_cachedTree);
+      if (folder != null) return folder;
+    }
+    final key = PathMatcher.equivalenceKey(folderPath);
+    final cached = _folderTrees[key];
+    if (cached != null) return cached;
+    final card = _cachedCardRevision == revision ? find(_cachedCards) : null;
+    final tracks =
+        card?.allTracks ??
+        _libraryService.library
+            .where(
+              (track) =>
+                  !track.isSingle &&
+                  (PathMatcher.isWithinOrEqual(track.path, folderPath) ||
+                      PathMatcher.isWithinOrEqual(track.groupKey, folderPath)),
+            )
+            .toList(growable: false);
+    if (tracks.isEmpty) return null;
+    final folder = find(
+      const LibraryOrganizer()
+          .buildTree(tracks: tracks, watchedFolders: [folderPath])
+          .tree,
+    );
+    if (folder != null) {
+      _folderTrees[key] = folder;
+      if (_folderTrees.length > 32) {
+        _folderTrees.remove(_folderTrees.keys.first);
+      }
+    }
+    return folder;
+  }
 
   int get leafFolderCount => _cachedCardLeafFolderCount;
 
@@ -404,6 +457,8 @@ class LibrarySnapshotCacheService {
   }
 
   void clear() {
+    _folderTrees.clear();
+    _folderTreesRevision = -1;
     _cachedCards = const <LibraryNode>[];
     _cachedCardRevision = -1;
     _cachedCardLeafFolderCount = 0;

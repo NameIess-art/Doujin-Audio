@@ -1690,6 +1690,7 @@ void main() {
     await tester.tap(expandButton);
     await tester.pump(const Duration(milliseconds: 350));
     expect(find.text('收起'), findsOneWidget);
+    final tagsSelector = find.byType(LibraryCategoryTermBox).evaluate().single;
 
     await tester.tap(
       find.byKey(
@@ -1703,6 +1704,17 @@ void main() {
     await tester.pump(const Duration(milliseconds: 350));
     expect(find.text('展开'), findsOneWidget);
     expect(find.text('收起'), findsNothing);
+    expect(
+      find
+          .byType(LibraryCategoryTermBox, skipOffstage: false)
+          .evaluate()
+          .firstWhere(
+            (element) =>
+                (element.widget as LibraryCategoryTermBox).categoryType ==
+                AudioLibraryCategoryType.tags,
+          ),
+      same(tagsSelector),
+    );
 
     await tester.tap(
       find.byKey(
@@ -1715,6 +1727,10 @@ void main() {
     await tester.pump(const Duration(milliseconds: 350));
     expect(find.text('展开'), findsOneWidget);
     expect(find.text('收起'), findsNothing);
+    expect(
+      find.byType(LibraryCategoryTermBox).evaluate().single,
+      same(tagsSelector),
+    );
     expect(find.text(tagsLabel), findsOneWidget);
     expect(find.text(voiceActorsLabel), findsOneWidget);
   });

@@ -277,7 +277,7 @@ class LibraryOrganizer {
 
       final directoryPath = PathMatcher.isContentUri(track.path)
           ? track.groupKey
-          : path.dirname(track.path);
+          : PathMatcher.parentPath(track.path) ?? path.dirname(track.path);
       final relativeDirectory = PathMatcher.relativeWithin(
         directoryPath,
         rootPath,
@@ -350,7 +350,7 @@ class LibraryOrganizer {
 
       final dirPath = PathMatcher.isContentUri(track.path)
           ? track.groupKey
-          : path.dirname(track.path);
+          : PathMatcher.parentPath(track.path) ?? path.dirname(track.path);
       final matchedRoot = _rootPathForTrack(
         track,
         watchedRoots,
@@ -471,9 +471,10 @@ class LibraryOrganizer {
   String _folderPathForRelativeParts(String rootPath, List<String> parts) {
     if (parts.isEmpty) return rootPath;
     if (PathMatcher.isContentUri(rootPath)) {
-      return '$rootPath::${parts.join('/')}';
+      final separator = rootPath.contains('::') ? '/' : '::';
+      return '$rootPath$separator${parts.join('/')}';
     }
-    return path.normalize(path.joinAll(<String>[rootPath, ...parts]));
+    return parts.fold(rootPath, PathMatcher.join);
   }
 
   String _normalizeDisplaySegment(String value) {

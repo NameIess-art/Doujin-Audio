@@ -42,6 +42,7 @@ import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/ui/ui_operation_service.dart';
 import 'package:doujin_audio/core/ui/warmup_scheduler.dart';
 import 'package:doujin_audio/core/widgets/async_cover_image.dart';
+import 'package:doujin_audio/core/widgets/app_search_page.dart';
 import 'package:doujin_audio/core/widgets/glass_refresh_indicator.dart';
 import 'package:doujin_audio/core/widgets/library_like_cards.dart';
 import 'package:doujin_audio/core/widgets/marquee_text.dart';
@@ -2548,13 +2549,21 @@ void main() {
         of: recommendationList,
         matching: find.text(harness.languageProvider.tr('asmr_empty_category')),
       );
-      expect(controller.recommendationRefreshCount, 1);
+      expect(controller.recommendationRefreshCount, 0);
       expect(recommendationSkeletons, findsWidgets);
       expect(recommendationEmptyState, findsNothing);
 
       await tester.pump(const Duration(milliseconds: 600));
       await tester.pump(const Duration(milliseconds: 200));
+      await tester.pump(coordinator.idleDelay);
       await tester.pump();
+      for (
+        var frame = 0;
+        frame < 20 && controller.recommendationRefreshCount == 0;
+        frame++
+      ) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
       expect(controller.recommendationRefreshCount, 1);
       expect(recommendationSkeletons, findsWidgets);
       expect(recommendationEmptyState, findsNothing);
@@ -2661,6 +2670,10 @@ void main() {
     await tester.pump(const Duration(milliseconds: 250));
     await tester.pump();
 
+    expect(controller.collectedSearchRefreshCount, 0);
+    await tester.pump(UiInteractionCoordinator.instance.idleDelay);
+    await tester.pump(UiInteractionCoordinator.instance.idleDelay);
+    await tester.pump();
     expect(controller.collectedSearchRefreshCount, 1);
     expect(
       find.descendant(
@@ -3125,6 +3138,195 @@ void main() {
       greaterThanOrEqualTo(8),
     );
   });
+
+  for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+    for (final inSearch in [false, true]) {
+      testWidgets(
+        'hidden ASMR category retains its subtree on $platform, search=$inSearch',
+        (tester) async {
+          _setLogicalTestViewSize(tester, const Size(360, 650));
+          final fixture = AppRuntimeWidgetTestFixture();
+          final controller = _QueuedEmptyAsmrLibraryController(
+            services: createTestAsmrServices(),
+          );
+          addTearDown(fixture.dispose);
+          addTearDown(controller.dispose);
+          await tester.pumpWidget(
+            fixture.build(
+              const AsmrTab(),
+              overrides: [
+                asmrLibraryControllerProvider.overrideWithValue(controller),
+              ],
+            ),
+          );
+          await tester.pumpAndSettle();
+          if (inSearch) {
+            await tester.tap(
+              find.byKey(const ValueKey<String>('asmr_search_button')),
+            );
+            await tester.pumpAndSettle();
+          }
+          void select(AsmrCategoryType category) {
+            if (inSearch) {
+              tester
+                  .widget<AppSearchPageScaffold<AsmrCategoryType>>(
+                    find.byType(AppSearchPageScaffold<AsmrCategoryType>),
+                  )
+                  .onCategorySelected(category);
+            } else {
+              tester
+                  .widget<HeaderSegmentedCategoryBar<AsmrCategoryType>>(
+                    find.byType(HeaderSegmentedCategoryBar<AsmrCategoryType>),
+                  )
+                  .onSelected(category);
+            }
+          }
+
+          final collectedList = find.descendant(
+            of: find.byKey(
+              inSearch
+                  ? const ValueKey<String>('asmr_search_collected')
+                  : const ValueKey(AsmrCategoryType.collected),
+            ),
+            matching: find.byKey(
+              const PageStorageKey(AsmrCategoryType.collected),
+            ),
+          );
+          final outgoingScroll = tester
+              .widget<ListView>(collectedList)
+              .controller!;
+          unawaited(
+            outgoingScroll.animateTo(
+              outgoingScroll.offset + 100,
+              duration: const Duration(seconds: 1),
+              curve: Curves.linear,
+            ),
+          );
+          expect(outgoingScroll.position.isScrollingNotifier.value, isTrue);
+          final outgoingOffset = outgoingScroll.offset;
+          select(AsmrCategoryType.favorites);
+          expect(outgoingScroll.position.isScrollingNotifier.value, isFalse);
+          expect(outgoingScroll.offset, outgoingOffset);
+          await tester.pumpAndSettle();
+          await tester.pump(UiInteractionCoordinator.instance.idleDelay);
+          await tester.pumpAndSettle();
+          final collectedReads =
+              controller.categoryViewReadCounts[AsmrCategoryType.collected];
+          select(AsmrCategoryType.history);
+          await tester.pumpAndSettle();
+          await tester.pump(UiInteractionCoordinator.instance.idleDelay);
+          await tester.pumpAndSettle();
+          expect(
+            controller.categoryViewReadCounts[AsmrCategoryType.collected],
+            collectedReads,
+          );
+          select(AsmrCategoryType.collected);
+          await tester.pumpAndSettle();
+          expect(
+            controller.categoryViewReadCounts[AsmrCategoryType.collected],
+            greaterThan(collectedReads!),
+          );
+          expect(tester.takeException(), isNull);
+        },
+        variant: TargetPlatformVariant({platform}),
+      );
+    }
+    testWidgets(
+      'ASMR search resumes a covered pending refresh on $platform',
+      (tester) async {
+        final fixture = AppRuntimeWidgetTestFixture();
+        final controller = _QueuedEmptyAsmrLibraryController(
+          services: createTestAsmrServices(),
+          delayCollectedSearch: true,
+        );
+        addTearDown(fixture.dispose);
+        addTearDown(controller.dispose);
+        await tester.pumpWidget(
+          fixture.build(
+            const AsmrTab(),
+            overrides: [
+              asmrLibraryControllerProvider.overrideWithValue(controller),
+            ],
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const ValueKey<String>('asmr_search_button')),
+        );
+        await tester.pumpAndSettle();
+        final source = Object();
+        final interaction = UiInteractionCoordinator.instance;
+        interaction.beginInteraction(source);
+        addTearDown(() => interaction.cancelInteraction(source));
+        final search = find.byType(AppSearchPageScaffold<AsmrCategoryType>);
+        tester
+            .widget<AppSearchPageScaffold<AsmrCategoryType>>(search)
+            .onSubmitted('sleep');
+        final navigator = Navigator.of(tester.element(search));
+        unawaited(
+          navigator.push<void>(
+            MaterialPageRoute<void>(
+              builder: (_) => const Scaffold(body: Text('Covered search')),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        interaction.endInteraction(source);
+        await tester.pump(interaction.idleDelay);
+        await tester.pump(interaction.idleDelay);
+        await tester.pump();
+        expect(controller.collectedSearchRefreshCount, 0);
+        navigator.pop();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 350));
+        await tester.pump(interaction.idleDelay);
+        await tester.pump(interaction.idleDelay);
+        await tester.pump();
+        expect(controller.collectedSearchRefreshCount, 1);
+        controller.completeCollectedSearchRefresh();
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+      },
+      variant: TargetPlatformVariant({platform}),
+    );
+    for (final leaveBeforeIdle in [false, true]) {
+      testWidgets(
+        'ASMR automatic pagination waits for idle on $platform, leave=$leaveBeforeIdle',
+        (tester) async {
+          final interaction = UiInteractionCoordinator.instance;
+          final fixture = AppRuntimeWidgetTestFixture();
+          final controller = _QueuedEmptyAsmrLibraryController(
+            services: createTestAsmrServices(),
+            collectedHasMore: true,
+          );
+          addTearDown(fixture.dispose);
+          addTearDown(controller.dispose);
+          final source = Object();
+          interaction.beginInteraction(source);
+          addTearDown(() => interaction.cancelInteraction(source));
+          await tester.pumpWidget(
+            fixture.build(
+              const AsmrTab(),
+              overrides: [
+                asmrLibraryControllerProvider.overrideWithValue(controller),
+              ],
+            ),
+          );
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 500));
+          expect(controller.loadMoreCount, 0);
+          if (leaveBeforeIdle) await tester.pumpWidget(const SizedBox.shrink());
+          interaction.endInteraction(source);
+          await tester.pump(interaction.idleDelay);
+          await tester.pump();
+          await tester.pump();
+          expect(controller.loadMoreCount, leaveBeforeIdle ? 0 : 1);
+          expect(tester.takeException(), isNull);
+        },
+        variant: TargetPlatformVariant({platform}),
+      );
+    }
+  }
 
   testWidgets('ASMR pagination shows progress without a pull-up hint', (
     tester,
@@ -5270,6 +5472,7 @@ final class _QueuedEmptyAsmrLibraryController extends AsmrLibraryController {
   int loadMoreCount = 0;
   int initializeCount = 0;
   int categoryViewReadCount = 0;
+  final categoryViewReadCounts = <AsmrCategoryType, int>{};
 
   static final AsmrWork _collectedWork = AsmrWork(
     id: 1,
@@ -5406,6 +5609,11 @@ final class _QueuedEmptyAsmrLibraryController extends AsmrLibraryController {
     bool searchSession = false,
   }) {
     categoryViewReadCount++;
+    categoryViewReadCounts.update(
+      category,
+      (count) => count + 1,
+      ifAbsent: () => 1,
+    );
     final isSearch =
         category == AsmrCategoryType.collected && searchQuery.isNotEmpty;
     final searchPending =

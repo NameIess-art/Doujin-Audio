@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:doujin_audio/core/ui/visual_settings_providers.dart';
 import 'package:doujin_audio/features/settings/presentation/settings_providers.dart';
 import 'package:flutter/material.dart';
@@ -163,7 +165,7 @@ void main() {
     );
   });
 
-  testWidgets('placeholder content fades over the shared 750ms duration', (
+  testWidgets('placeholder content fades over the shared 300ms duration', (
     tester,
   ) async {
     var showPlaceholder = true;
@@ -191,7 +193,7 @@ void main() {
 
     expect(
       kPlaceholderContentTransitionDuration,
-      const Duration(milliseconds: 750),
+      const Duration(milliseconds: 300),
     );
 
     update(() => showPlaceholder = false);
@@ -210,7 +212,7 @@ void main() {
       unorderedEquals(<double>[0, 1]),
     );
 
-    await tester.pump(const Duration(milliseconds: 350));
+    await tester.pump(const Duration(milliseconds: 150));
     final midpointOpacities = tester
         .widgetList<FadeTransition>(fadeFinder)
         .map((fade) => fade.opacity.value)
@@ -220,10 +222,16 @@ void main() {
     expect(midpointOpacities[1], inInclusiveRange(0.3, 0.7));
     expect(midpointOpacities[0] + midpointOpacities[1], closeTo(1, 0.001));
 
-    await tester.pump(const Duration(milliseconds: 350));
+    await tester.pump(const Duration(milliseconds: 149));
     expect(find.byKey(const ValueKey('placeholder')), findsOneWidget);
 
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 1));
+    expect(
+      tester.widgetList<FadeTransition>(fadeFinder).last.opacity.value,
+      closeTo(1, 0.001),
+    );
+    await tester.pump(const Duration(milliseconds: 1));
+    await tester.pump();
     expect(find.byKey(const ValueKey('placeholder')), findsNothing);
     expect(find.byKey(contentKey), findsOneWidget);
 
@@ -233,6 +241,138 @@ void main() {
     await tester.pump();
     expect(tester.takeException(), isNull);
     await tester.pumpAndSettle();
+  });
+
+  testWidgets('inline loading can restart, skip motion and dispose mid-fade', (
+    tester,
+  ) async {
+    var loading = true;
+    var reducedMotion = false;
+    late StateSetter update;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: StatefulBuilder(
+          builder: (context, setState) {
+            update = setState;
+            return MediaQuery(
+              data: MediaQuery.of(
+                context,
+              ).copyWith(disableAnimations: reducedMotion),
+              child: Column(
+                children: [
+                  PlaceholderContentTransition(
+                    fit: StackFit.loose,
+                    showPlaceholder: loading,
+                    placeholder: const SizedBox(
+                      key: ValueKey('inline_loading'),
+                      height: 40,
+                    ),
+                    content: const SizedBox(
+                      key: ValueKey('inline_data'),
+                      height: 80,
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+      ),
+    );
+    update(() => loading = false);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 150));
+    expect(
+      tester.getSize(find.byType(PlaceholderContentTransition)).height,
+      80,
+    );
+    update(() => loading = true);
+    await tester.pump();
+    expect(find.byKey(const ValueKey('inline_data')), findsNothing);
+    update(() {
+      reducedMotion = true;
+      loading = false;
+    });
+    await tester.pump();
+    expect(find.byKey(const ValueKey('inline_loading')), findsNothing);
+    expect(find.byKey(const ValueKey('inline_data')), findsOneWidget);
+    update(() {
+      reducedMotion = false;
+      loading = true;
+    });
+    await tester.pump();
+    update(() => loading = false);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 150));
+    await tester.pumpWidget(const SizedBox.shrink());
+    expect(tester.binding.transientCallbackCount, 0);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('covered loading completes without replay on return', (
+    tester,
+  ) async {
+    var loading = true;
+    late StateSetter update;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: StatefulBuilder(
+          builder: (context, setState) {
+            update = setState;
+            return PlaceholderContentTransition(
+              showPlaceholder: loading,
+              placeholder: const SizedBox(key: ValueKey('covered_loading')),
+              content: const SizedBox(key: ValueKey('covered_data')),
+            );
+          },
+        ),
+      ),
+    );
+    final navigator = Navigator.of(
+      tester.element(find.byType(PlaceholderContentTransition)),
+    );
+    for (final completeWhileCovered in [true, false]) {
+      update(() => loading = true);
+      await tester.pump();
+      if (!completeWhileCovered) {
+        update(() => loading = false);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 150));
+      }
+      unawaited(
+        navigator.push(
+          MaterialPageRoute<void>(
+            builder: (_) => const Scaffold(body: Text('Covering page')),
+          ),
+        ),
+      );
+      await tester.pump();
+      if (completeWhileCovered) {
+        update(() => loading = false);
+        await tester.pump();
+      }
+      expect(
+        find.byKey(const ValueKey('covered_loading'), skipOffstage: false),
+        findsNothing,
+      );
+      navigator.pop();
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('covered_data')), findsOneWidget);
+      expect(
+        tester
+            .widget<FadeTransition>(
+              find.descendant(
+                of: find.byType(PlaceholderContentTransition),
+                matching: find.byType(FadeTransition),
+              ),
+            )
+            .opacity
+            .value,
+        1,
+      );
+    }
+    await tester.pumpWidget(const SizedBox.shrink());
+    expect(tester.takeException(), isNull);
   });
 
   test('library-like info lines map AudioDetail metadata consistently', () {

@@ -651,7 +651,8 @@ const Map<String, String> appLanguageEn = {
   'exact_alarm_permission_missing':
       'Exact alarms are disabled, so auto-resume after long background time may be unreliable.',
   'clear_app_cache': 'Clear app cache',
-  'clear_app_cache_confirm': 'Clear covers and temporary caches? Source files, selected covers, favorites, history and playback records are retained.',
+  'clear_app_cache_confirm':
+      'Clear covers and temporary caches? Source files, selected covers, favorites, history and playback records are retained.',
   'app_cache_cleaned': 'Cleared {size} of cached files.',
   'app_cache_none': 'No app cache to clear.',
   'max_cache_size': 'Temporary cache limit',
@@ -864,10 +865,15 @@ const Map<String, String> appLanguageEn = {
   'subtitle_model_download_failed': 'Model download failed. Try again.',
   'subtitle_download_in_background': 'Download in background',
   'subtitle_model_space_unknown': 'Unknown',
-  'import_subtitle_hint': 'Select a subtitle file for this audio track',
+  'import_subtitle_hint': 'Select subtitles to rename and move into the audio folder',
   'subtitle_imported': 'Subtitle imported successfully',
   'subtitle_loaded_file': 'Loaded: {file}',
-  'subtitle_import_failed': 'Failed to parse subtitle file',
+  'subtitle_import_failed':
+      'Could not import subtitles. Check file and folder permissions.',
+  'subtitle_import_overwrite_title': 'Overwrite existing subtitles?',
+  'subtitle_import_overwrite_hint':
+      'This audio already has local subtitles. Importing replaces them and renames and moves the selected file into the audio folder.',
+  'subtitle_import_overwrite': 'Overwrite',
   'subtitle_load_failed': 'Could not load subtitles. Please try again.',
   'subtitle_save_failed': 'Could not save subtitles. Please try again.',
   'subtitle_edit': 'Edit subtitles',
@@ -890,7 +896,6 @@ const Map<String, String> appLanguageEn = {
   'subtitle_reset': 'Reset',
   'subtitle_offset_current': 'Current offset: {offset}',
   'no_subtitle_for_track': 'No subtitles loaded',
-  'reimport_subtitle': 'Re-import',
   'subtitle_global_display': 'Show subtitles globally',
   'overlay_permission_title': 'Allow subtitle overlay',
   'overlay_permission_message':

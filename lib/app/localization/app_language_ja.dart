@@ -598,7 +598,8 @@ const Map<String, String> appLanguageJa = {
   'exact_alarm_permission_missing':
       '正確なアラームが無効です。長時間バックグラウンド後の自動再開が不安定になる場合があります。',
   'clear_app_cache': 'アプリキャッシュを削除',
-  'clear_app_cache_confirm': 'カバーと一時キャッシュを削除しますか？元ファイル、選択したカバー、お気に入り、履歴、再生記録は保持されます。',
+  'clear_app_cache_confirm':
+      'カバーと一時キャッシュを削除しますか？元ファイル、選択したカバー、お気に入り、履歴、再生記録は保持されます。',
   'app_cache_cleaned': '{size} のキャッシュファイルを削除しました。',
   'app_cache_none': '削除できるアプリキャッシュはありません。',
   'max_cache_size': '一時キャッシュ上限',
@@ -794,10 +795,14 @@ const Map<String, String> appLanguageJa = {
   'subtitle_model_download_failed': 'モデルのダウンロードに失敗しました。再試行してください。',
   'subtitle_download_in_background': 'バックグラウンドでダウンロード',
   'subtitle_model_space_unknown': '不明',
-  'import_subtitle_hint': 'この音声トラックの字幕ファイルを選択',
+  'import_subtitle_hint': '字幕を選択し、音声と同じ名前で音声フォルダーへ移動',
   'subtitle_imported': '字幕をインポートしました',
   'subtitle_loaded_file': '読み込み済み：{file}',
-  'subtitle_import_failed': '字幕ファイルを解析できませんでした',
+  'subtitle_import_failed': '字幕をインポートできません。ファイルとフォルダーのアクセス権を確認してください。',
+  'subtitle_import_overwrite_title': '既存の字幕を上書きしますか？',
+  'subtitle_import_overwrite_hint':
+      'この音声にはローカル字幕があります。既存の字幕を置き換え、選択したファイルを音声と同じ名前に変更して音声フォルダーへ移動します。',
+  'subtitle_import_overwrite': '上書き',
   'subtitle_load_failed': '字幕を読み込めませんでした。もう一度お試しください。',
   'subtitle_save_failed': '字幕を保存できませんでした。もう一度お試しください。',
   'subtitle_edit': '字幕を編集',
@@ -818,7 +823,6 @@ const Map<String, String> appLanguageJa = {
   'subtitle_reset': 'リセット',
   'subtitle_offset_current': '現在のオフセット: {offset}',
   'no_subtitle_for_track': '字幕が見つかりません',
-  'reimport_subtitle': '再インポート',
   'subtitle_global_display': '字幕を全体に表示',
   'overlay_permission_title': '字幕用オーバーレイを許可',
   'overlay_permission_message':

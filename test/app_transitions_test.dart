@@ -448,7 +448,7 @@ void main() {
 
   for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
     testWidgets(
-      'whole detail paints before moving and exits after its final frame on $platform',
+      'work detail fades its stationary header and retains prepared frames on $platform',
       (tester) async {
         final navigatorKey = GlobalKey<NavigatorState>();
         final surface = GlobalKey();
@@ -466,7 +466,7 @@ void main() {
         );
         final route = buildAppPageRoute<void>(
           context: navigatorKey.currentContext!,
-          wholePageTransition: true,
+          workDetailTransition: true,
           child: _DetailPaintProbe(
             onPaint: () => paints++,
             child: _BuildCountingContent(
@@ -491,17 +491,20 @@ void main() {
           reason: 'The offscreen page is recorded before moving.',
         );
         final preparedBuilds = builds;
+        final headerLeft = tester
+            .getRect(find.byKey(const ValueKey('whole-home-header')))
+            .left;
         await tester.pump(const Duration(milliseconds: 75));
         final header = find.byKey(const ValueKey('whole-detail-header'));
         final body = find.byKey(const ValueKey('whole-detail-body'));
-        expect(
-          tester.getRect(header).center.dx,
-          closeTo(tester.getRect(body).center.dx, 0.01),
-        );
+        expect(tester.getRect(header).left, closeTo(headerLeft, 0.01));
         expect(tester.getRect(body).left, greaterThan(0));
+        final headerOpacity = find
+            .ancestor(of: header, matching: find.byType(Opacity))
+            .first;
         expect(
-          find.ancestor(of: header, matching: find.byType(Opacity)),
-          findsNothing,
+          tester.widget<Opacity>(headerOpacity).opacity,
+          inExclusiveRange(0, 1),
         );
         for (var i = 0; i < 3; i++) {
           await tester.pump(const Duration(milliseconds: 75));
@@ -517,6 +520,13 @@ void main() {
 
         navigatorKey.currentState!.pop();
         await tester.pump();
+        await tester.pump(const Duration(milliseconds: 225));
+        expect(tester.getRect(header).left, closeTo(headerLeft, 0.01));
+        expect(tester.getRect(body).left, greaterThan(0));
+        expect(
+          tester.widget<Opacity>(headerOpacity).opacity,
+          inExclusiveRange(0, 1),
+        );
         var finalFrameRetained = false;
         WidgetsBinding.instance.addPostFrameCallback((_) {
           finalFrameRetained =
@@ -530,7 +540,7 @@ void main() {
                   .evaluate()
                   .isNotEmpty;
         });
-        await tester.pump(kAppMotionSlow + const Duration(milliseconds: 1));
+        await tester.pump(const Duration(milliseconds: 76));
         expect(
           finalFrameRetained,
           isTrue,
@@ -566,7 +576,7 @@ void main() {
   }
 
   testWidgets(
-    'whole detail cancels during preparation and honors reduced motion',
+    'work detail cancels during preparation and honors reduced motion',
     (tester) async {
       for (final reduced in [false, true]) {
         final navigatorKey = GlobalKey<NavigatorState>();
@@ -581,7 +591,7 @@ void main() {
         );
         final route = buildAppPageRoute<void>(
           context: navigatorKey.currentContext!,
-          wholePageTransition: true,
+          workDetailTransition: true,
           child: const Text('cancel-whole-detail'),
         );
         if (reduced) expect(route.transitionDuration, Duration.zero);
@@ -600,7 +610,7 @@ void main() {
   );
 
   testWidgets(
-    'whole detail releases tickers after interrupted entry and removal',
+    'work detail releases tickers after interrupted entry and removal',
     (tester) async {
       final navigatorKey = GlobalKey<NavigatorState>();
       await tester.pumpWidget(
@@ -609,7 +619,7 @@ void main() {
       for (final remove in [false, true]) {
         final route = buildAppPageRoute<void>(
           context: navigatorKey.currentContext!,
-          wholePageTransition: true,
+          workDetailTransition: true,
           child: const Text('interrupted-whole-detail'),
         );
         unawaited(navigatorKey.currentState!.push(route));

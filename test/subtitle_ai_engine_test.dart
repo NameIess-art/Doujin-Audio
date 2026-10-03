@@ -259,7 +259,10 @@ void main() {
           service.generationJob!.errorMessage,
           contains('shared model unavailable'),
         );
-        expect(service.getCustomSubtitlePath('audio.mp3'), isNull);
+        expect(
+          service.trackSync('audio.mp3')?.cues.single.text,
+          script ? null : _source.text,
+        );
         service.dispose();
       },
       skip: !Platform.isWindows && !Platform.isAndroid,

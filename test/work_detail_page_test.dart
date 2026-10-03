@@ -23,6 +23,7 @@ import 'package:doujin_audio/core/widgets/mobile_overlay_inset.dart';
 import 'package:doujin_audio/core/widgets/drag_only_scrollbar.dart';
 import 'package:doujin_audio/core/widgets/top_page_header.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
+import 'package:doujin_audio/core/widgets/operation_feedback.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_metadata_service.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
 import 'package:doujin_audio/features/library/presentation/dlsite_metadata_review_page.dart';
@@ -52,7 +53,7 @@ Future<void> _settleDetail(WidgetTester tester) async {
     if (attempt >= 4 &&
         !tester.binding.hasScheduledFrame &&
         find
-            .byKey(const ValueKey('work_detail_loading_indicator'))
+            .byKey(const ValueKey('work_detail_entries_skeleton'))
             .evaluate()
             .isEmpty) {
       break;
@@ -311,27 +312,75 @@ void main() {
           expect(find.text('Cold directory'), findsOneWidget);
           expect(treeRequests, 0);
           expect(find.text('audio.mp3'), findsNothing);
-          final loader = tester.renderObject<RenderRepaintBoundary>(
-            find.byKey(const ValueKey('work_detail_loading_indicator')),
+          final skeleton = tester.renderObject<RenderRepaintBoundary>(
+            find.byKey(const ValueKey('work_detail_entries_skeleton')),
           );
+          final directorySkeleton = tester.widget<WorkDetailDirectorySkeleton>(
+            find.byType(WorkDetailDirectorySkeleton),
+          );
+          expect(directorySkeleton.itemCount, 6);
+          final skeletonRows = find.descendant(
+            of: find.byKey(const ValueKey('work_detail_entries_skeleton')),
+            matching: find.byType(SizedBox),
+          );
+          expect(tester.getSize(skeletonRows.first).height, 48);
           await tester.pump(const Duration(milliseconds: 20));
           expect(
-            loader.debugAsymmetricPaintCount,
+            skeleton.debugAsymmetricPaintCount,
             greaterThan(0),
-            reason: 'The spinner must repaint without repainting page content.',
+            reason: 'The skeleton repaints independently of page content.',
           );
           await tester.pump(const Duration(milliseconds: 500));
           await tester.pump(interaction.idleDelay);
           await tester.pump();
           expect(treeRequests, 1);
+          final skeletonRect = tester.getRect(
+            find.byKey(const ValueKey('work_detail_entries_skeleton')),
+          );
           directory.complete(
             const LibraryOrganizer().buildTree(
               tracks: fixture.library.library,
               watchedFolders: [folder],
             ),
           );
-          await _settleDetail(tester);
+          for (var attempt = 0; attempt < 50; attempt++) {
+            await tester.runAsync(
+              () => Future<void>.delayed(const Duration(milliseconds: 10)),
+            );
+            await tester.pump();
+            if (find.text('audio.mp3').evaluate().isNotEmpty) break;
+          }
           expect(find.text('audio.mp3'), findsOneWidget);
+          final fade = find.byKey(const ValueKey('work_detail_entries_fade'));
+          expect(tester.widget<SliverFadeTransition>(fade).opacity.value, 0);
+          final skeletonFade = find.ancestor(
+            of: find.byKey(const ValueKey('work_detail_entries_skeleton')),
+            matching: find.byType(FadeTransition),
+          ).first;
+          expect(tester.widget<FadeTransition>(skeletonFade).opacity.value, 1);
+          expect(
+            tester.getRect(
+              find.byKey(const ValueKey('work_detail_entries_skeleton')),
+            ),
+            skeletonRect,
+          );
+          await tester.pump(const Duration(milliseconds: 150));
+          expect(
+            tester.widget<SliverFadeTransition>(fade).opacity.value,
+            closeTo(0.5, 0.05),
+          );
+          expect(
+            tester.widget<FadeTransition>(skeletonFade).opacity.value +
+                tester.widget<SliverFadeTransition>(fade).opacity.value,
+            closeTo(1, 0.001),
+          );
+          await tester.pump(const Duration(milliseconds: 151));
+          await tester.pump();
+          expect(tester.widget<SliverFadeTransition>(fade).opacity.value, 1);
+          expect(
+            find.byKey(const ValueKey('work_detail_entries_skeleton')),
+            findsNothing,
+          );
           Navigator.of(tester.element(find.byType(WorkDetailPage))).pop();
           await _settleDetail(tester);
           await tester.pump(interaction.idleDelay);
@@ -340,10 +389,122 @@ void main() {
           await tester.pump();
           await tester.pump(const Duration(milliseconds: 100));
           expect(find.text('audio.mp3'), findsOneWidget);
+          expect(tester.widget<SliverFadeTransition>(fade).opacity.value, 1);
           expect(
             treeRequests,
             1,
             reason: 'Reopen reuses the prepared subtree.',
+          );
+          await tester.pumpWidget(const SizedBox.shrink());
+          expect(tester.takeException(), isNull);
+        },
+        variant: TargetPlatformVariant({platform}),
+      );
+
+      testWidgets(
+        'late file discoveries fade only new rows on $platform',
+        (tester) async {
+          final interaction = UiInteractionCoordinator.instance;
+          interaction.resetForTest();
+          addTearDown(interaction.resetForTest);
+          SharedPreferences.setMockInitialValues({});
+          final covers = _ControlledWorkDetailCoverService()
+            ..images.complete([])
+            ..cover.complete(null);
+          final fixture = AppRuntimeWidgetTestFixture(
+            coverArtworkCacheService: covers,
+          );
+          addTearDown(fixture.dispose);
+          const folder = 'C:/works/late-files';
+          final target = AudioDetailTarget.libraryRootFolder(folder);
+          fixture.library.addWatchedFolder(folder, notify: false);
+          fixture.library.addTracks([
+            testMusicTrack(
+              name: 'Existing audio',
+              path: '$folder/audio.mp3',
+              groupKey: folder,
+              groupTitle: 'Late files',
+            ),
+          ], persist: false);
+          await tester.runAsync(() async {
+            await fixture.library.loadAudioDetail(target);
+            await fixture.library.loadLibraryFolderTree(folder);
+            await _prewarmDirectory(fixture, folder);
+          });
+          final gateway = _PendingWorkDetailFileGateway();
+          final texts = WorkTextService(
+            platformGateway: gateway,
+            discoverImages: (_) async => [],
+          );
+          addTearDown(texts.dispose);
+          await tester.pumpWidget(
+            fixture.build(
+              WorkDetailPage.forLocal(target: target),
+              overrides: [workTextServiceProvider.overrideWithValue(texts)],
+            ),
+          );
+          await _settleDetail(tester);
+          Finder rowFade(String id) =>
+              find.byKey(ValueKey('work_detail_entry_fade_$id'));
+          expect(
+            tester
+                .widget<FadeTransition>(rowFade('audio:$folder/audio.mp3'))
+                .opacity
+                .value,
+            1,
+          );
+          gateway.texts.complete([
+            {
+              'name': 'notes.txt',
+              'relativePath': 'notes.txt',
+              'path': '$folder/notes.txt',
+            },
+          ]);
+          for (var attempt = 0; attempt < 50; attempt++) {
+            await tester.runAsync(
+              () => Future<void>.delayed(const Duration(milliseconds: 10)),
+            );
+            await tester.pump();
+            if (find.text('notes.txt').evaluate().isNotEmpty) break;
+          }
+          expect(find.text('notes.txt'), findsOneWidget);
+          expect(
+            tester
+                .widget<FadeTransition>(rowFade('audio:$folder/audio.mp3'))
+                .opacity
+                .value,
+            1,
+          );
+          expect(
+            tester
+                .widget<FadeTransition>(rowFade('text:notes.txt'))
+                .opacity
+                .value,
+            0,
+          );
+          await tester.pump(const Duration(milliseconds: 150));
+          expect(
+            tester
+                .widget<FadeTransition>(rowFade('text:notes.txt'))
+                .opacity
+                .value,
+            closeTo(0.5, 0.05),
+          );
+          expect(
+            tester
+                .widget<FadeTransition>(rowFade('audio:$folder/audio.mp3'))
+                .opacity
+                .value,
+            1,
+          );
+          await tester.pump(const Duration(milliseconds: 151));
+          await tester.pump();
+          expect(
+            tester
+                .widget<FadeTransition>(rowFade('text:notes.txt'))
+                .opacity
+                .value,
+            1,
           );
           await tester.pumpWidget(const SizedBox.shrink());
           expect(tester.takeException(), isNull);
@@ -945,7 +1106,11 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 500));
       expect(covers.imageRequests, 1);
-      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+      expect(
+        find.byKey(const ValueKey('work_detail_entries_skeleton')),
+        findsOneWidget,
+      );
       expect(
         find.text(fixture.languageProvider.tr('empty_folder')),
         findsNothing,
@@ -1329,7 +1494,10 @@ void main() {
         for (
           var i = 0;
           i < 20 &&
-              find.byType(CircularProgressIndicator).evaluate().isNotEmpty;
+              find
+                  .byKey(const ValueKey('work_detail_entries_skeleton'))
+                  .evaluate()
+                  .isNotEmpty;
           i++
         ) {
           await tester.pump(const Duration(milliseconds: 50));

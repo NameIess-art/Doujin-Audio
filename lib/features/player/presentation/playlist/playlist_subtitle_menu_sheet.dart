@@ -102,10 +102,20 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
         ],
       );
       if (!mounted) return;
-      final selectedPath = result?.files.singleOrNull?.path;
+      final selected = result?.files.singleOrNull;
+      final identifier = selected?.identifier;
+      final selectedPath = identifier?.startsWith('content://') == true
+          ? identifier
+          : selected?.path;
       if (selectedPath == null || selectedPath.isEmpty) return;
-
-      final track = await subtitles.importSubtitle(trackPath, selectedPath);
+      final overwrite = await _confirmSubtitleOverwrite(subtitles);
+      if (overwrite == null) return;
+      final track = await subtitles.importSubtitle(
+        trackPath,
+        selectedPath,
+        fileName: selected?.name,
+        overwrite: overwrite,
+      );
       if (!mounted || !context.mounted) return;
 
       if (track != null) {
@@ -188,6 +198,17 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
       );
       if (!mounted || selected == null) return;
       final selectedPath = selected.path;
+      if (path.extension(selected.name).toLowerCase() == '.txt' &&
+          await subtitles.isTimedSubtitleFile(selectedPath)) {
+        if (!mounted) return;
+        await _pickTimedScript(
+          subtitles,
+          selectedPath,
+          fileName: selected.name,
+        );
+        return;
+      }
+      if (!mounted) return;
       if (subtitles.hasKnownSubtitle(widget.session.currentTrackPath)) {
         final confirmed = await showDialog<bool>(
           context: context,
@@ -207,12 +228,6 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
           ),
         );
         if (!mounted || confirmed != true) return;
-      }
-      if (path.extension(selectedPath).toLowerCase() == '.txt' &&
-          await subtitles.isTimedSubtitleFile(selectedPath)) {
-        if (!mounted) return;
-        await _pickTimedScript(subtitles, selectedPath);
-        return;
       }
       if (!mounted) return;
       if (!await _confirmModelDownload(SubtitleModelStore.japaneseCtc)) return;
@@ -243,13 +258,18 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
 
   Future<void> _pickTimedScript(
     PlaybackSubtitleService subtitles,
-    String selectedPath,
-  ) async {
+    String selectedPath, {
+    required String fileName,
+  }) async {
     setState(() => _importing = true);
     try {
+      final overwrite = await _confirmSubtitleOverwrite(subtitles);
+      if (overwrite == null) return;
       final imported = await subtitles.importSubtitle(
         widget.session.currentTrackPath,
         selectedPath,
+        fileName: fileName,
+        overwrite: overwrite,
       );
       if (!mounted) return;
       final i18n = ref.read(appLanguageProviderInstanceProvider);
@@ -270,6 +290,35 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
     } finally {
       if (mounted) setState(() => _importing = false);
     }
+  }
+
+  Future<bool?> _confirmSubtitleOverwrite(
+    PlaybackSubtitleService subtitles,
+  ) async {
+    final exists = await subtitles.hasLocalSubtitleFile(
+      widget.session.currentTrackPath,
+    );
+    if (!mounted) return null;
+    if (!exists) return false;
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(i18n.tr('subtitle_import_overwrite_title')),
+        content: Text(i18n.tr('subtitle_import_overwrite_hint')),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: Text(i18n.tr('cancel')),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: Text(i18n.tr('subtitle_import_overwrite')),
+          ),
+        ],
+      ),
+    );
+    return confirmed == true ? true : null;
   }
 
   Future<void> _translateSubtitle(SubtitleLanguage language) async {
@@ -379,7 +428,6 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
       listenable: subtitles,
       builder: (context, _) {
         final activeOffset = subtitles.getOffset(trackPath);
-        final activeCustomPath = subtitles.getCustomSubtitlePath(trackPath);
         final activeTrack = subtitles.trackSync(trackPath);
         final canEditSubtitle =
             activeTrack?.cues.isNotEmpty == true &&
@@ -575,15 +623,13 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
                             ),
                           ),
                           subtitle: Text(
-                            activeCustomPath != null
-                                ? '${i18n.tr('reimport_subtitle')}: ${path.basename(activeCustomPath)}'
-                                : (activeTrack != null
-                                      ? i18n.tr('subtitle_loaded_file', {
-                                          'file': path.basename(
-                                            activeTrack.sourcePath,
-                                          ),
-                                        })
-                                      : i18n.tr('import_subtitle_hint')),
+                            activeTrack != null
+                                ? i18n.tr('subtitle_loaded_file', {
+                                    'file': path.basename(
+                                      activeTrack.sourcePath,
+                                    ),
+                                  })
+                                : i18n.tr('import_subtitle_hint'),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: theme.textTheme.bodySmall?.copyWith(

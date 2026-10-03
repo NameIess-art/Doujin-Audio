@@ -2000,7 +2000,7 @@ void main() {
     },
   );
 
-  testWidgets('playlist first open fades its card skeleton out over 750ms', (
+  testWidgets('playlist first open fades its card skeleton out over 300ms', (
     WidgetTester tester,
   ) async {
     final fixture = AppRuntimeWidgetTestFixture();

@@ -492,7 +492,7 @@ void main() {
     expect(loading, findsOneWidget);
     expect(find.byKey(const ValueKey('data-support-storage-card')), findsOneWidget);
 
-    await tester.pump(const Duration(milliseconds: 375));
+    await tester.pump(const Duration(milliseconds: 150));
     final fadingPlaceholder = find.ancestor(
       of: loading,
       matching: find.byType(FadeTransition),
@@ -501,7 +501,7 @@ void main() {
     expect(opacity, greaterThan(0));
     expect(opacity, lessThan(1));
 
-    await tester.pump(const Duration(milliseconds: 375));
+    await tester.pump(const Duration(milliseconds: 150));
     await tester.pumpAndSettle();
     expect(loading, findsNothing);
   });

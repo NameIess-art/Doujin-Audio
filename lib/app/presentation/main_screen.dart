@@ -148,6 +148,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
             origin + const Offset(inset, inset) &
             Size.square(box.size.height - inset * 2),
         dockRect: origin & box.size,
+        dockCollapsed: !_isMobilePlaybackExpanded,
       );
     });
   }

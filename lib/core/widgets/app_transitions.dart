@@ -7,7 +7,7 @@ import 'package:flutter/rendering.dart';
 
 import '../ui/ui_interaction_coordinator.dart';
 
-const kPlaceholderContentTransitionDuration = Duration(milliseconds: 750);
+const kPlaceholderContentTransitionDuration = Duration(milliseconds: 300);
 const kAppMotionFast = Duration(milliseconds: 180);
 const kAppMotionStandard = Duration(milliseconds: 220);
 const kAppMotionSlow = Duration(milliseconds: 300);
@@ -75,34 +75,18 @@ Widget _buildCoveringPageTransition({
   required Animation<double> secondaryAnimation,
   required Widget child,
   bool fadeHeader = true,
-  bool wholePageTransition = false,
+  bool workDetailTransition = false,
 }) {
   if (MediaQuery.disableAnimationsOf(context)) return child;
   final position = animation.drive(
     Tween<Offset>(begin: const Offset(1, 0), end: Offset.zero).chain(
       CurveTween(
-        curve: wholePageTransition
+        curve: workDetailTransition
             ? const Cubic(0.215, 0.61, 0.355, 1)
             : Curves.easeOutCubic,
       ),
     ),
   );
-  if (wholePageTransition) {
-    return ClipRect(
-      child: SlideTransition(
-        position: position,
-        child: RepaintBoundary(
-          child: _AppPageMotionScope(
-            key: contentKey,
-            configuration: (animation, secondaryAnimation, wholePageTransition),
-            contentBuilder: (_, content) => RepaintBoundary(child: content),
-            headerBuilder: (_, header) => header,
-            child: child,
-          ),
-        ),
-      ),
-    );
-  }
   return ClipRect(
     child: LayoutBuilder(
       builder: (context, constraints) => SlideTransition(
@@ -250,6 +234,7 @@ class PlaceholderContentTransition extends StatefulWidget {
     this.duration = kPlaceholderContentTransitionDuration,
     this.fadeContent = true,
     this.fadePlaceholder = true,
+    this.fit = StackFit.expand,
   });
 
   final bool showPlaceholder;
@@ -258,6 +243,7 @@ class PlaceholderContentTransition extends StatefulWidget {
   final Duration duration;
   final bool fadeContent;
   final bool fadePlaceholder;
+  final StackFit fit;
 
   @override
   State<PlaceholderContentTransition> createState() =>
@@ -271,6 +257,11 @@ class _PlaceholderContentTransitionState
   late final Animation<double> _placeholderOpacity;
   late final Animation<double> _contentOpacity;
   bool _fadingPlaceholder = false;
+
+  bool get _skipMotion =>
+      MediaQuery.disableAnimationsOf(context) ||
+      !TickerMode.valuesOf(context).enabled ||
+      ModalRoute.isCurrentOf(context) == false;
 
   @override
   void initState() {
@@ -298,13 +289,22 @@ class _PlaceholderContentTransitionState
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_skipMotion) {
+      _fadingPlaceholder = false;
+      _controller.value = 1;
+    }
+  }
+
+  @override
   void didUpdateWidget(covariant PlaceholderContentTransition oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.duration != widget.duration) {
       _controller.duration = widget.duration;
     }
     if (oldWidget.showPlaceholder && !widget.showPlaceholder) {
-      if (MediaQuery.disableAnimationsOf(context)) {
+      if (_skipMotion) {
         _fadingPlaceholder = false;
         _controller.value = 1;
       } else {
@@ -332,7 +332,7 @@ class _PlaceholderContentTransitionState
       return widget.placeholder;
     }
     return Stack(
-      fit: StackFit.expand,
+      fit: widget.fit,
       children: [
         if (_fadingPlaceholder)
           IgnorePointer(
@@ -1175,8 +1175,8 @@ PageRouteBuilder<T> buildAppPageRoute<T>({
   required Widget child,
   RouteSettings? settings,
   bool fadeHeader = true,
-  // Detail pages move their header and body together in one recorded layer.
-  bool wholePageTransition = false,
+  // Work details keep their smooth slide curve and paint the final exit frame.
+  bool workDetailTransition = false,
   Duration duration = kAppMotionSlow,
   bool fullscreenDialog = false,
 }) {
@@ -1191,7 +1191,7 @@ PageRouteBuilder<T> buildAppPageRoute<T>({
     reverseTransitionDuration: reducedMotion || duration == Duration.zero
         ? Duration.zero
         : duration,
-    deferExitFinalization: wholePageTransition,
+    deferExitFinalization: workDetailTransition,
     pageBuilder: (context, animation, secondaryAnimation) => child,
     transitionsBuilder: (context, animation, secondaryAnimation, routedChild) {
       if (duration == Duration.zero) return routedChild;
@@ -1203,7 +1203,7 @@ PageRouteBuilder<T> buildAppPageRoute<T>({
         secondaryAnimation: secondaryAnimation,
         child: routedChild,
         fadeHeader: fadeHeader,
-        wholePageTransition: wholePageTransition,
+        workDetailTransition: workDetailTransition,
       );
     },
   );

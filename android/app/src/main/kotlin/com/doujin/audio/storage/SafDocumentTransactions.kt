@@ -127,6 +127,7 @@ internal fun <T> replaceSafDocument(
     staleBackup: T?,
     createTemp: () -> T?,
     writeTemp: (T) -> Boolean,
+    isValidCommitted: (T) -> Boolean = { true },
     rename: (T, String) -> T?,
     delete: (T) -> Boolean
 ): T? {
@@ -151,6 +152,7 @@ internal fun <T> replaceSafDocument(
         targetName = targetName,
         current = current,
         temporary = temp,
+        isValidCommitted = isValidCommitted,
         rename = rename,
         delete = delete
     )

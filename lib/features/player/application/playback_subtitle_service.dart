@@ -49,7 +49,6 @@ class PlaybackSubtitleService extends ChangeNotifier {
     PlaybackSubtitleLoader? subtitleLoader,
     Future<Directory> Function()? subtitlesDirectoryResolver,
     Map<String, Duration>? initialOffsets,
-    Map<String, String>? initialCustomPaths,
     SubtitleAiEngine? aiEngine,
   }) : _trackResolver = trackResolver,
        _fileCacheGateway =
@@ -60,7 +59,6 @@ class PlaybackSubtitleService extends ChangeNotifier {
            subtitlesDirectoryResolver ?? _defaultSubtitlesDirectory,
        _aiEngine = aiEngine ?? SubtitleAiEngine() {
     if (initialOffsets != null) _offsets.addAll(initialOffsets);
-    if (initialCustomPaths != null) _customPaths.addAll(initialCustomPaths);
     _settingsReady = _loadPersistedSettings();
   }
 
@@ -232,7 +230,23 @@ class PlaybackSubtitleService extends ChangeNotifier {
 
   Duration getOffset(String trackPath) => _offsets[trackPath] ?? Duration.zero;
 
-  String? getCustomSubtitlePath(String trackPath) => _customPaths[trackPath];
+  bool _isRemote(String trackPath) =>
+      trackPath.startsWith('https://') || trackPath.startsWith('http://');
+
+  Future<bool> hasLocalSubtitleFile(String trackPath) async {
+    await _settingsReady;
+    if (_isRemote(trackPath)) {
+      return _customPaths.containsKey(trackPath) || _tracks[trackPath] != null;
+    }
+    if (trackPath.startsWith('content://')) {
+      return await _fileCacheGateway.resolveTrackSubtitle(
+            path: trackPath,
+            groupKey: _trackResolver(trackPath)?.groupKey,
+          ) !=
+          null;
+    }
+    return await findSubtitleFileForAudio(trackPath) != null;
+  }
 
   SubtitleLanguage classifyCurrentSubtitle(String trackPath) {
     final track = _tracks[trackPath];
@@ -314,76 +328,45 @@ class PlaybackSubtitleService extends ChangeNotifier {
   Future<SubtitleTrack> saveDraft(String trackPath, SubtitleDraft draft) async {
     await _settingsReady;
     _validateCues(trackPath, draft.cues);
-    final dest = draft.kind == SubtitleDraftKind.script
-        ? await _scriptSubtitleFile(trackPath)
-        : File(
-            path.join(
-              (await _subtitlesDirectoryResolver()).path,
-              '${md5.convert(utf8.encode(trackPath))}-translation.srt',
-            ),
-          );
-    if (draft.kind == SubtitleDraftKind.script) {
-      await _writeLrc(dest, draft.cues);
-      await _writeSafScript(trackPath, dest);
+    final extension = draft.kind == SubtitleDraftKind.script ? '.lrc' : '.srt';
+    final content = draft.kind == SubtitleDraftKind.script
+        ? _lrcContent(draft.cues)
+        : _srtContent(draft.cues);
+    String? savedPath;
+    if (_isRemote(trackPath)) {
+      final dest = await _remoteSubtitleFile(trackPath, extension);
+      await _writeSubtitleContent(dest, content);
+      savedPath = dest.path;
+      _customPaths[trackPath] = savedPath;
+      await _persistCustomPaths(throwOnFailure: true);
     } else {
-      await _writeSrt(dest, draft.cues);
+      savedPath = await _fileCacheGateway.saveTrackSubtitle(
+        trackPath: trackPath,
+        groupKey: _trackResolver(trackPath)?.groupKey,
+        extension: extension,
+        bytes: Uint8List.fromList(utf8.encode(content)),
+        overwrite: true,
+      );
     }
-    final savedFromFile = await _loadFromFile(dest.path);
+    if (savedPath == null) {
+      throw StateError('Failed to save subtitle beside audio');
+    }
+    final savedFromFile = await _loadFromFile(savedPath);
     if (savedFromFile == null || savedFromFile.cues.isEmpty) {
       throw StateError('Generated subtitle file could not be read');
     }
-    _customPaths[trackPath] = dest.path;
-    await _persistCustomPaths(throwOnFailure: true);
-    _trackRevisions[trackPath] = (_trackRevisions[trackPath] ?? 0) + 1;
-    final saved = savedFromFile.withOffset(getOffset(trackPath));
-    _tracks[trackPath] = saved;
-    _results[trackPath] = SynchronousFuture<SubtitleTrack?>(saved);
-    _trimResults();
-    _onTrackLoaded?.call(trackPath, saved);
-    notifyListeners();
-    return saved;
+    return _applySubtitle(trackPath, savedFromFile);
   }
 
-  Future<File> _scriptSubtitleFile(String trackPath) async {
-    if (!trackPath.startsWith('content://') &&
-        !trackPath.startsWith('http://') &&
-        !trackPath.startsWith('https://') &&
-        await File(trackPath).exists()) {
-      return File(
-        path.join(
-          path.dirname(trackPath),
-          '${path.basenameWithoutExtension(trackPath)}.lrc',
-        ),
-      );
-    }
-    final name =
-        trackPath.startsWith('content://') ||
-            trackPath.startsWith('http://') ||
-            trackPath.startsWith('https://')
-        ? Uri.parse(trackPath).pathSegments.last.split(':').last
-        : path.basename(trackPath);
+  Future<File> _remoteSubtitleFile(String trackPath, String extension) async {
+    final name = Uri.parse(trackPath).pathSegments.last;
     final stem = path.basenameWithoutExtension(name);
     final root = await _subtitlesDirectoryResolver();
     final dir = Directory(
       path.join(root.path, md5.convert(utf8.encode(trackPath)).toString()),
     );
     await dir.create(recursive: true);
-    return File(path.join(dir.path, '$stem.lrc'));
-  }
-
-  Future<void> _writeSafScript(String trackPath, File file) async {
-    if (!trackPath.startsWith('content://')) return;
-    final groupKey = _trackResolver(trackPath)?.groupKey;
-    if (groupKey == null || !groupKey.startsWith('content://')) {
-      throw StateError('Audio folder is unavailable for subtitle saving');
-    }
-    final saved = await _fileCacheGateway.writeTrackSubtitle(
-      folder: groupKey,
-      name:
-          '${path.basenameWithoutExtension(Uri.parse(trackPath).pathSegments.last.split(':').last)}.lrc',
-      bytes: await file.readAsBytes(),
-    );
-    if (!saved) throw StateError('Failed to save subtitle beside audio');
+    return File(path.join(dir.path, '$stem$extension'));
   }
 
   Future<void> setTrackOffset(String trackPath, Duration offset) async {
@@ -405,41 +388,56 @@ class PlaybackSubtitleService extends ChangeNotifier {
 
   Future<SubtitleTrack?> importSubtitle(
     String trackPath,
-    String filePath,
-  ) async {
+    String filePath, {
+    String? fileName,
+    bool overwrite = false,
+  }) async {
     await _settingsReady;
     final bytes = await _fileCacheGateway.readDocumentBytes(filePath);
     if (bytes == null) return null;
     final previousPath = _customPaths[trackPath];
     try {
-      final extension = path.extension(filePath).toLowerCase();
-      final dir = await _subtitlesDirectoryResolver();
-      final safeKey = md5.convert(utf8.encode(trackPath)).toString();
-      final destFile = File(
-        path.join(
-          dir.path,
-          '$safeKey-import-${DateTime.now().microsecondsSinceEpoch}$extension',
-        ),
+      final extension = path.extension(fileName ?? filePath).toLowerCase();
+      final parsed = await parseSubtitleTrackFromRaw(
+        sourcePath: filePath,
+        raw: decodeWorkText(bytes).text,
+        extension: extension,
       );
-      await destFile.writeAsBytes(bytes, flush: true);
-      final localTrack = await _loadFromFile(destFile.path);
-      if (localTrack == null || localTrack.cues.isEmpty) {
-        await destFile.delete();
-        return null;
+      if (parsed == null || parsed.cues.isEmpty) return null;
+      String? savedPath;
+      if (_isRemote(trackPath)) {
+        if (previousPath != null && !overwrite) return null;
+        final dest = await _remoteSubtitleFile(trackPath, extension);
+        await dest.writeAsBytes(bytes, flush: true);
+        if (filePath.startsWith('content://')) {
+          if (!await _fileCacheGateway.deleteDocumentPath(filePath)) {
+            throw StateError('Failed to move subtitle source');
+          }
+        } else if (!path.equals(
+          path.absolute(filePath),
+          path.absolute(dest.path),
+        )) {
+          await File(filePath).delete();
+        }
+        savedPath = dest.path;
+        _customPaths[trackPath] = savedPath;
+        await _persistCustomPaths(throwOnFailure: true);
+      } else {
+        savedPath = await _fileCacheGateway.saveTrackSubtitle(
+          trackPath: trackPath,
+          groupKey: _trackResolver(trackPath)?.groupKey,
+          extension: extension,
+          bytes: bytes,
+          sourcePath: filePath,
+          overwrite: overwrite,
+        );
       }
-
-      _customPaths[trackPath] = destFile.path;
-      await _persistCustomPaths(throwOnFailure: true);
-
-      _trackRevisions[trackPath] = (_trackRevisions[trackPath] ?? 0) + 1;
-      final offset = getOffset(trackPath);
-      final readyTrack = localTrack.withOffset(offset);
-      _tracks[trackPath] = readyTrack;
-      _results[trackPath] = SynchronousFuture<SubtitleTrack?>(readyTrack);
-      _trimResults();
-      _onTrackLoaded?.call(trackPath, readyTrack);
-      notifyListeners();
-      return readyTrack;
+      if (savedPath == null) return null;
+      final saved = await _loadFromFile(savedPath);
+      if (saved == null) {
+        throw StateError('Imported subtitle could not be read');
+      }
+      return _applySubtitle(trackPath, saved);
     } catch (error, stackTrace) {
       if (previousPath == null) {
         _customPaths.remove(trackPath);
@@ -465,17 +463,45 @@ class PlaybackSubtitleService extends ChangeNotifier {
     await _settingsReady;
     _validateCues(trackPath, cues, allowEmpty: true);
 
-    final dir = await _subtitlesDirectoryResolver();
-    final safeKey = md5.convert(utf8.encode(trackPath)).toString();
-    final destFile = File(path.join(dir.path, '$safeKey-edited.srt'));
-    await _writeSrt(destFile, cues);
-    final savedFromFile = await _loadFromFile(destFile.path);
+    final current = await load(trackPath);
+    if (current == null) throw StateError('No subtitle file to edit');
+    final sourcePath = current.sourcePath;
+    final bytes = await _fileCacheGateway.readDocumentBytes(sourcePath);
+    if (bytes == null) throw StateError('Subtitle file is unavailable');
+    final content = _editedSubtitleContent(
+      sourcePath,
+      decodeWorkText(bytes).text,
+      cues,
+    );
+    if (cues.isNotEmpty) {
+      final parsed = await parseSubtitleTrackFromRaw(
+        sourcePath: sourcePath,
+        raw: content,
+        extension: path.extension(sourcePath),
+      );
+      if (parsed == null || parsed.cues.length != cues.length) {
+        throw StateError('Edited cues cannot be stored in the subtitle format');
+      }
+    }
+    if (sourcePath.startsWith('content://')) {
+      final saved = await _fileCacheGateway.writeTrackSubtitle(
+        path: sourcePath,
+        bytes: Uint8List.fromList(utf8.encode(content)),
+      );
+      if (!saved) throw StateError('Failed to write subtitle file');
+    } else {
+      final file = File(sourcePath);
+      await _writeSubtitleContent(file, content);
+    }
+    final savedFromFile = await _loadFromFile(sourcePath);
     if (savedFromFile == null) {
       throw StateError('Edited subtitle file could not be read');
     }
-    final edited = savedFromFile.withOffset(getOffset(trackPath));
-    _customPaths[trackPath] = destFile.path;
-    await _persistCustomPaths();
+    return _applySubtitle(trackPath, savedFromFile);
+  }
+
+  SubtitleTrack _applySubtitle(String trackPath, SubtitleTrack subtitle) {
+    final edited = subtitle.withOffset(getOffset(trackPath));
     _trackRevisions[trackPath] = (_trackRevisions[trackPath] ?? 0) + 1;
     _tracks[trackPath] = edited;
     _results[trackPath] = SynchronousFuture<SubtitleTrack?>(edited);
@@ -507,23 +533,130 @@ class PlaybackSubtitleService extends ChangeNotifier {
     }
   }
 
-  static Future<void> _writeSrt(File destFile, List<SubtitleCue> cues) async {
+  static String _srtContent(List<SubtitleCue> cues, {bool webVtt = false}) {
     final content = cues.indexed
         .map((entry) {
           final (index, cue) = entry;
-          return '${index + 1}\n${_srtTime(cue.start)} --> ${_srtTime(cue.end)}\n${cue.text.trim()}';
+          final start = _srtTime(cue.start);
+          final end = _srtTime(cue.end);
+          final timing = webVtt
+              ? '${start.replaceAll(',', '.')} --> ${end.replaceAll(',', '.')}'
+              : '$start --> $end';
+          return '${index + 1}\n$timing\n${cue.text.trim()}';
         })
         .join('\n\n');
-    await _writeSubtitleContent(destFile, '$content\n');
+    return '${webVtt ? 'WEBVTT\n\n' : ''}$content\n';
   }
 
-  static Future<void> _writeLrc(File destFile, List<SubtitleCue> cues) async {
+  static String _lrcContent(List<SubtitleCue> cues) {
     final lines = <String>[];
     for (final cue in cues) {
-      lines.add('[${_lrcTime(cue.start)}]${cue.text.trim()}');
+      for (final line in cue.text.trim().split('\n')) {
+        lines.add('[${_lrcTime(cue.start)}]$line');
+      }
       lines.add('[${_lrcTime(cue.end)}]');
     }
-    await _writeSubtitleContent(destFile, '${lines.join('\n')}\n');
+    return '${lines.join('\n')}\n';
+  }
+
+  static String _editedSubtitleContent(
+    String sourcePath,
+    String original,
+    List<SubtitleCue> cues,
+  ) {
+    if (cues.isEmpty) return '\n';
+    var extension = path.extension(sourcePath).toLowerCase();
+    if (!const {
+      '.srt',
+      '.lrc',
+      '.vtt',
+      '.webvtt',
+      '.ass',
+      '.ssa',
+    }.contains(extension)) {
+      final raw = original.trimLeft().replaceFirst('\uFEFF', '');
+      if (raw.startsWith('WEBVTT')) {
+        extension = '.vtt';
+      } else if (RegExp(
+        r'^\[events\]',
+        caseSensitive: false,
+        multiLine: true,
+      ).hasMatch(raw)) {
+        extension = '.ass';
+      } else if (RegExp(r'\[\d+:\d{1,2}(?:[.:]\d{1,3})?\]').hasMatch(raw)) {
+        extension = '.lrc';
+      } else {
+        extension = '.srt';
+      }
+    }
+    return switch (extension) {
+      '.lrc' => _lrcContent(cues),
+      '.vtt' || '.webvtt' => _srtContent(cues, webVtt: true),
+      '.srt' => _srtContent(cues),
+      '.ass' || '.ssa' => _assContent(original, cues),
+      _ => throw StateError('Unsupported subtitle format: $extension'),
+    };
+  }
+
+  static String _assContent(String original, List<SubtitleCue> cues) {
+    final lines = original.replaceAll('\r\n', '\n').split('\n');
+    var inEvents = false;
+    List<String>? columns;
+    final templates = <List<String>>[];
+    final kept = <String>[];
+    var insertionIndex = -1;
+    for (final line in lines) {
+      final trimmed = line.trim();
+      if (trimmed.startsWith('[')) {
+        inEvents = trimmed.toLowerCase() == '[events]';
+      }
+      if (inEvents && trimmed.toLowerCase().startsWith('format:')) {
+        columns = trimmed
+            .substring(7)
+            .split(',')
+            .map((column) => column.trim().toLowerCase())
+            .toList();
+        insertionIndex = kept.length + 1;
+      }
+      if (inEvents && trimmed.toLowerCase().startsWith('dialogue:')) {
+        final count = columns?.length;
+        if (count == null) throw StateError('Missing ASS event format');
+        final fields = trimmed.substring(9).split(',');
+        if (fields.length < count) throw StateError('Invalid ASS dialogue');
+        templates.add([
+          ...fields.take(count - 1),
+          fields.skip(count - 1).join(','),
+        ]);
+      } else {
+        kept.add(line);
+      }
+    }
+    if (columns == null ||
+        insertionIndex < 0 ||
+        templates.isEmpty ||
+        columns.last != 'text' ||
+        !columns.contains('start') ||
+        !columns.contains('end')) {
+      throw StateError('Unsupported ASS event format');
+    }
+    final dialogue = <String>[];
+    for (var index = 0; index < cues.length; index++) {
+      final cue = cues[index];
+      final values = List<String>.of(
+        templates[index < templates.length ? index : templates.length - 1],
+      );
+      values[columns.indexOf('start')] = _assTime(cue.start);
+      values[columns.indexOf('end')] = _assTime(cue.end);
+      values[columns.indexOf('text')] = cue.text.trim().replaceAll('\n', r'\N');
+      dialogue.add('Dialogue: ${values.join(',')}');
+    }
+    kept.insertAll(insertionIndex, dialogue);
+    return '${kept.join('\n').trimRight()}\n';
+  }
+
+  static String _assTime(Duration duration) {
+    final time = _srtTime(duration).replaceAll(',', '.');
+    return time.substring(0, time.length - 1);
   }
 
   static String _lrcTime(Duration duration) {
@@ -597,7 +730,7 @@ class PlaybackSubtitleService extends ChangeNotifier {
           if (idx > 0) {
             final trackKey = item.substring(0, idx);
             final customPath = item.substring(idx + 1);
-            if (trackKey.isNotEmpty && customPath.isNotEmpty) {
+            if (_isRemote(trackKey) && customPath.isNotEmpty) {
               _customPaths.putIfAbsent(trackKey, () => customPath);
             }
           }
@@ -705,7 +838,7 @@ class PlaybackSubtitleService extends ChangeNotifier {
 
   Future<SubtitleTrack?> _loadTrack(String trackPath, MusicTrack? track) async {
     SubtitleTrack? loaded;
-    final customPath = _customPaths[trackPath];
+    final customPath = _isRemote(trackPath) ? _customPaths[trackPath] : null;
     if (customPath != null) {
       loaded = await _loadFromFile(customPath);
     }
@@ -715,7 +848,8 @@ class PlaybackSubtitleService extends ChangeNotifier {
       } else if (track?.isRemoteAsmr == true && track != null) {
         loaded = await _loadAsmrTrack(track);
       } else {
-        loaded = await loadSubtitleTrackForAudio(trackPath);
+        final file = await findSubtitleFileForAudio(trackPath);
+        if (file != null) loaded = await _loadFromFile(file.path);
       }
     }
     if (loaded != null) {
@@ -728,12 +862,11 @@ class PlaybackSubtitleService extends ChangeNotifier {
   }
 
   Future<SubtitleTrack?> _loadFromFile(String filePath) async {
-    final file = File(filePath);
-    if (!await file.exists()) return null;
     try {
-      final bytes = await file.readAsBytes();
+      final bytes = await _fileCacheGateway.readDocumentBytes(filePath);
+      if (bytes == null) return null;
       final raw = decodeWorkText(bytes).text;
-      if (raw.trim().isEmpty) {
+      if (raw.trim().isEmpty || raw.trim() == 'WEBVTT') {
         return SubtitleTrack(sourcePath: filePath, cues: const []);
       }
       final extension = path.extension(filePath).toLowerCase();
@@ -780,22 +913,22 @@ class PlaybackSubtitleService extends ChangeNotifier {
       if (raw == null) return null;
       final text = raw['text']?.toString();
       final extension = raw['extension']?.toString();
+      final sourcePath = raw['sourcePath']?.toString();
       if (text == null ||
-          text.isEmpty ||
+          sourcePath == null ||
+          sourcePath.isEmpty ||
           extension == null ||
           extension.isEmpty) {
         return null;
       }
-      final dir = await _subtitlesDirectoryResolver();
-      final safeKey = md5.convert(utf8.encode(trackPath)).toString();
-      final localFile = File(
-        path.join(
-          dir.path,
-          '$safeKey-content${extension.startsWith('.') ? extension : '.$extension'}',
-        ),
+      if (text.trim().isEmpty) {
+        return SubtitleTrack(sourcePath: sourcePath, cues: const []);
+      }
+      return parseSubtitleTrackFromRaw(
+        sourcePath: sourcePath,
+        raw: text,
+        extension: extension,
       );
-      await _writeSubtitleContent(localFile, text);
-      return _loadFromFile(localFile.path);
     } on MissingPluginException {
       return null;
     } catch (error, stackTrace) {

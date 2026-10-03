@@ -224,6 +224,22 @@ internal class DocumentStorageOperations(
         return newTreeUri.toString()
     }
 
+    fun writeFileBytes(path: String, bytes: ByteArray): Boolean {
+        val output = if (path.startsWith("content://")) {
+            // Keep the original document URI and truncate any old trailing text.
+            contentResolver.openOutputStream(Uri.parse(path), "wt") ?: return false
+        } else {
+            val file = File(path)
+            if (!file.isFile) throw IOException("Subtitle file does not exist: $path")
+            FileOutputStream(file, false)
+        }
+        output.use {
+            it.write(bytes)
+            it.flush()
+        }
+        return true
+    }
+
     fun writeFileBytesToFolder(
         folderPath: String,
         name: String,
@@ -231,10 +247,20 @@ internal class DocumentStorageOperations(
         mimeType: String?
     ): String? {
         val folder = resolveDocumentFileForFolderPath(folderPath) ?: return null
+        return writeFileBytesToDocumentFolder(folder.uri, name, bytes, mimeType)
+    }
+
+    internal fun writeFileBytesToDocumentFolder(
+        folderUri: Uri, name: String, bytes: ByteArray, mimeType: String?,
+        isValidCommitted: (String) -> Boolean = { true }
+    ): String? {
         val resolvedMimeType = mimeType ?: MimeTypeMap.getSingleton()
             .getMimeTypeFromExtension(name.substringAfterLast('.', "").lowercase(Locale.US))
             ?: "application/octet-stream"
-        val saved = replaceSafDocumentInFolder(folder, name, resolvedMimeType) { temporary ->
+        val saved = replaceSafDocumentInFolder(
+            folderUri, name, resolvedMimeType,
+            isValidCommitted = { isValidCommitted(it.uri.toString()) }
+        ) { temporary ->
             contentResolver.openOutputStream(temporary.uri, "w")?.use { output ->
                 output.write(bytes)
                 output.flush()
@@ -315,7 +341,7 @@ internal class DocumentStorageOperations(
             }
         }
 
-        return replaceSafDocumentInFolder(targetFolder, targetName, mimeType) { temporary ->
+        return replaceSafDocumentInFolder(targetFolder.uri, targetName, mimeType) { temporary ->
             java.io.FileInputStream(source).use { input ->
                 contentResolver.openOutputStream(temporary.uri, "w")?.use { output ->
                     input.copyTo(output)
@@ -327,12 +353,15 @@ internal class DocumentStorageOperations(
     }
 
     private fun replaceSafDocumentInFolder(
-        folder: DocumentFile,
+        folder: Uri,
         targetName: String,
         mimeType: String,
+        isValidCommitted: (DocumentFile) -> Boolean = { true },
         writeTemp: (DocumentFile) -> Boolean
     ): DocumentFile? {
-        val documents = folder.listFiles()
+        val documents = listReadableDirectoryDocuments(context, folder).mapNotNull {
+            DocumentFile.fromSingleUri(context, it.uri)
+        }
         val existing = documents.firstOrNull {
             it.isFile && paths.sameDocumentName(it.name, targetName)
         }
@@ -352,8 +381,12 @@ internal class DocumentStorageOperations(
             targetName = targetName,
             existing = existing,
             staleBackup = staleBackup,
-            createTemp = { folder.createFile(mimeType, tempName) },
+            createTemp = {
+                DocumentsContract.createDocument(contentResolver, folder, mimeType, tempName)
+                    ?.let { DocumentFile.fromSingleUri(context, it) }
+            },
             writeTemp = writeTemp,
+            isValidCommitted = isValidCommitted,
             rename = { document, name -> paths.renameDocumentFile(document, name) },
             delete = { document -> document.delete() }
         )

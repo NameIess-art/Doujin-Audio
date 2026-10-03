@@ -278,9 +278,9 @@ void main() {
     await tester.pump();
 
     expect(skeletonCover, findsOneWidget);
-    await tester.pump(const Duration(milliseconds: 375));
+    await tester.pump(const Duration(milliseconds: 150));
     expect(skeletonCover, findsOneWidget);
-    await tester.pump(const Duration(milliseconds: 376));
+    await tester.pump(const Duration(milliseconds: 151));
     expect(skeletonCover, findsNothing);
     final confirm = find.byKey(const ValueKey<String>('dlsite_review_confirm'));
     final confirmIcon = find.byKey(
@@ -1287,7 +1287,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('folder cover placeholder fades out over 750ms', (
+  testWidgets('folder cover path resolves without a second loading fade', (
     WidgetTester tester,
   ) async {
     final fixture = AppRuntimeWidgetTestFixture(
@@ -1312,13 +1312,16 @@ void main() {
     expect(placeholder, findsOneWidget);
 
     await tester.pump();
-    expect(placeholder, findsOneWidget);
-    await tester.pump(const Duration(milliseconds: 375));
-    expect(placeholder, findsOneWidget);
-    await tester.pump(const Duration(milliseconds: 376));
     expect(placeholder, findsNothing);
     expect(find.byKey(const ValueKey('audio_detail_cover_content')),
         findsOneWidget);
+    expect(
+      find.ancestor(
+        of: find.byType(RetryingFileImage),
+        matching: find.byType(AnimatedSwitcher),
+      ),
+      findsNothing,
+    );
   });
 
   testWidgets('Windows wheel advances folder cover candidates', (

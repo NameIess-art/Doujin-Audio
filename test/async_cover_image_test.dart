@@ -386,7 +386,7 @@ void main() {
     provider.complete(image);
     await tester.pump();
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 599));
+    await tester.pump(const Duration(milliseconds: 299));
     expect(find.byKey(const ValueKey('cover_placeholder')), findsOneWidget);
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('cover_placeholder')), findsNothing);
@@ -896,7 +896,7 @@ void main() {
     },
   );
 
-  testWidgets('RetryingImage fades the placeholder out over 750ms', (
+  testWidgets('RetryingImage fades the placeholder out over 300ms', (
     tester,
   ) async {
     final provider = _ControlledImageProvider();
@@ -940,7 +940,7 @@ void main() {
     );
     expect(
       kPlaceholderContentTransitionDuration,
-      const Duration(milliseconds: 750),
+      const Duration(milliseconds: 300),
     );
     final fades = find.descendant(
       of: transition,
@@ -955,7 +955,7 @@ void main() {
       tester.widget<FadeTransition>(placeholderFade.first).opacity.value,
       1,
     );
-    await tester.pump(const Duration(milliseconds: 375));
+    await tester.pump(const Duration(milliseconds: 150));
     final midwayOpacity = tester
         .widget<FadeTransition>(placeholderFade.first)
         .opacity
@@ -982,7 +982,7 @@ void main() {
       tester.widget<FadeTransition>(placeholderFade.first).opacity.value,
       closeTo(midwayOpacity, 0.001),
     );
-    await tester.pump(const Duration(milliseconds: 374));
+    await tester.pump(const Duration(milliseconds: 149));
     expect(
       find.byKey(const ValueKey<String>('decoding_placeholder')),
       findsOneWidget,

@@ -58,7 +58,8 @@ class LibraryTreeList extends ConsumerStatefulWidget {
   ConsumerState<LibraryTreeList> createState() => _LibraryTreeListState();
 }
 
-class _LibraryTreeListState extends ConsumerState<LibraryTreeList> {
+class _LibraryTreeListState extends ConsumerState<LibraryTreeList>
+    with TickerProviderStateMixin {
   final Set<String> _expandedCardPaths = <String>{};
   final Set<String> _folderTreeErrorPaths = <String>{};
   final Map<String, bool> _cardExpansionMotions = <String, bool>{};
@@ -66,6 +67,11 @@ class _LibraryTreeListState extends ConsumerState<LibraryTreeList> {
   final Map<String, _LoadedLibraryFolder> _loadedFolderTrees =
       <String, _LoadedLibraryFolder>{};
   final Map<String, int> _loadingFolderTreeRevisions = <String, int>{};
+  final Map<
+    String,
+    ({AnimationController controller, Animation<double> opacity})
+  >
+  _folderLoadAnimations = {};
   List<VisibleLibraryItem> _visibleItemsCache = const <VisibleLibraryItem>[];
   List<LibraryNode>? _visibleItemsSource;
   int? _visibleItemsStructureRevision;
@@ -98,6 +104,9 @@ class _LibraryTreeListState extends ConsumerState<LibraryTreeList> {
   void dispose() {
     for (final timer in _cardExpansionMotionTimers.values) {
       timer.cancel();
+    }
+    for (final animation in _folderLoadAnimations.values) {
+      animation.controller.dispose();
     }
     super.dispose();
   }
@@ -162,6 +171,34 @@ class _LibraryTreeListState extends ConsumerState<LibraryTreeList> {
         return;
       }
       _folderTreeErrorPaths.remove(normalizedPath);
+      if (_loadedFolderTrees[normalizedPath] == null &&
+          folder.children.isNotEmpty &&
+          _expandedCardPaths.contains(normalizedPath) &&
+          ModalRoute.isCurrentOf(context) != false &&
+          !MediaQuery.disableAnimationsOf(context) &&
+          widget.tree.whereType<FolderNode>().any(
+            (root) =>
+                PathMatcher.equalsNormalized(root.path, folderPath) &&
+                root.children.isEmpty,
+          )) {
+        final animation = AnimationController(
+          vsync: this,
+          duration: kPlaceholderContentTransitionDuration,
+        );
+        _folderLoadAnimations[normalizedPath] = (
+          controller: animation,
+          opacity: animation.drive(CurveTween(curve: Curves.easeInOutCubic)),
+        );
+        animation.addStatusListener((status) {
+          if (status != AnimationStatus.completed || !mounted) return;
+          setState(() => _folderLoadAnimations.remove(normalizedPath));
+          // Rows detach their FadeTransition listeners in this frame's build.
+          WidgetsBinding.instance.addPostFrameCallback(
+            (_) => animation.dispose(),
+          );
+        });
+        unawaited(animation.forward());
+      }
       setState(() {
         final previousFolder = _loadedFolderTrees[normalizedPath]?.folder;
         _loadedFolderTrees[normalizedPath] = _LoadedLibraryFolder(
@@ -299,6 +336,7 @@ class _LibraryTreeListState extends ConsumerState<LibraryTreeList> {
         .toList(growable: false);
     for (final path in removedRootPaths) {
       _loadedFolderTrees.remove(path);
+      _folderLoadAnimations.remove(path)?.controller.dispose();
       changed = true;
     }
     _loadingFolderTreeRevisions.removeWhere((path, _) {
@@ -401,7 +439,7 @@ class _LibraryTreeListState extends ConsumerState<LibraryTreeList> {
                 ),
         );
       }
-      final treeItem = Padding(
+      Widget treeItem = Padding(
         padding: EdgeInsets.only(left: item.depth * 8.0),
         child: RepaintBoundary(
           child: LibraryTreeItem(
@@ -425,6 +463,18 @@ class _LibraryTreeListState extends ConsumerState<LibraryTreeList> {
           ),
         ),
       );
+      if (item.depth > 0) {
+        Animation<double> opacity = const AlwaysStoppedAnimation(1);
+        if (!MediaQuery.disableAnimationsOf(context)) {
+          for (final entry in _folderLoadAnimations.entries) {
+            if (PathMatcher.isWithinOrEqual(node.path, entry.key)) {
+              opacity = entry.value.opacity;
+              break;
+            }
+          }
+        }
+        treeItem = FadeTransition(opacity: opacity, child: treeItem);
+      }
       return BrowseAnchor(
         id: PathMatcher.equivalenceKey(node.path),
         child: KeyedSubtree(

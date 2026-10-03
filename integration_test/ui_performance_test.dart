@@ -1025,7 +1025,7 @@ Future<List<Map<String, Object>>> _measurePageTransitions(
           settings: page is WorkDetailPage
               ? const RouteSettings(name: workDetailRouteName)
               : null,
-          wholePageTransition: page is WorkDetailPage,
+          workDetailTransition: page is WorkDetailPage,
         );
         if (page is WorkDetailPage) {
           WidgetsBinding.instance.addPostFrameCallback((_) {

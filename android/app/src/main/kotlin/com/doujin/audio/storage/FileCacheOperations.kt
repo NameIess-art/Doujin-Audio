@@ -111,8 +111,13 @@ internal class FileCacheOperations(context: Context) {
     fun resolveTrackSubtitle(path: String, groupKey: String?): HashMap<String, String>? =
         subtitles.resolve(path, groupKey)
 
-    fun writeTrackSubtitle(folder: String, name: String, bytes: ByteArray): Boolean =
-        documentStorage.writeFileBytesToFolder(folder, name, bytes, "text/plain") != null
+    fun writeTrackSubtitle(
+        trackPath: String, groupKey: String?, extension: String,
+        bytes: ByteArray, sourcePath: String?, overwrite: Boolean
+    ): String = subtitles.write(trackPath, groupKey, extension, bytes, sourcePath, overwrite)
+
+    fun writeTrackSubtitle(path: String, bytes: ByteArray): Boolean =
+        documentStorage.writeFileBytes(path, bytes)
 
     fun resolveMediaDurationMs(source: String): Long? = mediaMetadata.resolveDurationMs(source)
 
@@ -155,4 +160,3 @@ internal class FileCacheOperations(context: Context) {
     fun readDocumentBytes(path: String): ByteArray? =
         documentStorage.readDocumentBytes(path)
 }
-

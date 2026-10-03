@@ -302,80 +302,82 @@ class _LibraryEditTreeState extends ConsumerState<LibraryEditTree>
       child: Stack(
         children: [
           AppPageContentTransition(
-            child: ListView.builder(
-              padding: EdgeInsets.fromLTRB(
-                16,
-                MediaQuery.paddingOf(context).top + 98,
-                16,
-                24,
+            child: PlaceholderContentTransition(
+              showPlaceholder: localSnapshotPending,
+              placeholder: ListView(
+                padding: EdgeInsets.fromLTRB(16, headerTopInset, 16, 24),
+                children: const [
+                  LibraryEditTreeSkeleton(
+                    key: ValueKey('library_edit_entries_skeleton'),
+                  ),
+                ],
               ),
-              itemCount: localSnapshotPending || isEmpty
-                  ? 1
-                  : snapshotError
-                  ? editTree.length + 1
-                  : editTree.length,
-              itemBuilder: (context, index) {
-                if (localSnapshotPending) {
-                  return Padding(
-                    padding: const EdgeInsets.only(top: 96),
-                    child: Center(
-                      child: CircularProgressIndicator(
-                        color: Theme.of(context).colorScheme.primary,
-                      ),
-                    ),
-                  );
-                }
-                if (snapshotError && index == 0) {
-                  return Padding(
-                    padding: const EdgeInsets.only(top: 96),
-                    child: Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            i18n.tr('scan_failed_next_step'),
-                            textAlign: TextAlign.center,
-                            style: Theme.of(context).textTheme.bodyLarge
-                                ?.copyWith(
-                                  color: cs.onSurfaceVariant,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                          ),
-                          const SizedBox(height: 12),
-                          FilledButton.tonal(
-                            onPressed: _requestDiskSnapshotRefresh,
-                            child: Text(i18n.tr('retry')),
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
-                }
-                if (isEmpty) {
-                  return Padding(
-                    padding: const EdgeInsets.only(top: 96),
-                    child: Center(
-                      child: Text(
-                        _searchQuery.isEmpty
-                            ? i18n.tr('library_edit_empty')
-                            : i18n.tr('no_search_results'),
-                        style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                          color: cs.onSurfaceVariant,
-                          fontWeight: FontWeight.w700,
+              content: ListView.builder(
+                padding: EdgeInsets.fromLTRB(
+                  16,
+                  MediaQuery.paddingOf(context).top + 98,
+                  16,
+                  24,
+                ),
+                itemCount: isEmpty
+                    ? 1
+                    : snapshotError
+                    ? editTree.length + 1
+                    : editTree.length,
+                itemBuilder: (context, index) {
+                  if (snapshotError && index == 0) {
+                    return Padding(
+                      padding: const EdgeInsets.only(top: 96),
+                      child: Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              i18n.tr('scan_failed_next_step'),
+                              textAlign: TextAlign.center,
+                              style: Theme.of(context).textTheme.bodyLarge
+                                  ?.copyWith(
+                                    color: cs.onSurfaceVariant,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                            ),
+                            const SizedBox(height: 12),
+                            FilledButton.tonal(
+                              onPressed: _requestDiskSnapshotRefresh,
+                              child: Text(i18n.tr('retry')),
+                            ),
+                          ],
                         ),
                       ),
-                    ),
+                    );
+                  }
+                  if (isEmpty) {
+                    return Padding(
+                      padding: const EdgeInsets.only(top: 96),
+                      child: Center(
+                        child: Text(
+                          _searchQuery.isEmpty
+                              ? i18n.tr('library_edit_empty')
+                              : i18n.tr('no_search_results'),
+                          style: Theme.of(context).textTheme.bodyLarge
+                              ?.copyWith(
+                                color: cs.onSurfaceVariant,
+                                fontWeight: FontWeight.w700,
+                              ),
+                        ),
+                      ),
+                    );
+                  }
+                  final node = editTree[index - (snapshotError ? 1 : 0)];
+                  return LibraryEditTreeNodeWidget(
+                    key: ValueKey(node.pathValue),
+                    libraryPath: widget.libraryPath,
+                    node: node,
+                    initiallyExpanded: _searchQuery.isNotEmpty,
+                    onRememberFolder: rememberFolderStructureSnapshot,
                   );
-                }
-                final node = editTree[index - (snapshotError ? 1 : 0)];
-                return LibraryEditTreeNodeWidget(
-                  key: ValueKey(node.pathValue),
-                  libraryPath: widget.libraryPath,
-                  node: node,
-                  initiallyExpanded: _searchQuery.isNotEmpty,
-                  onRememberFolder: rememberFolderStructureSnapshot,
-                );
-              },
+                },
+              ),
             ),
           ),
           Positioned(

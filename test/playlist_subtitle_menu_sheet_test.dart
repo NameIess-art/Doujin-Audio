@@ -1,9 +1,14 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:file_picker/file_picker.dart';
+// The plugin exposes its platform test seam from this library.
+// ignore: implementation_imports
+import 'package:file_picker/src/platform/file_picker_platform_interface.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:path/path.dart' as p;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:doujin_audio/app/localization/app_language_provider.dart';
 import 'package:doujin_audio/app/state/app_runtime_providers.dart';
@@ -25,6 +30,51 @@ import 'package:doujin_audio/features/player/domain/playback_mode.dart';
 import 'package:doujin_audio/features/player/presentation/playback_providers.dart';
 import 'package:doujin_audio/features/player/presentation/playlist/playlist_subtitle_menu_sheet.dart';
 import 'package:doujin_audio/features/player/presentation/playlist/subtitle_generation_dialog.dart';
+
+final class _SubtitleFilePicker extends FilePickerPlatform {
+  _SubtitleFilePicker(this.file);
+
+  final File file;
+
+  @override
+  Future<FilePickerResult?> pickFiles({
+    String? dialogTitle,
+    String? initialDirectory,
+    FileType type = FileType.any,
+    List<String>? allowedExtensions,
+    void Function(FilePickerStatus)? onFileLoading,
+    int compressionQuality = 0,
+    bool allowMultiple = false,
+    bool withData = false,
+    bool withReadStream = false,
+    bool lockParentWindow = false,
+    bool readSequential = false,
+    bool cancelUploadOnWindowBlur = true,
+  }) async => FilePickerResult([
+    PlatformFile(
+      name: file.uri.pathSegments.last,
+      path: file.path,
+      size: file.lengthSync(),
+    ),
+  ]);
+}
+
+Future<void> _waitForImportAction(
+  WidgetTester tester,
+  bool Function() finished,
+) async {
+  for (var attempt = 0; attempt < 100; attempt++) {
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 10)),
+    );
+    await tester.pump();
+    if (finished()) {
+      await tester.pump(const Duration(milliseconds: 300));
+      return;
+    }
+  }
+  fail('Subtitle import did not finish');
+}
 
 class _ReadyModelStore extends SubtitleModelStore {
   @override
@@ -168,6 +218,100 @@ void main() {
     HttpOverrides.global = null;
     SharedPreferences.setMockInitialValues(<String, Object>{});
   });
+
+  for (final (name, hasExisting, confirm) in const [
+    ('cancelled subtitle import preserves both files', true, false),
+    ('confirmed subtitle import replaces and moves the local file', true, true),
+    ('first subtitle import moves the file without confirmation', false, true),
+  ]) {
+    testWidgets(name, (tester) async {
+      final root = Directory.systemTemp.createTempSync('subtitle_import_');
+      addTearDown(() => root.deleteSync(recursive: true));
+      final audioDirectory = Directory(p.join(root.path, 'audio'))
+        ..createSync();
+      final audioFile = File(p.join(audioDirectory.path, 'voice.mp3'))
+        ..writeAsBytesSync([0]);
+      final existing = File(p.join(audioDirectory.path, 'voice.ja.lrc'));
+      const original = '[00:01.00]原字幕\n[00:03.00]\n';
+      if (hasExisting) existing.writeAsStringSync(original);
+      final selected = File(p.join(root.path, 'selected.srt'))
+        ..writeAsStringSync('1\n00:00:01,000 --> 00:00:03,000\n新字幕\n');
+      final destination = File(p.join(audioDirectory.path, 'voice.srt'));
+      final previousPicker = FilePickerPlatform.instance;
+      FilePickerPlatform.instance = _SubtitleFilePicker(selected);
+      addTearDown(() => FilePickerPlatform.instance = previousPicker);
+      final service = PlaybackSubtitleService(trackResolver: (_) => null);
+      await tester.runAsync(() => service.load(audioFile.path));
+      final language = AppLanguageProvider();
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            appLanguageProviderInstanceProvider.overrideWithValue(language),
+            playbackSubtitleServiceProvider.overrideWithValue(service),
+          ],
+          child: MaterialApp(
+            home: Scaffold(
+              body: SubtitleMenuSheet(
+                session: _createSnapshot(trackPath: audioFile.path),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final importTile = find.byKey(const ValueKey('subtitle_import_tile'));
+      await tester.ensureVisible(importTile);
+      await tester.tap(importTile);
+      await _waitForImportAction(
+        tester,
+        () => hasExisting
+            ? find.byType(AlertDialog).evaluate().isNotEmpty
+            : service.trackSync(audioFile.path)?.sourcePath == destination.path,
+      );
+      if (hasExisting) {
+        expect(
+          find.text(language.tr('subtitle_import_overwrite_title')),
+          findsOneWidget,
+        );
+        expect(existing.readAsStringSync(), original);
+        expect(selected.existsSync(), isTrue);
+        expect(destination.existsSync(), isFalse);
+        await tester.tap(
+          find.text(
+            language.tr(confirm ? 'subtitle_import_overwrite' : 'cancel'),
+          ),
+        );
+        if (confirm) {
+          await _waitForImportAction(
+            tester,
+            () =>
+                service.trackSync(audioFile.path)?.sourcePath ==
+                destination.path,
+          );
+        } else {
+          await tester.pumpAndSettle();
+          expect(existing.readAsStringSync(), original);
+          expect(selected.existsSync(), isTrue);
+          expect(destination.existsSync(), isFalse);
+          expect(service.trackSync(audioFile.path)?.sourcePath, existing.path);
+        }
+      } else {
+        expect(find.byType(AlertDialog), findsNothing);
+      }
+      if (confirm) {
+        expect(selected.existsSync(), isFalse);
+        expect(existing.existsSync(), isFalse);
+        expect(destination.readAsStringSync(), contains('新字幕'));
+        final restarted = PlaybackSubtitleService(trackResolver: (_) => null);
+        final reloaded = await tester.runAsync(
+          () => restarted.load(audioFile.path),
+        );
+        expect(reloaded?.sourcePath, destination.path);
+        expect(reloaded?.cues.single.text, '新字幕');
+      }
+      expect(tester.takeException(), isNull);
+    });
+  }
 
   testWidgets(
     'SubtitleMenuSheet disables and greys out switches and sync controls when no subtitle',
@@ -408,7 +552,13 @@ void main() {
   testWidgets(
     'translation opens progress immediately and can continue in background',
     (tester) async {
-      const audioPath = '/path/to/japanese_audio.mp3';
+      final directory = Directory.systemTemp.createTempSync(
+        'subtitle_translation_',
+      );
+      addTearDown(() => directory.deleteSync(recursive: true));
+      final audioFile = File('${directory.path}/japanese_audio.mp3')
+        ..writeAsBytesSync([0]);
+      final audioPath = audioFile.path;
       final models = _DelayedModelStore();
       final engine = _PendingGenerationEngine(models: models);
       final service = _RecordingGenerationService(engine);
@@ -707,7 +857,10 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
     final directory = Directory.systemTemp.createTempSync('subtitle_sheet_');
     addTearDown(() => directory.deleteSync(recursive: true));
-    const audioPath = '/music/subtitled.mp3';
+    final audioFile = File(
+      '${directory.path}/very_long_subtitle_filename_with_multiple_words_and_japanese_字幕ファイル名を表示してもシート内に収まります.mp3',
+    )..writeAsBytesSync([0]);
+    final audioPath = audioFile.path;
     final service = PlaybackSubtitleService(
       trackResolver: (_) => null,
       subtitlesDirectoryResolver: () async => directory,

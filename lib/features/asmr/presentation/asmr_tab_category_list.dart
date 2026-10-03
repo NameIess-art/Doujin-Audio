@@ -78,12 +78,17 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
   List<AsmrWork>? _lastFavoritesWorks;
   String? _lastFavoritesQuery;
   int? _lastFavoritesRevision;
+  AsmrCategoryViewState? _lastLoadState;
+  final Map<int, Animation<double>> _loadingWorkAnimations = {};
+  final Set<AnimationController> _loadingBatchControllers = {};
   @override
   void didUpdateWidget(covariant _AsmrCategoryList oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.isActive != widget.isActive ||
         oldWidget.category != widget.category) {
       _inactiveContent = null;
+      _clearLoadAnimations();
+      _lastLoadState = null;
     }
     if (!widget.isActive) {
       UiInteractionCoordinator.instance.cancelCommit(
@@ -103,6 +108,8 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
       _lastFavoritesWorks = null;
       _lastFavoritesQuery = null;
       _lastFavoritesRevision = null;
+      _clearLoadAnimations();
+      _lastLoadState = null;
     }
   }
 
@@ -113,7 +120,63 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
       entry.dispose();
     }
     _collapsingWorks.clear();
+    _clearLoadAnimations();
     super.dispose();
+  }
+
+  void _clearLoadAnimations() {
+    for (final controller in _loadingBatchControllers) {
+      controller.dispose();
+    }
+    _loadingBatchControllers.clear();
+    _loadingWorkAnimations.clear();
+  }
+
+  void _updateLoadAnimations(
+    AsmrCategoryViewState state,
+    List<AsmrWork> works, {
+    required bool reduceMotion,
+  }) {
+    final previous = _lastLoadState;
+    _lastLoadState = state;
+    if (reduceMotion || state.isLoading || state.isRefreshing) {
+      _clearLoadAnimations();
+      return;
+    }
+    if (!widget.isActive ||
+        previous == null ||
+        previous.works.isEmpty ||
+        !previous.hasMore ||
+        previous.isLoading ||
+        previous.isRefreshing ||
+        works.length <= previous.works.length) {
+      return;
+    }
+    for (var i = 0; i < previous.works.length; i++) {
+      if (previous.works[i].id != works[i].id) return;
+    }
+    // Start once when a page enters the rendered data, including offscreen
+    // records. Lazy card creation then observes the batch's current opacity.
+    final controller = AnimationController(
+      vsync: this,
+      duration: kPlaceholderContentTransitionDuration,
+    );
+    final animation = controller.drive(
+      CurveTween(curve: Curves.easeInOutCubic),
+    );
+    _loadingBatchControllers.add(controller);
+    for (final work in works.skip(previous.works.length)) {
+      _loadingWorkAnimations[work.id] = animation;
+    }
+    controller.forward().then((_) {
+      if (!mounted) return;
+      setState(() {
+        _inactiveContent = null;
+        _loadingWorkAnimations.removeWhere((_, value) => value == animation);
+        _loadingBatchControllers.remove(controller);
+      });
+      controller.dispose();
+    });
   }
 
   @override
@@ -168,6 +231,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
     final works = queryMismatch ? const <AsmrWork>[] : state.works;
     final isFavorites = widget.category == AsmrCategoryType.favorites;
     final reduceMotion = MediaQuery.disableAnimationsOf(context);
+    _updateLoadAnimations(state, works, reduceMotion: reduceMotion);
 
     if (isFavorites) {
       if (_lastFavoritesRevision != state.revision &&
@@ -232,11 +296,16 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
         onLongPress: () => widget.onEnterSelectionMode(work),
         onToggleSelect: () => widget.onToggleSelection(work),
       );
-      final workCard = RepaintBoundary(
+      final workCard = FadeTransition(
         key: ValueKey<String>('asmr-work-${work.id}'),
-        child: widget.searchSession
-            ? card
-            : BrowseAnchor(id: '${work.id}', child: card),
+        opacity:
+            _loadingWorkAnimations[work.id] ??
+            const AlwaysStoppedAnimation<double>(1),
+        child: RepaintBoundary(
+          child: widget.searchSession
+              ? card
+              : BrowseAnchor(id: '${work.id}', child: card),
+        ),
       );
       final collapsing = _collapsingWorks[work.id];
       if (collapsing == null) return workCard;
@@ -349,9 +418,19 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
                       LibraryLikeCardMetrics.listHorizontalPadding,
                       widget.bottomInset + 24,
                     ),
-                    itemCount: visibleWorks.isEmpty
-                        ? 1
-                        : rowCount + (hasLoadMore ? 1 : 0),
+                    itemCount: visibleWorks.isEmpty ? 1 : rowCount + 1,
+                    findChildIndexCallback: (key) {
+                      if (key ==
+                          const ValueKey<String>('asmr_load_more_footer')) {
+                        return rowCount;
+                      }
+                      if (columnCount != 1) return null;
+                      final index = visibleWorks.indexWhere(
+                        (work) =>
+                            key == ValueKey<String>('asmr-work-${work.id}'),
+                      );
+                      return index < 0 ? null : index;
+                    },
                     itemBuilder: (context, rowIndex) {
                       if (visibleWorks.isEmpty) {
                         final errorText = state.lastError == null
@@ -377,32 +456,55 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
                         if (!state.needsLoadMoreRetry) {
                           _scheduleAutomaticLoadMore(state);
                         }
-                        return Padding(
-                          padding: const EdgeInsets.only(top: 4, bottom: 4),
-                          child: Center(
-                            child: state.needsLoadMoreRetry
-                                ? Text(
-                                    i18n.tr('asmr_load_more_hint'),
-                                    key: const ValueKey<String>(
-                                      'asmr_load_more_retry_hint',
-                                    ),
-                                    style: theme.textTheme.bodySmall?.copyWith(
-                                      color: theme.colorScheme.onSurfaceVariant,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  )
-                                : SizedBox(
-                                    key: const ValueKey<String>(
-                                      'asmr_load_more_progress',
-                                    ),
-                                    width: 22,
-                                    height: 22,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2.2,
-                                      color: asmrBlue,
-                                    ),
+                        return AnimatedSwitcher(
+                          key: const ValueKey<String>('asmr_load_more_footer'),
+                          duration: reduceMotion
+                              ? Duration.zero
+                              : kPlaceholderContentTransitionDuration,
+                          switchInCurve: Curves.easeInOutCubic,
+                          switchOutCurve: Curves.easeInOutCubic,
+                          child: !hasLoadMore
+                              ? const SizedBox.shrink(
+                                  key: ValueKey<String>(
+                                    'asmr_load_more_complete',
                                   ),
-                          ),
+                                )
+                              : Padding(
+                                  key: const ValueKey<String>(
+                                    'asmr_load_more_visible',
+                                  ),
+                                  padding: const EdgeInsets.only(
+                                    top: 4,
+                                    bottom: 4,
+                                  ),
+                                  child: Center(
+                                    child: state.needsLoadMoreRetry
+                                        ? Text(
+                                            i18n.tr('asmr_load_more_hint'),
+                                            key: const ValueKey<String>(
+                                              'asmr_load_more_retry_hint',
+                                            ),
+                                            style: theme.textTheme.bodySmall
+                                                ?.copyWith(
+                                                  color: theme
+                                                      .colorScheme
+                                                      .onSurfaceVariant,
+                                                  fontWeight: FontWeight.w600,
+                                                ),
+                                          )
+                                        : SizedBox(
+                                            key: const ValueKey<String>(
+                                              'asmr_load_more_progress',
+                                            ),
+                                            width: 22,
+                                            height: 22,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 2.2,
+                                              color: asmrBlue,
+                                            ),
+                                          ),
+                                  ),
+                                ),
                         );
                       }
                       if (columnCount == 1) {

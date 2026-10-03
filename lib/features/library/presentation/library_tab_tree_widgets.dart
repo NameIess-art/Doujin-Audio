@@ -546,45 +546,54 @@ class _FolderNodeWidgetState extends ConsumerState<LibraryFolderNodeWidget> {
           children: !_expanded || !widget.renderChildrenInline
               ? const <Widget>[]
               : <Widget>[
-                  if (_isLoadingChildren)
-                    const Padding(
+                  PlaceholderContentTransition(
+                    fit: StackFit.loose,
+                    showPlaceholder:
+                        _isLoadingChildren && _loadedFolder == null,
+                    placeholder: const Padding(
                       padding: EdgeInsets.symmetric(vertical: 12),
                       child: Center(child: CircularProgressIndicator()),
-                    )
-                  else if (_hasLoadError)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 6,
-                      ),
-                      child: OperationStatusBanner(
-                        key: ValueKey<String>(
-                          'folder_children_error:${folder.path}',
-                        ),
-                        label: i18n.tr('operation_failed_retry'),
-                        onRetry: () => unawaited(_loadChildren(refresh: true)),
-                        retryTooltip: i18n.tr('retry'),
-                      ),
-                    )
-                  else
-                    ...folder.children.map(
-                      (childNode) => Padding(
-                        padding: EdgeInsets.zero,
-                        child: RepaintBoundary(
-                          child: LibraryTreeItem(
-                            key: ValueKey(childNode.path),
-                            node: childNode,
-                            initiallyExpanded:
-                                widget.onFolderExpansionChanged == null
-                                ? widget.initiallyExpanded
-                                : false,
-                            onFolderExpansionChanged:
-                                widget.onFolderExpansionChanged,
-                            searchQuery: widget.searchQuery,
-                          ),
-                        ),
-                      ),
                     ),
+                    content: _hasLoadError
+                        ? Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 6,
+                            ),
+                            child: OperationStatusBanner(
+                              key: ValueKey<String>(
+                                'folder_children_error:${folder.path}',
+                              ),
+                              label: i18n.tr('operation_failed_retry'),
+                              onRetry: () =>
+                                  unawaited(_loadChildren(refresh: true)),
+                              retryTooltip: i18n.tr('retry'),
+                            ),
+                          )
+                        : Column(
+                            children: folder.children
+                                .map(
+                                  (childNode) => Padding(
+                                    padding: EdgeInsets.zero,
+                                    child: RepaintBoundary(
+                                      child: LibraryTreeItem(
+                                        key: ValueKey(childNode.path),
+                                        node: childNode,
+                                        initiallyExpanded:
+                                            widget.onFolderExpansionChanged ==
+                                                null
+                                            ? widget.initiallyExpanded
+                                            : false,
+                                        onFolderExpansionChanged:
+                                            widget.onFolderExpansionChanged,
+                                        searchQuery: widget.searchQuery,
+                                      ),
+                                    ),
+                                  ),
+                                )
+                                .toList(),
+                          ),
+                  ),
                 ],
         ),
       );

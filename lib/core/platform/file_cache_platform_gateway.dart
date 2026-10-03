@@ -13,6 +13,7 @@ import '../logging/app_log_service.dart';
 import '../media/media_file_support.dart';
 import '../errors/native_result.dart';
 import '../media/path_display.dart';
+import '../media/subtitle_parser.dart';
 import 'platform_channels.dart';
 import 'platform_method_client.dart';
 import 'windows_media_tools.dart';
@@ -514,20 +515,127 @@ class FileCachePlatformGateway {
   }
 
   Future<bool> writeTrackSubtitle({
-    required String folder,
-    required String name,
+    required String path,
     required Uint8List bytes,
   }) async {
     final result = await _client.invoke<bool>(
       FileCacheMethod.writeTrackSubtitle,
-      arguments: <String, Object?>{
-        'folder': folder,
-        'name': name,
-        'bytes': bytes,
-      },
+      arguments: <String, Object?>{'path': path, 'bytes': bytes},
       decode: (value) => value as bool,
     );
     return result.valueOrNull ?? false;
+  }
+
+  Future<String?> saveTrackSubtitle({
+    required String trackPath,
+    String? groupKey,
+    required String extension,
+    required Uint8List bytes,
+    String? sourcePath,
+    bool overwrite = false,
+  }) async {
+    if (!supportedSubtitleExtensions.contains(extension.toLowerCase())) {
+      throw ArgumentError.value(extension, 'extension');
+    }
+    if (trackPath.startsWith('content://') ||
+        sourcePath?.startsWith('content://') == true) {
+      if (!_isAndroid()) throw UnsupportedError('SAF requires Android');
+      final result = await _client.invoke<String>(
+        FileCacheMethod.writeTrackSubtitle,
+        arguments: {
+          'trackPath': trackPath,
+          'groupKey': ?groupKey,
+          'extension': extension,
+          'bytes': bytes,
+          'sourcePath': ?sourcePath,
+          'overwrite': overwrite,
+        },
+        decode: (value) => value as String,
+      );
+      return result.valueOrNull;
+    }
+    if (!await File(trackPath).exists()) {
+      throw FileSystemException('Audio file is unavailable', trackPath);
+    }
+    final destination = path.join(
+      path.dirname(trackPath),
+      '${path.basenameWithoutExtension(trackPath)}$extension',
+    );
+    final source = sourcePath == null ? null : File(sourcePath);
+    if (source != null && !await source.exists()) {
+      throw FileSystemException('Subtitle file is unavailable', sourcePath);
+    }
+    final stem = subtitleMatchStem(trackPath);
+    final current = await findSubtitleFileForAudio(trackPath);
+    if (sourcePath != null && current != null && !overwrite) {
+      throw PlatformException(code: 'subtitle_exists');
+    }
+    final oldFiles = <File>[];
+    await for (final entity in Directory(path.dirname(trackPath)).list()) {
+      if (entity is File &&
+          subtitleMatchStem(entity.path) == stem &&
+          supportedSubtitleExtensions.contains(
+            path.extension(entity.path).toLowerCase(),
+          ) &&
+          !path.equals(
+            path.absolute(entity.path),
+            path.absolute(destination),
+          ) &&
+          (source == null ||
+              !path.equals(
+                path.absolute(entity.path),
+                path.absolute(source.path),
+              ))) {
+        oldFiles.add(entity);
+      }
+    }
+    if (current != null &&
+        !path.equals(path.absolute(current.path), path.absolute(destination)) &&
+        (source == null ||
+            !path.equals(
+              path.absolute(current.path),
+              path.absolute(source.path),
+            )) &&
+        !oldFiles.any((file) => path.equals(file.path, current.path))) {
+      oldFiles.add(current);
+    }
+    final target = File(destination);
+    final sameSource =
+        source != null &&
+        path.equals(path.absolute(source.path), path.absolute(destination));
+    final staged = <File, String>{};
+    final transaction = DateTime.now().microsecondsSinceEpoch;
+    final temporary = File('$destination.$transaction.tmp');
+    var committed = false;
+    try {
+      if (!sameSource) {
+        await temporary.writeAsBytes(bytes, flush: true);
+        if (await target.exists()) oldFiles.add(target);
+      }
+      for (final old in oldFiles) {
+        final backup = '$destination.$transaction.${staged.length}.bak';
+        await old.rename(backup);
+        staged[File(backup)] = old.path;
+      }
+      if (!sameSource) {
+        await temporary.rename(destination);
+        committed = true;
+      }
+      if (source != null && !sameSource) await source.delete();
+    } catch (_) {
+      if (committed && await target.exists()) {
+        await target.delete();
+      }
+      for (final entry in staged.entries) {
+        await entry.key.rename(entry.value);
+      }
+      if (await temporary.exists()) await temporary.delete();
+      rethrow;
+    }
+    for (final backup in staged.keys) {
+      await backup.delete();
+    }
+    return destination;
   }
 
   Future<CoverImageReference?> writeFileBytesToFolder({

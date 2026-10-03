@@ -31,6 +31,7 @@ import '../../../core/widgets/unified_popup_menu.dart';
 import '../../../core/widgets/async_cover_image.dart';
 import '../../../core/widgets/mobile_overlay_inset.dart';
 import '../../../core/widgets/app_transitions.dart';
+import '../../../core/widgets/shimmer_loading.dart';
 import '../../../core/widgets/top_page_header.dart';
 import '../../asmr/application/asmr_library_controller.dart';
 import '../../asmr/domain/asmr_models.dart';
@@ -76,8 +77,17 @@ class WorkDetailPage extends ConsumerStatefulWidget {
   ConsumerState<WorkDetailPage> createState() => _WorkDetailPageState();
 }
 
-class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
+class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
+    with TickerProviderStateMixin {
   final ScrollController _scrollController = ScrollController();
+  final GlobalKey _pageStackKey = GlobalKey();
+  final GlobalKey _loadingSkeletonKey = GlobalKey();
+  late final AnimationController _directoryFade;
+  late final CurvedAnimation _directoryOpacity;
+  bool? _directoryWasLoading;
+  Rect? _departingSkeletonRect;
+  final Map<AnimationController, ({Set<String> ids, Animation<double> opacity})>
+  _entryLoadBatches = {};
   // Local state
   AudioDetailTarget? _localTarget;
   AudioDetail? _localDetail;
@@ -119,6 +129,15 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
   @override
   void initState() {
     super.initState();
+    _directoryFade = AnimationController(
+      vsync: this,
+      duration: kPlaceholderContentTransitionDuration,
+      value: 1,
+    );
+    _directoryOpacity = CurvedAnimation(
+      parent: _directoryFade,
+      curve: Curves.easeInOutCubic,
+    );
     assert(
       widget.initialDetail == null ||
           (widget.initialDetail!.target.targetType ==
@@ -329,6 +348,40 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
       key: _directoryCommitKey,
       commit: () {
         if (!mounted || request != _directoryRequest) return;
+        if (_directoryWasLoading == false &&
+            !MediaQuery.disableAnimationsOf(context) &&
+            (ModalRoute.of(context)?.isCurrent ?? true)) {
+          final previousIds = {
+            for (final entry in _currentEntries)
+              '${entry.type.name}:${entry.relativePath}',
+          };
+          final addedIds = {
+            for (final entry in directory.entriesAt(_currentPathSegments))
+              if (!previousIds.contains(
+                '${entry.type.name}:${entry.relativePath}',
+              ))
+                '${entry.type.name}:${entry.relativePath}',
+          };
+          if (addedIds.isNotEmpty) {
+            final controller = AnimationController(
+              vsync: this,
+              duration: kPlaceholderContentTransitionDuration,
+            );
+            _entryLoadBatches[controller] = (
+              ids: addedIds,
+              opacity: controller.drive(
+                CurveTween(curve: Curves.easeInOutCubic),
+              ),
+            );
+            controller.addStatusListener((status) {
+              if (status == AnimationStatus.completed) {
+                setState(() => _entryLoadBatches.remove(controller));
+                controller.dispose();
+              }
+            });
+            controller.forward();
+          }
+        }
         setState(() {
           _directory = directory;
           _preparingDirectory = false;
@@ -355,7 +408,55 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
     UiInteractionCoordinator.instance.cancelCommit(_directoryCommitKey);
     _pendingDataUpdates.clear();
     _scrollController.dispose();
+    _directoryOpacity.dispose();
+    _directoryFade.dispose();
+    for (final controller in _entryLoadBatches.keys) {
+      controller.dispose();
+    }
     super.dispose();
+  }
+
+  void _updateDirectoryMotion(bool isLoading) {
+    if (MediaQuery.disableAnimationsOf(context) ||
+        ModalRoute.isCurrentOf(context) == false) {
+      _directoryFade.value = 1;
+      _departingSkeletonRect = null;
+      for (final controller in _entryLoadBatches.keys) {
+        controller.dispose();
+      }
+      _entryLoadBatches.clear();
+      _directoryWasLoading = isLoading;
+      return;
+    }
+    if (_directoryWasLoading == true && !isLoading) {
+      final skeleton = _loadingSkeletonKey.currentContext?.findRenderObject();
+      final page = _pageStackKey.currentContext?.findRenderObject();
+      // Keep the fading skeleton at its painted position without reserving
+      // sliver space that would push the newly loaded entries below it.
+      _departingSkeletonRect =
+          skeleton is RenderBox && skeleton.hasSize && page is RenderBox
+          ? skeleton.localToGlobal(Offset.zero, ancestor: page) & skeleton.size
+          : null;
+      _directoryFade.forward(from: 0);
+    } else if (isLoading && _directoryWasLoading != true) {
+      _directoryFade.value = 1;
+      _departingSkeletonRect = null;
+    }
+    _directoryWasLoading = isLoading;
+  }
+
+  Widget _directorySkeleton() => const RepaintBoundary(
+    key: ValueKey('work_detail_entries_skeleton'),
+    child: WorkDetailDirectorySkeleton(),
+  );
+
+  Animation<double> _entryLoadOpacity(String id) {
+    if (!MediaQuery.disableAnimationsOf(context)) {
+      for (final batch in _entryLoadBatches.values) {
+        if (batch.ids.contains(id)) return batch.opacity;
+      }
+    }
+    return const AlwaysStoppedAnimation(1);
   }
 
   Future<void> _loadAsmrData() async {
@@ -1009,6 +1110,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
               currentEntries.isEmpty
         : (_loadingAsmr || _preparingDirectory || _directory == null) &&
               currentEntries.isEmpty;
+    _updateDirectoryMotion(isLoading);
 
     final String? trimmedCover = coverPath?.trim();
     final bool hasValidCover = trimmedCover != null && trimmedCover.isNotEmpty;
@@ -1100,6 +1202,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: Stack(
+        key: _pageStackKey,
         children: [
           AppPageContentTransition(
             backgroundColor: cs.surface,
@@ -1186,75 +1289,92 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
 
                     // 4. Directory File Tree List
                     if (isLoading)
-                      const SliverFillRemaining(
-                        hasScrollBody: false,
-                        child: Center(
-                          child: RepaintBoundary(
-                            key: ValueKey('work_detail_loading_indicator'),
-                            child: CircularProgressIndicator(),
-                          ),
-                        ),
-                      )
-                    else if (currentEntries.isEmpty)
-                      SliverFillRemaining(
-                        hasScrollBody: false,
-                        child: Center(
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                Icons.folder_open_rounded,
-                                size: 48,
-                                color: cs.onSurfaceVariant.withValues(
-                                  alpha: 0.5,
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                i18n.tr('empty_folder'),
-                                style: TextStyle(color: cs.onSurfaceVariant),
-                              ),
-                            ],
-                          ),
-                        ),
-                      )
-                    else
                       SliverPadding(
                         padding: const EdgeInsets.symmetric(
                           horizontal: 8,
                           vertical: 4,
                         ),
-                        sliver: SliverList(
-                          delegate: SliverChildBuilderDelegate(
-                            (context, index) {
-                              final item = currentEntries[index];
-                              return WorkDetailEntryTile(
-                                key: ValueKey(
-                                  '${item.type.name}:${item.relativePath}',
-                                ),
-                                item: item,
-                                accentColor: widget.isAsmr
-                                    ? asmrBlue
-                                    : cs.primary,
-                                menuEntries: _entryMenuItems(item),
-                                moreLabel: i18n.tr('more_actions'),
-                                onAction: (action) =>
-                                    _handleEntryAction(item, action),
-                              );
-                            },
-                            childCount: currentEntries.length,
-                            findChildIndexCallback: (key) {
-                              final index = currentEntries.indexWhere(
-                                (item) =>
-                                    key ==
-                                    ValueKey(
-                                      '${item.type.name}:${item.relativePath}',
-                                    ),
-                              );
-                              return index < 0 ? null : index;
-                            },
+                        sliver: SliverToBoxAdapter(
+                          child: SizedBox(
+                            key: _loadingSkeletonKey,
+                            child: _directorySkeleton(),
                           ),
                         ),
+                      )
+                    else
+                      SliverFadeTransition(
+                        key: const ValueKey('work_detail_entries_fade'),
+                        opacity: MediaQuery.disableAnimationsOf(context)
+                            ? const AlwaysStoppedAnimation(1)
+                            : _directoryOpacity,
+                        sliver: currentEntries.isEmpty
+                            ? SliverFillRemaining(
+                                hasScrollBody: false,
+                                child: Center(
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        Icons.folder_open_rounded,
+                                        size: 48,
+                                        color: cs.onSurfaceVariant.withValues(
+                                          alpha: 0.5,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 8),
+                                      Text(
+                                        i18n.tr('empty_folder'),
+                                        style: TextStyle(
+                                          color: cs.onSurfaceVariant,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              )
+                            : SliverPadding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 4,
+                                ),
+                                sliver: SliverList(
+                                  delegate: SliverChildBuilderDelegate(
+                                    (context, index) {
+                                      final item = currentEntries[index];
+                                      final id =
+                                          '${item.type.name}:${item.relativePath}';
+                                      return FadeTransition(
+                                        key: ValueKey(
+                                          'work_detail_entry_fade_$id',
+                                        ),
+                                        opacity: _entryLoadOpacity(id),
+                                        child: WorkDetailEntryTile(
+                                          key: ValueKey(id),
+                                          item: item,
+                                          accentColor: widget.isAsmr
+                                              ? asmrBlue
+                                              : cs.primary,
+                                          menuEntries: _entryMenuItems(item),
+                                          moreLabel: i18n.tr('more_actions'),
+                                          onAction: (action) =>
+                                              _handleEntryAction(item, action),
+                                        ),
+                                      );
+                                    },
+                                    childCount: currentEntries.length,
+                                    findChildIndexCallback: (key) {
+                                      final index = currentEntries.indexWhere(
+                                        (item) =>
+                                            key ==
+                                            ValueKey(
+                                              'work_detail_entry_fade_${item.type.name}:${item.relativePath}',
+                                            ),
+                                      );
+                                      return index < 0 ? null : index;
+                                    },
+                                  ),
+                                ),
+                              ),
                       ),
                     if (bottomOverlayInset > 0)
                       SliverToBoxAdapter(
@@ -1270,6 +1390,25 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
               ),
             ),
           ),
+          if (!isLoading &&
+              _departingSkeletonRect != null &&
+              !MediaQuery.disableAnimationsOf(context))
+            AnimatedBuilder(
+              animation: _directoryFade,
+              builder: (context, _) => _directoryFade.isCompleted
+                  ? const SizedBox.shrink()
+                  : Positioned.fromRect(
+                      rect: _departingSkeletonRect!,
+                      child: IgnorePointer(
+                        child: ExcludeSemantics(
+                          child: FadeTransition(
+                            opacity: ReverseAnimation(_directoryOpacity),
+                            child: _directorySkeleton(),
+                          ),
+                        ),
+                      ),
+                    ),
+            ),
           // Floating Back Button (top-left)
           Positioned(
             top: topSafeArea + 6,
@@ -1356,3 +1495,66 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
     );
   }
 }
+
+class WorkDetailDirectorySkeleton extends StatelessWidget {
+  const WorkDetailDirectorySkeleton({super.key, this.itemCount = 6});
+
+  final int itemCount;
+
+  static const List<double> _titleFractions = [
+    0.52,
+    0.68,
+    0.44,
+    0.60,
+    0.38,
+    0.55,
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return ShimmerLoader(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (var i = 0; i < itemCount; i++)
+            SizedBox(
+              height: 48,
+              child: Padding(
+                padding: const EdgeInsets.only(left: 16, right: 12),
+                child: Row(
+                  children: [
+                    const ShimmerContainer(
+                      width: 22,
+                      height: 22,
+                      borderRadius: 5,
+                    ),
+                    const SizedBox(width: 18),
+                    Expanded(
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: FractionallySizedBox(
+                          widthFactor:
+                              _titleFractions[i % _titleFractions.length],
+                          child: const ShimmerContainer(
+                            height: 12,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    const ShimmerContainer(
+                      width: 16,
+                      height: 16,
+                      borderRadius: 8,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+

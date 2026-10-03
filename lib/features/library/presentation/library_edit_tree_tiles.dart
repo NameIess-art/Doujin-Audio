@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../core/media/path_display.dart';
 import '../../../core/widgets/app_transitions.dart';
+import '../../../core/widgets/shimmer_loading.dart';
 import '../application/library_facade.dart';
 import 'library_providers.dart';
 
@@ -11,6 +12,7 @@ import 'library_edit_tree_projection.dart';
 
 const Size _libraryEditActionMinimumSize = Size(0, 36);
 const double _libraryEditChildFolderTileHeight = 48;
+const double libraryEditRootFolderHeight = 80;
 const _libraryEditRootFolderShape = RoundedRectangleBorder(
   borderRadius: BorderRadius.all(Radius.circular(10)),
 );
@@ -474,3 +476,90 @@ class _LibraryEditTrackTile extends ConsumerWidget {
     );
   }
 }
+
+class LibraryEditTreeSkeleton extends StatelessWidget {
+  const LibraryEditTreeSkeleton({super.key, this.itemCount = 6});
+
+  final int itemCount;
+
+  static const List<double> _titleFractions = [
+    0.48,
+    0.62,
+    0.40,
+    0.55,
+    0.36,
+    0.50,
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (var i = 0; i < itemCount; i++)
+          Card(
+            margin: const EdgeInsets.only(bottom: 6),
+            clipBehavior: Clip.antiAlias,
+            elevation: 0,
+            color: cs.surfaceContainerHigh,
+            shape: _libraryEditRootFolderShape,
+            child: SizedBox(
+              height: libraryEditRootFolderHeight,
+              child: ShimmerLoader(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 3, 6, 3),
+                  child: Row(
+                    children: [
+                      const ShimmerContainer(
+                        width: 24,
+                        height: 24,
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            FractionallySizedBox(
+                              widthFactor:
+                                  _titleFractions[i % _titleFractions.length],
+                              child: const ShimmerContainer(
+                                height: 14,
+                                borderRadius: 7,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            const ShimmerContainer(
+                              height: 11,
+                              width: 60,
+                              borderRadius: 5.5,
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      const ShimmerContainer(
+                        width: 60,
+                        height: 32,
+                        borderRadius: 8,
+                      ),
+                      const SizedBox(width: 4),
+                      const ShimmerContainer(
+                        width: 18,
+                        height: 18,
+                        borderRadius: 9,
+                      ),
+                      const SizedBox(width: 4),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+

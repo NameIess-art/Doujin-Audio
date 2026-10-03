@@ -16,6 +16,29 @@ import java.util.concurrent.TimeUnit
 
 class SafDocumentReplacementTest {
     @Test
+    fun `replacement validates imported source removal before deleting target backup`() {
+        val files = linkedMapOf("track.srt" to "old", "selected.srt" to "new")
+        val result = replaceSafDocument(
+            targetName = "track.srt",
+            existing = "track.srt",
+            staleBackup = null,
+            createTemp = { "temporary".also { files[it] = "" } },
+            writeTemp = { files[it] = "new"; true },
+            isValidCommitted = {
+                assertEquals("new", files[it])
+                assertEquals("old", files["track.srt.doujin.bak"])
+                false
+            },
+            rename = { source, destination ->
+                files.remove(source)?.let { bytes -> files[destination] = bytes; destination }
+            },
+            delete = { files.remove(it) != null }
+        )
+        assertNull(result)
+        assertEquals(mapOf("track.srt" to "old", "selected.srt" to "new"), files)
+    }
+
+    @Test
     fun `replacement returns provider document after commit rename`() {
         data class Document(val uri: String, val name: String)
         val existing = Document("old-uri", "cover.jpg")

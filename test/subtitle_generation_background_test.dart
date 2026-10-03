@@ -12,6 +12,7 @@ import 'package:doujin_audio/features/player/presentation/playlist/subtitle_gene
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:path/path.dart' as p;
 import 'package:shared_preferences/shared_preferences.dart';
 
 class _FakeSubtitleAiEngine extends SubtitleAiEngine {
@@ -86,11 +87,16 @@ Future<void> _waitForGeneration(PlaybackSubtitleService service) async {
 
 void main() {
   late Directory subtitleDir;
+  late String audioPath;
   setUp(() async {
     TestWidgetsFlutterBinding.ensureInitialized();
     HttpOverrides.global = null;
     SharedPreferences.setMockInitialValues(<String, Object>{});
     subtitleDir = await Directory.systemTemp.createTemp('generated_subtitles_');
+    final audioFile = File(p.join(subtitleDir.path, 'audio', 'audio.mp3'));
+    await audioFile.parent.create();
+    await audioFile.writeAsBytes([0]);
+    audioPath = audioFile.path;
   });
   tearDown(() => subtitleDir.delete(recursive: true));
 
@@ -106,7 +112,7 @@ void main() {
       var applied = false;
       expect(
         service.startScriptGeneration(
-          'audio.mp3',
+          audioPath,
           'script.txt',
           onApplied: () => applied = true,
         ),
@@ -129,23 +135,22 @@ void main() {
       await _waitForGeneration(service);
       expect(service.generationJob?.status, SubtitleGenerationStatus.completed);
       expect(applied, isTrue);
-      final savedPath = service.getCustomSubtitlePath('audio.mp3')!;
-      expect(savedPath, endsWith('.lrc'));
+      final savedPath = service.trackSync(audioPath)!.sourcePath;
+      expect(savedPath, p.setExtension(audioPath, '.lrc'));
       expect(await File(savedPath).readAsString(), contains('今日は天気'));
-      expect(service.trackSync('audio.mp3')?.sourcePath, savedPath);
-      expect(service.textAt('audio.mp3', const Duration(seconds: 4)), isNull);
+      expect(service.textAt(audioPath, const Duration(seconds: 4)), isNull);
       final restarted = PlaybackSubtitleService(
         trackResolver: (_) => null,
         subtitlesDirectoryResolver: () async => subtitleDir,
       );
-      expect((await restarted.load('audio.mp3'))?.sourcePath, savedPath);
+      expect((await restarted.load(audioPath))?.sourcePath, savedPath);
       expect(
-        restarted.textAt('audio.mp3', const Duration(seconds: 2)),
+        restarted.textAt(audioPath, const Duration(seconds: 2)),
         _japaneseCue.text,
       );
-      expect(restarted.textAt('audio.mp3', const Duration(seconds: 4)), isNull);
+      expect(restarted.textAt(audioPath, const Duration(seconds: 4)), isNull);
       expect(
-        restarted.textAt('audio.mp3', const Duration(seconds: 7)),
+        restarted.textAt(audioPath, const Duration(seconds: 7)),
         _laterJapaneseCue.text,
       );
       service.clearGenerationJob();
@@ -162,16 +167,16 @@ void main() {
           SubtitleTrack(sourcePath: 'old.srt', cues: const [_japaneseCue]),
       subtitlesDirectoryResolver: () async => subtitleDir,
     );
-    await service.load('audio.mp3');
+    await service.load(audioPath);
     var appliedCount = 0;
     service.startScriptGeneration(
-      'audio.mp3',
+      audioPath,
       'script.txt',
       onApplied: () => appliedCount++,
     );
     await Future<void>.delayed(Duration.zero);
-    expect(service.getCustomSubtitlePath('audio.mp3'), isNull);
-    expect(service.trackSync('audio.mp3')?.sourcePath, 'old.srt');
+    expect(await File(p.setExtension(audioPath, '.lrc')).exists(), isFalse);
+    expect(service.trackSync(audioPath)?.sourcePath, 'old.srt');
     expect(service.generationJob?.status, SubtitleGenerationStatus.running);
     expect(appliedCount, 0);
 
@@ -183,11 +188,10 @@ void main() {
       ),
     );
     await _waitForGeneration(service);
-    final savedPath = service.getCustomSubtitlePath('audio.mp3')!;
+    final savedPath = service.trackSync(audioPath)!.sourcePath;
     expect(service.generationJob?.status, SubtitleGenerationStatus.completed);
-    expect(savedPath, endsWith('.lrc'));
+    expect(savedPath, p.setExtension(audioPath, '.lrc'));
     expect(await File(savedPath).readAsString(), contains('次の台詞'));
-    expect(service.trackSync('audio.mp3')?.sourcePath, savedPath);
     expect(appliedCount, 1);
   });
 
@@ -200,8 +204,8 @@ void main() {
       aiEngine: engine,
       subtitlesDirectoryResolver: () async => subtitleDir,
     );
-    final pendingLoad = service.load('audio.mp3');
-    service.startScriptGeneration('audio.mp3', 'script.txt');
+    final pendingLoad = service.load(audioPath);
+    service.startScriptGeneration(audioPath, 'script.txt');
     engine.scriptResult.complete(
       const SubtitleDraft(
         cues: [_japaneseCue],
@@ -210,13 +214,13 @@ void main() {
       ),
     );
     await _waitForGeneration(service);
-    final generatedPath = service.getCustomSubtitlePath('audio.mp3');
+    final generatedPath = service.trackSync(audioPath)?.sourcePath;
     expect(generatedPath, isNotNull);
     oldLoad.complete(
       SubtitleTrack(sourcePath: 'old.srt', cues: const [_japaneseCue]),
     );
     expect((await pendingLoad)?.sourcePath, generatedPath);
-    expect(service.trackSync('audio.mp3')?.sourcePath, generatedPath);
+    expect(service.trackSync(audioPath)?.sourcePath, generatedPath);
     expect(await File(generatedPath!).exists(), isTrue);
   });
 
@@ -229,7 +233,7 @@ void main() {
           SubtitleTrack(sourcePath: 'source.srt', cues: const [_japaneseCue]),
       subtitlesDirectoryResolver: () async => subtitleDir,
     );
-    expect(service.startTranslationGeneration('audio.mp3', 'zh'), isTrue);
+    expect(service.startTranslationGeneration(audioPath, 'zh'), isTrue);
     await Future<void>.delayed(const Duration(milliseconds: 20));
     engine.translationProgress!(
       const SubtitleTaskProgress('translating', 0.75, '75%'),
@@ -254,14 +258,15 @@ void main() {
       SubtitleGenerationStatus.completed,
       reason: 'stage=${service.generationJob?.progress?.stage}',
     );
-    final savedPath = service.getCustomSubtitlePath('audio.mp3')!;
+    final savedPath = service.trackSync(audioPath)!.sourcePath;
+    expect(savedPath, p.setExtension(audioPath, '.srt'));
     expect(await File(savedPath).readAsString(), contains('今天天气'));
     expect(
-      service.trackSync('audio.mp3')?.cues.single.text,
+      service.trackSync(audioPath)?.cues.single.text,
       draft.cues.single.text,
     );
     expect(
-      (await service.japaneseSourceCues('audio.mp3')).single.text,
+      (await service.japaneseSourceCues(audioPath)).single.text,
       _japaneseCue.text,
     );
   });
@@ -279,18 +284,18 @@ void main() {
           cues: const [_japaneseCue],
         ),
       );
-      await service.load('audio.mp3');
+      await service.load(audioPath);
       var applied = false;
       service.startScriptGeneration(
-        'audio.mp3',
+        audioPath,
         'wrong-script.txt',
         onApplied: () => applied = true,
       );
       engine.scriptResult.complete(null);
       await _waitForGeneration(service);
       expect(service.generationJob?.status, SubtitleGenerationStatus.noMatch);
-      expect(service.getCustomSubtitlePath('audio.mp3'), isNull);
-      expect(service.trackSync('audio.mp3')?.sourcePath, 'existing.srt');
+      expect(await File(p.setExtension(audioPath, '.lrc')).exists(), isFalse);
+      expect(service.trackSync(audioPath)?.sourcePath, 'existing.srt');
       expect(applied, isFalse);
     },
   );
@@ -302,7 +307,7 @@ void main() {
       aiEngine: engine,
       subtitlesDirectoryResolver: () async => subtitleDir,
     );
-    service.startScriptGeneration('audio.mp3', 'script.txt');
+    service.startScriptGeneration(audioPath, 'script.txt');
     await Future<void>.delayed(Duration.zero);
     service.cancelGeneration();
     expect(engine.scriptCancelled!(), isTrue);
@@ -315,7 +320,8 @@ void main() {
     );
     await Future<void>.delayed(Duration.zero);
     expect(service.generationJob?.status, SubtitleGenerationStatus.cancelled);
-    expect(service.getCustomSubtitlePath('audio.mp3'), isNull);
+    expect(service.trackSync(audioPath)?.sourcePath, isNull);
+    expect(await File(p.setExtension(audioPath, '.lrc')).exists(), isFalse);
   });
 
   test('cancelled alignment retains the active subtitle', () async {
@@ -327,15 +333,15 @@ void main() {
           SubtitleTrack(sourcePath: 'old.srt', cues: const [_japaneseCue]),
       subtitlesDirectoryResolver: () async => subtitleDir,
     );
-    await service.load('audio.mp3');
-    service.startScriptGeneration('audio.mp3', 'script.txt');
+    await service.load(audioPath);
+    service.startScriptGeneration(audioPath, 'script.txt');
     await Future<void>.delayed(Duration.zero);
     service.cancelGeneration();
     engine.scriptResult.completeError(const SubtitleTaskCancelled());
     await _waitForGeneration(service);
     expect(service.generationJob?.status, SubtitleGenerationStatus.cancelled);
-    expect(service.getCustomSubtitlePath('audio.mp3'), isNull);
-    expect(service.trackSync('audio.mp3')?.sourcePath, 'old.srt');
+    expect(await File(p.setExtension(audioPath, '.lrc')).exists(), isFalse);
+    expect(service.trackSync(audioPath)?.sourcePath, 'old.srt');
   });
 
   testWidgets('dialog updates live and background action leaves task running', (
@@ -349,7 +355,7 @@ void main() {
       subtitlesDirectoryResolver: () async => subtitleDir,
     );
     final language = AppLanguageProvider();
-    service.startScriptGeneration('audio.mp3', 'script.txt');
+    service.startScriptGeneration(audioPath, 'script.txt');
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
@@ -451,7 +457,7 @@ void main() {
       subtitlesDirectoryResolver: () async => subtitleDir,
     );
     final language = AppLanguageProvider();
-    service.startTranslationGeneration('audio.mp3', 'en');
+    service.startTranslationGeneration(audioPath, 'en');
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
@@ -491,7 +497,7 @@ void main() {
           SubtitleTrack(sourcePath: 'source.srt', cues: const [_japaneseCue]),
       subtitlesDirectoryResolver: () async => subtitleDir,
     );
-    service.startTranslationGeneration('audio.mp3', 'zh');
+    service.startTranslationGeneration(audioPath, 'zh');
     await tester.pumpWidget(
       ProviderScope(
         overrides: [

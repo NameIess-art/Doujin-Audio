@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/services.dart';
+import 'package:path/path.dart' as path;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
@@ -180,7 +181,7 @@ void main() {
     },
   );
 
-  test('importSubtitle copies the file and updates the active track', () async {
+  test('importSubtitle moves and renames the file beside the audio', () async {
     const channel = MethodChannel('plugins.flutter.io/path_provider');
     final supportDir = await Directory.systemTemp.createTemp('sub_support_');
     final tempDir = await Directory.systemTemp.createTemp('sub_temp_');
@@ -202,7 +203,8 @@ void main() {
     final externalSub = File('${tempDir.path}/external.lrc');
     await externalSub.writeAsString('[00:01.00]external text');
 
-    const audioPath = '/music/song.mp3';
+    final audioPath = '${supportDir.path}/song.mp3';
+    await File(audioPath).writeAsBytes([]);
     var notifyCount = 0;
     final service = PlaybackSubtitleService(trackResolver: (_) => null);
     service.addListener(() => notifyCount++);
@@ -213,7 +215,6 @@ void main() {
     );
     expect(importedTrack, isNotNull);
     expect(notifyCount, 1);
-    expect(service.getCustomSubtitlePath(audioPath), isNotNull);
 
     final loaded = service.trackSync(audioPath);
     expect(loaded, isNotNull);
@@ -222,13 +223,20 @@ void main() {
       'external text',
     );
 
-    final customPath = service.getCustomSubtitlePath(audioPath)!;
+    final customPath = importedTrack!.sourcePath;
     expect(await File(customPath).readAsString(), contains('external text'));
-    expect(importedTrack!.sourcePath, customPath);
+    expect(importedTrack.sourcePath, customPath);
     expect(importedTrack.sourcePath, isNot(externalSub.path));
+    expect(path.basename(customPath), 'song.lrc');
+    expect(await externalSub.exists(), isFalse);
+    final restarted = PlaybackSubtitleService(trackResolver: (_) => null);
+    expect(
+      (await restarted.load(audioPath))?.cues.single.text,
+      'external text',
+    );
   });
 
-  test('SAF subtitles are materialized before being loaded', () async {
+  test('SAF subtitles retain their original document URI', () async {
     final directory = await Directory.systemTemp.createTemp('saf_subtitles_');
     addTearDown(() => directory.delete(recursive: true));
     final service = PlaybackSubtitleService(
@@ -238,8 +246,8 @@ void main() {
     );
     final loaded = await service.load('content://media/audio/1');
     expect(loaded?.cues.single.text, 'ローカル字幕');
-    expect(loaded?.sourcePath, startsWith(directory.path));
-    expect(await File(loaded!.sourcePath).exists(), isTrue);
+    expect(loaded?.sourcePath, 'content://media/subtitle/1');
+    expect(await directory.list().isEmpty, isTrue);
   });
 
   test(
@@ -367,62 +375,57 @@ void main() {
     },
   );
 
-  test(
-    'editing a subtitle preserves the source and updates playback',
-    () async {
-      final directory = await Directory.systemTemp.createTemp(
-        'edited_subtitle_',
-      );
-      addTearDown(() => directory.delete(recursive: true));
-      final original = File('${directory.path}/original.srt');
-      await original.writeAsString(
-        '1\n00:00:01,000 --> 00:00:02,000\nOriginal\n',
-      );
-      final service = PlaybackSubtitleService(
-        trackResolver: (_) => null,
-        subtitleLoader: (_, _) async => SubtitleTrack(
-          sourcePath: original.path,
-          cues: const [
-            SubtitleCue(
-              start: Duration(seconds: 1),
-              end: Duration(seconds: 2),
-              text: 'Original',
-            ),
-          ],
-        ),
-        subtitlesDirectoryResolver: () async => directory,
-      );
-      const audioPath = '/music/original.mp3';
-      await service.load(audioPath);
-      await expectLater(
-        service.saveEditedSubtitle(audioPath, [
-          const SubtitleCue(
-            start: Duration(seconds: 2),
-            end: Duration(seconds: 1),
-            text: 'Invalid',
+  test('editing a subtitle writes the source and updates playback', () async {
+    final directory = await Directory.systemTemp.createTemp('edited_subtitle_');
+    addTearDown(() => directory.delete(recursive: true));
+    final original = File('${directory.path}/original.srt');
+    await original.writeAsString(
+      '1\n00:00:01,000 --> 00:00:02,000\nOriginal\n',
+    );
+    final service = PlaybackSubtitleService(
+      trackResolver: (_) => null,
+      subtitleLoader: (_, _) async => SubtitleTrack(
+        sourcePath: original.path,
+        cues: const [
+          SubtitleCue(
+            start: Duration(seconds: 1),
+            end: Duration(seconds: 2),
+            text: 'Original',
           ),
-        ]),
-        throwsArgumentError,
-      );
-      final edited = await service.saveEditedSubtitle(audioPath, [
+        ],
+      ),
+      subtitlesDirectoryResolver: () async => directory,
+    );
+    const audioPath = '/music/original.mp3';
+    await service.load(audioPath);
+    await expectLater(
+      service.saveEditedSubtitle(audioPath, [
         const SubtitleCue(
-          start: Duration(milliseconds: 1500),
-          end: Duration(milliseconds: 2800),
-          text: 'Edited\nTranslated',
+          start: Duration(seconds: 2),
+          end: Duration(seconds: 1),
+          text: 'Invalid',
         ),
-      ]);
-      expect(edited.sourcePath, isNot(original.path));
-      expect(await original.readAsString(), contains('Original'));
-      expect(
-        await File(edited.sourcePath).readAsString(),
-        contains('Edited\nTranslated'),
-      );
-      expect(
-        service.textAt(audioPath, const Duration(seconds: 2)),
-        'Edited\nTranslated',
-      );
-    },
-  );
+      ]),
+      throwsArgumentError,
+    );
+    final edited = await service.saveEditedSubtitle(audioPath, [
+      const SubtitleCue(
+        start: Duration(milliseconds: 1500),
+        end: Duration(milliseconds: 2800),
+        text: 'Edited\nTranslated',
+      ),
+    ]);
+    expect(edited.sourcePath, original.path);
+    expect(await original.readAsString(), isNot(contains('Original')));
+    expect(
+      await File(edited.sourcePath).readAsString(),
+      contains('Edited\nTranslated'),
+    );
+    expect(
+      service.textAt(audioPath, const Duration(seconds: 2)),
+      'Edited\nTranslated',
+    );
+  });
 
   test('ASMR.ONE subtitles cannot be edited or saved', () async {
     final directory = await Directory.systemTemp.createTemp('asmr_edit_');

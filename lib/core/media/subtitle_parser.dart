@@ -1,10 +1,8 @@
-import 'dart:convert';
 import 'dart:isolate';
 import 'dart:io';
 
 import 'package:path/path.dart' as path;
 
-import '../logging/app_log_service.dart';
 import '../immutable_collections.dart';
 
 class SubtitleCue {
@@ -77,13 +75,14 @@ class SubtitleTrack {
   }
 }
 
-const Set<String> _supportedSubtitleExtensions = {
+const Set<String> supportedSubtitleExtensions = {
   '.vtt',
   '.webvtt',
   '.lrc',
   '.srt',
   '.ass',
   '.ssa',
+  '.txt',
 };
 
 const Set<String> _subtitleMatchMediaExtensions = {
@@ -103,33 +102,6 @@ const Set<String> _subtitleMatchMediaExtensions = {
   '.avi',
   '.3gp',
 };
-
-Future<SubtitleTrack?> loadSubtitleTrackForAudio(String audioPath) async {
-  if (audioPath.startsWith('content://')) return null;
-
-  final subtitleFile = await _findSubtitleFile(audioPath);
-  if (subtitleFile == null) return null;
-
-  try {
-    final bytes = await subtitleFile.readAsBytes();
-    final raw = utf8.decode(bytes, allowMalformed: true);
-    final extension = path.extension(subtitleFile.path).toLowerCase();
-    return await Isolate.run(
-      () => _parseSubtitleTrack(
-        sourcePath: subtitleFile.path,
-        raw: raw,
-        extension: extension,
-      ),
-    );
-  } catch (error, stackTrace) {
-    AppLogService.warning(
-      'subtitle_file_load_failed',
-      error: error,
-      stackTrace: stackTrace,
-    );
-    return null;
-  }
-}
 
 Future<SubtitleTrack?> parseSubtitleTrackFromRaw({
   required String sourcePath,
@@ -184,19 +156,18 @@ List<SubtitleCue> _parseSubtitleTrackByContent(String raw) {
   return const <SubtitleCue>[];
 }
 
-Future<File?> _findSubtitleFile(String audioPath) async {
+Future<File?> findSubtitleFileForAudio(String audioPath) async {
   final audioFile = File(audioPath);
   if (!await audioFile.exists()) return null;
-
   final directory = audioFile.parent;
-  final stem = _subtitleMatchStem(audioPath);
+  final stem = subtitleMatchStem(audioPath);
   final candidates = <File>[];
 
   try {
     await for (final entity in directory.list(followLinks: false)) {
       if (entity is! File) continue;
       final extension = path.extension(entity.path).toLowerCase();
-      if (!_supportedSubtitleExtensions.contains(extension)) continue;
+      if (!supportedSubtitleExtensions.contains(extension)) continue;
       candidates.add(entity);
     }
   } catch (_) {
@@ -206,7 +177,7 @@ Future<File?> _findSubtitleFile(String audioPath) async {
   if (candidates.isEmpty) return null;
 
   int rank(File file) {
-    final fileStem = _subtitleMatchStem(file.path);
+    final fileStem = subtitleMatchStem(file.path);
     if (fileStem == stem) return 0;
     if (fileStem.startsWith('$stem.')) return 1;
     if (fileStem.startsWith('${stem}_')) return 2;
@@ -216,27 +187,18 @@ Future<File?> _findSubtitleFile(String audioPath) async {
 
   candidates.sort((a, b) {
     final rankResult = rank(a).compareTo(rank(b));
-    if (rankResult != 0) return rankResult;
-    return a.path.toLowerCase().compareTo(b.path.toLowerCase());
+    return rankResult != 0
+        ? rankResult
+        : a.path.toLowerCase().compareTo(b.path.toLowerCase());
   });
-
-  final best = candidates.first;
-  return rank(best) >= 10 ? null : best;
+  return rank(candidates.first) < 10 ? candidates.first : null;
 }
 
-String _normalizedSubtitleExtension(String extension) =>
-    extension.startsWith('.')
-    ? extension.toLowerCase()
-    : '.${extension.toLowerCase()}';
-
-String _subtitleMatchStem(String value) {
+String subtitleMatchStem(String value) {
   var current = path.basename(value.toLowerCase());
   while (current.isNotEmpty) {
     final extension = path.extension(current);
-    if (extension.isEmpty) {
-      break;
-    }
-    if (!_supportedSubtitleExtensions.contains(extension) &&
+    if (!supportedSubtitleExtensions.contains(extension) &&
         !_subtitleMatchMediaExtensions.contains(extension)) {
       break;
     }
@@ -244,6 +206,11 @@ String _subtitleMatchStem(String value) {
   }
   return current;
 }
+
+String _normalizedSubtitleExtension(String extension) =>
+    extension.startsWith('.')
+    ? extension.toLowerCase()
+    : '.${extension.toLowerCase()}';
 
 List<SubtitleCue> _parseLrc(String raw) {
   final timestampPattern = RegExp(r'\[(\d+):(\d{1,2})(?:[.:](\d{1,3}))?\]');

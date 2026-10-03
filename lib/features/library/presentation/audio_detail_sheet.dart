@@ -101,7 +101,7 @@ Future<void> showAudioDetailSheet(
   final route = buildAppPageRoute<void>(
     context: context,
     settings: const RouteSettings(name: workDetailRouteName),
-    wholePageTransition: true,
+    workDetailTransition: true,
     child: WorkDetailPage.forLocal(
       target: target,
       initialDetail: initialDetail,
@@ -109,7 +109,9 @@ Future<void> showAudioDetailSheet(
     ),
   );
   await WidgetsBinding.instance.endOfFrame;
-  if (!context.mounted || !navigator.mounted || origin?.isCurrent == false) return;
+  if (!context.mounted || !navigator.mounted || origin?.isCurrent == false) {
+    return;
+  }
   if (replace && navigator.canPop()) {
     await navigator.pushReplacement<void, void>(route);
     return;
@@ -564,7 +566,6 @@ class _AudioDetailSheetState extends ConsumerState<AudioDetailSheet> {
     }
 
     final content = SizedBox(
-      key: ValueKey<bool>(_loading),
       width: double.infinity,
       child: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(24, 0, 24, 32),
@@ -634,111 +635,111 @@ class _AudioDetailSheetState extends ConsumerState<AudioDetailSheet> {
               ).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
             ),
             const SizedBox(height: 16),
-            if (_loading)
-              const OperationSkeletonList(
+            PlaceholderContentTransition(
+              fit: StackFit.loose,
+              showPlaceholder: _loading,
+              placeholder: const OperationSkeletonList(
                 itemCount: 5,
                 showHeader: false,
                 padding: EdgeInsets.symmetric(vertical: 6),
-              )
-            else if (_loadError != null)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 24),
-                child: OperationStatusBanner(
-                  label: i18n.tr('audio_detail_load_failed'),
-                  error: _loadError,
-                  onRetry: () => unawaited(_load()),
-                ),
-              )
-            else if (detail != null) ...[
-              if (_target.isLibraryRootFolder) ...[
-                FolderCoverSelector(
-                  key: ValueKey('${_target.targetPath}:$coverGeneration'),
-                  folderPath: _target.targetPath,
-                  initialCoverPath: libraryFacade.resolvedCoverPathForFolder(
-                    _target.targetPath,
-                  ),
-                  onCoverSelected: (coverPath) {
-                    setState(() {
-                      _detail = _detail?.copyWith(
-                        cardCoverPath: coverPath,
-                        cardCoverSelected: true,
-                      );
-                    });
-                  },
-                ),
-                const SizedBox(height: 12),
-              ] else ...[
-                _SingleFileCoverPreview(filePath: _target.targetPath),
-                const SizedBox(height: 12),
-              ],
-              const SizedBox(height: 12),
-              Text(
-                i18n.tr('asmr_detail_basic_info'),
-                style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                  fontWeight: FontWeight.w800,
-                  color: cs.primary,
-                ),
               ),
-              const SizedBox(height: 8),
-              ...[
-                _AudioDetailField.targetName,
-                _AudioDetailField.rjCode,
-                _AudioDetailField.workTitle,
-                _AudioDetailField.circleName,
-                _AudioDetailField.voiceActors,
-                _AudioDetailField.tags,
-              ].map(
-                (field) => _AudioDetailRow(
-                  label: field.label(i18n, detail),
-                  values: field.readValues(detail),
-                  labelStyle: labelStyle,
-                  busy: _savingField == field,
-                  onTap: () => _editField(field),
-                  isCapsule: true,
-                  onCopy: (val) => _copyText(context, val),
-                  onDeleteValue: field.isMulti
-                      ? (val) => _removeValueFromField(field, val)
-                      : null,
-                ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (_loadError != null)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 24),
+                      child: OperationStatusBanner(
+                        label: i18n.tr('audio_detail_load_failed'),
+                        error: _loadError,
+                        onRetry: () => unawaited(_load()),
+                      ),
+                    )
+                  else if (detail != null) ...[
+                    if (_target.isLibraryRootFolder) ...[
+                      FolderCoverSelector(
+                        key: ValueKey('${_target.targetPath}:$coverGeneration'),
+                        folderPath: _target.targetPath,
+                        initialCoverPath: libraryFacade
+                            .resolvedCoverPathForFolder(_target.targetPath),
+                        onCoverSelected: (coverPath) {
+                          setState(() {
+                            _detail = _detail?.copyWith(
+                              cardCoverPath: coverPath,
+                              cardCoverSelected: true,
+                            );
+                          });
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                    ] else ...[
+                      _SingleFileCoverPreview(filePath: _target.targetPath),
+                      const SizedBox(height: 12),
+                    ],
+                    const SizedBox(height: 12),
+                    Text(
+                      i18n.tr('asmr_detail_basic_info'),
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w800,
+                        color: cs.primary,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    ...[
+                      _AudioDetailField.targetName,
+                      _AudioDetailField.rjCode,
+                      _AudioDetailField.workTitle,
+                      _AudioDetailField.circleName,
+                      _AudioDetailField.voiceActors,
+                      _AudioDetailField.tags,
+                    ].map(
+                      (field) => _AudioDetailRow(
+                        label: field.label(i18n, detail),
+                        values: field.readValues(detail),
+                        labelStyle: labelStyle,
+                        busy: _savingField == field,
+                        onTap: () => _editField(field),
+                        isCapsule: true,
+                        onCopy: (val) => _copyText(context, val),
+                        onDeleteValue: field.isMulti
+                            ? (val) => _removeValueFromField(field, val)
+                            : null,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      i18n.tr('asmr_detail_other'),
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w800,
+                        color: cs.primary,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    ...[_AudioDetailField.duration].map(
+                      (field) => _AudioDetailRow(
+                        label: field.label(i18n, detail),
+                        values: field.readValues(
+                          detail,
+                          fallbackDuration: duration,
+                        ),
+                        labelStyle: labelStyle,
+                        busy:
+                            _savingField == field ||
+                            (field == _AudioDetailField.duration &&
+                                _calculatingDuration),
+                        onTap: () => _editField(field),
+                        onCopy: (val) => _copyText(context, val),
+                      ),
+                    ),
+                  ],
+                ],
               ),
-              const SizedBox(height: 16),
-              Text(
-                i18n.tr('asmr_detail_other'),
-                style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                  fontWeight: FontWeight.w800,
-                  color: cs.primary,
-                ),
-              ),
-              const SizedBox(height: 8),
-              ...[
-                _AudioDetailField.duration,
-              ].map(
-                (field) => _AudioDetailRow(
-                  label: field.label(i18n, detail),
-                  values: field.readValues(detail, fallbackDuration: duration),
-                  labelStyle: labelStyle,
-                  busy:
-                      _savingField == field ||
-                      (field == _AudioDetailField.duration &&
-                          _calculatingDuration),
-                  onTap: () => _editField(field),
-                  onCopy: (val) => _copyText(context, val),
-                ),
-              ),
-            ],
+            ),
           ],
         ),
       ),
     );
-    return AnimatedSwitcher(
-      duration: kPlaceholderContentTransitionDuration,
-      reverseDuration: kPlaceholderContentTransitionDuration,
-      transitionBuilder: (child, animation) => buildAppFadeTransition(
-        context: context,
-        animation: animation,
-        child: child,
-      ),
-      child: content,
-    );
+    return content;
   }
 }

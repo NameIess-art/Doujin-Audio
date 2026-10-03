@@ -2,6 +2,8 @@ package com.doujin.audio.channel
 
 import com.doujin.audio.scanner.*
 import com.doujin.audio.storage.*
+import com.doujin.audio.subtitle.subtitleDestinationName
+import com.doujin.audio.subtitle.SubtitleExistsException
 
 import android.os.Handler
 import android.os.Looper
@@ -15,6 +17,27 @@ import java.util.concurrent.atomic.AtomicInteger
 internal sealed interface FileCacheTaskResult<out T> {
     data class Success<T>(val value: T) : FileCacheTaskResult<T>
     data class Failure(val exception: Exception) : FileCacheTaskResult<Nothing>
+}
+
+internal fun trackSubtitleWriteAction(
+    arguments: ChannelArgumentReader,
+    writePath: (String, ByteArray) -> Boolean,
+    writeTrack: (String, String?, String, ByteArray, String?, Boolean) -> String
+): () -> Any {
+    val bytes = arguments.requiredByteArray("bytes")
+    if (arguments.optionalString("path") != null) {
+        val path = arguments.requiredString("path")
+        return { writePath(path, bytes) }
+    }
+    val trackPath = arguments.requiredString("trackPath")
+    val groupKey = arguments.optionalString("groupKey")
+    val extension = arguments.requiredString("extension")
+    subtitleDestinationName("track.mp3", extension)
+    val sourcePath = arguments.optionalString("sourcePath")?.let {
+        arguments.requiredString("sourcePath")
+    }
+    val overwrite = arguments.optionalBoolean("overwrite", false)
+    return { writeTrack(trackPath, groupKey, extension, bytes, sourcePath, overwrite) }
 }
 
 internal class FileCacheTaskExecutor {
@@ -326,12 +349,12 @@ internal class FileCacheMethodHandler(
                 }
             }
             FileCacheMethods.WRITE_TRACK_SUBTITLE -> {
-                val folder = arguments.requiredString("folder")
-                val name = arguments.requiredString("name")
-                val bytes = arguments.requiredByteArray("bytes")
-                runAsync(result, errorCode = { "subtitle_write_failed" }) {
-                    operations.writeTrackSubtitle(folder, name, bytes)
-                }
+                val write = trackSubtitleWriteAction(
+                    arguments, operations::writeTrackSubtitle, operations::writeTrackSubtitle
+                )
+                runAsync(result, errorCode = {
+                    if (it is SubtitleExistsException) "subtitle_exists" else "subtitle_write_failed"
+                }, block = write)
             }
             FileCacheMethods.PICK_AUDIO_SOURCE -> launchPickAudioSource(result)
             FileCacheMethods.PICK_AUDIO_FILES -> launchPickAudioFiles(result)

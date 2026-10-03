@@ -386,30 +386,56 @@ void main() {
   );
 
   test(
-    'writeTrackSubtitle sends the local LRC to the selected SAF folder',
+    'saveTrackSubtitle sends the audio identity and original source for moving',
     () async {
       messenger.setMockMethodCallHandler(channel, (call) async {
         calls.add(call);
-        return success(true);
+        return success('content://folder/voice.lrc');
       });
 
       final bytes = Uint8List.fromList(<int>[91, 48, 48, 58, 48, 49, 93]);
       expect(
-        await gateway.writeTrackSubtitle(
-          folder: 'content://folder',
-          name: 'voice.lrc',
+        await gateway.saveTrackSubtitle(
+          trackPath: 'content://folder/voice.mp3',
+          groupKey: 'content://folder',
+          extension: '.lrc',
+          sourcePath: 'content://selected/subtitle',
+          overwrite: true,
           bytes: bytes,
         ),
-        isTrue,
+        'content://folder/voice.lrc',
       );
       expect(calls.single.method, FileCacheMethod.writeTrackSubtitle);
       expect(calls.single.arguments, <String, Object?>{
-        'folder': 'content://folder',
-        'name': 'voice.lrc',
+        'trackPath': 'content://folder/voice.mp3',
+        'groupKey': 'content://folder',
+        'extension': '.lrc',
+        'sourcePath': 'content://selected/subtitle',
+        'overwrite': true,
         'bytes': bytes,
       });
     },
   );
+
+  test('writeTrackSubtitle targets the original subtitle URI', () async {
+    messenger.setMockMethodCallHandler(channel, (call) async {
+      calls.add(call);
+      return success(true);
+    });
+    final bytes = Uint8List.fromList([65]);
+    expect(
+      await gateway.writeTrackSubtitle(
+        path: 'content://folder/subtitle.srt',
+        bytes: bytes,
+      ),
+      isTrue,
+    );
+    expect(calls.single.method, FileCacheMethod.writeTrackSubtitle);
+    expect(calls.single.arguments, {
+      'path': 'content://folder/subtitle.srt',
+      'bytes': bytes,
+    });
+  });
 
   test(
     'malformed and failed optional envelopes keep technical errors out of values',

@@ -85,6 +85,10 @@ class _RoutedPlaybackDockHostState
   }
 
   void _syncRoutedPlaybackDock() {
+    if (_routeObserver.workDetailOpenedFromPlayback) {
+      _removeRoutedPlaybackDock();
+      return;
+    }
     if (_routeObserver.suppressDockForSessionDetail) return;
     final workDetailRoute = _routeObserver.lastRouteNamed(workDetailRouteName);
     if (workDetailRoute == null) {
@@ -219,7 +223,10 @@ class _RoutedPlaybackDockHostState
         final supportsRoutedDock =
             mediaQuery.size.width >= 300 && mediaQuery.size.height >= 300;
         final reserveWorkDetailDockInset =
-            isWorkDetailRoute && supportsRoutedDock && hasOverlaySessions;
+            isWorkDetailRoute &&
+            !_routeObserver.workDetailOpenedFromPlayback &&
+            supportsRoutedDock &&
+            hasOverlaySessions;
         final routeDockInset = reserveWorkDetailDockInset
             ? kActiveSessionCarouselDockHeight +
                   kMobileDockBottomMargin +
@@ -263,6 +270,17 @@ class _RootPageRouteObserver extends NavigatorObserver {
   List<PageRoute<dynamic>> get routes => List.unmodifiable(_routes);
   bool get suppressDockForSessionDetail => _suppressDockForSessionDetail;
   bool get isWorkDetailDeparting => _departingWorkDetailRoutes.isNotEmpty;
+
+  bool get workDetailOpenedFromPlayback {
+    final detail =
+        _departingWorkDetailRoutes.lastOrNull ??
+        lastRouteNamed(workDetailRouteName);
+    if (detail == null) return false;
+    final index = _routes.indexOf(detail);
+    // A popped detail remains in the overlay until its exit finishes.
+    final origins = index < 0 ? _routes : _routes.take(index);
+    return origins.any((route) => route is SessionDetailRoute);
+  }
 
   PageRoute<dynamic>? lastRouteNamed(String name) {
     for (var index = _routes.length - 1; index >= 0; index--) {
@@ -634,14 +652,16 @@ class _RoutedPlaybackDockState extends ConsumerState<_RoutedPlaybackDock> {
                     borderRadius: BorderRadius.circular(
                       kActiveSessionCarouselDockHeight / 2,
                     ),
-                    child: OverflowBox(
-                      alignment: Alignment.centerLeft,
-                      minWidth: expandedRect.width,
-                      maxWidth: expandedRect.width,
-                      minHeight: kActiveSessionCarouselDockHeight,
-                      maxHeight: kActiveSessionCarouselDockHeight,
-                      child: RepaintBoundary(child: dockContent()),
-                    ),
+                    child: !widget.geometry.mainDockCollapsed
+                        ? RepaintBoundary(child: dockContent())
+                        : OverflowBox(
+                            alignment: Alignment.centerLeft,
+                            minWidth: expandedRect.width,
+                            maxWidth: expandedRect.width,
+                            minHeight: kActiveSessionCarouselDockHeight,
+                            maxHeight: kActiveSessionCarouselDockHeight,
+                            child: RepaintBoundary(child: dockContent()),
+                          ),
                   ),
                 ),
               ),
@@ -668,6 +688,9 @@ class _RoutedPlaybackDockState extends ConsumerState<_RoutedPlaybackDock> {
                 child: LayoutBuilder(
                   builder: (context, constraints) {
                     _reportDockBounds();
+                    final isExpandedDock =
+                        !widget.geometry.mainDockCollapsed &&
+                        _transitionWidth(constraints.maxWidth) >= 160;
                     return Align(
                       alignment: Alignment.centerRight,
                       child: SizedBox(
@@ -689,14 +712,18 @@ class _RoutedPlaybackDockState extends ConsumerState<_RoutedPlaybackDock> {
                             borderRadius: BorderRadius.circular(
                               kActiveSessionCarouselDockHeight / 2,
                             ),
-                            child: OverflowBox(
-                              alignment: Alignment.centerLeft,
-                              minWidth: constraints.maxWidth,
-                              maxWidth: constraints.maxWidth,
-                              minHeight: kActiveSessionCarouselDockHeight,
-                              maxHeight: kActiveSessionCarouselDockHeight,
-                              child: RepaintBoundary(child: dockContent()),
-                            ),
+                            child: isExpandedDock
+                                ? RepaintBoundary(child: dockContent())
+                                : OverflowBox(
+                                    alignment: Alignment.centerLeft,
+                                    minWidth: constraints.maxWidth,
+                                    maxWidth: constraints.maxWidth,
+                                    minHeight: kActiveSessionCarouselDockHeight,
+                                    maxHeight: kActiveSessionCarouselDockHeight,
+                                    child: RepaintBoundary(
+                                      child: dockContent(),
+                                    ),
+                                  ),
                           ),
                         ),
                       ),

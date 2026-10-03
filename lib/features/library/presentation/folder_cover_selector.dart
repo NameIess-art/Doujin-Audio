@@ -244,22 +244,6 @@ class _FolderCoverSelectorState extends ConsumerState<FolderCoverSelector> {
     }
   }
 
-  Widget _buildCoverReveal(Widget child) {
-    return AnimatedSwitcher(
-      duration: const Duration(milliseconds: 650),
-      reverseDuration: kPlaceholderContentTransitionDuration,
-      switchInCurve: Curves.easeOutCubic,
-      switchOutCurve: Curves.easeInCubic,
-      transitionBuilder: (child, animation) => buildAppScaleFadeTransition(
-        context: context,
-        animation: animation,
-        child: child,
-        beginScale: 0.96,
-      ),
-      child: child,
-    );
-  }
-
   Widget _buildCompactNavigation(AppLanguageProvider i18n) {
     return DecoratedBox(
       key: const ValueKey<String>('audio_detail_cover_navigation_capsule'),
@@ -367,30 +351,28 @@ class _FolderCoverSelectorState extends ConsumerState<FolderCoverSelector> {
     ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700);
 
     if (_loading) {
-      return _buildCoverReveal(
-        Column(
-          key: const ValueKey('audio_detail_cover_loading'),
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (widget.showLabel) ...[
-              Text(i18n.tr('audio_detail_cover_image'), style: labelStyle),
-              const SizedBox(height: 10),
-            ],
-            Card(
-              key: const ValueKey('audio_detail_cover_placeholder'),
-              margin: EdgeInsets.zero,
-              color: cs.surfaceContainer,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-                side: BorderSide(color: cs.outlineVariant),
-              ),
-              child: const AspectRatio(
-                aspectRatio: kStandardCoverAspectRatio,
-                child: SizedBox.expand(),
-              ),
-            ),
+      return Column(
+        key: const ValueKey('audio_detail_cover_loading'),
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (widget.showLabel) ...[
+            Text(i18n.tr('audio_detail_cover_image'), style: labelStyle),
+            const SizedBox(height: 10),
           ],
-        ),
+          Card(
+            key: const ValueKey('audio_detail_cover_placeholder'),
+            margin: EdgeInsets.zero,
+            color: cs.surfaceContainer,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: BorderSide(color: cs.outlineVariant),
+            ),
+            child: const AspectRatio(
+              aspectRatio: kStandardCoverAspectRatio,
+              child: SizedBox.expand(),
+            ),
+          ),
+        ],
       );
     }
     if (_images.isEmpty || _pageController == null) {
@@ -563,7 +545,7 @@ class _FolderCoverSelectorState extends ConsumerState<FolderCoverSelector> {
         ],
       ],
     );
-    return _buildCoverReveal(content);
+    return content;
   }
 }
 

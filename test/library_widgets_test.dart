@@ -7,6 +7,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'support/runtime_test_models.dart';
 import 'package:doujin_audio/features/library/presentation/library_tab.dart';
+import 'package:doujin_audio/features/library/presentation/library_tree_list.dart';
+import 'package:doujin_audio/app/application/browse_page_state_store.dart';
+import 'package:doujin_audio/app/state/app_runtime_providers.dart';
 import 'package:doujin_audio/features/library/presentation/library_tab_edit.dart';
 import 'package:doujin_audio/features/library/presentation/work_detail_page.dart';
 import 'package:doujin_audio/features/player/presentation/playlist_tab.dart';
@@ -23,6 +26,8 @@ import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/platform/platform_channels.dart';
 import 'package:doujin_audio/core/media/path_matcher.dart';
 import 'package:doujin_audio/features/library/application/library_entry_editor_service.dart';
+import 'package:doujin_audio/features/library/application/cover_artwork_cache_service.dart';
+import 'package:doujin_audio/features/library/application/library_service.dart';
 import 'package:doujin_audio/features/library/application/library_organizer.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_download_page.dart';
@@ -55,6 +60,18 @@ class _ReadCountingTrackNode extends TrackNode {
   }
 }
 
+class _NoCoverArtworkCacheService extends CoverArtworkCacheService {
+  _NoCoverArtworkCacheService() : super(libraryService: LibraryService());
+
+  @override
+  Future<String?> futureForFolder(String folderPath) =>
+      SynchronousFuture<String?>(null);
+
+  @override
+  Future<String?> futureForTrack(MusicTrack? track, {String? trackPath}) =>
+      SynchronousFuture<String?>(null);
+}
+
 Set<String> _selectedSortControls(WidgetTester tester) {
   final controls =
       tester.widget(
@@ -80,6 +97,114 @@ void main() {
   tearDownAll(() async {
     await AppRuntimeTestFixture.disposeSharedDatabase(testDatabase);
   });
+
+  testWidgets(
+    'loaded folder rows share a 300ms fade and do not replay when scrolled',
+    (tester) async {
+      final fixture = AppRuntimeWidgetTestFixture(
+        coverArtworkCacheService: _NoCoverArtworkCacheService(),
+      );
+      addTearDown(fixture.dispose);
+      final scroll = ScrollController();
+      addTearDown(scroll.dispose);
+      const rootPath = '/library/loading-batch';
+      final root = FolderNode('Loading batch', rootPath);
+      final loaded = FolderNode('Loading batch', rootPath);
+      loaded.addChildren(List.generate(40, (index) => TrackNode(testMusicTrack(
+        name: 'Batch track $index',
+        path: '$rootPath/$index.mp3',
+        groupKey: rootPath,
+        groupTitle: 'Loading batch',
+      ))));
+      var result = Completer<FolderNode?>();
+      var listKey = const ValueKey('visible-folder-load');
+      final browseState = BrowsePageStateStore()
+        ..update('library', {'expanded': [PathMatcher.normalize(rootPath)]});
+      var loads = 0;
+      Widget buildList() => fixture.build(
+        LibraryTreeList(
+          key: listKey,
+          tree: [root],
+          structureRevision: 1,
+          selectedPaths: const {},
+          isSelectionMode: false,
+          scrollController: scroll,
+          i18n: fixture.languageProvider,
+          topPadding: 0,
+          bottomPadding: 0,
+          cacheExtent: 0,
+          physics: null,
+          loadFolder: (_) { loads++; return result.future; },
+          currentStructureRevision: () => 1,
+          onLongPress: (_) {},
+          onToggleSelect: (_) {},
+        ),
+        overrides: [browsePageStateStoreProvider.overrideWithValue(browseState)],
+      );
+      await tester.pumpWidget(buildList());
+      await tester.pump();
+      expect(loads, 1);
+      expect(find.text('Batch track 0'), findsNothing);
+      result.complete(loaded);
+      await tester.pump();
+      await tester.pump();
+      Finder rowFade() => find.descendant(
+        of: find.byType(LibraryTreeList, skipOffstage: false),
+        matching: find.ancestor(
+          of: find.text('Batch track 0', skipOffstage: false),
+          matching: find.byType(FadeTransition, skipOffstage: false),
+        ),
+        skipOffstage: false,
+      );
+      expect(tester.widget<FadeTransition>(rowFade()).opacity.value, 0);
+      final rowElement = tester.element(find.text('Batch track 0'));
+      void expectCompletedFade(Finder finder) {
+        final opacity = tester.widget<FadeTransition>(finder).opacity;
+        expect(opacity.value, 1);
+        expect(opacity, isA<AlwaysStoppedAnimation<double>>());
+      }
+      await tester.pump(const Duration(milliseconds: 150));
+      expect(tester.widget<FadeTransition>(rowFade()).opacity.value,
+          closeTo(0.5, 0.05));
+      await tester.pump(const Duration(milliseconds: 151));
+      expectCompletedFade(rowFade());
+      expect(tester.element(find.text('Batch track 0')), same(rowElement));
+      scroll.jumpTo(scroll.position.maxScrollExtent);
+      await tester.pump();
+      scroll.jumpTo(0);
+      await tester.pump();
+      expect(find.text('Batch track 0'), findsOneWidget);
+      expectCompletedFade(rowFade());
+      await tester.pumpWidget(buildList());
+      expect(loads, 1);
+      expectCompletedFade(rowFade());
+
+      result = Completer<FolderNode?>();
+      listKey = const ValueKey('covered-folder-load');
+      await tester.pumpWidget(buildList());
+      await tester.pump();
+      expect(loads, 2);
+      final navigator = Navigator.of(tester.element(find.byType(LibraryTreeList)));
+      unawaited(navigator.push(MaterialPageRoute<void>(
+        builder: (_) => const Scaffold(body: Text('Covering page')),
+      )));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+      result.complete(loaded);
+      await tester.pump();
+      navigator.pop();
+      await tester.pump();
+      expectCompletedFade(rowFade());
+      await tester.pump(const Duration(milliseconds: 350));
+      expect(find.text('Batch track 0'), findsOneWidget);
+      expectCompletedFade(rowFade());
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
 
   testWidgets(
     'Windows scrollbar starts below the page header',
@@ -785,7 +910,7 @@ void main() {
     await pumpUntilFound(tester, find.byType(WorkDetailPage));
     await pumpUntilNotFound(
       tester,
-      find.byKey(const ValueKey('work_detail_loading_indicator')),
+      find.byKey(const ValueKey('work_detail_entries_skeleton')),
     );
     await tester.pumpAndSettle();
     final detail = tester.widget<LocalCoverImage>(
@@ -956,6 +1081,10 @@ void main() {
       await pumpUntilNotFound(tester, find.byType(LibraryLikeSkeletonCard));
       await tester.tap(find.byType(ListTile).first);
       await pumpUntilFound(tester, find.byType(WorkDetailPage));
+      await pumpUntilNotFound(
+        tester,
+        find.byKey(const ValueKey('work_detail_entries_skeleton')),
+      );
       await tester.pumpAndSettle();
       await pumpUntilFound(tester, find.text('Disc', findRichText: true));
       await tester.tap(find.text('Disc', findRichText: true));
@@ -2600,6 +2729,19 @@ void main() {
       );
       await tester.pump(const Duration(milliseconds: 100));
       expect(service.responses, hasLength(1));
+      final loadingRegion = find.byType(PlaceholderContentTransition);
+      final skeleton = find.byKey(
+        const ValueKey('library_edit_entries_skeleton'),
+      );
+      expect(skeleton, findsOneWidget);
+      final skeletonCard = find.descendant(
+        of: skeleton,
+        matching: find.byType(Card),
+      ).first;
+      expect(tester.getSize(skeletonCard).height, 86.0);
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+      expect(tester.widget<PlaceholderContentTransition>(loadingRegion)
+          .showPlaceholder, isTrue);
       coordinator.endInteraction(transition);
       await tester.pump(const Duration(milliseconds: 161));
       await tester.pump();
@@ -2618,6 +2760,28 @@ void main() {
       await tester.pump(const Duration(milliseconds: 161));
       await tester.pump();
       expect(fixture.runtimeGraph.library.trackByPath(track.path), isNull);
+      expect(tester.widget<PlaceholderContentTransition>(loadingRegion)
+          .showPlaceholder, isFalse);
+      final contentFade = find.descendant(
+        of: loadingRegion,
+        matching: find.byType(FadeTransition),
+      ).last;
+      final placeholderFade = find.ancestor(
+        of: skeleton,
+        matching: find.byType(FadeTransition),
+      ).first;
+      expect(tester.widget<FadeTransition>(placeholderFade).opacity.value, 1);
+      expect(tester.widget<FadeTransition>(contentFade).opacity.value, 0);
+      await tester.pump(const Duration(milliseconds: 150));
+      expect(skeleton, findsOneWidget);
+      expect(tester.widget<FadeTransition>(placeholderFade).opacity.value,
+          closeTo(0.5, 0.05));
+      expect(tester.widget<FadeTransition>(contentFade).opacity.value,
+          closeTo(0.5, 0.05));
+      await tester.pump(const Duration(milliseconds: 151));
+      expect(skeleton, findsNothing);
+      expect(tester.widget<FadeTransition>(contentFade).opacity.value, 1);
+      expect(find.byType(CircularProgressIndicator), findsNothing);
       expect(tester.takeException(), isNull);
     },
     variant: const TargetPlatformVariant({

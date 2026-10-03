@@ -39,6 +39,195 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'support/app_runtime_test_fixture.dart';
 
 void main() {
+  for (final reduceMotion in [false, true]) {
+    testWidgets(
+      'ASMR appended page fades once from its data commit, reduce motion $reduceMotion',
+      (tester) async {
+        final coordinator = UiInteractionCoordinator.instance;
+        coordinator.resetForTest();
+        addTearDown(coordinator.resetForTest);
+        SharedPreferences.setMockInitialValues(const <String, Object>{});
+        tester.view.physicalSize = const Size(600, 800);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        final fixture = AppRuntimeWidgetTestFixture();
+        addTearDown(fixture.dispose);
+        await fixture.languageProvider.setLanguage(AppLanguage.zh);
+        final activeTab = ValueNotifier(0);
+        addTearDown(activeTab.dispose);
+        final oldWork = _work(id: 1, title: 'Loaded work');
+        final controller = _LoadedTabAsmrController(createTestAsmrServices(), [
+          oldWork,
+        ]);
+        addTearDown(controller.dispose);
+        await tester.pumpWidget(
+          fixture.build(
+            MediaQuery(
+              data: MediaQueryData(disableAnimations: reduceMotion),
+              child: AsmrTab(activeTabIndexListenable: activeTab),
+            ),
+            overrides: [
+              asmrLibraryControllerProvider.overrideWithValue(controller),
+            ],
+          ),
+        );
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 400));
+        await tester.tap(find.text('收藏'));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 400));
+        await tester.pump(const Duration(milliseconds: 400));
+        await tester.pump(coordinator.idleDelay);
+        await tester.pump();
+        expect(coordinator.isInteracting, false);
+        controller.hasMore = true;
+        controller.updateFavorites([oldWork]);
+        await tester.pump();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
+        await tester.pump();
+
+        final footer = find.byKey(
+          const ValueKey<String>('asmr_load_more_footer'),
+        );
+        final footerState = tester.state(footer);
+        final oldCard = find.byKey(const ValueKey<String>('asmr-work-1'));
+        final oldCardElement = tester.element(oldCard);
+        final progress = find.byKey(
+          const ValueKey<String>('asmr_load_more_progress'),
+          skipOffstage: false,
+        );
+        double footerOpacity() => tester
+            .widget<FadeTransition>(
+              find
+                  .ancestor(
+                    of: progress,
+                    matching: find.byType(FadeTransition, skipOffstage: false),
+                  )
+                  .first,
+            )
+            .opacity
+            .value;
+        expect(progress, findsOneWidget);
+        expect(footerOpacity(), 1);
+        final finalWork = _work(id: 0, title: 'Final pagination work');
+        controller.hasMore = false;
+        controller.updateFavorites([oldWork, finalWork]);
+        await tester.pump();
+        await tester.pump();
+        expect(tester.state(footer), same(footerState));
+        expect(tester.element(oldCard), same(oldCardElement));
+        if (reduceMotion) {
+          expect(progress, findsNothing);
+        } else {
+          expect(footerOpacity(), 1);
+          await tester.pump(const Duration(milliseconds: 150));
+          expect(
+            footerOpacity(),
+            closeTo(Curves.easeInOutCubic.transform(0.5), 0.01),
+          );
+          await tester.pump(const Duration(milliseconds: 150));
+          expect(footerOpacity(), closeTo(0, 0.000001));
+          await tester.pump(const Duration(milliseconds: 1));
+          await tester.pump();
+          expect(progress, findsNothing);
+        }
+        controller.hasMore = true;
+        controller.updateFavorites([oldWork, finalWork]);
+        await tester.pump();
+        await tester.pump();
+
+        double opacityFor(int id) => tester
+            .widget<FadeTransition>(
+              find.byKey(ValueKey<String>('asmr-work-$id')),
+            )
+            .opacity
+            .value;
+
+        final nextPage = [
+          oldWork,
+          finalWork,
+          for (var id = 2; id <= 35; id++)
+            _work(id: id, title: 'New page work $id'),
+        ];
+        controller.updateFavorites(nextPage);
+        await tester.pump();
+        await tester.pump();
+        expect(opacityFor(1), 1);
+        expect(opacityFor(2), reduceMotion ? 1 : 0);
+        expect(tester.element(oldCard), same(oldCardElement));
+        await tester.pump(const Duration(milliseconds: 150));
+        expect(opacityFor(1), 1);
+        expect(
+          opacityFor(2),
+          closeTo(
+            reduceMotion ? 1 : Curves.easeInOutCubic.transform(0.5),
+            0.01,
+          ),
+        );
+        controller.updateFavorites([
+          ...nextPage,
+          _work(id: 36, title: 'Next batch work'),
+        ]);
+        await tester.pump();
+        await tester.pump();
+        expect(
+          opacityFor(2),
+          closeTo(
+            reduceMotion ? 1 : Curves.easeInOutCubic.transform(0.5),
+            0.01,
+          ),
+        );
+        await tester.pump(const Duration(milliseconds: 150));
+        await tester.pump();
+        expect(opacityFor(2), 1);
+
+        final list = tester.widget<ListView>(find.byType(ListView));
+        list.controller!.jumpTo(list.controller!.position.maxScrollExtent);
+        await tester.pump();
+        expect(opacityFor(35), 1);
+        expect(
+          opacityFor(36),
+          closeTo(
+            reduceMotion ? 1 : Curves.easeInOutCubic.transform(0.5),
+            0.01,
+          ),
+        );
+        await tester.pump(const Duration(milliseconds: 150));
+        await tester.pump();
+        expect(opacityFor(36), 1);
+        list.controller!.jumpTo(0);
+        await tester.pump();
+        expect(opacityFor(2), 1);
+        await tester.pump(const Duration(milliseconds: 400));
+        activeTab.value = 1;
+        await tester.pump();
+        controller.updateFavorites([
+          ...controller.favoriteWorks,
+          _work(id: 37, title: 'Loaded while inactive'),
+        ]);
+        await tester.pump(const Duration(milliseconds: 400));
+        activeTab.value = 0;
+        await tester.pump();
+        await tester.pump();
+        expect(opacityFor(2), 1);
+        final restoredList = tester.widget<ListView>(find.byType(ListView));
+        restoredList.controller!.jumpTo(
+          restoredList.controller!.position.maxScrollExtent,
+        );
+        await tester.pump();
+        expect(opacityFor(37), 1);
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump(const Duration(seconds: 1));
+      },
+      variant: const TargetPlatformVariant({
+        TargetPlatform.android,
+        TargetPlatform.windows,
+      }),
+    );
+  }
+
   testWidgets(
     'ASMR tab loads covers nearest the viewport focus before cached offscreen cards',
     (tester) async {
@@ -813,7 +1002,7 @@ void main() {
     },
   );
 
-  testWidgets('download skeletons fade out for 750ms as data arrives', (
+  testWidgets('download skeletons fade out for 300ms as data arrives', (
     tester,
   ) async {
     SharedPreferences.setMockInitialValues(const <String, Object>{});
@@ -857,9 +1046,9 @@ void main() {
       findsOneWidget,
     );
     await tester.pump(const Duration(milliseconds: 1));
-    await tester.pump(const Duration(milliseconds: 375));
+    await tester.pump(const Duration(milliseconds: 150));
     expect(summarySkeleton, findsOneWidget);
-    await tester.pump(const Duration(milliseconds: 374));
+    await tester.pump(const Duration(milliseconds: 149));
     expect(summarySkeleton, findsOneWidget);
     await tester.pump(const Duration(milliseconds: 1));
     expect(summarySkeleton, findsNothing);
@@ -877,9 +1066,9 @@ void main() {
     );
     expect(find.byType(OperationSkeletonList), findsOneWidget);
     await tester.pump(const Duration(milliseconds: 1));
-    await tester.pump(const Duration(milliseconds: 375));
+    await tester.pump(const Duration(milliseconds: 150));
     expect(find.byType(OperationSkeletonList), findsOneWidget);
-    await tester.pump(const Duration(milliseconds: 375));
+    await tester.pump(const Duration(milliseconds: 150));
     expect(find.byType(OperationSkeletonList), findsNothing);
     expect(
       find.byKey(const ValueKey<String>('asmr_download_file_list')),
@@ -1254,6 +1443,7 @@ class _TestFavoritesAsmrLibraryController extends AsmrLibraryController {
   List<AsmrWork> favoriteWorks;
   Future<List<AsmrTrackFile>>? pendingTrackTree;
   int _revision = 0;
+  bool hasMore = false;
 
   @override
   Future<List<AsmrTrackFile>> ensureTrackTree(
@@ -1312,6 +1502,13 @@ class _TestFavoritesAsmrLibraryController extends AsmrLibraryController {
   }) async {}
 
   @override
+  Future<void> loadMoreCategory(
+    AsmrCategoryType category, {
+    String searchQuery = '',
+    bool searchSession = false,
+  }) async {}
+
+  @override
   Future<void> restoreAsmrAccountSession({bool force = false}) async {}
 
   @override
@@ -1361,7 +1558,7 @@ class _TestFavoritesAsmrLibraryController extends AsmrLibraryController {
       isRefreshing: false,
       isStale: false,
       hasAttemptedLoad: true,
-      hasMore: false,
+      hasMore: hasMore,
       needsLoadMoreRetry: false,
       totalCount: works.length,
       activeQuery: searchQuery,

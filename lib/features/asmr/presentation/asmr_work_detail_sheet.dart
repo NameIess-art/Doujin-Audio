@@ -14,7 +14,7 @@ Future<void> showAsmrWorkDetailSheet(
   final route = buildAppPageRoute<void>(
     context: context,
     settings: const RouteSettings(name: workDetailRouteName),
-    wholePageTransition: true,
+    workDetailTransition: true,
     child: WorkDetailPage.forAsmr(work: work),
   );
   await WidgetsBinding.instance.endOfFrame;

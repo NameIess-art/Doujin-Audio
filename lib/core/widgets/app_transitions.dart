@@ -949,7 +949,7 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
             position: position,
             child: ColoredBox(
               color: Theme.of(context).colorScheme.surface,
-              child: content,
+              child: RepaintBoundary(child: content),
             ),
           ),
           headerBuilder: (_, header) => FadeTransition(
@@ -1182,7 +1182,7 @@ PageRouteBuilder<T> buildAppPageRoute<T>({
 }) {
   final reducedMotion = MediaQuery.disableAnimationsOf(context);
   final contentKey = GlobalKey();
-  return _PreparedAppPageRoute<T>(
+  return AppPreparedPageRoute<T>(
     settings: settings,
     fullscreenDialog: fullscreenDialog,
     transitionDuration: reducedMotion || duration == Duration.zero
@@ -1209,8 +1209,10 @@ PageRouteBuilder<T> buildAppPageRoute<T>({
   );
 }
 
-class _PreparedAppPageRoute<T> extends PageRouteBuilder<T> {
-  _PreparedAppPageRoute({
+// Shared route lifecycle: record the first page before consuming entrance time,
+// and retain a closing page until its final frame has painted.
+class AppPreparedPageRoute<T> extends PageRouteBuilder<T> {
+  AppPreparedPageRoute({
     required super.pageBuilder,
     required super.transitionsBuilder,
     required super.transitionDuration,
@@ -1241,7 +1243,7 @@ class _PreparedAppPageRoute<T> extends PageRouteBuilder<T> {
   Simulation? createSimulation({required bool forward}) {
     if (!forward &&
         deferExitFinalization &&
-        reverseTransitionDuration != Duration.zero &&
+        controller!.reverseDuration != Duration.zero &&
         controller!.value > 0) {
       return _PostFrameExitSimulation(
         initialValue: controller!.value,

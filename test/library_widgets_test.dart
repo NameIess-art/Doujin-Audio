@@ -1620,21 +1620,36 @@ void main() {
           groupKey: workPath,
           groupTitle: 'Categorized work',
         ),
+        for (var i = 0; i < 20; i++)
+          testMusicTrack(
+            name: 'Categorized audio $i',
+            path: '/imports/category_$i.mp3',
+            groupKey: '__single_files__',
+            groupTitle: 'Imported files',
+            isSingle: true,
+          ),
       ],
       notify: false,
       persist: false,
     );
     libraryService.syncSlice(isInitialized: true, detailRevision: 0);
-    await tester.runAsync(
-      () => runtimeGraph.library.saveAudioDetail(
+    await tester.runAsync(() async {
+      await runtimeGraph.library.saveAudioDetail(
         AudioDetail.empty(
           AudioDetailTarget.libraryRootFolder(workPath),
         ).copyWith(
           tags: const <String>['sleep'],
           voiceActors: const <String>['Voice Actor'],
         ),
-      ),
-    );
+      );
+      for (var i = 0; i < 20; i++) {
+        await runtimeGraph.library.saveAudioDetail(
+          AudioDetail.empty(
+            AudioDetailTarget.singleAudioFile('/imports/category_$i.mp3'),
+          ).copyWith(tags: const ['sleep'], workTitle: 'Categorized audio $i'),
+        );
+      }
+    });
 
     await tester.pumpWidget(fixture.build(const LibraryTab()));
     await tester.pump();
@@ -1691,18 +1706,35 @@ void main() {
     );
     await tester.ensureVisible(expandButton);
     await tester.pump(const Duration(milliseconds: 500));
-    await tester.tap(expandButton);
+    tester.widget<ActionChip>(expandButton).onPressed!();
     await tester.pump(const Duration(milliseconds: 350));
     expect(find.text('收起'), findsOneWidget);
     final tagsSelector = find.byType(LibraryCategoryTermBox).evaluate().single;
-
-    await tester.tap(
-      find.byKey(
-        const ValueKey<String>(
-          'app_search_category_AudioLibraryCategoryType.voiceActors',
-        ),
+    final outgoingScroll = tester
+        .widget<ListView>(
+          find.byKey(const ValueKey<String>('library_category_tags')),
+        )
+        .controller!;
+    expect(outgoingScroll.position.maxScrollExtent, greaterThan(80));
+    const savedOffset = 40.0;
+    outgoingScroll.jumpTo(savedOffset);
+    unawaited(
+      outgoingScroll.animateTo(
+        savedOffset + 10,
+        duration: const Duration(seconds: 1),
+        curve: Curves.linear,
       ),
     );
+    expect(outgoingScroll.position.isScrollingNotifier.value, isTrue);
+    final outgoingOffset = outgoingScroll.offset;
+
+    tester.widget<InkWell>(
+      find.byKey(const ValueKey<String>(
+        'app_search_category_AudioLibraryCategoryType.voiceActors',
+      )),
+    ).onTap!();
+    expect(outgoingScroll.position.isScrollingNotifier.value, isFalse);
+    expect(outgoingScroll.offset, outgoingOffset);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 350));
     await tester.pump(const Duration(milliseconds: 350));
@@ -1735,8 +1767,18 @@ void main() {
       find.byType(LibraryCategoryTermBox).evaluate().single,
       same(tagsSelector),
     );
-    expect(find.text(tagsLabel), findsOneWidget);
-    expect(find.text(voiceActorsLabel), findsOneWidget);
+    expect(find.descendant(
+      of: find.byKey(const ValueKey<String>(
+        'app_search_category_AudioLibraryCategoryType.tags',
+      )),
+      matching: find.text(tagsLabel),
+    ), findsOneWidget);
+    expect(find.descendant(
+      of: find.byKey(const ValueKey<String>(
+        'app_search_category_AudioLibraryCategoryType.voiceActors',
+      )),
+      matching: find.text(voiceActorsLabel),
+    ), findsOneWidget);
   });
 
   testWidgets('category removal uses recoverable library audio semantics', (

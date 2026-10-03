@@ -2257,7 +2257,9 @@ void main() {
           final navigation = Object();
           interaction.beginInteraction(navigation);
           await tester.tap(
-            find.text(fixture.languageProvider.tr('asmr_category_recommendation')),
+            find.text(
+              fixture.languageProvider.tr('asmr_category_recommendation'),
+            ),
           );
           await tester.pump();
           await tester.tap(
@@ -4855,6 +4857,117 @@ void main() {
     },
   );
 
+  testWidgets(
+    'playback detail prepares its full entrance and retains the final return frame',
+    (tester) async {
+      _setLogicalTestViewSize(
+        tester,
+        defaultTargetPlatform == TargetPlatform.windows
+            ? const Size(1400, 800)
+            : const Size(360, 800),
+      );
+      await _pumpAppShell(tester);
+      final navigator = Navigator.of(tester.element(find.byType(MainScreen)));
+      final route = buildSessionDetailRoute(sessionId: 'orientation_session');
+      expect(route.transitionDuration, const Duration(milliseconds: 300));
+      expect(
+        route.reverseTransitionDuration,
+        const Duration(milliseconds: 300),
+      );
+      unawaited(navigator.push(route));
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(route.animation!.value, 0);
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(route.animation!.value, 0);
+      final content = find.byKey(
+        const ValueKey('session_detail_content_cache'),
+      );
+      final height = MediaQuery.sizeOf(tester.element(content)).height;
+      expect(tester.getTopLeft(content).dy, closeTo(height, 0.1));
+      await tester.pump(const Duration(milliseconds: 75));
+      expect(route.animation!.value, closeTo(0.25, 0.001));
+      expect(
+        tester.getTopLeft(content).dy,
+        closeTo(height * (1 - Curves.easeOutCubic.transform(0.25)), 0.1),
+      );
+      await tester.pump(const Duration(milliseconds: 226));
+      expect(route.animation!.status, AnimationStatus.completed);
+      expect(tester.getTopLeft(content).dy, closeTo(0, 0.1));
+
+      navigator.pop();
+      await tester.pump();
+      var finalFrameRetained = false;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        finalFrameRetained =
+            route.animation!.value == 0 &&
+            route.animation!.status == AnimationStatus.reverse &&
+            content.evaluate().isNotEmpty;
+      });
+      await tester.pump(const Duration(milliseconds: 301));
+      expect(finalFrameRetained, isTrue);
+      await tester.pumpAndSettle();
+      expect(find.byType(SessionDetailPage), findsNothing);
+      for (final remove in [false, true]) {
+        final interrupted = buildSessionDetailRoute(
+          sessionId: 'orientation_session',
+        );
+        unawaited(navigator.push(interrupted));
+        await tester.pump();
+        if (remove) {
+          navigator.removeRoute(interrupted);
+        } else {
+          navigator.pop();
+        }
+        await tester.pumpAndSettle();
+        expect(find.byType(SessionDetailPage), findsNothing);
+      }
+      expect(tester.takeException(), isNull);
+      await _settleSessionDetailAsyncWork(tester);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(seconds: 6));
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
+  testWidgets(
+    'playback detail reduced motion completes without a hidden transition',
+    (tester) async {
+      tester.platformDispatcher.accessibilityFeaturesTestValue =
+          const FakeAccessibilityFeatures(disableAnimations: true);
+      addTearDown(
+        tester.platformDispatcher.clearAccessibilityFeaturesTestValue,
+      );
+      _setLogicalTestViewSize(tester, const Size(1400, 800));
+      await _pumpAppShell(tester);
+      final navigator = Navigator.of(tester.element(find.byType(MainScreen)));
+      final route = buildSessionDetailRoute(sessionId: 'orientation_session');
+      unawaited(navigator.push(route));
+      await tester.pump();
+      await tester.pump();
+      expect(route.transitionDuration, Duration.zero);
+      expect(route.reverseTransitionDuration, Duration.zero);
+      expect(route.animation!.status, AnimationStatus.completed);
+      final content = find.byKey(
+        const ValueKey('session_detail_content_cache'),
+      );
+      expect(tester.getTopLeft(content).dy, closeTo(0, 0.1));
+      navigator.pop();
+      await tester.pumpAndSettle();
+      expect(find.byType(SessionDetailPage), findsNothing);
+      expect(tester.takeException(), isNull);
+      await _settleSessionDetailAsyncWork(tester);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(seconds: 6));
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
   testWidgets('rotation interrupts a landscape detail swipe safely', (
     tester,
   ) async {
@@ -4929,6 +5042,7 @@ void main() {
     await tester.pump();
     expect(route.opaque, isTrue);
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pump();
     await tester.pump(
       UiInteractionCoordinator.instance.idleDelay +
           const Duration(milliseconds: 20),
@@ -5292,6 +5406,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 500));
     await tester.pump(const Duration(milliseconds: 500));
 
+    await tester.pumpAndSettle();
     expect(detailFinder, findsNothing);
     expect(tester.takeException(), isNull);
     await _settleSessionDetailAsyncWork(tester);

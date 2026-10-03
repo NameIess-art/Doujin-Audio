@@ -1,7 +1,6 @@
 import '../../../library/presentation/library_providers.dart';
 import '../playback_providers.dart';
 import 'dart:async';
-import 'dart:math';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
@@ -78,10 +77,9 @@ class _DetailStructure {
 }
 
 class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
-    with TickerProviderStateMixin, WidgetsBindingObserver {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   late final AnimationController _dismissController;
-  late final AnimationController _contentEnterController;
-  bool _contentEnterStarted = false;
+  Animation<double>? _routeAnimation;
   final ValueNotifier<bool> _transitionActive = ValueNotifier(true);
   int _dismissOperation = 0;
   bool _closing = false;
@@ -118,10 +116,6 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
       duration: const Duration(milliseconds: 180),
       value: 0,
     );
-    _contentEnterController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 220),
-    )..addStatusListener(_handleEnterStatus);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         _activeSessionDetailIdsNotifier.push(widget.sessionId);
@@ -130,6 +124,20 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
             .setFocusedSession(widget.sessionId);
       }
     });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final animation = MediaQuery.disableAnimationsOf(context)
+        ? null
+        : ModalRoute.of(context)?.animation;
+    if (!identical(animation, _routeAnimation)) {
+      _routeAnimation?.removeStatusListener(_handleEnterStatus);
+      _routeAnimation = animation;
+      animation?.addStatusListener(_handleEnterStatus);
+    }
+    _handleEnterStatus(animation?.status ?? AnimationStatus.completed);
   }
 
   void _handleEnterStatus(AnimationStatus status) {
@@ -163,24 +171,11 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
     _segmentPanelExpandedNotifier.dispose();
     _transitionActive.dispose();
     _dismissController.dispose();
-    _contentEnterController.dispose();
+    _routeAnimation?.removeStatusListener(_handleEnterStatus);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _activeSessionDetailIdsNotifier.pop(widget.sessionId);
     });
     super.dispose();
-  }
-
-  void _ensureContentEnterStarted() {
-    if (_contentEnterStarted) return;
-    _contentEnterStarted = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      if (MediaQuery.disableAnimationsOf(context)) {
-        _contentEnterController.value = 1;
-        return;
-      }
-      unawaited(_contentEnterController.forward());
-    });
   }
 
   void _setRevealBehind(bool value) {
@@ -206,7 +201,10 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
       _setRevealBehind(false);
     }
     _dismissInteractionNotifier.value = false;
-    _transitionActive.value = !_contentEnterController.isCompleted || _closing;
+    _transitionActive.value =
+        (_routeAnimation != null &&
+            _routeAnimation!.status != AnimationStatus.completed) ||
+        _closing;
     UiInteractionCoordinator.instance.endInteraction(_dismissInteractionSource);
   }
 
@@ -305,9 +303,15 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
     ref
         .read(playlistUiControllerProvider)
         .requestCarouselSnap(widget.sessionId);
+    final prepareBehind = !_dismissInteractionActive;
     _beginDismissInteraction();
     try {
+      // Reveal and lay out the cached underlying page before the spring starts.
+      if (prepareBehind) await WidgetsBinding.instance.endOfFrame;
+      if (!mounted || operation != _dismissOperation) return;
       await _animateDismissToEnd(velocity: velocity);
+      // Keep the final translated frame alive before the zero-duration pop.
+      await WidgetsBinding.instance.endOfFrame;
       if (mounted && operation == _dismissOperation) {
         await navigator.maybePop();
       }
@@ -343,13 +347,11 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
       return const Scaffold(body: SizedBox.shrink());
     }
 
-    _ensureContentEnterStarted();
     final routeAnimation = MediaQuery.disableAnimationsOf(context)
         ? null
-        : ModalRoute.of(context)?.animation;
+        : _routeAnimation;
     final animatedListenable = Listenable.merge([
       ?routeAnimation,
-      _contentEnterController,
       _dismissController,
     ]);
 
@@ -358,10 +360,7 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
       child: AnimatedBuilder(
         animation: animatedListenable,
         builder: (context, child) {
-          final rawEnterProgress = min(
-            (routeAnimation?.value ?? 1).clamp(0.0, 1.0),
-            _contentEnterController.value.clamp(0.0, 1.0),
-          );
+          final rawEnterProgress = (routeAnimation?.value ?? 1).clamp(0.0, 1.0);
           final enterProgress = Curves.easeOutCubic.transform(rawEnterProgress);
           final dismissProgress = _dismissController.value.clamp(0.0, 1.0);
           final screenHeight = MediaQuery.sizeOf(context).height;
@@ -427,6 +426,7 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
             );
           },
           child: RepaintBoundary(
+            key: const ValueKey('session_detail_content_cache'),
             child: Builder(
               builder: (context) {
                 final coverGen = ref.watch(coverGenerationProvider);

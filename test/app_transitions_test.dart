@@ -289,6 +289,7 @@ void main() {
   }
 
   for (final style in [
+    AppIndexedStackTransitionStyle.slide,
     AppIndexedStackTransitionStyle.directional,
     AppIndexedStackTransitionStyle.crossFade,
   ]) {
@@ -298,6 +299,7 @@ void main() {
       final index = ValueNotifier<int>(0);
       addTearDown(index.dispose);
       final builds = [0, 0];
+      final paints = [0, 0];
       await tester.pumpWidget(
         MaterialApp(
           home: AppFadeThroughIndexedStack.lazy(
@@ -312,7 +314,10 @@ void main() {
                 Expanded(
                   child: _BuildCountingContent(
                     onBuild: () => builds[page]++,
-                    child: Text('content-$page'),
+                    child: _DetailPaintProbe(
+                      onPaint: () => paints[page]++,
+                      child: Text('content-$page'),
+                    ),
                   ),
                 ),
               ],
@@ -323,11 +328,14 @@ void main() {
       index.value = 1;
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 30));
+      await tester.pump(const Duration(milliseconds: 30));
       final preparedBuilds = List<int>.of(builds);
+      final preparedPaints = List<int>.of(paints);
       for (var i = 0; i < 5; i++) {
         await tester.pump(const Duration(milliseconds: 30));
       }
       expect(builds, preparedBuilds);
+      expect(paints, preparedPaints);
       await tester.pumpAndSettle();
     });
   }

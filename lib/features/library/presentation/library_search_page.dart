@@ -150,7 +150,10 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
   void _selectCategory(AudioLibraryCategoryType category) {
     if (_categoryType == category) return;
     FocusManager.instance.primaryFocus?.unfocus();
-    _resetScroll();
+    final controller = _scrollControllers[_categoryType];
+    if (controller != null && controller.hasClients) {
+      controller.jumpTo(controller.offset);
+    }
     _visitedCategories.add(category);
     final targetIndex = _categories.indexOf(category);
     if (targetIndex >= 0) {

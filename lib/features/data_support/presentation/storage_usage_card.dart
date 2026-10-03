@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/theme/app_design_tokens.dart';
 import '../../../core/ui/ui_operation_service.dart';
+import '../../../core/ui/ui_interaction_coordinator.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../core/cache/app_cache_service.dart';
 import '../application/storage_usage_service.dart';
@@ -16,22 +19,64 @@ class StorageUsageCard extends ConsumerStatefulWidget {
 }
 
 class _StorageUsageCardState extends ConsumerState<StorageUsageCard> {
-  late Future<StorageUsageSnapshot> _storageUsageFuture;
+  Future<StorageUsageSnapshot>? _storageUsageFuture;
+  bool _refreshNeeded = true;
+  late final _loadKey = 'storage_usage_load_${identityHashCode(this)}';
+  late final _resultKey = 'storage_usage_result_${identityHashCode(this)}';
 
   @override
-  void initState() {
-    super.initState();
-    _storageUsageFuture = _loadStorageUsage();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_refreshNeeded && (ModalRoute.of(context)?.isCurrent ?? true)) {
+      _reloadStorageUsage();
+    }
   }
 
-  Future<StorageUsageSnapshot> _loadStorageUsage() {
-    return ref.read(dataSupportStorageUsageServiceProvider).load();
+  void _loadStorageUsage() {
+    final published = Completer<StorageUsageSnapshot>();
+    _storageUsageFuture = published.future;
+    void publish(VoidCallback complete) {
+      if (!mounted || !identical(_storageUsageFuture, published.future)) return;
+      UiInteractionCoordinator.instance.scheduleCommit(
+        key: _resultKey,
+        commit: () {
+          if (mounted && identical(_storageUsageFuture, published.future)) {
+            complete();
+          }
+        },
+      );
+    }
+
+    unawaited(
+      ref
+          .read(dataSupportStorageUsageServiceProvider)
+          .load()
+          .then(
+            (snapshot) => publish(() => published.complete(snapshot)),
+            onError: (Object error, StackTrace stackTrace) =>
+                publish(() => published.completeError(error, stackTrace)),
+          ),
+    );
   }
 
   void _reloadStorageUsage() {
-    setState(() {
-      _storageUsageFuture = _loadStorageUsage();
-    });
+    if (!mounted) return;
+    _refreshNeeded = true;
+    UiInteractionCoordinator.instance.scheduleCommit(
+      key: _loadKey,
+      commit: () {
+        if (!mounted || !(ModalRoute.of(context)?.isCurrent ?? true)) return;
+        _refreshNeeded = false;
+        setState(_loadStorageUsage);
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    UiInteractionCoordinator.instance.cancelCommit(_loadKey);
+    UiInteractionCoordinator.instance.cancelCommit(_resultKey);
+    super.dispose();
   }
 
   @override
@@ -58,7 +103,8 @@ class _StorageUsageCardState extends ConsumerState<StorageUsageCard> {
         if (snapshot.hasData && snapshot.data!.isAvailable) {
           card = _StorageUsageCard(snapshot: snapshot.data!);
           phase = 'loaded';
-        } else if (snapshot.connectionState == ConnectionState.waiting) {
+        } else if (_storageUsageFuture == null ||
+            snapshot.connectionState == ConnectionState.waiting) {
           card = const _StorageUsageCard(snapshot: null);
           phase = 'loading';
         } else {

@@ -239,12 +239,16 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
   @override
   bool get wantKeepAlive => true;
 
+  late bool _wasSelected;
+
+  bool get _isSelected =>
+      widget.activeTabIndexListenable == null ||
+      widget.activeTabIndexListenable!.value == tabIndex;
+
   bool get _isActive {
     final route = ModalRoute.of(context);
     final isRouteCurrent = route == null || route.isCurrent;
-    return isRouteCurrent &&
-        (widget.activeTabIndexListenable == null ||
-            widget.activeTabIndexListenable!.value == tabIndex);
+    return isRouteCurrent && _isSelected;
   }
 
   T _readOrWatch<T>(ProviderListenable<T> provider) {
@@ -252,7 +256,11 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
   }
 
   void _handleActiveTabChanged() {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    final selected = _isSelected;
+    if (selected == _wasSelected) return;
+    _wasSelected = selected;
+    setState(() {});
   }
 
   void _scheduleInitialPlaceholderDismissal({required bool isInitialized}) {
@@ -273,9 +281,22 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
   @override
   void initState() {
     super.initState();
+    _wasSelected = _isSelected;
     widget.activeTabIndexListenable?.addListener(_handleActiveTabChanged);
     final controller = ref.read(mainScreenControllerProvider);
     initTabState(controller.scrollToTopTab, controller.stopScrollTab);
+  }
+
+  @override
+  void didUpdateWidget(covariant PlaylistTab oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.activeTabIndexListenable != widget.activeTabIndexListenable) {
+      oldWidget.activeTabIndexListenable?.removeListener(
+        _handleActiveTabChanged,
+      );
+      widget.activeTabIndexListenable?.addListener(_handleActiveTabChanged);
+    }
+    _handleActiveTabChanged();
   }
 
   Future<void> _clearAllWithUndo(

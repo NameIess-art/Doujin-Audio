@@ -319,6 +319,10 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
   bool _activationScheduled = false;
   bool _accountHydrationScheduled = false;
   bool _accountHydrationCompleted = false;
+  late final String _categoryLoadCommitKey =
+      'asmr_category_load_${identityHashCode(this)}';
+  late final String _languageCommitKey =
+      'asmr_page_language_${identityHashCode(this)}';
   late final AppLanguageProvider _languageProvider;
   bool _isSelectionMode = false;
   final Set<int> _selectedWorkIds = <int>{};
@@ -329,14 +333,18 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
   ScrollController get _scrollController =>
       _scrollControllers[_selectedCategory]!;
 
+  late bool _wasSelected;
+
+  bool get _isSelected =>
+      (widget.activeTabIndexListenable == null ||
+          widget.activeTabIndexListenable!.value == tabIndex) &&
+      (widget.activeSectionListenable == null ||
+          widget.activeSectionListenable!.value == widget.sectionIndex);
+
   bool get _isActive {
     final route = ModalRoute.of(context);
     final isRouteCurrent = route == null || route.isCurrent;
-    return isRouteCurrent &&
-        (widget.activeTabIndexListenable == null ||
-            widget.activeTabIndexListenable!.value == tabIndex) &&
-        (widget.activeSectionListenable == null ||
-            widget.activeSectionListenable!.value == widget.sectionIndex);
+    return isRouteCurrent && _isSelected;
   }
 
   @override
@@ -377,6 +385,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
   @override
   void initState() {
     super.initState();
+    _wasSelected = _isSelected;
     _scrollControllers = {
       for (final category in _headerCategories) category: ScrollController(),
     };
@@ -400,8 +409,14 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
 
   void _handleActiveStateChanged() {
     if (!mounted) return;
+    final selected = _isSelected;
+    if (selected == _wasSelected) return;
+    _wasSelected = selected;
     setState(() {});
     if (!_isActive) {
+      UiInteractionCoordinator.instance.cancelCommit(_categoryLoadCommitKey);
+      UiInteractionCoordinator.instance.cancelCommit(_languageCommitKey);
+      _pendingPageLanguageSync = null;
       _activationScheduled = false;
       _accountHydrationScheduled = false;
       return;
@@ -416,7 +431,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
     if (controller == null) return;
     final coordinator = UiInteractionCoordinator.instance;
     if (_activationCompleted) {
-      unawaited(_ensureCategoryLoaded(_selectedCategory));
+      _scheduleCategoryLoad();
       _scheduleAccountHydration(controller, coordinator.generation);
       return;
     }
@@ -483,9 +498,9 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
           setState(() => _selectedCategory = restoredCategory);
         }
       }
-      await _ensureCategoryLoaded(_selectedCategory);
       if (!mounted || !_isActive) return;
       setState(() => _activationCompleted = true);
+      _scheduleCategoryLoad();
       _scheduleAccountHydration(controller, generation);
     } catch (error, stackTrace) {
       AppLogService.warning(
@@ -551,6 +566,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
       );
       widget.activeSectionListenable?.addListener(_handleActiveStateChanged);
     }
+    _handleActiveStateChanged();
   }
 
   @override
@@ -607,6 +623,17 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
     await controller.ensureCategoryLoaded(category);
   }
 
+  void _scheduleCategoryLoad() {
+    final category = _selectedCategory;
+    UiInteractionCoordinator.instance.scheduleCommit(
+      key: _categoryLoadCommitKey,
+      commit: () {
+        if (!mounted || !_isActive || category != _selectedCategory) return;
+        unawaited(_ensureCategoryLoaded(category));
+      },
+    );
+  }
+
   Future<void> _runCategoryRefresh(AsmrCategoryType category) {
     return _runAsmrOperation<void>(
       scope: UiOperationScope.asmrCategory(
@@ -637,7 +664,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
     ref.read(browsePageStateStoreProvider).update('asmr_root:$scope', {
       'category': category.name,
     });
-    unawaited(_ensureCategoryLoaded(category));
+    _scheduleCategoryLoad();
   }
 
   void _enterSelectionMode(AsmrWork work) {
@@ -794,6 +821,8 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
 
   @override
   void dispose() {
+    UiInteractionCoordinator.instance.cancelCommit(_categoryLoadCommitKey);
+    UiInteractionCoordinator.instance.cancelCommit(_languageCommitKey);
     _activeCategoryIndex.dispose();
     _languageProvider.removeListener(_handleAppLanguageChanged);
     widget.activeTabIndexListenable?.removeListener(_handleActiveStateChanged);
@@ -987,22 +1016,26 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
   void _schedulePageLanguageSync(AppLanguage language) {
     if (!_isActive) return;
     final controller = ref.read(asmrLibraryControllerProvider);
-    if (controller == null ||
-        !controller.initialized ||
-        controller.pageLanguage == language ||
-        _pendingPageLanguageSync == language) {
+    if (controller == null || !controller.initialized) return;
+    if (controller.pageLanguage == language) {
+      _pendingPageLanguageSync = null;
+      UiInteractionCoordinator.instance.cancelCommit(_languageCommitKey);
+      return;
+    }
+    if (_pendingPageLanguageSync == language) {
       return;
     }
     _pendingPageLanguageSync = language;
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      if (!mounted || _pendingPageLanguageSync != language) return;
-      _pendingPageLanguageSync = null;
-      if (!_isActive) return;
-      final changed = controller.setPageLanguage(language);
-      if (changed && mounted) {
-        await _ensureCategoryLoaded(_selectedCategory);
-      }
-    });
+    UiInteractionCoordinator.instance.scheduleCommit(
+      key: _languageCommitKey,
+      priority: 0,
+      commit: () {
+        if (!mounted || _pendingPageLanguageSync != language) return;
+        _pendingPageLanguageSync = null;
+        if (!_isActive || _languageProvider.language != language) return;
+        if (controller.setPageLanguage(language)) _scheduleCategoryLoad();
+      },
+    );
   }
 
   void _handleAppLanguageChanged() {

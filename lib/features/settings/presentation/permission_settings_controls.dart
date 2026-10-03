@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../app/presentation/app_settings_group_card.dart';
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/theme/app_design_tokens.dart';
+import '../../../core/ui/ui_interaction_coordinator.dart';
 import '../../../core/ui/ui_operation_service.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/app_settings_action_tile.dart';
@@ -29,6 +30,9 @@ class _PermissionSettingsControlsState
   Future<PermissionStatusSnapshot>? _statusRequest;
   PermissionStatusSnapshot? _status;
   bool _recentlyOpenedSettings = false;
+  bool _refreshNeeded = true;
+  late final _loadKey = 'permission_status_load_${identityHashCode(this)}';
+  late final _resultKey = 'permission_status_result_${identityHashCode(this)}';
 
   @override
   void initState() {
@@ -36,11 +40,20 @@ class _PermissionSettingsControlsState
     _statusService =
         widget.statusService ?? ref.read(permissionStatusServiceProvider);
     WidgetsBinding.instance.addObserver(this);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _refreshStatus());
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_refreshNeeded && (ModalRoute.of(context)?.isCurrent ?? true)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _refreshStatus());
+    }
   }
 
   @override
   void dispose() {
+    UiInteractionCoordinator.instance.cancelCommit(_loadKey);
+    UiInteractionCoordinator.instance.cancelCommit(_resultKey);
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -56,15 +69,31 @@ class _PermissionSettingsControlsState
     }
   }
 
-  Future<void> _refreshStatus() async {
+  void _refreshStatus() {
     if (!mounted) return;
-    final request = _statusService.load();
-    setState(() {
-      _statusRequest = request;
-    });
-    final status = await request;
-    if (!mounted || !identical(_statusRequest, request)) return;
-    setState(() => _status = status);
+    _refreshNeeded = true;
+    final coordinator = UiInteractionCoordinator.instance;
+    coordinator.scheduleCommit(
+      key: _loadKey,
+      commit: () {
+        if (!mounted || !(ModalRoute.of(context)?.isCurrent ?? true)) return;
+        _refreshNeeded = false;
+        final request = _statusService.load();
+        _statusRequest = request;
+        unawaited(
+          request.then((status) {
+            if (!mounted || !identical(_statusRequest, request)) return;
+            coordinator.scheduleCommit(
+              key: _resultKey,
+              commit: () {
+                if (!mounted || !identical(_statusRequest, request)) return;
+                setState(() => _status = status);
+              },
+            );
+          }),
+        );
+      },
+    );
   }
 
   Future<void> _open({

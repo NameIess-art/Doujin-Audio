@@ -120,6 +120,73 @@ void main() {
   }
 
   testWidgets(
+    'reopening online details displays the cached tree during navigation',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      final interaction = UiInteractionCoordinator.instance;
+      interaction.resetForTest();
+      addTearDown(interaction.resetForTest);
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      final api = _TrackApi();
+      final services = createTestAsmrServices(
+        persistenceRepository: fixture.persistenceRepository,
+        apiService: api,
+      );
+      await tester.runAsync(services.preferencesStore.clearForTest);
+      final controller = AsmrLibraryController(
+        preferencesStore: services.preferencesStore,
+        remoteCatalogService: services.remoteCatalogService,
+        accountSyncService: services.accountSyncService,
+      );
+      addTearDown(controller.dispose);
+      await tester.runAsync(() => controller.initializeForVisiblePage());
+      await tester.runAsync(() => controller.ensureTrackTree(_work));
+      expect(api.treeRequests, 1);
+      await tester.pumpWidget(
+        fixture.build(
+          Builder(
+            builder: (context) => TextButton(
+              onPressed: () => showAsmrWorkDetailSheet(context, _work),
+              child: const Text('Open cached detail'),
+            ),
+          ),
+          navigatorObservers: [UiInteractionNavigatorObserver()],
+          overrides: [
+            asmrLibraryControllerProvider.overrideWithValue(controller),
+          ],
+        ),
+      );
+      await tester.tap(find.text('Open cached detail'));
+      await tester.pump();
+      expect(interaction.isInteracting, isTrue);
+      expect(find.text('audio', skipOffstage: false), findsOneWidget);
+      expect(api.treeRequests, 1);
+      await tester.pumpAndSettle();
+      await tester.pump(interaction.idleDelay);
+      await settleIo(tester);
+      expect(api.treeRequests, 2);
+      Navigator.of(tester.element(find.byType(WorkDetailPage))).pop();
+      await tester.pumpAndSettle();
+      controller.clearRuntimeCaches();
+      await tester.tap(find.text('Open cached detail'));
+      await tester.pump();
+      expect(find.text('audio'), findsNothing);
+      expect(api.treeRequests, 2);
+      await tester.pumpAndSettle();
+      await tester.pump(interaction.idleDelay);
+      await settleIo(tester);
+      expect(api.treeRequests, 3);
+      expect(find.text('audio'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
+  testWidgets(
     'online audio/video menus add one work session and remove with undo',
     (tester) async {
       SharedPreferences.setMockInitialValues({});
@@ -205,7 +272,7 @@ void main() {
   );
 
   testWidgets(
-    'reopening details loads a fresh tree instead of restoring a cached page',
+    'reopening details reuses tree data and refreshes without caching the page',
     (tester) async {
       SharedPreferences.setMockInitialValues({});
       final fixture = AppRuntimeWidgetTestFixture();
@@ -234,7 +301,7 @@ void main() {
         ],
       );
       await tester.pumpWidget(page());
-      expect(find.text('audio'), findsNothing);
+      expect(find.text('audio'), findsOneWidget);
       await settleIo(tester);
       expect(find.text('audio'), findsOneWidget);
       expect(api.treeRequests, 2);
@@ -242,7 +309,7 @@ void main() {
       expect(api.treeRequests, 2);
       await tester.pumpWidget(const SizedBox());
       await tester.pumpWidget(page());
-      expect(find.text('audio'), findsNothing);
+      expect(find.text('audio'), findsOneWidget);
       await settleIo(tester);
       expect(api.treeRequests, 3);
       expect(find.text('audio'), findsOneWidget);

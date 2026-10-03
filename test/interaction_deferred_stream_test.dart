@@ -14,9 +14,13 @@ void main() {
     );
     final source = ValueNotifier<int>(0);
     final values = <int>[];
+    var reads = 0;
     final subscription = interactionDeferredListenableStream(
       source: source,
-      read: () => source.value,
+      read: () {
+        reads++;
+        return source.value;
+      },
       coordinator: interaction,
     ).listen(values.add);
     await Future<void>.delayed(Duration.zero);
@@ -29,11 +33,13 @@ void main() {
     source.value = 3;
 
     expect(values, <int>[0]);
+    expect(reads, 1);
 
     interaction.cancelInteraction(interactionSource);
     interaction.flushPendingCommitsForTest();
 
     expect(values, <int>[0, 3]);
+    expect(reads, 2);
     await subscription.cancel();
     source.dispose();
     interaction.dispose();
@@ -65,6 +71,58 @@ void main() {
 
       expect(values, <int>[1, 3]);
       await subscription.cancel();
+      await source.close();
+      interaction.dispose();
+    },
+  );
+  test(
+    'value stream preserves its deferred final event before closing',
+    () async {
+      final interaction = UiInteractionCoordinator(idleDelay: Duration.zero);
+      final source = StreamController<int>.broadcast(sync: true);
+      final values = <int>[];
+      var done = false;
+      final subscription = interactionDeferredValueStream(
+        source.stream,
+        coordinator: interaction,
+      ).listen(values.add, onDone: () => done = true);
+      final interactionSource = Object();
+      interaction.beginInteraction(interactionSource);
+      source.add(1);
+      source.add(2);
+      await source.close();
+      expect(values, [1]);
+      expect(done, isFalse);
+      interaction.cancelInteraction(interactionSource);
+      interaction.flushPendingCommitsForTest();
+      await Future<void>.delayed(Duration.zero);
+      expect(values, [1, 2]);
+      expect(done, isTrue);
+      await subscription.cancel();
+      interaction.dispose();
+    },
+  );
+
+  test(
+    'value stream gives a returning listener its first event during motion',
+    () async {
+      final interaction = UiInteractionCoordinator(idleDelay: Duration.zero);
+      final source = StreamController<int>.broadcast(sync: true);
+      final stream = interactionDeferredValueStream(
+        source.stream,
+        coordinator: interaction,
+      );
+      final first = stream.listen((_) {});
+      source.add(1);
+      await first.cancel();
+      final interactionSource = Object();
+      interaction.beginInteraction(interactionSource);
+      final values = <int>[];
+      final returning = stream.listen(values.add);
+      source.add(2);
+      expect(values, [2]);
+      expect(interaction.pendingCommitCount, 0);
+      await returning.cancel();
       await source.close();
       interaction.dispose();
     },

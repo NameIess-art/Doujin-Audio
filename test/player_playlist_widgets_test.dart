@@ -701,6 +701,9 @@ void main() {
     testWidgets(
       'segment loading is shared and invalidated, disposed=$disposeBeforeResult',
       (tester) async {
+        final interaction = UiInteractionCoordinator.instance;
+        interaction.resetForTest();
+        addTearDown(interaction.resetForTest);
         final busy = ValueNotifier(true);
         addTearDown(busy.dispose);
         final pending = Completer<void>();
@@ -726,7 +729,17 @@ void main() {
         );
         state.expandSegmentPanel();
         await tester.pumpAndSettle();
+        expect(reads, 0);
+        final navigation = Object();
+        interaction.beginInteraction(navigation);
+        busy.value = false;
+        await tester.pump();
+        expect(reads, 0);
+        interaction.endInteraction(navigation);
+        await tester.pump(interaction.idleDelay);
+        await tester.pump();
         expect(reads, 1);
+        busy.value = true;
         if (disposeBeforeResult) {
           await tester.pumpWidget(const SizedBox.shrink());
         }
@@ -743,6 +756,116 @@ void main() {
         expect(tester.takeException(), isNull);
       },
     );
+  }
+
+  for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+    for (final closeBeforeIdle in [false, true]) {
+      testWidgets(
+        'segment loading cancels stale starts on $platform, closed=$closeBeforeIdle',
+        (tester) async {
+          final interaction = UiInteractionCoordinator.instance;
+          interaction.resetForTest();
+          addTearDown(interaction.resetForTest);
+          final busy = ValueNotifier(true);
+          addTearDown(busy.dispose);
+          late ValueNotifier<PlaybackSessionSnapshot> selected;
+          var reads = 0;
+          final tracks = [
+            for (final name in ['old', 'current'])
+              MusicTrack(
+                path: '/library/segments/$name.mp3',
+                displayName: name,
+                groupKey: '/library/segments',
+                groupTitle: 'Segments',
+                groupSubtitle: '',
+                isSingle: false,
+              ),
+          ];
+          final harness = await _pumpSubtitleDetail(
+            tester: tester,
+            subtitleTrack: SubtitleTrack(
+              sourcePath: 'empty.srt',
+              cues: const [],
+            ),
+            initialPosition: Duration.zero,
+            queueTracks: tracks,
+            configureFixture: (fixture) {
+              fixture.persistenceRepository.beforeTimeSegmentLabelLoad = () {
+                reads++;
+                return Future.value();
+              };
+            },
+            detailBuilder: (snapshot) {
+              selected = ValueNotifier(snapshot);
+              return ValueListenableBuilder<PlaybackSessionSnapshot>(
+                valueListenable: selected,
+                builder: (_, session, _) => SessionDetailContent(
+                  session: session,
+                  artworkWidget: const SizedBox.shrink(),
+                  transitionActive: busy,
+                ),
+              );
+            },
+          );
+          addTearDown(selected.dispose);
+          expect(reads, 0);
+          await tester.runAsync(() async {
+            for (final track in tracks) {
+              await harness.fixture.persistenceRepository
+                  .upsertTimeSegmentLabel(
+                    TimeSegmentLabel(
+                      id: 'deferred-${track.displayName}',
+                      trackKey: TimeSegmentLabel.trackKeyFor(track),
+                      name: '${track.displayName} deferred label',
+                      start: Duration.zero,
+                      end: const Duration(seconds: 5),
+                      colorValue: kTimeSegmentLabelPalette.first,
+                      createdAt: DateTime(2026),
+                      updatedAt: DateTime(2026),
+                    ),
+                  );
+            }
+          });
+          tester
+              .state<SessionDetailContentState>(
+                find.byType(SessionDetailContent),
+              )
+              .expandSegmentPanel();
+          final navigation = Object();
+          interaction.beginInteraction(navigation);
+          busy.value = false;
+          await tester.pump();
+          harness.session.currentTrackPath = tracks.last.path;
+          selected.value = PlaybackSessionSnapshot.fromRuntime(harness.session);
+          await tester.pump();
+          expect(reads, 0);
+          if (closeBeforeIdle) {
+            await tester.pumpWidget(const SizedBox.shrink());
+          }
+          interaction.endInteraction(navigation);
+          await tester.pump(interaction.idleDelay);
+          await tester.pump();
+          expect(reads, closeBeforeIdle ? 0 : 1);
+          await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 100)),
+          );
+          await tester.pumpAndSettle();
+          expect(reads, closeBeforeIdle ? 0 : 1);
+          expect(find.text('old deferred label'), findsNothing);
+          if (!closeBeforeIdle) {
+            expect(
+              tester
+                  .widget<TimeSegmentPanel>(find.byType(TimeSegmentPanel))
+                  .labels
+                  .map((label) => label.name),
+              ['current deferred label'],
+            );
+          }
+          expect(tester.takeException(), isNull);
+        },
+        variant: TargetPlatformVariant({platform}),
+      );
+    }
   }
 
   for (final disposeBeforeCommit in [false, true]) {

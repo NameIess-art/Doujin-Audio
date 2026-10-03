@@ -16,25 +16,25 @@ Stream<T> interactionDeferredListenableStream<T>({
   return Stream<T>.multi((events) {
     final commitKey =
         'interaction_deferred_listenable_${_interactionDeferredStreamSeed++}';
-    Object? pendingValue = _noPendingValue;
+    var dirty = false;
 
     void flushPending() {
-      final value = pendingValue;
-      pendingValue = _noPendingValue;
-      if (!events.isClosed && !identical(value, _noPendingValue)) {
-        events.addSync(value as T);
+      if (!events.isClosed && dirty) {
+        dirty = false;
+        events.addSync(read());
       }
     }
 
     void emit() {
-      final value = read();
       if (!interaction.isInteracting) {
         interaction.cancelCommit(commitKey);
-        pendingValue = _noPendingValue;
-        events.addSync(value);
+        dirty = false;
+        events.addSync(read());
         return;
       }
-      pendingValue = value;
+      // Snapshot construction can filter entire catalogs. Read once after the
+      // animation, rather than constructing values that will be discarded.
+      dirty = true;
       interaction.scheduleCommit(
         key: commitKey,
         priority: 10,
@@ -47,7 +47,7 @@ Stream<T> interactionDeferredListenableStream<T>({
     events.onCancel = () {
       source.removeListener(emit);
       interaction.cancelCommit(commitKey);
-      pendingValue = _noPendingValue;
+      dirty = false;
     };
   }, isBroadcast: true);
 }
@@ -63,6 +63,7 @@ Stream<T> interactionDeferredValueStream<T>(
       'interaction_deferred_value_${_interactionDeferredStreamSeed++}';
   Object? pendingValue = _noPendingValue;
   var hasEmitted = false;
+  var sourceDone = false;
 
   void flushPending() {
     final value = pendingValue;
@@ -70,6 +71,7 @@ Stream<T> interactionDeferredValueStream<T>(
     if (!controller.isClosed && !identical(value, _noPendingValue)) {
       controller.add(value as T);
     }
+    if (sourceDone) unawaited(controller.close());
   }
 
   void emit(T value) {
@@ -91,10 +93,20 @@ Stream<T> interactionDeferredValueStream<T>(
   controller = StreamController<T>.broadcast(
     sync: true,
     onListen: () {
+      hasEmitted = false;
+      sourceDone = false;
       subscription = source.listen(
         emit,
         onError: controller.addError,
-        onDone: controller.close,
+        onDone: () {
+          sourceDone = true;
+          if (identical(pendingValue, _noPendingValue)) {
+            unawaited(controller.close());
+          } else if (!interaction.isInteracting) {
+            interaction.cancelCommit(commitKey);
+            flushPending();
+          }
+        },
       );
     },
     onCancel: () async {

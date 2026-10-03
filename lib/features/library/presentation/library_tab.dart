@@ -77,14 +77,18 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
   @override
   double get defaultHeaderHeight => AppPageHeaderMetrics.expandedToolbarHeight;
 
+  late bool _wasSelected;
+
+  bool get _isSelected =>
+      (widget.activeTabIndexListenable == null ||
+          widget.activeTabIndexListenable!.value == tabIndex) &&
+      (widget.activeSectionListenable == null ||
+          widget.activeSectionListenable!.value == widget.sectionIndex);
+
   bool get _isActive {
     final route = ModalRoute.of(context);
     final isRouteCurrent = route == null || route.isCurrent;
-    return isRouteCurrent &&
-        (widget.activeTabIndexListenable == null ||
-            widget.activeTabIndexListenable!.value == tabIndex) &&
-        (widget.activeSectionListenable == null ||
-            widget.activeSectionListenable!.value == widget.sectionIndex);
+    return isRouteCurrent && _isSelected;
   }
 
   @override
@@ -96,6 +100,9 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
 
   void _handleActiveTabChanged() {
     if (!mounted) return;
+    final selected = _isSelected;
+    if (selected == _wasSelected) return;
+    _wasSelected = selected;
     setState(() {});
     if (_isActive) {
       _ensureStartupRefreshStarted();
@@ -410,6 +417,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
   @override
   void initState() {
     super.initState();
+    _wasSelected = _isSelected;
     widget.activeTabIndexListenable?.addListener(_handleActiveTabChanged);
     widget.activeSectionListenable?.addListener(_handleActiveTabChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -417,6 +425,24 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     });
     final controller = ref.read(mainScreenControllerProvider);
     initTabState(controller.scrollToTopTab, controller.stopScrollTab);
+  }
+
+  @override
+  void didUpdateWidget(covariant LibraryTab oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.activeTabIndexListenable != widget.activeTabIndexListenable) {
+      oldWidget.activeTabIndexListenable?.removeListener(
+        _handleActiveTabChanged,
+      );
+      widget.activeTabIndexListenable?.addListener(_handleActiveTabChanged);
+    }
+    if (oldWidget.activeSectionListenable != widget.activeSectionListenable) {
+      oldWidget.activeSectionListenable?.removeListener(
+        _handleActiveTabChanged,
+      );
+      widget.activeSectionListenable?.addListener(_handleActiveTabChanged);
+    }
+    _handleActiveTabChanged();
   }
 
   void _ensureStartupRefreshStarted() {

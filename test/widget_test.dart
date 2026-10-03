@@ -1299,7 +1299,10 @@ void main() {
     await tester.pump(const Duration(milliseconds: 140));
     expect(tester.getSize(routeWidth).width, lessThan(expandedWidth));
     expect(tester.getSize(routeWidth).width, greaterThan(48));
-    expect(tester.getCenter(routeCover).dx, greaterThan(collapsedCenter.dx - 120));
+    expect(
+      tester.getCenter(routeCover).dx,
+      greaterThan(collapsedCenter.dx - 120),
+    );
     expect(routeDock, findsOneWidget);
     await tester.pump(const Duration(milliseconds: 60));
     expect(routeDock, findsOneWidget);
@@ -1855,6 +1858,9 @@ void main() {
     await tester.pump();
     controller.completeRecommendationRefresh();
     await tester.pump(const Duration(milliseconds: 400));
+    await tester.pumpAndSettle();
+    await tester.pump(UiInteractionCoordinator.instance.idleDelay);
+    await tester.pump();
     final recommendationView = find.byKey(
       const ValueKey(AsmrCategoryType.recommendation),
     );
@@ -2185,6 +2191,206 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(seconds: 3));
   });
+
+  for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+    for (final leaveBeforeIdle in [false, true]) {
+      testWidgets(
+        'ASMR language changes wait for idle on $platform, leave=$leaveBeforeIdle',
+        (tester) async {
+          final interaction = UiInteractionCoordinator.instance;
+          final fixture = AppRuntimeWidgetTestFixture();
+          await fixture.languageProvider.setLanguage(AppLanguage.zh);
+          final controller = _QueuedEmptyAsmrLibraryController(
+            services: createTestAsmrServices(),
+            trackPageLanguageChanges: true,
+          );
+          final activePageIndex = ValueNotifier<int>(0);
+          addTearDown(fixture.dispose);
+          addTearDown(controller.dispose);
+          addTearDown(activePageIndex.dispose);
+          await tester.pumpWidget(
+            fixture.build(
+              AsmrTab(activeTabIndexListenable: activePageIndex),
+              overrides: [
+                asmrLibraryControllerProvider.overrideWithValue(controller),
+              ],
+            ),
+          );
+          await tester.pumpAndSettle();
+          controller.categoryLoadRequests.clear();
+          controller.categoryLoadLanguages.clear();
+          final navigation = Object();
+          interaction.beginInteraction(navigation);
+          await tester.tap(
+            find.text(fixture.languageProvider.tr('asmr_category_recommendation')),
+          );
+          await tester.pump();
+          await tester.tap(
+            find.text(fixture.languageProvider.tr('asmr_category_favorites')),
+          );
+          await tester.pump();
+          await fixture.languageProvider.setLanguage(AppLanguage.en);
+          await fixture.languageProvider.setLanguage(AppLanguage.ja);
+          await tester.pump();
+          expect(controller.pageLanguageChanges, isEmpty);
+          expect(controller.categoryLoadRequests, isEmpty);
+          if (leaveBeforeIdle) {
+            activePageIndex.value = 1;
+            await tester.pump();
+            await tester.pumpWidget(const SizedBox.shrink());
+          }
+          interaction.endInteraction(navigation);
+          await tester.pumpAndSettle();
+          await tester.pump(interaction.idleDelay);
+          await tester.pumpAndSettle();
+          expect(
+            controller.pageLanguageChanges,
+            leaveBeforeIdle ? isEmpty : [AppLanguage.ja],
+          );
+          expect(
+            controller.categoryLoadRequests,
+            leaveBeforeIdle ? isEmpty : [AsmrCategoryType.favorites],
+          );
+          expect(
+            controller.categoryLoadLanguages,
+            leaveBeforeIdle ? isEmpty : [AppLanguage.ja],
+          );
+          if (!leaveBeforeIdle) {
+            controller.pageLanguageChanges.clear();
+            controller.categoryLoadRequests.clear();
+            interaction.beginInteraction(navigation);
+            await fixture.languageProvider.setLanguage(AppLanguage.en);
+            await fixture.languageProvider.setLanguage(AppLanguage.ja);
+            interaction.endInteraction(navigation);
+            await tester.pump(interaction.idleDelay);
+            await tester.pumpAndSettle();
+            expect(controller.pageLanguageChanges, isEmpty);
+            expect(controller.categoryLoadRequests, isEmpty);
+          }
+          expect(tester.takeException(), isNull);
+        },
+        variant: TargetPlatformVariant({platform}),
+      );
+    }
+    testWidgets(
+      'ASMR restored category waits for its opening animation on $platform',
+      (tester) async {
+        final fixture = AppRuntimeWidgetTestFixture();
+        final initialization = Completer<void>();
+        final controller = _QueuedEmptyAsmrLibraryController(
+          services: createTestAsmrServices(),
+        )..initializationWait = initialization.future;
+        addTearDown(fixture.dispose);
+        addTearDown(controller.dispose);
+        await tester.pumpWidget(
+          fixture.build(
+            const AsmrTab(),
+            overrides: [
+              asmrLibraryControllerProvider.overrideWithValue(controller),
+            ],
+          ),
+        );
+        ProviderScope.containerOf(
+          tester.element(find.byType(AsmrTab)),
+        ).read(browsePageStateStoreProvider).update(
+          'asmr_root:${controller.browseCacheScope}',
+          {'category': AsmrCategoryType.recommendation.name},
+        );
+        await tester.pumpAndSettle();
+        initialization.complete();
+        await tester.pump();
+        await tester.pump();
+        final interaction = UiInteractionCoordinator.instance;
+        expect(controller.categoryLoadRequests, isEmpty);
+        expect(interaction.isInteracting, isTrue);
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(controller.categoryLoadRequests, isEmpty);
+        controller.completeRecommendationRefresh();
+        await tester.pumpAndSettle();
+        await tester.pump(interaction.idleDelay);
+        await tester.pump();
+        expect(controller.categoryLoadRequests, [
+          AsmrCategoryType.recommendation,
+        ]);
+        expect(controller.recommendationRefreshCount, 1);
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+      },
+      variant: TargetPlatformVariant({platform}),
+    );
+    for (final leaveBeforeIdle in [false, true]) {
+      testWidgets(
+        'ASMR activation and category loads wait for idle on $platform, leave=$leaveBeforeIdle',
+        (tester) async {
+          final interaction = UiInteractionCoordinator.instance;
+          final fixture = AppRuntimeWidgetTestFixture();
+          final controller = _QueuedEmptyAsmrLibraryController(
+            services: createTestAsmrServices(),
+          );
+          final activePageIndex = ValueNotifier<int>(0);
+          addTearDown(fixture.dispose);
+          addTearDown(controller.dispose);
+          addTearDown(activePageIndex.dispose);
+          await tester.pumpWidget(
+            fixture.build(
+              AsmrTab(activeTabIndexListenable: activePageIndex),
+              overrides: [
+                asmrLibraryControllerProvider.overrideWithValue(controller),
+              ],
+            ),
+          );
+          await tester.pumpAndSettle();
+          expect(controller.categoryLoadRequests, [AsmrCategoryType.collected]);
+          activePageIndex.value = 1;
+          await tester.pump();
+          final navigation = Object();
+          interaction.beginInteraction(navigation);
+          activePageIndex.value = 0;
+          await tester.pump();
+          expect(controller.categoryLoadRequests, [AsmrCategoryType.collected]);
+          interaction.endInteraction(navigation);
+          await tester.pump(interaction.idleDelay);
+          await tester.pumpAndSettle();
+          expect(controller.categoryLoadRequests, [
+            AsmrCategoryType.collected,
+            AsmrCategoryType.collected,
+          ]);
+
+          interaction.beginInteraction(navigation);
+          await tester.tap(
+            find.text(
+              fixture.languageProvider.tr('asmr_category_recommendation'),
+            ),
+          );
+          await tester.pump();
+          await tester.tap(
+            find.text(fixture.languageProvider.tr('asmr_category_favorites')),
+          );
+          await tester.pump();
+          expect(controller.categoryLoadRequests, hasLength(2));
+          if (leaveBeforeIdle) {
+            activePageIndex.value = 1;
+            await tester.pump();
+            await tester.pumpWidget(const SizedBox.shrink());
+          }
+          interaction.endInteraction(navigation);
+          await tester.pump(const Duration(milliseconds: 700));
+          await tester.pump(interaction.idleDelay);
+          await tester.pumpAndSettle();
+          await tester.pump(interaction.idleDelay);
+          await tester.pump();
+          expect(controller.categoryLoadRequests, [
+            AsmrCategoryType.collected,
+            AsmrCategoryType.collected,
+            if (!leaveBeforeIdle) AsmrCategoryType.favorites,
+          ]);
+          expect(controller.recommendationRefreshCount, 0);
+          expect(tester.takeException(), isNull);
+        },
+        variant: TargetPlatformVariant({platform}),
+      );
+    }
+  }
 
   testWidgets('local and ASMR library cards start at the same height', (
     tester,
@@ -4990,6 +5196,8 @@ final class _QueuedEmptyAsmrLibraryController extends AsmrLibraryController {
     String searchQuery = '',
     bool searchSession = false,
   }) {
+    categoryLoadRequests.add(category);
+    categoryLoadLanguages.add(pageLanguage);
     final state = categoryViewState(
       category,
       searchQuery: searchQuery,
@@ -5011,6 +5219,7 @@ final class _QueuedEmptyAsmrLibraryController extends AsmrLibraryController {
     this.emptyCollectedOnInitialLoad = false,
     this.delayInitialCollectedRefresh = false,
     this.separateSearchResults = false,
+    this.trackPageLanguageChanges = false,
     this.trackTree,
   }) : super(
          preferencesStore: services.preferencesStore,
@@ -5021,6 +5230,26 @@ final class _QueuedEmptyAsmrLibraryController extends AsmrLibraryController {
   final Completer<void> _recommendationRefresh = Completer<void>();
   Future<void>? initializationWait;
   final refreshRequests = <(AsmrCategoryType, String)>[];
+  final categoryLoadRequests = <AsmrCategoryType>[];
+  final categoryLoadLanguages = <AppLanguage>[];
+  final pageLanguageChanges = <AppLanguage>[];
+  final bool trackPageLanguageChanges;
+  AppLanguage? _trackedPageLanguage;
+
+  @override
+  bool get initialized => trackPageLanguageChanges || super.initialized;
+
+  @override
+  AppLanguage get pageLanguage => _trackedPageLanguage ?? super.pageLanguage;
+
+  @override
+  bool setPageLanguage(AppLanguage language) {
+    if (!trackPageLanguageChanges) return super.setPageLanguage(language);
+    if (pageLanguage == language) return false;
+    _trackedPageLanguage = language;
+    pageLanguageChanges.add(language);
+    return true;
+  }
   final List<Completer<void>> _collectedSearchRefreshes = <Completer<void>>[];
   final Completer<void> _initialCollectedRefresh = Completer<void>();
   final bool collectedHasMore;

@@ -90,12 +90,15 @@ final class LibraryCoverUiController {
       // Admit this frame's cards together after layout, so the first built
       // cache-extent item cannot start before the viewport's center is known.
       _scheduler.setPaused(true);
-      final requests = _deferredLookups.entries.toList()
-        ..sort(
-          (left, right) => _priorityForRequest(
-            left.value,
-          ).compareTo(_priorityForRequest(right.value)),
-        );
+      final requests =
+          _deferredLookups.entries
+              .where((entry) => _canRunLookup(entry.value))
+              .toList()
+            ..sort(
+              (left, right) => _priorityForRequest(
+                left.value,
+              ).compareTo(_priorityForRequest(right.value)),
+            );
       for (final entry in requests) {
         final request = entry.value;
         if (request.submitted) continue;
@@ -110,7 +113,9 @@ final class LibraryCoverUiController {
         );
       }
       _scheduler.setPaused(_interactionPaused);
-      if (_deferredLookups.values.any((request) => !request.submitted)) {
+      if (_deferredLookups.values.any(
+        (request) => !request.submitted && _canRunLookup(request),
+      )) {
         unawaited(_waitForCapacity());
       }
     });
@@ -125,6 +130,12 @@ final class LibraryCoverUiController {
   }
 
   Future<void> _runLookup(String key, _DeferredCoverLookup request) async {
+    // A cached page can become hidden while its request is queued. Keep the
+    // same future for its return, without starting invisible cover discovery.
+    if (!_disposed && !_canRunLookup(request)) {
+      request.submitted = false;
+      return;
+    }
     final completer = request.result;
     try {
       final hasMountedRequester =
@@ -142,6 +153,15 @@ final class LibraryCoverUiController {
       }
     }
   }
+
+  bool _canRunLookup(_DeferredCoverLookup request) =>
+      request.hasUnscopedRequest ||
+      !request.contexts.any((context) => context.mounted) ||
+      request.contexts.any(
+        (context) =>
+            context.mounted &&
+            TickerMode.getValuesNotifier(context).value.enabled,
+      );
 
   int _priorityForRequest(_DeferredCoverLookup request) {
     var priority = request.hasUnscopedRequest ? -2000 : 1 << 30;

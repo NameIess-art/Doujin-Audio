@@ -1312,6 +1312,54 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  for (final style in [
+    AppIndexedStackTransitionStyle.slide,
+    AppIndexedStackTransitionStyle.directional,
+    AppIndexedStackTransitionStyle.crossFade,
+  ]) {
+    testWidgets('hidden motion regions reuse their configuration ($style)', (
+      tester,
+    ) async {
+      final index = ValueNotifier<int>(0);
+      addTearDown(index.dispose);
+      final builds = [0, 0, 0];
+      await tester.pumpWidget(
+        MaterialApp(
+          home: AppFadeThroughIndexedStack.lazy(
+            indexListenable: index,
+            itemCount: 3,
+            style: style,
+            separateHeader: true,
+            itemBuilder: (_, page) => Column(
+              children: [
+                AppPageHeaderTransition(child: Text('cached-header-$page')),
+                Expanded(
+                  child: _BuildCountingContent(
+                    onBuild: () => builds[page]++,
+                    child: Text('cached-content-$page'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      index.value = 1;
+      await tester.pumpAndSettle();
+      final hiddenBuilds = builds[0];
+      index.value = 2;
+      await tester.pumpAndSettle();
+      index.value = 1;
+      await tester.pumpAndSettle();
+      expect(builds[0], hiddenBuilds);
+      index.value = 0;
+      await tester.pumpAndSettle();
+      expect(find.text('cached-content-0'), findsOneWidget);
+      expect(builds[0], greaterThan(hiddenBuilds));
+      expect(tester.takeException(), isNull);
+    });
+  }
+
   testWidgets('hidden cached pages pause provider subscriptions until return', (
     tester,
   ) async {

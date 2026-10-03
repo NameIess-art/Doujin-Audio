@@ -35,6 +35,7 @@ void main() {
         coverArtworkCacheService: _ResolvedCoverCache(),
         configureSettingsRepository: (settings) {
           settings.coverImageResolution = CoverImageResolution.original;
+          settings.blurPlayerBackgroundEnabled = true;
           settings.syncSlice();
         },
       );

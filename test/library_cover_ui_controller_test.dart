@@ -222,6 +222,66 @@ void main() {
     await Future.wait(futures);
     expect(cache.requests, hasLength(1));
   });
+
+  testWidgets('hidden queued covers wait and reuse their futures on return', (
+    tester,
+  ) async {
+    final cache = _RecordingCovers();
+    final fixture = AppRuntimeWidgetTestFixture(
+      coverArtworkCacheService: cache,
+    );
+    final covers = LibraryCoverUiController(library: fixture.library);
+    final visible = ValueNotifier<bool>(true);
+    addTearDown(fixture.dispose);
+    addTearDown(covers.dispose);
+    addTearDown(visible.dispose);
+    final futures = <Future<String?>>[];
+    var secondCompleted = false;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ValueListenableBuilder<bool>(
+          valueListenable: visible,
+          builder: (_, enabled, child) =>
+              TickerMode(enabled: enabled, child: child!),
+          child: Column(
+            children: [
+              for (var i = 0; i < 2; i++)
+                Builder(
+                  builder: (context) {
+                    futures.add(
+                      covers.deferredRemoteCover(
+                        'https://cover/$i',
+                        context: context,
+                      ),
+                    );
+                    return const SizedBox(height: 100);
+                  },
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+    expect(cache.requests, ['remote:0']);
+    unawaited(futures[1].then((_) => secondCompleted = true));
+    visible.value = false;
+    await tester.pump();
+    cache.release.complete();
+    await tester.pump();
+    expect(cache.requests, ['remote:0']);
+    expect(secondCompleted, isFalse);
+    // Resuming interaction while hidden must not spin on queue capacity.
+    covers.setInteractionPaused(false);
+    await tester.pump();
+    expect(cache.requests, ['remote:0']);
+    visible.value = true;
+    await tester.pump();
+    covers.setInteractionPaused(false);
+    await tester.pump();
+    await Future.wait(futures);
+    expect(cache.requests, ['remote:0', 'remote:1']);
+    expect(secondCompleted, isTrue);
+  });
 }
 
 MusicTrack _track(int index) => MusicTrack(

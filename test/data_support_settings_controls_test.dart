@@ -2,6 +2,7 @@ import 'package:doujin_audio/features/settings/presentation/settings_providers.d
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -9,6 +10,7 @@ import 'package:doujin_audio/app/localization/app_language_provider.dart';
 import 'package:doujin_audio/app/presentation/app_settings_group_card.dart';
 import 'package:doujin_audio/app/state/app_runtime_providers.dart';
 import 'package:doujin_audio/core/ui/ui_operation_service.dart';
+import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/platform/file_cache_platform_gateway.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
 import 'package:doujin_audio/features/data_support/application/storage_usage_service.dart';
@@ -48,6 +50,7 @@ void main() {
   }
 
   setUp(() {
+    UiInteractionCoordinator.instance.resetForTest();
     SharedPreferences.setMockInitialValues(const <String, Object>{});
     operationService = UiOperationService();
     messenger.setMockMethodCallHandler(storageChannel, (call) async {
@@ -63,6 +66,7 @@ void main() {
   });
 
   tearDown(() async {
+    UiInteractionCoordinator.instance.resetForTest();
     await operationService.dispose();
     messenger.setMockMethodCallHandler(storageChannel, null);
     messenger.setMockStreamHandler(storageEvents, null);
@@ -258,6 +262,164 @@ void main() {
     await tester.pumpAndSettle();
     expect(
       find.text(languageProvider.tr('restore_backup_warning')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('storage queries and results wait for idle', (tester) async {
+    final coordinator = UiInteractionCoordinator.instance;
+    final animation = Object();
+    final pending = Completer<Object?>();
+    var reads = 0;
+    messenger.setMockMethodCallHandler(storageChannel, (_) {
+      reads++;
+      return pending.future;
+    });
+    coordinator.beginInteraction(animation);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appLanguageProviderInstanceProvider.overrideWithValue(
+            AppLanguageProvider(),
+          ),
+          dataSupportStorageUsageServiceProvider.overrideWithValue(
+            storageService(),
+          ),
+        ],
+        child: const MaterialApp(home: StorageUsageCard()),
+      ),
+    );
+    await tester.pump();
+    expect(reads, 0);
+    coordinator.cancelInteraction(animation);
+    await tester.pump();
+    expect(reads, 1);
+    coordinator.beginInteraction(animation);
+    pending.complete(<String, Object?>{
+      'ok': true,
+      'value': <String, Object?>{
+        'totalBytes': 1024,
+        'availableBytes': 512,
+        'cacheBytes': 128,
+      },
+    });
+    await tester.pump();
+    await tester.pump();
+    expect(
+      find.byKey(const ValueKey('data-support-storage-card')),
+      findsNothing,
+    );
+    coordinator.cancelInteraction(animation);
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('data-support-storage-card')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('disposed storage overview skips queued queries', (tester) async {
+    final coordinator = UiInteractionCoordinator.instance;
+    final animation = Object();
+    var reads = 0;
+    messenger.setMockMethodCallHandler(storageChannel, (_) async {
+      reads++;
+      return null;
+    });
+    coordinator.beginInteraction(animation);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appLanguageProviderInstanceProvider.overrideWithValue(
+            AppLanguageProvider(),
+          ),
+          dataSupportStorageUsageServiceProvider.overrideWithValue(
+            storageService(),
+          ),
+        ],
+        child: const MaterialApp(home: StorageUsageCard()),
+      ),
+    );
+    await tester.pumpWidget(const SizedBox.shrink());
+    coordinator.cancelInteraction(animation);
+    await tester.pump();
+    expect(reads, 0);
+    expect(coordinator.pendingCommitCount, 0);
+  });
+
+  testWidgets('hidden storage overview queries once when uncovered', (
+    tester,
+  ) async {
+    final coordinator = UiInteractionCoordinator.instance;
+    final animation = Object();
+    final navigator = GlobalKey<NavigatorState>();
+    var reads = 0;
+    messenger.setMockMethodCallHandler(storageChannel, (_) async {
+      reads++;
+      return <String, Object?>{
+        'ok': true,
+        'value': <String, Object?>{
+          'totalBytes': 1024,
+          'availableBytes': 512,
+          'cacheBytes': 128,
+        },
+      };
+    });
+    coordinator.beginInteraction(animation);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appLanguageProviderInstanceProvider.overrideWithValue(
+            AppLanguageProvider(),
+          ),
+          dataSupportStorageUsageServiceProvider.overrideWithValue(
+            storageService(),
+          ),
+        ],
+        child: MaterialApp(
+          navigatorKey: navigator,
+          home: const StorageUsageCard(),
+        ),
+      ),
+    );
+    unawaited(
+      navigator.currentState!.push(
+        MaterialPageRoute<void>(
+          builder: (_) => const Scaffold(body: Text('covering page')),
+        ),
+      ),
+    );
+    await tester.pump();
+    coordinator.cancelInteraction(animation);
+    await tester.pumpAndSettle();
+    expect(reads, 0);
+    navigator.currentState!.pop();
+    await tester.pumpAndSettle();
+    expect(reads, 1);
+    expect(
+      find.byKey(const ValueKey('data-support-storage-card')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('storage overview publishes synchronous cached results', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appLanguageProviderInstanceProvider.overrideWithValue(
+            AppLanguageProvider(),
+          ),
+          dataSupportStorageUsageServiceProvider.overrideWithValue(
+            _SynchronousStorageUsageService(),
+          ),
+        ],
+        child: const MaterialApp(home: StorageUsageCard()),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('data-support-storage-card')),
       findsOneWidget,
     );
   });
@@ -513,4 +675,23 @@ void main() {
     expect(storageReads, 2);
     expect(find.byKey(appCacheSegmentKey), findsNothing);
   });
+}
+
+class _SynchronousStorageUsageService extends StorageUsageService {
+  _SynchronousStorageUsageService()
+    : super(
+        fileCacheGateway: FileCachePlatformGateway(isAndroid: () => false),
+        libraryTracks: () => const <MusicTrack>[],
+      );
+
+  @override
+  Future<StorageUsageSnapshot> load() => SynchronousFuture(
+    const StorageUsageSnapshot(
+      totalBytes: 1024,
+      audioLibraryBytes: 0,
+      applicationCacheBytes: 128,
+      otherUsedBytes: 384,
+      availableBytes: 512,
+    ),
+  );
 }

@@ -127,6 +127,11 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
           widget.initialCoverPath ??
           library.resolvedCoverPathForFolder(_localTarget!.targetPath) ??
           _localDetail?.cardCoverPath;
+    } else {
+      _asmrTree = ref
+          .read(asmrLibraryControllerProvider)
+          ?.trackTreeFor(widget.asmrWork!.id);
+      _loadingAsmr = _asmrTree == null;
     }
     // Reuse card metadata immediately; start I/O after the opening transition.
     UiInteractionCoordinator.instance.scheduleCommit(
@@ -273,6 +278,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage> {
     setState(() => _loadingAsmr = _asmrTree == null);
     try {
       await controller.initializeForVisiblePage();
+      if (!mounted) return;
       final tree = await controller.ensureTrackTree(
         widget.asmrWork!,
         forceRefresh: true,

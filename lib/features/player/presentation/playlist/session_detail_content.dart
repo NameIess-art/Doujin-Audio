@@ -104,10 +104,7 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
 
   void expandSegmentPanel() {
     if (_segmentPanelExpanded) return;
-    final trackKey = _segmentTrackKey;
-    if (trackKey != null && !_segmentLabelsLoaded && !_segmentLoading) {
-      unawaited(_loadSegmentLabels(trackKey));
-    }
+    _scheduleSegmentLoad();
     setState(() {
       _segmentPanelExpanded = true;
     });
@@ -188,7 +185,30 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
     _draftEnd = null;
     _draftColorValue = null;
     _setSegmentNameText('');
-    unawaited(_loadSegmentLabels(nextKey));
+    _scheduleSegmentLoad();
+  }
+
+  void _scheduleSegmentLoad() {
+    final trackKey = _segmentTrackKey;
+    if (trackKey == null ||
+        _segmentLoading ||
+        _segmentLabelsLoaded ||
+        widget.transitionActive?.value == true) {
+      return;
+    }
+    final generation = _segmentLoadGeneration;
+    UiInteractionCoordinator.instance.scheduleCommit(
+      key: _segmentCommitKey,
+      commit: () {
+        if (!mounted ||
+            generation != _segmentLoadGeneration ||
+            trackKey != _segmentTrackKey ||
+            widget.transitionActive?.value == true) {
+          return;
+        }
+        unawaited(_loadSegmentLabels(trackKey));
+      },
+    );
   }
 
   Future<void> _loadSegmentLabels(String trackKey) async {
@@ -225,8 +245,11 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
   }
 
   void _scheduleSegmentResult() {
-    if (_pendingSegmentResult == null ||
-        widget.transitionActive?.value == true) {
+    if (_pendingSegmentResult == null) {
+      _scheduleSegmentLoad();
+      return;
+    }
+    if (widget.transitionActive?.value == true) {
       return;
     }
     final generation = _segmentLoadGeneration;

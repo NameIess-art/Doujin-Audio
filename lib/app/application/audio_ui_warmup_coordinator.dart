@@ -20,7 +20,6 @@ final class AudioUiWarmupCoordinator {
        _subtitles = subtitles,
        _scheduler = scheduler ?? WarmupScheduler();
 
-  static const _playbackTabIndex = 1;
   final LibraryFacade _library;
   final PlaybackFacade _playback;
   final NotificationFacade _notifications;
@@ -38,14 +37,14 @@ final class AudioUiWarmupCoordinator {
     _syncPauseState();
   }
 
-  void schedule({required int currentPageIndex, bool immediate = false}) {
+  void schedule({bool isPlaybackPage = false, bool immediate = false}) {
     if (_disposed) return;
     final generation = ++_generation;
     _deferredTimer?.cancel();
     if (immediate) {
       _run(
         generation: generation,
-        currentPageIndex: currentPageIndex,
+        isPlaybackPage: isPlaybackPage,
         navigationCooldown: Duration.zero,
       );
       return;
@@ -54,7 +53,7 @@ final class AudioUiWarmupCoordinator {
       _deferredTimer = null;
       _run(
         generation: generation,
-        currentPageIndex: currentPageIndex,
+        isPlaybackPage: isPlaybackPage,
         navigationCooldown: const Duration(milliseconds: 120),
       );
     });
@@ -89,12 +88,12 @@ final class AudioUiWarmupCoordinator {
 
   void _run({
     required int generation,
-    required int currentPageIndex,
+    required bool isPlaybackPage,
     required Duration navigationCooldown,
   }) {
     if (_disposed || generation != _generation) return;
     _scheduler.beginGeneration(generation, cooldown: navigationCooldown);
-    if (currentPageIndex == _playbackTabIndex) {
+    if (isPlaybackPage) {
       _scheduleFocusedSessionWarmup(generation);
     }
   }

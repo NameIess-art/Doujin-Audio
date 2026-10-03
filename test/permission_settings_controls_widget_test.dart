@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -6,10 +8,112 @@ import 'package:doujin_audio/app/presentation/app_settings_group_card.dart';
 import 'package:doujin_audio/app/state/app_runtime_providers.dart';
 import 'package:doujin_audio/core/widgets/app_settings_action_tile.dart';
 import 'package:doujin_audio/core/platform/power_platform_service.dart';
+import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/features/settings/presentation/permission_settings_controls.dart';
 import 'package:doujin_audio/features/settings/application/permission_status_service.dart';
 
 void main() {
+  setUp(UiInteractionCoordinator.instance.resetForTest);
+  tearDown(UiInteractionCoordinator.instance.resetForTest);
+
+  testWidgets('permission queries and results wait for idle', (tester) async {
+    final coordinator = UiInteractionCoordinator.instance;
+    final animation = Object();
+    final pending = Completer<PermissionStatusSnapshot>();
+    final service = _TestPermissionStatusService(pending.future);
+    coordinator.beginInteraction(animation);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appLanguageProviderInstanceProvider.overrideWithValue(
+            AppLanguageProvider(),
+          ),
+        ],
+        child: MaterialApp(
+          home: PermissionSettingsControls(statusService: service),
+        ),
+      ),
+    );
+    await tester.pump();
+    expect(service.reads, 0);
+    coordinator.cancelInteraction(animation);
+    await tester.pump();
+    expect(service.reads, 1);
+
+    coordinator.beginInteraction(animation);
+    pending.complete(_TestPermissionStatusService.granted);
+    await tester.pump();
+    await tester.pump();
+    expect(find.byType(TextButton), findsNothing);
+    coordinator.cancelInteraction(animation);
+    await tester.pumpAndSettle();
+    expect(find.byType(TextButton), findsNWidgets(4));
+  });
+
+  testWidgets('disposed permission controls skip queued queries', (
+    tester,
+  ) async {
+    final coordinator = UiInteractionCoordinator.instance;
+    final animation = Object();
+    final service = _TestPermissionStatusService();
+    coordinator.beginInteraction(animation);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appLanguageProviderInstanceProvider.overrideWithValue(
+            AppLanguageProvider(),
+          ),
+        ],
+        child: MaterialApp(
+          home: PermissionSettingsControls(statusService: service),
+        ),
+      ),
+    );
+    await tester.pumpWidget(const SizedBox.shrink());
+    coordinator.cancelInteraction(animation);
+    await tester.pump();
+    expect(service.reads, 0);
+    expect(coordinator.pendingCommitCount, 0);
+  });
+
+  testWidgets('hidden permission controls query once when uncovered', (
+    tester,
+  ) async {
+    final coordinator = UiInteractionCoordinator.instance;
+    final animation = Object();
+    final navigator = GlobalKey<NavigatorState>();
+    final service = _TestPermissionStatusService();
+    coordinator.beginInteraction(animation);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appLanguageProviderInstanceProvider.overrideWithValue(
+            AppLanguageProvider(),
+          ),
+        ],
+        child: MaterialApp(
+          navigatorKey: navigator,
+          home: PermissionSettingsControls(statusService: service),
+        ),
+      ),
+    );
+    unawaited(
+      navigator.currentState!.push(
+        MaterialPageRoute<void>(
+          builder: (_) => const Scaffold(body: Text('covering page')),
+        ),
+      ),
+    );
+    await tester.pump();
+    coordinator.cancelInteraction(animation);
+    await tester.pumpAndSettle();
+    expect(service.reads, 0);
+    navigator.currentState!.pop();
+    await tester.pumpAndSettle();
+    expect(service.reads, 1);
+    expect(find.byType(TextButton), findsNWidgets(4));
+  });
+
   testWidgets('permission settings use independent rows with status buttons', (
     tester,
   ) async {
@@ -136,6 +240,26 @@ void main() {
       );
     },
   );
+}
+
+class _TestPermissionStatusService extends PermissionStatusService {
+  _TestPermissionStatusService([this.pending]);
+
+  final Future<PermissionStatusSnapshot>? pending;
+  int reads = 0;
+  static const granted = PermissionStatusSnapshot(
+    backgroundRunAllowed: true,
+    exactAlarmsAllowed: true,
+    manageFilesAllowed: true,
+    overlayAllowed: true,
+    updateInstallsAllowed: true,
+  );
+
+  @override
+  Future<PermissionStatusSnapshot> load() {
+    reads++;
+    return pending ?? Future.value(granted);
+  }
 }
 
 class _PartialPowerService extends PowerPlatformService {

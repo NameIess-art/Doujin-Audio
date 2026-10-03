@@ -286,10 +286,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
       _subtitleOverlay.requestRuntimeSync();
       Future.delayed(const Duration(milliseconds: 750), () {
         if (!mounted) return;
-        warmup.schedule(
-          currentPageIndex: _activePageIndex.value,
-          immediate: true,
-        );
+        warmup.schedule(isPlaybackPage: _isPlaybackPage, immediate: true);
       });
     });
   }
@@ -486,6 +483,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
 
   @override
   void dispose() {
+    _pageSwitchCoordinatorGeneration++;
     UiInteractionCoordinator.instance.cancelInteraction(_pageSwitchInteraction);
     _sleepModeAutoEntryTimer?.cancel();
     _sleepModeAutoEntryTimer = null;
@@ -579,7 +577,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
       if (!mounted) return;
       ref
           .read(audioUiWarmupCoordinatorProvider)
-          .schedule(currentPageIndex: _activePageIndex.value, immediate: true);
+          .schedule(isPlaybackPage: _isPlaybackPage, immediate: true);
     });
   }
 
@@ -633,10 +631,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
       ref.read(audioRuntimeCoordinatorProvider).resumeForeground().then((_) {
         if (!mounted) return;
         final warmup = ref.read(audioUiWarmupCoordinatorProvider);
-        warmup.schedule(
-          currentPageIndex: _activePageIndex.value,
-          immediate: true,
-        );
+        warmup.schedule(isPlaybackPage: _isPlaybackPage, immediate: true);
       }),
     );
   }
@@ -736,16 +731,29 @@ class _MainScreenState extends ConsumerState<MainScreen>
     final warmup = ref.read(audioUiWarmupCoordinatorProvider);
     final coordinator = UiInteractionCoordinator.instance;
     final generation = _pageSwitchCoordinatorGeneration;
+    final isPlaybackPage = _isPlaybackPage;
     coordinator.endInteraction(_pageSwitchInteraction);
     coordinator.scheduleAfterIdle(
       key: 'main_page_warmup_$index',
       generation: generation,
       priority: 0,
       task: () async {
-        if (!mounted || _activePageIndex.value != index) return;
-        warmup.schedule(currentPageIndex: index, immediate: true);
+        if (!mounted ||
+            generation != _pageSwitchCoordinatorGeneration ||
+            _activePageIndex.value != index) {
+          return;
+        }
+        warmup.schedule(isPlaybackPage: isPlaybackPage, immediate: true);
       },
     );
+  }
+
+  bool get _isPlaybackPage {
+    final destinations = _currentDestinations();
+    final index = _activePageIndex.value;
+    return index >= 0 &&
+        index < destinations.length &&
+        destinations[index].type == MainDestinationType.playlist;
   }
 
   Future<void> _showAsmrOnlineNoticeOnce() async {

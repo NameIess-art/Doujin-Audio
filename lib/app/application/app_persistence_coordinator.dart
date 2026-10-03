@@ -106,10 +106,10 @@ final class AppPersistenceCoordinator implements PersistedStateReloader {
     if (_reloading) {
       _uiWarmup.resumeForeground();
       _library.coverArtworkCacheService.invalidateAll();
-      _uiWarmup.schedule(currentPageIndex: 0, immediate: true);
+      _uiWarmup.schedule(immediate: true);
       _reloading = false;
     } else {
-      _uiWarmup.schedule(currentPageIndex: 0);
+      _uiWarmup.schedule();
     }
     _keepAlive.sync();
     await _library.ensureCardSnapshot();

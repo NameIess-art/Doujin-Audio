@@ -914,6 +914,14 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
       return KeyedSubtree(
         key: ValueKey<String>('app_indexed_page_$index'),
         child: _AppPageMotionScope(
+          configuration: (
+            widget.style,
+            animation,
+            outgoing,
+            incoming,
+            preparing,
+            outgoing || incoming || preparing ? _transitionDirection : 0,
+          ),
           contentBuilder: (context, content) => SlideTransition(
             position: position,
             child: ColoredBox(
@@ -970,6 +978,14 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
     Widget result;
     if (widget.separateHeader) {
       result = _AppPageMotionScope(
+        configuration: (
+          widget.style,
+          animation,
+          outgoing,
+          incoming,
+          preparing,
+          outgoing || incoming || preparing ? _transitionDirection : 0,
+        ),
         contentBuilder: animateContent,
         headerBuilder: (_, header) => AnimatedBuilder(
           animation: animation,

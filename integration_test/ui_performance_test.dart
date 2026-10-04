@@ -2,6 +2,7 @@ import 'package:doujin_audio/features/asmr/presentation/asmr_providers.dart';
 import '../test/support/asmr_controller_test_fixture.dart';
 import 'dart:async';
 import 'dart:convert';
+import 'dart:developer' show Timeline;
 import 'dart:io';
 import 'dart:ui';
 
@@ -52,6 +53,12 @@ const _libraryItemOverride = int.fromEnvironment('PERF_LIBRARY_ITEMS');
 const _asmrItemOverride = int.fromEnvironment('PERF_ASMR_ITEMS');
 const _asmrTrackOverride = int.fromEnvironment('PERF_ASMR_TRACKS');
 const _backupByteOverride = int.fromEnvironment('PERF_BACKUP_BYTES');
+const _semanticsEnabled = bool.fromEnvironment(
+  'PERF_SEMANTICS',
+  defaultValue: _scenario != 'playback',
+);
+const _coverManifest = String.fromEnvironment('PERF_COVER_MANIFEST');
+List<({String url, String path})> _profileCovers = const [];
 
 int get _libraryItemCount => _libraryItemOverride > 0
     ? _libraryItemOverride
@@ -102,11 +109,28 @@ void main() {
     SharedPreferences.setMockInitialValues(const <String, Object>{
       AppPreferences.onboardingCompletedKey: true,
     });
+    if (_coverManifest.isNotEmpty) {
+      final entries =
+          jsonDecode(await File(_coverManifest).readAsString()) as List;
+      _profileCovers = entries
+          .map(
+            (entry) =>
+                (url: entry['url'] as String, path: entry['path'] as String),
+          )
+          .toList(growable: false);
+      expect(_profileCovers, isNotEmpty);
+      for (final cover in _profileCovers) {
+        expect(await File(cover.path).exists(), true);
+      }
+    }
     if (_scenario == 'playback' || _scenario == 'page-transitions-playing') {
       await _measureRealPlayback(tester, binding);
       return;
     }
     final fixture = AppRuntimeWidgetTestFixture();
+    if (_profileCovers.isNotEmpty) {
+      await fixture.library.coverArtworkCacheService.initialize();
+    }
     final sessions = _seedRuntime(fixture, trackCount: _libraryItemCount);
     final asmrController = _ProfileAsmrController(
       services: createTestAsmrServices(
@@ -131,7 +155,10 @@ void main() {
     await fixture.library.loadLibraryTree();
     await tester.pumpWidget(
       fixture.build(
-        const MainScreen(),
+        const ExcludeSemantics(
+          excluding: !_semanticsEnabled,
+          child: MainScreen(),
+        ),
         navigatorObservers: <NavigatorObserver>[
           UiInteractionNavigatorObserver.instance,
         ],
@@ -227,9 +254,9 @@ void main() {
     binding.reportData = <String, dynamic>{'uiPerformance': report};
     debugPrint('UI_PERFORMANCE ${jsonEncode(report)}');
     _expectFrameBudgets(rounds);
-    // PERF_SCENARIO changes at build time; playback uses platform semantics only.
+    // The default retains the baseline's semantics; the override isolates its cost.
     // ignore: avoid_redundant_argument_values
-  }, semanticsEnabled: _scenario != 'playback');
+  }, semanticsEnabled: _semanticsEnabled);
 }
 
 Future<void> _measureRealPlayback(
@@ -288,6 +315,9 @@ Future<void> _measureRealPlayback(
         groupTitle: 'Local playback profile',
         groupSubtitle: '',
         isSingle: true,
+        coverCachePath: _profileCovers.isEmpty
+            ? null
+            : _profileCovers[i % _profileCovers.length].path,
         duration: Duration(seconds: i == 0 ? 120 : 4),
       ),
     );
@@ -305,7 +335,10 @@ Future<void> _measureRealPlayback(
   // Keep the real overlay provider, native event streams and runtime bindings.
   await tester.pumpWidget(
     fixture.build(
-      const MainScreen(),
+      const ExcludeSemantics(
+        excluding: !_semanticsEnabled,
+        child: MainScreen(),
+      ),
       navigatorObservers: [UiInteractionNavigatorObserver.instance],
       overrides: [
         asmrLibraryControllerProvider.overrideWithValue(asmrController),
@@ -757,13 +790,18 @@ List<PlaybackSession> _seedRuntime(
   fixture.settingsRepository.syncSlice(isInitialized: true);
   final tracks = List.generate(
     trackCount,
-    (index) => testMusicTrack(
-      name: 'Performance track ${index + 1}',
-      path: '/profile/audio_${index + 1}.mp3',
-      groupKey: '/profile/group_${index + 1}',
-      groupTitle: 'Performance album ${index + 1}',
-      isSingle: true,
-    ),
+    (index) =>
+        testMusicTrack(
+          name: 'Performance track ${index + 1}',
+          path: '/profile/audio_${index + 1}.mp3',
+          groupKey: '/profile/group_${index + 1}',
+          groupTitle: 'Performance album ${index + 1}',
+          isSingle: true,
+        ).copyWith(
+          coverCachePath: _profileCovers.isEmpty
+              ? null
+              : _profileCovers[index % _profileCovers.length].path,
+        ),
   );
   if (_scenario == 'detail-compare') {
     tracks.addAll(<MusicTrack>[
@@ -854,6 +892,10 @@ Map<String, Object> _pageTransitionReport(
   'mode': kProfileMode ? 'profile' : (kReleaseMode ? 'release' : 'debug'),
   'runtime': playing ? (Platform.isWindows ? 'libmpv' : 'Media3') : 'fixture',
   'playing': playing,
+  'semanticsEnabled': _semanticsEnabled,
+  'platformSemanticsEnabled': WidgetsBinding.instance.semanticsEnabled,
+  'coverFixtureCount': _profileCovers.length,
+  'decodedImageCacheCount': PaintingBinding.instance.imageCache.currentSize,
   'libraryItems': playing ? 100 : _libraryItemCount,
   'asmrItems': playing ? 100 : _asmrItemCount,
   'frameBudgetUs': _frameBudget.inMicroseconds,
@@ -862,6 +904,8 @@ Map<String, Object> _pageTransitionReport(
       'Action invocation through 36 pumps at 16 ms; preparation and trailing UI frames included',
   'firstVisibleFrameMeasurement':
       'UI frame commit with route progress > 0 or incoming slide within viewport; not display presentation time',
+  'firstVisibleProbe':
+      'Retained slide elements resolved before timing; no widget-tree search in frame callbacks',
   'rounds': rounds,
 };
 
@@ -899,6 +943,7 @@ Future<List<Map<String, Object>>> _measurePageTransitions(
     void collect(List<FrameTiming> values) => timings.addAll(values);
     WidgetsBinding.instance.addTimingsCallback(collect);
     final started = DateTime.now().microsecondsSinceEpoch;
+    final timelineStarted = Timeline.now;
     int? firstVisible;
     var sampling = true;
     void observeVisibleFrame(Duration _) {
@@ -911,6 +956,7 @@ Future<List<Map<String, Object>>> _measurePageTransitions(
     }
 
     late int finished;
+    late int timelineFinished;
     try {
       action();
       WidgetsBinding.instance.addPostFrameCallback(observeVisibleFrame);
@@ -919,6 +965,7 @@ Future<List<Map<String, Object>>> _measurePageTransitions(
         await tester.pump(const Duration(milliseconds: 16));
       }
       finished = DateTime.now().microsecondsSinceEpoch;
+      timelineFinished = Timeline.now;
       await Future<void>.delayed(const Duration(seconds: 2));
     } finally {
       sampling = false;
@@ -936,6 +983,10 @@ Future<List<Map<String, Object>>> _measurePageTransitions(
           ? -1
           : firstVisible! - started,
       'actionWindowUs': finished - started,
+      'actionStartedUs': started,
+      'actionFinishedUs': finished,
+      'actionStartedTimelineUs': timelineStarted,
+      'actionFinishedTimelineUs': timelineFinished,
     };
     rounds.add(result);
     debugPrint('PAGE_TRANSITION_PERFORMANCE ${jsonEncode(result)}');
@@ -946,16 +997,45 @@ Future<List<Map<String, Object>>> _measurePageTransitions(
     );
   }
 
-  bool slideVisible(String stackKey) => find
-      .descendant(
-        of: find.byKey(ValueKey<String>(stackKey)),
-        matching: find.byType(SlideTransition),
-      )
-      .evaluate()
-      .any((element) {
-        final dx = (element.widget as SlideTransition).position.value.dx;
-        return dx.abs() > 0.001 && dx.abs() < 0.999;
-      });
+  bool Function() observeSlide(String stackKey) {
+    // Finder traversal inside POST_FRAME was itself producing 20 ms frames.
+    // Existing page elements survive the slide; only inspect their positions.
+    final slides = find
+        .descendant(
+          of: find.byKey(ValueKey<String>(stackKey)),
+          matching: find.byType(SlideTransition),
+        )
+        .evaluate()
+        .toList(growable: false);
+    expect(slides, isNotEmpty);
+    return () => slides.any((element) {
+      if (!element.mounted) return false;
+      final dx = (element.widget as SlideTransition).position.value.dx;
+      return dx.abs() > 0.001 && dx.abs() < 0.999;
+    });
+  }
+
+  void selectDestination(MainDestinationType destination) {
+    final index = switch (destination) {
+      MainDestinationType.asmrOne => 0,
+      MainDestinationType.playlist => 2,
+      MainDestinationType.settings => 3,
+      MainDestinationType.library => 1,
+    };
+    final rail = find.byType(NavigationRail);
+    if (rail.evaluate().isNotEmpty) {
+      tester.widget<NavigationRail>(rail).onDestinationSelected!(index);
+    } else {
+      final key = switch (destination) {
+        MainDestinationType.asmrOne => 'show_asmr_one',
+        MainDestinationType.playlist => 'nav_sessions',
+        MainDestinationType.settings => 'nav_settings',
+        MainDestinationType.library => 'music_library',
+      };
+      final ink = find.byKey(ValueKey<String>('main_destination_ink_$key'));
+      tester.widget<InkResponse>(ink).onTap!();
+    }
+  }
 
   for (var opening = 1; opening <= 3; opening++) {
     // Start each pass from Library, so first visits to the other tabs are measured.
@@ -966,26 +1046,8 @@ Future<List<Map<String, Object>>> _measurePageTransitions(
       MainDestinationType.asmrOne,
     ]) {
       await measure('main-${destination.name}', opening, () {
-        final index = switch (destination) {
-          MainDestinationType.asmrOne => 0,
-          MainDestinationType.playlist => 2,
-          MainDestinationType.settings => 3,
-          MainDestinationType.library => 1,
-        };
-        final rail = find.byType(NavigationRail);
-        if (rail.evaluate().isNotEmpty) {
-          tester.widget<NavigationRail>(rail).onDestinationSelected!(index);
-        } else {
-          final key = switch (destination) {
-            MainDestinationType.asmrOne => 'show_asmr_one',
-            MainDestinationType.playlist => 'nav_sessions',
-            MainDestinationType.settings => 'nav_settings',
-            MainDestinationType.library => 'music_library',
-          };
-          final ink = find.byKey(ValueKey<String>('main_destination_ink_$key'));
-          tester.widget<InkResponse>(ink).onTap!();
-        }
-      }, () => slideVisible('main_page_stack'));
+        selectDestination(destination);
+      }, observeSlide('main_page_stack'));
       await settleTransition();
     }
     for (final category in [
@@ -998,7 +1060,20 @@ Future<List<Map<String, Object>>> _measurePageTransitions(
               find.byType(HeaderSegmentedCategoryBar<AsmrCategoryType>),
             )
             .onSelected(category);
-      }, () => slideVisible('asmr_category_stack'));
+      }, observeSlide('asmr_category_stack'));
+      await settleTransition();
+    }
+    for (final (name, destination) in [
+      ('library-from-asmr', MainDestinationType.library),
+      ('playlist-from-library', MainDestinationType.playlist),
+      ('library-from-playlist', MainDestinationType.library),
+      ('settings-from-library', MainDestinationType.settings),
+      ('library-from-settings', MainDestinationType.library),
+      ('asmr-from-library', MainDestinationType.asmrOne),
+    ]) {
+      await measure('main-$name', opening, () {
+        selectDestination(destination);
+      }, observeSlide('main_page_stack'));
       await settleTransition();
     }
     await _switchMainPage(tester, MainDestinationType.library);
@@ -1038,6 +1113,14 @@ Future<List<Map<String, Object>>> _measurePageTransitions(
       navigator.pop();
       await settleTransition();
     }
+  }
+  if (_profileCovers.isNotEmpty) {
+    expect(
+      PaintingBinding.instance.imageCache.currentSize,
+      greaterThan(0),
+      reason:
+          'The cover fixture must decode images, not measure only fallbacks.',
+    );
   }
   return rounds;
 }
@@ -1099,9 +1182,15 @@ List<AsmrWork> _buildAsmrWorks(int count) => List.generate(
     sourceId: 'RJ${(100000 + index).toString()}',
     sourceType: 'DLSITE',
     sourceUrl: '',
-    coverUrl: '',
-    thumbnailUrl: '',
-    mainCoverUrl: '',
+    coverUrl: _profileCovers.isEmpty
+        ? ''
+        : _profileCovers[index % _profileCovers.length].url,
+    thumbnailUrl: _profileCovers.isEmpty
+        ? ''
+        : _profileCovers[index % _profileCovers.length].url,
+    mainCoverUrl: _profileCovers.isEmpty
+        ? ''
+        : _profileCovers[index % _profileCovers.length].url,
     releaseDate: DateTime(2026),
     createDate: DateTime(2026),
     duration: Duration(minutes: 30 + index),

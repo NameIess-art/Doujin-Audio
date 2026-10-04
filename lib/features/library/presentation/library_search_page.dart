@@ -347,7 +347,6 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
     final body = AppFadeThroughIndexedStack(
       key: const ValueKey<String>('library_search_category_stack'),
       indexListenable: _activeCategoryIndex,
-      style: AppIndexedStackTransitionStyle.slide,
       duration: kAppMotionSlow,
       onTransitionCompleted: (index) {
         if (mounted &&

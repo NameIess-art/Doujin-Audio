@@ -107,6 +107,7 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
   bool _snapClosed = false;
   bool _actionPaneActive = false;
   bool _tickerModeEnabled = true;
+  ValueListenable<TickerModeData>? _tickerModeNotifier;
   bool _revealedFromStart = false;
   bool _dragStartFromStart = false;
   double _settledWidth = 0;
@@ -122,6 +123,7 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
 
   @override
   void dispose() {
+    _tickerModeNotifier?.removeListener(_handleTickerModeChanged);
     UiInteractionCoordinator.instance.cancelInteraction(_interactionSource);
     super.dispose();
   }
@@ -153,9 +155,25 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    final enabled = TickerMode.valuesOf(context).enabled;
+    final notifier = TickerMode.getValuesNotifier(context);
+    if (!identical(notifier, _tickerModeNotifier)) {
+      _tickerModeNotifier?.removeListener(_handleTickerModeChanged);
+      _tickerModeNotifier = notifier;
+      notifier.addListener(_handleTickerModeChanged);
+    }
+    _handleTickerModeChanged();
+  }
+
+  void _handleTickerModeChanged() {
+    final enabled = _tickerModeNotifier!.value.enabled;
     if (_tickerModeEnabled && !enabled) {
+      final needsRebuild =
+          _revealedWidth != 0 ||
+          _settledWidth != 0 ||
+          _actionPaneActive ||
+          _snapClosed;
       _resetPaneState();
+      if (needsRebuild) setState(() {});
     }
     _tickerModeEnabled = enabled;
   }

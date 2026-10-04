@@ -16,8 +16,11 @@ class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
   WindowsPlaybackBridge({
     Player Function()? createPlayer,
     Duration Function()? monotonicElapsed,
+    VideoControllerConfiguration videoControllerConfiguration =
+        const VideoControllerConfiguration(),
   }) : _createPlayer = createPlayer ?? _defaultPlayer,
-       _monotonicElapsed = monotonicElapsed;
+       _monotonicElapsed = monotonicElapsed,
+       _videoControllerConfiguration = videoControllerConfiguration;
 
   static WindowsPlaybackBridge? _instance;
   static WindowsPlaybackBridge get instance {
@@ -41,6 +44,7 @@ class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
   }
 
   final Player Function() _createPlayer;
+  final VideoControllerConfiguration _videoControllerConfiguration;
   final _sessions = <String, _WindowsPlaybackSession>{};
   final _snapshots = StreamController<NativePlaybackSnapshot>.broadcast();
   final _progress = StreamController<NativePlaybackProgressUpdate>.broadcast();
@@ -59,7 +63,10 @@ class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
     final player = session?.player;
     if (session == null || player == null || !session.wantsPlay) return null;
     if (session.videoController == null) {
-      session.videoController = VideoController(player);
+      session.videoController = VideoController(
+        player,
+        configuration: _videoControllerConfiguration,
+      );
       unawaited(
         _change(sessionId, (current) async {
           await player.platform!.waitForVideoControllerInitializationIfAttached;

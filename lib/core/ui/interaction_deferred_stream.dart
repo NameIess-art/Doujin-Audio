@@ -18,15 +18,20 @@ Stream<T> interactionDeferredListenableStream<T>({
     final commitKey =
         'interaction_deferred_listenable_${_interactionDeferredStreamSeed++}';
     var dirty = false;
+    var paused = false;
 
     void flushPending() {
-      if (!events.isClosed && dirty) {
+      if (!events.isClosed && !paused && dirty) {
         dirty = false;
         events.addSync(read());
       }
     }
 
     void emit() {
+      if (paused) {
+        dirty = true;
+        return;
+      }
       if (!interaction.isInteracting) {
         interaction.cancelCommit(commitKey);
         dirty = false;
@@ -44,6 +49,14 @@ Stream<T> interactionDeferredListenableStream<T>({
     }
 
     source.addListener(emit);
+    events.onPause = () {
+      paused = true;
+      interaction.cancelCommit(commitKey);
+    };
+    events.onResume = () {
+      paused = false;
+      if (dirty) emit();
+    };
     events.onCancel = () {
       source.removeListener(emit);
       interaction.cancelCommit(commitKey);

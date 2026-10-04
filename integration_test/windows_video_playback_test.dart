@@ -22,7 +22,13 @@ void registerWindowsVideoPlaybackTest() {
       MediaKit.ensureInitialized();
       final directory = await Directory.systemTemp.createTemp('windows_video_');
       final file = File('${directory.path}/中文 video.mp4');
-      final bridge = WindowsPlaybackBridge.instance..startListening();
+      // CI runners may have no usable GPU or hardware video decoder.
+      final bridge = WindowsPlaybackBridge(
+        videoControllerConfiguration: const VideoControllerConfiguration(
+          enableHardwareAcceleration: false,
+          hwdec: 'no',
+        ),
+      )..startListening();
       final repository = NativePlaybackRepository(bridge: bridge);
       try {
         final encoder = await WindowsMediaTools.instance.start('ffmpeg', [
@@ -34,7 +40,8 @@ void registerWindowsVideoPlaybackTest() {
           '-i',
           'testsrc2=size=320x180:rate=24',
           '-t',
-          '10',
+          // Keep the fixture alive through the first-frame and resume deadlines.
+          '60',
           '-c:v',
           'libx264',
           '-pix_fmt',
@@ -87,12 +94,14 @@ void registerWindowsVideoPlaybackTest() {
           await tester.pump(const Duration(milliseconds: 100));
         }
         if ((controller.rect.value?.width ?? 0) <= 0) {
-          final native = player.platform! as NativePlayer;
           final snapshot =
               (await bridge.snapshot()).valueOrNull!.sessions.single;
+          final currentPlayer = bridge.playerForSession('video');
           throw TestFailure(
-            'No video frame: playlist-pos=${await native.getProperty('playlist-pos')}, '
-            'path=${await native.getProperty('path')}, error=${snapshot.error}',
+            'No video frame: playerReleased=${currentPlayer == null}, '
+            'playing=${snapshot.playing}, requested=${snapshot.playWhenReady}, '
+            'processing=${snapshot.processingState}, position=${snapshot.position}, '
+            'path=${snapshot.path ?? snapshot.uri}, error=${snapshot.error}',
           );
         }
         await tester.pump(const Duration(milliseconds: 500));

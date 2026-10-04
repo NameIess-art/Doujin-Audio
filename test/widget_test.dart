@@ -258,14 +258,6 @@ void main() {
           .separateHeader,
       isTrue,
     );
-    expect(
-      tester
-          .widget<AppFadeThroughIndexedStack>(
-            find.byKey(const ValueKey<String>('main_page_stack')),
-          )
-          .style,
-      AppIndexedStackTransitionStyle.slide,
-    );
     expect(find.byKey(const ValueKey<String>('main_page_fade_1')), findsOne);
     expect(
       find.byKey(const ValueKey<String>('main_page_fade_0')),
@@ -2244,7 +2236,7 @@ void main() {
     await tester.pump(const Duration(seconds: 3));
   });
 
-  testWidgets('inactive ASMR tab detaches category subscriptions', (
+  testWidgets('inactive ASMR tab pauses category projections until return', (
     tester,
   ) async {
     final fixture = AppRuntimeWidgetTestFixture();
@@ -2258,9 +2250,16 @@ void main() {
 
     await tester.pumpWidget(
       fixture.build(
-        AsmrTab(
-          key: const ValueKey<String>('audio_library_asmr_page'),
-          activeTabIndexListenable: activePageIndex,
+        AppFadeThroughIndexedStack(
+          indexListenable: activePageIndex,
+          duration: kAppMotionSlow,
+          children: [
+            AsmrTab(
+              key: const ValueKey<String>('audio_library_asmr_page'),
+              activeTabIndexListenable: activePageIndex,
+            ),
+            const SizedBox.shrink(),
+          ],
         ),
         overrides: [
           asmrLibraryControllerProvider.overrideWithValue(controller),
@@ -2272,8 +2271,7 @@ void main() {
 
     activePageIndex.value = 1;
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
-    await tester.pump();
+    await tester.pumpAndSettle();
     final inactiveReadCount = controller.categoryViewReadCount;
     controller.emitPresentationChange();
     await tester.pump();
@@ -2282,7 +2280,9 @@ void main() {
 
     activePageIndex.value = 0;
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pumpAndSettle();
+    await tester.pump(UiInteractionCoordinator.instance.idleDelay);
+    await tester.pumpAndSettle();
     expect(controller.categoryViewReadCount, greaterThan(inactiveReadCount));
 
     await tester.pumpWidget(const SizedBox.shrink());

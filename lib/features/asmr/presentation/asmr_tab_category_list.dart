@@ -32,6 +32,7 @@ class _AsmrCategoryList extends ConsumerStatefulWidget {
   const _AsmrCategoryList({
     super.key,
     required this.isActive,
+    this.isPageActive,
     required this.category,
     required this.isLoadPending,
     required this.scrollController,
@@ -47,6 +48,7 @@ class _AsmrCategoryList extends ConsumerStatefulWidget {
   });
 
   final bool isActive;
+  final bool Function()? isPageActive;
   final AsmrCategoryType category;
   final bool isLoadPending;
   final ScrollController scrollController;
@@ -70,7 +72,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
       GlobalKey();
   bool _loadMoreTriggeredInCurrentScroll = false;
   bool _automaticLoadMoreScheduled = false;
-  Widget? _inactiveContent;
+  ValueListenable<TickerModeData>? _tickerModeNotifier;
   AsmrCategoryStateRequest? _lastPresentedRequest;
   AsmrLibraryController? _lastPresentedController;
   AsmrCategoryViewState? _lastPresentedState;
@@ -84,26 +86,48 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
   AsmrCategoryViewState? _lastLoadState;
   final Map<int, Animation<double>> _loadingWorkAnimations = {};
   final Set<AnimationController> _loadingBatchControllers = {};
+
+  bool get _isActive =>
+      widget.isActive &&
+      (widget.isPageActive?.call() ?? true) &&
+      (_tickerModeNotifier?.value.enabled ?? true) &&
+      ModalRoute.of(context)?.isCurrent != false;
+
   @override
-  void didUpdateWidget(covariant _AsmrCategoryList oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.isActive != widget.isActive ||
-        oldWidget.category != widget.category) {
-      _inactiveContent = null;
-      _clearLoadAnimations();
-      _lastLoadState = null;
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final notifier = TickerMode.getValuesNotifier(context);
+    if (!identical(notifier, _tickerModeNotifier)) {
+      _tickerModeNotifier?.removeListener(_handleActivityChanged);
+      _tickerModeNotifier = notifier;
+      notifier.addListener(_handleActivityChanged);
     }
-    if (!widget.isActive) {
+    _handleActivityChanged();
+  }
+
+  void _handleActivityChanged() {
+    if (!_isActive) {
       UiInteractionCoordinator.instance.cancelCommit(
         _automaticLoadMoreCommitKey,
       );
       _automaticLoadMoreScheduled = false;
+      _loadMoreTriggeredInCurrentScroll = false;
+      // Retained cards still reference these animations. TickerMode pauses them
+      // while the next data commit establishes a fresh pagination baseline.
+      _lastLoadState = null;
+      return;
     }
+    final state = _lastPresentedState;
+    if (state != null) _scheduleAutomaticLoadMore(state);
+  }
+
+  @override
+  void didUpdateWidget(covariant _AsmrCategoryList oldWidget) {
+    super.didUpdateWidget(oldWidget);
     if (oldWidget.category != widget.category ||
         oldWidget.searchSession != widget.searchSession ||
         normalizeSearchQuery(oldWidget.searchQuery) !=
             normalizeSearchQuery(widget.searchQuery)) {
-      _inactiveContent = null;
       for (final entry in _collapsingWorks.values) {
         entry.dispose();
       }
@@ -114,10 +138,12 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
       _clearLoadAnimations();
       _lastLoadState = null;
     }
+    _handleActivityChanged();
   }
 
   @override
   void dispose() {
+    _tickerModeNotifier?.removeListener(_handleActivityChanged);
     UiInteractionCoordinator.instance.cancelCommit(_automaticLoadMoreCommitKey);
     for (final entry in _collapsingWorks.values) {
       entry.dispose();
@@ -140,14 +166,17 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
     List<AsmrWork> works, {
     required bool reduceMotion,
   }) {
+    if (!_isActive) {
+      _lastLoadState = null;
+      return;
+    }
     final previous = _lastLoadState;
     _lastLoadState = state;
     if (reduceMotion || state.isLoading || state.isRefreshing) {
       _clearLoadAnimations();
       return;
     }
-    if (!widget.isActive ||
-        previous == null ||
+    if (previous == null ||
         previous.works.isEmpty ||
         !previous.hasMore ||
         previous.isLoading ||
@@ -174,7 +203,6 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
     controller.forward().then((_) {
       if (!mounted) return;
       setState(() {
-        _inactiveContent = null;
         _loadingWorkAnimations.removeWhere((_, value) => value == animation);
         _loadingBatchControllers.remove(controller);
       });
@@ -188,9 +216,6 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
   @override
   Widget build(BuildContext context) {
     super.build(context);
-    // Deactivation builds once to detach subscriptions and pause card work.
-    // Other category switches can then retain this hidden subtree unchanged.
-    if (!widget.isActive && _inactiveContent != null) return _inactiveContent!;
     final normalizedSearchQuery = normalizeSearchQuery(widget.searchQuery);
     final request = (
       category: widget.category,
@@ -198,9 +223,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
       searchSession: widget.searchSession,
     );
     final categoryProvider = asmrCategoryStateProvider(request);
-    final snapshot = widget.isActive
-        ? ref.watch(categoryProvider)
-        : ref.read(categoryProvider);
+    final snapshot = ref.watch(categoryProvider);
     final controller = ref.read(asmrLibraryControllerProvider);
     if (_lastPresentedRequest != request ||
         !identical(_lastPresentedController, controller)) {
@@ -208,8 +231,8 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
       _lastPresentedController = controller;
       _lastPresentedState = null;
     }
-    // Reattaching after a hidden page may defer its first projection. Keep the
-    // last published cards without bypassing the provider's interaction gate.
+    // A deferred projection must not replace the last published cards with a
+    // placeholder while the page's subscriptions resume.
     if (!snapshot.isLoading && snapshot.value != null) {
       _lastPresentedState = snapshot.value;
     }
@@ -274,7 +297,6 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
               onComplete: () {
                 if (!mounted) return;
                 setState(() {
-                  _inactiveContent = null;
                   final entry = _collapsingWorks.remove(workId);
                   entry?.dispose();
                 });
@@ -304,7 +326,6 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
       final card = _AsmrWorkTreeCard(
         work: work,
         searchQuery: widget.searchQuery,
-        isActive: widget.isActive,
         isSelectionMode: widget.isSelectionMode,
         isSelected: widget.selectedWorkIds.contains(work.id),
         onLongPress: () => widget.onEnterSelectionMode(work),
@@ -346,11 +367,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
             (widget.isLoadPending ||
                 state.isLoading ||
                 !state.hasAttemptedLoad));
-    if (widget.isActive) {
-      ref.watch(appLanguageStateProvider);
-    } else {
-      ref.read(appLanguageStateProvider);
-    }
+    ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     final theme = Theme.of(context);
     final asmrBlue = AppDesignTokens.of(context).asmrAccent;
@@ -558,7 +575,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
         ),
       ),
     );
-    final result = Theme(
+    return Theme(
       data: theme.copyWith(
         scrollbarTheme: theme.scrollbarTheme.copyWith(
           thumbColor: WidgetStateProperty.resolveWith((states) {
@@ -580,12 +597,10 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
               child: content,
             ),
     );
-    if (!widget.isActive) _inactiveContent = result;
-    return result;
   }
 
   void _loadMoreOncePerScroll(AsmrCategoryViewState state) {
-    if (!widget.isActive ||
+    if (!_isActive ||
         _loadMoreTriggeredInCurrentScroll ||
         state.isLoadingMore ||
         !state.hasMore) {
@@ -597,7 +612,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
 
   void _scheduleAutomaticLoadMore(AsmrCategoryViewState state) {
     if (_automaticLoadMoreScheduled ||
-        !widget.isActive ||
+        !_isActive ||
         state.isLoadingMore ||
         !state.hasMore ||
         state.needsLoadMoreRetry) {
@@ -608,9 +623,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
       key: _automaticLoadMoreCommitKey,
       commit: () {
         _automaticLoadMoreScheduled = false;
-        if (!mounted ||
-            !widget.isActive ||
-            ModalRoute.of(context)?.isCurrent == false) {
+        if (!mounted || !_isActive) {
           return;
         }
         final currentState = ref

@@ -20,7 +20,6 @@ class _AsmrWorkTreeCard extends ConsumerStatefulWidget {
   const _AsmrWorkTreeCard({
     required this.work,
     required this.searchQuery,
-    required this.isActive,
     required this.isSelectionMode,
     required this.isSelected,
     required this.onLongPress,
@@ -29,7 +28,6 @@ class _AsmrWorkTreeCard extends ConsumerStatefulWidget {
 
   final AsmrWork work;
   final String searchQuery;
-  final bool isActive;
   final bool isSelectionMode;
   final bool isSelected;
   final VoidCallback onLongPress;
@@ -41,10 +39,6 @@ class _AsmrWorkTreeCard extends ConsumerStatefulWidget {
 
 class _AsmrWorkTreeCardState extends ConsumerState<_AsmrWorkTreeCard> {
   static const double _rootTileHeight = LibraryLikeCardMetrics.rootTileHeight;
-
-  T _readOrWatch<T>(ProviderListenable<T> provider) {
-    return widget.isActive ? ref.watch(provider) : ref.read(provider);
-  }
 
   Future<void> _playWork(BuildContext context) async {
     final playback = ref.read(asmrPlaybackCoordinatorProvider);
@@ -90,16 +84,18 @@ class _AsmrWorkTreeCardState extends ConsumerState<_AsmrWorkTreeCard> {
 
   @override
   Widget build(BuildContext context) {
-    _readOrWatch(appLanguageStateProvider);
+    ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     final cs = Theme.of(context).colorScheme;
     final tokens = AppDesignTokens.of(context);
     final asmrBlue = tokens.asmrAccent;
-    final playBusy = _readOrWatch(
-      uiOperationForScopeProvider(
-        UiOperationScope.asmrWork(AsmrOperationKind.play, widget.work.id),
-      ),
-    ).isBusy;
+    final playBusy = ref
+        .watch(
+          uiOperationForScopeProvider(
+            UiOperationScope.asmrWork(AsmrOperationKind.play, widget.work.id),
+          ),
+        )
+        .isBusy;
     const cardShape = LibraryLikeCardMetrics.cardShape;
 
     final cardContent = Card(
@@ -139,7 +135,6 @@ class _AsmrWorkTreeCardState extends ConsumerState<_AsmrWorkTreeCard> {
                   url: _asmrWorkListCoverUrl(widget.work),
                   width: coverWidth,
                   duration: widget.work.duration,
-                  isActive: widget.isActive,
                   isSelected: widget.isSelected,
                   rjCode: widget.work.rjCode,
                 ),

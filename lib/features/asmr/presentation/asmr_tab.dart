@@ -6,7 +6,6 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_riverpod/misc.dart' show ProviderListenable;
 
 import '../../../app/localization/app_language_provider.dart';
 import '../domain/asmr_models.dart';
@@ -361,10 +360,6 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
 
   UiOperationService get _operations => ref.read(uiOperationServiceProvider);
 
-  T _readOrWatch<T>(ProviderListenable<T> provider) {
-    return _isActive ? ref.watch(provider) : ref.read(provider);
-  }
-
   double _minimumExpandedHeaderHeight(BuildContext context) {
     return AppPageHeaderMetrics.expandedToolbarHeight +
         MediaQuery.paddingOf(context).top;
@@ -412,7 +407,6 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
     final selected = _isSelected;
     if (selected == _wasSelected) return;
     _wasSelected = selected;
-    setState(() {});
     if (!_isActive) {
       UiInteractionCoordinator.instance.cancelCommit(_categoryLoadCommitKey);
       UiInteractionCoordinator.instance.cancelCommit(_languageCommitKey);
@@ -838,10 +832,9 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
   @override
   Widget build(BuildContext context) {
     super.build(context);
-    final globalState = _readOrWatch(asmrLibraryGlobalStateProvider).value;
-    final hasDownloadManager =
-        _readOrWatch(asmrDownloadManagerProvider) != null;
-    _readOrWatch(appLanguageStateProvider);
+    final globalState = ref.watch(asmrLibraryGlobalStateProvider).value;
+    final hasDownloadManager = ref.watch(asmrDownloadManagerProvider) != null;
+    ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     if (_lastHeaderMeasureLanguage != i18n.language) {
       _lastHeaderMeasureLanguage = i18n.language;
@@ -856,13 +849,15 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
         : _minimumExpandedHeaderHeight(context);
     final headerContentHeight = effectiveHeaderHeight + 4.0;
     final globalInitialized = globalState?.initialized ?? false;
-    final categoryState = _readOrWatch(
-      asmrCategoryStateProvider((
-        category: _selectedCategory,
-        searchQuery: '',
-        searchSession: false,
-      )),
-    ).value;
+    final categoryState = ref
+        .watch(
+          asmrCategoryStateProvider((
+            category: _selectedCategory,
+            searchQuery: '',
+            searchSession: false,
+          )),
+        )
+        .value;
     final totalWorks = (categoryState?.totalCount ?? 0) > 0
         ? categoryState!.totalCount
         : (categoryState?.works.length ?? 0);
@@ -891,14 +886,14 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
                 content: AppFadeThroughIndexedStack(
                   key: const ValueKey<String>('asmr_category_stack'),
                   indexListenable: _activeCategoryIndex,
-                  style: AppIndexedStackTransitionStyle.slide,
                   duration: kAppMotionSlow,
                   children: [
                     for (final category in _headerCategories)
                       if (_visitedCategories.contains(category))
                         _AsmrCategoryList(
                           key: ValueKey(category),
-                          isActive: _isActive && category == _selectedCategory,
+                          isActive: category == _selectedCategory,
+                          isPageActive: () => _isActive,
                           category: category,
                           isLoadPending: !_activationCompleted,
                           scrollController: _scrollControllers[category]!,

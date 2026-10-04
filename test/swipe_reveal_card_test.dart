@@ -420,54 +420,57 @@ void main() {
     expect(find.byType(TweenAnimationBuilder<double>), findsNothing);
   });
 
-  testWidgets('inactive page closes an open card before it becomes visible', (
-    tester,
-  ) async {
-    var tickerEnabled = true;
-    late StateSetter setHostState;
-    final shape = RoundedRectangleBorder(
-      borderRadius: BorderRadius.circular(12),
+  for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+    testWidgets(
+      'closed card keeps its subtree when TickerMode changes on $platform',
+      (tester) async {
+        final ticking = ValueNotifier<bool>(true);
+        addTearDown(ticking.dispose);
+        await tester.pumpWidget(_tickerCard(ticking));
+        final gesture = find.descendant(
+          of: find.byType(SwipeRevealCard),
+          matching: find.byType(GestureDetector),
+        );
+        final original = tester.widget<GestureDetector>(gesture);
+        for (var i = 0; i < 3; i++) {
+          ticking.value = false;
+          await tester.pump();
+          ticking.value = true;
+          await tester.pump();
+        }
+        expect(tester.widget<GestureDetector>(gesture), same(original));
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+      variant: TargetPlatformVariant({platform}),
     );
+  }
 
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: StatefulBuilder(
-            builder: (context, setState) {
-              setHostState = setState;
-              return TickerMode(
-                enabled: tickerEnabled,
-                child: Center(
-                  child: SizedBox(
-                    width: 260,
-                    height: 96,
-                    child: SwipeRevealCard(
-                      shape: shape,
-                      actionLabel: 'Remove',
-                      removeTooltip: 'Remove',
-                      onRemove: () {},
-                      child: const SizedBox.expand(child: Text('Swipe target')),
-                    ),
-                  ),
-                ),
-              );
-            },
-          ),
-        ),
-      ),
-    );
-
-    await tester.drag(find.text('Swipe target'), const Offset(-180, 0));
-    await tester.pumpAndSettle();
-    expect(find.byType(TweenAnimationBuilder<double>), findsOneWidget);
-
-    setHostState(() => tickerEnabled = false);
-    await tester.pump();
-    setHostState(() => tickerEnabled = true);
-    await tester.pump();
-
-    expect(find.byType(TweenAnimationBuilder<double>), findsNothing);
-  });
+  for (final phase in ['opening', 'open', 'closing']) {
+    testWidgets('inactive page closes a revealed card during $phase', (
+      tester,
+    ) async {
+      final ticking = ValueNotifier<bool>(true);
+      addTearDown(ticking.dispose);
+      await tester.pumpWidget(_tickerCard(ticking));
+      await tester.drag(find.text('Swipe target'), const Offset(-180, 0));
+      if (phase != 'opening') {
+        await tester.pumpAndSettle();
+      }
+      if (phase == 'closing') {
+        await tester.tapAt(tester.getCenter(find.byType(SwipeRevealCard)));
+      }
+      await tester.pump(const Duration(milliseconds: 50));
+      expect(find.byType(TweenAnimationBuilder<double>), findsOneWidget);
+      ticking.value = false;
+      await tester.pump();
+      expect(find.byType(TweenAnimationBuilder<double>), findsNothing);
+      expect(coordinator.isInteracting, isFalse);
+      ticking.value = true;
+      await tester.pump();
+      expect(find.byType(TweenAnimationBuilder<double>), findsNothing);
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+  }
 
   testWidgets('reveal pane matches card bounds without a second border', (
     tester,
@@ -725,3 +728,26 @@ void main() {
     },
   );
 }
+
+Widget _tickerCard(ValueNotifier<bool> ticking) => MaterialApp(
+  home: Scaffold(
+    body: ValueListenableBuilder<bool>(
+      valueListenable: ticking,
+      builder: (_, enabled, child) =>
+          TickerMode(enabled: enabled, child: child!),
+      child: Center(
+        child: SizedBox(
+          width: 260,
+          height: 96,
+          child: SwipeRevealCard(
+            shape: const RoundedRectangleBorder(),
+            actionLabel: 'Remove',
+            removeTooltip: 'Remove',
+            onRemove: () {},
+            child: const SizedBox.expand(child: Text('Swipe target')),
+          ),
+        ),
+      ),
+    ),
+  ),
+);

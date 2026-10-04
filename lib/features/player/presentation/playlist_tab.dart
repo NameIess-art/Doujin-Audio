@@ -7,7 +7,6 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_riverpod/misc.dart' show ProviderListenable;
 
 import '../../../app/application/audio_path_coordinator.dart';
 import '../../../app/localization/app_language_provider.dart';
@@ -239,8 +238,6 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
   @override
   bool get wantKeepAlive => true;
 
-  late bool _wasSelected;
-
   bool get _isSelected =>
       widget.activeTabIndexListenable == null ||
       widget.activeTabIndexListenable!.value == tabIndex;
@@ -249,18 +246,6 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
     final route = ModalRoute.of(context);
     final isRouteCurrent = route == null || route.isCurrent;
     return isRouteCurrent && _isSelected;
-  }
-
-  T _readOrWatch<T>(ProviderListenable<T> provider) {
-    return _isActive ? ref.watch(provider) : ref.read(provider);
-  }
-
-  void _handleActiveTabChanged() {
-    if (!mounted) return;
-    final selected = _isSelected;
-    if (selected == _wasSelected) return;
-    _wasSelected = selected;
-    setState(() {});
   }
 
   void _scheduleInitialPlaceholderDismissal({required bool isInitialized}) {
@@ -281,22 +266,8 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
   @override
   void initState() {
     super.initState();
-    _wasSelected = _isSelected;
-    widget.activeTabIndexListenable?.addListener(_handleActiveTabChanged);
     final controller = ref.read(mainScreenControllerProvider);
     initTabState(controller.scrollToTopTab, controller.stopScrollTab);
-  }
-
-  @override
-  void didUpdateWidget(covariant PlaylistTab oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.activeTabIndexListenable != widget.activeTabIndexListenable) {
-      oldWidget.activeTabIndexListenable?.removeListener(
-        _handleActiveTabChanged,
-      );
-      widget.activeTabIndexListenable?.addListener(_handleActiveTabChanged);
-    }
-    _handleActiveTabChanged();
   }
 
   Future<void> _clearAllWithUndo(
@@ -383,7 +354,6 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
 
   @override
   void dispose() {
-    widget.activeTabIndexListenable?.removeListener(_handleActiveTabChanged);
     disposeTabState();
     _scrollController.dispose();
     super.dispose();
@@ -402,20 +372,14 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
     ref.listen(playlistStructureUiProvider, (_, next) {
       if (mounted && _isActive) _reconcileSelection(next);
     });
-    final structureState = _isActive
-        ? ref.watch(playlistStructureUiProvider)
-        : ref.read(playlistStructureUiProvider);
-    final visibleEntries = _isActive
-        ? ref.watch(playlistSortedEntriesUiProvider)
-        : ref.read(playlistSortedEntriesUiProvider);
-    final pinnedPlaylistSessionIds = _readOrWatch(
+    final structureState = ref.watch(playlistStructureUiProvider);
+    final visibleEntries = ref.watch(playlistSortedEntriesUiProvider);
+    final pinnedPlaylistSessionIds = ref.watch(
       settingsStateProvider.select(
         (state) => state.value?.pinnedPlaylistSessionIds ?? const <String>[],
       ),
     ).toSet();
-    final coverImageResolution = _readOrWatch(
-      coverImageResolutionProvider,
-    );
+    final coverImageResolution = ref.watch(coverImageResolutionProvider);
     _scheduleInitialPlaceholderDismissal(
       isInitialized: structureState.isInitialized,
     );
@@ -562,9 +526,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
             right: 0,
             child: Consumer(
               builder: (context, ref, child) {
-                final headerState = _isActive
-                    ? ref.watch(playlistHeaderUiProvider)
-                    : ref.read(playlistHeaderUiProvider);
+                final headerState = ref.watch(playlistHeaderUiProvider);
                 if (_isSelectionMode) {
                   final count = _selectedSessionIds.length;
                   final isPlayEnabled = count > 0;

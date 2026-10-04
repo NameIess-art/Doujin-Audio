@@ -309,7 +309,6 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
     final body = AppFadeThroughIndexedStack(
       key: const ValueKey<String>('asmr_search_category_stack'),
       indexListenable: _activeCategoryIndex,
-      style: AppIndexedStackTransitionStyle.slide,
       duration: kAppMotionSlow,
       children: [
         for (final category in kAsmrSelectableCategories)

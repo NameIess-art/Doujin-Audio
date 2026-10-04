@@ -7,7 +7,6 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_riverpod/misc.dart' show ProviderListenable;
 
 import '../../../app/localization/app_language_provider.dart';
 import '../../../app/state/app_runtime_providers.dart';
@@ -94,16 +93,11 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
   @override
   bool get handlesScrollToTop => _isActive;
 
-  T _readOrWatch<T>(ProviderListenable<T> provider) {
-    return _isActive ? ref.watch(provider) : ref.read(provider);
-  }
-
   void _handleActiveTabChanged() {
     if (!mounted) return;
     final selected = _isSelected;
     if (selected == _wasSelected) return;
     _wasSelected = selected;
-    setState(() {});
     if (_isActive) {
       _ensureStartupRefreshStarted();
       if (_startupRefreshWaiting &&
@@ -570,36 +564,36 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
       listen: false,
     ).read(appLanguageProviderInstanceProvider);
     final libraryFacade = ref.read(libraryFacadeProvider);
-    final libraryHeaderAudioCount = _readOrWatch(
+    final libraryHeaderAudioCount = ref.watch(
       libraryHeaderUiProvider.select((s) => s.audioCount),
     );
-    final libraryHeaderHasWatchedSources = _readOrWatch(
+    final libraryHeaderHasWatchedSources = ref.watch(
       libraryHeaderUiProvider.select((s) => s.hasWatchedSources),
     );
-    final listStateStructureRevision = _readOrWatch(
+    final listStateStructureRevision = ref.watch(
       libraryListUiProvider.select((s) => s.structureRevision),
     );
-    final listStateIsScanning = _readOrWatch(
+    final listStateIsScanning = ref.watch(
       libraryListUiProvider.select((s) => s.isScanning),
     );
-    final listStateIsBackgroundScanning = _readOrWatch(
+    final listStateIsBackgroundScanning = ref.watch(
       libraryListUiProvider.select((s) => s.isBackgroundScanning),
     );
-    final listStateIsInitialized = _readOrWatch(
+    final listStateIsInitialized = ref.watch(
       libraryListUiProvider.select((s) => s.isInitialized),
     );
-    final listStateHasLibrary = _readOrWatch(
+    final listStateHasLibrary = ref.watch(
       libraryListUiProvider.select((s) => s.hasLibrary),
     );
-    final listStateCanPullRefresh = _readOrWatch(
+    final listStateCanPullRefresh = ref.watch(
       libraryListUiProvider.select((s) => s.canPullRefresh),
     );
-    final pinnedLibraryPaths = _readOrWatch(
+    final pinnedLibraryPaths = ref.watch(
       settingsStateProvider.select(
         (state) => state.value?.pinnedLibraryPaths ?? const <String>[],
       ),
     ).toSet();
-    final libraryRefreshOperationBusy = _readOrWatch(
+    final libraryRefreshOperationBusy = ref.watch(
       uiOperationForScopeProvider(
         UiOperationScope.libraryRefresh,
       ).select((s) => s.isBusy),
@@ -610,7 +604,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
           UiOperationScope.libraryImportLibrary,
           UiOperationScope.libraryImportFiles,
         ].any(
-          (scope) => _readOrWatch(
+          (scope) => ref.watch(
             uiOperationForScopeProvider(scope).select((s) => s.isBusy),
           ),
         );
@@ -622,9 +616,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
         snapshotRevision: listStateStructureRevision,
       );
     }
-    final tree = _isActive
-        ? ref.watch(librarySortedTreeUiProvider)
-        : ref.read(librarySortedTreeUiProvider);
+    final tree = ref.watch(librarySortedTreeUiProvider);
     final selectedSelections = _isSelectionMode
         ? selectedLibraryNodeSelections(tree, _selectedLibraryPaths)
         : const <LibraryBatchSelection>[];
@@ -767,9 +759,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                 child: AppPageContentTransition(
                   child: Consumer(
                     builder: (context, ref, _) {
-                      final scanState = _isActive
-                          ? ref.watch(libraryScanUiProvider)
-                          : ref.read(libraryScanUiProvider);
+                      final scanState = ref.watch(libraryScanUiProvider);
                       return LibraryScanProgressCard(
                         i18n: i18n,
                         scanState: scanState,

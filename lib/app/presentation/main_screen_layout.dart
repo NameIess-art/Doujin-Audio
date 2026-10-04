@@ -43,7 +43,7 @@ extension _MainScreenLayout on _MainScreenState {
 
       return KeyedSubtree(
         key: ValueKey<String>('main_page_fade_$actualIndex'),
-        child: RepaintBoundary(child: page),
+        child: page,
       );
     }
 
@@ -91,7 +91,6 @@ extension _MainScreenLayout on _MainScreenState {
                 indexListenable: _activePageIndex,
                 itemCount: destinations.length,
                 itemBuilder: pageShell,
-                style: AppIndexedStackTransitionStyle.slide,
                 duration: kAppMotionSlow,
                 onTransitionCompleted: _handlePageTransitionCompleted,
               ),

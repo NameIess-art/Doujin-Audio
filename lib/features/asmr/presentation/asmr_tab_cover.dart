@@ -4,7 +4,6 @@ class _AsmrWorkCover extends ConsumerWidget {
   const _AsmrWorkCover({
     required this.url,
     required this.width,
-    required this.isActive,
     this.isSelected = false,
     this.duration,
     this.rjCode = '',
@@ -12,7 +11,6 @@ class _AsmrWorkCover extends ConsumerWidget {
 
   final String url;
   final double width;
-  final bool isActive;
   final bool isSelected;
   final Duration? duration;
   final String rjCode;
@@ -22,9 +20,7 @@ class _AsmrWorkCover extends ConsumerWidget {
     final width = this.width;
     final height = width / kStandardCoverAspectRatio;
     final url = this.url.trim();
-    final coverResolution = isActive
-        ? ref.watch(coverImageResolutionProvider)
-        : ref.read(coverImageResolutionProvider);
+    final coverResolution = ref.watch(coverImageResolutionProvider);
     final coverCacheWidth = coverCacheWidthForResolution(coverResolution);
     final library = ref.read(libraryFacadeProvider);
     ref.watch(

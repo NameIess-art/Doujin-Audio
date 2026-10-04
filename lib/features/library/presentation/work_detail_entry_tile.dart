@@ -8,7 +8,7 @@ import '../../../core/widgets/mobile_overlay_inset.dart';
 import '../../../core/widgets/unified_popup_menu.dart';
 import 'work_detail_entries.dart';
 
-class WorkDetailEntryTile extends StatelessWidget {
+class WorkDetailEntryTile extends StatefulWidget {
   const WorkDetailEntryTile({
     super.key,
     required this.item,
@@ -24,14 +24,30 @@ class WorkDetailEntryTile extends StatelessWidget {
   final String moreLabel;
   final ValueChanged<WorkEntryAction> onAction;
 
+  @override
+  State<WorkDetailEntryTile> createState() => _WorkDetailEntryTileState();
+}
+
+class _WorkDetailEntryTileState extends State<WorkDetailEntryTile> {
+  bool _isMenuOpen = false;
+
   Future<void> _showMenu(BuildContext context, RelativeRect position) async {
-    final result = await showDockAwareMenu<WorkEntryAction>(
-      context: context,
-      position: position,
-      entries: menuEntries,
-    );
-    if (context.mounted && result != null) {
-      onAction(result);
+    if (mounted) {
+      setState(() => _isMenuOpen = true);
+    }
+    try {
+      final result = await showDockAwareMenu<WorkEntryAction>(
+        context: context,
+        position: position,
+        entries: widget.menuEntries,
+      );
+      if (context.mounted && result != null) {
+        widget.onAction(result);
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isMenuOpen = false);
+      }
     }
   }
 
@@ -53,6 +69,7 @@ class WorkDetailEntryTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final item = widget.item;
     final isFolder = item.type == WorkEntryType.folder;
     final icon = switch (item.type) {
       WorkEntryType.folder => Icons.folder_rounded,
@@ -65,19 +82,31 @@ class WorkDetailEntryTile extends StatelessWidget {
     };
     final color = switch (item.type) {
       WorkEntryType.folder => const Color(0xFFFFA000),
-      WorkEntryType.audio => accentColor,
+      WorkEntryType.audio => widget.accentColor,
       _ => cs.onSurfaceVariant,
     };
+    final isHighlighted =
+        defaultTargetPlatform == TargetPlatform.windows && _isMenuOpen;
+
     return GestureDetector(
       onSecondaryTapDown: defaultTargetPlatform == TargetPlatform.windows
           ? (details) async {
-              final result = await showUnifiedContextMenu<WorkEntryAction>(
-                context: context,
-                globalPosition: details.globalPosition,
-                entries: menuEntries,
-              );
-              if (context.mounted && result != null) {
-                onAction(result);
+              if (mounted) {
+                setState(() => _isMenuOpen = true);
+              }
+              try {
+                final result = await showUnifiedContextMenu<WorkEntryAction>(
+                  context: context,
+                  globalPosition: details.globalPosition,
+                  entries: widget.menuEntries,
+                );
+                if (context.mounted && result != null) {
+                  widget.onAction(result);
+                }
+              } finally {
+                if (mounted) {
+                  setState(() => _isMenuOpen = false);
+                }
               }
             }
           : null,
@@ -91,6 +120,9 @@ class WorkDetailEntryTile extends StatelessWidget {
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
           splashColor: color.withValues(alpha: 0.16),
           hoverColor: color.withValues(alpha: 0.08),
+          selected: isHighlighted,
+          selectedTileColor: widget.accentColor.withValues(alpha: 0.16),
+          selectedColor: widget.accentColor,
           leading: Icon(icon, color: color),
           title: Text(
             item.name,
@@ -106,7 +138,7 @@ class WorkDetailEntryTile extends StatelessWidget {
                 padding: EdgeInsets.zero,
                 iconSize: 22,
                 icon: const Icon(Icons.more_vert_rounded),
-                tooltip: moreLabel,
+                tooltip: widget.moreLabel,
                 onPressed: () => _showButtonMenu(buttonContext),
               ),
             ),
@@ -118,7 +150,7 @@ class WorkDetailEntryTile extends StatelessWidget {
                 context: context,
               ),
             );
-            onAction(WorkEntryAction.copy);
+            widget.onAction(WorkEntryAction.copy);
           },
           onTap: () {
             unawaited(
@@ -127,7 +159,7 @@ class WorkDetailEntryTile extends StatelessWidget {
                 context: context,
               ),
             );
-            onAction(
+            widget.onAction(
               item.type == WorkEntryType.audio
                   ? WorkEntryAction.play
                   : WorkEntryAction.open,

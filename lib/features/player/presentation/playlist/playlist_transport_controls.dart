@@ -617,6 +617,7 @@ class _PlaybackSecondaryControlsState
             ),
             controller: scrollController,
             scrollDirection: Axis.horizontal,
+            physics: const ClampingScrollPhysics(),
             padding: const EdgeInsets.symmetric(horizontal: 4),
             child: ConstrainedBox(
               constraints: BoxConstraints(

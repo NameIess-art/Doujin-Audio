@@ -390,4 +390,41 @@ void main() {
       expect(lastItemBottom, lessThanOrEqualTo(480));
     },
   );
+
+  testWidgets(
+    'search category selection capsule uses ClampingScrollPhysics',
+    (tester) async {
+      final controller = TextEditingController();
+      final focusNode = FocusNode();
+      addTearDown(controller.dispose);
+      addTearDown(focusNode.dispose);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: AppSearchPageScaffold<int>(
+            controller: controller,
+            focusNode: focusNode,
+            hintText: 'Search audio',
+            categories: const <AppSearchCategory<int>>[
+              AppSearchCategory(value: 0, label: 'Cat 0'),
+              AppSearchCategory(value: 1, label: 'Cat 1'),
+              AppSearchCategory(value: 2, label: 'Cat 2'),
+            ],
+            selectedCategory: 0,
+            onCategorySelected: (_) {},
+            onChanged: (_) {},
+            onSubmitted: (_) {},
+            onCloseOrClear: () {},
+            body: const SizedBox.expand(),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      final categoryList = tester.widget<ListView>(
+        find.byKey(const ValueKey<String>('app_search_categories')),
+      );
+      expect(categoryList.physics, isA<ClampingScrollPhysics>());
+    },
+  );
 }

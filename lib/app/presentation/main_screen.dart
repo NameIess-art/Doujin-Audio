@@ -239,11 +239,13 @@ class _MainScreenState extends ConsumerState<MainScreen>
       (_, hasPlayingSession) => _handlePlayingSessionChanged(hasPlayingSession),
       fireImmediately: true,
     );
-    ref.listenManual<bool>(
-      mainOverlayUiProvider.select((state) => state.hasPlayingAudioSession),
-      (_, _) => _evaluateSleepModeAutoTrigger(),
-      fireImmediately: true,
-    );
+    if (defaultTargetPlatform != TargetPlatform.windows) {
+      ref.listenManual<bool>(
+        mainOverlayUiProvider.select((state) => state.hasPlayingAudioSession),
+        (_, _) => _evaluateSleepModeAutoTrigger(),
+        fireImmediately: true,
+      );
+    }
     ref.listenManual<bool>(
       mainOverlayUiProvider.select((state) => state.hasNowPlaying),
       (_, hasNowPlaying) {
@@ -253,19 +255,21 @@ class _MainScreenState extends ConsumerState<MainScreen>
       },
       fireImmediately: true,
     );
-    ref.listenManual<SleepModeAutoTrigger>(
-      settingsStateProvider.select(
-        (value) =>
-            value.value?.sleepModeAutoTrigger ?? SleepModeAutoTrigger.manual,
-      ),
-      (_, _) => _evaluateSleepModeAutoTrigger(),
-      fireImmediately: true,
-    );
-    ref.listenManual<bool>(
-      timerStateProvider.select((state) => state.value?.active ?? false),
-      (_, _) => _evaluateSleepModeAutoTrigger(),
-      fireImmediately: true,
-    );
+    if (defaultTargetPlatform != TargetPlatform.windows) {
+      ref.listenManual<SleepModeAutoTrigger>(
+        settingsStateProvider.select(
+          (value) =>
+              value.value?.sleepModeAutoTrigger ?? SleepModeAutoTrigger.manual,
+        ),
+        (_, _) => _evaluateSleepModeAutoTrigger(),
+        fireImmediately: true,
+      );
+      ref.listenManual<bool>(
+        timerStateProvider.select((state) => state.value?.active ?? false),
+        (_, _) => _evaluateSleepModeAutoTrigger(),
+        fireImmediately: true,
+      );
+    }
     ref.listenManual<bool>(
       settingsStateProvider.select(
         (value) => value.value?.autoCheckUpdates ?? false,
@@ -354,7 +358,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
   }
 
   void _evaluateSleepModeAutoTrigger() {
-    if (!mounted) return;
+    if (!mounted || defaultTargetPlatform == TargetPlatform.windows) return;
     final settings = ref.read(settingsStateProvider).value;
     final trigger =
         settings?.sleepModeAutoTrigger ?? SleepModeAutoTrigger.manual;
@@ -396,7 +400,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
 
   void _onSleepModeAutoEntryTimerFired() {
     _sleepModeAutoEntryTimer = null;
-    if (!mounted) return;
+    if (!mounted || defaultTargetPlatform == TargetPlatform.windows) return;
     final settings = ref.read(settingsStateProvider).value;
     final trigger =
         settings?.sleepModeAutoTrigger ?? SleepModeAutoTrigger.manual;

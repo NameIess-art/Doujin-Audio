@@ -736,40 +736,43 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                                   ),
                                 ),
                         ),
-                        const SizedBox(width: 8),
-                        AppHeaderActionTransition(
-                          delayIndex: 1,
-                          child: HeaderFloatingButton(
-                            child: IconButton(
-                              key: const ValueKey<String>(
-                                'playlist_sleep_canvas_button',
-                              ),
-                              onPressed: headerState.hasPlayingAudioSession
-                                  ? () {
-                                      if (!ref
-                                          .read(playbackFacadeProvider)
-                                          .hasPlayingAudioSession) {
-                                        return;
+                        if (defaultTargetPlatform != TargetPlatform.windows) ...[
+                          const SizedBox(width: 8),
+                          AppHeaderActionTransition(
+                            delayIndex: 1,
+                            child: HeaderFloatingButton(
+                              child: IconButton(
+                                key: const ValueKey<String>(
+                                  'playlist_sleep_canvas_button',
+                                ),
+                                onPressed: headerState.hasPlayingAudioSession
+                                    ? () {
+                                        if (!ref
+                                            .read(playbackFacadeProvider)
+                                            .hasPlayingAudioSession) {
+                                          return;
+                                        }
+                                        Navigator.of(context).push(
+                                          BedtimeCanvasPage.route(context),
+                                        );
                                       }
-                                      Navigator.of(context).push(
-                                        BedtimeCanvasPage.route(context),
-                                      );
-                                    }
-                                  : null,
-                              icon: const Icon(Icons.bedtime_outlined),
-                              tooltip: i18n.tr('sleep_mode'),
-                              iconSize: 20,
-                              padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints.tightFor(
-                                width: 38,
-                                height: 38,
+                                    : null,
+                                icon: const Icon(Icons.bedtime_outlined),
+                                tooltip: i18n.tr('sleep_mode'),
+                                iconSize: 20,
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints.tightFor(
+                                  width: 38,
+                                  height: 38,
+                                ),
                               ),
                             ),
                           ),
-                        ),
+                        ],
                         const SizedBox(width: 8),
                         AppHeaderActionTransition(
-                          delayIndex: 2,
+                          delayIndex:
+                              defaultTargetPlatform != TargetPlatform.windows ? 2 : 1,
                           child: HeaderFloatingButton(
                             child: IconButton(
                               key: const ValueKey<String>(

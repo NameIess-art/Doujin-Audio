@@ -74,9 +74,10 @@ List<Widget> _buildSettingsPlaybackSection({
             );
           },
         ),
-        Consumer(
-          builder: (context, ref, _) {
-            final trigger = ref.watch(
+        if (defaultTargetPlatform != TargetPlatform.windows)
+          Consumer(
+            builder: (context, ref, _) {
+              final trigger = ref.watch(
               settingsStateProvider.select(
                 (state) =>
                     state.value?.sleepModeAutoTrigger ??

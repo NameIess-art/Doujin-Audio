@@ -713,6 +713,7 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
       ),
       navigationRailTheme: NavigationRailThemeData(
         useIndicator: true,
+        indicatorShape: const CircleBorder(),
         minWidth: 88,
         minExtendedWidth: 250,
         selectedIconTheme: IconThemeData(color: scheme.primary, size: 22),
@@ -755,6 +756,7 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
         style: IconButton.styleFrom(
           minimumSize: Size(tokens.minimumTapTarget, tokens.minimumTapTarget),
           visualDensity: VisualDensity.standard,
+          shape: const CircleBorder(),
         ),
       ),
       sliderTheme: SliderThemeData(

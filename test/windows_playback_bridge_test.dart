@@ -17,11 +17,14 @@ void main() {
   AppRuntimeTestFixture.initialize();
   late WindowsPlaybackBridge bridge;
   late List<_Player> players;
+  late Duration elapsed;
   void Function(_Player)? configureNextPlayer;
   setUp(() {
     players = [];
     configureNextPlayer = null;
+    elapsed = Duration.zero;
     bridge = WindowsPlaybackBridge(
+      monotonicElapsed: () => elapsed,
       createPlayer: () {
         final platform = _Player();
         configureNextPlayer?.call(platform);
@@ -1052,6 +1055,71 @@ void main() {
     await Future<void>.delayed(const Duration(milliseconds: 550));
     expect(players.single.opens, 1);
   });
+
+  test('network recovery timeout releases only the failed session', () async {
+    await prepare('one');
+    await prepare('two');
+    final failed = players.first;
+    final otherPlayer = bridge.playerForSession('two');
+    final events = <NativePlaybackSnapshot>[];
+    final subscription = bridge.snapshots.listen(events.add);
+    addTearDown(subscription.cancel);
+
+    failed.emitError('connection reset');
+    await Future<void>.delayed(Duration.zero);
+    var snapshot = (await bridge.snapshot()).valueOrNull!.sessions.singleWhere(
+      (session) => session.sessionId == 'one',
+    );
+    expect(snapshot.playWhenReady, isTrue);
+    elapsed = const Duration(minutes: 10);
+    await Future<void>.delayed(const Duration(milliseconds: 550));
+    failed.emitError('connection reset');
+    await Future<void>.delayed(Duration.zero);
+    snapshot = (await bridge.snapshot()).valueOrNull!.sessions.singleWhere(
+      (session) => session.sessionId == 'one',
+    );
+
+    expect(snapshot.playWhenReady, isFalse);
+    expect(snapshot.error, 'connection reset');
+    expect(bridge.playerForSession('one'), isNull);
+    expect(bridge.playerForSession('two'), same(otherPlayer));
+    expect(
+      events.lastWhere((event) => event.sessionId == 'one').playWhenReady,
+      isFalse,
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 550));
+    expect(failed.opens, 2);
+
+    await bridge.play('one');
+    final restarted = players.last;
+    restarted.emitError('connection reset');
+    await Future<void>.delayed(Duration.zero);
+    expect(bridge.playerForSession('one'), isNotNull);
+    await Future<void>.delayed(const Duration(milliseconds: 550));
+    expect(restarted.opens, 2);
+  });
+
+  test(
+    'unrecoverable local error clears playback intent and decoder',
+    () async {
+      await bridge.prepareSession(
+        sessionId: 'one',
+        uri: Uri.file('C:/audio/one.wav'),
+        title: 'one',
+        autoPlay: true,
+      );
+      await prepare('two');
+      final otherPlayer = bridge.playerForSession('two');
+      players.first.emitError('file unavailable');
+      await Future<void>.delayed(Duration.zero);
+      final snapshot = (await bridge.snapshot()).valueOrNull!.sessions
+          .singleWhere((session) => session.sessionId == 'one');
+      expect(snapshot.playWhenReady, isFalse);
+      expect(snapshot.error, 'file unavailable');
+      expect(bridge.playerForSession('one'), isNull);
+      expect(bridge.playerForSession('two'), same(otherPlayer));
+    },
+  );
 
   test(
     'queue replacement cancels retries bound to the previous queue',

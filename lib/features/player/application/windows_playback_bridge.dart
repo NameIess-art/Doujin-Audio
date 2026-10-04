@@ -13,8 +13,11 @@ part 'windows_playback_session.dart';
 /// The desktop implementation of the existing playback transport. Each session
 /// owns one libmpv player; video surfaces borrow it without opening another source.
 class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
-  WindowsPlaybackBridge({Player Function()? createPlayer})
-    : _createPlayer = createPlayer ?? _defaultPlayer;
+  WindowsPlaybackBridge({
+    Player Function()? createPlayer,
+    Duration Function()? monotonicElapsed,
+  }) : _createPlayer = createPlayer ?? _defaultPlayer,
+       _monotonicElapsed = monotonicElapsed;
 
   static WindowsPlaybackBridge? _instance;
   static WindowsPlaybackBridge get instance {
@@ -42,6 +45,8 @@ class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
   final _snapshots = StreamController<NativePlaybackSnapshot>.broadcast();
   final _progress = StreamController<NativePlaybackProgressUpdate>.broadcast();
   final _clock = Stopwatch()..start();
+  final Duration Function()? _monotonicElapsed;
+  Duration get _elapsed => _monotonicElapsed?.call() ?? _clock.elapsed;
   final _retiring = <Future<void>>{};
   String? _focusedSessionId;
   bool _listening = false;
@@ -450,7 +455,7 @@ class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
               position: position,
               bufferedPosition: player.state.buffer,
               duration: player.state.duration,
-              nativeElapsedRealtimeMs: _clock.elapsedMilliseconds,
+              nativeElapsedRealtimeMs: _elapsed.inMilliseconds,
             ),
           );
         }
@@ -475,10 +480,14 @@ class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
         next < candidates.length && candidates[next] != item['uri'];
     final remote =
         Uri.tryParse(item['uri'] as String)?.scheme.startsWith('http') == true;
-    if (!canFallback && !remote) return;
-    session.retryStartedAt ??= _clock.elapsed;
-    if (_clock.elapsed - session.retryStartedAt! >=
-        const Duration(minutes: 10)) {
+    session.retryStartedAt ??= _elapsed;
+    if ((!canFallback && !remote) ||
+        _elapsed - session.retryStartedAt! >= const Duration(minutes: 10)) {
+      // A terminal error must stop playback intent too: Windows power requests
+      // follow that intent while recoverable errors are retried.
+      session.wantsPlay = false;
+      session.cancelRetry();
+      unawaited(_change(session.id, _releaseIfIdle));
       return;
     }
     final generation = session.generation;
@@ -564,6 +573,7 @@ class WindowsPlaybackBridge implements NativePlaybackBridgeBase {
       }
       if (session.player == null || session.error != null) {
         session.retryAttempt = 0;
+        session.retryStartedAt = null;
         session.generation++;
         await _open(session);
       } else if (session.pendingStart == null) {

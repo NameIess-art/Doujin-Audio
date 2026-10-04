@@ -748,7 +748,7 @@ class HeaderSegmentedCategoryBar<T> extends StatelessWidget {
           builder: (scrollController) => SingleChildScrollView(
             controller: scrollController,
             scrollDirection: Axis.horizontal,
-            physics: const BouncingScrollPhysics(),
+            physics: const ClampingScrollPhysics(),
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 3),
               child: Row(

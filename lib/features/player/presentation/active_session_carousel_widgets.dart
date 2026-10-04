@@ -585,22 +585,29 @@ class _ActiveSessionTitleSubtitleState
                     ) ??
                     const TextStyle(),
               ),
-        if (secondaryText != null) ...[
-          const SizedBox(height: 1.5),
-          Text(
-            secondaryText,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: widget.playbackError == null
-                  ? cs.onSurfaceVariant
-                  : cs.error,
-              fontWeight: FontWeight.w600,
-              fontSize: 10.5,
-              height: 1.15,
+        const SizedBox(height: 1.5),
+        ExcludeSemantics(
+          excluding: secondaryText == null || secondaryText.isEmpty,
+          child: Opacity(
+            opacity:
+                (secondaryText != null && secondaryText.isNotEmpty) ? 1.0 : 0.0,
+            child: Text(
+              (secondaryText != null && secondaryText.isNotEmpty)
+                  ? secondaryText
+                  : ' ',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: widget.playbackError == null
+                    ? cs.onSurfaceVariant
+                    : cs.error,
+                fontWeight: FontWeight.w600,
+                fontSize: 10.5,
+                height: 1.15,
+              ),
             ),
           ),
-        ],
+        ),
       ],
     );
   }

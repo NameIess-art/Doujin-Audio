@@ -129,11 +129,7 @@ class DesktopMainNavigation extends StatelessWidget {
                         navigationRailTheme: Theme.of(context)
                             .navigationRailTheme
                             .copyWith(
-                              indicatorShape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(
-                                  AppRadius.medium,
-                                ),
-                              ),
+                              indicatorShape: const CircleBorder(),
                               indicatorColor: isDark
                                   ? cs.primary.withValues(alpha: 0.15)
                                   : cs.primaryContainer.withValues(alpha: 0.6),
@@ -159,6 +155,9 @@ class DesktopMainNavigation extends StatelessWidget {
                                           : 72,
                                       child: Center(
                                         child: IconButton(
+                                          style: IconButton.styleFrom(
+                                            shape: const CircleBorder(),
+                                          ),
                                           icon: Icon(
                                             isMenuCollapsed
                                                 ? Icons.menu_rounded
@@ -179,6 +178,9 @@ class DesktopMainNavigation extends StatelessWidget {
                                       ),
                                       child: isMenuCollapsed
                                           ? IconButton(
+                                              style: IconButton.styleFrom(
+                                                shape: const CircleBorder(),
+                                              ),
                                               icon: const Icon(
                                                 Icons.menu_rounded,
                                               ),
@@ -221,6 +223,9 @@ class DesktopMainNavigation extends StatelessWidget {
                                                   ),
                                                 ),
                                                 IconButton(
+                                                  style: IconButton.styleFrom(
+                                                    shape: const CircleBorder(),
+                                                  ),
                                                   icon: const Icon(
                                                     Icons.menu_open_rounded,
                                                   ),

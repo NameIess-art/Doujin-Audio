@@ -72,7 +72,9 @@ class GlobalShortcuts extends ConsumerWidget {
     final control = keyboard.isControlPressed;
     final alt = keyboard.isAltPressed;
     if (!control && !alt && key == LogicalKeyboardKey.f1) {
-      unawaited(_showHelp(routeContext, ref));
+      if (!_isHelpOpen) {
+        unawaited(_showHelp(routeContext, ref));
+      }
       return KeyEventResult.handled;
     }
     if (!control && !alt && key == LogicalKeyboardKey.escape) {
@@ -144,11 +146,24 @@ class GlobalShortcuts extends ConsumerWidget {
     return KeyEventResult.handled;
   }
 
-  Future<void> _showHelp(BuildContext context, WidgetRef ref) {
+  static bool _isHelpOpen = false;
+
+  @visibleForTesting
+  static bool get isHelpOpen => _isHelpOpen;
+
+  @visibleForTesting
+  static void resetHelpOpenForTesting() {
+    _isHelpOpen = false;
+  }
+
+  Future<void> _showHelp(BuildContext context, WidgetRef ref) async {
+    if (_isHelpOpen) return;
+    _isHelpOpen = true;
     final i18n = ref.read(appLanguageProviderInstanceProvider);
-    return showDialog<void>(
-      context: context,
-      builder: (context) => AlertDialog(
+    try {
+      await showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
         title: Text(i18n.tr('keyboard_shortcuts_title')),
         content: SizedBox(
           width: 560,
@@ -196,5 +211,8 @@ class GlobalShortcuts extends ConsumerWidget {
         ],
       ),
     );
+  } finally {
+    _isHelpOpen = false;
+  }
   }
 }

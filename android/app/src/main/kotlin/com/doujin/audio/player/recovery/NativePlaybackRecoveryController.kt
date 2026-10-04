@@ -20,6 +20,7 @@ import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 
 internal interface NativePlaybackRecoveryHost {
+    val interruptionActive: Boolean get() = false
     fun session(sessionId: String): NativePlaybackSession?
     fun healthSample(
         sessionId: String,
@@ -298,7 +299,6 @@ internal class NativePlaybackRecoveryController(
     private val recoveryBaselines = mutableMapOf<String, NativePlaybackHealthSample>()
     private val recovering = linkedSetOf<String>()
     private val candidateFallbackPending = linkedSetOf<String>()
-    private val recoveryGenerations = mutableMapOf<String, Long>()
     private var triggerInProgress = false
     private val startedAt = mutableMapOf<String, Long>()
     private var listening = false
@@ -334,7 +334,7 @@ internal class NativePlaybackRecoveryController(
 
     fun clearAll() {
         intended.clear()
-        pending.toList().forEach(::clearRecovery)
+        (pending + retryTasks.keys).toList().forEach(::clearRecovery)
         healthStates.clear()
         recoveryBaselines.clear()
         recovering.clear()
@@ -405,6 +405,7 @@ internal class NativePlaybackRecoveryController(
     }
 
     fun trigger(reason: String) {
+        if (host.interruptionActive) return
         if (triggerInProgress) {
             host.logInfo("playback_recovery_trigger_skipped_reentrant trigger=$reason")
             return
@@ -463,49 +464,52 @@ internal class NativePlaybackRecoveryController(
         immediate: Boolean = false
     ) {
         retryTasks.remove(sessionId)?.let(environment::remove)
-        val recoveryStarted = startedAt.getOrPut(sessionId, environment::elapsedRealtimeMs)
-        val remainingMs = maxRecoveryDurationMs -
-            (environment.elapsedRealtimeMs() - recoveryStarted).coerceAtLeast(0L)
-        if (remainingMs <= 0L) {
-            timeOutRecovery(sessionId)
-            return
-        }
-        val delayMs = if (immediate) {
-            0L
+        val deferredForFocus = host.interruptionActive
+        // A phone call or ducking interruption is not a failed playback retry.
+        // Restart the bounded recovery window after focus returns, and keep the
+        // pending task at the health-check cadence without advancing backoff.
+        if (deferredForFocus) startedAt -= sessionId
+        val delayMs: Long
+        if (deferredForFocus) {
+            delayMs = healthCheckIntervalMs
         } else {
-            playbackRecoveryDelayMs(
-                attempt,
-                recoveryStarted,
-                environment.elapsedRealtimeMs()
-            ).coerceAtMost(remainingMs)
+            val recoveryStarted = startedAt.getOrPut(sessionId, environment::elapsedRealtimeMs)
+            val remainingMs = maxRecoveryDurationMs -
+                (environment.elapsedRealtimeMs() - recoveryStarted).coerceAtLeast(0L)
+            if (remainingMs <= 0L) {
+                timeOutRecovery(sessionId)
+                return
+            }
+            delayMs = if (immediate) {
+                0L
+            } else {
+                playbackRecoveryDelayMs(
+                    attempt,
+                    recoveryStarted,
+                    environment.elapsedRealtimeMs()
+                ).coerceAtMost(remainingMs)
+            }
+            attempts[sessionId] = attempt + 1
         }
-        attempts[sessionId] = attempt + 1
-        val generation = recoveryGenerations[sessionId] ?: 0L
-        val task = Runnable {
+        lateinit var task: Runnable
+        task = Runnable {
+            if (retryTasks[sessionId] !== task) return@Runnable
             retryTasks.remove(sessionId)
-            retry(
-                sessionId = sessionId,
-                reason = "scheduled_retry",
-                generation = generation
-            )
+            retry(sessionId, "scheduled_retry")
         }
         retryTasks[sessionId] = task
-        host.logInfo("player_error_retry_scheduled sessionId=$sessionId delay=${delayMs}ms attempt=${attempt + 1}")
+        host.logInfo(
+            "player_error_retry_scheduled sessionId=$sessionId delay=${delayMs}ms " +
+                "attempt=${attempts.getOrDefault(sessionId, 0)} deferredForFocus=$deferredForFocus"
+        )
         environment.postDelayed(task, delayMs)
     }
 
-    private fun retry(
-        sessionId: String,
-        reason: String,
-        generation: Long? = null
-    ) {
+    private fun retry(sessionId: String, reason: String) {
         val session = host.session(sessionId) ?: return clear(sessionId)
         if (sessionId !in intended) return clearRecovery(sessionId)
-        if (generation != null && generation != (recoveryGenerations[sessionId] ?: 0L)) {
-            host.logInfo(
-                "playback_recovery_skip_stale sessionId=$sessionId trigger=$reason " +
-                    "generation=$generation current=${recoveryGenerations[sessionId] ?: 0L}"
-            )
+        if (host.interruptionActive) {
+            scheduleRetry(sessionId, attempts.getOrDefault(sessionId, 0))
             return
         }
         if (recoveryDurationExceeded(sessionId)) {
@@ -583,8 +587,6 @@ internal class NativePlaybackRecoveryController(
     }
 
     private fun clearRecovery(sessionId: String) {
-        recoveryGenerations[sessionId] =
-            (recoveryGenerations[sessionId] ?: 0L) + 1L
         pending -= sessionId
         attempts -= sessionId
         startedAt -= sessionId

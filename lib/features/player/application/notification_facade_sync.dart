@@ -27,11 +27,11 @@ extension NotificationFacadeSync on NotificationFacade {
     );
   }
 
-  Future<void> _clearUnifiedPlaybackNotificationsOnPlatform() async {
+  Future<bool> _clearUnifiedPlaybackNotificationsOnPlatform() async {
     _unifiedNotificationSyncKey = null;
     _lastNotificationItems = const <Map<String, dynamic>>[];
     _lastNotificationMainSessionId = null;
-    await _notificationService.clearUnifiedNotifications();
+    return (await _notificationService.clearUnifiedNotifications()).isOk;
   }
 
   void _syncNotificationState({bool immediateUnifiedSync = false}) {
@@ -111,11 +111,19 @@ extension NotificationFacadeSync on NotificationFacade {
         _unifiedNotificationSyncPending = false;
         final shouldShowUnifiedNotifications =
             _notificationsEnabled && !_notificationsDismissedWhilePaused;
-        if (!shouldShowUnifiedNotifications) {
-          await _clearUnifiedPlaybackNotificationsOnPlatform();
-          continue;
+        final succeeded = shouldShowUnifiedNotifications
+            ? await _syncUnifiedPlaybackNotifications()
+            : await _clearUnifiedPlaybackNotificationsOnPlatform();
+        if (!succeeded) {
+          if (!shouldShowUnifiedNotifications) {
+            _unifiedNotificationSyncPending =
+                _unifiedNotificationSyncPending &&
+                _notificationsEnabled &&
+                !_notificationsDismissedWhilePaused &&
+                activeSessions.isNotEmpty;
+          }
+          break;
         }
-        await _syncUnifiedPlaybackNotifications();
       }
     } finally {
       _unifiedNotificationSyncInFlight = false;
@@ -193,7 +201,7 @@ extension NotificationFacadeSync on NotificationFacade {
     return _notificationFocusedSession?.id == sessionId;
   }
 
-  Future<void> _syncUnifiedPlaybackNotifications() async {
+  Future<bool> _syncUnifiedPlaybackNotifications() async {
     final sessionsToShow = activeSessions;
     final mainSession = _focusedSessionFrom(sessionsToShow);
     final sessionIds = sessionsToShow.map((session) => session.id).toSet();
@@ -209,7 +217,7 @@ extension NotificationFacadeSync on NotificationFacade {
     if (_unifiedNotificationSyncKey != null &&
         _lastNotificationMainSessionId == mainSession?.id &&
         unchangedItems) {
-      return;
+      return true;
     }
     final syncPayload = <String, dynamic>{
       'mainSessionId': mainSession?.id,
@@ -217,17 +225,41 @@ extension NotificationFacadeSync on NotificationFacade {
     };
     final nextSyncKey = json.encode(syncPayload);
     if (_unifiedNotificationSyncKey == nextSyncKey) {
-      return;
+      return true;
     }
 
-    if (payload.isEmpty) {
-      await _clearUnifiedPlaybackNotificationsOnPlatform();
-    } else {
-      await _notificationService.syncUnifiedNotifications(syncPayload);
+    final succeeded = payload.isEmpty
+        ? await _clearUnifiedPlaybackNotificationsOnPlatform()
+        : (await _notificationService.syncUnifiedNotifications(
+            syncPayload,
+          )).isOk;
+    if (!succeeded) {
+      // Native calls can fail after changing power or media-control state.
+      // A previous success no longer proves the platform matches any payload.
+      _unifiedNotificationSyncKey = null;
+      _lastNotificationItems = const <Map<String, dynamic>>[];
+      _lastNotificationMainSessionId = null;
+      if (_unifiedNotificationSyncPending) {
+        final latestSessions =
+            _notificationsEnabled && !_notificationsDismissedWhilePaused
+            ? activeSessions
+            : const <PlaybackSession>[];
+        final latestSyncKey = json.encode(<String, dynamic>{
+          'mainSessionId': _focusedSessionFrom(latestSessions)?.id,
+          'items': latestSessions
+              .map(_notificationPayloadForSession)
+              .toList(growable: false),
+        });
+        // Preserve a newer pause/stop request, which may have no further
+        // progress events, but wait for a later refresh to retry the same state.
+        _unifiedNotificationSyncPending = latestSyncKey != nextSyncKey;
+      }
+      return false;
     }
     _unifiedNotificationSyncKey = nextSyncKey;
     _lastNotificationItems = payload;
     _lastNotificationMainSessionId = mainSession?.id;
+    return true;
   }
 
   Map<String, dynamic> _notificationPayloadForSession(PlaybackSession session) {

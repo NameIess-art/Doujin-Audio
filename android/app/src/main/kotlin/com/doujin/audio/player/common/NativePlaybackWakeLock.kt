@@ -3,16 +3,16 @@ package com.doujin.audio.player.common
 import android.annotation.SuppressLint
 import android.content.Context
 import android.net.wifi.WifiManager
-import android.os.Build
 import android.os.PowerManager
 
 /**
  * Holds the CPU wake lock that keeps handler-driven playback timers,
  * audio decoding, and recovery work running while the screen is off.
  *
- * Additionally holds a low-latency / high-perf Wi-Fi lock when network
- * streaming is active, preventing OEM power managers and Doze mode from
- * putting the Wi-Fi chip to sleep during overnight playback.
+ * Holds a high-performance Wi-Fi lock during network playback and recovery.
+ * Before Android 14 this remains effective with the screen off. Android 14+
+ * maps it to a foreground, screen-on-only lock, so buffering and recovery are
+ * still required; a Wi-Fi lock cannot bypass Doze or OEM power restrictions.
  */
 internal class NativePlaybackWakeLock(
     private val context: Context,
@@ -62,9 +62,8 @@ internal class NativePlaybackWakeLock(
     }
 
     /**
-     * Actively re-acquires the lock with a fresh rolling timeout to prevent
-     * OEM power managers or Doze mode from revoking or silencing the wake lock
-     * during long overnight playback sessions.
+     * Renews the timeout while the service owns playback. System power policy
+     * may still suppress the lock; reacquiring does not grant a Doze exemption.
      */
     @SuppressLint("WakelockTimeout")
     fun refresh() {
@@ -74,8 +73,8 @@ internal class NativePlaybackWakeLock(
         }
         val lock = wakeLock ?: return
         try {
-            // Re-acquiring with timeout updates the expiration in PowerManagerService
-            // even if the lock object already considers itself held.
+            // Non-reference-counted acquire replaces the pending timeout even
+            // when the lock is already held, without briefly releasing the CPU.
             lock.acquire(wakeLockTimeoutMs)
             logInfo("wakelock_refreshed")
         } catch (e: Exception) {
@@ -98,14 +97,11 @@ internal class NativePlaybackWakeLock(
                 if (wifiLock == null) {
                     val wifiManager = context.applicationContext
                         .getSystemService(Context.WIFI_SERVICE) as? WifiManager
-                    val lockType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                        WifiManager.WIFI_MODE_FULL_LOW_LATENCY
-                    } else {
-                        @Suppress("DEPRECATION")
-                        WifiManager.WIFI_MODE_FULL_HIGH_PERF
-                    }
+                    // LOW_LATENCY is inactive in the background or with the
+                    // screen off. HIGH_PERF covers those states before API 34.
+                    @Suppress("DEPRECATION")
                     wifiLock = wifiManager?.createWifiLock(
-                        lockType,
+                        WifiManager.WIFI_MODE_FULL_HIGH_PERF,
                         "${context.packageName}:native_playback_wifi"
                     )?.apply {
                         setReferenceCounted(false)

@@ -293,6 +293,7 @@ class _TimeSegmentPanelState extends State<TimeSegmentPanel> {
                         builder: (scrollController) => ListView.separated(
                           controller: scrollController,
                           scrollDirection: Axis.horizontal,
+                          physics: const ClampingScrollPhysics(),
                           itemCount: widget.labels.length,
                           separatorBuilder: (_, _) => const SizedBox(width: 8),
                           itemBuilder: (context, index) {
@@ -502,7 +503,7 @@ class SegmentPanelPageHeader extends StatelessWidget {
                       vertical: 3,
                     ),
                     scrollDirection: Axis.horizontal,
-                    physics: const BouncingScrollPhysics(),
+                    physics: const ClampingScrollPhysics(),
                     itemCount: labels.length,
                     separatorBuilder: (_, _) => const SizedBox(width: 2),
                     itemBuilder: (context, index) {

@@ -1602,6 +1602,124 @@ void main() {
     },
   );
 
+  for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+    testWidgets(
+      'active session card reserves subtitle slot and keeps title layout invariant on $platform',
+      (tester) async {
+        debugDefaultTargetPlatformOverride = platform;
+        addTearDown(() => debugDefaultTargetPlatformOverride = null);
+        final fixture = AppRuntimeWidgetTestFixture();
+        addTearDown(fixture.dispose);
+        final normalizedPath = PathMatcher.normalize('/library/track_sub.mp3');
+        final track = MusicTrack(
+          path: normalizedPath,
+          displayName: 'Invariant Track Title',
+          groupKey: PathMatcher.normalize('/library'),
+          groupTitle: 'Album',
+          groupSubtitle: '',
+          isSingle: false,
+        );
+        fixture.runtimeGraph.library.addTracks([track], notify: false, persist: false);
+        final session = PlaybackSession(
+          id: 'session_sub_test',
+          currentTrackPath: track.path,
+          customQueueTracks: [track],
+          loopMode: SessionLoopMode.single,
+          nonSingleLoopMode: SessionLoopMode.single,
+          volume: 1.0,
+          createdAt: DateTime(2026),
+          state: const PlayerState(false, ProcessingState.ready),
+        )..setOptimisticPosition(Duration.zero);
+        addTearDown(session.shutdown);
+        fixture.playbackService.registerSession(session);
+        fixture.playbackService.syncSlice(
+          activeSessions: <PlaybackSession>[session],
+          playingSessionCount: 0,
+          focusedSessionId: session.id,
+          coverGeneration: 0,
+          isInitialized: true,
+        );
+        final subtitleService = PlaybackSubtitleService(
+          trackResolver: (_) => track,
+          subtitleLoader: (_, _) async => SubtitleTrack(
+            sourcePath: 'sub.srt',
+            cues: const [
+              SubtitleCue(
+                start: Duration(seconds: 1),
+                end: Duration(seconds: 5),
+                text: 'Playing Subtitle Line',
+              ),
+            ],
+          ),
+        );
+        await subtitleService.load(track.path);
+
+        await tester.pumpWidget(
+          fixture.build(
+            SizedBox(
+              width: 320,
+              child: ActiveSessionCarousel(
+                sessions: [PlaybackSessionSnapshot.fromRuntime(session)],
+                presentation: ActiveSessionCarouselPresentation.embedded,
+                onOpenSession: (_) {},
+              ),
+            ),
+            subtitleService: subtitleService,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final titleFinder = find.text('Invariant Track Title');
+        expect(titleFinder, findsWidgets);
+        final titleRectsBefore = [
+          for (var i = 0; i < tester.widgetList(titleFinder).length; i++)
+            tester.getRect(titleFinder.at(i)),
+        ];
+
+        // Subtitle line text should not be visible yet (at 0s, cue is at 1-5s)
+        expect(find.text('Playing Subtitle Line'), findsNothing);
+
+        // Advance playback position into the subtitle range
+        session.applyNativeProgress(
+          NativePlaybackProgressUpdate(
+            sessionId: session.id,
+            position: const Duration(seconds: 2),
+            bufferedPosition: const Duration(seconds: 2),
+            nativeElapsedRealtimeMs: 0,
+          ),
+        );
+        await tester.pump(const Duration(milliseconds: 50));
+
+        // Subtitle line text is now visible
+        expect(find.text('Playing Subtitle Line'), findsWidgets);
+        final titleRectsWithSubtitle = [
+          for (var i = 0; i < tester.widgetList(titleFinder).length; i++)
+            tester.getRect(titleFinder.at(i)),
+        ];
+        expect(titleRectsWithSubtitle, titleRectsBefore);
+
+        // Advance position past the subtitle cue
+        session.applyNativeProgress(
+          NativePlaybackProgressUpdate(
+            sessionId: session.id,
+            position: const Duration(seconds: 10),
+            bufferedPosition: const Duration(seconds: 10),
+            nativeElapsedRealtimeMs: 0,
+          ),
+        );
+        await tester.pump(const Duration(milliseconds: 50));
+
+        expect(find.text('Playing Subtitle Line'), findsNothing);
+        final titleRectsAfter = [
+          for (var i = 0; i < tester.widgetList(titleFinder).length; i++)
+            tester.getRect(titleFinder.at(i)),
+        ];
+        expect(titleRectsAfter, titleRectsBefore);
+        debugDefaultTargetPlatformOverride = null;
+      },
+    );
+  }
+
   test('equalizer badge only appears while equalizer is enabled', () {
     final disabledIcons = sessionFeatureBadgeIcons(
       showSubtitles: false,
@@ -2474,6 +2592,10 @@ void main() {
         bottomLeft: Radius.circular(19),
       ),
     );
+    final tabListView = tester.widget<ListView>(
+      find.descendant(of: header, matching: find.byType(ListView)),
+    );
+    expect(tabListView.physics, isA<ClampingScrollPhysics>());
     final tabTaps = find.descendant(of: header, matching: find.byType(InkWell));
     expect(tabTaps, findsNWidgets(6));
     expect(

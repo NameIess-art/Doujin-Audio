@@ -331,6 +331,23 @@ void main() {
         find.textContaining(language.tr('keyboard_shortcuts_status_error')),
         findsOneWidget,
       );
+      expect(find.byType(AlertDialog), findsOneWidget);
+
+      // Second F1 key press should not open a duplicate dialog.
+      await tester.sendKeyEvent(LogicalKeyboardKey.f1);
+      await tester.pumpAndSettle();
+      expect(find.byType(AlertDialog), findsOneWidget);
+
+      // Escape closes the dialog.
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      expect(find.byType(AlertDialog), findsNothing);
+
+      // Can open again once closed.
+      await tester.sendKeyEvent(LogicalKeyboardKey.f1);
+      await tester.pumpAndSettle();
+      expect(find.byType(AlertDialog), findsOneWidget);
+
       await tester.sendKeyEvent(LogicalKeyboardKey.escape);
       await tester.pumpAndSettle();
       expect(find.byType(AlertDialog), findsNothing);

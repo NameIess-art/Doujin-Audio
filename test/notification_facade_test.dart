@@ -1,7 +1,9 @@
 import 'dart:async';
 
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/core/errors/native_result.dart';
+import 'package:doujin_audio/core/platform/notifications_platform_service.dart';
 import 'package:doujin_audio/features/library/application/library_facade.dart';
 import 'package:doujin_audio/features/player/application/notification_facade.dart';
 import 'package:doujin_audio/features/player/application/audio_state_services.dart';
@@ -17,6 +19,126 @@ import 'package:doujin_audio/features/player/domain/playback_persistence_reposit
 import 'support/test_persistence_repository.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  test(
+    'failed platform synchronization is retried without caching success',
+    () async {
+      const channel = MethodChannel('test/notification_sync_failure');
+      var attempts = 0;
+      var fail = true;
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(channel, (call) async {
+        attempts++;
+        return fail
+            ? <String, Object?>{
+                'ok': false,
+                'errorCode': 'platform_error',
+                'error': 'Power request failed.',
+              }
+            : <String, Object?>{'ok': true, 'value': null};
+      });
+      addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
+      final fixture = _createNotificationFixture(
+        PlaybackNotificationService(
+          notificationsPlatformService: NotificationsPlatformService(
+            channel: channel,
+            isWindowsOverride: true,
+          ),
+        ),
+      );
+      addTearDown(fixture.dispose);
+
+      fixture.facade.syncPlaybackState(immediateUnifiedSync: true);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(fixture.stateService.unifiedNotificationSyncKey, isNull);
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+      expect(attempts, 1);
+
+      fail = false;
+      fixture.facade.syncPlaybackState(immediateUnifiedSync: true);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(attempts, 2);
+      expect(fixture.stateService.unifiedNotificationSyncKey, isNotNull);
+
+      fixture.facade.syncPlaybackState(immediateUnifiedSync: true);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(attempts, 2);
+
+      fail = true;
+      fixture.session.setOptimisticState(playing: false);
+      fixture.facade.syncPlaybackState(immediateUnifiedSync: true);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(attempts, 3);
+      expect(fixture.stateService.unifiedNotificationSyncKey, isNull);
+
+      fail = false;
+      fixture.session.setOptimisticState(playing: true);
+      fixture.facade.syncPlaybackState(immediateUnifiedSync: true);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(attempts, 4);
+      expect(fixture.stateService.unifiedNotificationSyncKey, isNotNull);
+    },
+  );
+
+  test('failed empty-session clear does not suppress the next clear', () async {
+    final service = _RecordingPlaybackNotificationService()..failClear = true;
+    final fixture = _createNotificationFixture(service, registerSession: false);
+    addTearDown(fixture.dispose);
+
+    fixture.facade.syncPlaybackState(immediateUnifiedSync: true);
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    expect(service.clearCount, 1);
+    expect(fixture.stateService.unifiedNotificationSyncKey, isNull);
+
+    service.failClear = false;
+    fixture.facade.syncPlaybackState(immediateUnifiedSync: true);
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    expect(service.clearCount, 2);
+    expect(fixture.stateService.unifiedNotificationSyncKey, isNotNull);
+    fixture.facade.syncPlaybackState(immediateUnifiedSync: true);
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    expect(service.clearCount, 2);
+  });
+
+  for (final pauseDuringSync in <bool>[true, false]) {
+    test(
+      pauseDuringSync
+          ? 'failed in-flight sync preserves a newer paused payload'
+          : 'failed in-flight sync does not immediately retry the same payload',
+      () async {
+        final service = _BlockingPlaybackNotificationService()
+          ..failFirstSync = true;
+        final fixture = _createNotificationFixture(service);
+        addTearDown(fixture.dispose);
+
+        fixture.facade.syncPlaybackState(immediateUnifiedSync: true);
+        await service.firstSyncStarted.future;
+        if (pauseDuringSync) {
+          fixture.session.setOptimisticState(playing: false);
+        }
+        fixture.facade.syncPlaybackState(immediateUnifiedSync: true);
+        service.releaseFirstSync.complete();
+        await Future<void>.delayed(const Duration(milliseconds: 120));
+
+        expect(service.syncCount, pauseDuringSync ? 2 : 1);
+        if (pauseDuringSync) {
+          expect(
+            (service.payloads.last['items'] as List).single['playing'],
+            isFalse,
+          );
+          expect(fixture.stateService.unifiedNotificationSyncKey, isNotNull);
+        } else {
+          expect(fixture.stateService.unifiedNotificationSyncKey, isNull);
+          fixture.facade.syncPlaybackState(immediateUnifiedSync: true);
+          await Future<void>.delayed(const Duration(milliseconds: 20));
+          expect(service.syncCount, 2);
+        }
+      },
+    );
+  }
+
   test(
     'nonfocused settings and progress reuse notification presentation',
     () async {
@@ -304,6 +426,7 @@ void main() {
 
 _NotificationFixture _createNotificationFixture(
   PlaybackNotificationService service, {
+  bool registerSession = true,
   NotificationPlaybackCommands? commands,
   NotificationTrackResolver? trackByPath,
 }) {
@@ -330,7 +453,7 @@ _NotificationFixture _createNotificationFixture(
     createdAt: DateTime(2026),
     state: const PlayerState(true, ProcessingState.ready),
   );
-  playback.registerSession(session);
+  if (registerSession) playback.registerSession(session);
   facade.attachActions(
     playback: playback,
     resolveSession: ([sessionId]) => session,
@@ -390,12 +513,25 @@ final class _NotificationFixture {
 final class _RecordingPlaybackNotificationService
     extends PlaybackNotificationService {
   int syncCount = 0;
+  int clearCount = 0;
+  bool failClear = false;
   final List<Map<String, dynamic>> payloads = <Map<String, dynamic>>[];
 
   @override
-  Future<void> syncUnifiedNotifications(Map<String, dynamic> payload) async {
+  Future<NativeResult<void>> clearUnifiedNotifications() async {
+    clearCount++;
+    return failClear
+        ? const NativeFailure<void>('Power release failed.')
+        : const NativeSuccess<void>();
+  }
+
+  @override
+  Future<NativeResult<void>> syncUnifiedNotifications(
+    Map<String, dynamic> payload,
+  ) async {
     syncCount++;
     payloads.add(payload);
+    return const NativeSuccess<void>();
   }
 }
 
@@ -405,14 +541,22 @@ final class _BlockingPlaybackNotificationService
   final Completer<void> releaseFirstSync = Completer<void>();
   final List<Map<String, dynamic>> payloads = <Map<String, dynamic>>[];
   int syncCount = 0;
+  bool failFirstSync = false;
 
   @override
-  Future<void> syncUnifiedNotifications(Map<String, dynamic> payload) async {
+  Future<NativeResult<void>> syncUnifiedNotifications(
+    Map<String, dynamic> payload,
+  ) async {
     payloads.add(payload);
     syncCount++;
-    if (syncCount != 1) return;
-    firstSyncStarted.complete();
-    await releaseFirstSync.future;
+    if (syncCount == 1) {
+      firstSyncStarted.complete();
+      await releaseFirstSync.future;
+      if (failFirstSync) {
+        return const NativeFailure<void>('Power request failed.');
+      }
+    }
+    return const NativeSuccess<void>();
   }
 }
 

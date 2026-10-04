@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
@@ -26,64 +24,35 @@ class NotificationsPlatformService {
   bool get _isWindows =>
       _isWindowsOverride ?? defaultTargetPlatform == TargetPlatform.windows;
 
-  Future<void> syncUnifiedPlaybackNotifications(
+  Future<NativeResult<void>> syncUnifiedPlaybackNotifications(
     Map<String, dynamic> payload,
-  ) async {
-    if (!_isWindows) return;
-    try {
-      final result = await _client
-          .invoke<void>(
-            NotificationsMethod.syncUnifiedPlaybackNotifications,
-            arguments: payload,
-            decode: (_) {},
-          )
-          .timeout(
-            _timeout,
-            onTimeout: () {
-              AppLogService.warning('notification_sync_timed_out');
-              throw TimeoutException('Notification sync timed out.');
-            },
-          );
-      _logFailure(NotificationsMethod.syncUnifiedPlaybackNotifications, result);
-    } catch (error, stackTrace) {
-      AppLogService.error(
-        'notification_sync_failed',
-        error: error,
-        stackTrace: stackTrace,
-      );
-    }
-  }
+  ) => _invoke(
+    NotificationsMethod.syncUnifiedPlaybackNotifications,
+    arguments: payload,
+    timeoutMessage: 'Notification sync timed out.',
+  );
 
-  Future<void> clearUnifiedPlaybackNotifications() async {
-    if (!_isWindows) return;
-    try {
-      final result = await _client
-          .invoke<void>(
-            NotificationsMethod.clearUnifiedPlaybackNotifications,
-            decode: (_) {},
-          )
-          .timeout(
-            _timeout,
-            onTimeout: () {
-              AppLogService.warning('notification_clear_timed_out');
-              throw TimeoutException('Notification clear timed out.');
-            },
-          );
-      _logFailure(
-        NotificationsMethod.clearUnifiedPlaybackNotifications,
-        result,
-      );
-    } catch (error, stackTrace) {
-      AppLogService.error(
-        'notification_clear_failed',
-        error: error,
-        stackTrace: stackTrace,
-      );
-    }
-  }
+  Future<NativeResult<void>> clearUnifiedPlaybackNotifications() => _invoke(
+    NotificationsMethod.clearUnifiedPlaybackNotifications,
+    timeoutMessage: 'Notification clear timed out.',
+  );
 
-  void _logFailure<T>(String method, NativeResult<T> result) {
-    if (result case NativeFailure<T>(
+  Future<NativeResult<void>> _invoke(
+    String method, {
+    Map<String, dynamic>? arguments,
+    required String timeoutMessage,
+  }) async {
+    if (!_isWindows) return const NativeSuccess<void>();
+    final result = await _client
+        .invoke<void>(method, arguments: arguments, decode: (_) {})
+        .timeout(
+          _timeout,
+          onTimeout: () => NativeFailure<void>(
+            timeoutMessage,
+            code: NativeErrorCode.platformError,
+          ),
+        );
+    if (result case NativeFailure<void>(
       :final code,
       :final message,
       :final details,
@@ -93,5 +62,6 @@ class NotificationsPlatformService {
         error: <String, Object?>{'message': message, 'details': details},
       );
     }
+    return result;
   }
 }

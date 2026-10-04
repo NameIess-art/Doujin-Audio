@@ -391,6 +391,8 @@ class NativePlaybackService : MediaSessionService() {
     private val playbackRecovery: NativePlaybackRecoveryController by lazy {
         NativePlaybackRecoveryController(
             host = object : NativePlaybackRecoveryHost {
+                override val interruptionActive: Boolean
+                    get() = focusRecovery.interruptionActive
                 override fun session(sessionId: String) = sessionManager.get(sessionId)
                 override fun requestAudioFocus() = focusRecovery.requestIfNeeded()
                 override fun establishForegroundPlayback(sessionId: String): Boolean =

@@ -23,6 +23,7 @@ import 'package:doujin_audio/core/widgets/mobile_overlay_inset.dart';
 import 'package:doujin_audio/core/widgets/drag_only_scrollbar.dart';
 import 'package:doujin_audio/core/widgets/top_page_header.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
+import 'package:doujin_audio/core/widgets/unified_popup_menu.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_metadata_service.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
 import 'package:doujin_audio/features/library/presentation/dlsite_metadata_review_page.dart';
@@ -2597,6 +2598,64 @@ void main() {
           debugDefaultTargetPlatformOverride = null;
         }
       },
+    );
+
+    testWidgets(
+      'WorkDetailEntryTile highlights item on Windows when more menu is opened',
+      (WidgetTester tester) async {
+        WorkEntryAction? performedAction;
+        const item = WorkEntryItem(
+          type: WorkEntryType.audio,
+          name: 'Track 01.mp3',
+          relativePath: 'Track 01.mp3',
+          fullPathOrUrl: '/work/Track 01.mp3',
+        );
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: WorkDetailEntryTile(
+                item: item,
+                accentColor: Colors.deepPurple,
+                menuEntries: const [
+                  UnifiedMenuEntry.action(
+                    value: WorkEntryAction.play,
+                    label: 'Play',
+                  ),
+                ],
+                moreLabel: 'More',
+                onAction: (action) => performedAction = action,
+              ),
+            ),
+          ),
+        );
+
+        final listTileFinder = find.byType(ListTile);
+        expect(tester.widget<ListTile>(listTileFinder).selected, isFalse);
+
+        // Tap the more button to open the menu
+        final moreButton = find.byKey(
+          const ValueKey<String>('work_entry_more_Track 01.mp3'),
+        );
+        await tester.tap(moreButton);
+        await tester.pump();
+
+        // While menu is opened, the tile is selected and highlighted
+        expect(tester.widget<ListTile>(listTileFinder).selected, isTrue);
+        expect(
+          tester.widget<ListTile>(listTileFinder).selectedTileColor,
+          Colors.deepPurple.withValues(alpha: 0.16),
+        );
+
+        // Tap the menu action to close menu
+        await tester.tap(find.text('Play'));
+        await tester.pumpAndSettle();
+
+        // After menu closes, tile is unhighlighted and action is performed
+        expect(tester.widget<ListTile>(listTileFinder).selected, isFalse);
+        expect(performedAction, WorkEntryAction.play);
+      },
+      variant: TargetPlatformVariant.only(TargetPlatform.windows),
     );
 
     for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {

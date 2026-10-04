@@ -3622,6 +3622,17 @@ void main() {
       isTrue,
     );
     expect(
+      tester
+          .widgetList<Theme>(
+            find.ancestor(of: navigationRail, matching: find.byType(Theme)),
+          )
+          .any(
+            (theme) =>
+                theme.data.navigationRailTheme.indicatorShape is CircleBorder,
+          ),
+      isTrue,
+    );
+    expect(
       find.ancestor(
         of: navigationRail,
         matching: find.byType(SingleChildScrollView),
@@ -3651,6 +3662,10 @@ void main() {
     );
     expect(expandedMenuButton, findsOneWidget);
     expect(tester.getSize(expandedMenuButton), isNot(Size.zero));
+    final menuButton = tester.widget<IconButton>(
+      find.ancestor(of: expandedMenuButton, matching: find.byType(IconButton)),
+    );
+    expect(menuButton.style?.shape?.resolve({}) is CircleBorder, isTrue);
     final expandedMenuX = tester.getCenter(expandedMenuButton).dx;
     final expandedWidth = tester.getSize(navigationRail).width;
     final focusedIcon = find.byKey(

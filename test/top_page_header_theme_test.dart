@@ -177,13 +177,34 @@ void main() {
       expect(tester.getTopLeft(firstPill).dx - tester.getTopLeft(clips).dx, 4);
       expect(tester.getTopLeft(firstPill).dy - tester.getTopLeft(clips).dy, 3);
 
+      final scrollable = tester.widget<SingleChildScrollView>(viewport);
+      expect(scrollable.physics, isA<ClampingScrollPhysics>());
+
+      // Drag left to reach the right end (max extent)
       await tester.drag(viewport, const Offset(-500, 0));
+      await tester.pumpAndSettle();
+      final maxPixels =
+          tester.state<ScrollableState>(find.byType(Scrollable)).position.pixels;
+      expect(maxPixels, greaterThan(0));
+
+      // Attempting to drag further left at the rightmost end should clamp with no extra slack
+      await tester.drag(viewport, const Offset(-200, 0));
       await tester.pumpAndSettle();
       expect(
         tester.state<ScrollableState>(find.byType(Scrollable)).position.pixels,
-        greaterThan(0),
+        maxPixels,
       );
+
+      // Drag right to reach the leftmost end (0)
       await tester.drag(viewport, const Offset(500, 0));
+      await tester.pumpAndSettle();
+      expect(
+        tester.state<ScrollableState>(find.byType(Scrollable)).position.pixels,
+        0,
+      );
+
+      // Attempting to drag further right at the leftmost end should clamp with no extra slack
+      await tester.drag(viewport, const Offset(200, 0));
       await tester.pumpAndSettle();
       expect(
         tester.state<ScrollableState>(find.byType(Scrollable)).position.pixels,

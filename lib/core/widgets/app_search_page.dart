@@ -195,7 +195,7 @@ class AppSearchPageScaffold<T> extends StatelessWidget {
                           vertical: 3,
                         ),
                         scrollDirection: Axis.horizontal,
-                        physics: const BouncingScrollPhysics(),
+                        physics: const ClampingScrollPhysics(),
                         itemCount: categories.length,
                         separatorBuilder: (_, _) => const SizedBox(width: 2),
                         itemBuilder: (context, index) {

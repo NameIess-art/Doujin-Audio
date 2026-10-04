@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:doujin_audio/core/errors/native_result.dart';
 import 'package:doujin_audio/core/platform/notifications_platform_service.dart';
 import 'package:doujin_audio/core/platform/platform_channels.dart';
 import 'package:doujin_audio/core/platform/power_platform_service.dart';
@@ -226,7 +227,7 @@ void main() {
       expect(calls.first.arguments, containsPair('items', const <Object?>[]));
     });
 
-    test('timeout and exceptions do not throw', () async {
+    test('timeout and exceptions return failures without throwing', () async {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(channel, (call) {
             return Completer<void>().future;
@@ -237,13 +238,54 @@ void main() {
         timeout: const Duration(milliseconds: 1),
       );
 
-      await service.syncUnifiedPlaybackNotifications(const <String, dynamic>{});
+      final syncTimeout = await service.syncUnifiedPlaybackNotifications(
+        const <String, dynamic>{},
+      );
+      expect(syncTimeout.isFailure, isTrue);
+      expect(syncTimeout.errorCodeOrNull, NativeErrorCode.platformError);
+      final clearTimeout = await service.clearUnifiedPlaybackNotifications();
+      expect(clearTimeout.isFailure, isTrue);
+      expect(clearTimeout.errorCodeOrNull, NativeErrorCode.platformError);
 
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(channel, (call) async {
             throw PlatformException(code: 'boom');
           });
-      await service.clearUnifiedPlaybackNotifications();
+      final syncError = await service.syncUnifiedPlaybackNotifications(
+        const <String, dynamic>{},
+      );
+      expect(syncError.errorCodeOrNull, 'boom');
+      final clearError = await service.clearUnifiedPlaybackNotifications();
+      expect(clearError.errorCodeOrNull, 'boom');
+    });
+
+    test('sync and clear preserve native power request failures', () async {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+            return <String, Object?>{
+              'ok': false,
+              'errorCode': 'platform_error',
+              'error': 'Power request failed.',
+              'details': <String, Object?>{'systemError': 5},
+            };
+          });
+      final service = NotificationsPlatformService(
+        channel: channel,
+        isWindowsOverride: true,
+      );
+
+      final results = <NativeResult<void>>[
+        await service.syncUnifiedPlaybackNotifications(
+          const <String, dynamic>{},
+        ),
+        await service.clearUnifiedPlaybackNotifications(),
+      ];
+      for (final result in results) {
+        expect(result.isFailure, isTrue);
+        expect(result.errorCodeOrNull, NativeErrorCode.platformError);
+        expect(result.errorOrNull, 'Power request failed.');
+        expect(result.errorDetailsOrNull, <String, Object?>{'systemError': 5});
+      }
     });
   });
 }

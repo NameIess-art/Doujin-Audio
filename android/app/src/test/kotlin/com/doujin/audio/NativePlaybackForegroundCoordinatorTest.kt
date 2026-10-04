@@ -276,6 +276,43 @@ class NativePlaybackForegroundCoordinatorTest {
     }
 
     @Test
+    fun `twelve hours of playback retains foreground and one watchdog then releases on pause`() {
+        val environment = FakeForegroundEnvironment()
+        val host = FakeForegroundHost()
+        val watchdogIntervalMs = 4 * 60 * 1000L
+        val coordinator = NativePlaybackForegroundCoordinator(
+            host = host,
+            environment = environment,
+            stopGraceMs = 0L,
+            watchdogIntervalMs = watchdogIntervalMs
+        )
+        coordinator.sync()
+
+        repeat(180) { tick ->
+            environment.elapsedRealtimeMs = (tick + 1) * watchdogIntervalMs
+            environment.runFirst(watchdogIntervalMs)
+            // Removing the Activity task must not release ongoing playback.
+            assertFalse(coordinator.onTaskRemoved())
+            assertTrue(coordinator.isStarted)
+            assertEquals(listOf(watchdogIntervalMs), environment.delays())
+        }
+
+        assertEquals(12 * 60 * 60 * 1000L, environment.elapsedRealtimeMs)
+        assertEquals(180, host.watchdogRefreshes)
+        assertEquals(1, host.playbackStarts)
+        assertEquals(0, host.foregroundStops)
+
+        host.hasPlaybackToKeepAlive = false
+        coordinator.sync()
+        environment.runFirst(0L)
+
+        assertEquals(1, host.idleGraceBegans)
+        assertEquals(1, host.foregroundStops)
+        assertFalse(coordinator.isStarted)
+        assertTrue(environment.tasks.isEmpty())
+    }
+
+    @Test
     fun `watchdog rebuilds when the foreground notification went missing`() {
         val environment = FakeForegroundEnvironment()
         val host = FakeForegroundHost(notificationPosted = false)

@@ -998,4 +998,37 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
     expect(find.byType(BedtimeCanvasPage), findsOneWidget);
   });
+
+  testWidgets(
+    'Windows does not show sleep mode button on PlaylistTab',
+    (tester) async {
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      final session = PlaybackSession(
+        id: 'test-session-manual-button',
+        currentTrackPath: '/music/test.mp3',
+        loopMode: SessionLoopMode.single,
+        nonSingleLoopMode: SessionLoopMode.single,
+        volume: 0.8,
+        createdAt: DateTime(2026),
+        state: const PlayerState(true, ProcessingState.ready),
+      );
+      fixture.playbackService.registerSession(session);
+      fixture.playbackService.syncSlice(
+        activeSessions: <PlaybackSession>[session],
+        playingSessionCount: 1,
+        focusedSessionId: session.id,
+        coverGeneration: 0,
+        isInitialized: true,
+      );
+
+      await tester.pumpWidget(fixture.build(const PlaylistTab()));
+      await tester.pump();
+      expect(
+        find.byKey(const ValueKey('playlist_sleep_canvas_button')),
+        findsNothing,
+      );
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.windows),
+  );
 }

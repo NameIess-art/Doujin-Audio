@@ -486,7 +486,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
   @override
   void dispose() {
     _pageSwitchCoordinatorGeneration++;
-    UiInteractionCoordinator.instance.cancelInteraction(_pageSwitchInteraction);
+    UiInteractionCoordinator.instance.cancelNavigation(_pageSwitchInteraction);
     UiInteractionCoordinator.instance.cancelInteraction(_foregroundInteraction);
     _sleepModeAutoEntryTimer?.cancel();
     _sleepModeAutoEntryTimer = null;
@@ -656,6 +656,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
   }
 
   void _switchPage(int index) {
+    if (!UiInteractionCoordinator.instance.navigationAllowed.value) return;
     if (index == _activePageIndex.value) {
       ref.read(mainScreenControllerProvider).requestScrollToTop(index);
       return;
@@ -669,7 +670,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
         .requestStopScroll(_activePageIndex.value);
 
     final coordinator = UiInteractionCoordinator.instance;
-    coordinator.beginInteraction(_pageSwitchInteraction);
+    coordinator.beginNavigation(_pageSwitchInteraction);
     _pageSwitchCoordinatorGeneration = coordinator.beginGeneration();
     _activePageIndex.value = index;
     final destinations = _currentDestinations();
@@ -751,7 +752,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
     final coordinator = UiInteractionCoordinator.instance;
     final generation = _pageSwitchCoordinatorGeneration;
     final isPlaybackPage = _isPlaybackPage;
-    coordinator.endInteraction(_pageSwitchInteraction);
+    coordinator.endNavigation(_pageSwitchInteraction);
     coordinator.scheduleAfterIdle(
       key: 'main_page_warmup_$index',
       generation: generation,

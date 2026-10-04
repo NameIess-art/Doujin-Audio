@@ -8,6 +8,127 @@ import 'package:doujin_audio/core/widgets/app_transitions.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  testWidgets('navigation blocks repeated clicks before the next frame', (
+    tester,
+  ) async {
+    final allowed = ValueNotifier(true);
+    addTearDown(allowed.dispose);
+    var taps = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AppNavigationInputLock(
+          navigationAllowed: allowed,
+          child: TextButton(
+            onPressed: () {
+              taps++;
+              allowed.value = false;
+            },
+            child: const Text('navigate'),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('navigate'));
+    await tester.tap(find.text('navigate'), warnIfMissed: false);
+    expect(taps, 1);
+    allowed.value = true;
+    await tester.tap(find.text('navigate'));
+    expect(taps, 2);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets(
+    'navigation unlocks after all transitions without the idle delay',
+    (tester) async {
+      final coordinator = UiInteractionCoordinator();
+      addTearDown(coordinator.dispose);
+      final tab = Object();
+      final route = Object();
+      final scroll = Object();
+      coordinator.beginInteraction(scroll);
+      expect(coordinator.navigationAllowed.value, isTrue);
+      coordinator.beginNavigation(tab);
+      coordinator.beginNavigation(route);
+      coordinator.endNavigation(tab);
+      expect(coordinator.navigationAllowed.value, isFalse);
+      coordinator.cancelNavigation(route);
+      expect(coordinator.navigationAllowed.value, isTrue);
+      expect(coordinator.isInteracting, isTrue);
+      coordinator.cancelInteraction(scroll);
+      await tester.pump(coordinator.idleDelay);
+      expect(coordinator.isInteracting, isFalse);
+    },
+  );
+
+  for (final reduced in [false, true]) {
+    testWidgets('route input and back wait for transition (reduced=$reduced)', (
+      tester,
+    ) async {
+      final coordinator = UiInteractionCoordinator();
+      final observer = UiInteractionNavigatorObserver(coordinator: coordinator);
+      final navigatorKey = GlobalKey<NavigatorState>();
+      var destinationTaps = 0;
+      addTearDown(() {
+        observer.resetForTest();
+        coordinator.dispose();
+      });
+      await tester.pumpWidget(
+        MaterialApp(
+          navigatorKey: navigatorKey,
+          navigatorObservers: [observer],
+          builder: (_, child) => AppNavigationInputLock(
+            navigationAllowed: coordinator.navigationAllowed,
+            child: child!,
+          ),
+          home: Scaffold(
+            body: TextButton(
+              onPressed: () => destinationTaps++,
+              child: const Text('home destination'),
+            ),
+          ),
+        ),
+      );
+      final route = buildAppPageRoute<void>(
+        context: navigatorKey.currentContext!,
+        duration: reduced ? Duration.zero : kAppMotionSlow,
+        child: Scaffold(
+          body: TextButton(
+            onPressed: () => destinationTaps++,
+            child: const Text('detail destination'),
+          ),
+        ),
+      );
+      unawaited(navigatorKey.currentState!.push(route));
+      if (!reduced) {
+        expect(coordinator.navigationAllowed.value, isFalse);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 150));
+        await tester.tap(find.text('detail destination'), warnIfMissed: false);
+        expect(destinationTaps, 0);
+        await navigatorKey.currentState!.maybePop();
+        expect(route.isCurrent, isTrue);
+      }
+      await tester.pumpAndSettle();
+      expect(coordinator.navigationAllowed.value, isTrue);
+      await tester.tap(find.text('detail destination'));
+      expect(destinationTaps, 1);
+      await navigatorKey.currentState!.maybePop();
+      if (!reduced) {
+        expect(coordinator.navigationAllowed.value, isFalse);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 150));
+        await tester.tap(find.text('home destination'), warnIfMissed: false);
+        expect(destinationTaps, 1);
+      }
+      await tester.pumpAndSettle();
+      expect(coordinator.navigationAllowed.value, isTrue);
+      await tester.tap(find.text('home destination'));
+      expect(destinationTaps, 2);
+      await tester.pumpWidget(const SizedBox.shrink());
+      coordinator.resetForTest();
+    });
+  }
+
   testWidgets('prepared routes gate commits until their animation finishes', (
     tester,
   ) async {

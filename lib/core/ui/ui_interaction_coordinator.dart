@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
 
@@ -19,6 +20,8 @@ class UiInteractionCoordinator extends ChangeNotifier {
   final Duration interactionFrameBudget;
   final WarmupScheduler _backgroundScheduler;
   final Set<Object> _activeSources = <Object>{};
+  final Set<Object> _navigationSources = <Object>{};
+  final ValueNotifier<bool> _navigationAllowed = ValueNotifier(true);
   final Map<Object, Timer> _idleTimers = <Object, Timer>{};
   final Map<String, _PendingCommit> _pendingCommits =
       <String, _PendingCommit>{};
@@ -28,6 +31,7 @@ class UiInteractionCoordinator extends ChangeNotifier {
   int _generation = 0;
 
   bool get isInteracting => _activeSources.isNotEmpty;
+  ValueListenable<bool> get navigationAllowed => _navigationAllowed;
   int get generation => _generation;
   int get pendingCommitCount => _pendingCommits.length;
 
@@ -36,6 +40,24 @@ class UiInteractionCoordinator extends ChangeNotifier {
     _backgroundScheduler.beginGeneration(_generation);
     _dropStaleCommits();
     return _generation;
+  }
+
+  void beginNavigation(Object source) {
+    _navigationSources.add(source);
+    _navigationAllowed.value = false;
+    beginInteraction(source);
+  }
+
+  void endNavigation(Object source) {
+    _navigationSources.remove(source);
+    _navigationAllowed.value = _navigationSources.isEmpty;
+    endInteraction(source);
+  }
+
+  void cancelNavigation(Object source) {
+    _navigationSources.remove(source);
+    _navigationAllowed.value = _navigationSources.isEmpty;
+    cancelInteraction(source);
   }
 
   void beginInteraction(Object source) {
@@ -192,6 +214,8 @@ class UiInteractionCoordinator extends ChangeNotifier {
     }
     _idleTimers.clear();
     _activeSources.clear();
+    _navigationSources.clear();
+    _navigationAllowed.value = true;
     _backgroundScheduler.setPaused(false);
     flushPendingCommitsForTest();
   }
@@ -203,6 +227,8 @@ class UiInteractionCoordinator extends ChangeNotifier {
     }
     _idleTimers.clear();
     _activeSources.clear();
+    _navigationSources.clear();
+    _navigationAllowed.value = true;
     _backgroundScheduler.setPaused(false);
     _backgroundScheduler.clear();
     _pendingCommits.clear();
@@ -227,6 +253,7 @@ class UiInteractionCoordinator extends ChangeNotifier {
     }
     _throttleTimers.clear();
     _throttledCommits.clear();
+    _navigationAllowed.dispose();
     super.dispose();
   }
 }
@@ -259,16 +286,38 @@ class UiInteractionNavigatorObserver extends NavigatorObserver {
   final Object _gestureInteractionSource = Object();
   final Map<TransitionRoute<dynamic>, _RouteInteraction> _routeInteractions =
       <TransitionRoute<dynamic>, _RouteInteraction>{};
+  final Set<ModalRoute<dynamic>> _popRoutes = <ModalRoute<dynamic>>{};
+  late final _NavigationPopEntry _popEntry = _NavigationPopEntry(
+    _coordinator.navigationAllowed,
+  );
   Route<dynamic>? _gestureRoute;
+
+  void _registerPopRoute(Route<dynamic>? route) {
+    if (route is ModalRoute<dynamic> && _popRoutes.add(route)) {
+      route.registerPopEntry(_popEntry);
+      unawaited(
+        route.completed.then((_) {
+          _releaseRoute(route);
+          _unregisterPopRoute(route);
+        }),
+      );
+    }
+  }
+
+  void _unregisterPopRoute(Route<dynamic>? route) {
+    if (route is ModalRoute<dynamic> && _popRoutes.remove(route)) {
+      route.unregisterPopEntry(_popEntry);
+    }
+  }
 
   void _trackTransition(
     Route<dynamic>? route, {
     required Set<AnimationStatus> terminalStatuses,
   }) {
     if (route is! TransitionRoute<dynamic>) {
-      _coordinator.beginInteraction(_nonTransitionInteractionSource);
+      _coordinator.beginNavigation(_nonTransitionInteractionSource);
       WidgetsBinding.instance.addPostFrameCallback(
-        (_) => _coordinator.endInteraction(_nonTransitionInteractionSource),
+        (_) => _coordinator.endNavigation(_nonTransitionInteractionSource),
       );
       SchedulerBinding.instance.scheduleFrame();
       return;
@@ -276,7 +325,7 @@ class UiInteractionNavigatorObserver extends NavigatorObserver {
     _releaseRoute(route);
     final interaction = _RouteInteraction();
     _routeInteractions[route] = interaction;
-    _coordinator.beginInteraction(interaction.source);
+    _coordinator.beginNavigation(interaction.source);
     _attachRouteAnimation(
       route,
       interaction,
@@ -318,7 +367,7 @@ class UiInteractionNavigatorObserver extends NavigatorObserver {
       if (status == AnimationStatus.forward ||
           status == AnimationStatus.reverse) {
         interaction.terminalGeneration++;
-        _coordinator.beginInteraction(interaction.source);
+        _coordinator.beginNavigation(interaction.source);
         return;
       }
       if (terminalStatuses.contains(status)) {
@@ -366,11 +415,12 @@ class UiInteractionNavigatorObserver extends NavigatorObserver {
     if (interaction == null) return;
     final listener = interaction.listener;
     if (listener != null) route.animation?.removeStatusListener(listener);
-    _coordinator.endInteraction(interaction.source);
+    _coordinator.endNavigation(interaction.source);
   }
 
   @override
   void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    _registerPopRoute(route);
     if (previousRoute == null) return;
     _trackTransition(
       route,
@@ -380,6 +430,7 @@ class UiInteractionNavigatorObserver extends NavigatorObserver {
 
   @override
   void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    _unregisterPopRoute(route);
     _trackTransition(
       route,
       terminalStatuses: const <AnimationStatus>{AnimationStatus.dismissed},
@@ -388,6 +439,8 @@ class UiInteractionNavigatorObserver extends NavigatorObserver {
 
   @override
   void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) {
+    _unregisterPopRoute(oldRoute);
+    _registerPopRoute(newRoute);
     if (oldRoute is TransitionRoute<dynamic>) _releaseRoute(oldRoute);
     if (newRoute != null) {
       _trackTransition(
@@ -399,6 +452,7 @@ class UiInteractionNavigatorObserver extends NavigatorObserver {
 
   @override
   void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    _unregisterPopRoute(route);
     if (route is TransitionRoute<dynamic>) _releaseRoute(route);
   }
 
@@ -408,7 +462,7 @@ class UiInteractionNavigatorObserver extends NavigatorObserver {
     Route<dynamic>? previousRoute,
   ) {
     _gestureRoute = route;
-    _coordinator.beginInteraction(_gestureInteractionSource);
+    _coordinator.beginNavigation(_gestureInteractionSource);
   }
 
   @override
@@ -424,23 +478,34 @@ class UiInteractionNavigatorObserver extends NavigatorObserver {
         },
       );
     }
-    _coordinator.endInteraction(_gestureInteractionSource);
+    _coordinator.endNavigation(_gestureInteractionSource);
   }
 
   @visibleForTesting
   void resetForTest() {
+    for (final route in _popRoutes) {
+      route.unregisterPopEntry(_popEntry);
+    }
+    _popRoutes.clear();
     for (final entry in _routeInteractions.entries) {
       final listener = entry.value.listener;
       if (listener != null) {
         entry.key.animation?.removeStatusListener(listener);
       }
-      _coordinator.cancelInteraction(entry.value.source);
+      _coordinator.cancelNavigation(entry.value.source);
     }
     _routeInteractions.clear();
     _gestureRoute = null;
-    _coordinator.cancelInteraction(_nonTransitionInteractionSource);
-    _coordinator.cancelInteraction(_gestureInteractionSource);
+    _coordinator.cancelNavigation(_nonTransitionInteractionSource);
+    _coordinator.cancelNavigation(_gestureInteractionSource);
   }
+}
+
+class _NavigationPopEntry extends PopEntry<dynamic> {
+  _NavigationPopEntry(this.canPopNotifier);
+
+  @override
+  final ValueListenable<bool> canPopNotifier;
 }
 
 class _RouteInteraction {

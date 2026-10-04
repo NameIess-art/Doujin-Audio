@@ -179,7 +179,6 @@ class _TimelineSubtitleViewState extends State<TimelineSubtitleView> {
       setState(() => _isBrowsing = true);
     }
     _scrollToIndex(nextIndex);
-    _extendWindowNearFocusedIndex();
 
     unawaited(
       AppInteractionFeedback.continuous(
@@ -218,6 +217,7 @@ class _TimelineSubtitleViewState extends State<TimelineSubtitleView> {
     if (nextIndex == _focusedIndex || !mounted) return;
     _wheelTargetIndex = null;
     setState(() => _focusedIndex = nextIndex);
+    _extendWindowNearFocusedIndex();
     if (_isBrowsing) {
       unawaited(
         AppInteractionFeedback.continuous(
@@ -252,7 +252,6 @@ class _TimelineSubtitleViewState extends State<TimelineSubtitleView> {
     if (_isSnapping || !mounted) return;
     _isSnapping = true;
     try {
-      _extendWindowNearFocusedIndex();
       _scrollToIndex(_focusedIndex);
     } finally {
       _isSnapping = false;
@@ -286,6 +285,7 @@ class _TimelineSubtitleViewState extends State<TimelineSubtitleView> {
         }
       });
     }
+    _extendWindowNearFocusedIndex();
     if (!_scrollController.hasClients ||
         _itemCenters.isEmpty ||
         !_hasCurrentWindowLayout) {
@@ -351,12 +351,15 @@ class _TimelineSubtitleViewState extends State<TimelineSubtitleView> {
   }
 
   void _extendWindowNearFocusedIndex() {
+    final threshold =
+        (_viewportHeight / (2 * _minimumItemExtent)).ceil() +
+        _windowExpansionThreshold;
     var nextStart = _windowStart;
     var nextEnd = _windowEnd;
-    if (_focusedIndex - _windowStart <= _windowExpansionThreshold) {
+    if (_focusedIndex - _windowStart <= threshold) {
       nextStart = max(0, _windowStart - _windowExpansionSize);
     }
-    if ((_windowEnd - 1) - _focusedIndex <= _windowExpansionThreshold) {
+    if ((_windowEnd - 1) - _focusedIndex <= threshold) {
       nextEnd = min(widget.cues.length, _windowEnd + _windowExpansionSize);
     }
     if (nextStart == _windowStart && nextEnd == _windowEnd) return;
@@ -528,6 +531,12 @@ class _TimelineSubtitleViewState extends State<TimelineSubtitleView> {
               previous.$6 == textScaler &&
               previous.$7 == textDirection &&
               previous.$8 == focusedTextStyle;
+          final previousCenter =
+              canReuse &&
+                  _focusedIndex >= previous.$2 &&
+                  _focusedIndex < previous.$3
+              ? _itemCenters[_focusedIndex - previous.$2]
+              : null;
           _layoutSignature = layoutSignature;
           final itemExtents = <double>[
             for (var index = _windowStart; index < _windowEnd; index++)
@@ -543,6 +552,16 @@ class _TimelineSubtitleViewState extends State<TimelineSubtitleView> {
                 ),
           ];
           _updateLayoutMetrics(itemExtents, availableHeight: availableHeight);
+          if (previousCenter != null &&
+              previous!.$2 != _windowStart &&
+              _scrollController.hasClients) {
+            // Prepending measured cues must not move the subtitle under the
+            // user's finger or interrupt an in-progress scroll activity.
+            final shift =
+                _itemCenters[_focusedIndex - _windowStart] - previousCenter;
+            final position = _scrollController.position;
+            position.correctPixels(position.pixels + shift);
+          }
         }
         return Padding(
           padding: const EdgeInsets.only(top: 8),

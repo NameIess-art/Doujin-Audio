@@ -22,6 +22,7 @@ import '../presentation/main_screen.dart';
 import '../presentation/onboarding_page.dart';
 import '../../core/ui/ui_interaction_coordinator.dart';
 import '../../core/widgets/app_feedback.dart';
+import '../../core/widgets/app_transitions.dart';
 import '../theme/theme_provider.dart';
 import '../../core/persistence/app_preferences.dart';
 import '../../features/settings/application/settings_state.dart';
@@ -304,9 +305,13 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp> {
                       ),
                     )
                   : child ?? const SizedBox();
-              final content = MediaQuery(
-                data: effectiveMediaQuery,
-                child: wrapNavigator(context, navigatorChild),
+              final content = AppNavigationInputLock(
+                navigationAllowed:
+                    UiInteractionCoordinator.instance.navigationAllowed,
+                child: MediaQuery(
+                  data: effectiveMediaQuery,
+                  child: wrapNavigator(context, navigatorChild),
+                ),
               );
               if (defaultTargetPlatform == TargetPlatform.windows) {
                 return TooltipVisibility(visible: false, child: content);

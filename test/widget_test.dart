@@ -160,7 +160,7 @@ void main() {
           ValueKey<String>('main_destination_ink_$destination'),
         );
         tester.widget<InkResponse>(ink).onTap!.call();
-        await tester.pump();
+        await _pumpMainScreenAnimations(tester);
       }
 
       await selectPage('show_asmr_one');
@@ -338,6 +338,53 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+    testWidgets('main navigation waits for page transition ($platform)', (
+      tester,
+    ) async {
+      await _pumpAppShell(tester, includePlaybackSession: false);
+      debugDefaultTargetPlatformOverride = platform;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+      tester.element(find.byType(MainScreen)).markNeedsBuild();
+      await tester.pump();
+      final stack = find.byKey(const ValueKey<String>('main_page_stack'));
+      void selectPage(int index) {
+        final rail = find.byType(NavigationRail);
+        if (rail.evaluate().isNotEmpty) {
+          tester.widget<NavigationRail>(rail).onDestinationSelected!(index);
+        } else {
+          final destination = [
+            'music_library',
+            'show_asmr_one',
+            'nav_sessions',
+            'nav_settings',
+          ][index];
+          tester
+              .widget<InkResponse>(
+                find.byKey(
+                  ValueKey<String>('main_destination_ink_$destination'),
+                ),
+              )
+              .onTap!();
+        }
+      }
+
+      selectPage(3);
+      selectPage(2);
+      expect(tester.widget<AppFadeThroughIndexedStack>(stack).index, 3);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      selectPage(1);
+      expect(tester.widget<AppFadeThroughIndexedStack>(stack).index, 3);
+      await _pumpMainScreenAnimations(tester);
+      selectPage(2);
+      expect(tester.widget<AppFadeThroughIndexedStack>(stack).index, 2);
+      await _pumpMainScreenAnimations(tester);
+      expect(tester.takeException(), isNull);
+      debugDefaultTargetPlatformOverride = null;
+    });
+  }
+
   testWidgets('Windows keyboard navigates visible main destinations', (
     tester,
   ) async {
@@ -351,7 +398,15 @@ void main() {
     await tester.pump();
     await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
     await tester.sendKeyEvent(LogicalKeyboardKey.digit4);
+    await tester.sendKeyEvent(LogicalKeyboardKey.digit2);
     await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    expect(tester.widget<AppFadeThroughIndexedStack>(stack).index, 3);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    expect(tester.widget<AppFadeThroughIndexedStack>(stack).index, 3);
     await _pumpMainScreenAnimations(tester);
     expect(tester.widget<AppFadeThroughIndexedStack>(stack).index, 3);
     await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
@@ -778,8 +833,7 @@ void main() {
             find.byKey(ValueKey('main_destination_ink_${entry.key}')),
           )
           .onTap!();
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 350));
+      await _pumpMainScreenAnimations(tester);
       await tester.tap(
         find.byKey(const ValueKey('active_session_card_orientation_session')),
       );

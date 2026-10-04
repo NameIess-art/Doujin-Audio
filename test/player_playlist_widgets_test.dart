@@ -5931,6 +5931,86 @@ void main() {
     },
   );
 
+  for (final browsingDelta in [null, -24, 24]) {
+    testWidgets(
+      'timeline preloads cues before reaching the window edge ($browsingDelta)',
+      (tester) async {
+        const initialIndex = 120;
+        final harness = await _pumpSubtitleDetail(
+          tester: tester,
+          physicalSize: defaultTargetPlatform == TargetPlatform.windows
+              ? const Size(3840, 2400)
+              : const Size(1080, 2400),
+          subtitleTrack: SubtitleTrack(
+            sourcePath: 'preload.srt',
+            cues: List.generate(
+              240,
+              (index) => SubtitleCue(
+                start: Duration(seconds: index * 2),
+                end: Duration(seconds: (index + 1) * 2),
+                text: 'Preload cue $index',
+              ),
+            ),
+          ),
+          initialPosition: const Duration(seconds: initialIndex * 2),
+        );
+        final listFinder = find.byKey(const ValueKey('subtitle_timeline_list'));
+        int itemCount() => tester
+            .widget<ListView>(listFinder)
+            .childrenDelegate
+            .estimatedChildCount!;
+        final initialCount = itemCount();
+        final targetIndex = initialIndex + (browsingDelta ?? 24);
+        TestGesture? gesture;
+        if (browsingDelta == null) {
+          harness.session.applyNativeProgress(
+            NativePlaybackProgressUpdate(
+              sessionId: harness.session.id,
+              position: Duration(seconds: targetIndex * 2),
+              bufferedPosition: const Duration(seconds: 480),
+              nativeElapsedRealtimeMs: targetIndex * 2000,
+            ),
+          );
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 400));
+          await tester.pumpAndSettle();
+        } else {
+          gesture = await tester.startGesture(tester.getCenter(listFinder));
+          final controller = tester.widget<ListView>(listFinder).controller!;
+          final extent = tester
+              .getSize(
+                find.byKey(
+                  const ValueKey('subtitle_timeline_cue_$initialIndex'),
+                ),
+              )
+              .height;
+          controller.jumpTo(controller.offset + browsingDelta * extent);
+          await tester.pump();
+          await tester.pump();
+        }
+        expect(itemCount(), greaterThan(initialCount));
+        expect(itemCount(), lessThan(240));
+        final viewport = find.byKey(
+          const ValueKey('subtitle_timeline_viewport'),
+        );
+        final focused = find.byKey(
+          ValueKey('subtitle_timeline_cue_$targetIndex'),
+        );
+        expect(
+          tester.getCenter(focused).dy,
+          closeTo(tester.getCenter(viewport).dy, 0.5),
+        );
+        await gesture?.up();
+        await tester.pump(const Duration(seconds: 3));
+        await tester.pumpAndSettle();
+      },
+      variant: const TargetPlatformVariant({
+        TargetPlatform.android,
+        TargetPlatform.windows,
+      }),
+    );
+  }
+
   testWidgets('timeline subtitles lazily expand a bounded cue window', (
     tester,
   ) async {

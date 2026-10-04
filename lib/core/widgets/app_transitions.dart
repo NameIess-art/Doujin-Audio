@@ -14,6 +14,84 @@ const kAppMotionSlow = Duration(milliseconds: 300);
 
 typedef _PageTransitionBuilder = Widget Function(BuildContext, Widget);
 
+class AppNavigationInputLock extends StatefulWidget {
+  const AppNavigationInputLock({
+    super.key,
+    required this.navigationAllowed,
+    required this.child,
+  });
+
+  final ValueListenable<bool> navigationAllowed;
+  final Widget child;
+
+  @override
+  State<AppNavigationInputLock> createState() => _AppNavigationInputLockState();
+}
+
+class _AppNavigationInputLockState extends State<AppNavigationInputLock> {
+  final GlobalKey _pointerBarrierKey = GlobalKey();
+
+  @override
+  void initState() {
+    super.initState();
+    widget.navigationAllowed.addListener(_handleChanged);
+    FocusManager.instance.addEarlyKeyEventHandler(_handleKeyEvent);
+  }
+
+  @override
+  void didUpdateWidget(AppNavigationInputLock oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.navigationAllowed != widget.navigationAllowed) {
+      oldWidget.navigationAllowed.removeListener(_handleChanged);
+      widget.navigationAllowed.addListener(_handleChanged);
+      _handleChanged();
+    }
+  }
+
+  void _handleChanged() {
+    // Block another pointer event even before the next widget frame is built.
+    final barrier = _pointerBarrierKey.currentContext?.findRenderObject();
+    if (barrier is RenderAbsorbPointer) {
+      barrier.absorbing = !widget.navigationAllowed.value;
+    }
+  }
+
+  KeyEventResult _handleKeyEvent(KeyEvent event) =>
+      widget.navigationAllowed.value
+      ? KeyEventResult.ignored
+      : KeyEventResult.handled;
+
+  @override
+  void deactivate() {
+    widget.navigationAllowed.removeListener(_handleChanged);
+    FocusManager.instance.removeEarlyKeyEventHandler(_handleKeyEvent);
+    super.deactivate();
+  }
+
+  @override
+  void activate() {
+    super.activate();
+    widget.navigationAllowed.addListener(_handleChanged);
+    FocusManager.instance.addEarlyKeyEventHandler(_handleKeyEvent);
+  }
+
+  @override
+  void dispose() {
+    widget.navigationAllowed.removeListener(_handleChanged);
+    FocusManager.instance.removeEarlyKeyEventHandler(_handleKeyEvent);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AbsorbPointer(
+      key: _pointerBarrierKey,
+      absorbing: !widget.navigationAllowed.value,
+      child: widget.child,
+    );
+  }
+}
+
 // Animation ownership stays with the route/tab; regions only choose which
 // transition to display, without moving header state out of its page.
 class _AppPageMotionScope extends InheritedWidget {
@@ -707,7 +785,7 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
     _currentIndex = _safeIndex(widget.indexListenable.value);
     _targetIndex = _currentIndex;
     _controller.value = 1;
-    UiInteractionCoordinator.instance.cancelInteraction(_transitionInteraction);
+    UiInteractionCoordinator.instance.cancelNavigation(_transitionInteraction);
     widget.onTransitionCompleted?.call(_currentIndex);
   }
 
@@ -728,7 +806,7 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
       }
       return;
     }
-    UiInteractionCoordinator.instance.beginInteraction(_transitionInteraction);
+    UiInteractionCoordinator.instance.beginNavigation(_transitionInteraction);
     if (widget.style == AppIndexedStackTransitionStyle.none ||
         widget.duration == Duration.zero ||
         MediaQuery.disableAnimationsOf(context)) {
@@ -739,7 +817,7 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
         _controller.value = 1;
       });
       widget.onTransitionCompleted?.call(_currentIndex);
-      UiInteractionCoordinator.instance.endInteraction(_transitionInteraction);
+      UiInteractionCoordinator.instance.endNavigation(_transitionInteraction);
       return;
     }
 
@@ -796,7 +874,7 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
         _controller.value = 1;
       });
       widget.onTransitionCompleted?.call(_currentIndex);
-      UiInteractionCoordinator.instance.endInteraction(_transitionInteraction);
+      UiInteractionCoordinator.instance.endNavigation(_transitionInteraction);
       return;
     }
 
@@ -830,7 +908,7 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
       _isAnimating = false;
     });
     widget.onTransitionCompleted?.call(_currentIndex);
-    UiInteractionCoordinator.instance.endInteraction(_transitionInteraction);
+    UiInteractionCoordinator.instance.endNavigation(_transitionInteraction);
   }
 
   Widget _childAt(int index) {
@@ -847,7 +925,7 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
   @override
   void dispose() {
     widget.indexListenable.removeListener(_handleIndexChanged);
-    UiInteractionCoordinator.instance.cancelInteraction(_transitionInteraction);
+    UiInteractionCoordinator.instance.cancelNavigation(_transitionInteraction);
     _controller.dispose();
     super.dispose();
   }

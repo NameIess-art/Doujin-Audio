@@ -92,7 +92,7 @@ void main() {
         () =>
             OneFrameImageStreamCompleter(Future.value(ImageInfo(image: image))),
       )!;
-      final listener = ImageStreamListener((_, _) {});
+      final listener = ImageStreamListener((info, _) => info.dispose());
       completer.addListener(listener);
       await Future<void>.delayed(Duration.zero);
       trimCoverImageCacheOnMemoryPressure(imageCache: cache);

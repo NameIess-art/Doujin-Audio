@@ -1,9 +1,11 @@
 import 'package:doujin_audio/features/player/presentation/playback_providers.dart';
 import 'dart:async';
 import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     show ProviderContainer, ProviderScope;
@@ -398,6 +400,14 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+    // Drain the shared SQLite queue outside fake time after the detail is
+    // removed; its deferred label loads must finish before fixture teardown.
+    await tester.runAsync(
+      () => fixture.persistenceRepository.loadTimeSegmentLabels(
+        TimeSegmentLabel.trackKeyFor(tracks.first),
+      ),
+    );
   });
 
   testWidgets(
@@ -1053,6 +1063,160 @@ void main() {
       expect(gap, lessThanOrEqualTo(5));
     },
   );
+
+  testWidgets(
+    'segment marker geometry is reused across native progress and invalidated by width',
+    (tester) async {
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      final width = ValueNotifier(500.0);
+      addTearDown(width.dispose);
+      final session = PlaybackSession(
+        id: 'marker-cache-session',
+        currentTrackPath: '/track.mp3',
+        loopMode: SessionLoopMode.single,
+        nonSingleLoopMode: SessionLoopMode.single,
+        volume: 1,
+        createdAt: DateTime(2026),
+        state: const PlayerState(false, ProcessingState.ready),
+      )..setOptimisticDuration(const Duration(minutes: 1));
+      addTearDown(session.shutdown);
+      final labels = List.generate(
+        200,
+        (i) => TimeSegmentLabel(
+          id: '$i',
+          trackKey: '/track.mp3',
+          name: 'Label$i',
+          start: Duration(milliseconds: (i % 60) * 1000),
+          end: Duration(milliseconds: (i % 60) * 1000 + 500),
+          colorValue: 0xff336699,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        ),
+      );
+      await tester.pumpWidget(
+        fixture.build(
+          Center(
+            child: ValueListenableBuilder<double>(
+              valueListenable: width,
+              builder: (_, size, child) => SizedBox(width: size, child: child),
+              child: SessionProgressBar(
+                session: PlaybackSessionSnapshot.fromRuntime(session),
+                playback: fixture.runtimeGraph.playback,
+                paths: fixture.runtimeGraph.audioPaths,
+                timeSegmentLabels: labels,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final paint = find.byWidgetPredicate(
+        (widget) =>
+            widget is CustomPaint &&
+            widget.painter.runtimeType.toString() ==
+                '_TimeSegmentProgressPainter',
+      );
+      final render = tester.renderObject<RenderCustomPaint>(paint);
+      final dynamic painter = render.painter;
+      expect(painter.debugMarkerLayoutBuilds, 1);
+      for (var second = 1; second <= 10; second++) {
+        session.applyNativeProgress(
+          NativePlaybackProgressUpdate(
+            sessionId: session.id,
+            position: Duration(seconds: second),
+            duration: const Duration(minutes: 1),
+            bufferedPosition: Duration(seconds: second + 1),
+            nativeElapsedRealtimeMs: second * 1000,
+          ),
+        );
+        await tester.pump(const Duration(milliseconds: 500));
+      }
+      expect(tester.widget<Slider>(find.byType(Slider)).value, 10000);
+      expect(render.painter, same(painter));
+      expect(painter.debugMarkerLayoutBuilds, 1);
+      width.value = 650;
+      await tester.pumpAndSettle();
+      expect(render.painter, same(painter));
+      expect(painter.debugMarkerLayoutBuilds, 2);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  testWidgets('segment markers preserve overlap parity and clamped geometry', (
+    tester,
+  ) async {
+    final fixture = AppRuntimeWidgetTestFixture();
+    addTearDown(fixture.dispose);
+    final session = PlaybackSession(
+      id: 'marker-parity-session',
+      currentTrackPath: '/track.mp3',
+      loopMode: SessionLoopMode.single,
+      nonSingleLoopMode: SessionLoopMode.single,
+      volume: 1,
+      createdAt: DateTime(2026),
+      state: const PlayerState(false, ProcessingState.ready),
+    )..setOptimisticDuration(const Duration(seconds: 1));
+    addTearDown(session.shutdown);
+    // The 4/354 ms pair at width 40 exercises subtraction rounding at 14 px.
+    const endpoints = [(0, 354), (4, 700), (4, 700), (-100, 1300), (350, 700)];
+    final labels = [
+      for (var i = 0; i < endpoints.length; i++)
+        TimeSegmentLabel(
+          id: '$i',
+          trackKey: '/track.mp3',
+          name: '$i',
+          start: Duration(milliseconds: endpoints[i].$1),
+          end: Duration(milliseconds: endpoints[i].$2),
+          colorValue: 0xff336699,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        ),
+    ];
+    await tester.pumpWidget(
+      fixture.build(
+        Center(
+          child: SizedBox(
+            width: 500,
+            child: SessionProgressBar(
+              session: PlaybackSessionSnapshot.fromRuntime(session),
+              playback: fixture.runtimeGraph.playback,
+              paths: fixture.runtimeGraph.audioPaths,
+              timeSegmentLabels: labels,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final paint = find.byWidgetPredicate(
+      (widget) =>
+          widget is CustomPaint &&
+          widget.painter.runtimeType.toString() ==
+              '_TimeSegmentProgressPainter',
+    );
+    final dynamic painter = tester
+        .renderObject<RenderCustomPaint>(paint)
+        .painter;
+    for (final width in [40.0, 100.0, 452.0]) {
+      final recorder = ui.PictureRecorder();
+      painter.paint(Canvas(recorder), Size(width + 48, 40));
+      recorder.endRecording().dispose();
+      final expected = <({double x, double top})>[];
+      for (final label in labels) {
+        for (final position in [label.start, label.end]) {
+          final x =
+              24 + width * (position.inMilliseconds / 1000).clamp(0.0, 1.0);
+          final nearby = expected
+              .where((marker) => (marker.x - x).abs() < 14)
+              .length;
+          expected.add((x: x, top: nearby.isOdd ? 7.0 : 0.0));
+        }
+      }
+      expect(painter.debugMarkers, expected, reason: 'track width $width');
+    }
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
 
   testWidgets('landscape segment tooltip appears above the progress bar', (
     tester,
@@ -4043,7 +4207,10 @@ void main() {
     final presetColorButtons = find.descendant(
       of: find.byKey(const ValueKey('playback_queue_color_panel')),
       matching: find.byWidgetPredicate(
-        (w) => w is InkWell && w.customBorder is CircleBorder,
+        (w) =>
+            w is InkWell &&
+            w.customBorder is CircleBorder &&
+            w.child is AnimatedContainer,
       ),
     );
     expect(presetColorButtons, findsNWidgets(10));

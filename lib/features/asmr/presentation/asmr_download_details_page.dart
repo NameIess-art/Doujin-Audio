@@ -29,16 +29,72 @@ class _AsmrDownloadDetailsPageState
     extends ConsumerState<AsmrDownloadDetailsPage> {
   final GlobalKey _headerKey = GlobalKey();
   double _headerHeight = 0;
+  final Set<String> _collapsedPaths = {};
+  List<AsmrTrackFile>? _rowsSource;
+  List<({AsmrTrackFile node, int depth, bool emptyFolder})> _rows = const [];
+
+  void _toggleFolder(String path, bool expanded) {
+    setState(() {
+      if (expanded) {
+        _collapsedPaths.remove(path);
+      } else {
+        _collapsedPaths.add(path);
+      }
+      _rowsSource = null;
+    });
+  }
+
+  void _ensureRows(List<AsmrTrackFile> roots) {
+    if (identical(_rowsSource, roots)) return;
+    final rows = <({AsmrTrackFile node, int depth, bool emptyFolder})>[];
+    void visit(AsmrTrackFile node, int depth) {
+      rows.add((node: node, depth: depth, emptyFolder: false));
+      if (!node.isFolder || _collapsedPaths.contains(node.relativePath)) return;
+      if (node.children.isEmpty) {
+        rows.add((node: node, depth: depth, emptyFolder: true));
+      } else {
+        for (final child in node.children) {
+          visit(child, depth + 1);
+        }
+      }
+    }
+
+    for (final root in roots) {
+      visit(root, 0);
+    }
+    _rowsSource = roots;
+    _rows = rows;
+  }
+
+  @override
+  void didUpdateWidget(covariant AsmrDownloadDetailsPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.workId != widget.workId) {
+      _collapsedPaths.clear();
+      _rowsSource = null;
+      _rows = const [];
+      _headerHeight = 0;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
-    final task = ref.watch(asmrDownloadTaskProvider(widget.workId));
+    final structure = ref.watch(
+      asmrDownloadTaskProvider(widget.workId).select(
+        (task) => task == null
+            ? null
+            : (title: task.work.title, roots: task.selectedRoots),
+      ),
+    );
     final downloadManager = ref.read(asmrDownloadManagerProvider);
     final cs = Theme.of(context).colorScheme;
 
-    if (task == null) {
+    if (structure == null) {
+      _rowsSource = null;
+      _rows = const [];
+      _collapsedPaths.clear();
       return Scaffold(
         body: Stack(
           children: [
@@ -66,7 +122,8 @@ class _AsmrDownloadDetailsPageState
       );
     }
 
-    final tracks = task.selectedRoots;
+    final tracks = structure.roots;
+    _ensureRows(tracks);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -114,12 +171,93 @@ class _AsmrDownloadDetailsPageState
                           MediaQuery.paddingOf(context).bottom + 16,
                         ),
                         sliver: SliverList.builder(
-                          itemCount: tracks.length,
+                          itemCount: _rows.length,
                           itemBuilder: (context, index) {
-                            return _AsmrDownloadDetailsNodeTile(
-                              node: tracks[index],
-                              depth: 0,
-                              task: task,
+                            final row = _rows[index];
+                            final node = row.node;
+                            final rowKey = ValueKey<String>(
+                              'asmr_download_${row.emptyFolder ? "empty" : "node"}_row_${node.relativePath}',
+                            );
+                            if (row.emptyFolder) {
+                              return Padding(
+                                key: rowKey,
+                                padding: EdgeInsetsDirectional.only(
+                                  start: row.depth * 12 + 16,
+                                  end: 8,
+                                  bottom: 8,
+                                ),
+                                child: Text(
+                                  i18n.tr('asmr_download_empty_folder'),
+                                  style: Theme.of(context).textTheme.bodySmall
+                                      ?.copyWith(
+                                        color: cs.onSurfaceVariant.withValues(
+                                          alpha: 0.7,
+                                        ),
+                                      ),
+                                ),
+                              );
+                            }
+                            if (node.isFolder) {
+                              final expanded = !_collapsedPaths.contains(
+                                node.relativePath,
+                              );
+                              final accent = AppDesignTokens.of(
+                                context,
+                              ).asmrAccent;
+                              final shape = RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(
+                                  AppDesignTokens.of(context).radiusSmall,
+                                ),
+                              );
+                              return Theme(
+                                key: rowKey,
+                                data: Theme.of(
+                                  context,
+                                ).copyWith(dividerColor: Colors.transparent),
+                                // Descendants belong to the lazy sliver, not
+                                // this header's eager expansion body.
+                                child: ExpansionTile(
+                                  expansionAnimationStyle:
+                                      appExpansionAnimationStyle(context),
+                                  initiallyExpanded: expanded,
+                                  onExpansionChanged: (value) =>
+                                      _toggleFolder(node.relativePath, value),
+                                  shape: shape,
+                                  collapsedShape: shape,
+                                  tilePadding: EdgeInsetsDirectional.only(
+                                    start: row.depth * 12 + 16,
+                                    end: 16,
+                                  ),
+                                  minTileHeight: 44,
+                                  iconColor: accent,
+                                  collapsedIconColor: cs.onSurfaceVariant,
+                                  title: Text(
+                                    node.title,
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .titleSmall
+                                        ?.copyWith(
+                                          fontWeight: FontWeight.w700,
+                                          color: expanded ? accent : null,
+                                        ),
+                                  ),
+                                  leading: Icon(
+                                    expanded
+                                        ? Icons.folder_open_rounded
+                                        : Icons.folder_rounded,
+                                    color: expanded
+                                        ? accent
+                                        : cs.onSurfaceVariant,
+                                    size: 22,
+                                  ),
+                                ),
+                              );
+                            }
+                            return _AsmrDownloadDetailsFileTile(
+                              key: rowKey,
+                              node: node,
+                              depth: row.depth,
+                              workId: widget.workId,
                               i18n: i18n,
                               onRetryFile: downloadManager == null
                                   ? null
@@ -162,7 +300,7 @@ class _AsmrDownloadDetailsPageState
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Text(
-                            task.work.title,
+                            structure.title,
                             maxLines: 3,
                             overflow: TextOverflow.ellipsis,
                             style: Theme.of(context).textTheme.bodyMedium
@@ -173,24 +311,7 @@ class _AsmrDownloadDetailsPageState
                                 ),
                           ),
                           const SizedBox(height: 8),
-                          Row(
-                            children: [
-                              Icon(
-                                Icons.sd_storage_rounded,
-                                size: 15,
-                                color: cs.onSurfaceVariant,
-                              ),
-                              const SizedBox(width: 6),
-                              Text(
-                                '${formatAsmrDownloadSize(task.totalBytes > 0 && task.downloadedBytes > task.totalBytes ? task.totalBytes : task.downloadedBytes)} / ${formatAsmrDownloadSize(task.totalBytes)}',
-                                style: Theme.of(context).textTheme.bodySmall
-                                    ?.copyWith(
-                                      color: cs.onSurfaceVariant,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                              ),
-                            ],
-                          ),
+                          _AsmrDownloadDetailsTotals(workId: widget.workId),
                         ],
                       ),
                     ),
@@ -205,139 +326,99 @@ class _AsmrDownloadDetailsPageState
   }
 }
 
-class _AsmrDownloadDetailsNodeTile extends StatefulWidget {
-  const _AsmrDownloadDetailsNodeTile({
+class _AsmrDownloadDetailsTotals extends ConsumerWidget {
+  const _AsmrDownloadDetailsTotals({required this.workId});
+
+  final int workId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final totals = ref.watch(
+      asmrDownloadTaskProvider(workId).select(
+        (task) => (
+          total: task?.totalBytes ?? 0,
+          downloaded: task?.downloadedBytes ?? 0,
+        ),
+      ),
+    );
+    final downloaded = totals.total > 0 && totals.downloaded > totals.total
+        ? totals.total
+        : totals.downloaded;
+    final cs = Theme.of(context).colorScheme;
+    return Row(
+      children: [
+        Icon(Icons.sd_storage_rounded, size: 15, color: cs.onSurfaceVariant),
+        const SizedBox(width: 6),
+        Text(
+          '${formatAsmrDownloadSize(downloaded)} / ${formatAsmrDownloadSize(totals.total)}',
+          key: const ValueKey<String>('asmr_download_total_bytes'),
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+            color: cs.onSurfaceVariant,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _AsmrDownloadDetailsFileTile extends ConsumerWidget {
+  const _AsmrDownloadDetailsFileTile({
+    super.key,
     required this.node,
     required this.depth,
-    required this.task,
+    required this.workId,
     required this.i18n,
     required this.onRetryFile,
   });
 
   final AsmrTrackFile node;
   final int depth;
-  final AsmrDownloadTaskSnapshot task;
+  final int workId;
   final AppLanguageProvider i18n;
   final Future<bool> Function(String relativePath)? onRetryFile;
 
   @override
-  State<_AsmrDownloadDetailsNodeTile> createState() =>
-      _AsmrDownloadDetailsNodeTileState();
-}
-
-class _AsmrDownloadDetailsNodeTileState
-    extends State<_AsmrDownloadDetailsNodeTile> {
-  static const double _indentWidth = 12;
-  static const double _rootContentInset = 16;
-  static const double _nestedContentInset = 8;
-
-  bool _expanded = true;
-
-  void _toggleExpanded() {
-    setState(() {
-      _expanded = !_expanded;
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final state = ref.watch(
+      asmrDownloadTaskProvider(workId).select((task) {
+        final total = task?.fileTotalBytes[node.relativePath] ?? node.size;
+        final downloaded = task?.fileDownloadedBytes[node.relativePath] ?? 0;
+        final completed =
+            task?.status == AsmrDownloadTaskStatus.completed ||
+            (task?.completedFilePaths.contains(node.relativePath) ?? false) ||
+            (total > 0 && downloaded >= total);
+        return (
+          total: total,
+          downloaded: downloaded,
+          retryAttempt: task?.isActive == true && !completed
+              ? task?.fileRetryAttempts[node.relativePath]
+              : null,
+          retryMaximum: task?.automaticFileRetryCount ?? 0,
+          failed: task?.failedFilePaths.contains(node.relativePath) ?? false,
+          retrying:
+              task?.manuallyRetryingFilePaths.contains(node.relativePath) ??
+              false,
+          canRetry:
+              task?.status == AsmrDownloadTaskStatus.downloading ||
+              task?.status == AsmrDownloadTaskStatus.failed,
+        );
+      }),
+    );
+    final total = state.total;
+    final downloaded = state.downloaded;
+    final retryAttempt = state.retryAttempt;
+    final isFileFailed = state.failed;
+    final isManualRetrying = state.retrying;
+    final canRetryFile = onRetryFile != null && state.canRetry;
     final cs = Theme.of(context).colorScheme;
-    final tokens = AppDesignTokens.of(context);
-    final asmrBlue = tokens.asmrAccent;
-    final folderRadius = BorderRadius.circular(tokens.radiusSmall);
-    final indent = widget.depth * _indentWidth;
-    const fileRowHeight = 44.0;
-
-    if (widget.node.isFolder) {
-      final hasChildren = widget.node.children.isNotEmpty;
-      return Theme(
-        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-        child: ExpansionTile(
-          expansionAnimationStyle: appExpansionAnimationStyle(context),
-          initiallyExpanded: _expanded,
-          onExpansionChanged: (v) => _toggleExpanded(),
-          shape: RoundedRectangleBorder(borderRadius: folderRadius),
-          collapsedShape: RoundedRectangleBorder(borderRadius: folderRadius),
-          tilePadding: EdgeInsetsDirectional.only(
-            start: indent + _rootContentInset,
-            end: 16,
-          ),
-          childrenPadding: EdgeInsets.zero,
-          minTileHeight: fileRowHeight,
-          iconColor: asmrBlue,
-          collapsedIconColor: cs.onSurfaceVariant,
-          title: Text(
-            widget.node.title,
-            style: Theme.of(context).textTheme.titleSmall?.copyWith(
-              fontWeight: FontWeight.w700,
-              color: _expanded ? asmrBlue : null,
-            ),
-          ),
-          leading: Icon(
-            _expanded ? Icons.folder_open_rounded : Icons.folder_rounded,
-            color: _expanded ? asmrBlue : cs.onSurfaceVariant,
-            size: 22,
-          ),
-          children: hasChildren
-              ? [
-                  for (final child in widget.node.children)
-                    _AsmrDownloadDetailsNodeTile(
-                      node: child,
-                      depth: widget.depth + 1,
-                      task: widget.task,
-                      i18n: widget.i18n,
-                      onRetryFile: widget.onRetryFile,
-                    ),
-                ]
-              : [
-                  Padding(
-                    padding: EdgeInsetsDirectional.only(
-                      start: indent + _rootContentInset,
-                      end: 8,
-                      bottom: 8,
-                    ),
-                    child: Text(
-                      widget.i18n.tr('asmr_download_empty_folder'),
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: cs.onSurfaceVariant.withValues(alpha: 0.7),
-                      ),
-                    ),
-                  ),
-                ],
-        ),
-      );
-    }
-
-    final total =
-        widget.task.fileTotalBytes[widget.node.relativePath] ??
-        widget.node.size;
-    final downloaded =
-        widget.task.fileDownloadedBytes[widget.node.relativePath] ?? 0;
-    final isFileCompleted =
-        widget.task.status == AsmrDownloadTaskStatus.completed ||
-        widget.task.completedFilePaths.contains(widget.node.relativePath) ||
-        (total > 0 && downloaded >= total);
-    final retryAttempt = widget.task.isActive && !isFileCompleted
-        ? widget.task.fileRetryAttempts[widget.node.relativePath]
-        : null;
-    final isFileFailed = widget.task.failedFilePaths.contains(
-      widget.node.relativePath,
-    );
-    final isManualRetrying = widget.task.manuallyRetryingFilePaths.contains(
-      widget.node.relativePath,
-    );
-    final canRetryFile =
-        widget.onRetryFile != null &&
-        (widget.task.status == AsmrDownloadTaskStatus.downloading ||
-            widget.task.status == AsmrDownloadTaskStatus.failed);
+    final asmrBlue = AppDesignTokens.of(context).asmrAccent;
     double progress = 0.0;
     if (total > 0) {
       progress = (downloaded / total).clamp(0.0, 1.0);
     }
 
-    final contentStart = widget.depth == 0
-        ? _rootContentInset
-        : indent + _nestedContentInset;
+    final contentStart = depth == 0 ? 16.0 : depth * 12.0 + 8;
     return Padding(
       padding: EdgeInsetsDirectional.only(
         start: contentStart,
@@ -354,7 +435,7 @@ class _AsmrDownloadDetailsNodeTileState
         child: Row(
           children: [
             Icon(
-              asmrDownloadFileIcon(widget.node),
+              asmrDownloadFileIcon(node),
               size: 20,
               color: cs.onSurfaceVariant.withValues(alpha: 0.8),
             ),
@@ -365,7 +446,7 @@ class _AsmrDownloadDetailsNodeTileState
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    widget.node.title,
+                    node.title,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
@@ -391,14 +472,14 @@ class _AsmrDownloadDetailsNodeTileState
                       Text(
                         retryAttempt == null
                             ? '${formatAsmrDownloadSize(downloaded)} / ${formatAsmrDownloadSize(total)}'
-                            : widget.i18n.tr('asmr_download_status_retrying', {
+                            : i18n.tr('asmr_download_status_retrying', {
                                 'attempt': retryAttempt,
-                                'max': widget.task.automaticFileRetryCount,
+                                'max': state.retryMaximum,
                               }),
                         key: retryAttempt == null
                             ? null
                             : ValueKey<String>(
-                                'asmr_download_retry_${widget.node.relativePath}',
+                                'asmr_download_retry_${node.relativePath}',
                               ),
                         style: Theme.of(context).textTheme.labelSmall?.copyWith(
                           color: cs.onSurfaceVariant,
@@ -420,7 +501,7 @@ class _AsmrDownloadDetailsNodeTileState
                         child: SizedBox.square(
                           key: ValueKey<String>(
                             'asmr_download_manual_retry_progress_'
-                            '${widget.node.relativePath}',
+                            '${node.relativePath}',
                           ),
                           dimension: 18,
                           child: CircularProgressIndicator(
@@ -432,17 +513,15 @@ class _AsmrDownloadDetailsNodeTileState
                     : IconButton(
                         key: ValueKey<String>(
                           'asmr_download_manual_retry_'
-                          '${widget.node.relativePath}',
+                          '${node.relativePath}',
                         ),
                         padding: EdgeInsets.zero,
                         icon: const Icon(Icons.refresh_rounded),
                         iconSize: 22,
                         color: asmrBlue,
-                        tooltip: widget.i18n.tr('retry'),
+                        tooltip: i18n.tr('retry'),
                         onPressed: canRetryFile
-                            ? () => unawaited(
-                                widget.onRetryFile!(widget.node.relativePath),
-                              )
+                            ? () => unawaited(onRetryFile!(node.relativePath))
                             : null,
                       ),
               ),

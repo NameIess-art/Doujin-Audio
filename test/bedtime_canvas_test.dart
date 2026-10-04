@@ -465,6 +465,73 @@ void main() {
     );
 
     testWidgets(
+      'reduced motion stops breathing and preserves idle and touch lifecycle',
+      (tester) async {
+        final reduced = ValueNotifier<bool>(true);
+        addTearDown(reduced.dispose);
+        await tester.pumpWidget(
+          fixture.build(
+            ValueListenableBuilder<bool>(
+              valueListenable: reduced,
+              child: const BedtimeCanvasPage(),
+              builder: (context, disabled, child) => MediaQuery(
+                data: MediaQuery.of(
+                  context,
+                ).copyWith(disableAnimations: disabled),
+                child: child!,
+              ),
+            ),
+          ),
+        );
+        final fade = find
+            .ancestor(
+              of: find.textContaining(':'),
+              matching: find.byType(FadeTransition),
+            )
+            .first;
+        double opacity() => tester.widget<FadeTransition>(fade).opacity.value;
+        await tester.pump(const Duration(seconds: 2));
+        expect(opacity(), 0.16);
+        await tester.tap(find.byType(BedtimeCanvasPage));
+        await tester.pump(const Duration(seconds: 2));
+        expect(opacity(), 0.16);
+        reduced.value = false;
+        await tester.pump();
+        await tester.pump(const Duration(seconds: 2));
+        expect(opacity(), greaterThan(0.18));
+        reduced.value = true;
+        await tester.pump();
+        expect(opacity(), 0.16);
+        await tester.pump(const Duration(seconds: 16));
+        reduced.value = false;
+        await tester.pump();
+        await tester.pump(const Duration(seconds: 2));
+        expect(opacity(), 0.16);
+        await tester.tap(find.byType(BedtimeCanvasPage));
+        await tester.pump();
+        await tester.pump(const Duration(seconds: 2));
+        expect(opacity(), greaterThan(0.18));
+        reduced.value = true;
+        await tester.pump();
+        tester.platformDispatcher.accessibilityFeaturesTestValue =
+            const FakeAccessibilityFeatures(disableAnimations: true);
+        addTearDown(
+          tester.platformDispatcher.clearAccessibilityFeaturesTestValue,
+        );
+        final hold = await tester.startGesture(
+          tester.getCenter(find.byType(BedtimeCanvasPage)),
+        );
+        await tester.pump();
+        await tester.pump(const Duration(seconds: 1));
+        expect(find.byType(BedtimeCanvasPage), findsOneWidget);
+        await hold.up();
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump(const Duration(seconds: 16));
+        expect(tester.takeException(), isNull);
+      },
+    );
+
+    testWidgets(
       'stops breathing animation after idleDimDelay and wakes upon touch',
       (tester) async {
         BedtimeCanvasPage.idleDimDelay = const Duration(seconds: 15);

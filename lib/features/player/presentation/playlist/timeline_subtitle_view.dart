@@ -593,9 +593,12 @@ class _TimelineSubtitleViewState extends State<TimelineSubtitleView> {
                                     child: Center(
                                       child: AnimatedScale(
                                         scale: isFocused ? 1.03 : 1,
-                                        duration: const Duration(
-                                          milliseconds: 120,
-                                        ),
+                                        duration:
+                                            MediaQuery.disableAnimationsOf(
+                                              context,
+                                            )
+                                            ? Duration.zero
+                                            : const Duration(milliseconds: 120),
                                         curve: Curves.easeOutCubic,
                                         child: SizedBox(
                                           width: double.infinity,

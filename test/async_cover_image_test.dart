@@ -10,6 +10,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:doujin_audio/core/media/cover_image_resolution.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
+import 'package:doujin_audio/features/library/application/cover_image_cache_policy.dart';
 import 'package:doujin_audio/features/settings/application/settings_state.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/ui/cover_image_retention.dart';
@@ -43,11 +44,63 @@ final class _ControlledImageProvider
   }
 }
 
+final class _CountingCodec implements ui.Codec {
+  _CountingCodec(this.codec);
+
+  final ui.Codec codec;
+  int decodedFrames = 0;
+  bool disposed = false;
+
+  @override
+  int get frameCount => codec.frameCount;
+  @override
+  int get repetitionCount => codec.repetitionCount;
+  @override
+  Future<ui.FrameInfo> getNextFrame() {
+    decodedFrames += 1;
+    return codec.getNextFrame();
+  }
+
+  @override
+  void dispose() {
+    disposed = true;
+    codec.dispose();
+  }
+}
+
+final class _AnimatedImageProvider
+    extends ImageProvider<_AnimatedImageProvider> {
+  _AnimatedImageProvider(this.codec);
+
+  final _CountingCodec codec;
+  int loadCount = 0;
+
+  @override
+  Future<_AnimatedImageProvider> obtainKey(ImageConfiguration configuration) =>
+      SynchronousFuture(this);
+
+  @override
+  ImageStreamCompleter loadImage(
+    _AnimatedImageProvider key,
+    ImageDecoderCallback decode,
+  ) {
+    loadCount += 1;
+    return MultiFrameImageStreamCompleter(codec: Future.value(codec), scale: 1);
+  }
+}
+
 Future<ui.Image> _createTestImage() {
   final recorder = ui.PictureRecorder();
   final canvas = ui.Canvas(recorder);
   canvas.drawColor(const Color(0xFF336699), ui.BlendMode.src);
   return recorder.endRecording().toImage(2, 2);
+}
+
+Future<void> _flushImageCacheDisposals(WidgetTester tester) async {
+  // ImageCache releases completer handles after the frame to allow reinsertion.
+  // Clearing the cache does not itself schedule that frame.
+  tester.binding.scheduleFrame();
+  await tester.pump();
 }
 
 void main() {
@@ -450,11 +503,197 @@ void main() {
     await tester.pump();
     cache.clear();
     expect(cache.statusForKey(first).live, isFalse);
-    expect(cache.statusForKey(second).live, isTrue);
+    expect(cache.statusForKey(second).live, isFalse);
+    restoreRetainedCoverImage(second);
+    expect(cache.statusForKey(second).keepAlive, isTrue);
     configureRetainedCoverBudget(maximumSize: 1, maximumSizeBytes: 15);
     cache.clear();
     expect(cache.statusForKey(second).live, isFalse);
+    restoreRetainedCoverImage(second);
+    expect(cache.statusForKey(second).tracked, isFalse);
   });
+
+  for (final synchronous in [false, true]) {
+    testWidgets(
+      'retention releases ${synchronous ? 'synchronous' : 'asynchronous'} callback image handles',
+      (tester) async {
+        final owner = await _createTestImage();
+        final provider = _ControlledImageProvider();
+        final cache = PaintingBinding.instance.imageCache;
+        addTearDown(() {
+          releaseRetainedCoverImages();
+          cache.clear();
+          cache.clearLiveImages();
+          owner.dispose();
+        });
+        provider.complete(owner.clone());
+        if (synchronous) {
+          final stream = provider.resolve(ImageConfiguration.empty);
+          final listener = ImageStreamListener((info, _) => info.dispose());
+          stream.addListener(listener);
+          await tester.pump();
+          stream.removeListener(listener);
+        }
+        retainCoverImage(provider, ImageConfiguration.empty);
+        await tester.pump();
+        // Owner and completer retain pixels; the temporary listener's clone
+        // must already be disposed, independently of garbage collection.
+        expect(owner.debugGetOpenHandleStackTraces(), hasLength(2));
+        retainCoverImage(provider, ImageConfiguration.empty);
+        expect(owner.debugGetOpenHandleStackTraces(), hasLength(2));
+        if (synchronous) {
+          releaseRetainedCoverImages();
+        } else {
+          trimCoverImageCacheOnMemoryPressure();
+        }
+        cache.clear();
+        cache.clearLiveImages();
+        await _flushImageCacheDisposals(tester);
+        expect(owner.debugGetOpenHandleStackTraces(), hasLength(1));
+      },
+    );
+  }
+
+  testWidgets('retained image budget eviction releases pixels', (tester) async {
+    final first = await _createTestImage();
+    final second = await _createTestImage();
+    final firstProvider = _ControlledImageProvider()..complete(first.clone());
+    final secondProvider = _ControlledImageProvider()..complete(second.clone());
+    final cache = PaintingBinding.instance.imageCache;
+    addTearDown(() {
+      releaseRetainedCoverImages();
+      configureRetainedCoverBudget(
+        maximumSize: 200,
+        maximumSizeBytes: 50 * 1024 * 1024,
+      );
+      cache.clear();
+      cache.clearLiveImages();
+      first.dispose();
+      second.dispose();
+    });
+    configureRetainedCoverBudget(maximumSize: 1, maximumSizeBytes: 16);
+    retainCoverImage(firstProvider, ImageConfiguration.empty);
+    await tester.pump();
+    retainCoverImage(secondProvider, ImageConfiguration.empty);
+    await tester.pump();
+    cache.clear();
+    cache.clearLiveImages();
+    await _flushImageCacheDisposals(tester);
+    expect(first.debugGetOpenHandleStackTraces(), hasLength(1));
+    expect(second.debugGetOpenHandleStackTraces(), hasLength(2));
+    configureRetainedCoverBudget(maximumSize: 1, maximumSizeBytes: 15);
+    expect(second.debugGetOpenHandleStackTraces(), hasLength(1));
+  });
+
+  testWidgets('releasing pending retention ignores its later image', (
+    tester,
+  ) async {
+    final owner = await _createTestImage();
+    final provider = _ControlledImageProvider();
+    final cache = PaintingBinding.instance.imageCache;
+    addTearDown(() {
+      releaseRetainedCoverImages();
+      cache.clear();
+      cache.clearLiveImages();
+      owner.dispose();
+    });
+    retainCoverImage(provider, ImageConfiguration.empty);
+    releaseRetainedCoverImages();
+    provider.complete(owner.clone());
+    await tester.pump();
+    cache.clear();
+    cache.clearLiveImages();
+    await _flushImageCacheDisposals(tester);
+    expect(owner.debugGetOpenHandleStackTraces(), hasLength(1));
+    restoreRetainedCoverImage(provider);
+    expect(cache.statusForKey(provider).tracked, isFalse);
+  });
+
+  testWidgets(
+    'retained GIF stops decoding without visible consumers and resumes',
+    (tester) async {
+      final nativeCodec = await tester.runAsync(
+        () => ui.instantiateImageCodec(
+          base64Decode(
+            'R0lGODlhAQABAIAAAAAAAP///yH/C05FVFNDQVBFMi4wAwEAAAAh+QQACgAAACwAAAAAAQABAAACAkQBACH5BAAKAAAALAAAAAABAAEAAAICTAEAOw==',
+          ),
+        ),
+      );
+      final codec = _CountingCodec(nativeCodec!);
+      expect(codec.frameCount, 2);
+      expect(codec.repetitionCount, -1);
+      final provider = _AnimatedImageProvider(codec);
+      final cache = PaintingBinding.instance.imageCache;
+      addTearDown(() {
+        releaseRetainedCoverImages();
+        cache.clear();
+        cache.clearLiveImages();
+      });
+      Widget page({bool tickerEnabled = true, bool reduceMotion = false}) =>
+          MaterialApp(
+            home: MediaQuery(
+              data: MediaQueryData(disableAnimations: reduceMotion),
+              child: TickerMode(
+                enabled: tickerEnabled,
+                child: RetryingImage(
+                  retryKey: 'real-gif',
+                  imageProviderBuilder: () => provider,
+                  retainInImageCache: true,
+                  fallbackBuilder: (_) => const Text('loading'),
+                ),
+              ),
+            ),
+          );
+      Future<void> advanceFrames(int count) async {
+        for (var index = 0; index < count; index++) {
+          await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 10)),
+          );
+          await tester.pump(const Duration(milliseconds: 110));
+        }
+      }
+
+      await tester.pumpWidget(page());
+      await advanceFrames(8);
+      expect(codec.decodedFrames, greaterThan(2));
+      for (final reduceMotion in [false, true]) {
+        await tester.pumpWidget(
+          page(tickerEnabled: reduceMotion, reduceMotion: reduceMotion),
+        );
+        await advanceFrames(2);
+        final pausedFrames = codec.decodedFrames;
+        await advanceFrames(5);
+        expect(codec.decodedFrames, pausedFrames);
+        expect(tester.binding.transientCallbackCount, 0);
+        await tester.pumpWidget(page());
+        await advanceFrames(3);
+        expect(codec.decodedFrames, greaterThan(pausedFrames));
+      }
+      await tester.pumpWidget(const SizedBox.shrink());
+      await advanceFrames(
+        2,
+      ); // Drain the frame already being decoded on removal.
+      final pausedFrames = codec.decodedFrames;
+      expect(tester.binding.transientCallbackCount, 0);
+      cache.clear();
+      cache.clearLiveImages();
+      await advanceFrames(8);
+      expect(codec.decodedFrames, pausedFrames);
+      expect(codec.disposed, isFalse);
+      await tester.pumpWidget(page());
+      await advanceFrames(3);
+      expect(provider.loadCount, 1);
+      expect(codec.decodedFrames, greaterThan(pausedFrames));
+      await tester.pumpWidget(const SizedBox.shrink());
+      await advanceFrames(2);
+      releaseRetainedCoverImages();
+      cache.clear();
+      cache.clearLiveImages();
+      await _flushImageCacheDisposals(tester);
+      await advanceFrames(2);
+      expect(codec.disposed, isTrue);
+    },
+  );
 
   testWidgets('AsyncCoverImage retries when the first path is empty', (
     tester,

@@ -73,6 +73,8 @@ class LibraryCategoryTermBox extends StatefulWidget {
 
 class _LibraryCategoryTermBoxState extends State<LibraryCategoryTermBox> {
   static const _searchDebounce = Duration(milliseconds: 180);
+  static const _termBatchSize = 40;
+  int _visibleTermCount = _termBatchSize;
   bool _expanded = false;
   bool _wasExpandedBeforeSearch = false;
   late final TextEditingController _searchController;
@@ -139,6 +141,7 @@ class _LibraryCategoryTermBoxState extends State<LibraryCategoryTermBox> {
     if (categoryChanged ||
         (!oldWidget.collapseOnMount && widget.collapseOnMount)) {
       _expanded = false;
+      _visibleTermCount = _termBatchSize;
       _wasExpandedBeforeSearch = false;
       unawaited(AppPreferences.setBool(_prefKey, false));
     }
@@ -153,6 +156,9 @@ class _LibraryCategoryTermBoxState extends State<LibraryCategoryTermBox> {
       _searchController.text = widget.searchQuery;
       _localSearchQuery = widget.searchQuery;
     }
+    if (categoryChanged || oldWidget.searchQuery != widget.searchQuery) {
+      _visibleTermCount = _termBatchSize;
+    }
   }
 
   @override
@@ -165,6 +171,7 @@ class _LibraryCategoryTermBoxState extends State<LibraryCategoryTermBox> {
   void _toggleExpanded() {
     setState(() {
       _expanded = !_expanded;
+      if (!_expanded) _visibleTermCount = _termBatchSize;
       AppPreferences.setBool(_prefKey, _expanded);
       if (_localSearchQuery.isNotEmpty) {
         _wasExpandedBeforeSearch = _expanded;
@@ -178,6 +185,19 @@ class _LibraryCategoryTermBoxState extends State<LibraryCategoryTermBox> {
     final motionStandard = MediaQuery.disableAnimationsOf(context)
         ? Duration.zero
         : kAppMotionStandard;
+    // A Wrap is one outer list item, so only create the requested batch.
+    // Keep selected terms available even when they are outside that batch.
+    final visibleTerms = _expanded
+        ? <String>[
+            ...widget.terms.take(_visibleTermCount),
+            if (widget.selectedTerms.isNotEmpty)
+              ...widget.terms
+                  .skip(_visibleTermCount)
+                  .where(widget.selectedTerms.contains),
+          ]
+        : const <String>[];
+    final remainingTerms = widget.terms.length - visibleTerms.length;
+    final highlightTerms = extractSearchTerms(_localSearchQuery);
     return AnimatedContainer(
       duration: motionStandard,
       curve: Curves.easeOutCubic,
@@ -359,7 +379,7 @@ class _LibraryCategoryTermBoxState extends State<LibraryCategoryTermBox> {
                     Wrap(
                       spacing: 10,
                       runSpacing: 8,
-                      children: widget.terms
+                      children: visibleTerms
                           .map<Widget>((term) {
                             final selected = widget.selectedTerms.contains(
                               term,
@@ -386,9 +406,7 @@ class _LibraryCategoryTermBoxState extends State<LibraryCategoryTermBox> {
                                     child: _localSearchQuery.isNotEmpty
                                         ? SearchHighlightedText(
                                             text: term,
-                                            terms: extractSearchTerms(
-                                              _localSearchQuery,
-                                            ),
+                                            terms: highlightTerms,
                                             style:
                                                 Theme.of(
                                                   context,
@@ -437,6 +455,20 @@ class _LibraryCategoryTermBoxState extends State<LibraryCategoryTermBox> {
                           })
                           .toList(growable: false),
                     ),
+                    if (remainingTerms > 0)
+                      Align(
+                        alignment: AlignmentDirectional.centerStart,
+                        child: TextButton.icon(
+                          key: ValueKey<String>(
+                            'library_category_terms_more_${widget.categoryType.name}',
+                          ),
+                          onPressed: () => setState(() {
+                            _visibleTermCount += _termBatchSize;
+                          }),
+                          icon: const Icon(Icons.expand_more_rounded, size: 18),
+                          label: Text(widget.expandLabel),
+                        ),
+                      ),
                   ],
                 ],
               ),

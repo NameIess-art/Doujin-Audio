@@ -915,6 +915,7 @@ class _RetryingImageState extends State<RetryingImage> {
     _cacheCheckKey = checkKey;
 
     final provider = widget.imageProviderBuilder();
+    restoreRetainedCoverImage(provider);
     final configuration = createLocalImageConfiguration(context);
     var callbackIsSynchronous = true;
     var cachedSynchronously = false;
@@ -983,6 +984,7 @@ class _RetryingImageState extends State<RetryingImage> {
           : CoverLoadingArtwork(placeholder: widget.fallbackBuilder(context));
     }
     final imageProvider = provider ?? widget.imageProviderBuilder();
+    if (widget.retainInImageCache) restoreRetainedCoverImage(imageProvider);
     Widget image({required BoxFit? fit, required bool primary}) {
       return Image(
         key: ValueKey(

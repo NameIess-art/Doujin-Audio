@@ -50,6 +50,7 @@ class _BedtimeCanvasPageState extends ConsumerState<BedtimeCanvasPage>
   String? _brightnessToken;
   bool _isKeepScreenOn = true;
   bool _disposed = false;
+  bool? _disableAnimations;
 
   @override
   void initState() {
@@ -96,11 +97,12 @@ class _BedtimeCanvasPageState extends ConsumerState<BedtimeCanvasPage>
         curve: Curves.easeInOutSine,
       ),
     );
-    _wakeBreathingAnimation();
 
     _holdExitController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 2000),
+      // This duration measures a deliberate hold, rather than decorative motion.
+      animationBehavior: AnimationBehavior.preserve,
     );
 
     _holdExitController.addStatusListener((status) {
@@ -120,6 +122,21 @@ class _BedtimeCanvasPageState extends ConsumerState<BedtimeCanvasPage>
         timer.hasArmedRuntime ||
         timer.state.stopAfterCurrentTrack;
     _updateKeepScreenOnState(isInitialActive);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final disableAnimations = MediaQuery.disableAnimationsOf(context);
+    if (_disableAnimations == disableAnimations) return;
+    final firstAppearance = _disableAnimations == null;
+    _disableAnimations = disableAnimations;
+    if (disableAnimations) {
+      _breathingController.value = 0;
+    } else if (firstAppearance || _idleDimTimer?.isActive == true) {
+      _breathingController.repeat(reverse: true);
+    }
+    if (firstAppearance) _resetIdleDimTimer();
   }
 
   @override
@@ -160,7 +177,9 @@ class _BedtimeCanvasPageState extends ConsumerState<BedtimeCanvasPage>
   }
 
   void _wakeBreathingAnimation() {
-    if (_idleDimTimer?.isActive != true) {
+    if (_disableAnimations == true) {
+      _breathingController.value = 0;
+    } else if (_idleDimTimer?.isActive != true) {
       _breathingController.repeat(reverse: true);
     }
     _resetIdleDimTimer();
@@ -170,11 +189,15 @@ class _BedtimeCanvasPageState extends ConsumerState<BedtimeCanvasPage>
     _idleDimTimer?.cancel();
     _idleDimTimer = Timer(BedtimeCanvasPage.idleDimDelay, () {
       if (mounted && !_disposed) {
-        _breathingController.animateTo(
-          0.0,
-          duration: const Duration(milliseconds: 1200),
-          curve: Curves.easeOut,
-        );
+        if (_disableAnimations == true) {
+          _breathingController.value = 0;
+        } else {
+          _breathingController.animateTo(
+            0.0,
+            duration: const Duration(milliseconds: 1200),
+            curve: Curves.easeOut,
+          );
+        }
       }
     });
   }

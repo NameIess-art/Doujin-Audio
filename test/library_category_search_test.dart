@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:doujin_audio/core/media/audio_detail.dart';
@@ -294,6 +295,93 @@ void main() {
     setUp(() {
       SharedPreferences.setMockInitialValues(const <String, Object>{});
     });
+
+    for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+      testWidgets(
+        'large term batches retain selection and reset on search on $platform',
+        (tester) async {
+          debugDefaultTargetPlatformOverride = platform;
+          addTearDown(() => debugDefaultTargetPlatformOverride = null);
+          final selected = ValueNotifier(<String>{'term1999'});
+          final query = ValueNotifier('');
+          addTearDown(selected.dispose);
+          addTearDown(query.dispose);
+          await tester.pumpWidget(
+            MaterialApp(
+              home: Scaffold(
+                body: ListView(
+                  children: [
+                    ValueListenableBuilder<String>(
+                      valueListenable: query,
+                      builder: (context, text, _) =>
+                          ValueListenableBuilder<Set<String>>(
+                            valueListenable: selected,
+                            builder: (context, selection, _) =>
+                                LibraryCategoryTermBox(
+                                  categoryType: AudioLibraryCategoryType.tags,
+                                  collapseOnMount: true,
+                                  terms: text.isEmpty
+                                      ? List.generate(2000, (i) => 'term$i')
+                                      : const ['term1999'],
+                                  selectedTerms: selection,
+                                  emptyText: 'empty',
+                                  clearLabel: 'clear',
+                                  searchHintText: 'search',
+                                  searchQuery: text,
+                                  onSearchQueryChanged: (value) =>
+                                      query.value = value,
+                                  onToggle: (term) =>
+                                      selected.value = selection.contains(term)
+                                      ? (Set.of(selection)..remove(term))
+                                      : {...selection, term},
+                                  onClear: () => selected.value = {},
+                                ),
+                          ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+          await tester.pumpAndSettle();
+          await tester.tap(find.widgetWithText(ActionChip, '展开'));
+          await tester.pumpAndSettle();
+          expect(find.byType(FilterChip), findsNWidgets(41));
+          expect(find.text('term1999'), findsOneWidget);
+          expect(find.text('term40'), findsNothing);
+          final more = find.byKey(
+            const ValueKey('library_category_terms_more_tags'),
+          );
+          await tester.ensureVisible(more);
+          await tester.tap(more);
+          await tester.pumpAndSettle();
+          expect(find.byType(FilterChip), findsNWidgets(81));
+          expect(find.text('term40'), findsOneWidget);
+          await tester.ensureVisible(find.text('term1999'));
+          await tester.tap(find.text('term1999'));
+          await tester.pumpAndSettle();
+          expect(selected.value, isEmpty);
+          expect(find.byType(FilterChip), findsNWidgets(80));
+          query.value = 'term1999';
+          await tester.pumpAndSettle();
+          expect(find.byType(FilterChip), findsOneWidget);
+          expect(more, findsNothing);
+          query.value = '';
+          await tester.pumpAndSettle();
+          expect(find.byType(FilterChip), findsNWidgets(40));
+          final collapse = find.widgetWithText(ActionChip, '收起');
+          await tester.ensureVisible(collapse);
+          await tester.tap(collapse);
+          await tester.pumpAndSettle();
+          expect(find.byType(FilterChip), findsNothing);
+          await tester.tap(find.widgetWithText(ActionChip, '展开'));
+          await tester.pumpAndSettle();
+          expect(find.byType(FilterChip), findsNWidgets(40));
+          await tester.pumpWidget(const SizedBox.shrink());
+          debugDefaultTargetPlatformOverride = null;
+        },
+      );
+    }
 
     testWidgets(
       'displays capsule style when collapsed and transitions to card style when expanded',

@@ -61,16 +61,30 @@ void main() {
       sourceId: 'RJ123456',
       relativePath: 'Folder',
     );
-    final task = _downloadTask().copyWith(selectedRoots: <AsmrTrackFile>[folder]);
+    final task = _downloadTask().copyWith(
+      selectedRoots: <AsmrTrackFile>[folder],
+    );
     await tester.pumpWidget(_downloadDetailsApp(languageProvider, task));
     await tester.pump();
 
-    final expansionTile = tester.widget<ExpansionTile>(find.byType(ExpansionTile));
+    final expansionTile = tester.widget<ExpansionTile>(
+      find.byType(ExpansionTile),
+    );
     expect(expansionTile.shape, isA<RoundedRectangleBorder>());
     expect(expansionTile.collapsedShape, isA<RoundedRectangleBorder>());
     final shape = expansionTile.shape as RoundedRectangleBorder;
     expect(shape.borderRadius, isA<BorderRadius>());
     expect((shape.borderRadius as BorderRadius).topLeft.x, greaterThan(0));
+    final emptyFolder = find.text(
+      languageProvider.tr('asmr_download_empty_folder'),
+    );
+    expect(emptyFolder, findsOneWidget);
+    await tester.tap(find.text('Folder'));
+    await tester.pumpAndSettle();
+    expect(emptyFolder, findsNothing);
+    await tester.tap(find.text('Folder'));
+    await tester.pumpAndSettle();
+    expect(emptyFolder, findsOneWidget);
   });
 
   testWidgets('completed file restores its size after a retry', (tester) async {
@@ -233,6 +247,151 @@ void main() {
     expect(retryButton, findsOneWidget);
     expect(tester.widget<IconButton>(retryButton).onPressed, isNull);
   });
+  testWidgets('large expanded download trees mount only viewport rows', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues(const <String, Object>{});
+    final languageProvider = AppLanguageProvider();
+    addTearDown(languageProvider.dispose);
+    await languageProvider.setLanguage(AppLanguage.en);
+    await tester.pumpWidget(
+      _downloadDetailsApp(languageProvider, _downloadTree(500)),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('File000.mp3'), findsOneWidget);
+    expect(find.text('File499.mp3', skipOffstage: false), findsNothing);
+    expect(
+      find.byType(LinearProgressIndicator).evaluate().length,
+      lessThan(30),
+    );
+
+    final scrollable = find.descendant(
+      of: find.byType(CustomScrollView),
+      matching: find.byType(Scrollable),
+    );
+    await tester.scrollUntilVisible(
+      find.text('File499.mp3'),
+      500,
+      scrollable: scrollable,
+      maxScrolls: 100,
+    );
+    expect(find.text('File499.mp3'), findsOneWidget);
+    expect(find.text('File000.mp3', skipOffstage: false), findsNothing);
+    expect(
+      find.byType(LinearProgressIndicator).evaluate().length,
+      lessThan(30),
+    );
+  });
+
+  testWidgets('task stream rebuilds only changed file progress and totals', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues(const <String, Object>{});
+    final languageProvider = AppLanguageProvider();
+    final manager = _RecordingDownloadManager();
+    addTearDown(languageProvider.dispose);
+    addTearDown(manager.dispose);
+    await languageProvider.setLanguage(AppLanguage.en);
+    manager.debugSetCurrentTaskForTesting(_downloadTree(3));
+    await tester.pumpWidget(_downloadStreamApp(languageProvider, manager));
+    await tester.pumpAndSettle();
+
+    Finder progressFor(String path) => find.descendant(
+      of: find.byKey(ValueKey<String>('asmr_download_node_row_$path')),
+      matching: find.byType(LinearProgressIndicator),
+    );
+    final changedBefore = tester.widget<LinearProgressIndicator>(
+      progressFor('Folder/File000.mp3'),
+    );
+    final unchangedBefore = tester.widget<LinearProgressIndicator>(
+      progressFor('Folder/File001.mp3'),
+    );
+    final titleBefore = tester.widget<Text>(find.text('Work'));
+    final folderBefore = tester.widget<ExpansionTile>(
+      find.byType(ExpansionTile),
+    );
+    final totalsFinder = find.byKey(
+      const ValueKey<String>('asmr_download_total_bytes'),
+    );
+    final totalsBefore = tester.widget<Text>(totalsFinder);
+
+    manager.debugRecordDownloadChunkForTesting(
+      1,
+      'Folder/File000.mp3',
+      128,
+      256,
+    );
+    manager.debugFlushProgressNotificationsForTesting();
+    await tester.pump();
+    await tester.pump();
+
+    final changed = tester.widget<LinearProgressIndicator>(
+      progressFor('Folder/File000.mp3'),
+    );
+    expect(changed.value, 0.25);
+    expect(changed, isNot(same(changedBefore)));
+    expect(
+      tester.widget<LinearProgressIndicator>(progressFor('Folder/File001.mp3')),
+      same(unchangedBefore),
+    );
+    expect(tester.widget<Text>(find.text('Work')), same(titleBefore));
+    expect(
+      tester.widget<ExpansionTile>(find.byType(ExpansionTile)),
+      same(folderBefore),
+    );
+    expect(tester.widget<Text>(totalsFinder).data, isNot(totalsBefore.data));
+
+    manager.debugRemoveTaskForTesting(1);
+    await tester.pump();
+    await tester.pump();
+    expect(find.text('Download task not found'), findsOneWidget);
+    expect(find.byType(LinearProgressIndicator), findsNothing);
+  });
+
+  testWidgets('collapsed directories retain state while rows are recycled', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues(const <String, Object>{});
+    final languageProvider = AppLanguageProvider();
+    final manager = _RecordingDownloadManager();
+    addTearDown(languageProvider.dispose);
+    addTearDown(manager.dispose);
+    await languageProvider.setLanguage(AppLanguage.en);
+    final task = _downloadTask().copyWith(
+      selectedRoots: [
+        _downloadNode(
+          'Root',
+          children: [
+            _downloadNode(
+              'Root/Nested',
+              children: [_downloadNode('Root/Nested/Inside.mp3')],
+            ),
+            _downloadNode('Root/Other.mp3'),
+          ],
+        ),
+      ],
+    );
+    manager.debugSetCurrentTaskForTesting(task);
+    await tester.pumpWidget(_downloadStreamApp(languageProvider, manager));
+    await tester.pumpAndSettle();
+    expect(find.text('Inside.mp3'), findsOneWidget);
+
+    await tester.tap(find.text('Nested'));
+    await tester.pumpAndSettle();
+    expect(find.text('Inside.mp3', skipOffstage: false), findsNothing);
+    expect(find.text('Other.mp3'), findsOneWidget);
+    await tester.tap(find.text('Root'));
+    await tester.pumpAndSettle();
+    expect(find.text('Nested', skipOffstage: false), findsNothing);
+    await tester.tap(find.text('Root'));
+    await tester.pumpAndSettle();
+    expect(find.text('Nested'), findsOneWidget);
+    expect(find.text('Inside.mp3', skipOffstage: false), findsNothing);
+    await tester.tap(find.text('Nested'));
+    await tester.pumpAndSettle();
+    expect(find.text('Inside.mp3'), findsOneWidget);
+  });
 }
 
 Widget _downloadDetailsApp(
@@ -250,6 +409,55 @@ Widget _downloadDetailsApp(
     child: const MaterialApp(home: AsmrDownloadDetailsPage(workId: 1)),
   );
 }
+
+Widget _downloadStreamApp(
+  AppLanguageProvider languageProvider,
+  AsmrDownloadManager manager,
+) => ProviderScope(
+  overrides: [
+    appLanguageProviderInstanceProvider.overrideWithValue(languageProvider),
+    asmrDownloadManagerProvider.overrideWithValue(manager),
+  ],
+  child: const MaterialApp(home: AsmrDownloadDetailsPage(workId: 1)),
+);
+
+AsmrTrackFile _downloadNode(
+  String relativePath, {
+  List<AsmrTrackFile>? children,
+}) => AsmrTrackFile(
+  hash: relativePath,
+  title: relativePath.split('/').last,
+  type: children == null ? 'audio' : 'folder',
+  streamUrl: null,
+  downloadUrl: null,
+  lowQualityUrl: null,
+  duration: Duration.zero,
+  size: children == null ? 1024 : 0,
+  children: children ?? const [],
+  workId: 1,
+  workTitle: 'Work',
+  sourceId: 'RJ123456',
+  relativePath: relativePath,
+);
+
+AsmrDownloadTaskSnapshot _downloadTree(int count) => _downloadTask().copyWith(
+  totalFiles: count,
+  totalBytes: count * 1024,
+  downloadedBytes: 384,
+  fileDownloadedBytes: const {
+    'Folder/File000.mp3': 128,
+    'Folder/File001.mp3': 256,
+  },
+  selectedRoots: [
+    _downloadNode(
+      'Folder',
+      children: [
+        for (var index = 0; index < count; index++)
+          _downloadNode('Folder/File${index.toString().padLeft(3, '0')}.mp3'),
+      ],
+    ),
+  ],
+);
 
 AsmrDownloadTaskSnapshot _downloadTask({
   String title = 'Work',

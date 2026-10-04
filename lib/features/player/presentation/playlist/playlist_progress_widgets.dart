@@ -125,7 +125,8 @@ class _ProgressSliderAndTimecodesState
   void didUpdateWidget(covariant _ProgressSliderAndTimecodes oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.session != widget.session) {
-      final sessionChanged = oldWidget.session.id != widget.session.id ||
+      final sessionChanged =
+          oldWidget.session.id != widget.session.id ||
           oldWidget.session.currentTrackPath != widget.session.currentTrackPath;
       _positionGate.updateSession(widget.session);
       _publishProgressValue(force: sessionChanged);
@@ -643,7 +644,7 @@ class _ProgressTooltipState {
 }
 
 class _TimeSegmentProgressPainter extends CustomPainter {
-  const _TimeSegmentProgressPainter({
+  _TimeSegmentProgressPainter({
     required this.labels,
     required this.duration,
     required this.selectedSegmentId,
@@ -654,6 +655,72 @@ class _TimeSegmentProgressPainter extends CustomPainter {
   final Duration duration;
   final String? selectedSegmentId;
   final ColorScheme colorScheme;
+  double? _markerWidth;
+  List<({double x, double top})> _markers = const [];
+  @visibleForTesting
+  int debugMarkerLayoutBuilds = 0;
+  @visibleForTesting
+  List<({double x, double top})> get debugMarkers => _markers;
+
+  void _layoutMarkers(Rect trackRect) {
+    if (_markerWidth == trackRect.width) return;
+    _markerWidth = trackRect.width;
+    assert(() {
+      debugMarkerLayoutBuilds++;
+      return true;
+    }());
+    final positions = <double>[
+      for (final label in labels)
+        for (final position in [label.start, label.end])
+          trackRect.left +
+              trackRect.width *
+                  (position.inMilliseconds / duration.inMilliseconds).clamp(
+                    0.0,
+                    1.0,
+                  ),
+    ];
+    final sorted = List<double>.of(positions)..sort();
+    final counts = List<int>.filled(sorted.length + 1, 0);
+    int boundary(double value, {double offset = 0, bool afterEqual = false}) {
+      var low = 0;
+      var high = sorted.length;
+      while (low < high) {
+        final mid = (low + high) ~/ 2;
+        final difference = sorted[mid] - value;
+        if (difference < offset || (afterEqual && difference == offset)) {
+          low = mid + 1;
+        } else {
+          high = mid;
+        }
+      }
+      return low;
+    }
+
+    int prefixCount(int end) {
+      var count = 0;
+      for (var index = end; index > 0; index -= index & -index) {
+        count += counts[index];
+      }
+      return count;
+    }
+
+    // Preserve original drawing order and strict 14px overlap parity without
+    // scanning every preceding marker on every progress repaint.
+    _markers = [];
+    for (final x in positions) {
+      final nearby =
+          prefixCount(boundary(x, offset: 14)) -
+          prefixCount(boundary(x, offset: -14, afterEqual: true));
+      for (
+        var index = boundary(x) + 1;
+        index < counts.length;
+        index += index & -index
+      ) {
+        counts[index]++;
+      }
+      _markers.add((x: x, top: nearby.isOdd ? 7.0 : 0.0));
+    }
+  }
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -694,22 +761,19 @@ class _TimeSegmentProgressPainter extends CustomPainter {
       }
     }
 
-    final markerXs = <double>[];
-    for (final label in labels) {
+    _layoutMarkers(trackRect);
+    for (var index = 0; index < labels.length; index++) {
+      final label = labels[index];
       _drawMarker(
         canvas,
         trackRect,
-        markerXs,
-        label.start,
-        duration,
+        _markers[index * 2],
         Color(label.colorValue),
       );
       _drawMarker(
         canvas,
         trackRect,
-        markerXs,
-        label.end,
-        duration,
+        _markers[index * 2 + 1],
         Color(label.colorValue),
       );
     }
@@ -718,17 +782,11 @@ class _TimeSegmentProgressPainter extends CustomPainter {
   void _drawMarker(
     Canvas canvas,
     Rect trackRect,
-    List<double> markerXs,
-    Duration position,
-    Duration duration,
+    ({double x, double top}) marker,
     Color color,
   ) {
-    final ratio = position.inMilliseconds / duration.inMilliseconds;
-    final x = trackRect.left + trackRect.width * ratio.clamp(0.0, 1.0);
-    final nearby = markerXs.where((other) => (other - x).abs() < 14).length;
-    markerXs.add(x);
-    final layer = nearby.isOdd ? 1 : 0;
-    final top = layer == 0 ? 0.0 : 7.0;
+    final x = marker.x;
+    final top = marker.top;
     final body = RRect.fromRectAndRadius(
       Rect.fromCenter(center: Offset(x, top + 3), width: 10, height: 6),
       const Radius.circular(2),

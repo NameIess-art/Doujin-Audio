@@ -25,6 +25,103 @@ void main() {
   setUp(interaction.resetForTest);
   tearDown(interaction.resetForTest);
 
+  for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+    testWidgets(
+      'carousel rebuilds indicators only at mapped page changes on $platform',
+      (tester) async {
+        debugDefaultTargetPlatformOverride = platform;
+        addTearDown(() => debugDefaultTargetPlatformOverride = null);
+        final fixture = AppRuntimeWidgetTestFixture();
+        addTearDown(fixture.dispose);
+        final sessions = [
+          for (final id in ['one', 'two', 'three'])
+            PlaybackSession(
+              id: id,
+              currentTrackPath: '/$id.mp3',
+              loopMode: SessionLoopMode.single,
+              nonSingleLoopMode: SessionLoopMode.single,
+              volume: 1,
+              createdAt: DateTime(2026),
+              state: const PlayerState(false, ProcessingState.idle),
+            ),
+        ];
+        for (final session in sessions) {
+          addTearDown(session.shutdown);
+        }
+        Widget carousel(List<PlaybackSession> shown) => fixture.build(
+          Center(
+            child: SizedBox(
+              width: 320,
+              child: ActiveSessionCarousel(
+                sessions: shown
+                    .map(PlaybackSessionSnapshot.fromRuntime)
+                    .toList(),
+                viewportFraction: 1,
+                presentation: ActiveSessionCarouselPresentation.embedded,
+                onOpenSession: (_) {},
+              ),
+            ),
+          ),
+        );
+        await tester.pumpWidget(carousel(sessions));
+        await tester.pumpAndSettle();
+        final indicator = find.byKey(
+          const ValueKey('active_session_indicator'),
+        );
+        AnimatedContainer firstDot() => tester.widget<AnimatedContainer>(
+          find
+              .descendant(
+                of: indicator,
+                matching: find.byType(AnimatedContainer),
+              )
+              .first,
+        );
+        var previous = firstDot();
+        var indicatorRebuilds = 0;
+        Future<void> move(TestGesture gesture) async {
+          await gesture.moveBy(const Offset(-20, 0));
+          await tester.pump(const Duration(milliseconds: 40));
+          final next = firstDot();
+          if (!identical(next, previous)) indicatorRebuilds++;
+          previous = next;
+        }
+
+        final gesture = await tester.startGesture(
+          tester.getCenter(find.byType(PageView)),
+        );
+        final initialPage = tester
+            .widget<PageView>(find.byType(PageView))
+            .controller!
+            .page!;
+        for (var step = 0; step < 4; step++) {
+          await move(gesture);
+        }
+        final fractionalPage = tester
+            .widget<PageView>(find.byType(PageView))
+            .controller!
+            .page!;
+        expect(fractionalPage, greaterThan(initialPage));
+        expect(fractionalPage.round(), initialPage.round());
+        expect(indicatorRebuilds, 0);
+        for (var step = 0; step < 6; step++) {
+          await move(gesture);
+        }
+        expect(indicatorRebuilds, 1);
+        expect(tester.widget<Semantics>(indicator).properties.label, '2 / 3');
+        await gesture.up();
+        await tester.pumpAndSettle();
+        await tester.pumpWidget(
+          carousel([sessions[1], sessions[0], sessions[2]]),
+        );
+        await tester.pumpAndSettle();
+        expect(tester.widget<Semantics>(indicator).properties.label, '1 / 3');
+        await tester.pumpWidget(const SizedBox.shrink());
+        debugDefaultTargetPlatformOverride = null;
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
   for (final desktop in [false, true]) {
     testWidgets(
       '${desktop ? 'desktop' : 'mobile'} dock protects motion and releases on reversal, hide, reduced motion and disposal',

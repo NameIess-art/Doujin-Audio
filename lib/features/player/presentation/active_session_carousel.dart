@@ -84,6 +84,7 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
   final ValueNotifier<double> _pageNotifier = ValueNotifier<double>(
     _loopPageSeed.toDouble(),
   );
+  final ValueNotifier<int> _indicatorIndex = ValueNotifier<int>(0);
   List<PlaybackSessionSnapshot> _currentSessions = const [];
   List<PlaybackSessionSnapshot> _incomingSessions = const [];
   int _pageIndexOffset = 0;
@@ -122,6 +123,7 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
       ..removeListener(_handlePageTick)
       ..dispose();
     _pageNotifier.dispose();
+    _indicatorIndex.dispose();
     if (widget.presentation == ActiveSessionCarouselPresentation.card) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _visibleSessionNotifier.setVisible(null);
@@ -148,6 +150,7 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
       _pageNotifier.value.round(),
       sessions.length,
     );
+    _indicatorIndex.value = index;
     final sessionId = sessions[index].id;
     if (_lastVisibleSessionId == sessionId) return;
     _lastVisibleSessionId = sessionId;
@@ -473,14 +476,11 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
                   right: indicatorRight,
                   bottom: indicatorBottom,
                   child: IgnorePointer(
-                    child: ValueListenableBuilder<double>(
-                      valueListenable: _pageNotifier,
-                      builder: (context, page, child) {
-                        final activePage = _sessionIndexForPage(
-                          page.round(),
-                          visibleSessions.length,
-                        );
+                    child: ValueListenableBuilder<int>(
+                      valueListenable: _indicatorIndex,
+                      builder: (context, activePage, child) {
                         return Semantics(
+                          key: const ValueKey('active_session_indicator'),
                           label:
                               '${activePage + 1} / ${visibleSessions.length}',
                           child: Row(

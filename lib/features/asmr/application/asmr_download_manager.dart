@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
@@ -68,7 +67,7 @@ class AsmrDownloadManager {
     _store = AsmrDownloadTaskStore(
       persistTasks: persistTasks,
       persistenceWriter: persistenceWriter,
-      persistedTaskEncoder: _persistedTaskToJson,
+      persistenceSnapshot: _capturePersistenceSnapshot,
       operationObserver: storeOperationObserver,
     );
     _transfers = AsmrDownloadTransferExecutor(
@@ -851,15 +850,20 @@ class AsmrDownloadManager {
     _processQueue();
   }
 
-  Map<String, Object?> _persistedTaskToJson(AsmrDownloadTaskSnapshot task) =>
-      downloadTaskToJson(
-        task,
-        createdOutputPaths:
-            _outputs.createdOutputPaths[task.work.id] ?? const <String>{},
-        createdJsonDocuments:
-            _outputs.createdJsonDocuments[task.work.id] ??
-            const <String, CreatedDownloadJsonDocument>{},
-      );
+  PersistedDownloadTask _capturePersistenceSnapshot(
+    AsmrDownloadTaskSnapshot task,
+  ) => PersistedDownloadTask(
+    task: task,
+    // Transfers can mutate ownership while this snapshot waits for an older
+    // write. Freeze ownership now; the task and its tree are already immutable.
+    createdOutputPaths: Set<String>.unmodifiable(
+      _outputs.createdOutputPaths[task.work.id] ?? const <String>{},
+    ),
+    createdJsonDocuments: Map<String, CreatedDownloadJsonDocument>.unmodifiable(
+      _outputs.createdJsonDocuments[task.work.id] ??
+          const <String, CreatedDownloadJsonDocument>{},
+    ),
+  );
 
   Future<void> _restorePersistedTasksFromPreferences() async {
     final raw = await AppPreferences.getString(
@@ -867,25 +871,21 @@ class AsmrDownloadManager {
     );
     if (_disposed || raw == null || raw.isEmpty) return;
     try {
-      final decoded = jsonDecode(raw);
-      if (decoded is Map && decoded['tasks'] is List) {
-        for (final value in decoded['tasks'] as List) {
-          if (value is! Map) continue;
-          final restored = downloadTaskFromJson(
-            Map<String, dynamic>.from(value),
-          );
-          final task = restored.task;
-          _store[task.work.id] = task.copyWith(
-            status: AsmrDownloadTaskStatus.paused,
-            fileRetryAttempts: const <String, int>{},
-            manuallyRetryingFilePaths: const <String>{},
-            message: 'paused',
-          );
-          _outputs.createdOutputPaths[task.work.id] =
-              restored.createdOutputPaths;
-          _outputs.createdJsonDocuments[task.work.id] =
-              restored.createdJsonDocuments;
-        }
+      final restored = await compute(decodePersistedDownloadTasks, raw);
+      if (_disposed) return;
+      for (final snapshot in restored.tasks) {
+        final task = snapshot.task;
+        _store[task.work.id] = task;
+        _outputs.createdOutputPaths[task.work.id] = snapshot.createdOutputPaths;
+        _outputs.createdJsonDocuments[task.work.id] =
+            snapshot.createdJsonDocuments;
+      }
+      if (restored.error != null) {
+        AppLogService.warning(
+          'asmr_download_restore_failed',
+          error: restored.error,
+          stackTrace: restored.stackTrace,
+        );
       }
     } catch (error, stackTrace) {
       AppLogService.warning(

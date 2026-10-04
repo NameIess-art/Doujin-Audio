@@ -2,10 +2,11 @@ part of 'notification_facade.dart';
 
 extension NotificationFacadeSubtitles on NotificationFacade {
   Future<SubtitleTrack?> _subtitleTrackForPath(String trackPath) {
-    return _subtitleService.load(trackPath);
+    return _subtitleService.loadAutomatically(trackPath);
   }
 
   void _handleSubtitleTrackLoaded(String trackPath, SubtitleTrack? track) {
+    if (!_notificationsEnabled) return;
     var shouldRefreshNotification = false;
     for (final session in _sessions.values) {
       if (session.currentTrackPath != trackPath) continue;
@@ -55,7 +56,8 @@ extension NotificationFacadeSubtitles on NotificationFacade {
       : NotificationFacade._notificationProgressRefreshInterval;
 
   void _ensureSubtitleTrackLoaded(String trackPath) {
-    if (_subtitleService.hasResult(trackPath) ||
+    if (!_notificationsEnabled ||
+        _subtitleService.hasResult(trackPath) ||
         _subtitleService.isLoading(trackPath)) {
       return;
     }
@@ -67,6 +69,7 @@ extension NotificationFacadeSubtitles on NotificationFacade {
     Duration? position,
     bool syncNotification = true,
   }) {
+    if (!_notificationsEnabled) return false;
     final trackPath = session.currentTrackPath;
     _ensureSubtitleTrackLoaded(trackPath);
     final nextText = _subtitleTextForTrackAt(

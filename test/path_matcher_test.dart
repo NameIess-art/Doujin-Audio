@@ -2,6 +2,29 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/core/media/path_matcher.dart';
 
 void main() {
+  test('membership indexes preserve file-system root boundaries', () {
+    for (final (root, child, outside) in <(String, String, String)>[
+      (r'C:\', r'c:\Music\01.mp3', r'D:\Music\01.mp3'),
+      (
+        r'\\server\share\',
+        r'\\server\share\Music\01.mp3',
+        r'\\server\other\01.mp3',
+      ),
+    ]) {
+      expect(
+        PathMembershipIndex([root]).containsAncestorOrEqual(child),
+        isTrue,
+      );
+      expect(
+        PathMembershipIndex([root]).containsAncestorOrEqual(outside),
+        isFalse,
+      );
+      expect(
+        PathMembershipIndex([child]).containsDescendantOrEqual(root),
+        isTrue,
+      );
+    }
+  });
   test('SAF tree, document, and synthetic child paths match by document id', () {
     const root =
         'content://com.android.externalstorage.documents/tree/primary%3AMusic';

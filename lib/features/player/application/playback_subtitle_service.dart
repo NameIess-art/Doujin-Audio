@@ -50,6 +50,7 @@ class PlaybackSubtitleService extends ChangeNotifier {
     Future<Directory> Function()? subtitlesDirectoryResolver,
     Map<String, Duration>? initialOffsets,
     SubtitleAiEngine? aiEngine,
+    DateTime Function()? now,
   }) : _trackResolver = trackResolver,
        _fileCacheGateway =
            fileCacheGateway ?? FileCachePlatformGateway.instance,
@@ -57,7 +58,8 @@ class PlaybackSubtitleService extends ChangeNotifier {
        _subtitleLoader = subtitleLoader,
        _subtitlesDirectoryResolver =
            subtitlesDirectoryResolver ?? _defaultSubtitlesDirectory,
-       _aiEngine = aiEngine ?? SubtitleAiEngine() {
+       _aiEngine = aiEngine ?? SubtitleAiEngine(),
+       _now = now ?? DateTime.now {
     if (initialOffsets != null) _offsets.addAll(initialOffsets);
     _settingsReady = _loadPersistedSettings();
   }
@@ -68,6 +70,13 @@ class PlaybackSubtitleService extends ChangeNotifier {
   final PlaybackSubtitleLoader? _subtitleLoader;
   final Future<Directory> Function() _subtitlesDirectoryResolver;
   final SubtitleAiEngine _aiEngine;
+  final DateTime Function() _now;
+  static const _automaticRetryInterval = Duration(seconds: 30);
+  final Map<
+    String,
+    ({(String?, String?, String?, String?, String?) source, DateTime retryAt})
+  >
+  _automaticRetries = {};
   late final Future<void> _settingsReady;
   SubtitleGenerationJob? _generationJob;
 
@@ -501,6 +510,7 @@ class PlaybackSubtitleService extends ChangeNotifier {
   }
 
   SubtitleTrack _applySubtitle(String trackPath, SubtitleTrack subtitle) {
+    _automaticRetries.remove(trackPath);
     final edited = subtitle.withOffset(getOffset(trackPath));
     _trackRevisions[trackPath] = (_trackRevisions[trackPath] ?? 0) + 1;
     _tracks[trackPath] = edited;
@@ -765,7 +775,13 @@ class PlaybackSubtitleService extends ChangeNotifier {
     }
   }
 
-  Future<SubtitleTrack?> load(String trackPath) {
+  Future<SubtitleTrack?> loadAutomatically(String trackPath) =>
+      _load(trackPath, automatic: true);
+
+  Future<SubtitleTrack?> load(String trackPath) =>
+      _load(trackPath, automatic: false);
+
+  Future<SubtitleTrack?> _load(String trackPath, {required bool automatic}) {
     if (_tracks.containsKey(trackPath)) {
       return _results.putIfAbsent(
         trackPath,
@@ -774,6 +790,15 @@ class PlaybackSubtitleService extends ChangeNotifier {
     }
     final existing = _loading[trackPath];
     if (existing != null) return existing;
+    final source = _subtitleSource(trackPath);
+    final retry = _automaticRetries[trackPath];
+    if (automatic &&
+        retry != null &&
+        retry.source == source &&
+        _now().isBefore(retry.retryAt)) {
+      return SynchronousFuture<SubtitleTrack?>(null);
+    }
+    _automaticRetries.remove(trackPath);
     final requestGeneration = _generation;
     final requestRevision = _trackRevisions[trackPath] ?? 0;
     late final Future<SubtitleTrack?> task;
@@ -797,6 +822,16 @@ class PlaybackSubtitleService extends ChangeNotifier {
             subtitleTrack,
           );
           _trimResults();
+        } else {
+          // Progress-driven consumers may revisit a failed URL every tick.
+          // Explicit loads bypass this temporary cooldown.
+          _automaticRetries[trackPath] = (
+            source: source,
+            retryAt: _now().add(_automaticRetryInterval),
+          );
+          if (_automaticRetries.length > 20) {
+            _automaticRetries.remove(_automaticRetries.keys.first);
+          }
         }
         _onTrackLoaded?.call(trackPath, subtitleTrack);
         notifyListeners();
@@ -812,6 +847,19 @@ class PlaybackSubtitleService extends ChangeNotifier {
   }
 
   SubtitleTrack? trackSync(String trackPath) => _tracks[trackPath];
+
+  (String?, String?, String?, String?, String?) _subtitleSource(
+    String trackPath,
+  ) {
+    final metadata = _trackResolver(trackPath)?.remoteMetadata;
+    return (
+      metadata?['subtitleUrl']?.toString(),
+      metadata?['subtitleExtension']?.toString(),
+      metadata?['subtitleSourcePath']?.toString(),
+      metadata?['subtitleTitle']?.toString(),
+      _customPaths[trackPath],
+    );
+  }
 
   String? textAt(
     String trackPath,
@@ -833,6 +881,7 @@ class PlaybackSubtitleService extends ChangeNotifier {
     _trackRevisions.clear();
     _tracks.clear();
     _results.clear();
+    _automaticRetries.clear();
     notifyListeners();
   }
 

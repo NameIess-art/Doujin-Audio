@@ -1,7 +1,53 @@
+import 'dart:convert';
+
 import '../domain/asmr_download.dart';
 import '../domain/asmr_models.dart';
 import 'asmr_download_models.dart';
 import 'asmr_download_internal_models.dart';
+
+String encodePersistedDownloadTasks(List<PersistedDownloadTask> tasks) =>
+    jsonEncode(<String, Object?>{
+      'version': 1,
+      'tasks': tasks
+          .map(
+            (snapshot) => downloadTaskToJson(
+              snapshot.task,
+              createdOutputPaths: snapshot.createdOutputPaths,
+              createdJsonDocuments: snapshot.createdJsonDocuments,
+            ),
+          )
+          .toList(growable: false),
+    });
+
+({List<PersistedDownloadTask> tasks, Object? error, StackTrace? stackTrace})
+decodePersistedDownloadTasks(String payload) {
+  final tasks = <PersistedDownloadTask>[];
+  try {
+    final decoded = jsonDecode(payload);
+    if (decoded is Map && decoded['tasks'] is List) {
+      for (final value in decoded['tasks'] as List) {
+        if (value is! Map) continue;
+        final restored = downloadTaskFromJson(Map<String, dynamic>.from(value));
+        tasks.add(
+          PersistedDownloadTask(
+            task: restored.task.copyWith(
+              status: AsmrDownloadTaskStatus.paused,
+              fileRetryAttempts: const {},
+              manuallyRetryingFilePaths: const {},
+              message: 'paused',
+            ),
+            createdOutputPaths: restored.createdOutputPaths,
+            createdJsonDocuments: restored.createdJsonDocuments,
+          ),
+        );
+      }
+    }
+    return (tasks: tasks, error: null, stackTrace: null);
+  } catch (error, stackTrace) {
+    // Keep tasks decoded before a malformed entry, matching existing recovery.
+    return (tasks: tasks, error: error, stackTrace: stackTrace);
+  }
+}
 
 Map<String, Object?> downloadTaskToJson(
   AsmrDownloadTaskSnapshot task, {

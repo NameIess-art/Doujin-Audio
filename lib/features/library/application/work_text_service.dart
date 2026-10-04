@@ -302,7 +302,12 @@ class WorkTextService {
     request =
         (() async {
           try {
-            final files = List<T>.unmodifiable(await discover(folderPath));
+            final discovered = await discover(folderPath);
+            // Directory indexes use snapshot identity. Keep it stable when a
+            // real refresh finds the same files, including an empty folder.
+            final files = cached != null && listEquals(cached, discovered)
+                ? cached
+                : List<T>.unmodifiable(discovered);
             if (generation == _cacheGeneration &&
                 identical(requests[key], request)) {
               snapshots[key] = files;

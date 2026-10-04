@@ -122,6 +122,66 @@ void main() {
 
   group('WorkTextService', () {
     test(
+      'successful text refresh reuses equal snapshots but detects changes',
+      () async {
+        var files = <Map<String, String>>[];
+        final gateway = _FakeFileCacheGateway(discover: (_) async => files);
+        final service = WorkTextService(platformGateway: gateway);
+        addTearDown(service.dispose);
+        final empty = await service.refreshWorkTextFiles('/work');
+        expect(await service.refreshWorkTextFiles('/work'), same(empty));
+        files = [
+          {
+            'name': 'script.txt',
+            'relativePath': 'script.txt',
+            'path': '/work/script.txt',
+          },
+        ];
+        final added = await service.refreshWorkTextFiles('/work');
+        expect(added, isNot(same(empty)));
+        expect(await service.refreshWorkTextFiles('/work'), same(added));
+        files = [
+          {
+            'name': 'renamed.txt',
+            'relativePath': 'renamed.txt',
+            'path': '/work/script.txt',
+          },
+        ];
+        final renamed = await service.refreshWorkTextFiles('/work');
+        expect(renamed, isNot(same(added)));
+        expect(renamed.single.name, 'renamed.txt');
+        expect(gateway.discoverCalls, 5);
+      },
+    );
+
+    test(
+      'image refresh preserves equal identity until content or generation changes',
+      () async {
+        var paths = ['/work/cover.jpg'];
+        var scans = 0;
+        final service = WorkTextService(
+          discoverImages: (_) async {
+            scans++;
+            return _images(paths);
+          },
+        );
+        addTearDown(service.dispose);
+        final first = await service.refreshWorkImageFiles('/work');
+        expect(await service.refreshWorkImageFiles('/work'), same(first));
+        paths = ['/work/replacement.jpg'];
+        final replaced = await service.refreshWorkImageFiles('/work');
+        expect(replaced, isNot(same(first)));
+        expect(replaced.single.sourcePath, '/work/replacement.jpg');
+        await service.clearDirectoryCache();
+        expect(
+          await service.refreshWorkImageFiles('/work'),
+          isNot(same(replaced)),
+        );
+        expect(scans, 4);
+      },
+    );
+
+    test(
       'shares pending and completed scans for equivalent Windows paths',
       () async {
         final result = Completer<List<Map<String, String>>>();

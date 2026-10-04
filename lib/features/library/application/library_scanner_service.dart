@@ -805,13 +805,11 @@ class LibraryScannerService {
     var fileExists = false;
     try {
       final candidates = await _tracksFromPickedAudioFiles(pickedFiles, labels);
-      if (candidates.any(
-        (track) => _rules.isTrackAlreadyInLibrary(
-          trackPath: track.path,
-          watchedFolders: provider.watchedFolders,
-          watchedLibraries: provider.watchedLibraries,
-          tracks: provider.library,
-        ),
+      if (_rules.areAnyTracksAlreadyInLibrary(
+        trackPaths: candidates.map((track) => track.path),
+        watchedFolders: provider.watchedFolders,
+        watchedLibraries: provider.watchedLibraries,
+        tracks: provider.library,
       )) {
         fileExists = true;
       } else {

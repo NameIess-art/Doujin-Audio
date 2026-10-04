@@ -30,28 +30,25 @@ class LibraryScanRules {
         );
   }
 
-  bool isTrackAlreadyInLibrary({
-    required String trackPath,
+  bool areAnyTracksAlreadyInLibrary({
+    required Iterable<String> trackPaths,
     required Iterable<String> watchedFolders,
     required Iterable<String> watchedLibraries,
     required Iterable<MusicTrack> tracks,
   }) {
-    final normalizedTrackPath = PathMatcher.normalize(trackPath);
-    return tracks.any(
-          (track) =>
-              PathMatcher.equalsNormalized(track.path, normalizedTrackPath),
-        ) ||
-        watchedFolders.any(
-          (value) => PathMatcher.isWithinOrEqual(normalizedTrackPath, value),
-        ) ||
-        watchedLibraries.any(
-          (value) => PathMatcher.isWithinOrEqual(normalizedTrackPath, value),
-        ) ||
-        tracks.any(
-          (track) =>
-              track.groupKey != '__single_files__' &&
-              PathMatcher.isWithinOrEqual(normalizedTrackPath, track.groupKey),
-        );
+    if (trackPaths.isEmpty) return false;
+    final existingPaths = <String>{};
+    final roots = <String>{...watchedFolders, ...watchedLibraries};
+    for (final track in tracks) {
+      existingPaths.add(PathMatcher.equivalenceKey(track.path));
+      if (track.groupKey != '__single_files__') roots.add(track.groupKey);
+    }
+    final rootIndex = PathMembershipIndex(roots);
+    return trackPaths.any(
+      (trackPath) =>
+          existingPaths.contains(PathMatcher.equivalenceKey(trackPath)) ||
+          rootIndex.containsAncestorOrEqual(trackPath),
+    );
   }
 
   bool hasWatchedLibraryOverlap({

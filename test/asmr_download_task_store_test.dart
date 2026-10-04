@@ -3,18 +3,101 @@ import 'dart:convert';
 
 import 'package:doujin_audio/features/asmr/application/asmr_download_manager.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_download_task_store.dart';
+import 'package:doujin_audio/features/asmr/application/asmr_download_internal_models.dart';
+import 'package:doujin_audio/features/asmr/application/asmr_download_serialization.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_download.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/foundation.dart';
 
 void main() {
   const safRoot =
       'content://com.android.externalstorage.documents/tree/primary%3AMusic';
 
+  test(
+    'download worker round trip retains ownership and pauses recovered tasks',
+    () async {
+      final task = _task(1).copyWith(
+        downloadedBytes: 512,
+        fileDownloadedBytes: const {'track.mp3': 512},
+        fileRetryAttempts: const {'track.mp3': 2},
+        manuallyRetryingFilePaths: const {'track.mp3'},
+      );
+      final payload = await compute(encodePersistedDownloadTasks, [
+        PersistedDownloadTask(
+          task: task,
+          createdOutputPaths: const {'C:/Downloads/Work 1/track.mp3'},
+          createdJsonDocuments: const {},
+        ),
+      ]);
+      final restored = await compute(decodePersistedDownloadTasks, payload);
+      expect(restored.error, isNull);
+      expect(restored.tasks.single.task.status, AsmrDownloadTaskStatus.paused);
+      expect(restored.tasks.single.task.message, 'paused');
+      expect(restored.tasks.single.task.downloadedBytes, 512);
+      expect(restored.tasks.single.task.fileDownloadedBytes, {
+        'track.mp3': 512,
+      });
+      expect(
+        restored.tasks.single.task.selectedRoots.single.relativePath,
+        'track.mp3',
+      );
+      expect(restored.tasks.single.task.fileRetryAttempts, isEmpty);
+      expect(restored.tasks.single.task.manuallyRetryingFilePaths, isEmpty);
+      expect(restored.tasks.single.createdOutputPaths, {
+        'C:/Downloads/Work 1/track.mp3',
+      });
+
+      final decoded = jsonDecode(payload) as Map<String, dynamic>;
+      (decoded['tasks'] as List).add({'work': null});
+      final partial = await compute(
+        decodePersistedDownloadTasks,
+        jsonEncode(decoded),
+      );
+      expect(partial.tasks, hasLength(1));
+      expect(partial.error, isA<FormatException>());
+      expect(partial.stackTrace, isNotNull);
+    },
+  );
+
+  test(
+    'queued checkpoints freeze ownership before awaiting an earlier write',
+    () async {
+      final firstWrite = Completer<void>();
+      final firstStarted = Completer<void>();
+      final writes = <String?>[];
+      final manager = AsmrDownloadManager(
+        persistenceWriter: (payload) async {
+          writes.add(payload);
+          if (writes.length == 1) {
+            firstStarted.complete();
+            await firstWrite.future;
+          }
+        },
+      );
+      addTearDown(manager.shutdown);
+      manager.debugSetCurrentTaskForTesting(_task(1));
+      final first = manager.flushPersistence();
+      await firstStarted.future;
+      manager.debugRecordCreatedOutputPathForTesting(1, 'first.mp3');
+      manager.debugRecordDownloadChunkForTesting(1, 'track.mp3', 1, 1);
+      final second = manager.flushPersistence();
+      manager.debugRecordCreatedOutputPathForTesting(1, 'later.mp3');
+      firstWrite.complete();
+      await Future.wait([first, second]);
+      final restored = decodePersistedDownloadTasks(writes[1]!);
+      expect(restored.tasks.single.createdOutputPaths, {'first.mp3'});
+    },
+  );
+
   test('composable store owns snapshots and shutdown is idempotent', () async {
     final store = AsmrDownloadTaskStore(
       persistTasks: false,
-      persistedTaskEncoder: (_) => const <String, Object?>{},
+      persistenceSnapshot: (task) => PersistedDownloadTask(
+        task: task,
+        createdOutputPaths: const {},
+        createdJsonDocuments: const {},
+      ),
     );
     final taskIdsDone = Completer<void>();
     final taskDone = Completer<void>();

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/core/errors/native_result.dart';
+import 'package:doujin_audio/core/media/music_track.dart';
 import 'package:doujin_audio/core/platform/notifications_platform_service.dart';
 import 'package:doujin_audio/features/library/application/library_facade.dart';
 import 'package:doujin_audio/features/player/application/notification_facade.dart';
@@ -20,6 +21,89 @@ import 'support/test_persistence_repository.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  test(
+    'disabled notifications never load subtitles on focused progress',
+    () async {
+      var loads = 0;
+      final subtitles = PlaybackSubtitleService(
+        trackResolver: (_) => null,
+        subtitleLoader: (_, _) async {
+          loads++;
+          return null;
+        },
+      );
+      addTearDown(subtitles.dispose);
+      var enabled = false;
+      final fixture = _createNotificationFixture(
+        _RecordingPlaybackNotificationService(),
+        subtitles: subtitles,
+        notificationsEnabled: () => enabled,
+      );
+      addTearDown(fixture.dispose);
+      fixture.facade.registerSessionFocus(fixture.session.id);
+      for (var tick = 0; tick < 120; tick++) {
+        fixture.facade.refreshSessionSubtitle(
+          fixture.session,
+          position: Duration(milliseconds: tick * 500),
+          syncNotification: false,
+        );
+      }
+      await Future<void>.delayed(Duration.zero);
+      expect(loads, 0);
+
+      enabled = true;
+      fixture.facade.refreshSessionSubtitle(
+        fixture.session,
+        syncNotification: false,
+      );
+      await subtitles.loadAutomatically(fixture.session.currentTrackPath);
+      expect(loads, 1);
+    },
+  );
+
+  test(
+    'enabled focused notifications limit failed remote subtitle retries',
+    () async {
+      var loads = 0;
+      var now = DateTime(2026);
+      final subtitles = PlaybackSubtitleService(
+        trackResolver: (path) => MusicTrack(
+          path: path,
+          displayName: 'Remote track',
+          groupKey: 'work',
+          groupTitle: 'Work',
+          groupSubtitle: 'ASMR',
+          isSingle: false,
+          remoteMetadataKind: 'asmr.one',
+          remoteMetadata: const {
+            'subtitleUrl': 'https://example.com/missing.vtt',
+          },
+        ),
+        subtitleLoader: (_, _) async {
+          loads++;
+          return null;
+        },
+        now: () => now,
+      );
+      addTearDown(subtitles.dispose);
+      final fixture = _createNotificationFixture(
+        _RecordingPlaybackNotificationService(),
+        subtitles: subtitles,
+      );
+      addTearDown(fixture.dispose);
+      for (var tick = 0; tick < 120; tick++) {
+        fixture.facade.refreshSessionSubtitle(
+          fixture.session,
+          position: Duration(milliseconds: tick * 500),
+          syncNotification: false,
+        );
+        await Future<void>.delayed(Duration.zero);
+        now = now.add(const Duration(milliseconds: 500));
+      }
+      expect(loads, 2);
+    },
+  );
 
   test(
     'failed platform synchronization is retried without caching success',
@@ -429,6 +513,8 @@ _NotificationFixture _createNotificationFixture(
   bool registerSession = true,
   NotificationPlaybackCommands? commands,
   NotificationTrackResolver? trackByPath,
+  PlaybackSubtitleService? subtitles,
+  bool Function()? notificationsEnabled,
 }) {
   final library = _createLibraryFacade();
   final playback = PlaybackFacade.create(
@@ -469,10 +555,10 @@ _NotificationFixture _createNotificationFixture(
   );
   facade.attachSynchronization(
     playbackCommands: commands ?? _NoopNotificationPlaybackCommands(),
-    subtitles: PlaybackSubtitleService(trackResolver: (_) => null),
+    subtitles: subtitles ?? PlaybackSubtitleService(trackResolver: (_) => null),
     trackByPath: trackByPath ?? (_) => null,
     coverArtworkCacheService: library.coverArtworkCacheService,
-    notificationsEnabled: () => true,
+    notificationsEnabled: notificationsEnabled ?? () => true,
   );
   return _NotificationFixture(library, playback, facade, stateService, session);
 }

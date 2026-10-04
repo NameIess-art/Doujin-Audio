@@ -16,6 +16,109 @@ void main() {
   });
 
   group('TimerFacade', () {
+    testWidgets(
+      'ordinary countdown only writes fade at transitions and during fade',
+      (tester) async {
+        final service = TimerService();
+        final multipliers = <double>[];
+        final timer = TimerFacade.create(
+          service: service,
+          powerPlatformService: _RecordingPowerPlatformService(),
+        );
+        addTearDown(timer.dispose);
+        _attachNoopRuntime(timer, applyFadeMultiplier: multipliers.add);
+        timer.configureTimer(TimerMode.manual, const Duration(minutes: 5));
+        timer.startCountdown();
+        multipliers.clear();
+
+        for (var tick = 0; tick < 3; tick++) {
+          service.timerEndsAt = DateTime.now().add(Duration(minutes: 4 - tick));
+          await tester.pump(const Duration(seconds: 1));
+        }
+        expect(multipliers, isEmpty);
+
+        service.timerEndsAt = DateTime.now().add(const Duration(seconds: 10));
+        await tester.pump(const Duration(seconds: 1));
+        expect(multipliers, hasLength(1));
+        expect(multipliers.single, inExclusiveRange(0.0, 1.0));
+        timer.configureTimer(TimerMode.manual, const Duration(minutes: 5));
+        expect(multipliers.last, 1.0);
+        timer.startCountdown();
+        timer.cancelTimer();
+        expect(multipliers.last, 1.0);
+      },
+    );
+
+    testWidgets('restored countdown resets fade once before ordinary ticks', (
+      tester,
+    ) async {
+      final service = TimerService()
+        ..timerMode = TimerMode.manual
+        ..timerDuration = const Duration(minutes: 5)
+        ..timerActive = true
+        ..timerRemaining = const Duration(minutes: 5)
+        ..timerEndsAt = DateTime.now().add(const Duration(minutes: 5));
+      final multipliers = <double>[];
+      final timer = TimerFacade.create(
+        service: service,
+        powerPlatformService: _RecordingPowerPlatformService(),
+      );
+      addTearDown(timer.dispose);
+      _attachNoopRuntime(timer, applyFadeMultiplier: multipliers.add);
+      timer.restoreCountdownTimer();
+      expect(multipliers, [1.0]);
+      service.timerEndsAt = DateTime.now().add(const Duration(minutes: 4));
+      await tester.pump(const Duration(seconds: 1));
+      expect(multipliers, [1.0]);
+      timer.cancelTimer();
+    });
+
+    test(
+      'track end fades keep the final global source once per event turn',
+      () async {
+        final multipliers = <double>[];
+        final timer = TimerFacade.create();
+        addTearDown(timer.dispose);
+        _attachNoopRuntime(timer, applyFadeMultiplier: multipliers.add);
+        timer.setStopAfterCurrentTrack(true);
+        timer.applyFadeMultiplier(0.8);
+        timer.applyFadeMultiplier(0.3);
+        timer.applyFadeMultiplier(0.6);
+        expect(multipliers, isEmpty);
+        await Future<void>.delayed(Duration.zero);
+        expect(multipliers, [0.6]);
+
+        // A subsequent round still reaches all current sessions, including new ones.
+        timer.applyFadeMultiplier(0.6);
+        await Future<void>.delayed(Duration.zero);
+        expect(multipliers, [0.6, 0.6]);
+        timer.applyFadeMultiplier(0.2);
+        timer.setStopAfterCurrentTrack(false);
+        await Future<void>.delayed(Duration.zero);
+        expect(multipliers, [0.6, 0.6, 1.0]);
+      },
+    );
+
+    for (final cleanup in ['reset', 'detach', 'dispose']) {
+      test('$cleanup cancels a pending track end fade', () async {
+        final multipliers = <double>[];
+        final timer = TimerFacade.create();
+        addTearDown(timer.dispose);
+        _attachNoopRuntime(timer, applyFadeMultiplier: multipliers.add);
+        timer.setStopAfterCurrentTrack(true);
+        timer.applyFadeMultiplier(0.2);
+        if (cleanup == 'reset') {
+          timer.resetRuntimeState();
+        } else if (cleanup == 'detach') {
+          timer.detachRuntime();
+        } else {
+          await timer.dispose();
+        }
+        await Future<void>.delayed(Duration.zero);
+        expect(multipliers, cleanup == 'reset' ? [1.0] : isEmpty);
+      });
+    }
+
     for (final target in [TargetPlatform.android, TargetPlatform.windows]) {
       test(
         '$target manual confirmation synchronizes only the final timer',
@@ -554,6 +657,7 @@ void _attachNoopRuntime(
   TimerFacade timer, {
   List<PlaybackSession> Function()? sessions,
   Future<void> Function(String sessionId)? flushSessionPersistence,
+  void Function(double multiplier)? applyFadeMultiplier,
 }) {
   timer.attachRuntime(
     hasPlayingSession: () => false,
@@ -563,7 +667,7 @@ void _attachNoopRuntime(
     resumeSession: (_) async => false,
     onStateChanged: () {},
     onRuntimeRestored: () {},
-    applyFadeMultiplier: (_) {},
+    applyFadeMultiplier: applyFadeMultiplier ?? (_) {},
     flushSessionPersistence: flushSessionPersistence,
   );
 }

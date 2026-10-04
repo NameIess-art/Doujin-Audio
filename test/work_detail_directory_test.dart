@@ -15,6 +15,23 @@ MusicTrack _track(String name) => MusicTrack(
   isSingle: false,
 );
 
+class _DirectoryGateway extends Fake implements FileCachePlatformGateway {
+  List<Map<String, String>> files = [
+    {
+      'name': 'script.txt',
+      'relativePath': 'script.txt',
+      'path': 'C:/作品/script.txt',
+    },
+  ];
+  int scans = 0;
+
+  @override
+  Future<List<Map<String, String>>> discoverWorkTexts(String folderPath) async {
+    scans++;
+    return files;
+  }
+}
+
 AsmrTrackFile _remote(
   String name,
   String type, {
@@ -135,6 +152,57 @@ void main() {
       expect(reopened.resolved, same(snapshot));
       expect(await reopened.load(), same(snapshot));
       expect(reopened.resolved!.entriesAt([]), same(snapshot.entriesAt([])));
+    },
+  );
+
+  test(
+    'unchanged attachment refresh reuses the prepared directory index',
+    () async {
+      final gateway = _DirectoryGateway();
+      var imageScans = 0;
+      final service = WorkTextService(
+        platformGateway: gateway,
+        discoverImages: (_) async {
+          imageScans++;
+          return [
+            const CoverImageReference(
+              displayPath: 'C:/作品/cover.jpg',
+              sourcePath: 'C:/作品/cover.jpg',
+            ),
+          ];
+        },
+      );
+      addTearDown(service.dispose);
+      final root = FolderNode('作品', 'C:/作品')
+        ..addChild(TrackNode(_track('audio.mp3')));
+      Future<WorkDirectoryInput> refresh() async => WorkDirectoryInput.local(
+        root: root,
+        texts: await service.refreshWorkTextFiles('C:/作品'),
+        images: await service.refreshWorkImageFiles('C:/作品'),
+        folderPath: 'C:/作品',
+      );
+      final first = await refresh();
+      final directory = await first.load();
+      final unchanged = await refresh();
+      expect(unchanged.resolved, same(directory));
+      expect(await unchanged.load(), same(directory));
+      expect(gateway.scans, 2);
+      expect(imageScans, 2);
+      gateway.files = [
+        {'name': 'new.txt', 'relativePath': 'new.txt', 'path': 'C:/作品/new.txt'},
+      ];
+      final changed = await refresh();
+      expect(changed.resolved, isNull);
+      final updated = await changed.load();
+      expect(updated, isNot(same(directory)));
+      expect(
+        updated
+            .entriesAt([])
+            .where((item) => item.type == WorkEntryType.text)
+            .single
+            .name,
+        'new.txt',
+      );
     },
   );
 

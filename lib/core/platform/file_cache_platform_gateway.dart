@@ -744,11 +744,18 @@ class FileCachePlatformGateway {
 
   Future<void> setApplicationCacheLimit(int maxBytes) async {
     if (!_isAndroid()) return;
-    await _client.invoke<Object?>(
+    final result = await _client.invoke<Object?>(
       FileCacheMethod.setApplicationCacheLimit,
       arguments: <String, Object?>{'maxBytes': maxBytes},
       decode: (value) => value,
     );
+    if (result is NativeFailure<Object?>) {
+      throw PlatformException(
+        code: result.code,
+        message: result.message,
+        details: result.details,
+      );
+    }
   }
 
   Future<int> clearApplicationCache() async {

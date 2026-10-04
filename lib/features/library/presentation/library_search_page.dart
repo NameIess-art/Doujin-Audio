@@ -61,7 +61,7 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
 
   late final ValueNotifier<int> _activeCategoryIndex;
   late final Set<AudioLibraryCategoryType> _visitedCategories;
-  bool _animatingFromAll = false;
+  final Set<AudioLibraryCategoryType> _transitionCategories = {};
 
   Timer? _debounceTimer;
   AudioLibraryCategoryType _categoryType = AudioLibraryCategoryType.all;
@@ -73,7 +73,7 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
   List<LibraryNode> _searchSelectionTree = const [];
 
   final Map<AudioLibraryCategoryType, _CategoryFilterCache>
-      _categoryFilterCaches = {};
+  _categoryFilterCaches = {};
   Future<AudioLibraryCategorySnapshot>? _categorySnapshotFuture;
   int? _categorySnapshotStructureRevision;
   int? _categorySnapshotDetailRevision;
@@ -154,18 +154,17 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
       controller.jumpTo(controller.offset);
     }
     _visitedCategories.add(category);
+    _transitionCategories
+      ..add(_categoryType)
+      ..add(category);
     final targetIndex = _categories.indexOf(category);
     if (targetIndex >= 0) {
       _activeCategoryIndex.value = targetIndex;
     }
-    final fromAll = _categoryType == AudioLibraryCategoryType.all;
     setState(() {
       _categoryType = category;
       _hasSwitchedCategory = true;
       _clearSelection();
-      if (fromAll) {
-        _animatingFromAll = true;
-      }
     });
   }
 
@@ -351,21 +350,23 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
       style: AppIndexedStackTransitionStyle.slide,
       duration: kAppMotionSlow,
       onTransitionCompleted: (index) {
-        if (_animatingFromAll && mounted) {
-          setState(() => _animatingFromAll = false);
+        if (mounted &&
+            index == _activeCategoryIndex.value &&
+            _transitionCategories.isNotEmpty) {
+          setState(_transitionCategories.clear);
         }
       },
       children: [
         if (_visitedCategories.contains(AudioLibraryCategoryType.all))
           LibrarySearchAllResults(
-            active: _categoryType == AudioLibraryCategoryType.all ||
-                _animatingFromAll,
+            active:
+                _categoryType == AudioLibraryCategoryType.all ||
+                _transitionCategories.contains(AudioLibraryCategoryType.all),
             query: _query,
             queryRevision: _queryRevision,
             structureRevision: structureRevision,
             detailRevision: detailRevision,
-            scrollController:
-                _scrollControllers[AudioLibraryCategoryType.all]!,
+            scrollController: _scrollControllers[AudioLibraryCategoryType.all]!,
             topPadding: topInset,
             isSelectionMode: _isSelectionMode,
             selectedPaths: _selectedLibraryPaths,
@@ -379,6 +380,9 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
           if (_visitedCategories.contains(category))
             _buildCategoryBody(
               categoryType: category,
+              active:
+                  category == _categoryType ||
+                  _transitionCategories.contains(category),
               libraryFacade: libraryFacade,
               i18n: i18n,
               topPadding: topInset,
@@ -510,10 +514,12 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
   ) {
     return switch (category) {
       AudioLibraryCategoryType.tags => i18n.tr('library_category_no_tags'),
-      AudioLibraryCategoryType.voiceActors =>
-        i18n.tr('library_category_no_voice_actors'),
-      AudioLibraryCategoryType.circles =>
-        i18n.tr('library_category_no_circles'),
+      AudioLibraryCategoryType.voiceActors => i18n.tr(
+        'library_category_no_voice_actors',
+      ),
+      AudioLibraryCategoryType.circles => i18n.tr(
+        'library_category_no_circles',
+      ),
       AudioLibraryCategoryType.all => '',
     };
   }
@@ -541,8 +547,7 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
       category,
       _CategoryFilterCache.new,
     );
-    if (identical(snapshot, cache.snapshot) &&
-        filterKey == cache.filterKey) {
+    if (identical(snapshot, cache.snapshot) && filterKey == cache.filterKey) {
       return cache.result;
     }
 
@@ -614,6 +619,7 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
 
   Widget _buildCategoryBody({
     required AudioLibraryCategoryType categoryType,
+    required bool active,
     required LibraryFacade libraryFacade,
     required AppLanguageProvider i18n,
     required double topPadding,
@@ -655,11 +661,15 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
         }
 
         final terms = _termsForCategory(snapshot, categoryType);
-        final entries = _filterCategoryEntries(
-          snapshot,
-          categoryType,
-          pinnedPaths: pinnedPaths,
-        );
+        // Hidden pages retain their last result. Refilter using the latest
+        // query, snapshot and pins when they enter or participate in a slide.
+        final entries = active
+            ? _filterCategoryEntries(
+                snapshot,
+                categoryType,
+                pinnedPaths: pinnedPaths,
+              )
+            : _categoryFilterCaches[categoryType]?.result ?? const [];
         Map<String, FolderNode>? foldersByPath;
         FolderNode? folderForEntry(AudioLibraryCategoryEntry entry) {
           if (!entry.isFolder) return null;
@@ -701,10 +711,12 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
             itemBuilder: (context, index) {
               if (hasTermBox && index == 0) {
                 return LibraryCategoryTermBox(
-                  key: ValueKey('library_category_term_box_${categoryType.name}'),
+                  key: ValueKey(
+                    'library_category_term_box_${categoryType.name}',
+                  ),
                   categoryType: categoryType,
-                  collapseOnMount: _hasSwitchedCategory &&
-                      categoryType == _categoryType,
+                  collapseOnMount:
+                      _hasSwitchedCategory && categoryType == _categoryType,
                   terms: terms,
                   selectedTerms: selectedTerms,
                   emptyText: _noTermsText(i18n, categoryType),

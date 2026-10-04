@@ -230,7 +230,7 @@ final class SubtitleOverlayController {
                 !subtitles.hasResult(trackPath))) {
       unawaited(() async {
         try {
-          await subtitles.load(trackPath);
+          await subtitles.loadAutomatically(trackPath);
           if (_runtimeEnabled &&
               _runtimeRunning &&
               identical(_observedRuntimeSession, session) &&

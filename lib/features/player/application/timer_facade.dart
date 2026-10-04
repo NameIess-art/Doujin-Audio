@@ -39,6 +39,8 @@ final class TimerFacade {
 
   final Duration resumeFadeInDuration;
   Timer? _resumeFadeTimer;
+  Timer? _trackEndFadeTimer;
+  double? _pendingTrackEndFade;
   final TimerService _service;
   final PowerPlatformService powerPlatformService;
   final Future<SharedPreferences> Function() _persistencePreferencesLoader;
@@ -118,6 +120,7 @@ final class TimerFacade {
   }
 
   void detachRuntime() {
+    _cancelPendingTrackEndFade();
     _hasPlayingSession = () => false;
     _sessions = _emptySessions;
     _pauseSession = _falseSession;
@@ -159,6 +162,7 @@ final class TimerFacade {
     _service.timerWaitingForPlayback = false;
     _service.timerRemaining = _service.timerDuration;
     _service.timerEndsAt = DateTime.now().add(_service.timerDuration!);
+    _setFadeMultiplier(1.0);
     _service.countdownTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (generation != _service.timerGeneration) return;
       _tickCountdown();
@@ -194,14 +198,38 @@ final class TimerFacade {
   void setStopAfterCurrentTrack(bool enabled) {
     if (_service.stopAfterCurrentTrack == enabled) return;
     _service.stopAfterCurrentTrack = enabled;
+    _cancelPendingTrackEndFade();
     if (!enabled) {
-      _applyFadeMultiplier(1.0);
+      _setFadeMultiplier(1.0);
     }
     _changed();
   }
 
-  void applyFadeMultiplier(double multiplier) =>
-      _applyFadeMultiplier(multiplier);
+  void applyFadeMultiplier(double multiplier) {
+    if (!_service.stopAfterCurrentTrack) return;
+    _pendingTrackEndFade = multiplier;
+    // One native progress event may contain several session positions. Keep
+    // its final global multiplier instead of fanning out each intermediate one.
+    _trackEndFadeTimer ??= Timer(Duration.zero, () {
+      _trackEndFadeTimer = null;
+      final latest = _pendingTrackEndFade;
+      _pendingTrackEndFade = null;
+      if (_service.stopAfterCurrentTrack && latest != null) {
+        _applyFadeMultiplier(latest);
+      }
+    });
+  }
+
+  void _cancelPendingTrackEndFade() {
+    _trackEndFadeTimer?.cancel();
+    _trackEndFadeTimer = null;
+    _pendingTrackEndFade = null;
+  }
+
+  void _setFadeMultiplier(double multiplier) {
+    _cancelPendingTrackEndFade();
+    _applyFadeMultiplier(multiplier);
+  }
 
   void setAutoResume(bool enabled, int hour, int minute) {
     _service.autoResumeEnabled = enabled;
@@ -279,10 +307,10 @@ final class TimerFacade {
   void _startResumeFadeIn() {
     _cancelResumeFadeIn();
     if (resumeFadeInDuration <= Duration.zero) {
-      _applyFadeMultiplier(1.0);
+      _setFadeMultiplier(1.0);
       return;
     }
-    _applyFadeMultiplier(0.0);
+    _setFadeMultiplier(0.0);
     final stopwatch = Stopwatch()..start();
     final durationMs = resumeFadeInDuration.inMilliseconds;
     const interval = Duration(milliseconds: 100);
@@ -290,12 +318,12 @@ final class TimerFacade {
     _resumeFadeTimer = Timer.periodic(interval, (timer) {
       final elapsed = stopwatch.elapsedMilliseconds;
       if (elapsed >= durationMs) {
-        _applyFadeMultiplier(1.0);
+        _setFadeMultiplier(1.0);
         timer.cancel();
         _resumeFadeTimer = null;
       } else {
         final fraction = (elapsed / durationMs).clamp(0.0, 1.0);
-        _applyFadeMultiplier(fraction);
+        _setFadeMultiplier(fraction);
       }
     });
   }
@@ -309,6 +337,7 @@ final class TimerFacade {
     bool clearPausedSessions = true,
     bool restoreFadeMultiplier = true,
   }) {
+    _cancelPendingTrackEndFade();
     _cancelResumeFadeIn();
     _restoredCountdownSessions.clear();
     _service.timerGeneration++;
@@ -328,7 +357,7 @@ final class TimerFacade {
     }
     _service.stopAfterCurrentTrack = false;
     if (restoreFadeMultiplier) {
-      _applyFadeMultiplier(1.0);
+      _setFadeMultiplier(1.0);
     }
   }
 
@@ -361,6 +390,7 @@ final class TimerFacade {
   void restoreCountdownTimer() {
     final endsAt = _service.timerEndsAt;
     if (endsAt == null) return;
+    _setFadeMultiplier(1.0);
     final generation = _service.timerGeneration;
     _service.countdownTimer?.cancel();
     _service.countdownTimer = Timer.periodic(const Duration(seconds: 1), (_) {
@@ -450,7 +480,7 @@ final class TimerFacade {
   }
 
   void _maybeResetTimerAfterExpiry() {
-    _applyFadeMultiplier(1.0);
+    _setFadeMultiplier(1.0);
     if (_service.autoResumeAt != null ||
         _service.pausedByTimerSessionIds.isNotEmpty &&
             _service.autoResumeEnabled) {
@@ -538,7 +568,7 @@ final class TimerFacade {
       await syncNativeAlarms();
       return;
     }
-    _applyFadeMultiplier(0.0);
+    _setFadeMultiplier(0.0);
     final resumedSessionIds = <String>[];
     for (final session in resumableSessions) {
       final resumed = await _resumeSession(session);
@@ -587,6 +617,7 @@ final class TimerFacade {
       generation == _service.timerGeneration;
 
   void _cancelTimerInternal() {
+    _setFadeMultiplier(1.0);
     _restoredCountdownSessions.clear();
     _service.timerGeneration++;
     _service.countdownTimer?.cancel();
@@ -608,7 +639,7 @@ final class TimerFacade {
     );
     if (tick.expired) {
       _service.timerRemaining = tick.remaining;
-      _applyFadeMultiplier(0.0);
+      _setFadeMultiplier(0.0);
       _changed();
       _expireTimer();
       return;
@@ -620,11 +651,9 @@ final class TimerFacade {
       final remainingMs = _service.timerRemaining!.inMilliseconds;
       final fadeDurationMs = math.min(30000, duration.inMilliseconds ~/ 2);
       if (fadeDurationMs > 0 && remainingMs <= fadeDurationMs) {
-        _applyFadeMultiplier(
+        _setFadeMultiplier(
           (remainingMs / fadeDurationMs.toDouble()).clamp(0.0, 1.0),
         );
-      } else if (remainingMs > fadeDurationMs) {
-        _applyFadeMultiplier(1.0);
       }
     }
     _changed();
@@ -647,6 +676,7 @@ final class TimerFacade {
   void _changed() => _onStateChanged();
 
   Future<void> dispose() async {
+    _cancelPendingTrackEndFade();
     _cancelResumeFadeIn();
     _service.countdownTimer?.cancel();
     _service.autoResumeTimer?.cancel();

@@ -4,9 +4,80 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/core/media/cover_image_format.dart';
 import 'package:doujin_audio/core/cache/app_cache_service.dart';
+import 'package:doujin_audio/core/platform/file_cache_platform_gateway.dart';
+import 'package:doujin_audio/core/platform/platform_channels.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  group('Android cache limit initialization', () {
+    const channel = MethodChannel('test/application_cache');
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    late List<String> calls;
+    var failSetter = false;
+
+    setUp(() {
+      calls = <String>[];
+      failSetter = false;
+      AppCacheService.resetForTest(
+        isAndroid: true,
+        fileCache: FileCachePlatformGateway(
+          channel: channel,
+          isAndroid: () => true,
+        ),
+      );
+      messenger.setMockMethodCallHandler(channel, (call) async {
+        calls.add(call.method);
+        if (failSetter &&
+            call.method == FileCacheMethod.setApplicationCacheLimit) {
+          return <String, Object?>{
+            'ok': false,
+            'code': 'cache_failure',
+            'message': 'Cannot trim cache',
+          };
+        }
+        return <String, Object?>{'ok': true, 'value': null};
+      });
+    });
+
+    tearDown(() {
+      AppCacheService.resetForTest();
+      messenger.setMockMethodCallHandler(channel, null);
+    });
+
+    test(
+      'successful setter trims once and cancels pending enforcement',
+      () async {
+        AppCacheService.scheduleEnforce(
+          idleDelay: const Duration(milliseconds: 10),
+        );
+        await AppCacheService.setMaxCacheBytes(100);
+        await Future<void>.delayed(const Duration(milliseconds: 30));
+        expect(calls, <String>[FileCacheMethod.setApplicationCacheLimit]);
+      },
+    );
+
+    test('failed native setter retains the enforcement retry', () async {
+      failSetter = true;
+      await AppCacheService.setMaxCacheBytes(100);
+      expect(calls, <String>[
+        FileCacheMethod.setApplicationCacheLimit,
+        FileCacheMethod.enforceApplicationCacheLimit,
+      ]);
+    });
+
+    test('active lease defers native trimming until release', () async {
+      final lease = AppCacheService.protectPaths(<String>['/active/cache']);
+      await AppCacheService.setMaxCacheBytes(
+        AppCacheService.defaultMaxCacheBytes,
+      );
+      expect(calls, isEmpty);
+      lease.release();
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      expect(calls, <String>[FileCacheMethod.enforceApplicationCacheLimit]);
+    });
+  });
 
   test(
     'orphaned persistent imports are deleted without removing live files',

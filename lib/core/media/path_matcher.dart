@@ -391,12 +391,10 @@ abstract final class PathMatcher {
 
 final class PathMembershipIndex {
   PathMembershipIndex(Iterable<String> paths)
-    : _keys = paths.map(PathMatcher.equivalenceKey).toSet() {
-    _sortedKeys = _keys.toList(growable: false)..sort();
-  }
+    : _keys = paths.map(PathMatcher.equivalenceKey).toSet();
 
   final Set<String> _keys;
-  late final List<String> _sortedKeys;
+  late final List<String> _sortedKeys = _keys.toList(growable: false)..sort();
 
   bool containsEquivalent(String value) {
     return _keys.contains(PathMatcher.equivalenceKey(value));
@@ -405,7 +403,7 @@ final class PathMembershipIndex {
   bool containsDescendantOrEqual(String value) {
     final key = PathMatcher.equivalenceKey(value);
     if (_keys.contains(key)) return true;
-    final prefix = '$key/';
+    final prefix = key.endsWith('/') ? key : '$key/';
     var low = 0;
     var high = _sortedKeys.length;
     while (low < high) {
@@ -426,6 +424,8 @@ final class PathMembershipIndex {
     while (true) {
       final separator = key.lastIndexOf('/');
       if (separator < 0) return false;
+      // File-system roots retain their trailing separator in equivalence keys.
+      if (_keys.contains(key.substring(0, separator + 1))) return true;
       key = key.substring(0, separator);
       if (_keys.contains(key)) return true;
     }

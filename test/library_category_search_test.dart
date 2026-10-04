@@ -4,9 +4,164 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:doujin_audio/core/media/audio_detail.dart';
 import 'package:doujin_audio/core/widgets/search_highlight.dart';
 import 'package:doujin_audio/features/library/domain/audio_library_category.dart';
+import 'package:doujin_audio/features/library/domain/library_node.dart';
 import 'package:doujin_audio/features/library/presentation/library_tab.dart';
+import 'package:doujin_audio/features/library/presentation/library_search_page.dart';
+import 'package:doujin_audio/features/library/presentation/library_providers.dart';
+import 'package:doujin_audio/features/library/application/library_facade.dart';
+import 'package:doujin_audio/features/library/application/library_snapshot_cache_service.dart';
+import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
+
+import 'support/app_runtime_test_fixture.dart';
+
+class _CountingCategoryEntry extends AudioLibraryCategoryEntry {
+  _CountingCategoryEntry(AudioLibraryCategoryEntry entry)
+    : super(
+        target: entry.target,
+        title: entry.title,
+        path: entry.path,
+        isFolder: entry.isFolder,
+        detail: entry.detail,
+        tracks: entry.tracks,
+      );
+
+  final reads = <AudioLibraryCategoryType, int>{};
+
+  @override
+  Set<String> normalizedTermsForCategory(AudioLibraryCategoryType type) {
+    reads.update(type, (value) => value + 1, ifAbsent: () => 1);
+    return super.normalizedTermsForCategory(type);
+  }
+}
+
+class _FixedCategorySnapshotCache extends LibrarySnapshotCacheService {
+  _FixedCategorySnapshotCache({
+    required super.libraryService,
+    required super.detailCacheService,
+    required this.snapshot,
+  }) : super(
+         treeSnapshotBuilder: (_) async =>
+             LibraryTreeSnapshot(tree: const [], leafFolderCount: 0),
+       );
+
+  AudioLibraryCategorySnapshot snapshot;
+
+  @override
+  AudioLibraryCategorySnapshot get categorySnapshotSync => snapshot;
+
+  @override
+  Future<AudioLibraryCategorySnapshot> categorySnapshot({
+    required VoidCallback onCommitted,
+  }) async => snapshot;
+}
 
 void main() {
+  AppRuntimeTestFixture.initialize();
+  testWidgets(
+    'hidden visited categories wait for activation to filter latest state',
+    (tester) async {
+      UiInteractionCoordinator.instance.resetForTest();
+      addTearDown(UiInteractionCoordinator.instance.resetForTest);
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      final entries = [
+        for (final title in ['Alpha', 'Beta'])
+          _CountingCategoryEntry(
+            _createEntry(
+              title: title,
+              path: '/$title',
+              tags: ['ASMR'],
+              voiceActors: ['Voice'],
+              circleName: 'Circle',
+            ),
+          ),
+      ];
+      AudioLibraryCategorySnapshot snapshot() => AudioLibraryCategorySnapshot(
+        entries: entries,
+        tagTerms: ['ASMR'],
+        voiceActorTerms: ['Voice'],
+        circleTerms: ['Circle'],
+        structureRevision: fixture.libraryService.structureRevision,
+        detailRevision: fixture.library.detailCacheService.revision,
+      );
+      final cache = _FixedCategorySnapshotCache(
+        libraryService: fixture.libraryService,
+        detailCacheService: fixture.library.detailCacheService,
+        snapshot: snapshot(),
+      );
+      final library = LibraryFacade.create(
+        databaseRepository: fixture.persistenceRepository,
+        service: fixture.libraryService,
+        detailCacheService: fixture.library.detailCacheService,
+        snapshotCacheService: cache,
+      );
+      await tester.pumpWidget(
+        fixture.build(
+          const LibrarySearchPage(),
+          overrides: [libraryFacadeProvider.overrideWithValue(library)],
+        ),
+      );
+      await tester.pumpAndSettle();
+      Future<void> choose(AudioLibraryCategoryType type) async {
+        await tester.tap(find.byKey(ValueKey('app_search_category_$type')));
+        await tester.pumpAndSettle();
+      }
+
+      for (final type in AudioLibraryCategoryType.values.skip(1)) {
+        await choose(type);
+      }
+      await choose(AudioLibraryCategoryType.all);
+      final priorReads = Map<AudioLibraryCategoryType, int>.of(
+        entries.first.reads,
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('app_search_field')),
+        'Beta',
+      );
+      await tester.pump(const Duration(milliseconds: 250));
+      await tester.pumpAndSettle();
+      fixture.settings.pinnedLibraryPaths = ['/Beta'];
+      fixture.settings.syncSlice(isInitialized: true);
+      fixture.libraryService.markStructureChanged();
+      cache.snapshot = snapshot();
+      fixture.library.syncPresentationState(isInitialized: true);
+      await tester.pumpAndSettle();
+      expect(entries.first.reads, priorReads);
+      await choose(AudioLibraryCategoryType.tags);
+      expect(
+        entries.first.reads[AudioLibraryCategoryType.tags],
+        greaterThan(priorReads[AudioLibraryCategoryType.tags]!),
+      );
+      expect(
+        entries.first.reads[AudioLibraryCategoryType.voiceActors],
+        priorReads[AudioLibraryCategoryType.voiceActors],
+      );
+      expect(find.byKey(const ValueKey('category_/Beta')), findsOneWidget);
+      expect(find.byKey(const ValueKey('category_/Alpha')), findsNothing);
+      final beforeSlide = entries.first.reads[AudioLibraryCategoryType.tags]!;
+      await tester.tap(
+        find.byKey(
+          const ValueKey(
+            'app_search_category_AudioLibraryCategoryType.voiceActors',
+          ),
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 16));
+      await tester.enterText(
+        find.byKey(const ValueKey('app_search_field')),
+        'Alpha',
+      );
+      await tester.pump(const Duration(milliseconds: 230));
+      expect(
+        entries.first.reads[AudioLibraryCategoryType.tags],
+        greaterThan(beforeSlide),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('category_/Alpha')), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   group('SearchHighlightScope.withTerms', () {
     testWidgets('provides custom terms list to descendant SearchHighlightedText', (
       tester,

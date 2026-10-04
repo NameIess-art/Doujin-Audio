@@ -104,6 +104,99 @@ void main() {
     expect(calls, 2);
   });
 
+  test(
+    'automatic remote misses cool down while explicit retry stays immediate',
+    () async {
+      const path = 'https://api.asmr.one/audio.mp3';
+      var now = DateTime(2026);
+      var calls = 0;
+      final service = PlaybackSubtitleService(
+        trackResolver: (_) => _remoteTrack(path),
+        subtitleLoader: (_, _) async {
+          calls++;
+          return null;
+        },
+        now: () => now,
+      );
+      addTearDown(service.dispose);
+
+      await service.loadAutomatically(path);
+      for (var tick = 0; tick < 59; tick++) {
+        now = now.add(const Duration(milliseconds: 500));
+        await service.loadAutomatically(path);
+      }
+      expect(calls, 1);
+      expect(service.hasResult(path), isFalse);
+      now = now.add(const Duration(milliseconds: 500));
+      await service.loadAutomatically(path);
+      expect(calls, 2);
+      await service.load(path);
+      expect(calls, 3);
+      await service.loadAutomatically(path);
+      expect(calls, 3);
+    },
+  );
+
+  test(
+    'source changes and clearing bypass automatic subtitle cooldown',
+    () async {
+      const path = 'https://api.asmr.one/audio.mp3';
+      var track = _remoteTrack(path);
+      var calls = 0;
+      final service = PlaybackSubtitleService(
+        trackResolver: (_) => track,
+        subtitleLoader: (_, _) async {
+          calls++;
+          return null;
+        },
+        now: () => DateTime(2026),
+      );
+      addTearDown(service.dispose);
+
+      await service.loadAutomatically(path);
+      track = track.copyWith(
+        remoteMetadata: const {
+          'subtitleUrl': 'https://api.asmr.one/replacement.vtt',
+        },
+      );
+      await service.loadAutomatically(path);
+      expect(calls, 2);
+      service.clear();
+      await service.loadAutomatically(path);
+      expect(calls, 3);
+    },
+  );
+
+  test(
+    'automatic and explicit subtitle consumers share an in-flight load',
+    () async {
+      const path = 'https://api.asmr.one/audio.mp3';
+      final completed = Completer<SubtitleTrack?>();
+      var calls = 0;
+      final service = PlaybackSubtitleService(
+        trackResolver: (_) => _remoteTrack(path),
+        subtitleLoader: (_, _) {
+          calls++;
+          return completed.future;
+        },
+      );
+      addTearDown(service.dispose);
+
+      final first = service.loadAutomatically(path);
+      final explicit = service.load(path);
+      final automatic = service.loadAutomatically(path);
+      expect(explicit, same(first));
+      expect(automatic, same(first));
+      await Future<void>.delayed(Duration.zero);
+      expect(calls, 1);
+      final loaded = SubtitleTrack(sourcePath: 'subtitle.vtt', cues: const []);
+      completed.complete(loaded);
+      expect(await first, same(loaded));
+      expect(await service.loadAutomatically(path), same(loaded));
+      expect(calls, 1);
+    },
+  );
+
   test('reports an unloaded subtitle only from track metadata', () {
     const knownPath = 'https://api.asmr.one/known.mp3';
     const unknownPath = 'https://api.asmr.one/unknown.mp3';

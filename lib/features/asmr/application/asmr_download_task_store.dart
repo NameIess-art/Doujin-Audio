@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 
@@ -7,13 +6,12 @@ import '../../../core/logging/app_log_service.dart';
 import '../../../core/media/path_matcher.dart';
 import '../../../core/persistence/app_preferences.dart';
 import 'asmr_download_models.dart';
+import 'asmr_download_internal_models.dart';
+import 'asmr_download_serialization.dart';
 
 const Duration _taskStructurePersistenceDebounce = Duration(milliseconds: 400);
 const Duration _taskProgressCheckpointInterval = Duration(seconds: 5);
 const Duration _progressNotifyMinInterval = Duration(milliseconds: 120);
-
-String _encodePersistedTaskPayload(List<Map<String, Object?>> tasks) =>
-    jsonEncode(<String, Object?>{'version': 1, 'tasks': tasks});
 
 enum AsmrDownloadStoreOperation {
   uriReferenceVisit,
@@ -21,23 +19,23 @@ enum AsmrDownloadStoreOperation {
   persistenceSnapshot,
 }
 
-typedef AsmrDownloadPersistedTaskEncoder =
-    Map<String, Object?> Function(AsmrDownloadTaskSnapshot task);
+typedef AsmrDownloadPersistenceSnapshot =
+    PersistedDownloadTask Function(AsmrDownloadTaskSnapshot task);
 
 /// Owns download task snapshots and every derived/published task state.
 final class AsmrDownloadTaskStore {
   AsmrDownloadTaskStore({
     required bool persistTasks,
-    required AsmrDownloadPersistedTaskEncoder persistedTaskEncoder,
+    required AsmrDownloadPersistenceSnapshot persistenceSnapshot,
     Future<void> Function(String? payload)? persistenceWriter,
     void Function(AsmrDownloadStoreOperation operation)? operationObserver,
   }) : _persistTasks = persistTasks,
-       _persistedTaskEncoder = persistedTaskEncoder,
+       _persistenceSnapshot = persistenceSnapshot,
        _persistenceWriter = persistenceWriter,
        _operationObserver = operationObserver;
 
   final bool _persistTasks;
-  final AsmrDownloadPersistedTaskEncoder _persistedTaskEncoder;
+  final AsmrDownloadPersistenceSnapshot _persistenceSnapshot;
   final Future<void> Function(String? payload)? _persistenceWriter;
   final void Function(AsmrDownloadStoreOperation operation)? _operationObserver;
 
@@ -256,10 +254,12 @@ final class AsmrDownloadTaskStore {
 
   void setLiveDownloadedBytes(int workId, int value) {
     final task = this[workId];
-    final maxBytes =
-        task != null && task.totalBytes > 0 ? task.totalBytes : null;
-    _liveDownloadedBytes[workId] =
-        maxBytes != null && value > maxBytes ? maxBytes : value;
+    final maxBytes = task != null && task.totalBytes > 0
+        ? task.totalBytes
+        : null;
+    _liveDownloadedBytes[workId] = maxBytes != null && value > maxBytes
+        ? maxBytes
+        : value;
   }
 
   Map<String, int> liveFileDownloadedBytes(
@@ -463,8 +463,8 @@ final class AsmrDownloadTaskStore {
       );
       final effectiveDownloadedBytes =
           task.totalBytes > 0 && downloadedBytes > task.totalBytes
-              ? task.totalBytes
-              : downloadedBytes;
+          ? task.totalBytes
+          : downloadedBytes;
       if (task.downloadedBytes == effectiveDownloadedBytes &&
           mapEquals(task.fileDownloadedBytes, fileDownloadedBytes)) {
         continue;
@@ -505,12 +505,12 @@ final class AsmrDownloadTaskStore {
     _operationObserver?.call(AsmrDownloadStoreOperation.persistenceSnapshot);
     final tasks = _tasks.values
         .where((task) => task.status != AsmrDownloadTaskStatus.completed)
-        .map(_persistedTaskEncoder)
+        .map(_persistenceSnapshot)
         .toList(growable: false);
     final write = _persistenceTail.then((_) async {
       final payload = tasks.isEmpty
           ? null
-          : await compute(_encodePersistedTaskPayload, tasks);
+          : await compute(encodePersistedDownloadTasks, tasks);
       await _writePersistedTasks(payload);
     });
     // Keep background writes and later retries usable after a failed write;

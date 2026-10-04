@@ -13,8 +13,9 @@ const String legacyRemoteCoverCacheDirectoryName = 'remote_covers';
 
 class AppCacheService {
   static const int defaultMaxCacheBytes = 300 * 1024 * 1024;
-  static final FileCachePlatformGateway _fileCache =
+  static FileCachePlatformGateway _fileCache =
       FileCachePlatformGateway.instance;
+  static bool _isAndroid = Platform.isAndroid;
 
   static int _maxCacheBytes = defaultMaxCacheBytes;
   static Future<void>? _enforceFuture;
@@ -55,10 +56,13 @@ class AppCacheService {
   }
 
   static Future<void> setMaxCacheBytes(int bytes) async {
+    _cancelScheduledEnforce();
     _maxCacheBytes = bytes <= 0 ? defaultMaxCacheBytes : bytes;
-    if (Platform.isAndroid && _protectedPaths.isEmpty) {
+    if (_isAndroid && _protectedPaths.isEmpty) {
       try {
         await _fileCache.setApplicationCacheLimit(_maxCacheBytes);
+        // The native setter also trims the cache before completing.
+        return;
       } on MissingPluginException {
         // Non-Android platforms do not expose the native cache channel.
       } catch (_) {
@@ -194,12 +198,17 @@ class AppCacheService {
   }
 
   @visibleForTesting
-  static void resetForTest() {
+  static void resetForTest({
+    FileCachePlatformGateway? fileCache,
+    bool? isAndroid,
+  }) {
     _cancelScheduledEnforce();
     scheduledEnforceEnabled = true;
     _enforceAfterLeaseRelease = false;
     _enforceRequested = false;
     _protectedPaths.clear();
+    _fileCache = fileCache ?? FileCachePlatformGateway.instance;
+    _isAndroid = isAndroid ?? Platform.isAndroid;
   }
 
   static Future<void> _drainEnforceRequests() async {
@@ -214,7 +223,7 @@ class AppCacheService {
   }
 
   static Future<void> _enforceLimitOnce() async {
-    if (Platform.isAndroid && _protectedPaths.isEmpty) {
+    if (_isAndroid && _protectedPaths.isEmpty) {
       try {
         await _fileCache.enforceApplicationCacheLimit(_maxCacheBytes);
         return;
@@ -224,7 +233,7 @@ class AppCacheService {
         // Fall back to Dart-visible cache directories below.
       }
     }
-    if (Platform.isAndroid && _protectedPaths.isNotEmpty) {
+    if (_isAndroid && _protectedPaths.isNotEmpty) {
       _enforceAfterLeaseRelease = true;
     }
     await _enforceDartCacheLimit(_maxCacheBytes);

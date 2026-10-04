@@ -94,36 +94,37 @@ class PlaylistPinnedIndicator extends StatelessWidget {
     super.key,
     required this.sessionId,
     this.color,
+    this.isSelected = false,
   });
 
   final String sessionId;
   final Color? color;
+  final bool isSelected;
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final pinColor = color ?? cs.primary;
+    final surfaceBorderColor = isSelected
+        ? Color.alphaBlend(
+            cs.primaryContainer.withValues(alpha: 0.15),
+            cs.surface,
+          )
+        : cs.surface;
     return IgnorePointer(
       child: ExcludeSemantics(
         child: Container(
           key: ValueKey<String>('playlist_session_pinned_$sessionId'),
-          width: 20,
-          height: 20,
+          width: 22,
+          height: 22,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             color: pinColor,
-            border: Border.all(color: Colors.white, width: 1.5),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.28),
-                blurRadius: 4,
-                offset: const Offset(0, 1),
-              ),
-            ],
+            border: Border.all(color: surfaceBorderColor, width: 2),
           ),
           child: const Icon(
             Icons.push_pin_rounded,
-            size: 11,
+            size: 13,
             color: Colors.white,
           ),
         ),
@@ -165,10 +166,11 @@ class PlaylistLeadingIndicators extends StatelessWidget {
             if (isPinned)
               Positioned(
                 top: 2,
-                left: 2,
+                left: 1,
                 child: PlaylistPinnedIndicator(
                   sessionId: sessionId,
                   color: pinColor,
+                  isSelected: isSelected,
                 ),
               ),
             Positioned(
@@ -591,10 +593,11 @@ class SessionListCard extends ConsumerWidget {
                                 ),
                                 if (isPinned)
                                   Positioned(
-                                    top: 4,
-                                    right: 4,
+                                    top: -2,
+                                    right: -2,
                                     child: PlaylistPinnedIndicator(
                                       sessionId: sessionId,
+                                      isSelected: isSelected,
                                       color: isAsmrOne
                                           ? asmrBlue
                                           : localPlayRose,

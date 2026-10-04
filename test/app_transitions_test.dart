@@ -5,6 +5,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
+import 'package:doujin_audio/core/widgets/shimmer_loading.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 
 class _StateProbe extends StatefulWidget {
@@ -92,6 +93,78 @@ void main() {
   });
 
   for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+    testWidgets(
+      'detail route pauses both pages animations and semantics on $platform',
+      (tester) async {
+        final semantics = tester.ensureSemantics();
+        final navigatorKey = GlobalKey<NavigatorState>();
+        final focus = FocusNode();
+        addTearDown(focus.dispose);
+        Widget page(String name, {FocusNode? focusNode}) => Scaffold(
+          body: ShimmerLoader(
+            child: Focus(
+              focusNode: focusNode,
+              child: Semantics(label: name, child: const SizedBox.expand()),
+            ),
+          ),
+        );
+        await tester.pumpWidget(
+          MaterialApp(
+            navigatorKey: navigatorKey,
+            theme: ThemeData(
+              platform: platform,
+              pageTransitionsTheme: const PageTransitionsTheme(
+                builders: {
+                  TargetPlatform.android: AppPageTransitionsBuilder(),
+                  TargetPlatform.windows: AppPageTransitionsBuilder(),
+                },
+              ),
+            ),
+            home: page('detail-origin'),
+          ),
+        );
+        final route = buildAppPageRoute<void>(
+          context: navigatorKey.currentContext!,
+          workDetailTransition: true,
+          child: page('detail-destination', focusNode: focus),
+        );
+        unawaited(navigatorKey.currentState!.push(route));
+        await tester.pump();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+        final state = tester.state(find.byType(ShimmerLoader).last);
+        expect(find.byType(ShaderMask), findsNothing);
+        expect(find.bySemanticsLabel('detail-origin'), findsNothing);
+        expect(find.bySemanticsLabel('detail-destination'), findsNothing);
+        expect(focus.canRequestFocus, isFalse);
+
+        await tester.pump(const Duration(milliseconds: 201));
+        await tester.pump();
+        expect(find.byType(ShaderMask), findsOneWidget);
+        expect(find.bySemanticsLabel('detail-destination'), findsOneWidget);
+        expect(focus.canRequestFocus, isTrue);
+        expect(tester.state(find.byType(ShimmerLoader)), same(state));
+
+        navigatorKey.currentState!.pop();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(find.byType(ShaderMask), findsNothing);
+        expect(find.bySemanticsLabel('detail-origin'), findsNothing);
+        expect(find.bySemanticsLabel('detail-destination'), findsNothing);
+        expect(focus.canRequestFocus, isFalse);
+        await tester.pump(const Duration(milliseconds: 201));
+        await tester.pump(const Duration(milliseconds: 1));
+        await tester.pump();
+        await tester.pump();
+        expect(find.byType(ShaderMask), findsOneWidget);
+        expect(find.bySemanticsLabel('detail-origin'), findsOneWidget);
+        semantics.dispose();
+        await tester.pumpWidget(const SizedBox.shrink());
+        expect(tester.takeException(), isNull);
+      },
+      variant: TargetPlatformVariant({platform}),
+    );
+
     testWidgets('route preserves content and restores input on $platform', (
       tester,
     ) async {
@@ -1489,6 +1562,86 @@ void main() {
       expect(buildCounts, <int>[1, 1, 0]);
     },
   );
+
+  for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+    testWidgets(
+      'lazy revisions update only visible pages and retain state on $platform',
+      (tester) async {
+        final index = ValueNotifier<int>(0);
+        final revision = ValueNotifier<int>(0);
+        addTearDown(index.dispose);
+        addTearDown(revision.dispose);
+        final builds = [0, 0];
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: ThemeData(platform: platform),
+            home: ValueListenableBuilder<int>(
+              valueListenable: revision,
+              builder: (_, version, _) => AppFadeThroughIndexedStack.lazy(
+                indexListenable: index,
+                itemCount: 2,
+                contentRevision: version,
+                duration: kAppMotionSlow,
+                itemBuilder: (_, page) {
+                  builds[page]++;
+                  return _StateProbe(
+                    key: ValueKey(page),
+                    label: 'revision-$version-page-$page',
+                  );
+                },
+              ),
+            ),
+          ),
+        );
+        final firstState = tester.state(find.byKey(const ValueKey(0)));
+        index.value = 1;
+        await tester.pumpAndSettle();
+        final secondState = tester.state(find.byKey(const ValueKey(1)));
+        index.value = 0;
+        await tester.pumpAndSettle();
+        expect(builds, [1, 1]);
+
+        revision.value = 1;
+        await tester.pumpAndSettle();
+        revision.value = 2;
+        await tester.pumpAndSettle();
+        expect(builds, [3, 1]);
+        expect(find.text('revision-2-page-0'), findsOneWidget);
+        expect(
+          find.text('revision-0-page-1', skipOffstage: false),
+          findsOneWidget,
+        );
+        expect(tester.state(find.byKey(const ValueKey(0))), same(firstState));
+
+        index.value = 1;
+        await tester.pump();
+        expect(builds, [3, 2]);
+        expect(find.text('revision-2-page-1'), findsOneWidget);
+        await tester.pumpAndSettle();
+        expect(tester.state(find.byKey(const ValueKey(1))), same(secondState));
+        for (var i = 0; i < 2; i++) {
+          index.value = 0;
+          await tester.pumpAndSettle();
+          index.value = 1;
+          await tester.pumpAndSettle();
+        }
+        expect(builds, [3, 2]);
+        index.value = 0;
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+        revision.value = 3;
+        index.value = 1;
+        await tester.pumpAndSettle();
+        expect(find.text('revision-3-page-1'), findsOneWidget);
+        expect(tester.state(find.byKey(const ValueKey(1))), same(secondState));
+        index.value = 0;
+        await tester.pumpAndSettle();
+        expect(find.text('revision-3-page-0'), findsOneWidget);
+        expect(tester.state(find.byKey(const ValueKey(0))), same(firstState));
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
 
   testWidgets('lazy stack skips unvisited pages during rapid switching', (
     tester,

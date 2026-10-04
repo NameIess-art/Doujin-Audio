@@ -165,7 +165,7 @@ Widget _buildCoveringPageTransition({
       ),
     ),
   );
-  return ClipRect(
+  final transition = ClipRect(
     child: LayoutBuilder(
       builder: (context, constraints) => SlideTransition(
         position: position,
@@ -206,6 +206,25 @@ Widget _buildCoveringPageTransition({
             child: child,
           ),
         ),
+      ),
+    ),
+  );
+  final interactive =
+      animation.status == AnimationStatus.completed &&
+      secondaryAnimation.status == AnimationStatus.dismissed;
+  // Record a quiet page layer while sliding; skeletons and child animations
+  // resume with input and semantics only after both route motions finish.
+  return _buildPageActivity(transition, interactive: interactive);
+}
+
+Widget _buildPageActivity(Widget child, {required bool interactive}) {
+  return TickerMode(
+    enabled: interactive,
+    child: ExcludeFocus(
+      excluding: !interactive,
+      child: ExcludeSemantics(
+        excluding: !interactive,
+        child: IgnorePointer(ignoring: !interactive, child: child),
       ),
     ),
   );
@@ -657,13 +676,15 @@ class AppFadeThroughIndexedStack extends StatefulWidget {
     this.duration = const Duration(milliseconds: 350),
     this.onTransitionCompleted,
   }) : itemCount = children.length,
-       itemBuilder = null;
+       itemBuilder = null,
+       contentRevision = null;
 
   AppFadeThroughIndexedStack.lazy({
     super.key,
     required this.indexListenable,
     required this.itemCount,
     required IndexedWidgetBuilder this.itemBuilder,
+    this.contentRevision,
     this.separateHeader = false,
     this.duration = const Duration(milliseconds: 350),
     this.onTransitionCompleted,
@@ -674,6 +695,10 @@ class AppFadeThroughIndexedStack extends StatefulWidget {
   final List<Widget> children;
   final int itemCount;
   final IndexedWidgetBuilder? itemBuilder;
+
+  /// Changed builder inputs are applied when retained pages become visible.
+  /// Leave null to keep the initial widgets across parent rebuilds.
+  final Object? contentRevision;
   final bool separateHeader;
   final Duration duration;
   final ValueChanged<int>? onTransitionCompleted;
@@ -691,6 +716,7 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
   int _transitionDirection = 1;
   bool _isAnimating = false;
   late List<Widget?> _lazyChildren;
+  final Set<int> _dirtyChildren = {};
   late List<GlobalKey> _pageKeys;
   final Object _transitionInteraction = Object();
   final Set<int> _preparedPages = {};
@@ -749,6 +775,13 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
       }
       _resetLazyChildren();
       _handleIndexChanged();
+    } else if (_isLazy && widget.contentRevision != oldWidget.contentRevision) {
+      for (var index = 0; index < _itemCount; index++) {
+        if (_lazyChildren[index] != null) {
+          _dirtyChildren.add(index);
+          _preparedPages.remove(index);
+        }
+      }
     }
   }
 
@@ -770,6 +803,7 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
           index < previousKeys.length ? previousKeys[index] : GlobalKey(),
     );
     _controller.stop();
+    _dirtyChildren.clear();
     _pendingIndex = null;
     _preparedPages.removeWhere((index) => index >= _itemCount);
     _isAnimating = false;
@@ -893,11 +927,17 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
 
   Widget _childAt(int index) {
     if (!_isLazy) return widget.children[index];
-    if (_lazyChildren[index] == null &&
-        index != _currentIndex &&
-        index != _targetIndex &&
-        index != _pendingIndex) {
-      return const SizedBox.shrink();
+    final visible =
+        index == _currentIndex ||
+        index == _targetIndex ||
+        index == _pendingIndex;
+    if (!visible) {
+      return _lazyChildren[index] ?? const SizedBox.shrink();
+    }
+    // Retain hidden elements, but apply changed query/selection inputs only
+    // when they become visible, before their preparation layout.
+    if (_dirtyChildren.remove(index)) {
+      _lazyChildren[index] = widget.itemBuilder!(context, index);
     }
     return _lazyChildren[index] ??= widget.itemBuilder!(context, index);
   }
@@ -1204,6 +1244,18 @@ class AppPreparedPageRoute<T> extends PageRouteBuilder<T> {
   bool _prepared = false;
   bool _disposed = false;
   Timer? _exitCompletionTimer;
+
+  // Material routes require a delegated transition to follow a custom route's
+  // secondary animation. Keep their content still and pause it while covered.
+  @override
+  DelegatedTransitionBuilder get delegatedTransition =>
+      (context, animation, secondaryAnimation, allowSnapshotting, child) =>
+          _buildPageActivity(
+            child!,
+            interactive:
+                animation.status == AnimationStatus.completed &&
+                secondaryAnimation.status == AnimationStatus.dismissed,
+          );
 
   @override
   Widget buildPage(

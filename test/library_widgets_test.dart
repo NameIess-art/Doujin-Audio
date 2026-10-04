@@ -1392,6 +1392,15 @@ void main() {
     var attempts = 0;
     var shouldFail = true;
     final fixture = AppRuntimeWidgetTestFixture(
+      libraryCardSnapshotBuilder: (payload) async {
+        attempts++;
+        if (shouldFail) throw StateError('synthetic tree failure');
+        return const LibraryOrganizer().buildTree(
+          tracks: payload.tracks,
+          watchedFolders: payload.watchedFolders,
+          watchedLibraries: payload.watchedLibraries,
+        );
+      },
       libraryTreeSnapshotBuilder: (payload) async {
         attempts++;
         if (shouldFail) throw StateError('synthetic tree failure');
@@ -1752,7 +1761,7 @@ void main() {
     },
   );
 
-  testWidgets('switching library categories collapses the element selector', (
+  testWidgets('switching library categories preserves the element selector', (
     WidgetTester tester,
   ) async {
     final fixture = AppRuntimeWidgetTestFixture();
@@ -1921,8 +1930,8 @@ void main() {
     );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 350));
-    expect(find.text('展开'), findsOneWidget);
-    expect(find.text('收起'), findsNothing);
+    expect(find.text('收起'), findsOneWidget);
+    expect(find.text('展开'), findsNothing);
     expect(
       find.byType(LibraryCategoryTermBox).evaluate().single,
       same(tagsSelector),

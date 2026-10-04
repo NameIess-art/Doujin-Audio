@@ -1,6 +1,8 @@
 import 'package:doujin_audio/core/app_language.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
+import 'package:doujin_audio/core/widgets/app_search_page.dart';
+import 'package:doujin_audio/core/widgets/top_page_header.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_library_controller.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_providers.dart';
@@ -97,6 +99,215 @@ void main() {
   });
 
   for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+    testWidgets(
+      'ASMR empty search uses root cache on its first frame on $platform',
+      (tester) async {
+        final controller = _PresentationController(createTestAsmrServices());
+        final fixture = AppRuntimeWidgetTestFixture();
+        addTearDown(controller.dispose);
+        addTearDown(fixture.dispose);
+        await tester.pumpWidget(
+          fixture.build(
+            const AsmrTab(),
+            overrides: [
+              asmrLibraryControllerProvider.overrideWithValue(controller),
+            ],
+          ),
+        );
+        await pumpUntilFound(tester, find.text('Published work'));
+        await tester.pumpAndSettle();
+        final reads = controller.categoryReads;
+        final loads = controller.categoryLoads;
+        final initializations = controller.initializations;
+        await tester.tap(find.byKey(const ValueKey('asmr_search_button')));
+        await tester.pump();
+        final results = find.byKey(const ValueKey('asmr_search_collected'));
+        expect(
+          find.descendant(of: results, matching: find.text('Published work')),
+          findsOneWidget,
+        );
+        expect(controller.categoryReads, reads);
+        await tester.pumpAndSettle();
+        expect(controller.categoryReads, reads);
+        expect(controller.categoryLoads, loads);
+        expect(controller.initializations, initializations);
+        final search = tester.widget<AppSearchPageScaffold<AsmrCategoryType>>(
+          find.byType(AppSearchPageScaffold<AsmrCategoryType>),
+        );
+        search.onSubmitted('new query');
+        await tester.pumpAndSettle();
+        expect(controller.lastSearchQuery, 'new query');
+        expect(controller.categoryReads, greaterThan(reads));
+        final searchReads = controller.categoryReads;
+        search.controller.text = 'new query';
+        search.onCloseOrClear();
+        await tester.pump();
+        expect(
+          find.descendant(of: results, matching: find.text('Published work')),
+          findsOneWidget,
+        );
+        await tester.pumpAndSettle();
+        expect(controller.categoryReads, searchReads);
+        expect(controller.categoryLoads, loads);
+        expect(controller.initializations, initializations);
+        Navigator.of(tester.element(results)).pop();
+        await tester.pumpAndSettle();
+        controller.cacheValid = false;
+        controller.publish('Reloaded work');
+        tester
+            .widget<IconButton>(
+              find.byKey(const ValueKey('asmr_search_button')),
+            )
+            .onPressed!();
+        await tester.pumpAndSettle();
+        await tester.pump(interaction.idleDelay);
+        await tester.pumpAndSettle();
+        expect(controller.categoryLoads, greaterThan(loads));
+        expect(
+          find.descendant(of: results, matching: find.text('Reloaded work')),
+          findsOneWidget,
+        );
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+      variant: TargetPlatformVariant({platform}),
+    );
+
+    testWidgets(
+      'ASMR category switches retain widgets and publish hidden updates on $platform',
+      (tester) async {
+        final controller = _PresentationController(createTestAsmrServices());
+        final fixture = AppRuntimeWidgetTestFixture();
+        addTearDown(controller.dispose);
+        addTearDown(fixture.dispose);
+        await tester.pumpWidget(
+          fixture.build(
+            const AsmrTab(),
+            overrides: [
+              asmrLibraryControllerProvider.overrideWithValue(controller),
+            ],
+          ),
+        );
+        await pumpUntilFound(tester, find.text('Published work'));
+        await tester.pumpAndSettle();
+        void select(AsmrCategoryType category) => tester
+            .widget<HeaderSegmentedCategoryBar<AsmrCategoryType>>(
+              find.byType(HeaderSegmentedCategoryBar<AsmrCategoryType>),
+            )
+            .onSelected(category);
+        Future<void> settleCategory() async {
+          await tester.pumpAndSettle();
+          await tester.pump(interaction.idleDelay);
+          await tester.pumpAndSettle();
+        }
+
+        final collected = find.byKey(
+          const ValueKey(AsmrCategoryType.collected),
+          skipOffstage: false,
+        );
+        final initialWidget = tester.widget(collected);
+        final initialState = tester.state(collected);
+        select(AsmrCategoryType.recommendation);
+        await settleCategory();
+        select(AsmrCategoryType.collected);
+        await settleCategory();
+        final initialReads = controller.categoryReads;
+        for (var i = 0; i < 3; i++) {
+          select(AsmrCategoryType.recommendation);
+          await settleCategory();
+          select(AsmrCategoryType.collected);
+          await settleCategory();
+        }
+        expect(tester.widget(collected), same(initialWidget));
+        expect(tester.state(collected), same(initialState));
+        expect(controller.categoryReads, initialReads);
+
+        select(AsmrCategoryType.recommendation);
+        await settleCategory();
+        controller.publish('Newest work');
+        await tester.pumpAndSettle();
+        expect(
+          find.descendant(
+            of: collected,
+            matching: find.text('Published work', skipOffstage: false),
+            skipOffstage: false,
+          ),
+          findsOneWidget,
+        );
+        select(AsmrCategoryType.collected);
+        await settleCategory();
+        expect(find.text('Newest work'), findsOneWidget);
+        expect(tester.state(collected), same(initialState));
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+      variant: TargetPlatformVariant({platform}),
+    );
+
+    testWidgets(
+      'ASMR search categories retain content and adopt changed queries on $platform',
+      (tester) async {
+        final controller = _PresentationController(createTestAsmrServices());
+        final fixture = AppRuntimeWidgetTestFixture();
+        addTearDown(controller.dispose);
+        addTearDown(fixture.dispose);
+        await tester.pumpWidget(
+          fixture.build(
+            const AsmrTab(),
+            overrides: [
+              asmrLibraryControllerProvider.overrideWithValue(controller),
+            ],
+          ),
+        );
+        await pumpUntilFound(tester, find.text('Published work'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const ValueKey('asmr_search_button')));
+        await tester.pumpAndSettle();
+        AppSearchPageScaffold<AsmrCategoryType> search() =>
+            tester.widget(find.byType(AppSearchPageScaffold<AsmrCategoryType>));
+        final collected = find.byKey(
+          const ValueKey('asmr_search_collected'),
+          skipOffstage: false,
+        );
+        final initialWidget = tester.widget(collected);
+        final initialState = tester.state(collected);
+        for (var i = 0; i < 3; i++) {
+          search().onCategorySelected(AsmrCategoryType.recommendation);
+          await tester.pumpAndSettle();
+          search().onCategorySelected(AsmrCategoryType.collected);
+          await tester.pumpAndSettle();
+        }
+        expect(tester.widget(collected), same(initialWidget));
+        expect(tester.state(collected), same(initialState));
+
+        search().onCategorySelected(AsmrCategoryType.recommendation);
+        await tester.pumpAndSettle();
+        search().onSubmitted('Newest');
+        controller.publish('Newest work');
+        await tester.pumpAndSettle();
+        final readsBeforeReturn = controller.categoryReads;
+        search().onCategorySelected(AsmrCategoryType.collected);
+        await tester.pumpAndSettle();
+        await tester.pump(interaction.idleDelay);
+        await tester.pumpAndSettle();
+        expect(controller.lastSearchQuery, 'Newest');
+        expect(controller.categoryReads, greaterThan(readsBeforeReturn));
+        expect(tester.state(collected), same(initialState));
+        expect(tester.widget(collected), isNot(same(initialWidget)));
+        expect(find.text('Published work'), findsNothing);
+        expect(
+          find.descendant(
+            of: collected,
+            matching: find.textContaining('Newest work', findRichText: true),
+          ),
+          findsWidgets,
+        );
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+      variant: TargetPlatformVariant({platform}),
+    );
+
     testWidgets(
       'ASMR repeat switches retain category projections on $platform',
       (tester) async {
@@ -287,6 +498,11 @@ class _PresentationController extends AsmrLibraryController {
   bool needsRetry = false;
   int workCount = 1;
   int loadMoreCount = 0;
+  String lastSearchQuery = '';
+  int initializations = 0;
+  int categoryLoads = 0;
+  bool cacheValid = true;
+  AppLanguage _presentationLanguage = AppLanguage.zh;
 
   void publish(String value) {
     title = value;
@@ -296,6 +512,9 @@ class _PresentationController extends AsmrLibraryController {
 
   @override
   bool get initialized => true;
+
+  @override
+  bool hasLoadedCategory(AsmrCategoryType category) => cacheValid;
 
   @override
   AsmrLibraryGlobalViewState get globalViewState => AsmrLibraryGlobalViewState(
@@ -313,10 +532,11 @@ class _PresentationController extends AsmrLibraryController {
     bool searchSession = false,
   }) {
     categoryReads++;
+    if (searchSession) lastSearchQuery = searchQuery;
     return AsmrCategoryViewState(
       category: category,
       works: [
-        for (var i = 0; i < workCount; i++)
+        for (var i = 0; cacheValid && i < workCount; i++)
           AsmrWork.fromJson({
             'id': i + 1,
             'title': i == 0 ? title : '$title $i',
@@ -326,7 +546,7 @@ class _PresentationController extends AsmrLibraryController {
       isLoadingMore: false,
       isRefreshing: false,
       isStale: false,
-      hasAttemptedLoad: true,
+      hasAttemptedLoad: cacheValid,
       hasMore: hasMore,
       needsLoadMoreRetry: needsRetry,
       totalCount: workCount,
@@ -344,17 +564,31 @@ class _PresentationController extends AsmrLibraryController {
   }
 
   @override
-  Future<void> initialize({AsmrContentLanguage? defaultLanguage}) async {}
+  Future<void> initialize({AsmrContentLanguage? defaultLanguage}) async {
+    initializations++;
+  }
 
   @override
-  bool setPageLanguage(AppLanguage language) => false;
+  AppLanguage get pageLanguage => _presentationLanguage;
+
+  @override
+  bool setPageLanguage(AppLanguage language) {
+    _presentationLanguage = language;
+    return false;
+  }
 
   @override
   Future<void> ensureCategoryLoaded(
     AsmrCategoryType category, {
     String searchQuery = '',
     bool searchSession = false,
-  }) async {}
+  }) async {
+    categoryLoads++;
+    if (!cacheValid) {
+      cacheValid = true;
+      notifyListeners();
+    }
+  }
 
   @override
   Future<void> loadMoreCategory(

@@ -17,9 +17,7 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
       category: ScrollController(keepScrollOffset: false),
   };
   Timer? _debounceTimer;
-  late AsmrCategoryType _category;
   late final ValueNotifier<int> _activeCategoryIndex;
-  late final Set<AsmrCategoryType> _visitedCategories;
   String _query = '';
   bool _showSearchPlaceholder = false;
   bool _isSelectionMode = false;
@@ -31,15 +29,18 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
   late final AppLanguageProvider _languageProvider;
   AsmrLibraryController? _searchController;
 
+  AsmrCategoryType get _category =>
+      kAsmrSelectableCategories[_activeCategoryIndex.value];
+
   @override
   void initState() {
     super.initState();
-    _category = widget.initialCategory;
-    final initialIndex = kAsmrSelectableCategories.indexOf(_category);
+    final initialIndex = kAsmrSelectableCategories.indexOf(
+      widget.initialCategory,
+    );
     _activeCategoryIndex = ValueNotifier<int>(
       initialIndex >= 0 ? initialIndex : 0,
     );
-    _visitedCategories = <AsmrCategoryType>{_category};
     _searchController = ref.read(asmrLibraryControllerProvider);
     _searchController?.beginSearchSession();
     _languageProvider = ref.read(appLanguageProviderInstanceProvider);
@@ -117,15 +118,11 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
     if (_category == category) return;
     final outgoingScroll = _scrollControllers[_category]!;
     if (outgoingScroll.hasClients) outgoingScroll.jumpTo(outgoingScroll.offset);
-    _visitedCategories.add(category);
+    if (_isSelectionMode) setState(_clearSelection);
     final targetIndex = kAsmrSelectableCategories.indexOf(category);
     if (targetIndex >= 0) {
       _activeCategoryIndex.value = targetIndex;
     }
-    setState(() {
-      _category = category;
-      _clearSelection();
-    });
     _scheduleRefresh(showSearchPlaceholder: _query.isNotEmpty);
   }
 
@@ -193,6 +190,27 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
 
   void _scheduleRefresh({bool showSearchPlaceholder = false}) {
     _requestSerial++;
+    if (_query.isEmpty) {
+      final controller = ref.read(asmrLibraryControllerProvider);
+      final cached = ref
+          .read(
+            asmrCategoryStateProvider((
+              category: _category,
+              searchQuery: '',
+              searchSession: false,
+            )),
+          )
+          .value;
+      if (controller != null &&
+          controller.pageLanguage == _languageProvider.language &&
+          cached != null &&
+          (controller.hasLoadedCategory(_category) ||
+              controller.isLoadingCategory(_category))) {
+        _refreshPending = false;
+        UiInteractionCoordinator.instance.cancelCommit(_refreshCommitKey);
+        return;
+      }
+    }
     _refreshPending = true;
     if (showSearchPlaceholder) {
       final cached = ref
@@ -202,10 +220,10 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
             searchQuery: _query,
             searchSession: true,
           );
-      setState(
-        () => _showSearchPlaceholder =
-            _query.isNotEmpty && !(cached?.hasAttemptedLoad ?? false),
-      );
+      final pending = _query.isNotEmpty && !(cached?.hasAttemptedLoad ?? false);
+      if (_showSearchPlaceholder != pending) {
+        setState(() => _showSearchPlaceholder = pending);
+      }
     }
     UiInteractionCoordinator.instance.scheduleCommit(
       key: _refreshCommitKey,
@@ -234,15 +252,18 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
       searchQuery: query,
       searchSession: true,
     );
-    setState(() {
-      _showSearchPlaceholder =
-          showSearchPlaceholder &&
-          query.isNotEmpty &&
-          !(cached?.hasAttemptedLoad ?? false);
-    });
+    final pending =
+        showSearchPlaceholder &&
+        query.isNotEmpty &&
+        !(cached?.hasAttemptedLoad ?? false);
+    if (_showSearchPlaceholder != pending) {
+      setState(() => _showSearchPlaceholder = pending);
+    }
     if (!force && (cached?.hasAttemptedLoad ?? false)) return;
     if (controller == null) {
-      if (mounted && requestSerial == _requestSerial) {
+      if (mounted &&
+          requestSerial == _requestSerial &&
+          _showSearchPlaceholder) {
         setState(() => _showSearchPlaceholder = false);
       }
       return;
@@ -275,7 +296,9 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
             ),
     );
     if (!mounted || requestSerial != _requestSerial) return;
-    setState(() => _showSearchPlaceholder = false);
+    if (_showSearchPlaceholder) {
+      setState(() => _showSearchPlaceholder = false);
+    }
   }
 
   @override
@@ -306,70 +329,77 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
           ),
         )
         .toList(growable: false);
-    final body = AppFadeThroughIndexedStack(
+    final body = AppFadeThroughIndexedStack.lazy(
       key: const ValueKey<String>('asmr_search_category_stack'),
       indexListenable: _activeCategoryIndex,
       duration: kAppMotionSlow,
-      children: [
-        for (final category in kAsmrSelectableCategories)
-          if (_visitedCategories.contains(category))
-            _AsmrCategoryList(
-              key: ValueKey<String>('asmr_search_${category.name}'),
-              isActive: category == _category,
-              category: category,
-              isLoadPending: _showSearchPlaceholder,
-              scrollController: _scrollControllers[category]!,
-              searchQuery: _query,
-              searchSession: true,
-              topInset: _isSelectionMode
-                  ? AppPageHeaderMetrics.expandedToolbarHeight +
-                        MediaQuery.paddingOf(context).top +
-                        AppPageHeaderMetrics.bottomSpacing
-                  : AppSearchPageScaffold.controlsTopInset(context),
-              bottomInset: MediaQuery.paddingOf(context).bottom + 16,
-              onRefresh: () => _refresh(force: true),
-              isSelectionMode: _isSelectionMode,
-              selectedWorkIds: _selectedWorkIds,
-              onEnterSelectionMode: _enterSelectionMode,
-              onToggleSelection: _toggleWorkSelection,
-            )
-          else
-            const SizedBox.shrink(),
-      ],
+      itemCount: kAsmrSelectableCategories.length,
+      contentRevision: Object(),
+      itemBuilder: (context, index) {
+        final category = kAsmrSelectableCategories[index];
+        return _AsmrCategoryList(
+          key: ValueKey<String>('asmr_search_${category.name}'),
+          isActive: () => category == _category,
+          category: category,
+          isLoadPending: _showSearchPlaceholder,
+          scrollController: _scrollControllers[category]!,
+          searchQuery: _query,
+          searchSession: true,
+          topInset: _isSelectionMode
+              ? AppPageHeaderMetrics.expandedToolbarHeight +
+                    MediaQuery.paddingOf(context).top +
+                    AppPageHeaderMetrics.bottomSpacing
+              : AppSearchPageScaffold.controlsTopInset(context),
+          bottomInset: MediaQuery.paddingOf(context).bottom + 16,
+          onRefresh: () => _refresh(force: true),
+          isSelectionMode: _isSelectionMode,
+          selectedWorkIds: _selectedWorkIds,
+          onEnterSelectionMode: _enterSelectionMode,
+          onToggleSelection: _toggleWorkSelection,
+        );
+      },
     );
-    final selectedWorks = _selectedWorks();
-    return AppSearchPageScaffold<AsmrCategoryType>(
-      controller: _controller,
-      focusNode: _focusNode,
-      hintText: i18n.tr('asmr_search_hint'),
-      categories: categories,
-      selectedCategory: _category,
-      onCategorySelected: _selectCategory,
-      onChanged: _onChanged,
-      onSubmitted: (value) => unawaited(_onSubmitted(value)),
-      onCloseOrClear: _closeOrClear,
-      accentColor: accent,
-      controlsOverlay: _isSelectionMode
-          ? Theme(
-              data: asmrThemeData(context),
-              child: _AsmrBatchSelectionHeader(
-                keyPrefix: 'asmr_search',
-                i18n: i18n,
-                selectedWorks: selectedWorks,
-                onAddToPlaylist: selectedWorks.isEmpty
-                    ? null
-                    : _addSelectedWorksToPlaylist,
-                onDownload: selectedWorks.isEmpty
-                    ? null
-                    : _downloadSelectedWorks,
-                onToggleFavorite: selectedWorks.isEmpty
-                    ? null
-                    : _toggleSelectedFavorites,
-                onExit: _exitSelectionMode,
-              ),
-            )
-          : null,
-      body: body,
+    return ValueListenableBuilder<int>(
+      valueListenable: _activeCategoryIndex,
+      child: body,
+      builder: (context, _, body) {
+        final selectedWorks = _isSelectionMode
+            ? _selectedWorks()
+            : <AsmrWork>[];
+        return AppSearchPageScaffold<AsmrCategoryType>(
+          controller: _controller,
+          focusNode: _focusNode,
+          hintText: i18n.tr('asmr_search_hint'),
+          categories: categories,
+          selectedCategory: _category,
+          onCategorySelected: _selectCategory,
+          onChanged: _onChanged,
+          onSubmitted: (value) => unawaited(_onSubmitted(value)),
+          onCloseOrClear: _closeOrClear,
+          accentColor: accent,
+          controlsOverlay: _isSelectionMode
+              ? Theme(
+                  data: asmrThemeData(context),
+                  child: _AsmrBatchSelectionHeader(
+                    keyPrefix: 'asmr_search',
+                    i18n: i18n,
+                    selectedWorks: selectedWorks,
+                    onAddToPlaylist: selectedWorks.isEmpty
+                        ? null
+                        : _addSelectedWorksToPlaylist,
+                    onDownload: selectedWorks.isEmpty
+                        ? null
+                        : _downloadSelectedWorks,
+                    onToggleFavorite: selectedWorks.isEmpty
+                        ? null
+                        : _toggleSelectedFavorites,
+                    onExit: _exitSelectionMode,
+                  ),
+                )
+              : null,
+          body: body!,
+        );
+      },
     );
   }
 }

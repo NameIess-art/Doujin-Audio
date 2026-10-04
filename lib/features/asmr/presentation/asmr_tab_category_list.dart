@@ -47,7 +47,7 @@ class _AsmrCategoryList extends ConsumerStatefulWidget {
     required this.onToggleSelection,
   });
 
-  final bool isActive;
+  final bool Function() isActive;
   final bool Function()? isPageActive;
   final AsmrCategoryType category;
   final bool isLoadPending;
@@ -88,7 +88,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
   final Set<AnimationController> _loadingBatchControllers = {};
 
   bool get _isActive =>
-      widget.isActive &&
+      widget.isActive() &&
       (widget.isPageActive?.call() ?? true) &&
       (_tickerModeNotifier?.value.enabled ?? true) &&
       ModalRoute.of(context)?.isCurrent != false;
@@ -220,7 +220,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
     final request = (
       category: widget.category,
       searchQuery: normalizedSearchQuery,
-      searchSession: widget.searchSession,
+      searchSession: widget.searchSession && normalizedSearchQuery.isNotEmpty,
     );
     final categoryProvider = asmrCategoryStateProvider(request);
     final snapshot = ref.watch(categoryProvider);

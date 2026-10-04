@@ -125,6 +125,83 @@ void main() {
     );
   }
 
+  for (final closing in [false, true]) {
+    testWidgets(
+      closing
+          ? 'initialization finishing during closing starts no file request'
+          : 'initialization finishing during interaction defers file requests',
+      (tester) async {
+        final interaction = UiInteractionCoordinator.instance;
+        interaction.resetForTest();
+        addTearDown(interaction.resetForTest);
+        final fixture = AppRuntimeWidgetTestFixture();
+        addTearDown(fixture.dispose);
+        final api = _TrackApi();
+        final controller = _InitializingTrackController(
+          createTestAsmrServices(
+            persistenceRepository: fixture.persistenceRepository,
+            apiService: api,
+          ),
+        );
+        addTearDown(controller.dispose);
+        await tester.pumpWidget(
+          fixture.build(
+            Builder(
+              builder: (context) => TextButton(
+                onPressed: () => showAsmrWorkDetailSheet(context, _work),
+                child: const Text('Open initializing detail'),
+              ),
+            ),
+            navigatorObservers: [UiInteractionNavigatorObserver()],
+            overrides: [
+              asmrLibraryControllerProvider.overrideWithValue(controller),
+            ],
+          ),
+        );
+        await tester.tap(find.text('Open initializing detail'));
+        await tester.pump();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+        await tester.pump(const Duration(milliseconds: 301));
+        await tester.pump(interaction.idleDelay);
+        await tester.pump();
+        expect(controller.initializationRequests, 1);
+        expect(api.treeRequests, 0);
+
+        final activity = Object();
+        if (closing) {
+          Navigator.of(tester.element(find.byType(WorkDetailPage))).pop();
+        } else {
+          interaction.beginInteraction(activity);
+        }
+        await tester.pump();
+        controller.initialization.complete();
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(find.byType(WorkDetailPage), findsOneWidget);
+        expect(api.treeRequests, 0);
+        if (closing) {
+          await tester.pumpAndSettle();
+          await tester.pump(interaction.idleDelay);
+          expect(find.byType(WorkDetailPage), findsNothing);
+          expect(api.treeRequests, 0);
+        } else {
+          interaction.endInteraction(activity);
+          await tester.pump(interaction.idleDelay);
+          await settleIo(tester);
+          expect(api.treeRequests, 1);
+          expect(find.text('audio'), findsOneWidget);
+          await tester.pumpWidget(const SizedBox.shrink());
+          await tester.pump(interaction.idleDelay);
+        }
+        expect(tester.takeException(), isNull);
+      },
+      variant: const TargetPlatformVariant({
+        TargetPlatform.android,
+        TargetPlatform.windows,
+      }),
+    );
+  }
+
   testWidgets(
     'reopening online details displays the cached tree during navigation',
     (tester) async {
@@ -508,6 +585,26 @@ final _nodes = [
       'mediaStreamUrl': 'https://example.test/$name',
     }),
 ];
+
+class _InitializingTrackController extends AsmrLibraryController {
+  _InitializingTrackController(TestAsmrServices services)
+    : super(
+        preferencesStore: services.preferencesStore,
+        remoteCatalogService: services.remoteCatalogService,
+        accountSyncService: services.accountSyncService,
+      );
+
+  final initialization = Completer<void>();
+  int initializationRequests = 0;
+
+  @override
+  Future<void> initializeForVisiblePage({
+    AsmrContentLanguage? defaultLanguage,
+  }) {
+    initializationRequests++;
+    return initialization.future;
+  }
+}
 
 class _TrackApi extends AsmrApiService {
   int treeRequests = 0;

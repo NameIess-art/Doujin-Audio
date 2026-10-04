@@ -19,6 +19,7 @@ import '../../../core/ui/visual_settings_providers.dart';
 import '../../../core/widgets/app_bottom_sheet.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/app_transitions.dart';
+import '../../../core/widgets/animated_reorder.dart';
 import '../../../core/widgets/async_cover_image.dart';
 import '../../../core/widgets/mobile_overlay_inset.dart';
 import '../../../core/widgets/page_header_inset.dart';
@@ -411,7 +412,6 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
       final track = paths.sessionTrackForPath(session.id, structure.trackPath);
       final coverPath = library.resolvedPlaybackCoverPathForTrack(track);
       final card = RepaintBoundary(
-        key: ValueKey(session.id),
         child: structure.isPlaybackQueue
             ? PlaybackQueueCard(
                 session: session,
@@ -470,8 +470,17 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                 onOpen: () => _openSessionDetail(context, session.id),
               ),
       );
-      return BrowseAnchor(id: session.id, child: card);
+      return AnimatedReorderItem(
+        key: ValueKey(session.id),
+        id: session.id,
+        child: BrowseAnchor(id: session.id, child: card),
+      );
     }
+
+    final sessionIndices = <Key, int>{
+      for (var i = 0; i < visibleEntries.length; i++)
+        ValueKey(visibleEntries[i].session.id): i,
+    };
 
     final page = ScrollActivityGate(
       child: PageHeaderInset(
@@ -500,22 +509,28 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                       onOpenLibrary: widget.onOpenLibrary,
                     ),
                   if (structureState.hasSessions)
-                    ListView.builder(
-                      key: const PageStorageKey<String>('playlist_list'),
-                      controller: _scrollController,
-                      physics: const ClampingScrollPhysics(),
-                      padding: EdgeInsets.fromLTRB(
-                        playlistListHorizontalPadding,
-                        topPadding,
-                        playlistListHorizontalPadding,
-                        bottomPadding,
+                    AnimatedReorder(
+                      order: visibleEntries
+                          .map((entry) => entry.session.id)
+                          .toList(),
+                      child: ListView.builder(
+                        key: const PageStorageKey<String>('playlist_list'),
+                        controller: _scrollController,
+                        physics: const ClampingScrollPhysics(),
+                        padding: EdgeInsets.fromLTRB(
+                          playlistListHorizontalPadding,
+                          topPadding,
+                          playlistListHorizontalPadding,
+                          bottomPadding,
+                        ),
+                        cacheExtent: listCacheExtent,
+                        clipBehavior: Clip.none,
+                        keyboardDismissBehavior:
+                            ScrollViewKeyboardDismissBehavior.onDrag,
+                        itemCount: visibleEntries.length + 1,
+                        itemBuilder: buildSessionItem,
+                        findChildIndexCallback: (key) => sessionIndices[key],
                       ),
-                      cacheExtent: listCacheExtent,
-                      clipBehavior: Clip.none,
-                      keyboardDismissBehavior:
-                          ScrollViewKeyboardDismissBehavior.onDrag,
-                      itemCount: visibleEntries.length + 1,
-                      itemBuilder: buildSessionItem,
                     ),
                 ],
               ),

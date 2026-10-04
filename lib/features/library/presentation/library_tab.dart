@@ -20,6 +20,7 @@ import '../../../core/ui/ui_operation_service.dart';
 import '../application/library_scanner_service.dart';
 import '../application/library_catalog.dart';
 import '../application/library_scan_coordinator.dart';
+import '../../../core/logging/app_log_service.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/mobile_overlay_inset.dart';
@@ -511,11 +512,21 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
         return;
       }
       unawaited(
-        libraryFacade.ensureCardSnapshot().whenComplete(() {
-          if (mounted && _cardSnapshotRequestRevision == structureRevision) {
-            _cardSnapshotRequestRevision = null;
-          }
-        }),
+        libraryFacade
+            .ensureCardSnapshot()
+            .catchError((Object error, StackTrace stackTrace) {
+              AppLogService.error(
+                'library_card_snapshot_failed',
+                error: error,
+                stackTrace: stackTrace,
+              );
+              return LibraryTreeSnapshot(tree: const [], leafFolderCount: 0);
+            })
+            .whenComplete(() {
+              if (mounted && _cardSnapshotRequestRevision == structureRevision) {
+                _cardSnapshotRequestRevision = null;
+              }
+            }),
       );
     });
   }

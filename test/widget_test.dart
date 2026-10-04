@@ -3324,8 +3324,9 @@ void main() {
           await tester.pumpAndSettle();
           expect(
             controller.categoryViewReadCounts[AsmrCategoryType.collected],
-            greaterThan(collectedReads!),
+            inSearch ? collectedReads : greaterThan(collectedReads!),
           );
+          expect(find.text('Loaded work', findRichText: true), findsOneWidget);
           expect(tester.takeException(), isNull);
         },
         variant: TargetPlatformVariant({platform}),
@@ -5814,6 +5815,14 @@ final class _QueuedEmptyAsmrLibraryController extends AsmrLibraryController {
     if (emptyCollectedOnInitialLoad) return const <AsmrWork>[];
     return <AsmrWork>[_collectedWork, _secondCollectedWork];
   }
+
+  @override
+  bool hasLoadedCategory(AsmrCategoryType category) =>
+      category == AsmrCategoryType.recommendation
+      ? recommendationRefreshCount > 0 && !_recommendationLoading
+      : category == AsmrCategoryType.collected && delayInitialCollectedRefresh
+      ? _initialCollectedRefresh.isCompleted
+      : true;
 
   @override
   List<AsmrWork> filteredWorksFor(

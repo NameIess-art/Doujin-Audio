@@ -42,19 +42,25 @@ void main() {
     required ValueChanged<List<LibraryNode>> onTreeChanged,
     bool active = true,
     int queryRevision = 0,
-  }) => LibrarySearchAllResults(
-    active: active,
-    query: query,
-    queryRevision: queryRevision,
-    structureRevision: fixture.library.structureRevision,
-    detailRevision: fixture.library.detailCacheService.revision,
-    scrollController: scrollController,
-    topPadding: 0,
-    isSelectionMode: false,
-    selectedPaths: const {},
-    onEnterSelectionMode: (_) {},
-    onToggleSelection: (_) {},
-    onTreeChanged: onTreeChanged,
+  }) => Offstage(
+    offstage: !active,
+    child: TickerMode(
+      enabled: active,
+      child: LibrarySearchAllResults(
+        isActive: () => active,
+        query: query,
+        queryRevision: queryRevision,
+        structureRevision: fixture.library.structureRevision,
+        detailRevision: fixture.library.detailCacheService.revision,
+        scrollController: scrollController,
+        topPadding: 0,
+        isSelectionMode: false,
+        selectedPaths: const {},
+        onEnterSelectionMode: (_) {},
+        onToggleSelection: (_) {},
+        onTreeChanged: onTreeChanged,
+      ),
+    ),
   );
 
   testWidgets(
@@ -89,15 +95,14 @@ void main() {
     },
   );
 
-  testWidgets('cached root cards display before the full tree finishes', (
+  testWidgets('cached root cards display without building the full tree', (
     tester,
   ) async {
-    final fullTree = Completer<LibraryTreeSnapshot>();
     var builds = 0;
     final fixture = AppRuntimeWidgetTestFixture(
-      libraryTreeSnapshotBuilder: (_) {
+      libraryTreeSnapshotBuilder: (_) async {
         builds++;
-        return fullTree.future;
+        return LibraryTreeSnapshot(tree: const [], leafFolderCount: 0);
       },
     );
     addTearDown(fixture.dispose);
@@ -129,13 +134,113 @@ void main() {
     expect(find.text('Cached work', findRichText: true), findsWidgets);
     expect(find.byType(LibraryLoadingSkeleton), findsNothing);
     expect(published.last.single, same(card));
-    expect(builds, 1);
-    final folder = FolderNode('Cached work', '/work')
-      ..addChildren([TrackNode(track)]);
-    fullTree.complete(LibraryTreeSnapshot(tree: [folder], leafFolderCount: 1));
+    expect(builds, 0);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpWidget(
+      fixture.build(
+        results(
+          fixture: fixture,
+          scrollController: controller,
+          query: '',
+          onTreeChanged: published.add,
+        ),
+      ),
+    );
+    expect(find.text('Cached work', findRichText: true), findsWidgets);
+    expect(find.byType(LibraryLoadingSkeleton), findsNothing);
+    expect(published.last.single, same(card));
+    expect(builds, 0);
+  });
+
+  testWidgets('empty search rebuilds only cards after structure invalidation', (
+    tester,
+  ) async {
+    var cardBuilds = 0;
+    var treeBuilds = 0;
+    final fixture = AppRuntimeWidgetTestFixture(
+      libraryCardSnapshotBuilder: (payload) async {
+        cardBuilds++;
+        return LibraryTreeSnapshot(
+          tree: payload.tracks.map(TrackNode.new).toList(),
+          leafFolderCount: 0,
+        );
+      },
+      libraryTreeSnapshotBuilder: (_) async {
+        treeBuilds++;
+        return LibraryTreeSnapshot(tree: const [], leafFolderCount: 0);
+      },
+    );
+    addTearDown(fixture.dispose);
+    final original = testMusicTrack(
+      name: 'Original audio',
+      path: '/original.mp3',
+      groupKey: '/original.mp3',
+      groupTitle: 'Original audio',
+      isSingle: true,
+    );
+    fixture.library.addTracks([original], notify: false, persist: false);
+    final cachedNode = TrackNode(original);
+    fixture.library.snapshotCacheService.adoptCardSnapshot(
+      LibraryTreeSnapshot(tree: [cachedNode], leafFolderCount: 0),
+    );
+    await tester.runAsync(fixture.library.coverArtworkCacheService.initialize);
+    await tester.runAsync(
+      () => fixture.library.detailCacheService.load(
+        AudioDetailTarget.singleAudioFile(original.path),
+      ),
+    );
+    final controller = ScrollController();
+    addTearDown(controller.dispose);
+    final revision = ValueNotifier(0);
+    addTearDown(revision.dispose);
+    final published = <List<LibraryNode>>[];
+    await tester.pumpWidget(
+      fixture.build(
+        ValueListenableBuilder<int>(
+          valueListenable: revision,
+          builder: (_, _, _) => results(
+            fixture: fixture,
+            scrollController: controller,
+            query: '',
+            onTreeChanged: published.add,
+          ),
+        ),
+      ),
+    );
+    expect(published.last.single, same(cachedNode));
+    expect(cardBuilds, 0);
+    expect(treeBuilds, 0);
+
+    fixture.library.addTracks(
+      [
+        testMusicTrack(
+          name: 'Added audio',
+          path: '/added.mp3',
+          groupKey: '/added.mp3',
+          groupTitle: 'Added audio',
+          isSingle: true,
+        ),
+      ],
+      notify: false,
+      persist: false,
+    );
+    await tester.runAsync(
+      () => fixture.library.detailCacheService.load(
+        AudioDetailTarget.singleAudioFile('/added.mp3'),
+      ),
+    );
+    revision.value++;
     await tester.pumpAndSettle();
-    expect(published.last.single, same(folder));
-    expect(builds, 1);
+    expect(find.text('Added audio', findRichText: true), findsWidgets);
+    expect(published.last, hasLength(2));
+    expect(cardBuilds, 1);
+    expect(treeBuilds, 0);
+
+    revision.value++;
+    await tester.pumpAndSettle();
+    expect(cardBuilds, 1);
+    expect(treeBuilds, 0);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets(
@@ -300,8 +405,8 @@ void main() {
       isSingle: true,
     );
     final fixture = AppRuntimeWidgetTestFixture(
-      libraryTreeSnapshotBuilder: (_) async {
-        if (++requests == 1) throw StateError('First tree request failed');
+      libraryCardSnapshotBuilder: (_) async {
+        if (++requests == 1) throw StateError('First card request failed');
         return LibraryTreeSnapshot(
           tree: [TrackNode(track)],
           leafFolderCount: 0,
@@ -314,7 +419,7 @@ void main() {
     final queryRevision = ValueNotifier(0);
     addTearDown(queryRevision.dispose);
     fixture.library.addTracks([track], notify: false, persist: false);
-    await tester.runAsync(fixture.library.audioLibraryCategorySnapshot);
+    await tester.runAsync(fixture.library.coverArtworkCacheService.initialize);
     await tester.pumpWidget(
       fixture.build(
         ValueListenableBuilder<int>(
@@ -330,19 +435,13 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(
-      find.byKey(const ValueKey('library_search_stale_error')),
-      findsOneWidget,
-    );
+    expect(find.byKey(const ValueKey('library_search_error')), findsOneWidget);
 
     queryRevision.value++;
     await tester.pumpAndSettle();
 
     expect(requests, 2);
-    expect(
-      find.byKey(const ValueKey('library_search_stale_error')),
-      findsNothing,
-    );
+    expect(find.byKey(const ValueKey('library_search_error')), findsNothing);
     expect(find.text('Recovered audio', findRichText: true), findsWidgets);
     expect(tester.takeException(), isNull);
   });
@@ -436,10 +535,11 @@ void main() {
     pending.complete(LibraryTreeSnapshot(tree: [node], leafFolderCount: 0));
     await tester.pumpAndSettle();
 
-    // The hidden result does not render rows. Only its latest request filters
-    // the shared tree, even though the first request had the same query key.
-    expect(node.reads, 1);
-    expect(published.single.single, same(node));
+    expect(node.reads, 0);
+    expect(published, isEmpty);
+    input.value = (query: 'First', revision: 2, active: true);
+    await tester.pumpAndSettle();
+    expect(published.last.single, same(node));
     expect(tester.takeException(), isNull);
   });
 
@@ -468,6 +568,7 @@ void main() {
       addTearDown(active.dispose);
       fixture.library.addTracks([track], notify: false, persist: false);
       await tester.runAsync(fixture.library.audioLibraryCategorySnapshot);
+      await fixture.library.loadLibraryTree();
       await tester.pumpWidget(
         fixture.build(
           ValueListenableBuilder<bool>(
@@ -494,7 +595,7 @@ void main() {
 
       active.value = false;
       await tester.pumpAndSettle();
-      expect(scrollController.positions, isEmpty);
+      expect(scrollController.positions, hasLength(1));
       active.value = true;
       await tester.pumpAndSettle();
 

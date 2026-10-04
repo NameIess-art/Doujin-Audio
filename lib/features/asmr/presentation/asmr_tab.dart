@@ -300,9 +300,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
     AsmrCategoryType.history,
   ];
 
-  AsmrCategoryType _selectedCategory = AsmrCategoryType.collected;
   late final ValueNotifier<int> _activeCategoryIndex;
-  late final Set<AsmrCategoryType> _visitedCategories;
   late final Map<AsmrCategoryType, ScrollController> _scrollControllers;
   final GlobalKey _headerKey = GlobalKey();
   double _headerHeight = 0;
@@ -328,6 +326,9 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
 
   @override
   bool get wantKeepAlive => true;
+
+  AsmrCategoryType get _selectedCategory =>
+      _headerCategories[_activeCategoryIndex.value];
 
   ScrollController get _scrollController =>
       _scrollControllers[_selectedCategory]!;
@@ -384,11 +385,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
     _scrollControllers = {
       for (final category in _headerCategories) category: ScrollController(),
     };
-    final initialIndex = _headerCategories.indexOf(_selectedCategory);
-    _activeCategoryIndex = ValueNotifier<int>(
-      initialIndex >= 0 ? initialIndex : 0,
-    );
-    _visitedCategories = <AsmrCategoryType>{_selectedCategory};
+    _activeCategoryIndex = ValueNotifier<int>(0);
     _languageProvider = ref.read(appLanguageProviderInstanceProvider);
     _languageProvider.addListener(_handleAppLanguageChanged);
     widget.activeTabIndexListenable?.addListener(_handleActiveStateChanged);
@@ -484,12 +481,10 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
         );
         if (restored.isNotEmpty && _headerCategories.contains(restored.first)) {
           final restoredCategory = restored.first;
-          _visitedCategories.add(restoredCategory);
           final restoredIndex = _headerCategories.indexOf(restoredCategory);
           if (restoredIndex >= 0) {
             _activeCategoryIndex.value = restoredIndex;
           }
-          setState(() => _selectedCategory = restoredCategory);
         }
       }
       if (!mounted || !_isActive) return;
@@ -644,16 +639,16 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
   void _selectCategory(AsmrCategoryType category) {
     if (_selectedCategory == category) return;
     stopScroll();
-    _visitedCategories.add(category);
+    if (_isSelectionMode) {
+      setState(() {
+        _isSelectionMode = false;
+        _selectedWorkIds.clear();
+      });
+    }
     final targetIndex = _headerCategories.indexOf(category);
     if (targetIndex >= 0) {
       _activeCategoryIndex.value = targetIndex;
     }
-    setState(() {
-      _selectedCategory = category;
-      _isSelectionMode = false;
-      _selectedWorkIds.clear();
-    });
     final scope =
         ref.read(asmrLibraryControllerProvider)?.browseCacheScope ?? '';
     ref.read(browsePageStateStoreProvider).update('asmr_root:$scope', {
@@ -832,7 +827,11 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
   @override
   Widget build(BuildContext context) {
     super.build(context);
-    final globalState = ref.watch(asmrLibraryGlobalStateProvider).value;
+    final globalInitialized = ref.watch(
+      asmrLibraryGlobalStateProvider.select(
+        (state) => state.value?.initialized ?? false,
+      ),
+    );
     final hasDownloadManager = ref.watch(asmrDownloadManagerProvider) != null;
     ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
@@ -848,25 +847,6 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
         ? _headerHeight
         : _minimumExpandedHeaderHeight(context);
     final headerContentHeight = effectiveHeaderHeight + 4.0;
-    final globalInitialized = globalState?.initialized ?? false;
-    final categoryState = ref
-        .watch(
-          asmrCategoryStateProvider((
-            category: _selectedCategory,
-            searchQuery: '',
-            searchSession: false,
-          )),
-        )
-        .value;
-    final totalWorks = (categoryState?.totalCount ?? 0) > 0
-        ? categoryState!.totalCount
-        : (categoryState?.works.length ?? 0);
-    final asmrStatsText = i18n.tr('asmr_header_stats', {
-      'count': totalWorks.toString(),
-    });
-    final selectedWorks = _isSelectionMode
-        ? _selectedWorks()
-        : const <AsmrWork>[];
 
     return PageHeaderInset(
       topInset: headerContentHeight,
@@ -883,32 +863,31 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
                   topInset: headerContentHeight,
                   bottomInset: bottomInset + 24,
                 ),
-                content: AppFadeThroughIndexedStack(
+                content: AppFadeThroughIndexedStack.lazy(
                   key: const ValueKey<String>('asmr_category_stack'),
                   indexListenable: _activeCategoryIndex,
                   duration: kAppMotionSlow,
-                  children: [
-                    for (final category in _headerCategories)
-                      if (_visitedCategories.contains(category))
-                        _AsmrCategoryList(
-                          key: ValueKey(category),
-                          isActive: category == _selectedCategory,
-                          isPageActive: () => _isActive,
-                          category: category,
-                          isLoadPending: !_activationCompleted,
-                          scrollController: _scrollControllers[category]!,
-                          searchQuery: '',
-                          topInset: headerContentHeight,
-                          bottomInset: bottomInset,
-                          onRefresh: _refreshCategoryWithFeedback,
-                          isSelectionMode: _isSelectionMode,
-                          selectedWorkIds: _selectedWorkIds,
-                          onEnterSelectionMode: _enterSelectionMode,
-                          onToggleSelection: _toggleWorkSelection,
-                        )
-                      else
-                        const SizedBox.shrink(),
-                  ],
+                  itemCount: _headerCategories.length,
+                  contentRevision: Object(),
+                  itemBuilder: (context, index) {
+                    final category = _headerCategories[index];
+                    return _AsmrCategoryList(
+                      key: ValueKey(category),
+                      isActive: () => category == _selectedCategory,
+                      isPageActive: () => _isActive,
+                      category: category,
+                      isLoadPending: !_activationCompleted,
+                      scrollController: _scrollControllers[category]!,
+                      searchQuery: '',
+                      topInset: headerContentHeight,
+                      bottomInset: bottomInset,
+                      onRefresh: _refreshCategoryWithFeedback,
+                      isSelectionMode: _isSelectionMode,
+                      selectedWorkIds: _selectedWorkIds,
+                      onEnterSelectionMode: _enterSelectionMode,
+                      onToggleSelection: _toggleWorkSelection,
+                    );
+                  },
                 ),
               ),
             ),
@@ -917,91 +896,118 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
             top: 0,
             left: 0,
             right: 0,
-            child: Theme(
-              data: asmrThemeData(context),
-              child: _isSelectionMode
-                  ? _AsmrBatchSelectionHeader(
-                      keyPrefix: 'asmr',
-                      i18n: i18n,
-                      selectedWorks: selectedWorks,
-                      onAddToPlaylist: selectedWorks.isEmpty
-                          ? null
-                          : _addSelectedWorksToPlaylist,
-                      onDownload: selectedWorks.isEmpty
-                          ? null
-                          : _downloadSelectedWorks,
-                      onToggleFavorite: selectedWorks.isEmpty
-                          ? null
-                          : _toggleSelectedFavorites,
-                      onExit: _exitSelectionMode,
-                    )
-                  : TopPageHeader(
-                      key: _headerKey,
-                      icon: Icons.cloud_rounded,
-                      iconColor: AppDesignTokens.of(context).asmrAccent,
-                      collapseController: _scrollController,
-                      topCapsuleTitle: 'ASMR.ONE',
-                      topCapsuleData: asmrStatsText,
-                      title: 'ASMR.ONE',
-                      titleWidget: _buildCategorySwitcher(i18n),
-                      onTitleSwipeLeft: widget.onTitleSwipeLeft,
-                      onTitleSwipeRight: widget.onTitleSwipeRight,
-                      trailing: SizedBox(
-                        height: 38,
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          mainAxisAlignment: MainAxisAlignment.end,
-                          children: [
-                            HeaderFloatingButton(
-                              child: IconButton(
-                                key: const ValueKey<String>(
-                                  'asmr_search_button',
-                                ),
-                                onPressed: _openSearchPage,
-                                icon: const Icon(Icons.search_rounded),
-                                tooltip: i18n.tr('search'),
-                                iconSize: 20,
-                                padding: EdgeInsets.zero,
-                                constraints: const BoxConstraints.tightFor(
-                                  width: 38,
-                                  height: 38,
-                                ),
-                              ),
-                            ),
-                            if (isLandscape) ...[
-                              const SizedBox(width: 8),
-                              HeaderFloatingButton(
-                                child: IconButton(
-                                  onPressed: globalInitialized
-                                      ? () => unawaited(
-                                          _refreshCategoryWithFeedback(
-                                            showSnackbar: true,
+            child: ValueListenableBuilder<int>(
+              valueListenable: _activeCategoryIndex,
+              builder: (context, _, _) => Consumer(
+                builder: (context, ref, _) {
+                  final categoryState = ref
+                      .watch(
+                        asmrCategoryStateProvider((
+                          category: _selectedCategory,
+                          searchQuery: '',
+                          searchSession: false,
+                        )),
+                      )
+                      .value;
+                  final totalWorks = (categoryState?.totalCount ?? 0) > 0
+                      ? categoryState!.totalCount
+                      : (categoryState?.works.length ?? 0);
+                  final asmrStatsText = i18n.tr('asmr_header_stats', {
+                    'count': totalWorks.toString(),
+                  });
+                  final selectedWorks = _isSelectionMode
+                      ? _selectedWorks()
+                      : const <AsmrWork>[];
+                  return Theme(
+                    data: asmrThemeData(context),
+                    child: _isSelectionMode
+                        ? _AsmrBatchSelectionHeader(
+                            keyPrefix: 'asmr',
+                            i18n: i18n,
+                            selectedWorks: selectedWorks,
+                            onAddToPlaylist: selectedWorks.isEmpty
+                                ? null
+                                : _addSelectedWorksToPlaylist,
+                            onDownload: selectedWorks.isEmpty
+                                ? null
+                                : _downloadSelectedWorks,
+                            onToggleFavorite: selectedWorks.isEmpty
+                                ? null
+                                : _toggleSelectedFavorites,
+                            onExit: _exitSelectionMode,
+                          )
+                        : TopPageHeader(
+                            key: _headerKey,
+                            icon: Icons.cloud_rounded,
+                            iconColor: AppDesignTokens.of(context).asmrAccent,
+                            collapseController: _scrollController,
+                            topCapsuleTitle: 'ASMR.ONE',
+                            topCapsuleData: asmrStatsText,
+                            title: 'ASMR.ONE',
+                            titleWidget: _buildCategorySwitcher(i18n),
+                            onTitleSwipeLeft: widget.onTitleSwipeLeft,
+                            onTitleSwipeRight: widget.onTitleSwipeRight,
+                            trailing: SizedBox(
+                              height: 38,
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                mainAxisAlignment: MainAxisAlignment.end,
+                                children: [
+                                  HeaderFloatingButton(
+                                    child: IconButton(
+                                      key: const ValueKey<String>(
+                                        'asmr_search_button',
+                                      ),
+                                      onPressed: _openSearchPage,
+                                      icon: const Icon(Icons.search_rounded),
+                                      tooltip: i18n.tr('search'),
+                                      iconSize: 20,
+                                      padding: EdgeInsets.zero,
+                                      constraints:
+                                          const BoxConstraints.tightFor(
+                                            width: 38,
+                                            height: 38,
                                           ),
-                                        )
-                                      : null,
-                                  icon: const Icon(Icons.refresh_rounded),
-                                  tooltip: i18n.tr('refresh'),
-                                  iconSize: 20,
-                                  padding: EdgeInsets.zero,
-                                  constraints: const BoxConstraints.tightFor(
-                                    width: 38,
-                                    height: 38,
+                                    ),
                                   ),
-                                ),
-                              ),
-                            ],
-                            if (hasDownloadManager)
-                              const _AsmrDownloadProgressInlineButton(),
-                            const SizedBox(width: 8),
-                            HeaderFloatingButton(
-                              child: _AsmrAccountButton(
-                                onPressed: _showAccountDialog,
+                                  if (isLandscape) ...[
+                                    const SizedBox(width: 8),
+                                    HeaderFloatingButton(
+                                      child: IconButton(
+                                        onPressed: globalInitialized
+                                            ? () => unawaited(
+                                                _refreshCategoryWithFeedback(
+                                                  showSnackbar: true,
+                                                ),
+                                              )
+                                            : null,
+                                        icon: const Icon(Icons.refresh_rounded),
+                                        tooltip: i18n.tr('refresh'),
+                                        iconSize: 20,
+                                        padding: EdgeInsets.zero,
+                                        constraints:
+                                            const BoxConstraints.tightFor(
+                                              width: 38,
+                                              height: 38,
+                                            ),
+                                      ),
+                                    ),
+                                  ],
+                                  if (hasDownloadManager)
+                                    const _AsmrDownloadProgressInlineButton(),
+                                  const SizedBox(width: 8),
+                                  HeaderFloatingButton(
+                                    child: _AsmrAccountButton(
+                                      onPressed: _showAccountDialog,
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
-                          ],
-                        ),
-                      ),
-                    ).withAppHeaderTransition(),
+                          ).withAppHeaderTransition(),
+                  );
+                },
+              ),
             ),
           ),
         ],

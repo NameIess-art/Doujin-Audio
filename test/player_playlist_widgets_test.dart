@@ -5081,6 +5081,28 @@ void main() {
       // The pushpin icon is ABOVE the green checkmark icon
       expect(pinNoCoverRectAfter.bottom < checkmarkRect.top, isTrue);
 
+      // 4. In selection mode, select session with cover and verify symmetry
+      final trackCoverCardFinder = find.byKey(
+        ValueKey<String>('playlist_card_content_${sessionCover.id}'),
+      );
+      await tester.tap(trackCoverCardFinder, warnIfMissed: false);
+      await tester.pumpAndSettle();
+
+      final selectionCoverFinder = find.byKey(
+        ValueKey<String>('playlist_selection_indicator_${sessionCover.id}'),
+      );
+      expect(selectionCoverFinder, findsOneWidget);
+      final selectionCoverRect = tester.getRect(selectionCoverFinder);
+      final pinCoverRectAfter = tester.getRect(pinCoverFinder);
+
+      expect(pinCoverRectAfter.center.dx, selectionCoverRect.center.dx);
+      expect(
+        (coverRect.center.dy - pinCoverRectAfter.center.dy).abs(),
+        closeTo((selectionCoverRect.center.dy - coverRect.center.dy).abs(), 0.01),
+      );
+      expect(pinCoverRectAfter.width, selectionCoverRect.width);
+      expect(pinCoverRectAfter.height, selectionCoverRect.height);
+
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pumpAndSettle();
       await tester.runAsync(
@@ -6963,7 +6985,7 @@ void main() {
       expect(
         find.byWidgetPredicate(
           (widget) =>
-              widget is RepaintBoundary &&
+              widget is SwipeRevealCard &&
               widget.key == ValueKey(queueSessions.first.id),
         ),
         findsOneWidget,

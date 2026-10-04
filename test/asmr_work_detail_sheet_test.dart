@@ -659,7 +659,7 @@ void main() {
           of: find.byKey(const ValueKey<String>('asmr_search_favorites')),
           matching: find.text('Shared work 1'),
         ),
-        findsNothing,
+        findsOneWidget,
       );
       await tester.pumpAndSettle();
       expect(

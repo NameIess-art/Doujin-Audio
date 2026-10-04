@@ -194,7 +194,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
     final folderPath = target.targetPath;
     final library = ref.read(libraryFacadeProvider);
 
-    setState(() => _loadingLocal = true);
+    if (!_loadingLocal) setState(() => _loadingLocal = true);
 
     try {
       final detailResult = await library.loadAudioDetail(target);
@@ -328,8 +328,26 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
   Future<void> _prepareDirectory() async {
     final request = ++_directoryRequest;
     final input = _directoryInput;
-    _preparingDirectory = input.resolved != _directory || _directory == null;
-    final directory = input.resolved ?? await input.load();
+    final cached = input.resolved;
+    final loading = widget.isLocal ? _loadingLocal : _loadingAsmr;
+    // Wait for a real source instead of computing an empty intermediate tree.
+    if (loading &&
+        input.root == null &&
+        input.tree == null &&
+        input.texts.isEmpty &&
+        input.images.isEmpty) {
+      return;
+    }
+    _preparingDirectory = cached != _directory || _directory == null;
+    if (cached != null &&
+        identical(cached, _directory) &&
+        (loading ||
+            cached.validDepth(_currentPathSegments) ==
+                _currentPathSegments.length)) {
+      UiInteractionCoordinator.instance.cancelCommit(_directoryCommitKey);
+      return;
+    }
+    final directory = cached ?? await input.load();
     if (!mounted || request != _directoryRequest) return;
     UiInteractionCoordinator.instance.scheduleCommit(
       key: _directoryCommitKey,
@@ -448,13 +466,24 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
   Future<void> _loadAsmrData() async {
     final controller = ref.read(asmrLibraryControllerProvider);
     if (controller == null) {
-      setState(() => _loadingAsmr = false);
+      _publishDataUpdate(() => _loadingAsmr = false);
       return;
     }
-    setState(() => _loadingAsmr = _asmrTree == null);
     try {
       await controller.initializeForVisiblePage();
-      if (!mounted) return;
+      if (!mounted || ModalRoute.of(context)?.isActive == false) return;
+      // Initialization may finish during a later navigation or scroll.
+      if (UiInteractionCoordinator.instance.isInteracting) {
+        UiInteractionCoordinator.instance.scheduleCommit(
+          key: _filesCommitKey,
+          commit: () {
+            if (mounted && ModalRoute.of(context)?.isActive != false) {
+              unawaited(_loadAsmrData());
+            }
+          },
+        );
+        return;
+      }
       final tree = await controller.ensureTrackTree(
         widget.asmrWork!,
         forceRefresh: true,

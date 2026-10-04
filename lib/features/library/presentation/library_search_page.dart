@@ -59,13 +59,9 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
   final Set<String> _selectedLibraryPaths = <String>{};
   final Map<AudioLibraryCategoryType, String> _termSearchQueries = {};
 
-  late final ValueNotifier<int> _activeCategoryIndex;
-  late final Set<AudioLibraryCategoryType> _visitedCategories;
-  final Set<AudioLibraryCategoryType> _transitionCategories = {};
+  final ValueNotifier<int> _activeCategoryIndex = ValueNotifier<int>(0);
 
   Timer? _debounceTimer;
-  AudioLibraryCategoryType _categoryType = AudioLibraryCategoryType.all;
-  bool _hasSwitchedCategory = false;
   bool _isSelectionMode = false;
   String _query = '';
   int _queryRevision = 0;
@@ -78,19 +74,8 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
   int? _categorySnapshotStructureRevision;
   int? _categorySnapshotDetailRevision;
 
-  String get _effectiveSearchQuery => _query;
-
-  @override
-  void initState() {
-    super.initState();
-    final initialIndex = _categories.indexOf(_categoryType);
-    _activeCategoryIndex = ValueNotifier<int>(
-      initialIndex >= 0 ? initialIndex : 0,
-    );
-    _visitedCategories = <AudioLibraryCategoryType>{_categoryType};
-  }
-
-  void _setLocalState(VoidCallback fn) => setState(fn);
+  AudioLibraryCategoryType get _categoryType =>
+      _categories[_activeCategoryIndex.value];
 
   void _resetScroll() {
     final controller = _scrollControllers[_categoryType];
@@ -153,19 +138,11 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
     if (controller != null && controller.hasClients) {
       controller.jumpTo(controller.offset);
     }
-    _visitedCategories.add(category);
-    _transitionCategories
-      ..add(_categoryType)
-      ..add(category);
+    if (_isSelectionMode) setState(_clearSelection);
     final targetIndex = _categories.indexOf(category);
     if (targetIndex >= 0) {
       _activeCategoryIndex.value = targetIndex;
     }
-    setState(() {
-      _categoryType = category;
-      _hasSwitchedCategory = true;
-      _clearSelection();
-    });
   }
 
   void _clearSelection() {
@@ -344,23 +321,18 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
         )
         .toSet();
 
-    final body = AppFadeThroughIndexedStack(
+    final body = AppFadeThroughIndexedStack.lazy(
       key: const ValueKey<String>('library_search_category_stack'),
       indexListenable: _activeCategoryIndex,
       duration: kAppMotionSlow,
-      onTransitionCompleted: (index) {
-        if (mounted &&
-            index == _activeCategoryIndex.value &&
-            _transitionCategories.isNotEmpty) {
-          setState(_transitionCategories.clear);
-        }
-      },
-      children: [
-        if (_visitedCategories.contains(AudioLibraryCategoryType.all))
-          LibrarySearchAllResults(
-            active:
-                _categoryType == AudioLibraryCategoryType.all ||
-                _transitionCategories.contains(AudioLibraryCategoryType.all),
+      contentRevision: Object(),
+      itemCount: _categories.length,
+      itemBuilder: (context, index) {
+        final category = _categories[index];
+        if (category == AudioLibraryCategoryType.all) {
+          return LibrarySearchAllResults(
+            isActive: () => _categoryType == AudioLibraryCategoryType.all,
+            activityListenable: _activeCategoryIndex,
             query: _query,
             queryRevision: _queryRevision,
             structureRevision: structureRevision,
@@ -372,28 +344,20 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
             onEnterSelectionMode: _enterSelectionMode,
             onToggleSelection: _toggleLibrarySelection,
             onTreeChanged: (tree) => _searchSelectionTree = tree,
-          )
-        else
-          const SizedBox.shrink(),
-        for (final category in _categories.skip(1))
-          if (_visitedCategories.contains(category))
-            _buildCategoryBody(
-              categoryType: category,
-              active:
-                  category == _categoryType ||
-                  _transitionCategories.contains(category),
-              libraryFacade: libraryFacade,
-              i18n: i18n,
-              topPadding: topInset,
-              bottomPadding: MediaQuery.paddingOf(context).bottom + 16,
-              cacheExtent: 320,
-              structureRevision: structureRevision,
-              detailRevision: detailRevision,
-              pinnedPaths: pinnedLibraryPaths,
-            )
-          else
-            const SizedBox.shrink(),
-      ],
+          );
+        }
+        return _buildCategoryBody(
+          categoryType: category,
+          libraryFacade: libraryFacade,
+          i18n: i18n,
+          topPadding: topInset,
+          bottomPadding: MediaQuery.paddingOf(context).bottom + 16,
+          cacheExtent: 320,
+          structureRevision: structureRevision,
+          detailRevision: detailRevision,
+          pinnedPaths: pinnedLibraryPaths,
+        );
+      },
     );
 
     final isAllPinned =
@@ -402,42 +366,47 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
           (p) => pinnedLibraryPaths.contains(PathMatcher.normalize(p)),
         );
 
-    return AppSearchPageScaffold<AudioLibraryCategoryType>(
-      controller: _controller,
-      focusNode: _focusNode,
-      hintText: i18n.tr('search_audio_placeholder'),
-      categories: categories,
-      selectedCategory: _categoryType,
-      onCategorySelected: _selectCategory,
-      onChanged: _onChanged,
-      onSubmitted: _onSubmitted,
-      onCloseOrClear: _closeOrClear,
-      body: HeroMode(
+    return ValueListenableBuilder<int>(
+      valueListenable: _activeCategoryIndex,
+      child: HeroMode(
         key: const ValueKey<String>('library_search_hero_mode'),
         enabled: false,
         child: body,
       ),
-      controlsOverlay: _isSelectionMode
-          ? LibraryBatchSelectionHeader(
-              keyPrefix: 'library_search',
-              i18n: i18n,
-              selectedCount: _selectedLibraryPaths.length,
-              isPinned: isAllPinned,
-              onAddToPlaylist: _selectedLibraryPaths.isEmpty
-                  ? null
-                  : () => unawaited(_addCurrentSelectionsToPlaylist()),
-              onCompleteMetadata: _selectedLibraryPaths.isEmpty
-                  ? null
-                  : () => unawaited(_completeCurrentSelectionsMetadata()),
-              onTogglePin: _selectedLibraryPaths.isEmpty
-                  ? null
-                  : () => unawaited(_toggleCurrentSelectionsPinned()),
-              onRemove: _selectedLibraryPaths.isEmpty
-                  ? null
-                  : () => unawaited(_removeCurrentSelections()),
-              onExit: _exitSelectionMode,
-            )
-          : null,
+      builder: (context, index, body) =>
+          AppSearchPageScaffold<AudioLibraryCategoryType>(
+            controller: _controller,
+            focusNode: _focusNode,
+            hintText: i18n.tr('search_audio_placeholder'),
+            categories: categories,
+            selectedCategory: _categories[index],
+            onCategorySelected: _selectCategory,
+            onChanged: _onChanged,
+            onSubmitted: _onSubmitted,
+            onCloseOrClear: _closeOrClear,
+            body: body!,
+            controlsOverlay: _isSelectionMode
+                ? LibraryBatchSelectionHeader(
+                    keyPrefix: 'library_search',
+                    i18n: i18n,
+                    selectedCount: _selectedLibraryPaths.length,
+                    isPinned: isAllPinned,
+                    onAddToPlaylist: _selectedLibraryPaths.isEmpty
+                        ? null
+                        : () => unawaited(_addCurrentSelectionsToPlaylist()),
+                    onCompleteMetadata: _selectedLibraryPaths.isEmpty
+                        ? null
+                        : () => unawaited(_completeCurrentSelectionsMetadata()),
+                    onTogglePin: _selectedLibraryPaths.isEmpty
+                        ? null
+                        : () => unawaited(_toggleCurrentSelectionsPinned()),
+                    onRemove: _selectedLibraryPaths.isEmpty
+                        ? null
+                        : () => unawaited(_removeCurrentSelections()),
+                    onExit: _exitSelectionMode,
+                  )
+                : null,
+          ),
     );
   }
 
@@ -530,7 +499,7 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
   }) {
     final selectedTerms = _selectedTermsForCategory(category);
     final queryTerms = extractSearchTerms(
-      _effectiveSearchQuery,
+      _query,
     ).map((term) => term.toLowerCase()).toList(growable: false);
     final termKeywords = _termSearchKeywordsForCategory(category);
     final normalizedSelectedTerms =
@@ -618,7 +587,6 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
 
   Widget _buildCategoryBody({
     required AudioLibraryCategoryType categoryType,
-    required bool active,
     required LibraryFacade libraryFacade,
     required AppLanguageProvider i18n,
     required double topPadding,
@@ -660,9 +628,9 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
         }
 
         final terms = _termsForCategory(snapshot, categoryType);
-        // Hidden pages retain their last result. Refilter using the latest
-        // query, snapshot and pins when they enter or participate in a slide.
-        final entries = active
+        // The outgoing page stays visible during a slide, but only the
+        // selected category should project a newly committed query.
+        final entries = categoryType == _categoryType
             ? _filterCategoryEntries(
                 snapshot,
                 categoryType,
@@ -686,7 +654,7 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
         final termQuery = _termSearchQueries[categoryType] ?? '';
 
         final highlightTerms = <String>{
-          ...extractSearchTerms(_effectiveSearchQuery),
+          ...extractSearchTerms(_query),
           ...selectedTerms,
           ..._termSearchKeywordsForCategory(categoryType),
         }.where((t) => t.trim().isNotEmpty).toList(growable: false);
@@ -714,8 +682,7 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
                     'library_category_term_box_${categoryType.name}',
                   ),
                   categoryType: categoryType,
-                  collapseOnMount:
-                      _hasSwitchedCategory && categoryType == _categoryType,
+                  collapseOnMount: true,
                   terms: terms,
                   selectedTerms: selectedTerms,
                   emptyText: _noTermsText(i18n, categoryType),
@@ -725,7 +692,7 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
                   searchHintText: _termSearchHintText(i18n, categoryType),
                   searchQuery: termQuery,
                   onSearchQueryChanged: (val) {
-                    _setLocalState(() {
+                    setState(() {
                       if (val.isEmpty) {
                         _termSearchQueries.remove(categoryType);
                       } else {
@@ -734,12 +701,12 @@ class _LibrarySearchPageState extends ConsumerState<LibrarySearchPage> {
                     });
                   },
                   onToggle: (term) {
-                    _setLocalState(() {
+                    setState(() {
                       if (!selectedTerms.remove(term)) selectedTerms.add(term);
                     });
                   },
                   onClear: () {
-                    _setLocalState(() => selectedTerms.clear());
+                    setState(() => selectedTerms.clear());
                   },
                 );
               }

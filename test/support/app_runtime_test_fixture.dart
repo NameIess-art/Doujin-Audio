@@ -305,6 +305,7 @@ final class AppRuntimeWidgetTestFixture {
     bool persistenceEnabled = false,
     SettingsRepository? providedSettingsRepository,
     LibraryTreeSnapshotBuilder? libraryTreeSnapshotBuilder,
+    LibraryCardSnapshotBuilder? libraryCardSnapshotBuilder,
     PowerPlatformService? powerPlatformService,
     void Function(SettingsRepository settingsRepository)?
     configureSettingsRepository,
@@ -331,12 +332,14 @@ final class AppRuntimeWidgetTestFixture {
         ),
       ),
     );
-    final snapshotCache = libraryTreeSnapshotBuilder == null
+    final snapshotCache =
+        libraryTreeSnapshotBuilder == null && libraryCardSnapshotBuilder == null
         ? null
         : LibrarySnapshotCacheService(
             libraryService: libraryService,
             detailCacheService: detailCache,
             treeSnapshotBuilder: libraryTreeSnapshotBuilder,
+            cardSnapshotBuilder: libraryCardSnapshotBuilder,
           );
     library = LibraryFacade.create(
       databaseRepository: persistenceRepository,

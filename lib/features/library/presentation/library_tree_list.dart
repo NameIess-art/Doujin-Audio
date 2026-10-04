@@ -9,6 +9,7 @@ import '../domain/library_node.dart';
 import '../../../core/media/path_matcher.dart';
 import '../../../core/logging/app_log_service.dart';
 import '../../../core/widgets/app_transitions.dart';
+import '../../../core/widgets/animated_reorder.dart';
 import '../../../core/widgets/library_like_cards.dart';
 import '../../../core/widgets/operation_feedback.dart';
 
@@ -475,10 +476,12 @@ class _LibraryTreeListState extends ConsumerState<LibraryTreeList>
         }
         treeItem = FadeTransition(opacity: opacity, child: treeItem);
       }
-      return BrowseAnchor(
-        id: PathMatcher.equivalenceKey(node.path),
-        child: KeyedSubtree(
-          key: ValueKey(node.path),
+      final id = PathMatcher.equivalenceKey(node.path);
+      return AnimatedReorderItem(
+        key: ValueKey(node.path),
+        id: id,
+        child: BrowseAnchor(
+          id: id,
           child: item.depth == 0
               ? treeItem
               : AnimatedTreeReveal(
@@ -497,45 +500,61 @@ class _LibraryTreeListState extends ConsumerState<LibraryTreeList>
           constraints.maxWidth,
         );
         final rowCount = (visibleItems.length / columnCount).ceil();
-        return ListView.builder(
-          key: const PageStorageKey<String>('library_list'),
-          controller: widget.scrollController,
-          clipBehavior: Clip.none,
-          padding: EdgeInsets.fromLTRB(
-            LibraryLikeCardMetrics.listHorizontalPadding,
-            widget.topPadding,
-            LibraryLikeCardMetrics.listHorizontalPadding,
-            widget.bottomPadding,
-          ),
-          cacheExtent: widget.cacheExtent,
-          physics: widget.physics,
-          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-          itemCount: rowCount + 1,
-          itemBuilder: (context, rowIndex) {
-            if (rowIndex == rowCount) {
-              return const SizedBox.shrink(key: ValueKey('bottom_spacing'));
-            }
-            if (columnCount == 1) {
-              return buildTopLevelLibraryItem(context, rowIndex);
-            }
-            return Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                for (var column = 0; column < columnCount; column++) ...[
-                  if (column > 0)
-                    const SizedBox(width: kResponsiveLibraryCardSpacing),
-                  Expanded(
-                    child: rowIndex * columnCount + column < visibleItems.length
-                        ? buildTopLevelLibraryItem(
-                            context,
-                            rowIndex * columnCount + column,
-                          )
-                        : const SizedBox.shrink(),
-                  ),
+        final itemIndices = <Key, int>{
+          if (columnCount == 1)
+            for (var i = 0; i < visibleItems.length; i++)
+              if (!visibleItems[i].isFolderError)
+                ValueKey(visibleItems[i].node.path): i,
+        };
+        return AnimatedReorder(
+          order: visibleItems
+              .where((item) => !item.isFolderError)
+              .map((item) => PathMatcher.equivalenceKey(item.node.path))
+              .toList(),
+          child: ListView.builder(
+            key: const PageStorageKey<String>('library_list'),
+            controller: widget.scrollController,
+            clipBehavior: Clip.none,
+            padding: EdgeInsets.fromLTRB(
+              LibraryLikeCardMetrics.listHorizontalPadding,
+              widget.topPadding,
+              LibraryLikeCardMetrics.listHorizontalPadding,
+              widget.bottomPadding,
+            ),
+            cacheExtent: widget.cacheExtent,
+            physics: widget.physics,
+            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+            itemCount: rowCount + 1,
+            findChildIndexCallback: columnCount == 1
+                ? (key) => itemIndices[key]
+                : null,
+            itemBuilder: (context, rowIndex) {
+              if (rowIndex == rowCount) {
+                return const SizedBox.shrink(key: ValueKey('bottom_spacing'));
+              }
+              if (columnCount == 1) {
+                return buildTopLevelLibraryItem(context, rowIndex);
+              }
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  for (var column = 0; column < columnCount; column++) ...[
+                    if (column > 0)
+                      const SizedBox(width: kResponsiveLibraryCardSpacing),
+                    Expanded(
+                      child:
+                          rowIndex * columnCount + column < visibleItems.length
+                          ? buildTopLevelLibraryItem(
+                              context,
+                              rowIndex * columnCount + column,
+                            )
+                          : const SizedBox.shrink(),
+                    ),
+                  ],
                 ],
-              ],
-            );
-          },
+              );
+            },
+          ),
         );
       },
     );

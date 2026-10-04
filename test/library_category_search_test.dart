@@ -4,9 +4,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:doujin_audio/core/media/audio_detail.dart';
 import 'package:doujin_audio/core/widgets/search_highlight.dart';
+import 'package:doujin_audio/core/widgets/app_search_page.dart';
 import 'package:doujin_audio/features/library/domain/audio_library_category.dart';
 import 'package:doujin_audio/features/library/domain/library_node.dart';
-import 'package:doujin_audio/features/library/presentation/library_tab.dart';
+import 'package:doujin_audio/features/library/presentation/library_tab_category_widgets.dart';
 import 'package:doujin_audio/features/library/presentation/library_search_page.dart';
 import 'package:doujin_audio/features/library/presentation/library_providers.dart';
 import 'package:doujin_audio/features/library/application/library_facade.dart';
@@ -58,6 +59,135 @@ class _FixedCategorySnapshotCache extends LibrarySnapshotCacheService {
 
 void main() {
   AppRuntimeTestFixture.initialize();
+  for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+    testWidgets(
+      'visited categories retain lists, filters and scroll on $platform',
+      (tester) async {
+        debugDefaultTargetPlatformOverride = platform;
+        addTearDown(() => debugDefaultTargetPlatformOverride = null);
+        UiInteractionCoordinator.instance.resetForTest();
+        addTearDown(UiInteractionCoordinator.instance.resetForTest);
+        final fixture = AppRuntimeWidgetTestFixture();
+        addTearDown(fixture.dispose);
+        final darkTheme = ValueNotifier(false);
+        addTearDown(darkTheme.dispose);
+        final entries = List.generate(
+          30,
+          (index) => _CountingCategoryEntry(
+            _createEntry(
+              title: 'Work $index',
+              path: '/work/$index',
+              tags: ['ASMR'],
+              voiceActors: ['Voice'],
+              circleName: 'Circle',
+            ),
+          ),
+        );
+        final cache = _FixedCategorySnapshotCache(
+          libraryService: fixture.libraryService,
+          detailCacheService: fixture.library.detailCacheService,
+          snapshot: AudioLibraryCategorySnapshot(
+            entries: entries,
+            tagTerms: ['ASMR'],
+            voiceActorTerms: ['Voice'],
+            circleTerms: ['Circle'],
+            structureRevision: fixture.libraryService.structureRevision,
+            detailRevision: fixture.library.detailCacheService.revision,
+          ),
+        );
+        final library = LibraryFacade.create(
+          databaseRepository: fixture.persistenceRepository,
+          service: fixture.libraryService,
+          detailCacheService: fixture.library.detailCacheService,
+          snapshotCacheService: cache,
+        );
+        await tester.pumpWidget(
+          fixture.build(
+            ValueListenableBuilder<bool>(
+              valueListenable: darkTheme,
+              child: const LibrarySearchPage(),
+              builder: (_, dark, child) => Theme(
+                data: dark ? ThemeData.dark() : ThemeData.light(),
+                child: child!,
+              ),
+            ),
+            overrides: [libraryFacadeProvider.overrideWithValue(library)],
+          ),
+        );
+        await tester.pumpAndSettle();
+        Future<void> choose(AudioLibraryCategoryType type) async {
+          await tester.tap(find.byKey(ValueKey('app_search_category_$type')));
+          await tester.pumpAndSettle();
+        }
+
+        await choose(AudioLibraryCategoryType.tags);
+        await tester.tap(find.widgetWithText(ActionChip, '展开'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.widgetWithText(FilterChip, 'ASMR'));
+        await tester.pumpAndSettle();
+        final tagListFinder = find.byKey(
+          const ValueKey('library_category_tags'),
+        );
+        final tagList = tester.widget<ListView>(tagListFinder);
+        final termState = tester.state(find.byType(LibraryCategoryTermBox));
+        tagList.controller!.jumpTo(32);
+        await tester.pumpAndSettle();
+        final reads = Map<AudioLibraryCategoryType, int>.of(
+          entries.first.reads,
+        );
+        for (var round = 0; round < 2; round++) {
+          await choose(AudioLibraryCategoryType.voiceActors);
+          await choose(AudioLibraryCategoryType.tags);
+          expect(tester.widget<ListView>(tagListFinder), same(tagList));
+          expect(
+            tester.state(find.byType(LibraryCategoryTermBox)),
+            same(termState),
+          );
+          expect(tagList.controller!.offset, 32);
+          expect(
+            entries.first.reads[AudioLibraryCategoryType.tags],
+            reads[AudioLibraryCategoryType.tags],
+          );
+        }
+        tagList.controller!.jumpTo(0);
+        await tester.pumpAndSettle();
+        expect(
+          tester
+              .widget<FilterChip>(find.widgetWithText(FilterChip, 'ASMR'))
+              .selected,
+          isTrue,
+        );
+        expect(find.widgetWithText(ActionChip, '收起'), findsOneWidget);
+        darkTheme.value = true;
+        await tester.pumpAndSettle();
+        expect(
+          Theme.of(
+            tester.element(find.byType(AudioLibraryCategoryEntryCard).first),
+          ).brightness,
+          Brightness.dark,
+        );
+        AudioLibraryCategoryEntryCard firstCard() =>
+            tester.widget<AudioLibraryCategoryEntryCard>(
+              find.byType(AudioLibraryCategoryEntryCard).first,
+            );
+        firstCard().onLongPress!();
+        await tester.pumpAndSettle();
+        expect(firstCard().isSelectionMode, isTrue);
+        tester
+            .widget<AppSearchPageScaffold<AudioLibraryCategoryType>>(
+              find.byType(AppSearchPageScaffold<AudioLibraryCategoryType>),
+            )
+            .onCategorySelected(AudioLibraryCategoryType.voiceActors);
+        await tester.pumpAndSettle();
+        await choose(AudioLibraryCategoryType.tags);
+        expect(firstCard().isSelectionMode, isFalse);
+        expect(find.widgetWithText(ActionChip, '收起'), findsOneWidget);
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+        debugDefaultTargetPlatformOverride = null;
+      },
+    );
+  }
   testWidgets(
     'hidden visited categories wait for activation to filter latest state',
     (tester) async {
@@ -153,10 +283,7 @@ void main() {
         'Alpha',
       );
       await tester.pump(const Duration(milliseconds: 230));
-      expect(
-        entries.first.reads[AudioLibraryCategoryType.tags],
-        greaterThan(beforeSlide),
-      );
+      expect(entries.first.reads[AudioLibraryCategoryType.tags], beforeSlide);
       await tester.pumpAndSettle();
       expect(find.byKey(const ValueKey('category_/Alpha')), findsOneWidget);
       expect(tester.takeException(), isNull);

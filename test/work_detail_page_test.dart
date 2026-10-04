@@ -59,7 +59,12 @@ Future<void> _settleDetail(WidgetTester tester) async {
       break;
     }
   }
-  await tester.pumpAndSettle();
+  if (find
+      .byKey(const ValueKey('work_detail_entries_skeleton'))
+      .evaluate()
+      .isEmpty) {
+    await tester.pumpAndSettle();
+  }
 }
 
 Future<void> _prewarmDirectory(
@@ -324,16 +329,31 @@ void main() {
             matching: find.byType(SizedBox),
           );
           expect(tester.getSize(skeletonRows.first).height, 48);
+          final preparedPaints = skeleton.debugAsymmetricPaintCount;
           await tester.pump(const Duration(milliseconds: 20));
           expect(
             skeleton.debugAsymmetricPaintCount,
-            greaterThan(0),
-            reason: 'The skeleton repaints independently of page content.',
+            preparedPaints,
+            reason: 'The skeleton stays still during the route slide.',
           );
           await tester.pump(const Duration(milliseconds: 500));
           await tester.pump(interaction.idleDelay);
           await tester.pump();
           expect(treeRequests, 1);
+          await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 50)),
+          );
+          await tester.pump();
+          expect(
+            const WorkDirectoryInput.local(
+              root: null,
+              texts: [],
+              images: [],
+              folderPath: folder,
+            ).resolved,
+            isNull,
+            reason: 'Do not prepare an empty tree before sources arrive.',
+          );
           final skeletonRect = tester.getRect(
             find.byKey(const ValueKey('work_detail_entries_skeleton')),
           );
@@ -1873,7 +1893,7 @@ void main() {
 
       await tester.tap(find.text('Go'));
       await tester.pump();
-      await tester.pump(const Duration(milliseconds: 300));
+      await _settleDetail(tester);
 
       expect(
         find.text(fixture.languageProvider.tr('asmr_no_subtitle')),
@@ -1913,6 +1933,12 @@ void main() {
         findsOneWidget,
       );
 
+      expect(
+        ModalRoute.of(
+          tester.element(find.byKey(const ValueKey('work_detail_back_button'))),
+        )!.animation!.status,
+        AnimationStatus.completed,
+      );
       await tester.tap(
         find.byKey(const ValueKey<String>('work_detail_back_button')),
       );

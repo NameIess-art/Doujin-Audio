@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as path;
 import 'package:doujin_audio/app/localization/app_language_provider.dart';
 import 'package:doujin_audio/core/widgets/app_dialog.dart';
+import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'support/runtime_test_models.dart';
 import 'package:doujin_audio/features/library/presentation/audio_detail_sheet.dart';
 import 'package:doujin_audio/features/library/presentation/folder_cover_selector.dart';
@@ -278,9 +279,14 @@ void main() {
     await tester.pump();
 
     expect(skeletonCover, findsOneWidget);
-    await tester.pump(const Duration(milliseconds: 150));
+    final halfFadeDuration = kPlaceholderContentTransitionDuration ~/ 2;
+    await tester.pump(halfFadeDuration);
     expect(skeletonCover, findsOneWidget);
-    await tester.pump(const Duration(milliseconds: 151));
+    await tester.pump(
+      kPlaceholderContentTransitionDuration -
+          halfFadeDuration +
+          const Duration(milliseconds: 1),
+    );
     expect(skeletonCover, findsNothing);
     final confirm = find.byKey(const ValueKey<String>('dlsite_review_confirm'));
     final confirmIcon = find.byKey(

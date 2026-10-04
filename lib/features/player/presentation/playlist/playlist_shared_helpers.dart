@@ -21,7 +21,7 @@ import '../../../../core/widgets/app_feedback.dart';
 const double sessionVolumeDisplayMaximum = 1.5;
 const int sessionVolumeDisplayMaximumPercent = 150;
 const double playlistCoverSize = 52;
-const double playlistActionContainerWidth = 56;
+const double playlistActionContainerWidth = 48;
 const double playlistRowHeight = 64;
 const EdgeInsets playlistRowPadding = EdgeInsets.symmetric(
   horizontal: AppSpacing.xs,

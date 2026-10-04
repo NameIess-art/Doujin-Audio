@@ -399,6 +399,8 @@ void main() {
             reason: 'Reopen reuses the prepared subtree.',
           );
           await tester.pumpWidget(const SizedBox.shrink());
+          // Disposing the reopened route releases its navigation interaction.
+          await tester.pump(interaction.idleDelay);
           expect(tester.takeException(), isNull);
         },
         variant: TargetPlatformVariant({platform}),

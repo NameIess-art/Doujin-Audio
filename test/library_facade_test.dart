@@ -1145,88 +1145,93 @@ void main() {
       expect(rows.single['display_name'], '01 renamed');
     });
 
-    test(
-      'cancelled library promotion preserves persisted track classification',
-      () async {
-        await runtimeGraph.runtime.dispose();
-        runtimeGraph = createTestRuntimeGraph(
-          notificationService: notificationService,
-          persistenceRepository: TestPersistenceRepository(
-            database: AppDatabase.test(db),
-          ),
-          skipPersistence: false,
-        );
-        final root = PathMatcher.normalize('C:/music');
-        final trackPath = PathMatcher.normalize('C:/music/existing.mp3');
-        final original = MusicTrack(
-          path: trackPath,
-          displayName: 'Original track',
-          groupKey: root,
-          groupTitle: 'Original folder',
-          groupSubtitle: root,
-          isSingle: false,
-          isFavorite: true,
-          tags: const <String>['keep'],
-        );
-        runtimeGraph.library.beginLibraryBatch();
-        runtimeGraph.library.addWatchedFolder(root, notify: false);
-        runtimeGraph.library.addOrReplaceTracks(<MusicTrack>[
-          original,
-        ], notify: false);
-        await runtimeGraph.library.endLibraryBatch();
-
-        final dataSource = _JsonPreservationScanDataSource()
-          ..configure(
-            selectedPath: root,
-            tracks: <ScannedTrack>[_scannedTrackForPath(trackPath)],
-            afterChunk: () {
-              expect(
-                runtimeGraph.library.trackByPath(trackPath)?.isSingle,
-                isTrue,
-              );
-              runtimeGraph.library.cancelScan();
-            },
+    for (final sourceRoot in ['/music', 'C:/music']) {
+      test(
+        'cancelled library promotion preserves persisted track classification ($sourceRoot)',
+        () async {
+          await runtimeGraph.runtime.dispose();
+          runtimeGraph = createTestRuntimeGraph(
+            notificationService: notificationService,
+            persistenceRepository: TestPersistenceRepository(
+              database: AppDatabase.test(db),
+            ),
+            skipPersistence: false,
           );
-        final outcome = await LibraryScannerService(dataSource: dataSource)
-            .addLibrary(
-              provider: runtimeGraph.library,
-              labels: const LibraryScanLabels(
-                chooseMusicFolder: 'folder',
-                chooseLibraryFolder: 'library',
-                chooseAudioFiles: 'files',
-                importedFiles: 'imported',
-                manuallySelectedFiles: 'selected',
-              ),
-            );
+          final root = PathMatcher.normalize(sourceRoot);
+          final trackPath = PathMatcher.normalize('$sourceRoot/existing.mp3');
+          final original = MusicTrack(
+            path: trackPath,
+            displayName: 'Original track',
+            groupKey: root,
+            groupTitle: 'Original folder',
+            groupSubtitle: root,
+            isSingle: false,
+            isFavorite: true,
+            tags: const <String>['keep'],
+          );
+          runtimeGraph.library.beginLibraryBatch();
+          runtimeGraph.library.addWatchedFolder(root, notify: false);
+          runtimeGraph.library.addOrReplaceTracks(<MusicTrack>[
+            original,
+          ], notify: false);
+          await runtimeGraph.library.endLibraryBatch();
 
-        expect(outcome?.code, LibraryScanOutcomeCode.cancelled);
-        expect(runtimeGraph.library.trackByPath(trackPath)?.isSingle, isFalse);
-        expect(runtimeGraph.library.watchedLibraries, isEmpty);
-        await runtimeGraph.runtime.dispose();
-        runtimeGraph = createTestRuntimeGraph(
-          notificationService: notificationService,
-          persistenceRepository: TestPersistenceRepository(
-            database: AppDatabase.test(db),
-          ),
-          skipPersistence: false,
-        );
-        await runtimeGraph.library.loadPersistedState();
-        final restored = runtimeGraph.library.trackByPath(trackPath)!;
-        expect(runtimeGraph.library.library, hasLength(1));
-        expect(restored.isSingle, isFalse);
-        expect(restored.groupKey, root);
-        expect(restored.groupTitle, 'Original folder');
-        expect(restored.displayName, 'Original track');
-        expect(restored.isFavorite, isTrue);
-        final detail = await runtimeGraph.library.databaseRepository
-            .loadTrackDetail(trackPath);
-        expect(detail?.tags, const <String>['keep']);
-        expect(
-          runtimeGraph.library.audioDetailTargetForTrack(restored),
-          AudioDetailTarget.libraryRootFolder(root),
-        );
-      },
-    );
+          final dataSource = _JsonPreservationScanDataSource()
+            ..configure(
+              selectedPath: root,
+              tracks: <ScannedTrack>[_scannedTrackForPath(trackPath)],
+              afterChunk: () {
+                expect(
+                  runtimeGraph.library.trackByPath(trackPath)?.isSingle,
+                  isTrue,
+                );
+                runtimeGraph.library.cancelScan();
+              },
+            );
+          final outcome = await LibraryScannerService(dataSource: dataSource)
+              .addLibrary(
+                provider: runtimeGraph.library,
+                labels: const LibraryScanLabels(
+                  chooseMusicFolder: 'folder',
+                  chooseLibraryFolder: 'library',
+                  chooseAudioFiles: 'files',
+                  importedFiles: 'imported',
+                  manuallySelectedFiles: 'selected',
+                ),
+              );
+
+          expect(outcome?.code, LibraryScanOutcomeCode.cancelled);
+          expect(
+            runtimeGraph.library.trackByPath(trackPath)?.isSingle,
+            isFalse,
+          );
+          expect(runtimeGraph.library.watchedLibraries, isEmpty);
+          await runtimeGraph.runtime.dispose();
+          runtimeGraph = createTestRuntimeGraph(
+            notificationService: notificationService,
+            persistenceRepository: TestPersistenceRepository(
+              database: AppDatabase.test(db),
+            ),
+            skipPersistence: false,
+          );
+          await runtimeGraph.library.loadPersistedState();
+          final restored = runtimeGraph.library.trackByPath(trackPath)!;
+          expect(runtimeGraph.library.library, hasLength(1));
+          expect(restored.isSingle, isFalse);
+          expect(restored.groupKey, root);
+          expect(restored.groupTitle, 'Original folder');
+          expect(restored.displayName, 'Original track');
+          expect(restored.isFavorite, isTrue);
+          final detail = await runtimeGraph.library.databaseRepository
+              .loadTrackDetail(trackPath);
+          expect(detail?.tags, const <String>['keep']);
+          expect(
+            runtimeGraph.library.audioDetailTargetForTrack(restored),
+            AudioDetailTarget.libraryRootFolder(root),
+          );
+        },
+      );
+    }
 
     test(
       'unchanged watched folder refresh keeps library revision stable',
@@ -2206,7 +2211,7 @@ Future<void> _waitForLibrarySetting(
 }
 
 ScannedTrack _scannedTrackForPath(String trackPath) {
-  final folder = path.dirname(trackPath);
+  final folder = PathMatcher.parentPath(trackPath)!;
   return ScannedTrack(
     path: trackPath,
     groupKey: folder,

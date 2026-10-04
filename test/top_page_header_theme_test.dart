@@ -179,37 +179,31 @@ void main() {
 
       final scrollable = tester.widget<SingleChildScrollView>(viewport);
       expect(scrollable.physics, isA<ClampingScrollPhysics>());
+      final position =
+          tester.state<ScrollableState>(find.byType(Scrollable)).position;
+      expect(position.maxScrollExtent, greaterThan(0));
+      final fullDragDistance =
+          position.maxScrollExtent + tester.getSize(viewport).width;
 
       // Drag left to reach the right end (max extent)
-      await tester.drag(viewport, const Offset(-500, 0));
+      await tester.drag(viewport, Offset(-fullDragDistance, 0));
       await tester.pumpAndSettle();
-      final maxPixels =
-          tester.state<ScrollableState>(find.byType(Scrollable)).position.pixels;
-      expect(maxPixels, greaterThan(0));
+      expect(position.pixels, position.maxScrollExtent);
 
       // Attempting to drag further left at the rightmost end should clamp with no extra slack
       await tester.drag(viewport, const Offset(-200, 0));
       await tester.pumpAndSettle();
-      expect(
-        tester.state<ScrollableState>(find.byType(Scrollable)).position.pixels,
-        maxPixels,
-      );
+      expect(position.pixels, position.maxScrollExtent);
 
       // Drag right to reach the leftmost end (0)
-      await tester.drag(viewport, const Offset(500, 0));
+      await tester.drag(viewport, Offset(fullDragDistance, 0));
       await tester.pumpAndSettle();
-      expect(
-        tester.state<ScrollableState>(find.byType(Scrollable)).position.pixels,
-        0,
-      );
+      expect(position.pixels, 0);
 
       // Attempting to drag further right at the leftmost end should clamp with no extra slack
       await tester.drag(viewport, const Offset(200, 0));
       await tester.pumpAndSettle();
-      expect(
-        tester.state<ScrollableState>(find.byType(Scrollable)).position.pixels,
-        0,
-      );
+      expect(position.pixels, 0);
     });
 
     testWidgets('asmrThemeData produces ThemeData with asmrAccent as primary', (

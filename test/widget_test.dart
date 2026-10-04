@@ -3320,6 +3320,8 @@ void main() {
           );
           select(AsmrCategoryType.collected);
           await tester.pumpAndSettle();
+          await tester.pump(UiInteractionCoordinator.instance.idleDelay);
+          await tester.pumpAndSettle();
           expect(
             controller.categoryViewReadCounts[AsmrCategoryType.collected],
             greaterThan(collectedReads!),
@@ -3846,6 +3848,7 @@ void main() {
       expect(icon, findsOneWidget);
       expect(tester.getCenter(icon).dx, closeTo(menuX, 0.1));
     }
+    await tester.pumpWidget(const SizedBox.shrink());
     debugDefaultTargetPlatformOverride = null;
     expect(tester.takeException(), isNull);
   });
@@ -3925,6 +3928,7 @@ void main() {
       closeTo(expandedMenuX, 0.1),
     );
     expect(iconGap(), closeTo(expandedGap, 0.1));
+    await tester.pumpWidget(const SizedBox.shrink());
     expect(tester.takeException(), isNull);
     debugDefaultTargetPlatformOverride = null;
   });

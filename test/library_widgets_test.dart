@@ -87,6 +87,31 @@ void main() {
   AppRuntimeTestFixture.initialize();
   late Database testDatabase;
 
+  Future<void> finishLibraryTest(
+    WidgetTester tester,
+    AppRuntimeWidgetTestFixture fixture,
+  ) async {
+    await tester.pumpWidget(const SizedBox.shrink());
+    // SQLite completions need real I/O and the widget test's microtask queue.
+    var drained = false;
+    final drain = fixture.undoableRemovalService.commitPending()
+        .then((failures) {
+          expect(failures, 0);
+          return fixture.runtimeGraph.library.detailCacheService.suspendAndWait();
+        })
+        .then((_) => fixture.runtimeGraph.library.flushPendingPersistence())
+        .then((_) => testDatabase.rawQuery('SELECT 1'))
+        .then((_) => drained = true);
+    for (var i = 0; i < 2000 && !drained; i++) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 5)),
+      );
+      await tester.pump(const Duration(milliseconds: 5));
+    }
+    expect(drained, isTrue);
+    await drain;
+  }
+
   setUp(UiInteractionCoordinator.instance.resetForTest);
   tearDown(UiInteractionCoordinator.instance.resetForTest);
 
@@ -99,7 +124,7 @@ void main() {
   });
 
   testWidgets(
-    'loaded folder rows share a 300ms fade and do not replay when scrolled',
+    'loaded folder rows share the content fade and do not replay when scrolled',
     (tester) async {
       final fixture = AppRuntimeWidgetTestFixture(
         coverArtworkCacheService: _NoCoverArtworkCacheService(),
@@ -163,10 +188,16 @@ void main() {
         expect(opacity.value, 1);
         expect(opacity, isA<AlwaysStoppedAnimation<double>>());
       }
-      await tester.pump(const Duration(milliseconds: 150));
-      expect(tester.widget<FadeTransition>(rowFade()).opacity.value,
-          closeTo(0.5, 0.05));
-      await tester.pump(const Duration(milliseconds: 151));
+      final halfFadeDuration = kPlaceholderContentTransitionDuration ~/ 2;
+      await tester.pump(halfFadeDuration);
+      expect(
+        tester.widget<FadeTransition>(rowFade()).opacity.value,
+        closeTo(0.5, 0.05),
+      );
+      await tester.pump(
+        kPlaceholderContentTransitionDuration - halfFadeDuration +
+            const Duration(milliseconds: 1),
+      );
       expectCompletedFade(rowFade());
       expect(tester.element(find.text('Batch track 0')), same(rowElement));
       scroll.jumpTo(scroll.position.maxScrollExtent);
@@ -757,8 +788,7 @@ void main() {
       closeTo(tester.getTopLeft(second).dy, 1),
     );
     expect(tester.getTopLeft(first).dx, lessThan(tester.getTopLeft(second).dx));
-    await tester.pumpWidget(const SizedBox.shrink());
-    await tester.pump(const Duration(seconds: 10));
+    await finishLibraryTest(tester, fixture);
   });
 
   testWidgets('library cover lookups wait until scrolling becomes idle', (
@@ -1537,6 +1567,7 @@ void main() {
       fixture.settingsRepository.pinnedLibraryPaths,
       isNot(contains(PathMatcher.normalize(folderPath))),
     );
+    await finishLibraryTest(tester, fixture);
   });
 
   testWidgets('removing a library audio shows undo and retains other audios', (
@@ -2749,13 +2780,21 @@ void main() {
       ).first;
       expect(tester.widget<FadeTransition>(placeholderFade).opacity.value, 1);
       expect(tester.widget<FadeTransition>(contentFade).opacity.value, 0);
-      await tester.pump(const Duration(milliseconds: 150));
+      final halfFadeDuration = kPlaceholderContentTransitionDuration ~/ 2;
+      await tester.pump(halfFadeDuration);
       expect(skeleton, findsOneWidget);
-      expect(tester.widget<FadeTransition>(placeholderFade).opacity.value,
-          closeTo(0.5, 0.05));
-      expect(tester.widget<FadeTransition>(contentFade).opacity.value,
-          closeTo(0.5, 0.05));
-      await tester.pump(const Duration(milliseconds: 151));
+      expect(
+        tester.widget<FadeTransition>(placeholderFade).opacity.value,
+        closeTo(0.5, 0.05),
+      );
+      expect(
+        tester.widget<FadeTransition>(contentFade).opacity.value,
+        closeTo(0.5, 0.05),
+      );
+      await tester.pump(
+        kPlaceholderContentTransitionDuration - halfFadeDuration +
+            const Duration(milliseconds: 1),
+      );
       expect(skeleton, findsNothing);
       expect(tester.widget<FadeTransition>(contentFade).opacity.value, 1);
       expect(find.byType(CircularProgressIndicator), findsNothing);
@@ -3522,11 +3561,7 @@ void main() {
         findsOneWidget,
       );
 
-      await tester.pumpWidget(const SizedBox.shrink());
-      await tester.runAsync(
-        () => Future<void>.delayed(const Duration(milliseconds: 30)),
-      );
-      await tester.pump();
+      await finishLibraryTest(tester, fixture);
     },
   );
 
@@ -3650,11 +3685,7 @@ void main() {
       );
       expect(updatedSwipeCard.leadingActionIconWidget, isA<PushPinOffIcon>());
 
-      await tester.pumpWidget(const SizedBox.shrink());
-      await tester.runAsync(
-        () => Future<void>.delayed(const Duration(milliseconds: 30)),
-      );
-      await tester.pump();
+      await finishLibraryTest(tester, fixture);
     },
   );
 
@@ -3759,11 +3790,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 100));
       expect(find.text('Remote ASMR Title'), findsOneWidget);
 
-      await tester.pumpWidget(const SizedBox.shrink());
-      await tester.runAsync(
-        () => Future<void>.delayed(const Duration(milliseconds: 30)),
-      );
-      await tester.pump();
+      await finishLibraryTest(tester, fixture);
     },
   );
 
@@ -3817,11 +3844,7 @@ void main() {
       // Selection checkmark should be displayed
       expect(find.byIcon(Icons.check_rounded), findsOneWidget);
 
-      await tester.pumpWidget(const SizedBox.shrink());
-      await tester.runAsync(
-        () => Future<void>.delayed(const Duration(milliseconds: 30)),
-      );
-      await tester.pump();
+      await finishLibraryTest(tester, fixture);
     },
   );
 
@@ -3913,11 +3936,7 @@ void main() {
         PathMatcher.normalize(singleTrack.path),
       );
 
-      await tester.pumpWidget(const SizedBox.shrink());
-      await tester.runAsync(
-        () => Future<void>.delayed(const Duration(milliseconds: 30)),
-      );
-      await tester.pump();
+      await finishLibraryTest(tester, fixture);
     },
   );
 
@@ -3986,6 +4005,7 @@ void main() {
 
       // Navigated to WorkDetailPage
       expect(find.byType(WorkDetailPage), findsOneWidget);
+      await finishLibraryTest(tester, fixture);
     },
   );
 }

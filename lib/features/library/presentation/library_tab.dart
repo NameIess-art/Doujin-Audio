@@ -527,6 +527,28 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
   }
 
   @override
+  void deactivate() {
+    // Sibling disposal can release an interaction before this tab is unmounted.
+    UiInteractionCoordinator.instance.removeListener(
+      _handleStartupRefreshInteractionChanged,
+    );
+    _startupRefreshIdleTimer?.cancel();
+    _startupRefreshIdleTimer = null;
+    super.deactivate();
+  }
+
+  @override
+  void activate() {
+    super.activate();
+    if (_startupRefreshWaiting) {
+      UiInteractionCoordinator.instance.addListener(
+        _handleStartupRefreshInteractionChanged,
+      );
+      _handleStartupRefreshInteractionChanged();
+    }
+  }
+
+  @override
   void dispose() {
     widget.activeTabIndexListenable?.removeListener(_handleActiveTabChanged);
     widget.activeSectionListenable?.removeListener(_handleActiveTabChanged);

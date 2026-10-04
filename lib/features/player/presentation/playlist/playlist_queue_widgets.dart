@@ -460,6 +460,12 @@ class _QueueCoverGrid extends StatelessWidget {
             children: [
               for (var index = 0; index < items.length; index++)
                 _buildSector(index),
+              IgnorePointer(
+                child: CustomPaint(
+                  key: const ValueKey('playback_queue_cover_dividers'),
+                  painter: _QueueCoverDividerPainter(count: items.length),
+                ),
+              ),
             ],
           );
     return ClipOval(
@@ -502,17 +508,22 @@ class _QueueCoverSectorClipper extends CustomClipper<Path> {
 
   double get _sweepAngle => 2 * math.pi / count;
 
-  double get _startAngle => switch (count) {
-    2 => index == 0 ? math.pi / 2 : -math.pi / 2,
-    3 => -5 * math.pi / 6 + index * _sweepAngle,
-    4 => switch (index) {
-      0 => math.pi,
-      1 => -math.pi / 2,
-      2 => math.pi / 2,
-      _ => 0,
-    },
-    _ => throw StateError('Queue cover count must be between 2 and 4'),
-  };
+  static double startAngle(int count, int index) {
+    final sweepAngle = 2 * math.pi / count;
+    return switch (count) {
+      2 => index == 0 ? math.pi / 2 : -math.pi / 2,
+      3 => -5 * math.pi / 6 + index * sweepAngle,
+      4 => switch (index) {
+        0 => math.pi,
+        1 => -math.pi / 2,
+        2 => math.pi / 2,
+        _ => 0,
+      },
+      _ => throw StateError('Queue cover count must be between 2 and 4'),
+    };
+  }
+
+  double get _startAngle => startAngle(count, index);
 
   Offset imageCenterOffset(Size size) {
     final sweep = _sweepAngle;
@@ -543,4 +554,40 @@ class _QueueCoverSectorClipper extends CustomClipper<Path> {
   @override
   bool shouldReclip(_QueueCoverSectorClipper oldClipper) =>
       count != oldClipper.count || index != oldClipper.index;
+}
+
+class _QueueCoverDividerPainter extends CustomPainter {
+  const _QueueCoverDividerPainter({
+    required this.count,
+  });
+
+  static const Color _highlightColor = Color(0x60FFFFFF);
+  static const double _strokeWidth = 1.0;
+
+  final int count;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (count < 2) return;
+    final center = size.center(Offset.zero);
+    final radius = size.shortestSide / 2;
+    final paint = Paint()
+      ..color = _highlightColor
+      ..strokeWidth = _strokeWidth
+      ..strokeCap = StrokeCap.round
+      ..style = PaintingStyle.stroke;
+
+    for (var index = 0; index < count; index++) {
+      final angle = _QueueCoverSectorClipper.startAngle(count, index);
+      final target = center + Offset(
+        radius * math.cos(angle),
+        radius * math.sin(angle),
+      );
+      canvas.drawLine(center, target, paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_QueueCoverDividerPainter oldDelegate) =>
+      count != oldDelegate.count;
 }

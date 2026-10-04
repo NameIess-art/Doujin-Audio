@@ -3495,6 +3495,16 @@ void main() {
           );
         }
       }
+      final dividers = find.byKey(
+        const ValueKey('playback_queue_cover_dividers'),
+      );
+      if (count == 1) {
+        expect(dividers, findsNothing);
+      } else {
+        expect(dividers, findsOneWidget);
+        final customPaint = tester.widget<CustomPaint>(dividers);
+        expect(customPaint.painter, isNotNull);
+      }
       await tester.pump(const Duration(milliseconds: 200));
     });
   }

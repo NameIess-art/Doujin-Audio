@@ -787,10 +787,14 @@ class AsmrLibraryController extends ChangeNotifier
         token: _authSession?.token,
       );
       if (_isWorkRequestCurrent(key)) {
-        _workContent.clearTrackTreeError(work.id);
-        final sortedTree = _workContent.storeTrackTree(work.id, tree);
-        _workContent.bumpTrackRevision(work.id);
-        return sortedTree;
+        final sortedTree = await compute(sortAsmrTrackTreeNaturally, tree);
+        // Account, language or cache invalidation can occur during sorting.
+        if (_isWorkRequestCurrent(key)) {
+          _workContent.clearTrackTreeError(work.id);
+          final storedTree = _workContent.storeTrackTree(work.id, sortedTree);
+          _workContent.bumpTrackRevision(work.id);
+          return storedTree;
+        }
       }
       if (_disposed || key.runtimeCacheEpoch != _runtimeCacheEpoch) {
         throw StateError('asmr_content_invalidated');

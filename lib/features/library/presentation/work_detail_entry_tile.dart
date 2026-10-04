@@ -30,16 +30,24 @@ class WorkDetailEntryTile extends StatefulWidget {
 
 class _WorkDetailEntryTileState extends State<WorkDetailEntryTile> {
   bool _isMenuOpen = false;
+  ValueNotifier<bool>? _menuDismissal;
+
+  @override
+  void dispose() {
+    _menuDismissal?.value = true;
+    _menuDismissal?.dispose();
+    super.dispose();
+  }
 
   Future<void> _showMenu(BuildContext context, RelativeRect position) async {
-    if (mounted) {
-      setState(() => _isMenuOpen = true);
-    }
+    if (!mounted || _isMenuOpen) return;
+    setState(() => _isMenuOpen = true);
     try {
       final result = await showDockAwareMenu<WorkEntryAction>(
         context: context,
         position: position,
         entries: widget.menuEntries,
+        dismissOn: _menuDismissal ??= ValueNotifier(false),
       );
       if (context.mounted && result != null) {
         widget.onAction(result);
@@ -91,6 +99,7 @@ class _WorkDetailEntryTileState extends State<WorkDetailEntryTile> {
     return GestureDetector(
       onSecondaryTapDown: defaultTargetPlatform == TargetPlatform.windows
           ? (details) async {
+              if (_isMenuOpen) return;
               if (mounted) {
                 setState(() => _isMenuOpen = true);
               }
@@ -128,7 +137,9 @@ class _WorkDetailEntryTileState extends State<WorkDetailEntryTile> {
             item.name,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: isFolder ? const TextStyle(fontWeight: FontWeight.w600) : null,
+            style: isFolder
+                ? const TextStyle(fontWeight: FontWeight.w600)
+                : null,
           ),
           trailing: SizedBox.square(
             dimension: 44,

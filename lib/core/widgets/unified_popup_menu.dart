@@ -79,6 +79,7 @@ class _UnifiedPopupMenuButtonState<T> extends State<UnifiedPopupMenuButton<T>>
     with SingleTickerProviderStateMixin {
   final GlobalKey _anchorKey = GlobalKey();
   OverlayEntry? _entry;
+  Future<void>? _closing;
   late final AnimationController _controller;
   final Object _interactionSource = Object();
 
@@ -89,18 +90,57 @@ class _UnifiedPopupMenuButtonState<T> extends State<UnifiedPopupMenuButton<T>>
       vsync: this,
       duration: const Duration(milliseconds: 160),
       reverseDuration: const Duration(milliseconds: 100),
-    );
+    )..addStatusListener(_handleAnimationStatus);
+  }
+
+  void _handleAnimationStatus(AnimationStatus status) {
+    final interaction = UiInteractionCoordinator.instance;
+    if (status == AnimationStatus.forward ||
+        status == AnimationStatus.reverse) {
+      interaction.beginInteraction(_interactionSource);
+    } else {
+      interaction.endInteraction(_interactionSource);
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_entry == null) return;
+    if (!TickerMode.valuesOf(context).enabled) {
+      unawaited(_removeOverlay(immediate: true));
+    } else if (MediaQuery.disableAnimationsOf(context)) {
+      if (_closing != null) {
+        unawaited(_removeOverlay(immediate: true));
+      } else {
+        UiInteractionCoordinator.instance.cancelInteraction(_interactionSource);
+        // Its transitions live in a separate overlay subtree, which cannot
+        // rebuild while the launching button updates dependencies.
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && _entry != null && _closing == null) {
+            _controller.value = 1;
+          }
+        });
+      }
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant UnifiedPopupMenuButton<T> oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!widget.enabled) unawaited(_removeOverlay(immediate: true));
   }
 
   @override
   void dispose() {
     _removeOverlay(immediate: true);
+    UiInteractionCoordinator.instance.cancelInteraction(_interactionSource);
     _controller.dispose();
     super.dispose();
   }
 
   Future<void> _toggle() async {
-    if (!widget.enabled) return;
+    if (!widget.enabled || !TickerMode.valuesOf(context).enabled) return;
     if (_entry != null) {
       await _removeOverlay();
       return;
@@ -131,17 +171,19 @@ class _UnifiedPopupMenuButtonState<T> extends State<UnifiedPopupMenuButton<T>>
           entries: widget.entries,
           onDismiss: _removeOverlay,
           onSelected: (value) async {
+            if (_closing != null) return;
             if (widget.selectAfterDismiss) {
               await _removeOverlay();
-              widget.onSelected(value);
+              if (mounted) widget.onSelected(value);
               return;
             }
             await _removeOverlay(immediate: true);
-            widget.onSelected(value);
+            if (mounted) widget.onSelected(value);
           },
           onTrailingSelected: (value) async {
+            if (_closing != null) return;
             await _removeOverlay();
-            widget.onTrailingSelected?.call(value);
+            if (mounted) widget.onTrailingSelected?.call(value);
           },
         );
       },
@@ -150,25 +192,45 @@ class _UnifiedPopupMenuButtonState<T> extends State<UnifiedPopupMenuButton<T>>
     overlay.insert(_entry!);
     if (MediaQuery.maybeOf(context)?.disableAnimations ?? false) {
       _controller.value = 1;
+      UiInteractionCoordinator.instance.cancelInteraction(_interactionSource);
     } else {
       _controller.forward(from: 0);
     }
   }
 
-  Future<void> _removeOverlay({bool immediate = false}) async {
+  Future<void> _removeOverlay({bool immediate = false}) {
     final entry = _entry;
-    if (entry == null) return;
-    _entry = null;
+    if (entry == null) return Future.value();
     final reduceMotion =
-        MediaQuery.maybeOf(context)?.disableAnimations ?? false;
-    if (!immediate && !reduceMotion) {
-      try {
-        await _controller.reverse();
-      } catch (_) {
-        // The entry may be disposed while its closing animation is running.
+        !immediate && (MediaQuery.maybeOf(context)?.disableAnimations ?? false);
+    if (immediate || reduceMotion) {
+      _controller.stop();
+      _closing = null;
+      _detachOverlay(entry);
+      UiInteractionCoordinator.instance.cancelInteraction(_interactionSource);
+      return Future.value();
+    }
+    return _closing ??= _animateRemoval(entry);
+  }
+
+  Future<void> _animateRemoval(OverlayEntry entry) async {
+    try {
+      await _controller.reverse().orCancel;
+    } on TickerCanceled {
+      // Unmounting also removes the entry while reverse is in progress.
+    } finally {
+      if (identical(_entry, entry)) {
+        _detachOverlay(entry);
+        _closing = null;
       }
     }
+  }
+
+  void _detachOverlay(OverlayEntry entry) {
+    if (!identical(_entry, entry)) return;
+    _entry = null;
     entry.remove();
+    entry.dispose();
     UiInteractionCoordinator.instance.endInteraction(_interactionSource);
   }
 
@@ -499,43 +561,76 @@ Future<T?> showDockAwareMenu<T>({
   required BuildContext context,
   required RelativeRect position,
   required List<UnifiedMenuEntry<T>> entries,
+  Listenable? dismissOn,
 }) async {
   final overlayState =
       MobileOverlayInset.menuOverlayOf(context) ?? Overlay.maybeOf(context);
   if (overlayState == null) return null;
+  final tickerMode = TickerMode.getValuesNotifier(context);
+  if (!tickerMode.value.enabled) return null;
 
   final completer = Completer<T?>();
+  final interactionSource = Object();
+  final themes = InheritedTheme.capture(from: context, to: null);
+  final reducedMotion = MediaQuery.disableAnimationsOf(context);
+  final hostRoute = ModalRoute.of(context);
   late OverlayEntry entry;
+  void cancelMenu() {
+    if (completer.isCompleted) return;
+    UiInteractionCoordinator.instance.cancelInteraction(interactionSource);
+    completer.complete(null);
+  }
+
+  void cancelWhenHidden() {
+    if (!tickerMode.value.enabled) cancelMenu();
+  }
 
   entry = OverlayEntry(
     builder: (_) => _DockMenuOverlay<T>(
       position: position,
       entries: entries,
-      themeContext: context,
+      themes: themes,
+      reducedMotion: reducedMotion,
+      interactionSource: interactionSource,
       onResult: (value) {
         if (!completer.isCompleted) completer.complete(value);
       },
     ),
   );
 
+  UiInteractionCoordinator.instance.beginInteraction(interactionSource);
+  tickerMode.addListener(cancelWhenHidden);
+  dismissOn?.addListener(cancelMenu);
   overlayState.insert(entry);
-  final result = await completer.future;
-  entry.remove();
-  entry.dispose();
-  return result;
+  // A root overlay outlives its launching page. Remove its menu when that
+  // route completes, including a pop before the menu's first layout.
+  unawaited(hostRoute?.popped.then((_) => cancelMenu()));
+  try {
+    return await completer.future;
+  } finally {
+    tickerMode.removeListener(cancelWhenHidden);
+    dismissOn?.removeListener(cancelMenu);
+    entry.remove();
+    entry.dispose();
+    UiInteractionCoordinator.instance.cancelInteraction(interactionSource);
+  }
 }
 
 class _DockMenuOverlay<T> extends StatefulWidget {
   const _DockMenuOverlay({
     required this.position,
     required this.entries,
-    required this.themeContext,
+    required this.themes,
+    required this.reducedMotion,
+    required this.interactionSource,
     required this.onResult,
   });
 
   final RelativeRect position;
   final List<UnifiedMenuEntry<T>> entries;
-  final BuildContext themeContext;
+  final CapturedThemes themes;
+  final bool reducedMotion;
+  final Object interactionSource;
   final ValueChanged<T?> onResult;
 
   @override
@@ -545,7 +640,14 @@ class _DockMenuOverlay<T> extends StatefulWidget {
 class _DockMenuOverlayState<T> extends State<_DockMenuOverlay<T>>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
+  late final CurvedAnimation _curved;
   bool _dismissed = false;
+  bool _started = false;
+  bool _resultCompleted = false;
+  T? _dismissValue;
+  bool get _reducedMotion =>
+      widget.reducedMotion || MediaQuery.disableAnimationsOf(context);
+  Object get _interactionSource => widget.interactionSource;
 
   @override
   void initState() {
@@ -554,77 +656,112 @@ class _DockMenuOverlayState<T> extends State<_DockMenuOverlay<T>>
       vsync: this,
       duration: const Duration(milliseconds: 160),
       reverseDuration: const Duration(milliseconds: 100),
+    )..addStatusListener(_handleAnimationStatus);
+    _curved = CurvedAnimation(
+      parent: _controller,
+      curve: Curves.easeOutCubic,
+      reverseCurve: Curves.easeInCubic,
     );
-    _controller.forward(from: 0);
+  }
+
+  void _handleAnimationStatus(AnimationStatus status) {
+    final interaction = UiInteractionCoordinator.instance;
+    if (status == AnimationStatus.forward ||
+        status == AnimationStatus.reverse) {
+      interaction.beginInteraction(_interactionSource);
+    } else {
+      interaction.endInteraction(_interactionSource);
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_reducedMotion) {
+      _controller.value = _dismissed ? 0 : 1;
+      UiInteractionCoordinator.instance.cancelInteraction(_interactionSource);
+      if (_dismissed) _completeResult(_dismissValue);
+    } else if (!_started) {
+      _controller.forward(from: 0);
+    }
+    _started = true;
   }
 
   @override
   void dispose() {
+    _curved.dispose();
     _controller.dispose();
+    UiInteractionCoordinator.instance.cancelInteraction(_interactionSource);
+    _completeResult(null);
     super.dispose();
   }
 
   Future<void> _dismiss(T? value) async {
     if (_dismissed) return;
     _dismissed = true;
+    _dismissValue = value;
     try {
-      await _controller.reverse();
-    } catch (_) {
-      // Animation controller may be disposed if unmounted.
+      if (!_reducedMotion) {
+        await _controller.reverse().orCancel;
+      }
+    } on TickerCanceled {
+      return;
     }
+    _completeResult(value);
+  }
+
+  void _completeResult(T? value) {
+    if (_resultCompleted) return;
+    _resultCompleted = true;
     widget.onResult(value);
   }
 
   @override
   Widget build(BuildContext context) {
-    final curved = CurvedAnimation(
-      parent: _controller,
-      curve: Curves.easeOutCubic,
-      reverseCurve: Curves.easeInCubic,
-    );
-
     return CallbackShortcuts(
       bindings: {
         const SingleActivator(LogicalKeyboardKey.escape): () => _dismiss(null),
       },
-      child: PopScope(
-        canPop: false,
-        onPopInvokedWithResult: (didPop, _) {
-          if (!didPop) _dismiss(null);
-        },
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: () => _dismiss(null),
-              child: const SizedBox.expand(),
-            ),
-            CustomSingleChildLayout(
-              delegate: _DockMenuLayout(widget.position),
-              child: FadeTransition(
-                opacity: curved,
-                child: ScaleTransition(
-                  alignment: Alignment.topRight,
-                  scale: Tween<double>(begin: 0.96, end: 1).animate(curved),
-                  child: InheritedTheme.captureAll(
-                    widget.themeContext,
-                    Material(
-                      color: Colors.transparent,
-                      child: IntrinsicWidth(
-                        child: _UnifiedPopupMenuCard<T>(
-                          entries: widget.entries,
-                          compact: true,
-                          primaryIcons: true,
-                          onSelected: (value) => _dismiss(value),
+      child: FocusScope(
+        autofocus: true,
+        child: PopScope(
+          canPop: false,
+          onPopInvokedWithResult: (didPop, _) {
+            if (!didPop) _dismiss(null);
+          },
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => _dismiss(null),
+                child: const SizedBox.expand(),
+              ),
+              CustomSingleChildLayout(
+                delegate: _DockMenuLayout(widget.position),
+                child: FadeTransition(
+                  opacity: _curved,
+                  child: ScaleTransition(
+                    alignment: Alignment.topRight,
+                    scale: Tween<double>(begin: 0.96, end: 1).animate(_curved),
+                    child: widget.themes.wrap(
+                      Material(
+                        color: Colors.transparent,
+                        child: IntrinsicWidth(
+                          child: _UnifiedPopupMenuCard<T>(
+                            entries: widget.entries,
+                            compact: true,
+                            primaryIcons: true,
+                            onSelected: (value) => _dismiss(value),
+                          ),
                         ),
                       ),
                     ),
                   ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

@@ -669,7 +669,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
         color: Theme.of(context).colorScheme.primary,
         backgroundColor: Theme.of(
           context,
-        ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
+        ).colorScheme.surfaceContainerHighest,
         onRefresh: _runLibraryPullRefresh,
         // Adjust edgeOffset because RefreshIndicator is now inside the restricted Positioned.
         edgeOffset: listTopPadding,
@@ -700,8 +700,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                         color: Theme.of(context).colorScheme.primary,
                         backgroundColor: Theme.of(context)
                             .colorScheme
-                            .surfaceContainerHighest
-                            .withValues(alpha: 0.6),
+                            .surfaceContainerHighest,
                         onRefresh: _runLibraryPullRefresh,
                         edgeOffset: listTopPadding,
                         displacement: 32,

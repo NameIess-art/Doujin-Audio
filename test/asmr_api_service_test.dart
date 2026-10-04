@@ -4,8 +4,141 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_api_service.dart';
+import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
 
 void main() {
+  test(
+    'background decoding preserves localized pages and nested tracks',
+    () async {
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      final subscription = server.listen((request) async {
+        request.response.headers.contentType = ContentType.json;
+        final Object payload = request.uri.path.startsWith('/api/tracks/')
+            ? [
+                {
+                  'title': '中文 folder',
+                  'type': 'folder',
+                  'children': [
+                    {
+                      'title': '音声 10.mp3',
+                      'type': 'audio',
+                      'hash': 'voice',
+                      'duration': 1.25,
+                      'size': 4096,
+                      'mediaStreamUrl': 'https://example.test/voice.mp3',
+                      'work': {'id': 72, 'source_id': 'RJ123456'},
+                    },
+                  ],
+                },
+              ]
+            : {
+                'works': [
+                  {
+                    'id': 72,
+                    'title': 'Fallback',
+                    'i18n': {
+                      'zh-cn': {'title': '中文标题'},
+                      'ja-jp': {'title': '日本語'},
+                      'en-us': {'title': 'English'},
+                    },
+                  },
+                ],
+                'pagination': {
+                  'currentPage': 1,
+                  'pageSize': 1,
+                  'totalCount': 1,
+                },
+              };
+        request.response.write(jsonEncode(payload));
+        await request.response.close();
+      });
+      final service = AsmrApiService(
+        baseUri: Uri.parse('http://${server.address.address}:${server.port}'),
+      );
+      try {
+        for (final (language, title) in [
+          (AsmrContentLanguage.zh, '中文标题'),
+          (AsmrContentLanguage.ja, '日本語'),
+          (AsmrContentLanguage.en, 'English'),
+        ]) {
+          final page = await service.fetchWorks(
+            order: 'release',
+            sort: 'desc',
+            language: language,
+          );
+          final search = await service.searchWorks(
+            keyword: 'voice',
+            order: 'release',
+            sort: 'desc',
+            language: language,
+          );
+          expect(page.works.single.title, title);
+          expect(search.works.single.title, title);
+        }
+        final tree = await service.fetchTrackTree(72);
+        final track = tree.single.children.single;
+        expect(track.relativePath, '中文 folder/音声 10.mp3');
+        expect(track.duration, const Duration(milliseconds: 1250));
+        expect(track.size, 4096);
+        expect(track.workId, 72);
+        expect(track.sourceId, 'RJ123456');
+        expect(track.streamUrl, 'https://example.test/voice.mp3');
+      } finally {
+        service.close();
+        await subscription.cancel();
+        await server.close(force: true);
+      }
+    },
+  );
+
+  test(
+    'track decoding retains shape and model field errors without failover',
+    () async {
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      final subscription = server.listen((request) async {
+        request.response.headers.contentType = ContentType.json;
+        request.response.write(switch (request.uri.path) {
+          '/api/tracks/1' => '{"unexpected":true}',
+          '/api/tracks/2' => '[{"title":42}]',
+          _ => '[{"title":"invalid duration","duration":1e400}]',
+        });
+        await request.response.close();
+      });
+      final client = HttpClient();
+      final hosts = <String>[];
+      client.findProxy = (uri) {
+        hosts.add(uri.host);
+        return 'DIRECT';
+      };
+      final service = AsmrApiService(
+        httpClient: client,
+        baseUri: Uri.parse('http://${server.address.address}:${server.port}'),
+      );
+      try {
+        await expectLater(
+          service.fetchTrackTree(1),
+          throwsA(
+            isA<HttpException>().having(
+              (error) => error.message,
+              'message',
+              'Unexpected API response list.',
+            ),
+          ),
+        );
+        await expectLater(service.fetchTrackTree(2), throwsA(isA<TypeError>()));
+        await expectLater(
+          service.fetchTrackTree(3),
+          throwsA(isA<UnsupportedError>()),
+        );
+        expect(hosts, everyElement(server.address.address));
+      } finally {
+        service.close();
+        await subscription.cancel();
+        await server.close(force: true);
+      }
+    },
+  );
+
   test('official media hashes use API redirect endpoints before raw URLs', () {
     expect(
       AsmrApiService.mediaStreamUrlsForHash('1583603/1853944').first,

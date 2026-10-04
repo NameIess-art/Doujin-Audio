@@ -761,7 +761,8 @@ class GlassRefreshIndicatorState extends State<GlassRefreshIndicator>
                     child: ClipOval(
                       child: Container(
                         color:
-                            widget.backgroundColor ?? cs.surfaceContainerHigh,
+                            (widget.backgroundColor ?? cs.surfaceContainerHigh)
+                                .withValues(alpha: 1.0),
                         child: innerIndicator,
                       ),
                     ),

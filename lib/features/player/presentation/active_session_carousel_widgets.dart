@@ -767,6 +767,7 @@ class _ActiveSessionCover extends ConsumerWidget {
           seed: track?.displayName ?? track?.path ?? sessionId,
           cacheWidth: coverCacheWidth,
           useDefaultCacheWidth: false,
+          deferLoadDuringInteraction: true,
           fit: BoxFit.cover,
           displayMode: CoverImageDisplayMode.fill,
           compact: true,

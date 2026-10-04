@@ -1254,6 +1254,84 @@ void registerAsmrControllerStateTests({
   );
 
   test(
+    'runtime clearing rejects trees while background sorting is pending',
+    () async {
+      await resetPrefs();
+      final api = _FakeAsmrApiService(
+        trackTree: [
+          for (var i = 2000; i > 0; i--)
+            _trackFile('Track $i.mp3', 'Track $i.mp3'),
+        ],
+      );
+      final controller = createTestAsmrController(
+        preferencesStore: preferences,
+        apiService: api,
+        persistenceRepository: persistenceRepository(),
+      );
+      final request = controller.ensureTrackTree(_work(id: 72, title: 'Work'));
+      final rejected = expectLater(request, throwsStateError);
+      // Drain the API's Future continuations without delivering the worker's
+      // event-queue response, so invalidation happens during async sorting.
+      for (var i = 0; i < 8; i++) {
+        await Future<void>.value();
+      }
+      expect(api.trackFetchWorkIds, [72]);
+      expect(controller.trackTreeFor(72), isNull);
+      expect(controller.trackTreeViewState(72).isLoading, isTrue);
+      controller.clearRuntimeCaches();
+      await rejected;
+      expect(controller.trackTreeFor(72), isNull);
+      expect(api.trackFetchWorkIds, [72]);
+    },
+  );
+
+  for (final accountChange in [false, true]) {
+    test(
+      '${accountChange ? 'account' : 'language'} changes discard a sorted tree before caching and reload it',
+      () async {
+        await resetPrefs();
+        final replacementStarted = Completer<void>();
+        final replacementReleased = Completer<void>();
+        var fetches = 0;
+        final api = _FakeAsmrApiService(
+          trackTree: [_trackFile('Track 2.mp3', 'Track 2.mp3')],
+          beforeFetchTrackTree: (_) async {
+            if (++fetches == 2) {
+              replacementStarted.complete();
+              await replacementReleased.future;
+            }
+          },
+        );
+        final controller = createTestAsmrController(
+          preferencesStore: preferences,
+          apiService: api,
+          persistenceRepository: persistenceRepository(),
+        );
+        await controller.initializeForVisiblePage();
+        final request = controller.ensureTrackTree(
+          _work(id: 72, title: 'Work'),
+        );
+        for (var i = 0; i < 8; i++) {
+          await Future<void>.value();
+        }
+        expect(controller.trackTreeFor(72), isNull);
+        final authUpdate = accountChange
+            ? controller.logoutAsmrAccount()
+            : null;
+        if (!accountChange) controller.setPageLanguage(AppLanguage.en);
+        await replacementStarted.future;
+        await authUpdate;
+        expect(controller.trackTreeFor(72), isNull);
+        replacementReleased.complete();
+        final tree = await request;
+        expect(tree.single.title, 'Track 2.mp3');
+        expect(controller.trackTreeFor(72), same(tree));
+        expect(api.trackFetchWorkIds, [72, 72]);
+      },
+    );
+  }
+
+  test(
     'runtime clearing rejects pending file trees without starting a replacement request',
     () async {
       await resetPrefs();

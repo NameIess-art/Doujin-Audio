@@ -1,12 +1,166 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/core/widgets/swipe_reveal_card.dart';
+import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/app/theme/theme_provider.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  final coordinator = UiInteractionCoordinator.instance;
+  setUp(coordinator.resetForTest);
+  tearDown(coordinator.resetForTest);
+
+  testWidgets(
+    'async data waits through dragging and settling, then resumes while open',
+    (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: SizedBox(
+                width: 260,
+                height: 96,
+                child: SwipeRevealCard(
+                  shape: const RoundedRectangleBorder(),
+                  actionLabel: 'Remove',
+                  removeTooltip: 'Remove',
+                  onRemove: () {},
+                  child: const Text('Swipe target'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      final gesture = await tester.startGesture(
+        tester.getCenter(find.text('Swipe target')),
+      );
+      await gesture.moveBy(const Offset(-40, 0));
+      await gesture.moveBy(const Offset(-40, 0));
+      expect(coordinator.isInteracting, isTrue);
+      var committed = false;
+      final result = Completer<void>();
+      final completion = result.future.then(
+        (_) => coordinator.scheduleCommit(
+          key: 'swipe-result',
+          commit: () => committed = true,
+        ),
+      );
+      result.complete();
+      await completion;
+      await tester.pump();
+      expect(committed, isFalse);
+      await gesture.up();
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(committed, isFalse);
+      await tester.pumpAndSettle();
+      await tester.pump(coordinator.idleDelay);
+      await tester.pump();
+      expect(committed, isTrue);
+      expect(coordinator.isInteracting, isFalse);
+      expect(find.byTooltip('Remove'), findsOneWidget);
+    },
+  );
+
+  for (final ending in ['cancel', 'hide', 'dispose', 'disable']) {
+    testWidgets('swipe $ending releases animation protection', (tester) async {
+      var enabled = true;
+      var ticking = true;
+      late StateSetter update;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: StatefulBuilder(
+              builder: (_, setState) {
+                update = setState;
+                return TickerMode(
+                  enabled: ticking,
+                  child: Center(
+                    child: SizedBox(
+                      width: 260,
+                      height: 96,
+                      child: SwipeRevealCard(
+                        enabled: enabled,
+                        shape: const RoundedRectangleBorder(),
+                        actionLabel: 'Remove',
+                        removeTooltip: 'Remove',
+                        onRemove: () {},
+                        child: const Text('Swipe target'),
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+      );
+      final gesture = await tester.startGesture(
+        tester.getCenter(find.text('Swipe target')),
+      );
+      await gesture.moveBy(const Offset(-40, 0));
+      await gesture.moveBy(const Offset(-40, 0));
+      expect(coordinator.isInteracting, isTrue);
+      if (ending == 'cancel') {
+        await gesture.cancel();
+      } else if (ending == 'dispose') {
+        await tester.pumpWidget(const SizedBox());
+        await gesture.cancel();
+      } else {
+        update(() {
+          if (ending == 'hide') ticking = false;
+          if (ending == 'disable') enabled = false;
+        });
+        await tester.pump();
+        await gesture.cancel();
+      }
+      await tester.pumpAndSettle();
+      await tester.pump(coordinator.idleDelay);
+      expect(coordinator.isInteracting, isFalse);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  testWidgets('reduced motion settles swipe immediately', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MediaQuery(
+          data: const MediaQueryData(disableAnimations: true),
+          child: Scaffold(
+            body: Center(
+              child: SizedBox(
+                width: 260,
+                height: 96,
+                child: SwipeRevealCard(
+                  shape: const RoundedRectangleBorder(),
+                  actionLabel: 'Remove',
+                  removeTooltip: 'Remove',
+                  onRemove: () {},
+                  child: const Text('Swipe target'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.drag(find.text('Swipe target'), const Offset(-180, 0));
+    await tester.pump();
+    expect(
+      tester
+          .widget<TweenAnimationBuilder<double>>(
+            find.byType(TweenAnimationBuilder<double>),
+          )
+          .duration,
+      Duration.zero,
+    );
+    await tester.pump(coordinator.idleDelay);
+    expect(coordinator.isInteracting, isFalse);
+  });
 
   testWidgets(
     'Windows context menu reuses all actions without triggering tap',
@@ -58,15 +212,26 @@ void main() {
         await tester.pumpAndSettle();
         expect(find.byType(PopupMenuItem<VoidCallback>), findsNWidgets(4));
         final item = tester.widget<PopupMenuItem<VoidCallback>>(
-          find.ancestor(of: find.text(label), matching: find.byType(PopupMenuItem<VoidCallback>)),
+          find.ancestor(
+            of: find.text(label),
+            matching: find.byType(PopupMenuItem<VoidCallback>),
+          ),
         );
         expect(item.height, 40);
-        final iconContext = tester.element(find.descendant(
-          of: find.ancestor(of: find.text(label), matching: find.byType(PopupMenuItem<VoidCallback>)),
-          matching: find.byType(Icon),
-        ));
+        final iconContext = tester.element(
+          find.descendant(
+            of: find.ancestor(
+              of: find.text(label),
+              matching: find.byType(PopupMenuItem<VoidCallback>),
+            ),
+            matching: find.byType(Icon),
+          ),
+        );
         final colors = Theme.of(iconContext).colorScheme;
-        expect(IconTheme.of(iconContext).color, label == 'Remove' ? colors.error : colors.primary);
+        expect(
+          IconTheme.of(iconContext).color,
+          label == 'Remove' ? colors.error : colors.primary,
+        );
         await tester.tap(find.text(label));
         await tester.pumpAndSettle();
       }

@@ -43,6 +43,7 @@ void main() {
     testWidgets(
       'ASMR appended page fades once from its data commit, reduce motion $reduceMotion',
       (tester) async {
+        final halfFadeDuration = kPlaceholderContentTransitionDuration ~/ 2;
         final coordinator = UiInteractionCoordinator.instance;
         coordinator.resetForTest();
         addTearDown(coordinator.resetForTest);
@@ -85,7 +86,7 @@ void main() {
         controller.updateFavorites([oldWork]);
         await tester.pump();
         await tester.pump();
-        await tester.pump(const Duration(milliseconds: 300));
+        await tester.pump(kPlaceholderContentTransitionDuration);
         await tester.pump();
 
         final footer = find.byKey(
@@ -122,12 +123,12 @@ void main() {
           expect(progress, findsNothing);
         } else {
           expect(footerOpacity(), 1);
-          await tester.pump(const Duration(milliseconds: 150));
+          await tester.pump(halfFadeDuration);
           expect(
             footerOpacity(),
             closeTo(Curves.easeInOutCubic.transform(0.5), 0.01),
           );
-          await tester.pump(const Duration(milliseconds: 150));
+          await tester.pump(halfFadeDuration);
           expect(footerOpacity(), closeTo(0, 0.000001));
           await tester.pump(const Duration(milliseconds: 1));
           await tester.pump();
@@ -157,7 +158,7 @@ void main() {
         expect(opacityFor(1), 1);
         expect(opacityFor(2), reduceMotion ? 1 : 0);
         expect(tester.element(oldCard), same(oldCardElement));
-        await tester.pump(const Duration(milliseconds: 150));
+        await tester.pump(halfFadeDuration);
         expect(opacityFor(1), 1);
         expect(
           opacityFor(2),
@@ -179,7 +180,7 @@ void main() {
             0.01,
           ),
         );
-        await tester.pump(const Duration(milliseconds: 150));
+        await tester.pump(halfFadeDuration);
         await tester.pump();
         expect(opacityFor(2), 1);
 
@@ -194,7 +195,7 @@ void main() {
             0.01,
           ),
         );
-        await tester.pump(const Duration(milliseconds: 150));
+        await tester.pump(halfFadeDuration);
         await tester.pump();
         expect(opacityFor(36), 1);
         list.controller!.jumpTo(0);
@@ -658,15 +659,31 @@ void main() {
           of: find.byKey(const ValueKey<String>('asmr_search_favorites')),
           matching: find.text('Shared work 1'),
         ),
-        findsOneWidget,
+        findsNothing,
       );
       await tester.pumpAndSettle();
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey<String>('asmr_search_favorites')),
+          matching: find.text('Shared work 1'),
+        ),
+        findsOneWidget,
+      );
       expect(controller.ensureLanguages, hasLength(rootLoads));
       await tester.tap(find.text('收藏'));
       await tester.pumpAndSettle();
       Future<void> query(String value) async {
         await tester.enterText(find.byType(TextField), value);
         await tester.pump(const Duration(milliseconds: 260));
+        // Scroll idle timers can outlive the last scheduled animation frame.
+        // Wait for the new request's published cards before reading its offset.
+        await pumpUntilFound(
+          tester,
+          find.descendant(
+            of: find.byKey(const ValueKey<String>('asmr_search_favorites')),
+            matching: find.byKey(const ValueKey<String>('asmr-work-1')),
+          ),
+        );
         await tester.pumpAndSettle();
       }
 

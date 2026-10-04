@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../core/ui/ui_interaction_coordinator.dart';
 import '../localization/app_language_provider.dart';
 import '../../features/player/application/playback_session_snapshot.dart';
 import '../../features/player/presentation/active_session_carousel.dart';
@@ -46,6 +47,9 @@ class MobileDockCapsuleContentState extends State<MobileDockCapsuleContent>
   late final AnimationController _expandController;
   late final Listenable _animationListenable;
   List<PlaybackSessionSnapshot> _cachedSessions = const [];
+  final Object _motionInteraction = Object();
+  bool _tickerModeEnabled = true;
+  bool _disableAnimations = false;
 
   static const Duration _motionDuration = Duration(milliseconds: 280);
 
@@ -77,6 +81,7 @@ class MobileDockCapsuleContentState extends State<MobileDockCapsuleContent>
     ]);
 
     _appearanceController.addStatusListener((status) {
+      _syncMotionInteraction();
       if (status == AnimationStatus.dismissed) {
         if (mounted && widget.overlaySessions.isEmpty) {
           setState(() {
@@ -87,11 +92,39 @@ class MobileDockCapsuleContentState extends State<MobileDockCapsuleContent>
       widget.onReportPlaybackCoverRect();
     });
     _expandController.addStatusListener((_) {
+      _syncMotionInteraction();
       widget.onReportPlaybackCoverRect();
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) widget.onReportPlaybackCoverRect();
     });
+  }
+
+  void _syncMotionInteraction() {
+    final coordinator = UiInteractionCoordinator.instance;
+    if (!_tickerModeEnabled || _disableAnimations) {
+      coordinator.cancelInteraction(_motionInteraction);
+    } else if (_appearanceController.isAnimating ||
+        _expandController.isAnimating) {
+      coordinator.beginInteraction(_motionInteraction);
+    } else {
+      coordinator.endInteraction(_motionInteraction);
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _tickerModeEnabled = TickerMode.valuesOf(context).enabled;
+    _disableAnimations = MediaQuery.disableAnimationsOf(context);
+    if (_disableAnimations) {
+      final hasPlayback = widget.overlaySessions.isNotEmpty;
+      _appearanceController.value = hasPlayback ? 1 : 0;
+      _expandController.value = hasPlayback && widget.isPlaybackExpanded
+          ? 1
+          : 0;
+    }
+    _syncMotionInteraction();
   }
 
   @override
@@ -105,6 +138,7 @@ class MobileDockCapsuleContentState extends State<MobileDockCapsuleContent>
     }
 
     final disableAnimations = MediaQuery.disableAnimationsOf(context);
+    _disableAnimations = disableAnimations;
 
     if (hasPlayback != hadPlayback) {
       if (disableAnimations) {
@@ -138,6 +172,7 @@ class MobileDockCapsuleContentState extends State<MobileDockCapsuleContent>
 
   @override
   void dispose() {
+    UiInteractionCoordinator.instance.cancelInteraction(_motionInteraction);
     _appearanceCurve.dispose();
     _appearanceController.dispose();
     _expandController.dispose();

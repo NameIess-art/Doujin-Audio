@@ -9,7 +9,7 @@ import '../../features/player/presentation/playlist/session_detail_page.dart';
 import 'main_destination.dart';
 import 'app_dock_panel.dart';
 
-class DesktopMainNavigation extends StatelessWidget {
+class DesktopMainNavigation extends StatefulWidget {
   const DesktopMainNavigation({
     super.key,
     required this.i18n,
@@ -45,7 +45,77 @@ class DesktopMainNavigation extends StatelessWidget {
   onReportPlaybackRect;
 
   @override
+  State<DesktopMainNavigation> createState() => _DesktopMainNavigationState();
+}
+
+class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
+  final Object _motionInteraction = Object();
+  bool _motionActive = false;
+  bool _tickerModeEnabled = true;
+  bool _disableAnimations = false;
+  bool? _landscapeLayout;
+
+  void _syncMotionInteraction() {
+    final coordinator = UiInteractionCoordinator.instance;
+    if (!_tickerModeEnabled || _disableAnimations) {
+      coordinator.cancelInteraction(_motionInteraction);
+    } else if (_motionActive) {
+      coordinator.beginInteraction(_motionInteraction);
+    } else {
+      coordinator.endInteraction(_motionInteraction);
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant DesktopMainNavigation oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _disableAnimations = MediaQuery.disableAnimationsOf(context);
+    if (oldWidget.isMenuCollapsed != widget.isMenuCollapsed) {
+      _motionActive = !_disableAnimations;
+      _syncMotionInteraction();
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _tickerModeEnabled = TickerMode.valuesOf(context).enabled;
+    _disableAnimations = MediaQuery.disableAnimationsOf(context);
+    final landscape =
+        defaultTargetPlatform == TargetPlatform.windows ||
+        MediaQuery.orientationOf(context) == Orientation.landscape;
+    if (_disableAnimations || _landscapeLayout != landscape) {
+      _motionActive = false;
+    }
+    _landscapeLayout = landscape;
+    _syncMotionInteraction();
+  }
+
+  @override
+  void dispose() {
+    UiInteractionCoordinator.instance.cancelInteraction(_motionInteraction);
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final DesktopMainNavigation(
+      :i18n,
+      :overlaySessions,
+      :destinations,
+      :isMenuCollapsed,
+      :activePageIndex,
+      :menuIconKeys,
+      :menuIconLinks,
+      :collapseOffset,
+      :onSwitchPage,
+      :onToggleMenu,
+      :playbackGeometryKey,
+      :onReportPlaybackRect,
+    ) = widget;
+    final motionDuration = _disableAnimations
+        ? Duration.zero
+        : kThemeAnimationDuration;
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final isLandscapeLayout =
@@ -72,7 +142,11 @@ class DesktopMainNavigation extends StatelessWidget {
 
     return AnimatedContainer(
       key: ValueKey<bool>(isLandscapeLayout),
-      duration: kThemeAnimationDuration,
+      duration: motionDuration,
+      onEnd: () {
+        _motionActive = false;
+        _syncMotionInteraction();
+      },
       curve: Curves.easeInOut,
       width: containerWidth,
       margin: isLandscapeLayout
@@ -279,7 +353,7 @@ class DesktopMainNavigation extends StatelessWidget {
                                         ? 1
                                         : 0,
                                   ),
-                                  duration: kThemeAnimationDuration,
+                                  duration: motionDuration,
                                   curve: Curves.easeInOut,
                                   builder: (context, collapse, _) => Stack(
                                     children: [
@@ -358,7 +432,6 @@ class DesktopMainNavigation extends StatelessWidget {
               child: LayoutBuilder(
                 builder: (context, constraints) {
                   void reportPlaybackRect() {
-                    if (UiInteractionCoordinator.instance.isInteracting) return;
                     onReportPlaybackRect(
                       dockCollapsed: isMenuCollapsed,
                       dockAreaWidth: constraints.maxWidth,
@@ -373,7 +446,7 @@ class DesktopMainNavigation extends StatelessWidget {
                         : Alignment.centerLeft,
                     child: AnimatedContainer(
                       key: playbackGeometryKey,
-                      duration: kThemeAnimationDuration,
+                      duration: motionDuration,
                       curve: Curves.easeInOut,
                       onEnd: reportPlaybackRect,
                       width: isMenuCollapsed

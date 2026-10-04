@@ -8,6 +8,93 @@ import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  test('initial listenable read waits until every interaction ends', () async {
+    final interaction = UiInteractionCoordinator(idleDelay: Duration.zero);
+    final source = ValueNotifier<int>(0);
+    final values = <int>[];
+    var reads = 0;
+    final firstMotion = Object();
+    final secondMotion = Object();
+    interaction.beginInteraction(firstMotion);
+    interaction.beginInteraction(secondMotion);
+    final subscription = interactionDeferredListenableStream(
+      source: source,
+      read: () {
+        reads++;
+        return source.value;
+      },
+      coordinator: interaction,
+      deferInitialRead: true,
+    ).listen(values.add);
+    await Future<void>.delayed(Duration.zero);
+    source.value = 1;
+    interaction.beginGeneration();
+    source.value = 2;
+    interaction.cancelInteraction(firstMotion);
+    interaction.flushPendingCommitsForTest();
+    expect(reads, 0);
+    expect(values, isEmpty);
+
+    interaction.cancelInteraction(secondMotion);
+    interaction.flushPendingCommitsForTest();
+    expect(reads, 1);
+    expect(values, [2]);
+    expect(interaction.pendingCommitCount, 0);
+    await subscription.cancel();
+    source.dispose();
+    interaction.dispose();
+  });
+
+  test('cancellation discards a deferred initial read', () async {
+    final interaction = UiInteractionCoordinator(idleDelay: Duration.zero);
+    final source = ValueNotifier<int>(0);
+    var reads = 0;
+    final motion = Object();
+    interaction.beginInteraction(motion);
+    final subscription = interactionDeferredListenableStream(
+      source: source,
+      read: () {
+        reads++;
+        return source.value;
+      },
+      coordinator: interaction,
+      deferInitialRead: true,
+    ).listen((_) {});
+    await Future<void>.delayed(Duration.zero);
+    expect(interaction.pendingCommitCount, 1);
+    await subscription.cancel();
+    interaction.cancelInteraction(motion);
+    interaction.flushPendingCommitsForTest();
+    source.value = 1;
+    expect(reads, 0);
+    expect(interaction.pendingCommitCount, 0);
+    source.dispose();
+    interaction.dispose();
+  });
+
+  test(
+    'initial read remains immediate by default during interaction',
+    () async {
+      final interaction = UiInteractionCoordinator(idleDelay: Duration.zero);
+      final source = ValueNotifier<int>(7);
+      final values = <int>[];
+      final motion = Object();
+      interaction.beginInteraction(motion);
+      final subscription = interactionDeferredListenableStream(
+        source: source,
+        read: () => source.value,
+        coordinator: interaction,
+      ).listen(values.add);
+      await Future<void>.delayed(Duration.zero);
+      expect(values, [7]);
+      expect(interaction.pendingCommitCount, 0);
+      await subscription.cancel();
+      interaction.cancelInteraction(motion);
+      source.dispose();
+      interaction.dispose();
+    },
+  );
+
   test('listenable bridge emits latest value after interaction', () async {
     final interaction = UiInteractionCoordinator(
       idleDelay: const Duration(days: 1),

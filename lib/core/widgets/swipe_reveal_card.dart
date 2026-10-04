@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../ui/ui_interaction_coordinator.dart';
 import 'app_feedback.dart';
 import 'swipe_reveal_action_pane.dart';
 import 'unified_popup_menu.dart';
@@ -108,6 +109,22 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
   bool _tickerModeEnabled = true;
   bool _revealedFromStart = false;
   bool _dragStartFromStart = false;
+  double _settledWidth = 0;
+  final Object _interactionSource = Object();
+
+  void _beginMotion() {
+    UiInteractionCoordinator.instance.beginInteraction(_interactionSource);
+  }
+
+  void _finishMotion() {
+    UiInteractionCoordinator.instance.endInteraction(_interactionSource);
+  }
+
+  @override
+  void dispose() {
+    UiInteractionCoordinator.instance.cancelInteraction(_interactionSource);
+    super.dispose();
+  }
 
   bool get _hasSecondaryAction => widget.onSecondaryAction != null;
   bool get _hasTertiaryAction => widget.onTertiaryAction != null;
@@ -147,7 +164,7 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
   void didUpdateWidget(covariant SwipeRevealCard oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (!widget.enabled && oldWidget.enabled) {
-      _closePane(immediate: true);
+      _resetPaneState();
     }
     if (oldWidget.key != widget.key &&
         (_revealedWidth != 0 || _actionPaneActive)) {
@@ -156,6 +173,8 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
   }
 
   void _resetPaneState() {
+    UiInteractionCoordinator.instance.cancelInteraction(_interactionSource);
+    _settledWidth = 0;
     _revealedWidth = 0;
     _dragStartRevealedWidth = 0;
     _dragDx = 0;
@@ -169,7 +188,17 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
   }
 
   void _closePane({bool immediate = false}) {
-    if (_revealedWidth == 0) return;
+    if (_revealedWidth == 0) {
+      if (immediate) {
+        UiInteractionCoordinator.instance.cancelInteraction(_interactionSource);
+      }
+      return;
+    }
+    if (immediate) {
+      UiInteractionCoordinator.instance.cancelInteraction(_interactionSource);
+    } else {
+      _beginMotion();
+    }
     setState(() {
       _snapClosed = immediate;
       _revealedWidth = 0;
@@ -244,16 +273,18 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
   }
 
   void _handleHorizontalDragStart(DragStartDetails details) {
-    if (!widget.enabled) return;
+    if (!widget.enabled || !_tickerModeEnabled) return;
     _dragStartRevealedWidth = _revealedWidth;
     _dragStartFromStart = _revealedFromStart;
     _dragDx = 0;
     _dragDy = 0;
     _dragAccepted = _revealedWidth > 0;
     _dragRejected = false;
+    if (_dragAccepted) _beginMotion();
   }
 
   void _handleHorizontalDragUpdate(DragUpdateDetails details) {
+    if (!widget.enabled || !_tickerModeEnabled) return;
     _dragDx += details.delta.dx;
     _dragDy += details.delta.dy;
 
@@ -281,6 +312,7 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
       _revealedFromStart = _dragDx > 0;
       _dragStartFromStart = _revealedFromStart;
       _dragAccepted = true;
+      _beginMotion();
       AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
       widget.onWillReveal?.call();
     }
@@ -291,9 +323,7 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
         verticalDistance > horizontalDistance * _rejectSlopeRatio) {
       _dragAccepted = false;
       _dragRejected = true;
-      setState(() {
-        _revealedWidth = 0;
-      });
+      _closePane();
       return;
     }
 
@@ -318,10 +348,9 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
       _dragAccepted = false;
       _dragRejected = false;
       if (_dragStartRevealedWidth == 0 && _revealedWidth != 0) {
-        setState(() {
-          _revealedWidth = 0;
-        });
+        _closePane();
       }
+      if (_settledWidth == _revealedWidth) _finishMotion();
       return;
     }
     final velocity = details.primaryVelocity ?? 0;
@@ -336,6 +365,7 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
     });
     _dragAccepted = false;
     _dragRejected = false;
+    if (_settledWidth == _revealedWidth) _finishMotion();
   }
 
   @override
@@ -462,6 +492,7 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
             onHorizontalDragUpdate: _handleHorizontalDragUpdate,
             onHorizontalDragEnd: _handleHorizontalDragEnd,
             onSecondaryTap: () {
+              _beginMotion();
               setState(() {
                 final opening = !_isOpen;
                 _actionPaneActive = opening || _actionPaneActive;
@@ -472,6 +503,8 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
             onHorizontalDragCancel: () {
               _dragAccepted = false;
               _dragRejected = false;
+              _closePane();
+              if (_settledWidth == _revealedWidth) _finishMotion();
             },
             child: Stack(
               children: [
@@ -497,12 +530,15 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                 else
                   TweenAnimationBuilder<double>(
                     tween: Tween<double>(begin: 0, end: _revealedWidth),
-                    duration: _snapClosed
+                    duration:
+                        _snapClosed || MediaQuery.disableAnimationsOf(context)
                         ? Duration.zero
                         : const Duration(milliseconds: 220),
                     curve: Curves.easeOutCubic,
                     onEnd: () {
                       if (!mounted) return;
+                      _settledWidth = _revealedWidth;
+                      if (!_dragAccepted) _finishMotion();
                       if (!_snapClosed &&
                           (_revealedWidth != 0 || !_actionPaneActive)) {
                         return;

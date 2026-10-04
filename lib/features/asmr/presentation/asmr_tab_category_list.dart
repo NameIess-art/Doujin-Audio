@@ -71,6 +71,9 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
   bool _loadMoreTriggeredInCurrentScroll = false;
   bool _automaticLoadMoreScheduled = false;
   Widget? _inactiveContent;
+  AsmrCategoryStateRequest? _lastPresentedRequest;
+  AsmrLibraryController? _lastPresentedController;
+  AsmrCategoryViewState? _lastPresentedState;
   late final String _automaticLoadMoreCommitKey =
       'asmr_load_more_${identityHashCode(this)}';
   final Map<int, _CollapsingAsmrWork> _collapsingWorks =
@@ -189,25 +192,29 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
     // Other category switches can then retain this hidden subtree unchanged.
     if (!widget.isActive && _inactiveContent != null) return _inactiveContent!;
     final normalizedSearchQuery = normalizeSearchQuery(widget.searchQuery);
-    final categoryProvider = asmrCategoryStateProvider((
+    final request = (
       category: widget.category,
       searchQuery: normalizedSearchQuery,
       searchSession: widget.searchSession,
-    ));
-    final providerState =
-        (widget.isActive
-                ? ref.watch(categoryProvider)
-                : ref.read(categoryProvider))
-            .value;
+    );
+    final categoryProvider = asmrCategoryStateProvider(request);
+    final snapshot = widget.isActive
+        ? ref.watch(categoryProvider)
+        : ref.read(categoryProvider);
+    final controller = ref.read(asmrLibraryControllerProvider);
+    if (_lastPresentedRequest != request ||
+        !identical(_lastPresentedController, controller)) {
+      _lastPresentedRequest = request;
+      _lastPresentedController = controller;
+      _lastPresentedState = null;
+    }
+    // Reattaching after a hidden page may defer its first projection. Keep the
+    // last published cards without bypassing the provider's interaction gate.
+    if (!snapshot.isLoading && snapshot.value != null) {
+      _lastPresentedState = snapshot.value;
+    }
     final state =
-        ref
-            .read(asmrLibraryControllerProvider)
-            ?.categoryViewState(
-              widget.category,
-              searchQuery: normalizedSearchQuery,
-              searchSession: widget.searchSession,
-            ) ??
-        providerState ??
+        _lastPresentedState ??
         AsmrCategoryViewState(
           category: widget.category,
           works: const <AsmrWork>[],
@@ -231,7 +238,14 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
     final works = queryMismatch ? const <AsmrWork>[] : state.works;
     final isFavorites = widget.category == AsmrCategoryType.favorites;
     final reduceMotion = MediaQuery.disableAnimationsOf(context);
-    _updateLoadAnimations(state, works, reduceMotion: reduceMotion);
+    if (snapshot.isLoading) {
+      // Retained cards are not a new data commit. After reactivation, establish
+      // the new provider baseline before animating subsequent appended pages.
+      _clearLoadAnimations();
+      _lastLoadState = null;
+    } else {
+      _updateLoadAnimations(state, works, reduceMotion: reduceMotion);
+    }
 
     if (isFavorites) {
       if (_lastFavoritesRevision != state.revision &&
@@ -380,7 +394,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
             color: asmrBlue,
             backgroundColor: Theme.of(
               context,
-            ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
+            ).colorScheme.surfaceContainerHighest,
             edgeOffset: widget.topInset,
             displacement: 32,
             triggerMode: GlassRefreshIndicatorTriggerMode.anywhere,

@@ -54,6 +54,41 @@ void main() {
   });
 
   testWidgets(
+    'pull-to-refresh indicator enforces opaque background even if semi-transparent color is passed',
+    (tester) async {
+      final refresh = Completer<void>();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: GlassRefreshIndicator(
+              backgroundColor: const Color(0x99FF0000), // ~60% alpha
+              onRefresh: () => refresh.future,
+              child: ListView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                children: const [SizedBox(height: 800)],
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.drag(find.byType(ListView), const Offset(0, 300));
+      await tester.pump(const Duration(milliseconds: 250));
+      await tester.pump();
+
+      final indicator = find.byType(RefreshProgressIndicator);
+      expect(indicator, findsOneWidget);
+      final background = tester.widget<Container>(
+        find.ancestor(of: indicator, matching: find.byType(Container)).first,
+      );
+      expect(background.color!.a, 1.0);
+
+      refresh.complete();
+      await tester.pump(const Duration(milliseconds: 300));
+    },
+  );
+
+  testWidgets(
     'pull-to-refresh indicator stays strictly at or below edgeOffset and fades in during drag',
     (tester) async {
       final refresh = Completer<void>();

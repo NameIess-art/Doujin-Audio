@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
+
 import '../domain/asmr_models.dart';
 import '../domain/asmr_media_sources.dart';
 
@@ -225,15 +227,14 @@ class AsmrApiService {
     int workId, {
     String? token,
   }) async {
-    final response = await _sendJsonRequestList(
+    final response = await _send(
       method: 'GET',
       path: '/api/tracks/$workId',
       token: token,
+      decodeResponse: _decodeTrackTree,
     );
-    return response
-        .whereType<Map<String, dynamic>>()
-        .map(AsmrTrackFile.fromJson)
-        .toList(growable: false);
+    if (response is List<AsmrTrackFile>) return response;
+    throw const HttpException('Unexpected API response list.');
   }
 
   Future<Map<String, dynamic>> _sendJsonRequest({
@@ -256,32 +257,13 @@ class AsmrApiService {
     throw const HttpException('Unexpected API response.');
   }
 
-  Future<List<dynamic>> _sendJsonRequestList({
-    required String method,
-    required String path,
-    Map<String, String>? queryParameters,
-    String? token,
-    Object? body,
-  }) async {
-    final response = await _send(
-      method: method,
-      path: path,
-      queryParameters: queryParameters,
-      token: token,
-      body: body,
-    );
-    if (response is List<dynamic>) {
-      return response;
-    }
-    throw const HttpException('Unexpected API response list.');
-  }
-
   Future<Object?> _send({
     required String method,
     required String path,
     Map<String, String>? queryParameters,
     String? token,
     Object? body,
+    ComputeCallback<String, Object?> decodeResponse = jsonDecode,
   }) async {
     final startDomainIndex = _currentDomainIndex;
     int attempt = 0;
@@ -332,13 +314,18 @@ class AsmrApiService {
         if (responseBody.isEmpty) {
           return null;
         }
-        return json.decode(responseBody);
+        // Responses can arrive during a later navigation or dock animation.
+        // Decode off the UI isolate even when the request started while idle.
+        return await compute(decodeResponse, responseBody);
       } catch (error, stackTrace) {
         lastError = error;
         lastStackTrace = stackTrace;
         if (error is AsmrApiException && error.statusCode < 500) {
           rethrow;
         }
+        // Model field errors are not endpoint failures and previously escaped
+        // from fetchTrackTree after JSON decoding without retrying a domain.
+        if (error is Error) rethrow;
       }
       attempt++;
     }
@@ -351,6 +338,16 @@ class AsmrApiService {
     }
     throw const HttpException('All ASMR API candidates failed.');
   }
+}
+
+Object? _decodeTrackTree(String body) {
+  final response = jsonDecode(body);
+  // Keep shape validation at the caller, outside endpoint failover.
+  if (response is! List<dynamic>) return response;
+  return response
+      .whereType<Map<String, dynamic>>()
+      .map(AsmrTrackFile.fromJson)
+      .toList(growable: false);
 }
 
 class AsmrApiException extends HttpException {

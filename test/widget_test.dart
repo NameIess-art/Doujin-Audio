@@ -1215,11 +1215,18 @@ void main() {
       const ValueKey<String>('session_detail_backdrop_surface'),
       skipOffstage: false,
     );
+    // The prepared route can measure its first page offstage before the
+    // enter animation starts. Its hidden backdrop must not paint over the dock.
     expect(
-      tester.getRect(backdrop).top,
-      greaterThanOrEqualTo(
-        MediaQuery.sizeOf(tester.element(playbackDetail)).height,
-      ),
+      tester
+          .widget<Opacity>(
+            find.byKey(
+              const ValueKey<String>('session_detail_backdrop_paint_gate'),
+              skipOffstage: false,
+            ),
+          )
+          .opacity,
+      0,
     );
     final firstFramePaintOrder = find
         .byWidgetPredicate((_) => true, skipOffstage: false)
@@ -1261,6 +1268,7 @@ void main() {
     expect(routeDock, findsOneWidget);
     expect(tester.widget<IgnorePointer>(routeDockInteraction).ignoring, isTrue);
     await tester.pump(const Duration(milliseconds: 250));
+    await tester.pumpAndSettle();
     expect(
       tester.widget<IgnorePointer>(routeDockInteraction).ignoring,
       isFalse,
@@ -4515,7 +4523,7 @@ void main() {
     semantics.dispose();
   });
 
-  testWidgets('bottom dock keeps one blur surface during UI interaction', (
+  testWidgets('bottom dock keeps its surface during UI interaction', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(1080, 2400);
@@ -4528,24 +4536,24 @@ void main() {
       ),
     );
 
+    final panel = find.byType(AppDockPanel).first;
+    final panelElement = tester.element(panel);
+    final surface = find
+        .descendant(of: panel, matching: find.byType(DecoratedBox))
+        .first;
+    final decoration = tester.widget<DecoratedBox>(surface).decoration;
     expect(
-      find.byKey(const ValueKey('floating_glass_panel_blur')),
-      findsWidgets,
-    );
-    expect(
-      find.byKey(const ValueKey('active_session_blur_orientation_session')),
+      find.descendant(of: panel, matching: find.byType(BackdropFilter)),
       findsNothing,
     );
 
     UiInteractionCoordinator.instance.beginInteraction(interactionSource);
     await tester.pump();
 
+    expect(tester.element(panel), same(panelElement));
+    expect(tester.widget<DecoratedBox>(surface).decoration, decoration);
     expect(
-      find.byKey(const ValueKey('floating_glass_panel_blur')),
-      findsWidgets,
-    );
-    expect(
-      find.byKey(const ValueKey('active_session_blur_orientation_session')),
+      find.descendant(of: panel, matching: find.byType(BackdropFilter)),
       findsNothing,
     );
   });

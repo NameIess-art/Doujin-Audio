@@ -35,6 +35,19 @@ class _ScrollActivityGateState extends State<ScrollActivityGate> {
   late final ValueNotifier<bool> _isScrolling = ValueNotifier<bool>(false);
   final Object _interactionSource = Object();
   Timer? _idleTimer;
+  bool _tickerModeEnabled = true;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _tickerModeEnabled = TickerMode.valuesOf(context).enabled;
+    if (!_tickerModeEnabled) {
+      _idleTimer?.cancel();
+      _idleTimer = null;
+      _isScrolling.value = false;
+      UiInteractionCoordinator.instance.cancelInteraction(_interactionSource);
+    }
+  }
 
   @override
   void dispose() {
@@ -45,7 +58,10 @@ class _ScrollActivityGateState extends State<ScrollActivityGate> {
   }
 
   bool _handleScrollNotification(ScrollNotification notification) {
-    if (notification.depth > widget.maxNotificationDepth) return false;
+    if (!_tickerModeEnabled ||
+        notification.depth > widget.maxNotificationDepth) {
+      return false;
+    }
 
     if (notification is ScrollStartNotification ||
         notification is ScrollUpdateNotification ||

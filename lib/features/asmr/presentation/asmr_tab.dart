@@ -82,6 +82,7 @@ List<AsmrWork> _selectedAsmrWorks(
   bool searchSession = false,
   required Set<int> selectedWorkIds,
 }) {
+  if (selectedWorkIds.isEmpty) return const <AsmrWork>[];
   final controller = ref.read(asmrLibraryControllerProvider);
   if (controller == null) return const <AsmrWork>[];
   return controller

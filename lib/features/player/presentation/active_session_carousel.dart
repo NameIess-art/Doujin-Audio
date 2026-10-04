@@ -18,6 +18,7 @@ import '../../../core/media/subtitle_parser.dart';
 import '../../../core/ui/visual_settings_providers.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/async_cover_image.dart';
+import '../../../core/widgets/scroll_activity_gate.dart';
 import '../../../core/widgets/library_like_cards.dart';
 import '../application/playback_session_snapshot.dart';
 import '../application/playback_subtitle_service.dart';
@@ -443,26 +444,28 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
                     }
                   }
                 },
-                child: PageView.builder(
-                  controller: _pageController,
-                  scrollBehavior: ScrollConfiguration.of(context).copyWith(
-                    dragDevices: {
-                      PointerDeviceKind.touch,
-                      PointerDeviceKind.mouse,
-                      PointerDeviceKind.trackpad,
+                child: ScrollActivityGate(
+                  child: PageView.builder(
+                    controller: _pageController,
+                    scrollBehavior: ScrollConfiguration.of(context).copyWith(
+                      dragDevices: {
+                        PointerDeviceKind.touch,
+                        PointerDeviceKind.mouse,
+                        PointerDeviceKind.trackpad,
+                      },
+                    ),
+                    physics: visibleSessions.length == 1
+                        ? const NeverScrollableScrollPhysics()
+                        : const BouncingScrollPhysics(),
+                    itemBuilder: (context, index) {
+                      return _ActiveSessionPageTransform(
+                        pageListenable: _pageNotifier,
+                        index: index,
+                        enabled: visibleSessions.length > 1 && !embedded,
+                        child: buildSessionCard(index),
+                      );
                     },
                   ),
-                  physics: visibleSessions.length == 1
-                      ? const NeverScrollableScrollPhysics()
-                      : const BouncingScrollPhysics(),
-                  itemBuilder: (context, index) {
-                    return _ActiveSessionPageTransform(
-                      pageListenable: _pageNotifier,
-                      index: index,
-                      enabled: visibleSessions.length > 1 && !embedded,
-                      child: buildSessionCard(index),
-                    );
-                  },
                 ),
               ),
               if (visibleSessions.length > 1 && !compact)

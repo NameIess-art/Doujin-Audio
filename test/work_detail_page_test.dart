@@ -353,10 +353,12 @@ void main() {
           expect(find.text('audio.mp3'), findsOneWidget);
           final fade = find.byKey(const ValueKey('work_detail_entries_fade'));
           expect(tester.widget<SliverFadeTransition>(fade).opacity.value, 0);
-          final skeletonFade = find.ancestor(
-            of: find.byKey(const ValueKey('work_detail_entries_skeleton')),
-            matching: find.byType(FadeTransition),
-          ).first;
+          final skeletonFade = find
+              .ancestor(
+                of: find.byKey(const ValueKey('work_detail_entries_skeleton')),
+                matching: find.byType(FadeTransition),
+              )
+              .first;
           expect(tester.widget<FadeTransition>(skeletonFade).opacity.value, 1);
           expect(
             tester.getRect(
@@ -364,7 +366,8 @@ void main() {
             ),
             skeletonRect,
           );
-          await tester.pump(const Duration(milliseconds: 150));
+          final halfFadeDuration = kPlaceholderContentTransitionDuration ~/ 2;
+          await tester.pump(halfFadeDuration);
           expect(
             tester.widget<SliverFadeTransition>(fade).opacity.value,
             closeTo(0.5, 0.05),
@@ -374,7 +377,7 @@ void main() {
                 tester.widget<SliverFadeTransition>(fade).opacity.value,
             closeTo(1, 0.001),
           );
-          await tester.pump(const Duration(milliseconds: 151));
+          await tester.pump(halfFadeDuration + const Duration(milliseconds: 1));
           await tester.pump();
           expect(tester.widget<SliverFadeTransition>(fade).opacity.value, 1);
           expect(
@@ -482,7 +485,8 @@ void main() {
                 .value,
             0,
           );
-          await tester.pump(const Duration(milliseconds: 150));
+          final halfFadeDuration = kPlaceholderContentTransitionDuration ~/ 2;
+          await tester.pump(halfFadeDuration);
           expect(
             tester
                 .widget<FadeTransition>(rowFade('text:notes.txt'))
@@ -497,7 +501,7 @@ void main() {
                 .value,
             1,
           );
-          await tester.pump(const Duration(milliseconds: 151));
+          await tester.pump(halfFadeDuration + const Duration(milliseconds: 1));
           await tester.pump();
           expect(
             tester
@@ -2777,6 +2781,8 @@ void main() {
           expect(tester.takeException(), isNull);
 
           await tester.pumpWidget(const SizedBox.shrink());
+          // Drain directory metadata I/O before the shared SQLite fixture closes.
+          await _settleDetail(tester);
         },
         variant: TargetPlatformVariant({platform}),
       );

@@ -131,12 +131,10 @@ class _MainScreenState extends ConsumerState<MainScreen>
   ) => _menuIconCenters[target.index] - _menuIconCenters[source.index];
 
   void _reportMobilePlaybackCoverRect() {
-    if (UiInteractionCoordinator.instance.isInteracting) return;
     final geometry = widget.playbackDockGeometry;
     if (geometry == null) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      if (UiInteractionCoordinator.instance.isInteracting) return;
       final box =
           _mobilePlaybackGeometryKey.currentContext?.findRenderObject()
               as RenderBox?;
@@ -158,12 +156,10 @@ class _MainScreenState extends ConsumerState<MainScreen>
     required double dockAreaWidth,
     required double expandedDockWidth,
   }) {
-    if (UiInteractionCoordinator.instance.isInteracting) return;
     final geometry = widget.playbackDockGeometry;
     if (geometry == null) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      if (UiInteractionCoordinator.instance.isInteracting) return;
       final box =
           _desktopPlaybackGeometryKey.currentContext?.findRenderObject()
               as RenderBox?;

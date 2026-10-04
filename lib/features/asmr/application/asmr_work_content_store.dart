@@ -133,7 +133,7 @@ final class AsmrWorkContentStore {
   }
 
   List<AsmrTrackFile> storeTrackTree(int workId, List<AsmrTrackFile> tree) {
-    final sortedTree = immutableList(sortAsmrTrackTreeNaturally(tree));
+    final sortedTree = immutableList(tree);
     _trackCache.remove(workId);
     _trackCache[workId] = sortedTree;
     _visibleTrackCache.remove(workId);

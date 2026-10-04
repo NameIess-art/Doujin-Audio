@@ -11,6 +11,7 @@ Stream<T> interactionDeferredListenableStream<T>({
   required Listenable source,
   required T Function() read,
   UiInteractionCoordinator? coordinator,
+  bool deferInitialRead = false,
 }) {
   final interaction = coordinator ?? UiInteractionCoordinator.instance;
   return Stream<T>.multi((events) {
@@ -42,13 +43,17 @@ Stream<T> interactionDeferredListenableStream<T>({
       );
     }
 
-    events.addSync(read());
     source.addListener(emit);
     events.onCancel = () {
       source.removeListener(emit);
       interaction.cancelCommit(commitKey);
       dirty = false;
     };
+    if (deferInitialRead) {
+      emit();
+    } else {
+      events.addSync(read());
+    }
   }, isBroadcast: true);
 }
 

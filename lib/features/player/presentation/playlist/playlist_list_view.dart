@@ -37,9 +37,16 @@ class PlaylistSelectionIndicator extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
     final duration = MediaQuery.disableAnimationsOf(context)
         ? Duration.zero
         : kAppMotionFast;
+    final surfaceBorderColor = isSelected
+        ? Color.alphaBlend(
+            cs.primaryContainer.withValues(alpha: 0.15),
+            cs.surface,
+          )
+        : cs.surface;
     return IgnorePointer(
       child: ExcludeSemantics(
         child: AnimatedSwitcher(
@@ -60,23 +67,16 @@ class PlaylistSelectionIndicator extends StatelessWidget {
                   key: ValueKey<String>(
                     'playlist_selection_indicator_$sessionId',
                   ),
-                  width: 24,
-                  height: 24,
+                  width: 22,
+                  height: 22,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     color: _playlistSelectionCheckmarkColor,
-                    border: Border.all(color: Colors.white, width: 1.5),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.28),
-                        blurRadius: 4,
-                        offset: const Offset(0, 1),
-                      ),
-                    ],
+                    border: Border.all(color: surfaceBorderColor, width: 2),
                   ),
                   child: const Icon(
                     Icons.check_rounded,
-                    size: 16,
+                    size: 14,
                     color: Colors.white,
                   ),
                 )
@@ -173,7 +173,7 @@ class PlaylistLeadingIndicators extends StatelessWidget {
               ),
             Positioned(
               bottom: 2,
-              left: 0,
+              left: 1,
               child: PlaylistSelectionIndicator(
                 sessionId: sessionId,
                 isSelected: isSelected,
@@ -582,8 +582,8 @@ class SessionListCard extends ConsumerWidget {
                                   coverCacheWidth: coverCacheWidth,
                                 ),
                                 Positioned(
-                                  left: 4,
-                                  bottom: 4,
+                                  right: -2,
+                                  bottom: -2,
                                   child: PlaylistSelectionIndicator(
                                     sessionId: sessionId,
                                     isSelected: isSelected,

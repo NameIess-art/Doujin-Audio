@@ -270,8 +270,8 @@ class _PlaybackQueueCardState extends ConsumerState<PlaybackQueueCard> {
                               coverCacheWidth: coverCacheWidth,
                             ),
                             Positioned(
-                              left: 4,
-                              bottom: 4,
+                              right: -2,
+                              bottom: -2,
                               child: PlaylistSelectionIndicator(
                                 sessionId: session.id,
                                 isSelected: isSelected,

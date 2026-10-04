@@ -6353,11 +6353,11 @@ void main() {
       );
       expect(
         tester.getTopLeft(trackIndicator).dx,
-        tester.getTopLeft(trackContent).dx + 12,
+        tester.getTopLeft(trackContent).dx + 40,
       );
       expect(
         tester.getBottomLeft(trackIndicator).dy,
-        tester.getBottomLeft(trackContent).dy - (playlistRowPadding.bottom + 4),
+        tester.getBottomLeft(trackContent).dy - (playlistRowPadding.bottom - 2),
       );
       final indicatorContainer = tester.widget<Container>(trackIndicator);
       final indicatorDecoration =

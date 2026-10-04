@@ -10,7 +10,7 @@ import 'native_playback_bridge.dart';
 import 'playback_queue_resolver.dart';
 
 class PlaybackSession {
-  static const loadingIndicatorThreshold = Duration(milliseconds: 600);
+  static const loadingIndicatorThreshold = Duration(milliseconds: 400);
 
   PlaybackSession({
     required this.id,

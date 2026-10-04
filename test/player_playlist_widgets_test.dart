@@ -531,6 +531,62 @@ void main() {
     );
   }
 
+  for (final forward in [false, true]) {
+    testWidgets(
+      'five-second ${forward ? 'forward' : 'rewind'} delays the central spinner by 400ms',
+      (tester) async {
+        final harness = await _pumpSubtitleDetail(
+          tester: tester,
+          subtitleTrack: SubtitleTrack(sourcePath: 'empty.srt', cues: const []),
+          initialPosition: const Duration(seconds: 20),
+          physicalSize: defaultTargetPlatform == TargetPlatform.windows
+              ? const Size(3840, 2400)
+              : const Size(1080, 2400),
+        );
+        final session = harness.session;
+        final playback = harness.fixture.runtimeGraph.playback;
+        final stateSubscription = session.stateStream.listen((_) {
+          playback.publishSessionState(session.id);
+        });
+        addTearDown(stateSubscription.cancel);
+        session.loadedPath = session.currentTrackPath;
+        session.setOptimisticState(playing: true);
+        playback.publishSessionState(session.id);
+        await tester.pump();
+
+        await tester.tap(
+          find.byIcon(
+            forward ? Icons.forward_5_rounded : Icons.replay_5_rounded,
+          ),
+        );
+        await tester.pump();
+        expect(session.position, Duration(seconds: forward ? 25 : 15));
+        session.setOptimisticState(processingState: ProcessingState.buffering);
+        await tester.pump();
+        final spinner = find.descendant(
+          of: find.byType(TransportPlaybackControlPanel),
+          matching: find.byType(CircularProgressIndicator),
+        );
+        expect(spinner, findsNothing);
+        await tester.pump(const Duration(milliseconds: 399));
+        expect(spinner, findsNothing);
+        await tester.pump(const Duration(milliseconds: 1));
+        await tester.pump();
+        expect(spinner, findsOneWidget);
+
+        session.setOptimisticState(processingState: ProcessingState.ready);
+        await tester.pump();
+        await tester.pump();
+        expect(spinner, findsNothing);
+        expect(tester.takeException(), isNull);
+      },
+      variant: const TargetPlatformVariant({
+        TargetPlatform.android,
+        TargetPlatform.windows,
+      }),
+    );
+  }
+
   testWidgets('detail transport updates do not request artwork again', (
     tester,
   ) async {

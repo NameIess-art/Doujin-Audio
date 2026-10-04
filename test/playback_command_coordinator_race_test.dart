@@ -809,6 +809,11 @@ void main() {
     test('rapid play pause play keeps the latest intent', () async {
       final playCalls = <Map<Object?, Object?>>[];
       final playResponses = <Completer<Object?>>[];
+      final preparationStarted = Completer<void>();
+      final releasePreparation = Completer<void>();
+      final firstPlayStarted = Completer<void>();
+      final pauseStarted = Completer<void>();
+      final lastPlayStarted = Completer<void>();
       Map<Object?, Object?>? pauseCall;
       final pauseResponse = Completer<Object?>();
 
@@ -834,6 +839,8 @@ void main() {
           .setMockMethodCallHandler(nativePlaybackChannel, (call) async {
             final arguments = call.arguments as Map<Object?, Object?>?;
             if (call.method == NativePlaybackMethod.prepareSession) {
+              preparationStarted.complete();
+              await releasePreparation.future;
               return <String, Object?>{
                 'ok': true,
                 'value': <String, Object?>{
@@ -855,10 +862,16 @@ void main() {
               final completer = Completer<Object?>();
               playCalls.add(arguments!);
               playResponses.add(completer);
+              if (playCalls.length == 1) {
+                firstPlayStarted.complete();
+              } else {
+                lastPlayStarted.complete();
+              }
               return completer.future;
             }
             if (call.method == NativePlaybackMethod.pause) {
               pauseCall = arguments;
+              pauseStarted.complete();
               return pauseResponse.future;
             }
             return <String, Object?>{'ok': true, 'value': null};
@@ -872,33 +885,26 @@ void main() {
         isSingle: true,
       );
       await runtimeGraph.playback.spawnSession(track, autoPlay: false);
-      for (var i = 0; i < 100; i++) {
-        if (runtimeGraph.playback.activeSessions.singleOrNull?.loadedPath !=
-            null) {
-          break;
-        }
-        await Future<void>.delayed(const Duration(milliseconds: 10));
-      }
       final session = runtimeGraph.playback.activeSessions.single;
 
       final firstPlay = runtimeGraph.playback.toggleSessionPlayPause(
         session.id,
       );
-      for (var i = 0; i < 20 && playCalls.isEmpty; i++) {
-        await Future<void>.delayed(Duration.zero);
-      }
+      // Cold preparation can outlast any fixed number of event-loop turns.
+      await preparationStarted.future;
+      expect(session.isLoading, isTrue);
+      expect(playCalls, isEmpty);
+      releasePreparation.complete();
+      await firstPlayStarted.future;
       expect(session.effectivePlaying, isTrue);
 
       final pause = runtimeGraph.playback.toggleSessionPlayPause(session.id);
-      for (var i = 0; i < 20 && pauseCall == null; i++) {
-        await Future<void>.delayed(Duration.zero);
-      }
+      await pauseStarted.future;
       expect(session.effectivePlaying, isFalse);
 
       final lastPlay = runtimeGraph.playback.toggleSessionPlayPause(session.id);
-      for (var i = 0; i < 20 && playCalls.length < 2; i++) {
-        await Future<void>.delayed(Duration.zero);
-      }
+      await lastPlayStarted.future;
+      expect(playCalls, hasLength(2));
       expect(session.effectivePlaying, isTrue);
 
       final firstPlayCall = playCalls.first;

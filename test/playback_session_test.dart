@@ -345,7 +345,7 @@ void main() {
   test('loading threshold delays transient playback state', () async {
     expect(
       PlaybackSession.loadingIndicatorThreshold,
-      const Duration(milliseconds: 600),
+      const Duration(milliseconds: 400),
     );
     final session = PlaybackSession(
       id: 'session_1',
@@ -371,7 +371,7 @@ void main() {
     expect(session.isPlaybackLoading, isTrue);
   });
 
-  testWidgets('preparation and repeated switches wait a full 600ms', (
+  testWidgets('preparation and repeated switches wait a full 400ms', (
     tester,
   ) async {
     final session = createSession();
@@ -379,16 +379,16 @@ void main() {
     session.beginPreparation(showLoading: true, autoPlay: true);
     expect(session.isLoading, isTrue);
     expect(session.isPlaybackLoading, isFalse);
-    await tester.pump(const Duration(milliseconds: 599));
+    await tester.pump(const Duration(milliseconds: 399));
     expect(session.isPlaybackLoading, isFalse);
     await tester.pump(const Duration(milliseconds: 1));
     expect(session.isPlaybackLoading, isTrue);
 
     session.beginPreparation(showLoading: true, autoPlay: true);
     expect(session.isPlaybackLoading, isFalse);
-    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump(const Duration(milliseconds: 250));
     session.beginPreparation(showLoading: false, autoPlay: true);
-    await tester.pump(const Duration(milliseconds: 599));
+    await tester.pump(const Duration(milliseconds: 399));
     expect(session.isPlaybackLoading, isFalse);
     await tester.pump(const Duration(milliseconds: 1));
     expect(session.isPlaybackLoading, isTrue);
@@ -426,7 +426,7 @@ void main() {
     expect(session.isPlaybackLoading, isFalse);
     snapshot('buffering');
     expect(session.isPlaybackLoading, isFalse);
-    await tester.pump(const Duration(milliseconds: 499));
+    await tester.pump(const Duration(milliseconds: 299));
     expect(session.isPlaybackLoading, isFalse);
     snapshot('ready');
     session.finishPreparation(

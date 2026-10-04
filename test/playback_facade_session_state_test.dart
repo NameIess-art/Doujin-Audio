@@ -19,6 +19,136 @@ import 'package:doujin_audio/features/player/domain/audio_effects.dart';
 import 'package:doujin_audio/features/player/domain/playback_queue.dart';
 
 void main() {
+  group('offset seek loading delay', () {
+    late LibraryFacade library;
+    late _RecordingNativePlaybackRepository native;
+    late PlaybackFacade playback;
+    late PlaybackSession session;
+
+    setUp(() {
+      library = _createLibraryFacade();
+      native = _RecordingNativePlaybackRepository();
+      playback = PlaybackFacade.create(
+        databaseRepository:
+            library.databaseRepository as PlaybackPersistenceRepository,
+        nativeRepository: native,
+      )..configurePersistence(enabled: false);
+      session = _session('offset-loading')
+        ..loadedPath = '/tracks/offset-loading.mp3'
+        ..lastKnownPosition = const Duration(seconds: 20)
+        ..duration = const Duration(seconds: 100)
+        ..setOptimisticState(
+          playing: true,
+          processingState: ProcessingState.ready,
+        );
+      playback.registerSession(session);
+    });
+
+    tearDown(() async {
+      await playback.dispose();
+      await library.dispose();
+    });
+
+    void applyProcessingState(String state) {
+      playback.applyNativeSnapshot(
+        NativePlaybackSnapshot(
+          sessionId: session.id,
+          path: session.currentTrackPath,
+          playing: state == 'ready',
+          playWhenReady: true,
+          processingState: state,
+          position: session.position,
+          bufferedPosition: session.position,
+          volume: 1,
+          boostGain: 1,
+          channelSwapEnabled: false,
+        ),
+        hasLibraryTrack: (_) => false,
+      );
+    }
+
+    for (final seconds in [-5, 5]) {
+      testWidgets('$seconds seconds waits 400 ms while buffering', (
+        tester,
+      ) async {
+        final gate = Completer<NativeResult<NativePlaybackSnapshot>>();
+        native.seekGate = gate;
+        final seek = playback.seekSessionByOffset(
+          session.id,
+          Duration(seconds: seconds),
+        );
+        expect(native.seekPositions, [Duration(seconds: 20 + seconds)]);
+        applyProcessingState('buffering');
+        expect(session.isPlaybackLoading, isFalse);
+
+        gate.complete(const NativeSuccess<NativePlaybackSnapshot>());
+        await seek;
+        await tester.pump(const Duration(milliseconds: 399));
+        expect(session.isPlaybackLoading, isFalse);
+        await tester.pump(const Duration(milliseconds: 1));
+        expect(session.isPlaybackLoading, isTrue);
+
+        applyProcessingState('ready');
+        expect(session.isPlaybackLoading, isFalse);
+      });
+    }
+
+    testWidgets('short buffering never publishes visible loading', (
+      tester,
+    ) async {
+      final publishedLoading = <bool>[];
+      session.subscriptions.add(
+        session.stateStream.listen((_) {
+          publishedLoading.add(session.isPlaybackLoading);
+        }),
+      );
+      await playback.seekSessionByOffset(
+        session.id,
+        const Duration(seconds: 5),
+      );
+      applyProcessingState('buffering');
+      await tester.pump(const Duration(milliseconds: 399));
+      applyProcessingState('ready');
+      await tester.pump(const Duration(milliseconds: 1));
+
+      expect(session.isPlaybackLoading, isFalse);
+      expect(publishedLoading, isNotEmpty);
+      expect(publishedLoading, everyElement(isFalse));
+    });
+
+    testWidgets('repeated offset seeks hide loading and restart the delay', (
+      tester,
+    ) async {
+      await playback.seekSessionByOffset(
+        session.id,
+        const Duration(seconds: 5),
+      );
+      applyProcessingState('buffering');
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(session.isPlaybackLoading, isTrue);
+
+      await playback.seekSessionByOffset(
+        session.id,
+        const Duration(seconds: -5),
+      );
+      expect(session.isPlaybackLoading, isFalse);
+      await tester.pump(const Duration(milliseconds: 300));
+      await playback.seekSessionByOffset(
+        session.id,
+        const Duration(seconds: 5),
+      );
+      await tester.pump(const Duration(milliseconds: 399));
+      expect(session.isPlaybackLoading, isFalse);
+      await tester.pump(const Duration(milliseconds: 1));
+      expect(session.isPlaybackLoading, isTrue);
+      expect(native.seekPositions, [
+        const Duration(seconds: 25),
+        const Duration(seconds: 20),
+        const Duration(seconds: 25),
+      ]);
+    });
+  });
+
   test(
     'dispose releases the native repository when session cancellation fails',
     () async {

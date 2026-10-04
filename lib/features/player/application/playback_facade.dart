@@ -541,6 +541,8 @@ final class PlaybackFacade {
               ? Duration.zero
               : (target > maxDuration ? maxDuration : target))
         : (target < Duration.zero ? Duration.zero : target);
+    session.beginLoadingIndicatorThreshold();
+    publishSessionState(session.id);
     await seekSession(sessionId, clamped);
   }
 

@@ -119,6 +119,45 @@ Future<void> showAudioDetailSheet(
   await navigator.push<void>(route);
 }
 
+Future<DlsiteMetadataReviewResult?> showAudioDetailEditor(
+  BuildContext context,
+  WidgetRef ref,
+  AudioDetailTarget target,
+) async {
+  final navigator = Navigator.of(context);
+  final origin = ModalRoute.of(context);
+  try {
+    final result = await ref
+        .read(libraryFacadeProvider)
+        .loadAudioDetail(target);
+    if (!context.mounted || !navigator.mounted || origin?.isCurrent == false) {
+      return null;
+    }
+    return await navigator.push<DlsiteMetadataReviewResult>(
+      buildAppPageRoute(
+        context: context,
+        child: DlsiteMetadataReviewPage.edit(detail: result.detail),
+      ),
+    );
+  } catch (error, stackTrace) {
+    AppLogService.warning(
+      'audio_detail_editor_load_failed',
+      error: error,
+      stackTrace: stackTrace,
+    );
+    if (context.mounted) {
+      showAppSnackBar(
+        context,
+        ref
+            .read(appLanguageProviderInstanceProvider)
+            .tr('audio_detail_load_failed'),
+        tone: AppFeedbackTone.warning,
+      );
+    }
+    return null;
+  }
+}
+
 class AudioDetailSheet extends ConsumerStatefulWidget {
   const AudioDetailSheet({
     super.key,
@@ -138,7 +177,6 @@ class AudioDetailSheet extends ConsumerStatefulWidget {
 class _AudioDetailSheetState extends ConsumerState<AudioDetailSheet> {
   late AudioDetailTarget _target = widget.target;
   AudioDetail? _detail;
-  Duration? _calculatedDuration;
   Object? _loadError;
   bool _loading = true;
   bool _runningAction = false;
@@ -181,10 +219,9 @@ class _AudioDetailSheetState extends ConsumerState<AudioDetailSheet> {
     final generation = ++_durationCalculationGeneration;
     final target = _target;
     if (detail.duration != null) {
-      if (_calculatingDuration || _calculatedDuration != null) {
+      if (_calculatingDuration) {
         setState(() {
           _calculatingDuration = false;
-          _calculatedDuration = null;
         });
       }
       return;
@@ -205,8 +242,19 @@ class _AudioDetailSheetState extends ConsumerState<AudioDetailSheet> {
             _target != target) {
           return;
         }
+        if (widget.durationCalculator != null && calculatedDuration != null) {
+          await libraryFacade.saveMissingLibraryDuration(
+            target,
+            calculatedDuration,
+          );
+        }
+        if (!mounted ||
+            generation != _durationCalculationGeneration ||
+            _target != target) {
+          return;
+        }
         setState(() {
-          _calculatedDuration = calculatedDuration;
+          _detail = libraryFacade.resolvedAudioDetail(target) ?? _detail;
           _calculatingDuration = false;
         });
       } catch (error, stackTrace) {
@@ -453,9 +501,6 @@ class _AudioDetailSheetState extends ConsumerState<AudioDetailSheet> {
       if (!mounted) return;
       setState(() {
         _detail = result.detail;
-        if (field == _AudioDetailField.duration) {
-          _calculatedDuration = null;
-        }
         _savingField = null;
       });
       if (field == _AudioDetailField.duration) {
@@ -557,7 +602,7 @@ class _AudioDetailSheetState extends ConsumerState<AudioDetailSheet> {
     final track = ref.watch(libraryTrackProvider(_target.targetPath));
     final coverGeneration = ref.watch(coverGenerationProvider);
 
-    Duration? duration = detail?.duration ?? _calculatedDuration;
+    Duration? duration = detail?.duration;
     if (duration == null && !_target.isLibraryRootFolder) {
       final trackDuration = track?.duration;
       if (trackDuration != null && trackDuration > Duration.zero) {

@@ -704,7 +704,16 @@ void main() {
       await tester.pumpAndSettle();
       expect(
         find.text(i18n.tr('asmr_download_folder_name_hint')),
-        findsOneWidget,
+        findsNothing,
+      );
+      final headerIcon = find.byKey(
+        const ValueKey('asmr_download_folder_name_header_icon'),
+      );
+      expect(headerIcon, findsOneWidget);
+      expect(tester.widget<Icon>(headerIcon).size, 28);
+      expect(
+        tester.widget<Icon>(headerIcon).icon,
+        Icons.drive_file_rename_outline,
       );
       expect(find.byType(CheckboxListTile), findsNWidgets(4));
 
@@ -735,6 +744,19 @@ void main() {
             .value,
         isTrue,
       );
+      expect(find.text(i18n.tr('done')), findsNothing);
+      expect(
+        find.byKey(const ValueKey('asmr_download_folder_name_cancel')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('asmr_download_folder_name_confirm')),
+        findsOneWidget,
+      );
+      await tester.tap(
+        find.byKey(const ValueKey('asmr_download_folder_name_confirm')),
+      );
+      await tester.pumpAndSettle();
     },
   );
 
@@ -804,10 +826,6 @@ void main() {
     );
     await tester.drag(workHandle, const Offset(0, 120));
     await tester.pumpAndSettle();
-    expect(settingsRepository.folderNameFieldUpdates.single, const [
-      AsmrDownloadFolderNameField.rjCode,
-      AsmrDownloadFolderNameField.workTitle,
-    ]);
     expect(
       tester.getTopLeft(find.widgetWithText(CheckboxListTile, rjCode)).dy,
       lessThan(
@@ -818,9 +836,6 @@ void main() {
 
     await tester.tap(find.widgetWithText(CheckboxListTile, workTitle));
     await tester.pumpAndSettle();
-    expect(settingsRepository.folderNameFieldUpdates.last, const [
-      AsmrDownloadFolderNameField.rjCode,
-    ]);
     expect(
       tester
           .widget<CheckboxListTile>(
@@ -837,6 +852,57 @@ void main() {
           .value,
       isTrue,
     );
+    expect(settingsRepository.folderNameFieldUpdates, isEmpty);
+
+    await tester.tap(
+      find.byKey(const ValueKey('asmr_download_folder_name_confirm')),
+    );
+    await tester.pump();
+    expect(settingsRepository.folderNameFieldUpdates.single, const [
+      AsmrDownloadFolderNameField.rjCode,
+    ]);
+    settingsRepository._pendingPersistence.complete();
+    await tester.pumpAndSettle();
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('ASMR folder name cancellation leaves repository state unchanged', (
+    tester,
+  ) async {
+    final settingsRepository = _DeferredFolderNameSettingsRepository();
+    final harness = AppRuntimeWidgetTestFixture(
+      providedSettingsRepository: settingsRepository,
+    );
+    addTearDown(harness.dispose);
+    await tester.pumpWidget(
+      harness.build(const AsmrDownloadFolderNameSettingsSheet()),
+    );
+    await tester.pumpAndSettle();
+
+    final workTitle = harness.languageProvider.tr(
+      'asmr_download_folder_field_work_title',
+    );
+    await tester.tap(find.widgetWithText(CheckboxListTile, workTitle));
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<CheckboxListTile>(
+            find.widgetWithText(CheckboxListTile, workTitle),
+          )
+          .value,
+      isFalse,
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey('asmr_download_folder_name_cancel')),
+    );
+    await tester.pumpAndSettle();
+    expect(settingsRepository.folderNameFieldUpdates, isEmpty);
+    expect(settingsRepository.asmrDownloadFolderNameFields, const [
+      AsmrDownloadFolderNameField.workTitle,
+      AsmrDownloadFolderNameField.rjCode,
+    ]);
+    await tester.pumpWidget(const SizedBox());
   });
 
   testWidgets('settings home uses separated category cards', (tester) async {
@@ -1560,6 +1626,12 @@ void main() {
       );
       expect(tester.widget<CheckboxListTile>(workTitle).value, true);
       await tester.tap(workTitle);
+      await tester.pumpAndSettle();
+      expect(tester.widget<CheckboxListTile>(workTitle).value, false);
+
+      await tester.tap(
+        find.byKey(const ValueKey('asmr_download_folder_name_confirm')),
+      );
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 250));
       expect(tester.widget<CheckboxListTile>(workTitle).value, true);

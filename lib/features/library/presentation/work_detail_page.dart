@@ -42,6 +42,7 @@ import '../../settings/presentation/settings_providers.dart';
 import '../application/work_text_service.dart';
 import '../domain/library_node.dart';
 import 'dlsite_metadata_review_page.dart';
+import 'audio_detail_sheet.dart' show showAudioDetailEditor;
 import 'library_providers.dart';
 import 'library_removal_feedback.dart';
 import 'work_image_viewer_page.dart';
@@ -966,12 +967,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
   Future<void> _handleLocalEdit() async {
     final detail = _localDetail;
     if (detail == null) return;
-    final result = await Navigator.of(context).push<DlsiteMetadataReviewResult>(
-      buildAppPageRoute(
-        context: context,
-        child: DlsiteMetadataReviewPage.edit(detail: detail),
-      ),
-    );
+    final result = await showAudioDetailEditor(context, ref, detail.target);
     final savedDetail = result?.detail;
     if (!mounted || savedDetail == null) return;
     setState(() {

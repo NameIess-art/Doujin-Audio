@@ -70,6 +70,7 @@ class _LoopModeSheetState extends State<LoopModeSheet> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final cs = theme.colorScheme;
     final i18n = ProviderScope.containerOf(
       context,
       listen: false,
@@ -92,11 +93,24 @@ class _LoopModeSheetState extends State<LoopModeSheet> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          Text(
-                            i18n.tr('loop_mode_title'),
-                            style: theme.textTheme.headlineSmall?.copyWith(
-                              fontWeight: FontWeight.w800,
-                            ),
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.repeat_rounded,
+                                key: const ValueKey('loop_mode_header_icon'),
+                                color: cs.primary,
+                                size: 28,
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Text(
+                                  i18n.tr('loop_mode_title'),
+                                  style: theme.textTheme.headlineSmall?.copyWith(
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                           const SizedBox(height: 18),
                           SegmentedButton<bool>(

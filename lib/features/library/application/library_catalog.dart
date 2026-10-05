@@ -95,6 +95,9 @@ abstract interface class LibraryCatalogWriter {
   Future<AudioDetailBackupImportResult> importAudioDetailBackups({
     bool onlyMissing = false,
   });
+  Future<void> backfillMissingLibraryDurations({
+    Future<Duration?> Function(String path)? durationReader,
+  });
 }
 
 abstract interface class LibraryCatalog

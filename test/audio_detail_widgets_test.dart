@@ -944,7 +944,7 @@ void main() {
   );
 
   testWidgets(
-    'clearing a manual folder duration shows the calculated track total',
+    'clearing a manual folder duration saves the calculated track total',
     (WidgetTester tester) async {
       final fixture = AppRuntimeWidgetTestFixture();
       addTearDown(fixture.dispose);
@@ -1055,7 +1055,7 @@ void main() {
       final saved = await tester.runAsync(
         () => runtimeGraph.library.loadAudioDetail(target),
       );
-      expect(saved?.detail.duration, isNull);
+      expect(saved?.detail.duration, const Duration(minutes: 6));
       expect(
         find.text('00:06:00'),
         findsOneWidget,

@@ -51,7 +51,7 @@ class PlaybackQueueCard extends ConsumerStatefulWidget {
   final PlaybackFacade playback;
   final int? coverCacheWidth;
   final VoidCallback onOpen;
-  final VoidCallback onEdit;
+  final FutureOr<void> Function() onEdit;
   final bool isSelectionMode;
   final bool isSelected;
   final bool isPinned;
@@ -212,6 +212,7 @@ class _PlaybackQueueCardState extends ConsumerState<PlaybackQueueCard> {
         actionLabel: i18n.tr('edit'),
         removeTooltip: i18n.tr('edit_playback_queue'),
         onRemove: onEdit,
+        closeAfterPrimaryAction: true,
         onLeadingAction: onTogglePin,
         leadingActionLabel: i18n.tr(isPinned ? 'unpin_from_top' : 'pin_to_top'),
         leadingActionTooltip: i18n.tr(

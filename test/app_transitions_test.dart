@@ -986,7 +986,7 @@ void main() {
     await tester.pumpAndSettle();
   });
 
-  testWidgets('batch routes retain their own header transition', (
+  testWidgets('stacked batch routes fade their headers on push and pop', (
     tester,
   ) async {
     final navigatorKey = GlobalKey<NavigatorState>();
@@ -998,7 +998,6 @@ void main() {
       navigator.push(
         buildAppPageRoute<void>(
           context: navigator.context,
-          fadeHeader: false,
           child: regions('batch'),
         ),
       ),
@@ -1008,11 +1007,11 @@ void main() {
       navigator.push(
         buildAppPageRoute<void>(
           context: navigator.context,
-          fadeHeader: false,
           child: regions('detail'),
         ),
       ),
     );
+    await tester.pump();
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 75));
 
@@ -1023,18 +1022,29 @@ void main() {
     );
     expect(outgoing, findsOneWidget);
     expect(incoming, findsOneWidget);
-    expect(
-      find.ancestor(of: incoming, matching: find.byType(Opacity)),
-      findsNothing,
-    );
-    expect(
-      find.ancestor(of: outgoing, matching: find.byType(Opacity)),
-      findsNothing,
-    );
+    double headerOpacity(Finder header) => tester
+        .widget<Opacity>(
+          find.ancestor(of: header, matching: find.byType(Opacity)).first,
+        )
+        .opacity;
+    expect(headerOpacity(incoming), inExclusiveRange(0, 1));
+    expect(headerOpacity(outgoing), 1);
+    final headerLeft = tester.getRect(outgoing).left;
+    expect(tester.getRect(incoming).left, closeTo(headerLeft, 0.01));
     expect(
       find.ancestor(of: incoming, matching: find.byType(SlideTransition)),
       findsOneWidget,
     );
+    await tester.pumpAndSettle();
+    expect(headerOpacity(incoming), 1);
+    navigator.pop();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 225));
+    expect(headerOpacity(incoming), inExclusiveRange(0, 1));
+    expect(tester.getRect(incoming).left, closeTo(headerLeft, 0.01));
+    await tester.pumpAndSettle();
+    expect(incoming, findsNothing);
+    expect(headerOpacity(outgoing), 1);
   });
 
   testWidgets('tab headers stay fixed while content slides independently', (

@@ -190,6 +190,37 @@ class AudioDetailRepository {
     return normalized;
   }
 
+  Future<AudioDetailSaveResult> saveMissingDuration(
+    AudioDetailTarget target,
+    Duration duration,
+  ) async {
+    if (duration.inMilliseconds <= 0) {
+      throw ArgumentError.value(duration, 'duration', 'Must be positive');
+    }
+    final normalizedTarget = _normalizeTarget(target);
+    final current =
+        await _store.load(normalizedTarget) ??
+        AudioDetail.empty(normalizedTarget);
+    final detail = current
+        .copyWith(duration: current.duration ?? duration)
+        .normalizedForSave(_now(), touchUpdatedAt: false);
+    _ensureCanCommit();
+    if (current.duration == null) await _store.upsert(detail);
+    _ensureCanCommit();
+    final document = await _documents.saveMissingDuration(
+      detail,
+      timeSegmentLabels: await _store.loadTimeSegmentLabelsForTarget(
+        normalizedTarget,
+      ),
+      beforeCommit: _ensureCanCommit,
+    );
+    return AudioDetailSaveResult(
+      detail: detail,
+      documentStatus: document.status,
+      documentError: document.error,
+    );
+  }
+
   Future<AudioDetailBackupImportResult> importBackupsMany(
     Iterable<AudioDetailTarget> targets,
   ) async {

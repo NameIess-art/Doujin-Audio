@@ -12,9 +12,11 @@ class _AppAnimatedScrim extends AnimatedWidget {
   const _AppAnimatedScrim({
     required Animation<double> animation,
     required this.scrimKey,
+    this.curve,
   }) : super(listenable: animation);
 
   final Key scrimKey;
+  final Curve? curve;
 
   @override
   Widget build(BuildContext context) {
@@ -23,7 +25,7 @@ class _AppAnimatedScrim extends AnimatedWidget {
       key: scrimKey,
       color: kSecondaryOverlayConfig.scrimColor(
         context,
-        _appScrimProgress(animation),
+        curve?.transform(animation.value) ?? _appScrimProgress(animation),
       ),
     );
   }
@@ -50,7 +52,7 @@ Future<T?> showAppOverlayPanel<T>({
     barrierColor: Colors.transparent,
     transitionDuration: MediaQuery.disableAnimationsOf(context)
         ? Duration.zero
-        : kSecondaryOverlayConfig.transitionDuration,
+        : kAppMotionSlow,
     pageBuilder: (dialogContext, animation, secondaryAnimation) {
       final mediaSize = MediaQuery.sizeOf(dialogContext);
       final isDesktop =
@@ -101,54 +103,53 @@ class _AppOverlayPanelShell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final constraints = maxHeight == null
+        ? BoxConstraints(maxWidth: maxWidth)
+        : BoxConstraints(maxWidth: maxWidth, maxHeight: maxHeight!);
     return Material(
       color: Colors.transparent,
-      child: AnimatedBuilder(
-        animation: animation,
-        child: child,
-        builder: (context, child) {
-          final constraints = maxHeight == null
-              ? BoxConstraints(maxWidth: maxWidth)
-              : BoxConstraints(maxWidth: maxWidth, maxHeight: maxHeight!);
-          return Stack(
-            fit: StackFit.expand,
-            children: [
-              Positioned.fill(
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: barrierDismissible
-                      ? () => Navigator.of(context).maybePop()
-                      : null,
-                  child: _AppAnimatedScrim(
-                    animation: animation,
-                    scrimKey: const ValueKey('app_overlay_panel_scrim'),
-                  ),
-                ),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          Positioned.fill(
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: barrierDismissible
+                  ? () => Navigator.of(context).maybePop()
+                  : null,
+              child: _AppAnimatedScrim(
+                animation: animation,
+                scrimKey: const ValueKey('app_overlay_panel_scrim'),
+                curve: Curves.easeInOutCubic,
               ),
-              SafeArea(
-                child: Padding(
-                  padding: outerPadding,
-                  child: Align(
-                    alignment: isDesktop ? Alignment.center : mobileAlignment,
-                    child: ConstrainedBox(
-                      constraints: constraints,
-                      child: buildAppScaleFadeTransition(
-                        context: context,
-                        animation: animation,
-                        // Ink must paint inside the transition so tile backgrounds
-                        // and splashes fade and scale with the panel content.
-                        child: Material(
-                          type: MaterialType.transparency,
-                          child: child!,
-                        ),
-                      ),
+            ),
+          ),
+          SafeArea(
+            child: Padding(
+              padding: outerPadding,
+              child: Align(
+                alignment: isDesktop ? Alignment.center : mobileAlignment,
+                child: ConstrainedBox(
+                  constraints: constraints,
+                  child: buildAppScaleFadeTransition(
+                    context: context,
+                    animation: animation,
+                    // Use the same curve in both directions to keep early
+                    // dismissal continuous and synchronized with the scrim.
+                    curve: Curves.easeInOutCubic,
+                    reverseCurve: Curves.easeInOutCubic,
+                    // Ink must paint inside the transition so tile backgrounds
+                    // and splashes fade and scale with the panel content.
+                    child: Material(
+                      type: MaterialType.transparency,
+                      child: child,
                     ),
                   ),
                 ),
               ),
-            ],
-          );
-        },
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -152,7 +152,6 @@ Widget _buildCoveringPageTransition({
   required Animation<double> animation,
   required Animation<double> secondaryAnimation,
   required Widget child,
-  bool fadeHeader = true,
   bool workDetailTransition = false,
 }) {
   if (MediaQuery.disableAnimationsOf(context)) return child;
@@ -174,7 +173,6 @@ Widget _buildCoveringPageTransition({
             animation,
             secondaryAnimation,
             constraints.maxWidth,
-            fadeHeader,
             workDetailTransition,
           ),
           contentBuilder: (context, content) => workDetailTransition
@@ -199,9 +197,10 @@ Widget _buildCoveringPageTransition({
               final outgoing = Curves.easeOutCubic.transform(
                 (secondaryAnimation.value / 0.6).clamp(0.0, 1.0),
               );
-              final fadedHeader = fadeHeader
-                  ? Opacity(opacity: incoming * (1 - outgoing), child: header)
-                  : header!;
+              final fadedHeader = Opacity(
+                opacity: incoming * (1 - outgoing),
+                child: header,
+              );
               if (workDetailTransition) return fadedHeader;
               // Generic routes translate the whole page; cancel that motion
               // for headers narrower than the page so menus change in place.
@@ -1312,7 +1311,6 @@ PageRouteBuilder<T> buildAppPageRoute<T>({
   required BuildContext context,
   required Widget child,
   RouteSettings? settings,
-  bool fadeHeader = true,
   // Work details keep their smooth slide curve and paint the final exit frame.
   bool workDetailTransition = false,
   Duration duration = kAppMotionSlow,
@@ -1340,7 +1338,6 @@ PageRouteBuilder<T> buildAppPageRoute<T>({
         animation: animation,
         secondaryAnimation: secondaryAnimation,
         child: routedChild,
-        fadeHeader: fadeHeader,
         workDetailTransition: workDetailTransition,
       );
     },

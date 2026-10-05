@@ -176,12 +176,36 @@ final class AudioDetailJsonCodec {
     Uint8List bytes,
     AudioDetail detail,
     Map<String, Object?> fields,
-  ) {
+  ) => _mergeFields(bytes, detail, fields)!;
+
+  Uint8List? mergeMissingDuration(
+    Uint8List bytes,
+    AudioDetail detail, {
+    Map<String, Object?> additionalFields = const {},
+  }) => _mergeFields(
+    bytes,
+    detail,
+    {'durationMs': detail.duration!.inMilliseconds},
+    onlyMissingDuration: true,
+    additionalFields: additionalFields,
+  );
+
+  Uint8List? _mergeFields(
+    Uint8List bytes,
+    AudioDetail detail,
+    Map<String, Object?> fields, {
+    bool onlyMissingDuration = false,
+    Map<String, Object?> additionalFields = const {},
+  }) {
     final target = detail.target;
     final root = _decodeRoot(bytes);
     if (root is Map && target.isLibraryRootFolder) {
       final entry = Map<String, Object?>.from(root);
-      _detailFromJson(target, entry);
+      final current = _detailFromJson(target, entry);
+      if (onlyMissingDuration) {
+        _labelsFromJson(entry, target);
+        if (current.duration != null) return null;
+      }
       return _encode({...entry, ...fields});
     }
     if (root is List && !target.isLibraryRootFolder) {
@@ -194,10 +218,17 @@ final class AudioDetailJsonCodec {
               target.targetPath,
             ),
       )) {
-        return _encode([...root, _detailToJson(detail, fields)]);
+        return _encode([
+          ...root,
+          _detailToJson(detail, {...additionalFields, ...fields}),
+        ]);
       }
       final entry = _findTargetEntry(root, target);
-      _detailFromJson(target, entry);
+      final current = _detailFromJson(target, entry);
+      if (onlyMissingDuration) {
+        _labelsFromJson(entry, target);
+        if (current.duration != null) return null;
+      }
       return _encode([
         for (final item in root)
           if (item is Map && item['targetPath'] == entry['targetPath'])

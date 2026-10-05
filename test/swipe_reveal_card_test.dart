@@ -3,10 +3,12 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/core/widgets/swipe_reveal_card.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/app/theme/theme_provider.dart';
+import 'package:doujin_audio/features/player/presentation/playlist/playlist_shared_helpers.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -518,6 +520,140 @@ void main() {
     expect((revealShape as RoundedRectangleBorder).side, BorderSide.none);
     expect(tester.getSize(revealPane), tester.getSize(closedSurface.first));
   });
+
+  for (final direction in [-1.0, 1.0]) {
+    testWidgets('playlist closing paints no opposite underlayer ($direction)', (
+      tester,
+    ) async {
+      const captureKey = ValueKey('playlist_swipe_capture');
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            backgroundColor: Colors.white,
+            body: Center(
+              child: RepaintBoundary(
+                key: captureKey,
+                child: SizedBox(
+                  width: 260,
+                  height: playlistRowHeight,
+                  child: SwipeRevealCard(
+                    shape: playlistRowShape,
+                    color: Colors.red,
+                    closedColor: Colors.white,
+                    actionLabel: 'Remove',
+                    removeTooltip: 'Remove',
+                    onRemove: () {},
+                    onLeadingAction: () {},
+                    leadingActionLabel: 'Pin',
+                    child: const SizedBox.expand(),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      final card = find.byType(SwipeRevealCard);
+      await tester.drag(card, Offset(direction * 180, 0));
+      await tester.pumpAndSettle();
+      await tester.tapAt(tester.getCenter(card));
+      await tester.pump();
+      final boundary = tester.renderObject<RenderRepaintBoundary>(
+        find.byKey(captureKey),
+      );
+      for (var frame = 0; frame < 16; frame++) {
+        await tester.pump(const Duration(milliseconds: 16));
+        final redPixels = await tester.runAsync(() async {
+          final image = await boundary.toImage();
+          try {
+            final bytes = (await image.toByteData())!;
+            var count = 0;
+            final start = direction > 0 ? image.width ~/ 2 : 0;
+            final end = direction > 0 ? image.width : image.width ~/ 2;
+            for (var y = 0; y < image.height; y++) {
+              for (var x = start; x < end; x++) {
+                final offset = (y * image.width + x) * 4;
+                if (bytes.getUint8(offset) > bytes.getUint8(offset + 1) + 20) {
+                  count++;
+                }
+              }
+            }
+            return count;
+          } finally {
+            image.dispose();
+          }
+        });
+        expect(redPixels, 0, reason: 'Opposite underlayer at frame $frame');
+      }
+      expect(find.byType(TweenAnimationBuilder<double>), findsNothing);
+    });
+
+    testWidgets('closing swipe stays on its original side ($direction)', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: SizedBox(
+                width: 260,
+                height: 96,
+                child: SwipeRevealCard(
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  actionLabel: 'Remove',
+                  removeTooltip: 'Remove',
+                  onRemove: () {},
+                  onLeadingAction: () {},
+                  leadingActionLabel: 'Pin',
+                  leadingActionTooltip: 'Pin',
+                  child: const SizedBox.expand(
+                    key: ValueKey('bounded_swipe_content'),
+                    child: Text('Swipe target'),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      final card = find.byType(SwipeRevealCard);
+      final content = find.byKey(const ValueKey('bounded_swipe_content'));
+      final closedLeft = tester.getTopLeft(content).dx;
+      final center = tester.getCenter(card);
+      await tester.dragFrom(center, Offset(direction * 180, 0));
+      await tester.pumpAndSettle();
+      expect(tester.getTopLeft(content).dx - closedLeft, direction * 72);
+
+      await tester.dragFrom(center, Offset(-direction * 180, 0));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 80));
+      final gesture = await tester.startGesture(center);
+      await gesture.moveBy(Offset(-direction * 180, 0));
+      await tester.pump();
+      for (var frame = 0; frame < 16; frame++) {
+        final distance =
+            (tester.getTopLeft(content).dx - closedLeft) * direction;
+        expect(distance, inInclusiveRange(0.0, 72.0));
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      // Reversing the same gesture after reaching zero keeps its original side.
+      await gesture.moveBy(Offset(direction * 400, 0));
+      await tester.pump();
+      for (var frame = 0; frame < 16; frame++) {
+        final distance =
+            (tester.getTopLeft(content).dx - closedLeft) * direction;
+        expect(distance, inInclusiveRange(0.0, 72.0));
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      expect(tester.getTopLeft(content).dx - closedLeft, direction * 72);
+      await gesture.moveBy(Offset(-direction * 400, 0));
+      await gesture.up();
+      await tester.pumpAndSettle();
+      expect(tester.getTopLeft(content).dx, closedLeft);
+    });
+  }
 
   testWidgets('leading action reveals on a right swipe', (tester) async {
     var downloads = 0;

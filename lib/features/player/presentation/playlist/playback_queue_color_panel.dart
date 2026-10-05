@@ -6,15 +6,10 @@ import '../../../../app/theme/app_design_tokens.dart';
 
 const List<Color> _queuePresetColors = [
   Color(0xFF2E9C8B), // Default Mint Teal
-  Color(0xFF00ACC1), // Cyan
   Color(0xFF1E88E5), // Blue
-  Color(0xFF5E35B1), // Deep Purple
   Color(0xFF8E24AA), // Purple
-  Color(0xFFD81B60), // Rose Pink
   Color(0xFFE53935), // Red
   Color(0xFFFB8C00), // Orange
-  Color(0xFFFFB300), // Amber
-  Color(0xFF43A047), // Green
 ];
 
 class PlaybackQueueColorPanel extends StatelessWidget {
@@ -47,31 +42,42 @@ class PlaybackQueueColorPanel extends StatelessWidget {
         '#${(color.toARGB32() & 0xFFFFFF).toRadixString(16).padLeft(6, '0').toUpperCase()}';
 
     return SizedBox(
+      width: double.infinity,
       height: height,
-      child: Material(
+      child: DecoratedBox(
         key: const ValueKey('playback_queue_color_panel'),
-        color: cs.surfaceContainerLow,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        clipBehavior: Clip.antiAlias,
-        child: SafeArea(
-          top: false,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(24),
+          color: cs.surfaceContainerLow,
+          boxShadow: [
+            BoxShadow(
+              color: cs.shadow.withValues(alpha: 0.22),
+              blurRadius: 32,
+              offset: const Offset(0, 18),
+            ),
+          ],
+        ),
+        child: Material(
+          color: Colors.transparent,
+          borderRadius: BorderRadius.circular(24),
+          clipBehavior: Clip.antiAlias,
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
             child: Column(
-              mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Row(
                   children: [
                     Container(
-                      width: 42,
-                      height: 42,
+                      width: 40,
+                      height: 40,
                       decoration: BoxDecoration(
-                        color: color.withValues(alpha: 0.16),
+                        color: color.withValues(alpha: 0.14),
                         borderRadius: BorderRadius.circular(tokens.radiusSmall),
                       ),
                       child: Icon(
                         Icons.palette_outlined,
+                        key: const ValueKey('playback_queue_color_header_icon'),
                         color: color,
                         size: 22,
                       ),
@@ -84,10 +90,11 @@ class PlaybackQueueColorPanel extends StatelessWidget {
                         children: [
                           Text(
                             i18n.tr('edit_queue_color'),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                             style: Theme.of(context).textTheme.titleMedium
                                 ?.copyWith(
                                   fontWeight: FontWeight.w800,
-                                  fontSize: 16,
                                 ),
                           ),
                           const SizedBox(height: 2),
@@ -110,53 +117,39 @@ class PlaybackQueueColorPanel extends StatelessWidget {
                       tooltip: MaterialLocalizations.of(
                         context,
                       ).backButtonTooltip,
+                      visualDensity: VisualDensity.compact,
+                      constraints: const BoxConstraints(
+                        minWidth: 36,
+                        minHeight: 36,
+                      ),
+                      padding: EdgeInsets.zero,
                       icon: const Icon(Icons.arrow_back_rounded),
                       onPressed: onBack,
                     ),
                   ],
                 ),
-                const SizedBox(height: 12),
-                // Preset color palette: two rows of five
-                Column(
-                  mainAxisSize: MainAxisSize.min,
+                const SizedBox(height: 28),
+                // Preset color palette: one row of five
+                Row(
                   children: [
-                    Row(
-                      children: [
-                        for (int i = 0; i < 5; i++)
-                          Expanded(
-                            child: Center(
-                              child: _buildPresetColorButton(
-                                cs: cs,
-                                presetColor: _queuePresetColors[i],
-                                currentColor: color,
-                              ),
-                            ),
+                    for (int i = 0; i < _queuePresetColors.length; i++)
+                      Expanded(
+                        child: Center(
+                          child: _buildPresetColorButton(
+                            cs: cs,
+                            presetColor: _queuePresetColors[i],
+                            currentColor: color,
                           ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        for (int i = 5; i < 10; i++)
-                          Expanded(
-                            child: Center(
-                              child: _buildPresetColorButton(
-                                cs: cs,
-                                presetColor: _queuePresetColors[i],
-                                currentColor: color,
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
+                        ),
+                      ),
                   ],
                 ),
-                const SizedBox(height: 10),
+                const SizedBox(height: 12),
                 for (final channel in <(String, int)>[
                   ('R', (color.r * 255).round()),
                   ('G', (color.g * 255).round()),
                   ('B', (color.b * 255).round()),
-                ])
+                ]) ...[
                   _QueueColorSlider(
                     label: channel.$1,
                     value: channel.$2,
@@ -174,13 +167,18 @@ class PlaybackQueueColorPanel extends StatelessWidget {
                       onColorChanged(Color.fromARGB(255, r, g, b).toARGB32());
                     },
                   ),
-                const SizedBox(height: 2),
+                  if (channel.$1 != 'B') const SizedBox(height: 16),
+                ],
+                const Spacer(),
                 Align(
                   alignment: Alignment.centerRight,
-                  child: TextButton.icon(
+                  child: TextButton(
+                    style: TextButton.styleFrom(
+                      shape: const StadiumBorder(),
+                      textStyle: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
                     onPressed: () => onColorChanged(null),
-                    icon: const Icon(Icons.restart_alt_rounded, size: 18),
-                    label: Text(i18n.tr('reset_to_default')),
+                    child: Text(i18n.tr('reset_to_default')),
                   ),
                 ),
               ],
@@ -261,29 +259,17 @@ class _QueueColorSlider extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final channelColor = switch (label) {
-      'R' => Colors.redAccent,
-      'G' => Colors.green,
-      'B' => Colors.blueAccent,
-      _ => color,
-    };
     return SizedBox(
-      height: 38,
+      height: 34,
       child: Row(
         children: [
-          Container(
-            width: 26,
-            height: 26,
-            decoration: BoxDecoration(
-              color: channelColor.withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            alignment: Alignment.center,
+          SizedBox(
+            width: 18,
             child: Text(
               label,
               style: Theme.of(context).textTheme.labelMedium?.copyWith(
                 fontWeight: FontWeight.w900,
-                color: channelColor,
+                color: cs.primary,
               ),
             ),
           ),

@@ -350,8 +350,18 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
   Future<AudioDetailLoadResult> loadAudioDetail(AudioDetailTarget target) =>
       _metadataCoordinator.loadAudioDetail(target);
 
-  Future<AudioDetailSaveResult> saveAudioDetail(AudioDetail detail) =>
-      _metadataCoordinator.saveAudioDetail(detail);
+  Future<AudioDetailSaveResult> saveAudioDetail(
+    AudioDetail detail, {
+    bool preserveExistingDuration = false,
+  }) => _metadataCoordinator.saveAudioDetail(
+    detail,
+    preserveExistingDuration: preserveExistingDuration,
+  );
+
+  Future<AudioDetailSaveResult> saveMissingLibraryDuration(
+    AudioDetailTarget target,
+    Duration duration,
+  ) => _metadataCoordinator.saveMissingDuration(target, duration);
 
   Future<bool> exportTimeSegmentLabels(String trackKey) =>
       _metadataCoordinator.exportTimeSegmentLabels(trackKey);
@@ -387,6 +397,7 @@ final class LibraryFacade implements LibraryCatalog, PlaybackLibraryCatalog {
   AudioDetailTarget audioDetailTargetForPath(String trackPath) =>
       _metadataCoordinator.targetForPath(trackPath);
 
+  @override
   Future<void> backfillMissingLibraryDurations({
     Future<Duration?> Function(String path)? durationReader,
   }) => _metadataCoordinator.backfillMissingDurations(

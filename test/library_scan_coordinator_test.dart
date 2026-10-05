@@ -42,6 +42,7 @@ void main() {
     expect(outcome?.addedCount, 2);
     expect(catalog.detailImportCount, 1);
     expect(catalog.lastImportOnlyMissing, isTrue);
+    expect(catalog.durationBackfillCount, 1);
     expect(coordinator.state.phase, LibraryScanPhase.success);
     expect(coordinator.state.outcome, same(outcome));
     expect(coordinator.state.failure, isNull);
@@ -143,6 +144,7 @@ void main() {
     );
 
     expect(catalog.detailImportCount, 0);
+    expect(catalog.durationBackfillCount, 0);
   });
 
   test('unchanged manual refresh skips JSON detail import', () async {
@@ -160,6 +162,7 @@ void main() {
     await coordinator.refresh(catalog: catalog, labels: labels);
 
     expect(catalog.detailImportCount, 0);
+    expect(catalog.durationBackfillCount, 1);
   });
 
   test('manual refresh reports explicit detail import failures', () async {
@@ -180,6 +183,55 @@ void main() {
 
     expect(catalog.detailImportCount, 1);
     expect(outcome?.details['detailImportFailureCount'], 2);
+  });
+
+  test(
+    'duration backfill starts after JSON import without delaying scan',
+    () async {
+      final pendingImport = Completer<AudioDetailBackupImportResult>();
+      final pendingDuration = Completer<void>();
+      final catalog = _FakeCatalog(
+        pendingImport: pendingImport.future,
+        pendingDuration: pendingDuration.future,
+      );
+      final coordinator = LibraryScanCoordinator(
+        scanner: _FakeScanner(
+          (_, _) async => LibraryScanOutcome(
+            code: LibraryScanOutcomeCode.refreshAdded,
+            source: 'refresh',
+          ),
+        ),
+      );
+      addTearDown(coordinator.dispose);
+      final scan = coordinator.refresh(catalog: catalog, labels: labels);
+      await pumpEventQueue();
+      expect(catalog.durationBackfillCount, 0);
+      pendingImport.complete(const AudioDetailBackupImportResult());
+      await scan;
+      expect(catalog.durationBackfillCount, 1);
+      expect(pendingDuration.isCompleted, isFalse);
+      pendingDuration.complete();
+    },
+  );
+
+  test('cancel during JSON import prevents duration backfill', () async {
+    final pendingImport = Completer<AudioDetailBackupImportResult>();
+    final catalog = _FakeCatalog(pendingImport: pendingImport.future);
+    final coordinator = LibraryScanCoordinator(
+      scanner: _FakeScanner(
+        (_, _) async => LibraryScanOutcome(
+          code: LibraryScanOutcomeCode.refreshAdded,
+          source: 'refresh',
+        ),
+      ),
+    );
+    addTearDown(coordinator.dispose);
+    final scan = coordinator.refresh(catalog: catalog, labels: labels);
+    await pumpEventQueue();
+    coordinator.cancel(catalog);
+    pendingImport.complete(const AudioDetailBackupImportResult());
+    expect(await scan, isNull);
+    expect(catalog.durationBackfillCount, 0);
   });
 
   test(
@@ -276,10 +328,17 @@ class _FakeScanner extends LibraryScannerService {
 }
 
 class _FakeCatalog implements LibraryCatalog {
-  _FakeCatalog({this.importResult = const AudioDetailBackupImportResult()});
+  _FakeCatalog({
+    this.importResult = const AudioDetailBackupImportResult(),
+    this.pendingImport,
+    this.pendingDuration,
+  });
 
   final AudioDetailBackupImportResult importResult;
+  final Future<AudioDetailBackupImportResult>? pendingImport;
+  final Future<void>? pendingDuration;
   int detailImportCount = 0;
+  int durationBackfillCount = 0;
   bool? lastImportOnlyMissing;
 
   @override
@@ -291,7 +350,15 @@ class _FakeCatalog implements LibraryCatalog {
   }) async {
     detailImportCount++;
     lastImportOnlyMissing = onlyMissing;
-    return importResult;
+    return pendingImport ?? importResult;
+  }
+
+  @override
+  Future<void> backfillMissingLibraryDurations({
+    Future<Duration?> Function(String path)? durationReader,
+  }) async {
+    durationBackfillCount++;
+    await pendingDuration;
   }
 
   @override

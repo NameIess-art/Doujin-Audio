@@ -15,6 +15,7 @@ import '../../../core/media/audio_detail.dart';
 import '../../../core/media/dlsite_metadata.dart';
 import '../../../core/media/path_display.dart';
 import '../../../core/media/time_text_formatters.dart';
+import '../../../core/logging/app_log_service.dart';
 import '../../../core/ui/ui_operation_service.dart';
 import '../../../core/ui/visual_settings_providers.dart';
 import '../../../core/widgets/app_feedback.dart';
@@ -133,6 +134,8 @@ class _DlsiteMetadataReviewPageState
   bool _loading = true;
   bool _saving = false;
   bool _saveCover = true;
+  bool _durationEdited = false;
+  int _durationCalculationGeneration = 0;
 
   UiOperationScope get _operationScope => UiOperationScope.metadataReview(
     '${widget.detail.target.targetType.dbValue}|${widget.detail.target.targetPath}',
@@ -215,6 +218,7 @@ class _DlsiteMetadataReviewPageState
   }
 
   void _initializeEditor() {
+    _durationController.removeListener(_markDurationEdited);
     final detail = widget.detail;
     final metadata = DlsiteMetadata(
       rjCode: detail.rjCode,
@@ -234,6 +238,48 @@ class _DlsiteMetadataReviewPageState
     _candidates = <DlsiteMetadata>[metadata];
     _loading = false;
     _saveCover = false;
+    _durationEdited = false;
+    _durationController.addListener(_markDurationEdited);
+    final generation = ++_durationCalculationGeneration;
+    if (detail.duration == null) {
+      unawaited(_completeEditorDuration(detail.target, generation));
+    }
+  }
+
+  void _markDurationEdited() => _durationEdited = true;
+
+  Future<void> _completeEditorDuration(
+    AudioDetailTarget target,
+    int generation,
+  ) async {
+    try {
+      final library = ref.read(libraryFacadeProvider);
+      await library.calculateMissingLibraryDuration(target.targetPath);
+      if (!mounted ||
+          generation != _durationCalculationGeneration ||
+          (_editingDetail ?? widget.detail).target != target ||
+          _saving ||
+          _durationEdited ||
+          _durationController.text.trim().isNotEmpty) {
+        return;
+      }
+      final duration = library.resolvedAudioDetail(target)?.duration;
+      if (duration == null) return;
+      _durationController.removeListener(_markDurationEdited);
+      _durationController.text = formatDurationHms(duration);
+      _durationController.addListener(_markDurationEdited);
+      setState(() {
+        _editingDetail = (_editingDetail ?? widget.detail).copyWith(
+          duration: duration,
+        );
+      });
+    } catch (error, stackTrace) {
+      AppLogService.warning(
+        'audio_detail_editor_duration_calculation_failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
   }
 
   Future<void> _fetch() async {
@@ -448,6 +494,7 @@ class _DlsiteMetadataReviewPageState
                     duration: edited.duration,
                     rating: edited.rating,
                   ),
+                  preserveExistingDuration: !_durationEdited,
                 ),
           );
       if (!mounted) return;

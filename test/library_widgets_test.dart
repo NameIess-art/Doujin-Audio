@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'support/runtime_test_models.dart';
@@ -12,8 +13,11 @@ import 'package:doujin_audio/app/application/browse_page_state_store.dart';
 import 'package:doujin_audio/app/state/app_runtime_providers.dart';
 import 'package:doujin_audio/features/library/presentation/library_tab_edit.dart';
 import 'package:doujin_audio/features/library/presentation/work_detail_page.dart';
+import 'package:doujin_audio/features/library/presentation/dlsite_metadata_review_page.dart';
 import 'package:doujin_audio/features/player/presentation/playlist_tab.dart';
 import 'package:doujin_audio/features/player/application/playback_session_snapshot.dart';
+import 'package:doujin_audio/features/player/application/native_playback_bridge.dart';
+import 'package:doujin_audio/features/player/application/native_playback_repository.dart';
 import 'package:doujin_audio/features/library/presentation/library_card_artwork.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/core/widgets/glass_refresh_indicator.dart';
@@ -2640,6 +2644,38 @@ void main() {
       find.byTooltip(languageProvider.tr('batch_metadata')),
       findsOneWidget,
     );
+    await tester.tap(find.byTooltip(languageProvider.tr('batch_metadata')));
+    await tester.pump();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 60));
+    final batchHeader = find.widgetWithText(
+      TopPageHeader,
+      languageProvider.tr('batch_metadata'),
+    );
+    final batchHeaderFade = find.descendant(
+      of: batchHeader,
+      matching: find.byType(Opacity),
+    ).first;
+    expect(
+      tester.widget<Opacity>(batchHeaderFade).opacity,
+      inExclusiveRange(0, 1),
+    );
+    final headerLeft = tester.getRect(batchHeaderFade).left;
+    await tester.pumpAndSettle();
+    expect(tester.widget<Opacity>(batchHeaderFade).opacity, 1);
+    await tester.tap(
+      find.descendant(of: batchHeader, matching: find.byType(BackButton)),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 225));
+    expect(
+      tester.widget<Opacity>(batchHeaderFade).opacity,
+      inExclusiveRange(0, 1),
+    );
+    expect(tester.getRect(batchHeaderFade).left, closeTo(headerLeft, 0.01));
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(batchHeader, findsNothing);
     expect(
       find.byTooltip(languageProvider.tr('video_to_audio')),
       findsOneWidget,
@@ -3918,6 +3954,171 @@ void main() {
       await finishLibraryTest(tester, fixture);
     },
   );
+
+  for (final kind in ['audio', 'covered audio', 'video']) {
+    testWidgets(
+      'single $kind card plays on tap and edits from its menu',
+      (tester) async {
+        var prepareCalls = 0;
+        var playCalls = 0;
+        Map<String, Object?>? snapshot;
+        final messenger =
+            TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+        messenger.setMockMethodCallHandler(nativePlaybackChannel, (call) async {
+          final arguments = call.arguments as Map<Object?, Object?>?;
+          if (call.method == NativePlaybackMethod.prepareSession) {
+            prepareCalls++;
+            snapshot = {
+              'sessionId': arguments!['sessionId'],
+              'path': arguments['path'],
+              'uri': arguments['uri'],
+              'playing': false,
+              'playWhenReady': false,
+              'processingState': 'ready',
+              'positionMs': 0,
+              'bufferedPositionMs': 0,
+              'volume': 1.0,
+            };
+            return {'ok': true, 'value': snapshot};
+          }
+          if (call.method == NativePlaybackMethod.play) {
+            playCalls++;
+            return {
+              'ok': true,
+              'value': {
+                ...snapshot!,
+                'playing': true,
+                'playWhenReady': true,
+                'transportCommandId': arguments!['transportCommandId'],
+              },
+            };
+          }
+          return {'ok': true, 'value': null};
+        });
+        addTearDown(
+          () => messenger.setMockMethodCallHandler(nativePlaybackChannel, null),
+        );
+        final fixture = AppRuntimeWidgetTestFixture(
+          coverArtworkCacheService: kind == 'covered audio'
+              ? null
+              : _NoCoverArtworkCacheService(),
+          providedNativePlaybackRepository: NativePlaybackRepository(
+            bridge: NativePlaybackBridge.instance,
+          ),
+        );
+        addTearDown(fixture.dispose);
+        final directory = (await tester.runAsync(
+          () => Directory.systemTemp.createTemp('single_card_'),
+        ))!;
+        addTearDown(() => directory.delete(recursive: true));
+        final track = MusicTrack(
+          path: '${directory.path}/selected.${kind == 'video' ? 'mp4' : 'mp3'}',
+          displayName: 'Selected $kind',
+          groupKey: '__single_files__',
+          groupTitle: 'Imported files',
+          groupSubtitle: '',
+          isSingle: true,
+          isVideo: kind == 'video',
+          duration: const Duration(seconds: 30),
+        );
+        final target = AudioDetailTarget.singleAudioFile(track.path);
+        fixture.library.addTracks([track], notify: false, persist: false);
+        String? cover;
+        if (kind == 'covered audio') {
+          cover = '${directory.path}/cover.png';
+          await tester.runAsync(
+            () => File(cover!).writeAsBytes(
+              base64Decode(
+                'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+              ),
+            ),
+          );
+        }
+        await tester.runAsync(
+          () => fixture.library.saveAudioDetail(
+            AudioDetail.empty(target).copyWith(
+              duration: track.duration,
+              cardCoverPath: cover,
+              cardCoverSelected: cover != null,
+            ),
+          ),
+        );
+        fixture.libraryService.syncSlice(
+          isInitialized: true,
+          detailRevision: 0,
+        );
+        await tester.pumpWidget(fixture.build(const LibraryTab()));
+        await pumpUntilLibraryTreeReady(tester, fixture.library);
+        await pumpUntilNotFound(tester, find.byType(LibraryLikeSkeletonCard));
+        await tester.pump(const Duration(milliseconds: 350));
+        final title = find.text(track.displayName, findRichText: true);
+        expect(title, findsOneWidget);
+        await tester.tap(title);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 350));
+        for (var attempt = 0; attempt < 50 && playCalls == 0; attempt++) {
+          await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 10)));
+          await tester.pump(const Duration(milliseconds: 20));
+        }
+        expect(prepareCalls, 1);
+        expect(playCalls, 1);
+        expect(find.byType(WorkDetailPage), findsNothing);
+        expect(
+          fixture.playback.activeSessions.single.currentTrackPath,
+          PathMatcher.normalize(track.path),
+        );
+        final card = find.ancestor(
+          of: title,
+          matching: find.byType(SwipeRevealCard),
+        );
+        final editLabel = fixture.languageProvider.tr('audio_detail_edit_info');
+        expect(
+          tester.widget<SwipeRevealCard>(card).secondaryActionLabel,
+          editLabel,
+        );
+        if (defaultTargetPlatform == TargetPlatform.windows) {
+          await tester.tap(
+            card,
+            buttons: kSecondaryMouseButton,
+            kind: PointerDeviceKind.mouse,
+          );
+          await tester.pumpAndSettle();
+          await tester.tap(find.text(editLabel));
+        } else {
+          await tester.drag(card, const Offset(-250, 0));
+          await tester.pumpAndSettle();
+          await tester.tap(find.byTooltip(editLabel));
+        }
+        await pumpUntilFound(tester, find.byType(DlsiteMetadataReviewPage));
+        await tester.pumpAndSettle();
+        expect(find.byType(WorkDetailPage), findsNothing);
+        final durationField = tester.widget<TextField>(
+          find.descendant(
+            of: find.byKey(const ValueKey('metadata_edit_card_info_duration')),
+            matching: find.byType(TextField),
+          ),
+        );
+        expect(durationField.controller!.text, '00:00:30');
+        await tester.enterText(
+          find.byKey(const ValueKey('metadata_edit_audio_detail_work_title')),
+          'Edited title',
+        );
+        await tester.tap(find.byKey(const ValueKey('dlsite_review_confirm')));
+        await pumpUntilNotFound(tester, find.byType(DlsiteMetadataReviewPage));
+        expect(
+          (await tester.runAsync(
+            () => fixture.library.loadAudioDetail(target),
+          ))!.detail.workTitle,
+          'Edited title',
+        );
+        await finishLibraryTest(tester, fixture);
+      },
+      variant: const TargetPlatformVariant({
+        TargetPlatform.android,
+        TargetPlatform.windows,
+      }),
+    );
+  }
 
   testWidgets(
     'single track without cover shows pin in leading indicator and checkmark at bottom-left when selected',

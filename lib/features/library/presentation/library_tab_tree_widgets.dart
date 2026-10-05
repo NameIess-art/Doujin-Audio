@@ -838,7 +838,7 @@ class _TrackNodeWidget extends ConsumerWidget {
     final useFeaturedSingleCard =
         track.isVideo || hasDisplayableCoverArtwork(track, resolvedCoverPath);
 
-    Future<void> playSingleTrack() async {
+    Future<void> playSingleTrack({bool? autoPlay}) async {
       unawaited(
         AppInteractionFeedback.trigger(
           AppInteractionFeedbackType.tap,
@@ -847,7 +847,7 @@ class _TrackNodeWidget extends ConsumerWidget {
       );
       final created = await playback.spawnSession(
         track,
-        autoPlay: track.isVideo ? true : null,
+        autoPlay: autoPlay ?? (track.isVideo ? true : null),
       );
       if (!context.mounted) return;
       if (created) {
@@ -872,15 +872,15 @@ class _TrackNodeWidget extends ConsumerWidget {
         closedColor: cs.surface,
         actionLabel: i18n.tr('remove'),
         removeTooltip: i18n.tr('remove_audio'),
-        secondaryActionLabel: i18n.tr('download'),
-        secondaryActionTooltip: i18n.tr('download'),
-        secondaryActionIcon: Icons.download_rounded,
+        secondaryActionLabel: i18n.tr('audio_detail_edit_info'),
+        secondaryActionTooltip: i18n.tr('audio_detail_edit_info'),
+        secondaryActionIcon: Icons.edit_rounded,
         verticalActions: useFeaturedCard,
         onSecondaryAction: () => unawaited(
-          downloadAudioTargetFromAsmr(
-            context: context,
-            ref: ref,
-            target: AudioDetailTarget.singleAudioFile(track.path),
+          showAudioDetailEditor(
+            context,
+            ref,
+            AudioDetailTarget.singleAudioFile(track.path),
           ),
         ),
         onLeadingAction: () => unawaited(
@@ -920,14 +920,7 @@ class _TrackNodeWidget extends ConsumerWidget {
             onLongPress: onLongPress,
             onTap: isSelectionMode
                 ? onToggleSelect
-                : () => unawaited(
-                    showAudioDetailSheet(
-                      context,
-                      AudioDetailTarget.singleAudioFile(track.path),
-                      initialDetail: singleDetail,
-                      initialCoverPath: resolvedCoverPath,
-                    ),
-                  ),
+                : () => unawaited(playSingleTrack(autoPlay: true)),
             child: useFeaturedCard
                 ? ListTile(
                     contentPadding: LibraryLikeCardMetrics.rootTilePadding,

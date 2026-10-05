@@ -548,6 +548,10 @@ class _CoverFallbackTexturePainter extends CustomPainter {
     final shortest = size.shortestSide;
     if (shortest <= 0) return;
 
+    // Decorative circles cross the edges but must stay inside the cover area.
+    canvas.save();
+    canvas.clipRect(Offset.zero & size);
+
     final accentPaint = Paint()
       ..color = accent
       ..style = PaintingStyle.fill;
@@ -577,6 +581,7 @@ class _CoverFallbackTexturePainter extends CustomPainter {
         linePaint,
       );
     }
+    canvas.restore();
   }
 
   @override

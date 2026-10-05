@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -32,6 +34,7 @@ class SwipeRevealCard extends StatefulWidget {
     this.secondaryActionIconWidget,
     this.primaryActionIcon = Icons.delete_outline_rounded,
     this.primaryActionTooltip,
+    this.closeAfterPrimaryAction = false,
     this.onTertiaryAction,
     this.tertiaryActionLabel,
     this.tertiaryActionTooltip,
@@ -54,7 +57,7 @@ class SwipeRevealCard extends StatefulWidget {
   });
 
   final Widget child;
-  final VoidCallback onRemove;
+  final FutureOr<void> Function() onRemove;
   final String actionLabel;
   final String removeTooltip;
   final ShapeBorder shape;
@@ -67,6 +70,7 @@ class SwipeRevealCard extends StatefulWidget {
   final Widget? secondaryActionIconWidget;
   final IconData primaryActionIcon;
   final String? primaryActionTooltip;
+  final bool closeAfterPrimaryAction;
   final VoidCallback? onTertiaryAction;
   final String? tertiaryActionLabel;
   final String? tertiaryActionTooltip;
@@ -107,10 +111,11 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
   bool _snapClosed = false;
   bool _actionPaneActive = false;
   bool _tickerModeEnabled = true;
+  bool _primaryActionPending = false;
   ValueListenable<TickerModeData>? _tickerModeNotifier;
   bool _revealedFromStart = false;
   bool _dragStartFromStart = false;
-  double _settledWidth = 0;
+  double _displayedWidth = 0;
   final Object _interactionSource = Object();
 
   void _beginMotion() {
@@ -166,10 +171,11 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
 
   void _handleTickerModeChanged() {
     final enabled = _tickerModeNotifier!.value.enabled;
-    if (_tickerModeEnabled && !enabled) {
+    // A modal action can cover this route while retaining the revealed card.
+    if (_tickerModeEnabled && !enabled && !_primaryActionPending) {
       final needsRebuild =
           _revealedWidth != 0 ||
-          _settledWidth != 0 ||
+          _displayedWidth != 0 ||
           _actionPaneActive ||
           _snapClosed;
       _resetPaneState();
@@ -192,7 +198,7 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
 
   void _resetPaneState() {
     UiInteractionCoordinator.instance.cancelInteraction(_interactionSource);
-    _settledWidth = 0;
+    _displayedWidth = 0;
     _revealedWidth = 0;
     _dragStartRevealedWidth = 0;
     _dragDx = 0;
@@ -225,11 +231,26 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
 
   void _runActionAfterPaneClose(VoidCallback? action) {
     if (action == null) return;
+    if (widget.closeAfterPrimaryAction && action == widget.onRemove) {
+      unawaited(_runPrimaryActionThenClose());
+      return;
+    }
     _closePane(immediate: true);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       action();
     });
+  }
+
+  Future<void> _runPrimaryActionThenClose() async {
+    if (_primaryActionPending) return;
+    _primaryActionPending = true;
+    try {
+      await widget.onRemove();
+    } finally {
+      _primaryActionPending = false;
+      if (mounted) _closePane();
+    }
   }
 
   Future<void> _showContextMenu([TapDownDetails? details]) async {
@@ -292,11 +313,12 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
 
   void _handleHorizontalDragStart(DragStartDetails details) {
     if (!widget.enabled || !_tickerModeEnabled) return;
-    _dragStartRevealedWidth = _revealedWidth;
+    // The target may already be zero while the closing animation is visible.
+    _dragStartRevealedWidth = _displayedWidth;
     _dragStartFromStart = _revealedFromStart;
     _dragDx = 0;
     _dragDy = 0;
-    _dragAccepted = _revealedWidth > 0;
+    _dragAccepted = _displayedWidth > 0;
     _dragRejected = false;
     if (_dragAccepted) _beginMotion();
   }
@@ -368,7 +390,7 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
       if (_dragStartRevealedWidth == 0 && _revealedWidth != 0) {
         _closePane();
       }
-      if (_settledWidth == _revealedWidth) _finishMotion();
+      if (_displayedWidth == _revealedWidth) _finishMotion();
       return;
     }
     final velocity = details.primaryVelocity ?? 0;
@@ -383,7 +405,7 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
     });
     _dragAccepted = false;
     _dragRejected = false;
-    if (_settledWidth == _revealedWidth) _finishMotion();
+    if (_displayedWidth == _revealedWidth) _finishMotion();
   }
 
   @override
@@ -501,7 +523,9 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
     }
     final cardWidget = RepaintBoundary(
       child: TapRegion(
-        onTapOutside: (_) => _closePane(),
+        onTapOutside: (_) {
+          if (!_primaryActionPending) _closePane();
+        },
         child: Padding(
           padding: widget.margin,
           child: GestureDetector(
@@ -513,34 +537,41 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
               _beginMotion();
               setState(() {
                 final opening = !_isOpen;
+                if (_displayedWidth == 0) _revealedFromStart = false;
                 _actionPaneActive = opening || _actionPaneActive;
-                _revealedFromStart = false;
-                _revealedWidth = opening ? _actionWidth : 0;
+                _revealedWidth = opening ? _activeActionWidth : 0;
               });
             },
             onHorizontalDragCancel: () {
+              // An action tap also cancels the competing drag recognizer.
+              if (_dragAccepted) _closePane();
               _dragAccepted = false;
               _dragRejected = false;
-              _closePane();
-              if (_settledWidth == _revealedWidth) _finishMotion();
+              if (_displayedWidth == _revealedWidth) _finishMotion();
             },
             child: Stack(
               children: [
                 if (_actionPaneActive)
                   Positioned.fill(
-                    child: SwipeRevealActionPane(
-                      actions: _revealedFromStart
-                          ? leadingActions
-                          : trailingActions,
-                      fromStart: _revealedFromStart,
-                      vertical: widget.verticalActions,
-                      width: actionWidth,
-                      progress: revealProgress,
-                      shape: widget.shape,
-                      color: widget.color,
-                      label: actionLabel,
-                      tooltip: actionTooltip,
-                      onAction: _runActionAfterPaneClose,
+                    child: ClipRect(
+                      clipper: _SwipeRevealPaneClipper(
+                        fromStart: _revealedFromStart,
+                        actionWidth: actionWidth,
+                      ),
+                      child: SwipeRevealActionPane(
+                        actions: _revealedFromStart
+                            ? leadingActions
+                            : trailingActions,
+                        fromStart: _revealedFromStart,
+                        vertical: widget.verticalActions,
+                        width: actionWidth,
+                        progress: revealProgress,
+                        shape: widget.shape,
+                        color: widget.color,
+                        label: actionLabel,
+                        tooltip: actionTooltip,
+                        onAction: _runActionAfterPaneClose,
+                      ),
                     ),
                   ),
                 if (!_actionPaneActive && _revealedWidth == 0)
@@ -555,7 +586,7 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                     curve: Curves.easeOutCubic,
                     onEnd: () {
                       if (!mounted) return;
-                      _settledWidth = _revealedWidth;
+                      _displayedWidth = _revealedWidth;
                       if (!_dragAccepted) _finishMotion();
                       if (!_snapClosed &&
                           (_revealedWidth != 0 || !_actionPaneActive)) {
@@ -567,14 +598,20 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                           _snapClosed = false;
                           if (_revealedWidth == 0) {
                             _actionPaneActive = false;
-                            _revealedFromStart = false;
+                            if (!_dragAccepted) _revealedFromStart = false;
                           }
                         });
                       });
                     },
                     builder: (context, value, child) {
+                      _displayedWidth = value.clamp(0.0, actionWidth);
                       return Transform.translate(
-                        offset: Offset(_revealedFromStart ? value : -value, 0),
+                        offset: Offset(
+                          _revealedFromStart
+                              ? _displayedWidth
+                              : -_displayedWidth,
+                          0,
+                        ),
                         child: child,
                       );
                     },
@@ -598,4 +635,32 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
 
     return cardWidget;
   }
+}
+
+class _SwipeRevealPaneClipper extends CustomClipper<Rect> {
+  const _SwipeRevealPaneClipper({
+    required this.fromStart,
+    required this.actionWidth,
+  });
+
+  final bool fromStart;
+  final double actionWidth;
+
+  @override
+  Rect getClip(Size size) {
+    // Keep the opposite antialiased edge hidden as the foreground returns to
+    // zero, while leaving room for its rounded end beyond the action buttons.
+    final inset = (size.width - actionWidth).clamp(0.0, size.width) / 2;
+    return Rect.fromLTRB(
+      fromStart ? 0 : inset,
+      0,
+      fromStart ? size.width - inset : size.width,
+      size.height,
+    );
+  }
+
+  @override
+  bool shouldReclip(_SwipeRevealPaneClipper oldClipper) =>
+      fromStart != oldClipper.fromStart ||
+      actionWidth != oldClipper.actionWidth;
 }

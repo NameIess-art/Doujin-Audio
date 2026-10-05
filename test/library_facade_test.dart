@@ -152,7 +152,11 @@ void main() {
           expect(detail.cardCoverPath, oldCover);
           expect(detail.duration, const Duration(seconds: 45));
         }
-        expect(await file.readAsBytes(), bytes);
+        await fixture.library.backfillMissingLibraryDurations();
+        expect(jsonDecode(await file.readAsString()), {
+          ...jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>,
+          'durationMs': const Duration(seconds: 45).inMilliseconds,
+        });
       },
     );
   }
@@ -440,7 +444,7 @@ void main() {
   });
 
   test(
-    'duration backfill keeps a richer local detail backup byte-identical',
+    'duration backfill only adds duration to a richer local detail backup',
     () async {
       final workFolder = await Directory.systemTemp.createTemp(
         'detail_duration_backup_race_',
@@ -498,7 +502,10 @@ void main() {
         durationReader: (_) async => const Duration(minutes: 2),
       );
 
-      expect(await backupFile.readAsString(), originalBackup);
+      expect(jsonDecode(await backupFile.readAsString()), {
+        ...jsonDecode(originalBackup) as Map<String, dynamic>,
+        'durationMs': const Duration(minutes: 2).inMilliseconds,
+      });
       expect(await thirdPartyJson.readAsString(), originalThirdPartyJson);
       expect(
         (await (runtimeGraph.library.databaseRepository as AudioDetailStore)
@@ -510,15 +517,19 @@ void main() {
   );
 
   test('missing duration is resolved for a single video file', () async {
-    const videoPath = r'C:\library\standalone-video.mp4';
+    final directory = await Directory.systemTemp.createTemp(
+      'single_video_duration_',
+    );
+    addTearDown(() => directory.delete(recursive: true));
+    final videoPath = path.join(directory.path, 'standalone-video.mp4');
     runtimeGraph.library.addTracks(
       <MusicTrack>[
         MusicTrack(
           path: videoPath,
           displayName: 'standalone-video',
-          groupKey: r'C:\library',
+          groupKey: directory.path,
           groupTitle: 'standalone-video',
-          groupSubtitle: r'C:\library',
+          groupSubtitle: directory.path,
           isSingle: true,
           isVideo: true,
         ),
@@ -536,16 +547,32 @@ void main() {
       },
     );
 
-    expect(requestedPaths, const <String>[videoPath]);
+    expect(requestedPaths, <String>[videoPath]);
     expect(duration, const Duration(minutes: 7, seconds: 12));
     expect(
       runtimeGraph.library.trackByPath(videoPath)?.duration,
       const Duration(minutes: 7, seconds: 12),
     );
+    final target = AudioDetailTarget.singleAudioFile(videoPath);
+    expect(
+      (await runtimeGraph.library.loadAudioDetail(target)).detail.duration,
+      duration,
+    );
+    expect(
+      const AudioDetailJsonCodec()
+          .decode(
+            await File(
+              path.join(directory.path, audioDetailDocumentName),
+            ).readAsBytes(),
+            target,
+          )
+          .duration,
+      duration,
+    );
   });
 
   test(
-    'library duration backfill persists work and single details only to database',
+    'library duration backfill persists work and single details to database and JSON',
     () async {
       final root = await Directory.systemTemp.createTemp(
         'library_duration_backfill_',
@@ -645,15 +672,35 @@ void main() {
         ),
       );
 
+      const codec = AudioDetailJsonCodec();
       expect(
-        await File(path.join(workDir.path, audioDetailDocumentName)).exists(),
-        isFalse,
+        codec
+            .decode(
+              await File(
+                path.join(workDir.path, audioDetailDocumentName),
+              ).readAsBytes(),
+              workTarget,
+            )
+            .duration,
+        const Duration(minutes: 3),
       );
       expect(
-        await File(
-          path.join(singlesDir.path, audioDetailDocumentName),
-        ).exists(),
-        isFalse,
+        codec
+            .decode(
+              await File(
+                path.join(singlesDir.path, audioDetailDocumentName),
+              ).readAsBytes(),
+              singleTarget,
+            )
+            .duration,
+        const Duration(seconds: 45),
+      );
+      runtimeGraph.library.detailCacheService.clear();
+      expect(
+        (await runtimeGraph.library.loadAudioDetail(
+          singleTarget,
+        )).detail.duration,
+        const Duration(seconds: 45),
       );
     },
   );
@@ -707,6 +754,61 @@ void main() {
         (await runtimeGraph.library.loadAudioDetail(target)).detail.duration,
         const Duration(minutes: 9),
       );
+    },
+  );
+
+  test(
+    'known database duration creates missing JSON without probing again',
+    () async {
+      final work = await Directory.systemTemp.createTemp(
+        'known_duration_json_',
+      );
+      addTearDown(() => work.delete(recursive: true));
+      final target = AudioDetailTarget.libraryRootFolder(work.path);
+      runtimeGraph.library.addWatchedFolder(work.path, notify: false);
+      runtimeGraph.library.addTracks(
+        [
+          MusicTrack(
+            path: path.join(work.path, 'audio.mp3'),
+            displayName: 'Audio',
+            groupKey: work.path,
+            groupTitle: 'Work',
+            groupSubtitle: '',
+            isSingle: false,
+            duration: const Duration(minutes: 2),
+          ),
+        ],
+        notify: false,
+        persist: false,
+      );
+      await (runtimeGraph.library.databaseRepository as AudioDetailStore)
+          .upsert(
+            AudioDetail.empty(
+              target,
+            ).copyWith(duration: const Duration(minutes: 9)),
+          );
+      var probes = 0;
+      Future<Duration?> readDuration(String _) async {
+        probes++;
+        return const Duration(minutes: 2);
+      }
+
+      await runtimeGraph.library.backfillMissingLibraryDurations(
+        durationReader: readDuration,
+      );
+      final file = File(path.join(work.path, audioDetailDocumentName));
+      final bytes = await file.readAsBytes();
+      expect(
+        const AudioDetailJsonCodec().decode(bytes, target).duration,
+        const Duration(minutes: 9),
+      );
+      final revision = runtimeGraph.library.detailCacheService.revision;
+      await runtimeGraph.library.backfillMissingLibraryDurations(
+        durationReader: readDuration,
+      );
+      expect(probes, 0);
+      expect(await file.readAsBytes(), bytes);
+      expect(runtimeGraph.library.detailCacheService.revision, revision);
     },
   );
 

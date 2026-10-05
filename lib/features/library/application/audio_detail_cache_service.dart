@@ -166,12 +166,21 @@ class AudioDetailCacheService {
     return load(target);
   }
 
-  Future<AudioDetailSaveResult> save(AudioDetail detail) {
+  Future<AudioDetailSaveResult> save(
+    AudioDetail detail, {
+    bool preserveExistingDuration = false,
+  }) {
     final epoch = _cacheEpoch;
     return _runSerialized<AudioDetailSaveResult>(
       <AudioDetailTarget>[detail.target],
       () async {
-        final result = await _repository.save(detail);
+        var next = detail;
+        if (preserveExistingDuration && next.duration == null) {
+          // Read inside the queue so a preceding probe can finish committing.
+          final latest = (await _repository.load(next.target)).detail;
+          next = next.copyWith(duration: latest.duration);
+        }
+        final result = await _repository.save(next);
         if (epoch != _cacheEpoch) {
           throw const AudioDetailOperationCancelled();
         }
@@ -228,6 +237,23 @@ class AudioDetailCacheService {
       }
       _store(result);
       _bumpRevision();
+      return result;
+    });
+  }
+
+  Future<AudioDetailSaveResult> saveMissingDuration(
+    AudioDetailTarget target,
+    Duration duration,
+  ) {
+    final epoch = _cacheEpoch;
+    return _runSerialized<AudioDetailSaveResult>([target], () async {
+      final previousDuration = resolvedDetail(target)?.duration;
+      final result = await _repository.saveMissingDuration(target, duration);
+      if (epoch != _cacheEpoch) {
+        throw const AudioDetailOperationCancelled();
+      }
+      _store(result.detail);
+      if (previousDuration != result.detail.duration) _bumpRevision();
       return result;
     });
   }

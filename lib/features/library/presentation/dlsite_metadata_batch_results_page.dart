@@ -53,7 +53,6 @@ class _DlsiteMetadataBatchResultsPageState
       await Navigator.of(context).push<void>(
         buildAppPageRoute(
           context: context,
-          fadeHeader: false,
           child: DlsiteMetadataBatchReviewPage(
             session: widget.session,
             initialIndex: index,

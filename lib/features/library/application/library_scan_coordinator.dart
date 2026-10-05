@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 
 import '../../../core/errors/app_failure.dart';
@@ -115,11 +117,14 @@ class LibraryScanCoordinator extends ChangeNotifier {
     }
     if (skipWhenUnchanged &&
         outcome.code == LibraryScanOutcomeCode.refreshNoChanges) {
+      _backfillDurations(catalog);
       return outcome;
     }
     final import = await catalog.importAudioDetailBackups(
       onlyMissing: onlyMissing,
     );
+    if (!_isCurrent(generation)) return null;
+    _backfillDurations(catalog);
     if (import.failureCount == 0 && import.importedCount == 0) return outcome;
     return LibraryScanOutcome(
       code: outcome.code,
@@ -129,6 +134,21 @@ class LibraryScanCoordinator extends ChangeNotifier {
         'detailImportCount': import.importedCount,
         'detailImportFailureCount': import.failureCount,
       },
+    );
+  }
+
+  void _backfillDurations(LibraryCatalog catalog) {
+    unawaited(
+      catalog.backfillMissingLibraryDurations().catchError((
+        Object error,
+        StackTrace stackTrace,
+      ) {
+        AppLogService.warning(
+          'library_scan_duration_backfill_failed',
+          error: error,
+          stackTrace: stackTrace,
+        );
+      }),
     );
   }
 

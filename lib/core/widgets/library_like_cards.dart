@@ -10,7 +10,7 @@ import 'marquee_text.dart';
 import 'search_highlight.dart';
 import 'shimmer_loading.dart';
 
-const _libraryLikeInfoLineHeight = 16.0;
+const _libraryLikeInfoLineHeight = 18.0;
 
 const double kResponsiveLibraryCardMinWidth = 420;
 const double kResponsiveLibraryCardSpacing = 8;
@@ -124,11 +124,10 @@ class LibraryLikeSkeletonCard extends StatelessWidget {
                                     _SkeletonInfoLine(
                                       labelWidth: 28,
                                       textWidth: 160,
-                                      lines: 3,
+                                      lines: 2,
                                       multiLineTextWidths: <double>[
                                         160,
                                         130,
-                                        85,
                                       ],
                                     ),
                                   ],
@@ -461,7 +460,7 @@ class LibraryLikeInfoLineData {
          'Secondary label and text must be provided together.',
        );
 
-  static const int maxLines = 6;
+  static const int maxLines = 5;
 
   final String label;
   final String text;
@@ -526,10 +525,7 @@ List<LibraryLikeInfoLineData> buildLibraryLikeInfoLines({
   }
   if (metadata.tags.isNotEmpty) {
     final remainingLines =
-        (LibraryLikeInfoLineData.maxLines - result.length).clamp(
-          1,
-          LibraryLikeInfoLineData.maxLines,
-        );
+        (LibraryLikeInfoLineData.maxLines - result.length).clamp(1, 2);
     result.add(
       LibraryLikeInfoLineData(
         tagsLabel,
@@ -608,13 +604,13 @@ class LibraryLikeWorkCardContent extends StatelessWidget {
     final infoStyle =
         Theme.of(context).textTheme.labelSmall?.copyWith(
           fontWeight: FontWeight.w700,
-          fontSize: 10,
+          fontSize: 11.5,
           height: 1.05,
           color: cs.onSurface.withValues(alpha: 0.82),
         ) ??
         TextStyle(
           fontWeight: FontWeight.w700,
-          fontSize: 10,
+          fontSize: 11.5,
           height: 1.05,
           color: cs.onSurface.withValues(alpha: 0.82),
         );
@@ -944,13 +940,13 @@ class LibraryLikeSingleAudioCardContent extends StatelessWidget {
     final infoStyle =
         Theme.of(context).textTheme.labelSmall?.copyWith(
           fontWeight: FontWeight.w700,
-          fontSize: 10,
+          fontSize: 11.5,
           height: 1.05,
           color: cs.onSurface.withValues(alpha: 0.82),
         ) ??
         TextStyle(
           fontWeight: FontWeight.w700,
-          fontSize: 10,
+          fontSize: 11.5,
           height: 1.05,
           color: cs.onSurface.withValues(alpha: 0.82),
         );
@@ -1121,11 +1117,13 @@ class _LibraryLikeMultiLineInfoText extends StatelessWidget {
               text: splitLines.$1,
               style: style,
               enableMarquee: enableMarquee,
+              height: _libraryLikeInfoLineHeight,
             ),
             LibraryLikeMarqueeLine(
               text: splitLines.$2,
               style: style,
               enableMarquee: enableMarquee,
+              height: _libraryLikeInfoLineHeight,
             ),
           ],
         );
@@ -1164,17 +1162,19 @@ class LibraryLikeMarqueeLine extends StatelessWidget {
     required this.text,
     required this.style,
     this.enableMarquee = true,
+    this.height = 16,
   });
 
   final String text;
   final TextStyle style;
   final bool enableMarquee;
+  final double height;
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
       width: double.infinity,
-      height: 16,
+      height: height,
       child: enableMarquee
           ? MarqueeText(text: text, style: style, scrollSpeed: 26)
           : SearchHighlightedText(text: text, maxLines: 1, style: style),

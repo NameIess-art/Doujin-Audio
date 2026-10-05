@@ -57,7 +57,7 @@ void main() {
     expect(initialRed, greaterThan(0));
     await tester.tapAt(const Offset(1, 1));
     await tester.pump();
-    await tester.pump(kSecondaryOverlayConfig.transitionDuration * 0.75);
+    await tester.pump(const Duration(milliseconds: 225));
     expect(await redAtCenter(), lessThan(initialRed / 2));
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('fading_ink')), findsNothing);
@@ -261,7 +261,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('shared overlay panel uses scale fade and dismisses by scrim', (
+  testWidgets('shared overlay panel fades in and out over 300ms', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -290,12 +290,42 @@ void main() {
     final openingScrim = tester.widget<ColoredBox>(
       find.byKey(const ValueKey('app_overlay_panel_scrim')),
     );
-    expect(
-      openingScrim.color.a,
-      closeTo(kSecondaryOverlayConfig.backgroundOpacity, 0.001),
-    );
+    expect(openingScrim.color.a, closeTo(0, 0.001));
+    final route = ModalRoute.of(
+      tester.element(find.byKey(const ValueKey('overlay_panel_content'))),
+    )!;
+    expect(route.transitionDuration, const Duration(milliseconds: 300));
+    expect(route.reverseTransitionDuration, const Duration(milliseconds: 300));
 
-    await tester.pumpAndSettle();
+    double panelOpacity() => tester
+        .widget<FadeTransition>(
+          find.ancestor(
+            of: find.byKey(const ValueKey('overlay_panel_content')),
+            matching: find.byType(FadeTransition),
+          ),
+        )
+        .opacity
+        .value;
+    double scrimOpacity() => tester
+        .widget<ColoredBox>(
+          find.byKey(const ValueKey('app_overlay_panel_scrim')),
+        )
+        .color
+        .a;
+    await tester.pump(const Duration(milliseconds: 150));
+    final middleOpacity = Curves.easeInOutCubic.transform(0.5);
+    expect(panelOpacity(), closeTo(middleOpacity, 0.001));
+    expect(
+      scrimOpacity(),
+      closeTo(
+        panelOpacity() * kSecondaryOverlayConfig.backgroundOpacity,
+        0.001,
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 149));
+    expect(panelOpacity(), lessThan(1));
+    await tester.pump(const Duration(milliseconds: 1));
+    expect(panelOpacity(), 1);
 
     expect(find.text('Overlay content'), findsOneWidget);
     expect(
@@ -319,18 +349,81 @@ void main() {
 
     await tester.tapAt(const Offset(1, 1));
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 60));
+    await tester.pump(const Duration(milliseconds: 150));
 
     final fadingPanelScrim = tester.widget<ColoredBox>(
       find.byKey(const ValueKey('app_overlay_panel_scrim')),
     );
     expect(
       fadingPanelScrim.color.a,
-      inExclusiveRange(0, kSecondaryOverlayConfig.backgroundOpacity),
+      closeTo(kSecondaryOverlayConfig.backgroundOpacity * middleOpacity, 0.001),
     );
+    expect(panelOpacity(), closeTo(middleOpacity, 0.001));
 
+    await tester.pump(const Duration(milliseconds: 149));
+    expect(find.text('Overlay content'), findsOneWidget);
+    await tester.pump(const Duration(milliseconds: 1));
+    expect(panelOpacity(), closeTo(0, 0.001));
     await tester.pumpAndSettle();
     expect(find.text('Overlay content'), findsNothing);
+  });
+
+  testWidgets('closing a partially opened panel keeps the fade continuous', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => TextButton(
+              onPressed: () => showAppOverlayPanel<void>(
+                context: context,
+                builder: (_) => const Text('Partial overlay'),
+              ),
+              child: const Text('Open'),
+            ),
+          ),
+        ),
+      ),
+    );
+    double opacity() => tester
+        .widget<FadeTransition>(
+          find.ancestor(
+            of: find.text('Partial overlay'),
+            matching: find.byType(FadeTransition),
+          ),
+        )
+        .opacity
+        .value;
+    double scrimOpacity() => tester
+        .widget<ColoredBox>(
+          find.byKey(const ValueKey('app_overlay_panel_scrim')),
+        )
+        .color
+        .a;
+
+    await tester.tap(find.text('Open'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 120));
+    final beforeClose = opacity();
+    final scrimBeforeClose = scrimOpacity();
+    expect(beforeClose, inExclusiveRange(0, 1));
+    await tester.binding.handlePopRoute();
+    await tester.pump();
+    expect(opacity(), closeTo(beforeClose, 0.001));
+    expect(scrimOpacity(), closeTo(scrimBeforeClose, 0.001));
+    var previous = beforeClose;
+    for (var frame = 0; frame < 6; frame++) {
+      await tester.pump(const Duration(milliseconds: 16));
+      expect(opacity(), lessThan(previous));
+      expect(
+        scrimOpacity(),
+        closeTo(opacity() * kSecondaryOverlayConfig.backgroundOpacity, 0.001),
+      );
+      previous = opacity();
+    }
+    await tester.pumpAndSettle();
+    expect(find.text('Partial overlay'), findsNothing);
   });
 
   testWidgets('shared overlay panel closes with the back route', (

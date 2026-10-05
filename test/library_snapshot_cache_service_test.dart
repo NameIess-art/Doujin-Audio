@@ -1089,6 +1089,17 @@ class _FakeAudioDetailRepository implements AudioDetailRepository {
   ) => save(detail);
 
   @override
+  Future<AudioDetailSaveResult> saveMissingDuration(
+    AudioDetailTarget target,
+    Duration duration,
+  ) async {
+    return AudioDetailSaveResult(
+      detail: AudioDetail.empty(target).copyWith(duration: duration),
+      documentStatus: JsonDocumentWriteStatus.preserved,
+    );
+  }
+
+  @override
   Future<AudioDetail> updateDerivedFields(
     AudioDetailTarget target, {
     String? rjCode,

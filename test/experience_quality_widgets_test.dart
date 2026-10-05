@@ -365,7 +365,7 @@ void main() {
         '声优:Alice，Bob:null:null:1',
         'Circle:Circle:null:null:1',
         'Release:2026-07-02:Rating:4:1',
-        'Tags:sleep，voice:null:null:3',
+        'Tags:sleep，voice:null:null:2',
       ],
     );
   });
@@ -416,12 +416,12 @@ void main() {
         '声優:Voice A、Voice B:null:null:1',
         'Circle:Circle:null:null:1',
         'Release:2026-06-09:Rating:4.5:1',
-        'Tags:ASMR、Sleep:null:null:3',
+        'Tags:ASMR、Sleep:null:null:2',
       ],
     );
   });
 
-  testWidgets('six metadata lines fit the fixed work card info block', (
+  testWidgets('five metadata lines fit the fixed work card info block', (
     tester,
   ) async {
     final lines = buildLibraryLikeInfoLines(
@@ -443,11 +443,11 @@ void main() {
         _buildFeaturedCard(
           title: 'Work',
           lines: lines,
-          coverKey: const ValueKey('six-line-cover'),
+          coverKey: const ValueKey('five-line-cover'),
         ),
       ),
     );
-    expect(lines.fold<int>(0, (total, line) => total + line.lines), 6);
+    expect(lines.fold<int>(0, (total, line) => total + line.lines), 5);
     expect(tester.takeException(), isNull);
   });
 
@@ -827,7 +827,7 @@ void main() {
       }
       expect(row3Titles.length, 2);
 
-      // Verify the 4th title element has 3 rows of text shimmers (160, 130, 85)
+      // Verify the 4th title element has 2 rows of text shimmers (160, 130)
       expect(
         find.byWidgetPredicate((w) => w is ShimmerContainer && w.width == 160),
         findsOneWidget,
@@ -838,7 +838,7 @@ void main() {
       );
       expect(
         find.byWidgetPredicate((w) => w is ShimmerContainer && w.width == 85),
-        findsOneWidget,
+        findsNothing,
       );
 
       final row4Text = tester.getTopLeft(
@@ -847,23 +847,16 @@ void main() {
       final row5Text = tester.getTopLeft(
         find.byWidgetPredicate((w) => w is ShimmerContainer && w.width == 130),
       );
-      final row6Text = tester.getTopLeft(
-        find.byWidgetPredicate((w) => w is ShimmerContainer && w.width == 85),
-      );
 
-      // Row 4, 5, 6 are vertically stacked and aligned horizontally
+      // Row 4 and 5 are vertically stacked and aligned horizontally
       expect(row4Text.dx, row5Text.dx);
-      expect(row5Text.dx, row6Text.dx);
       expect(row4Text.dy, lessThan(row5Text.dy));
-      expect(row5Text.dy, lessThan(row6Text.dy));
 
-      // Confirm there are no titles at row 5 or row 6 vertical level
-      for (final y in [row5Text.dy, row6Text.dy]) {
-        expect(
-          titlePositions.any((titleY) => (titleY - y).abs() < 2),
-          isFalse,
-        );
-      }
+      // Confirm there are no titles at row 5 vertical level
+      expect(
+        titlePositions.any((titleY) => (titleY - row5Text.dy).abs() < 2),
+        isFalse,
+      );
     },
   );
 
@@ -1143,7 +1136,7 @@ void main() {
     );
 
     expect(find.byType(MarqueeText), findsNothing);
-    expect(tester.getSize(find.byType(LibraryLikeDetailInfoLine)).height, 16);
+    expect(tester.getSize(find.byType(LibraryLikeDetailInfoLine)).height, 18);
     final valueText = tester.widget<Text>(find.text('耳舐め，ASMR'));
     expect(valueText.maxLines, 4);
     expect(valueText.overflow, TextOverflow.ellipsis);
@@ -1175,9 +1168,9 @@ void main() {
       // 4px spacing between title and info block
       expect(cvRect.top - titleRect.bottom, closeTo(4.0, 0.5));
 
-      // 0 gap between consecutive info lines (each line is 16px high)
-      expect(circleRect.top - cvRect.top, 16.0);
-      expect(salesRect.top - circleRect.top, 16.0);
+      // 0 gap between consecutive info lines (each line is 18px high)
+      expect(circleRect.top - cvRect.top, 18.0);
+      expect(salesRect.top - circleRect.top, 18.0);
     },
   );
 

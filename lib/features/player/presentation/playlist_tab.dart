@@ -312,12 +312,12 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
     Navigator.of(context).push(buildSessionDetailRoute(sessionId: sessionId));
   }
 
-  void _openQueueEditor(BuildContext context, String sessionId) {
+  Future<void> _openQueueEditor(BuildContext context, String sessionId) {
     AppInteractionFeedback.trigger(
       AppInteractionFeedbackType.tap,
       context: context,
     );
-    showPlaybackQueueEditPanel(context, sessionId);
+    return showPlaybackQueueEditPanel(context, sessionId);
   }
 
   Future<void> _openSortOptions() async {

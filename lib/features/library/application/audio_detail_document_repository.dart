@@ -76,6 +76,8 @@ final class AudioDetailDocumentRepository {
     AudioDetailTarget? previousTarget,
     List<TimeSegmentLabel>? timeSegmentLabels,
     bool onlyTimeSegments = false,
+    bool onlyMissingDuration = false,
+    void Function()? beforeCommit,
   }) async {
     final key = locationFor(detail.target).lockKey;
     final previous = _pendingSaves[key] ?? Future<void>.value();
@@ -83,11 +85,14 @@ final class AudioDetailDocumentRepository {
     _pendingSaves[key] = completion.future;
     await previous;
     try {
+      beforeCommit?.call();
       return await _saveExplicit(
         detail,
         previousTarget: previousTarget,
         timeSegmentLabels: timeSegmentLabels,
         onlyTimeSegments: onlyTimeSegments,
+        onlyMissingDuration: onlyMissingDuration,
+        beforeCommit: beforeCommit,
       );
     } finally {
       completion.complete();
@@ -97,11 +102,24 @@ final class AudioDetailDocumentRepository {
     }
   }
 
+  Future<JsonDocumentWriteResult> saveMissingDuration(
+    AudioDetail detail, {
+    List<TimeSegmentLabel>? timeSegmentLabels,
+    void Function()? beforeCommit,
+  }) => saveExplicit(
+    detail,
+    timeSegmentLabels: timeSegmentLabels,
+    onlyMissingDuration: true,
+    beforeCommit: beforeCommit,
+  );
+
   Future<JsonDocumentWriteResult> _saveExplicit(
     AudioDetail detail, {
     AudioDetailTarget? previousTarget,
     List<TimeSegmentLabel>? timeSegmentLabels,
     required bool onlyTimeSegments,
+    required bool onlyMissingDuration,
+    void Function()? beforeCommit,
   }) async {
     final location = locationFor(detail.target);
     final codec = _codec;
@@ -114,11 +132,13 @@ final class AudioDetailDocumentRepository {
       final current = await _store.read(location);
       final snapshot = current.snapshot;
       if (current.status == JsonDocumentReadStatus.missing) {
+        final bytes = await Isolate.run(
+          () => codec.encodeNew(detail, additionalFields: coverFields),
+        );
+        beforeCommit?.call();
         final created = await _store.write(
           location: location,
-          bytes: await Isolate.run(
-            () => codec.encodeNew(detail, additionalFields: coverFields),
-          ),
+          bytes: bytes,
           mode: JsonDocumentWriteMode.createIfAbsent,
         );
         if (created.status != JsonDocumentWriteStatus.preserved) return created;
@@ -131,10 +151,16 @@ final class AudioDetailDocumentRepository {
         );
       }
 
-      Uint8List bytes;
+      Uint8List? bytes;
       try {
         bytes = await Isolate.run(
-          () => onlyTimeSegments
+          () => onlyMissingDuration
+              ? codec.mergeMissingDuration(
+                  snapshot.bytes,
+                  detail,
+                  additionalFields: coverFields,
+                )
+              : onlyTimeSegments
               ? codec.mergeTimeSegments(
                   snapshot.bytes,
                   detail,
@@ -153,6 +179,12 @@ final class AudioDetailDocumentRepository {
           error: error.toString(),
         );
       }
+      if (bytes == null) {
+        return const JsonDocumentWriteResult(
+          status: JsonDocumentWriteStatus.preserved,
+        );
+      }
+      beforeCommit?.call();
       final replaced = await _store.write(
         location: location,
         bytes: bytes,

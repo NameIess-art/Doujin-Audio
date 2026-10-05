@@ -711,7 +711,8 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
             ),
           );
         },
-        onShowWorkDetail: session.currentTrackPath.isNotEmpty
+        onShowWorkDetail:
+            session.currentTrackPath.isNotEmpty && track?.isSingle != true
             ? () => _openWorkDetail(context)
             : null,
       );

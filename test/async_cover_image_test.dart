@@ -114,6 +114,69 @@ void main() {
 
   tearDown(UiInteractionCoordinator.instance.resetForTest);
 
+  for (final brightness in Brightness.values) {
+    for (final size in const [Size(360, 240), Size(360, 120), Size(960, 240)]) {
+      testWidgets('fallback texture stays inside $size in $brightness', (
+        tester,
+      ) async {
+        const margin = 80.0;
+        final boundaryKey = GlobalKey();
+        final surfaceSize = Size(
+          size.width + margin * 2,
+          size.height + margin * 2,
+        );
+        await tester.binding.setSurfaceSize(surfaceSize);
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        await tester.pumpWidget(
+          Directionality(
+            textDirection: TextDirection.ltr,
+            child: Theme(
+              data: ThemeData(brightness: brightness),
+              child: RepaintBoundary(
+                key: boundaryKey,
+                child: Center(
+                  child: SizedBox.fromSize(
+                    size: size,
+                    child: const CoverFallbackArtwork(
+                      seed: 'video_2026-01-21_02-06-55.flac',
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+
+        final boundary = tester.renderObject<RenderRepaintBoundary>(
+          find.byKey(boundaryKey),
+        );
+        final pixels = await tester.runAsync(() async {
+          final image = await boundary.toImage();
+          try {
+            return await image.toByteData();
+          } finally {
+            image.dispose();
+          }
+        });
+        final bytes = pixels!.buffer.asUint8List();
+        final width = surfaceSize.width.toInt();
+        final coverRect = const Offset(margin, margin) & size;
+        var paintedInside = false;
+        for (var y = 0; y < surfaceSize.height; y++) {
+          for (var x = 0; x < width; x++) {
+            final alpha = bytes[(y * width + x) * 4 + 3];
+            if (coverRect.contains(Offset(x.toDouble(), y.toDouble()))) {
+              paintedInside |= alpha > 0;
+            } else if (alpha > 0) {
+              fail('Fallback artwork painted outside its bounds at ($x, $y)');
+            }
+          }
+        }
+        expect(paintedInside, isTrue);
+      });
+    }
+  }
+
   final deferredFileCovers = <String, Widget Function(String)>{
     'RetryingFileImage': (path) => RetryingFileImage(
       path: path,

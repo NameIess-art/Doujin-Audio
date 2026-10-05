@@ -79,9 +79,11 @@ final class LibraryMetadataCoordinator {
   Future<AudioDetailSaveResult> saveAudioDetail(
     AudioDetail detail, {
     bool deferCategoryUpdate = false,
+    bool preserveExistingDuration = false,
   }) async {
     final result = await _detailCacheService.save(
       detail.copyWith(target: canonicalTarget(detail.target)),
+      preserveExistingDuration: preserveExistingDuration,
     );
     _snapshotCacheService.markDetailChanged(result.detail, deferCategoryUpdate);
     if (!deferCategoryUpdate) _syncState();
@@ -300,29 +302,43 @@ final class LibraryMetadataCoordinator {
       final detail = loadResults[index].detail;
       final tracks = tracksByTargetKey[_targetKey(detail.target)];
       if (tracks == null || tracks.isEmpty) continue;
-      if (detail.duration != null &&
-          tracks.every((track) => track.duration > Duration.zero)) {
-        continue;
-      }
       final probe = await _probeDurations(tracks, durationReader, epoch: epoch);
       if (!await _commitDurations(probe.updatedTracks, epoch)) return;
-      if (!_isCurrent(epoch) ||
-          probe.totalDuration == null ||
-          detail.duration != null) {
-        continue;
-      }
+      if (!_isCurrent(epoch)) return;
       final latest =
           _detailCacheService.resolvedDetail(detail.target) ?? detail;
-      if (latest.duration == null) {
-        final updated = await _detailCacheService.updateDerivedFields(
-          latest.target,
-          duration: probe.totalDuration,
-        );
+      final duration = latest.duration ?? probe.totalDuration;
+      if (duration != null) {
+        await saveMissingDuration(latest.target, duration);
         if (!_isCurrent(epoch)) return;
-        _snapshotCacheService.markDetailChanged(updated);
-        _syncState();
       }
     }
+  }
+
+  Future<AudioDetailSaveResult> saveMissingDuration(
+    AudioDetailTarget target,
+    Duration duration,
+  ) async {
+    final epoch = _epoch;
+    if (!_isCurrent(epoch)) throw const AudioDetailOperationCancelled();
+    final canonical = canonicalTarget(target);
+    final previous = _detailCacheService.resolvedDetail(canonical);
+    final result = await _detailCacheService.saveMissingDuration(
+      canonical,
+      duration,
+    );
+    if (!_isCurrent(epoch)) throw const AudioDetailOperationCancelled();
+    if (previous?.duration != result.detail.duration) {
+      _snapshotCacheService.markDetailChanged(result.detail);
+      _syncState();
+    }
+    if (result.documentFailed) {
+      AppLogService.warning(
+        'library_duration_document_sync_failed '
+        'target=${canonical.targetPath} error=${result.documentError}',
+      );
+    }
+    return result;
   }
 
   Future<Duration?> calculateMissingDuration(
@@ -337,20 +353,35 @@ final class LibraryMetadataCoordinator {
               PathMatcher.equalsNormalized(track.path, targetPath),
         )
         .toList(growable: false);
+    final target = singleTracks.isNotEmpty
+        ? targetForTrack(singleTracks.first)
+        : canonicalTarget(AudioDetailTarget.libraryRootFolder(targetPath));
     final tracks = singleTracks.isNotEmpty
         ? singleTracks
         : _service.library
               .where(
                 (track) =>
                     !track.isSingle &&
-                    (PathMatcher.isWithinOrEqual(track.groupKey, targetPath) ||
-                        PathMatcher.isWithinOrEqual(track.path, targetPath)),
+                    (PathMatcher.isWithinOrEqual(
+                          track.groupKey,
+                          target.targetPath,
+                        ) ||
+                        PathMatcher.isWithinOrEqual(
+                          track.path,
+                          target.targetPath,
+                        )),
               )
               .toList(growable: false);
     final probe = await _probeDurations(tracks, durationReader, epoch: epoch);
-    return await _commitDurations(probe.updatedTracks, epoch)
-        ? probe.totalDuration
-        : null;
+    if (!await _commitDurations(probe.updatedTracks, epoch) ||
+        !_isCurrent(epoch) ||
+        probe.totalDuration == null) {
+      return null;
+    }
+    return (await saveMissingDuration(
+      target,
+      probe.totalDuration!,
+    )).detail.duration;
   }
 
   Future<({Duration? totalDuration, List<MusicTrack> updatedTracks})>
@@ -422,11 +453,20 @@ final class LibraryMetadataCoordinator {
   Future<bool> _commitDurations(List<MusicTrack> tracks, int epoch) async {
     if (!_isCurrent(epoch)) return false;
     if (tracks.isEmpty) return true;
-    await _databaseRepository.upsertTracks(tracks);
+    // Probing is asynchronous; retain edits made to a track while it ran.
+    final updated = <MusicTrack>[
+      for (final track in tracks)
+        if (_service.libraryByPath[track.path] case final current?)
+          if (current.duration <= Duration.zero)
+            current.copyWith(duration: track.duration),
+    ];
+    if (updated.isEmpty) return true;
+    await _databaseRepository.upsertTracks(updated);
     if (!_isCurrent(epoch)) return false;
-    for (final track in tracks) {
+    for (final track in updated) {
       final index = _service.libraryIndexByPath[track.path];
-      if (index != null) _service.library[index] = track;
+      if (index == null) continue;
+      _service.library[index] = track;
       _service.libraryByPath[track.path] = track;
     }
     _service.rebuildLibraryIndexes();

@@ -609,6 +609,7 @@ class HeaderFloatingSurface extends StatelessWidget {
     this.height = 38,
     this.width,
     this.padding,
+    this.backgroundOpacity = 1,
   });
 
   final Widget child;
@@ -616,6 +617,7 @@ class HeaderFloatingSurface extends StatelessWidget {
   final double? height;
   final double? width;
   final EdgeInsetsGeometry? padding;
+  final double backgroundOpacity;
 
   @override
   Widget build(BuildContext context) {
@@ -625,7 +627,7 @@ class HeaderFloatingSurface extends StatelessWidget {
     final borderRadius = BorderRadius.circular(radius);
     final surface = DecoratedBox(
       decoration: BoxDecoration(
-        color: background,
+        color: background.withValues(alpha: background.a * backgroundOpacity),
         borderRadius: borderRadius,
         border: Border.all(
           color: cs.outlineVariant.withValues(alpha: isDark ? 0.24 : 0.42),
@@ -657,10 +659,16 @@ class HeaderFloatingSurface extends StatelessWidget {
 }
 
 class HeaderFloatingButton extends StatelessWidget {
-  const HeaderFloatingButton({super.key, required this.child, this.size = 38});
+  const HeaderFloatingButton({
+    super.key,
+    required this.child,
+    this.size = 38,
+    this.backgroundOpacity = 1,
+  });
 
   final Widget child;
   final double size;
+  final double backgroundOpacity;
 
   @override
   Widget build(BuildContext context) {
@@ -668,6 +676,7 @@ class HeaderFloatingButton extends StatelessWidget {
       width: size,
       height: size,
       radius: size / 2,
+      backgroundOpacity: backgroundOpacity,
       child: IconButtonTheme(
         data: IconButtonThemeData(
           style: IconButton.styleFrom(

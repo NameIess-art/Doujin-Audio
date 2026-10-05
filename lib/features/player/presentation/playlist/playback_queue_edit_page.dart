@@ -134,7 +134,7 @@ class _PlaybackQueueEditPageState extends ConsumerState<PlaybackQueueEditPage> {
                     ),
                     IconButton(
                       tooltip: i18n.tr('close'),
-                      icon: const Icon(Icons.close_rounded),
+                      icon: const Icon(Icons.keyboard_arrow_down_rounded),
                       onPressed: () => Navigator.of(context).pop(),
                     ),
                   ],

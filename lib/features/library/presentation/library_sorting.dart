@@ -13,6 +13,8 @@ List<LibraryNode> sortLibraryNodes({
   required bool ascending,
   required bool groupByLibrary,
   required LibraryFacade library,
+  WorkNameDisplay workNameDisplay = WorkNameDisplay.workTitle,
+  AudioDetail? Function(AudioDetailTarget target)? detailForTarget,
   Set<String> pinnedPaths = const <String>{},
 }) {
   if (nodes.length < 2) return nodes;
@@ -23,7 +25,14 @@ List<LibraryNode> sortLibraryNodes({
     for (final node in nodes)
       (
         node: node,
-        value: _librarySortValue(node, criterion, groupByLibrary, library),
+        value: _librarySortValue(
+          node,
+          criterion,
+          groupByLibrary,
+          library,
+          workNameDisplay,
+          detailForTarget,
+        ),
         pinned: normalizedPinned.contains(PathMatcher.normalize(node.path)),
       ),
   ];
@@ -80,9 +89,16 @@ LibrarySortValue _librarySortValue(
   LibrarySortCriterion criterion,
   bool groupByLibrary,
   LibraryFacade library,
+  WorkNameDisplay workNameDisplay,
+  AudioDetail? Function(AudioDetailTarget target)? detailForTarget,
 ) {
   final needsDetail = criterion == LibrarySortCriterion.voiceActor ||
       criterion == LibrarySortCriterion.releaseDate;
+  final needsWorkTitle =
+      criterion == LibrarySortCriterion.name &&
+      workNameDisplay == WorkNameDisplay.workTitle &&
+      node is FolderNode &&
+      node.isModuleNode;
   final needsTrackDates = criterion == LibrarySortCriterion.addedAt ||
       criterion == LibrarySortCriterion.playbackTime;
   List<MusicTrack> tracks = const <MusicTrack>[];
@@ -98,11 +114,11 @@ LibrarySortValue _librarySortValue(
     firstTrack = node.firstTrack;
   }
   AudioDetail? detail;
-  if (needsDetail && node is FolderNode) {
-    detail = _detailForTarget(
-      AudioDetailTarget.libraryRootFolder(node.path),
-      library,
-    );
+  if ((needsDetail || needsWorkTitle) && node is FolderNode) {
+    final target = AudioDetailTarget.libraryRootFolder(node.path);
+    detail = detailForTarget == null
+        ? _detailForTarget(target, library)
+        : detailForTarget(target);
   } else if (needsDetail && firstTrack != null) {
     detail = _detailForTrack(firstTrack, library);
   }
@@ -128,8 +144,9 @@ LibrarySortValue _librarySortValue(
             return latest;
           })
       : null;
+  final workTitle = needsWorkTitle ? detail?.workTitle.trim() ?? '' : '';
   return LibrarySortValue(
-    name: node.name,
+    name: workTitle.isNotEmpty ? workTitle : node.name,
     libraryKey: groupByLibrary ? library.libraryRootForPath(node.path) : null,
     voiceActor: voiceActors.isEmpty ? null : voiceActors.join('\u0000'),
     duration: criterion == LibrarySortCriterion.duration

@@ -809,12 +809,11 @@ void main() {
       ),
     );
     await service.load(audioPath);
+    final language = AppLanguageProvider();
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
-          appLanguageProviderInstanceProvider.overrideWithValue(
-            AppLanguageProvider(),
-          ),
+          appLanguageProviderInstanceProvider.overrideWithValue(language),
           playbackSubtitleServiceProvider.overrideWithValue(service),
         ],
         child: MaterialApp(
@@ -843,7 +842,8 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.byType(SimpleDialog), findsOneWidget);
-    expect(find.byType(SimpleDialogOption), findsNWidgets(2));
+    expect(find.text(language.tr('subtitle_language_zh')), findsOneWidget);
+    expect(find.text(language.tr('subtitle_language_en')), findsOneWidget);
   });
 
   testWidgets('long subtitle filenames stay within the sheet while scrolling', (
@@ -927,4 +927,192 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(SimpleDialog), findsNothing);
   });
+
+  testWidgets(
+    'script recognition dialog displays styled header, format badges, and close button',
+    (tester) async {
+      const folder = '/library/work';
+      const scriptPath = '/library/work/script.md';
+      final texts = _WorkTexts(const [
+        WorkTextFile(
+          name: 'notes.txt',
+          relativePath: 'notes.txt',
+          path: '/library/work/notes.txt',
+        ),
+        WorkTextFile(
+          name: 'script.md',
+          relativePath: 'subfolder/script.md',
+          path: scriptPath,
+        ),
+      ]);
+      final service = _ScriptSelectionService();
+      final language = AppLanguageProvider();
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            appLanguageProviderInstanceProvider.overrideWithValue(language),
+            playbackSubtitleServiceProvider.overrideWithValue(service),
+            libraryFacadeProvider.overrideWithValue(
+              _workLibrary(folder, '/library/work/audio.mp3'),
+            ),
+            workTextServiceProvider.overrideWithValue(texts),
+          ],
+          child: MaterialApp(
+            home: Scaffold(
+              body: SubtitleMenuSheet(
+                session: _createSnapshot(trackPath: '/library/work/audio.mp3'),
+                generationUnavailableReason: () => null,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final scriptTile = find.byKey(const ValueKey('subtitle_script_tile'));
+      await tester.ensureVisible(scriptTile);
+      await tester.tap(scriptTile);
+      await tester.pumpAndSettle();
+
+      final dialogFinder = find.byType(SimpleDialog);
+      expect(dialogFinder, findsOneWidget);
+      expect(find.byIcon(Icons.text_snippet_rounded), findsNWidgets(2)); // tile + dialog header
+      expect(find.text(language.tr('subtitle_script_generate')), findsNWidgets(2));
+      expect(find.text(language.tr('subtitle_script_hint')), findsNWidgets(2));
+      expect(find.text('TXT'), findsOneWidget);
+      expect(find.text('MD'), findsOneWidget);
+      expect(find.text('notes.txt'), findsOneWidget);
+      expect(find.text('subfolder/script.md'), findsOneWidget);
+
+      // Verify item highlight indicators are rounded rectangles conforming to items
+      final scriptInkWells = tester.widgetList<InkWell>(
+        find.descendant(
+          of: dialogFinder,
+          matching: find.byType(InkWell),
+        ),
+      ).where((i) => i.borderRadius != null).toList();
+      expect(scriptInkWells, hasLength(2));
+      for (final inkWell in scriptInkWells) {
+        expect(inkWell.borderRadius, BorderRadius.circular(12));
+      }
+
+      final scriptMaterials = tester.widgetList<Material>(
+        find.descendant(
+          of: dialogFinder,
+          matching: find.byType(Material),
+        ),
+      ).where((m) => m.shape is RoundedRectangleBorder && (m.shape as RoundedRectangleBorder).borderRadius == BorderRadius.circular(12));
+      expect(scriptMaterials, hasLength(2));
+
+      // Verify scrollbar is removed
+      expect(
+        find.descendant(
+          of: dialogFinder,
+          matching: find.byType(Scrollbar),
+        ),
+        findsNothing,
+      );
+      expect(
+        find.descendant(
+          of: dialogFinder,
+          matching: find.byType(RawScrollbar),
+        ),
+        findsNothing,
+      );
+
+      // Verify close button dismisses dialog
+      final closeButton = find.descendant(
+        of: dialogFinder,
+        matching: find.byIcon(Icons.close_rounded),
+      );
+      expect(closeButton, findsOneWidget);
+      await tester.tap(closeButton);
+      await tester.pumpAndSettle();
+      expect(find.byType(SimpleDialog), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'translation language dialog displays styled header, language badges, and close button',
+    (tester) async {
+      const audioPath = '/path/to/japanese_audio.mp3';
+      final service = PlaybackSubtitleService(
+        trackResolver: (_) => null,
+        subtitleLoader: (trackPath, track) async => SubtitleTrack(
+          sourcePath: 'sub.srt',
+          cues: const [
+            SubtitleCue(
+              start: Duration(seconds: 1),
+              end: Duration(seconds: 5),
+              text: '今日は天気がいいですね。どこへ行きましょうか。',
+            ),
+          ],
+        ),
+      );
+      await service.load(audioPath);
+      final language = AppLanguageProvider();
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            appLanguageProviderInstanceProvider.overrideWithValue(language),
+            playbackSubtitleServiceProvider.overrideWithValue(service),
+          ],
+          child: MaterialApp(
+            home: Scaffold(
+              body: SubtitleMenuSheet(
+                session: _createSnapshot(trackPath: audioPath),
+                generationUnavailableReason: () => null,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final translateTile = find.byKey(const ValueKey('subtitle_translate_tile'));
+      await tester.ensureVisible(translateTile);
+      await tester.tap(translateTile);
+      await tester.pumpAndSettle();
+
+      final dialogFinder = find.byType(SimpleDialog);
+      expect(dialogFinder, findsOneWidget);
+      expect(find.byIcon(Icons.translate_rounded), findsNWidgets(2)); // tile + dialog header
+      expect(find.text(language.tr('subtitle_choose_language')), findsOneWidget);
+      expect(find.text(language.tr('subtitle_translate_hint')), findsNWidgets(2));
+      expect(find.text('ZH'), findsOneWidget);
+      expect(find.text('EN'), findsOneWidget);
+      expect(find.text(language.tr('subtitle_language_zh')), findsOneWidget);
+      expect(find.text(language.tr('subtitle_language_en')), findsOneWidget);
+
+      // Verify item highlight indicators are rounded rectangles conforming to items
+      final langInkWells = tester.widgetList<InkWell>(
+        find.descendant(
+          of: dialogFinder,
+          matching: find.byType(InkWell),
+        ),
+      ).where((i) => i.borderRadius != null).toList();
+      expect(langInkWells, hasLength(2));
+      for (final inkWell in langInkWells) {
+        expect(inkWell.borderRadius, BorderRadius.circular(14));
+      }
+
+      final langMaterials = tester.widgetList<Material>(
+        find.descendant(
+          of: dialogFinder,
+          matching: find.byType(Material),
+        ),
+      ).where((m) => m.shape is RoundedRectangleBorder && (m.shape as RoundedRectangleBorder).borderRadius == BorderRadius.circular(14));
+      expect(langMaterials, hasLength(2));
+
+      // Verify close button dismisses dialog
+      final closeButton = find.descendant(
+        of: dialogFinder,
+        matching: find.byIcon(Icons.close_rounded),
+      );
+      expect(closeButton, findsOneWidget);
+      await tester.tap(closeButton);
+      await tester.pumpAndSettle();
+      expect(find.byType(SimpleDialog), findsNothing);
+    },
+  );
 }

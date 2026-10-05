@@ -13,6 +13,7 @@ import '../../../../app/theme/app_design_tokens.dart';
 import '../../../../core/media/music_track.dart';
 import '../../../../core/ui/permission_action_controller.dart';
 import '../../../../core/widgets/app_transitions.dart';
+import '../../../../core/widgets/top_page_header.dart';
 import '../../application/playback_session_snapshot.dart';
 import '../../application/subtitle_overlay_controller.dart';
 import 'playlist_feature_icons.dart';
@@ -31,7 +32,7 @@ class SessionDetailScaffold extends ConsumerStatefulWidget {
   final ValueChanged<double>? onVerticalDragUpdate;
   final void Function(DragEndDetails)? onVerticalDragEnd;
   final VoidCallback? onVerticalDragCancel;
-  final ValueNotifier<bool>? segmentPanelExpandedNotifier;
+  final ValueNotifier<bool> segmentPanelExpandedNotifier;
 
   const SessionDetailScaffold({
     super.key,
@@ -43,7 +44,7 @@ class SessionDetailScaffold extends ConsumerStatefulWidget {
     this.onVerticalDragEnd,
     this.onVerticalDragCancel,
     required this.dismissAnimation,
-    this.segmentPanelExpandedNotifier,
+    required this.segmentPanelExpandedNotifier,
   });
 
   @override
@@ -157,6 +158,7 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
   Widget build(BuildContext context) {
     final session = widget.session;
     final paths = ref.read(audioPathCoordinatorProvider);
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
     final coverPathFuture = widget.coverPathFuture;
     final onClose = widget.onClose;
     final onVerticalDragUpdate = widget.onVerticalDragUpdate;
@@ -225,23 +227,15 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
                         isWindows ||
                         MediaQuery.orientationOf(context) ==
                             Orientation.landscape;
-                    final topBarHeight = isWindows ? 40.0 : 24.0;
-                    final closeIconSize = isWindows ? 28.0 : 22.0;
-                    final closeConstraints = isWindows
-                        ? const BoxConstraints(minWidth: 40, minHeight: 40)
-                        : const BoxConstraints(minWidth: 32, minHeight: 24);
+                    final topBarHeight = isWindows ? 48.0 : 40.0;
 
                     return Column(
                       children: [
-                        // Top Bar — outside drag GestureDetector so taps work
+                        // Preserve the content inset after floating the close button.
                         Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 8),
                           child: Builder(
                             builder: (context) {
-                              final i18n = ProviderScope.containerOf(
-                                context,
-                                listen: false,
-                              ).read(appLanguageProviderInstanceProvider);
                               final subtitles = ref.read(
                                 playbackSubtitleServiceProvider,
                               );
@@ -263,25 +257,6 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
 
                                   return Row(
                                     children: [
-                                      IconButton(
-                                        onPressed: onClose,
-                                        tooltip: i18n.tr('close'),
-                                        padding: isWindows
-                                            ? const EdgeInsets.all(8)
-                                            : EdgeInsets.zero,
-                                        constraints: closeConstraints,
-                                        visualDensity: isWindows
-                                            ? VisualDensity.standard
-                                            : VisualDensity.compact,
-                                        icon: Icon(
-                                          Icons.keyboard_arrow_down_rounded,
-                                          color: sessionDetailForeground(
-                                            cs,
-                                            SessionDetailForegroundLevel.muted,
-                                          ),
-                                          size: closeIconSize,
-                                        ),
-                                      ),
                                       Expanded(
                                         child: SizedBox(height: topBarHeight),
                                       ),
@@ -457,6 +432,24 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
                       ],
                     );
                   },
+                ),
+              ),
+              Positioned(
+                top: MediaQuery.paddingOf(context).top + 6,
+                left: 16,
+                child: ValueListenableBuilder<bool>(
+                  valueListenable: widget.segmentPanelExpandedNotifier,
+                  builder: (context, expanded, child) =>
+                      expanded ? const SizedBox.shrink() : child!,
+                  child: HeaderFloatingButton(
+                    backgroundOpacity: 0.5,
+                    child: IconButton(
+                      key: const ValueKey('session_detail_close_button'),
+                      onPressed: onClose,
+                      tooltip: i18n.tr('close'),
+                      icon: const Icon(Icons.keyboard_arrow_down_rounded),
+                    ),
+                  ),
                 ),
               ),
             ],

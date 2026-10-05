@@ -2649,6 +2649,190 @@ void main() {
     expect(find.byType(SessionDetailPage), findsOneWidget);
   });
 
+  for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+    testWidgets(
+      'console pages switch directly in 300 ms on $platform',
+      (tester) async {
+        final pumped = await _pumpSubtitleDetail(
+          tester: tester,
+          subtitleTrack: SubtitleTrack(sourcePath: 'empty.vtt', cues: []),
+          initialPosition: Duration.zero,
+          physicalSize: platform == TargetPlatform.windows
+              ? const Size(3840, 2400)
+              : const Size(1290, 2700),
+        );
+        final i18n = pumped.fixture.languageProvider;
+        await tester.tap(find.byTooltip(i18n.tr('audio_features')));
+        await tester.pumpAndSettle();
+        final stack = find.byKey(const ValueKey('playback_console_page_stack'));
+        final header = find.byType(SegmentPanelPageHeader);
+        final speed = find.byType(SpeedWheelPage, skipOffstage: false);
+        final speedState = tester.state(speed);
+        final speedWidget = tester.widget(speed);
+        expect(
+          tester.widget<AppFadeThroughIndexedStack>(stack).duration,
+          const Duration(milliseconds: 300),
+        );
+        expect(find.byType(EqualizerPage, skipOffstage: false), findsNothing);
+        expect(
+          find.byType(AudioFeaturesPage, skipOffstage: false),
+          findsNothing,
+        );
+
+        Offset translation(int index) => tester
+            .widget<FractionalTranslation>(
+              find
+                  .descendant(
+                    of: find.descendant(
+                      of: stack,
+                      matching: find.byKey(ValueKey('app_indexed_page_$index')),
+                    ),
+                    matching: find.byType(FractionalTranslation),
+                  )
+                  .first,
+            )
+            .translation;
+
+        bool excludesSemantics(Finder page) {
+          var excluding = false;
+          tester.element(page).visitAncestorElements((element) {
+            final widget = element.widget;
+            if (widget is ExcludeSemantics) {
+              excluding = widget.excluding;
+              return false;
+            }
+            return true;
+          });
+          return excluding;
+        }
+
+        await tester.tap(find.text(i18n.tr('equalizer')));
+        await tester.pump();
+        final equalizer = find.byType(EqualizerPage);
+        final equalizerWidget = tester.widget(equalizer);
+        expect(translation(0).dx, -1);
+        expect(excludesSemantics(equalizer), isTrue);
+        expect(excludesSemantics(speed), isTrue);
+        expect(
+          find.byType(AudioFeaturesPage, skipOffstage: false),
+          findsNothing,
+        );
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 150));
+        expect(translation(0).dx, allOf(greaterThan(-1), lessThan(0)));
+        expect(tester.widget(equalizer), same(equalizerWidget));
+        expect(tester.widget(speed), same(speedWidget));
+        await tester.pump(const Duration(milliseconds: 149));
+        expect(excludesSemantics(equalizer), isTrue);
+        await tester.pump(const Duration(milliseconds: 2));
+        expect(translation(0), Offset.zero);
+        expect(excludesSemantics(equalizer), isFalse);
+        expect(TickerMode.valuesOf(tester.element(speed)).enabled, isFalse);
+
+        tester.widget<SegmentPanelPageHeader>(header).onSelected(2);
+        await tester.pump();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 150));
+        expect(excludesSemantics(speed), isTrue);
+        await tester.pump(const Duration(milliseconds: 151));
+        expect(translation(2), Offset.zero);
+        expect(tester.state(speed), same(speedState));
+        expect(excludesSemantics(speed), isFalse);
+
+        tester.widget<SegmentPanelPageHeader>(header).onSelected(0);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+        tester.widget<SegmentPanelPageHeader>(header).onSelected(4);
+        await tester.pumpAndSettle();
+        expect(find.byType(VolumeBalancePage), findsOneWidget);
+        expect(tester.widget<SegmentPanelPageHeader>(header).pageIndex, 4);
+        expect(
+          find.byType(AudioFeaturesPage, skipOffstage: false),
+          findsNothing,
+        );
+        expect(find.byTooltip(i18n.tr('segment_add')), findsNothing);
+
+        if (platform == TargetPlatform.windows) {
+          final pointer = TestPointer(1, ui.PointerDeviceKind.mouse);
+          await tester.sendEventToBinding(
+            pointer.hover(tester.getCenter(stack)),
+          );
+          await tester.sendEventToBinding(pointer.scroll(const Offset(0, -40)));
+        } else {
+          await tester.dragFrom(
+            tester.getTopLeft(stack) + const Offset(100, 60),
+            const Offset(160, 0),
+          );
+        }
+        await tester.pumpAndSettle();
+        expect(tester.widget<SegmentPanelPageHeader>(header).pageIndex, 3);
+        expect(find.byTooltip(i18n.tr('segment_add')), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      },
+      variant: TargetPlatformVariant({platform}),
+    );
+
+    testWidgets(
+      'console pages respect reduced motion on $platform',
+      (tester) async {
+        final nameController = TextEditingController();
+        addTearDown(nameController.dispose);
+        await _pumpSubtitleDetail(
+          tester: tester,
+          subtitleTrack: SubtitleTrack(sourcePath: 'empty.vtt', cues: []),
+          initialPosition: Duration.zero,
+          detailBuilder: (session) => Builder(
+            builder: (context) => MediaQuery(
+              data: MediaQuery.of(context).copyWith(disableAnimations: true),
+              child: TimeSegmentPanel(
+                session: session,
+                playback: ProviderScope.containerOf(
+                  context,
+                ).read(playbackFacadeProvider),
+                labels: const [],
+                selectedId: null,
+                showEditor: false,
+                loading: false,
+                nameController: nameController,
+                draftStart: null,
+                draftEnd: null,
+                draftColorValue: null,
+                loopSegmentId: null,
+                onSelect: (_) {},
+                onAdd: () {},
+                onSetStart: () {},
+                onSetEnd: () {},
+                onEditStart: () {},
+                onEditEnd: () {},
+                onDelete: () {},
+                onToggleLoop: () {},
+                onClose: () {},
+              ),
+            ),
+          ),
+        );
+        final header = find.byType(SegmentPanelPageHeader);
+        tester.widget<SegmentPanelPageHeader>(header).onSelected(0);
+        await tester.pump();
+        expect(find.byType(EqualizerPage), findsOneWidget);
+        expect(find.byType(SpeedWheelPage), findsNothing);
+        expect(
+          TickerMode.valuesOf(
+            tester.element(find.byType(EqualizerPage)),
+          ).enabled,
+          isTrue,
+        );
+        tester.widget<SegmentPanelPageHeader>(header).onSelected(2);
+        await tester.pump();
+        expect(find.byType(SpeedWheelPage), findsOneWidget);
+        expect(find.byType(EqualizerPage), findsNothing);
+        expect(tester.takeException(), isNull);
+        await tester.pumpAndSettle();
+      },
+      variant: TargetPlatformVariant({platform}),
+    );
+  }
+
   testWidgets('session reset actions share style and disable at defaults', (
     WidgetTester tester,
   ) async {
@@ -3245,118 +3429,148 @@ void main() {
     },
   );
 
-  testWidgets('deleting a segment survives a pending name save', (
-    tester,
-  ) async {
-    tester.view.devicePixelRatio = 1;
-    tester.view.physicalSize = const Size(430, 900);
-    addTearDown(tester.view.resetDevicePixelRatio);
-    addTearDown(tester.view.resetPhysicalSize);
+  testWidgets(
+    'deleting a segment survives a pending name save and supports undo',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(430, 900);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPhysicalSize);
 
-    final fixture = AppRuntimeWidgetTestFixture();
-    addTearDown(fixture.dispose);
-    final track = testMusicTrack(
-      name: 'Segment race track',
-      path: '/library/segments/delete-race.mp3',
-      groupKey: '/library/segments',
-      groupTitle: 'Segments',
-    );
-    final session = PlaybackSession(
-      id: 'segment-delete-race-session',
-      currentTrackPath: track.path,
-      loopMode: SessionLoopMode.single,
-      nonSingleLoopMode: SessionLoopMode.single,
-      volume: 1,
-      createdAt: DateTime(2026),
-      state: const PlayerState(false, ProcessingState.ready),
-    );
-    addTearDown(session.shutdown);
-    fixture.runtimeGraph.library.addTracks(
-      <MusicTrack>[track],
-      notify: false,
-      persist: false,
-    );
-    final trackKey = TimeSegmentLabel.trackKeyFor(track);
-    await tester.runAsync(
-      () => fixture.persistenceRepository.upsertTimeSegmentLabel(
-        TimeSegmentLabel(
-          id: 'label-to-delete',
-          trackKey: trackKey,
-          name: 'Original',
-          start: const Duration(seconds: 5),
-          end: const Duration(seconds: 10),
-          colorValue: kTimeSegmentLabelPalette.first,
-          createdAt: DateTime(2026),
-          updatedAt: DateTime(2026),
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      final track = testMusicTrack(
+        name: 'Segment race track',
+        path: '/library/segments/delete-race.mp3',
+        groupKey: '/library/segments',
+        groupTitle: 'Segments',
+      );
+      final session = PlaybackSession(
+        id: 'segment-delete-race-session',
+        currentTrackPath: track.path,
+        loopMode: SessionLoopMode.single,
+        nonSingleLoopMode: SessionLoopMode.single,
+        volume: 1,
+        createdAt: DateTime(2026),
+        state: const PlayerState(false, ProcessingState.ready),
+      );
+      addTearDown(session.shutdown);
+      fixture.runtimeGraph.library.addTracks(
+        <MusicTrack>[track],
+        notify: false,
+        persist: false,
+      );
+      final trackKey = TimeSegmentLabel.trackKeyFor(track);
+      await tester.runAsync(
+        () => fixture.persistenceRepository.upsertTimeSegmentLabel(
+          TimeSegmentLabel(
+            id: 'label-to-delete',
+            trackKey: trackKey,
+            name: 'Original',
+            start: const Duration(seconds: 5),
+            end: const Duration(seconds: 10),
+            colorValue: kTimeSegmentLabelPalette.first,
+            createdAt: DateTime(2026),
+            updatedAt: DateTime(2026),
+          ),
         ),
-      ),
-    );
-    fixture.playbackService.registerSession(session);
-    fixture.playbackService.syncSlice(
-      activeSessions: <PlaybackSession>[session],
-      playingSessionCount: 0,
-      focusedSessionId: session.id,
-      coverGeneration: 0,
-      isInitialized: true,
-    );
+      );
+      fixture.playbackService.registerSession(session);
+      fixture.playbackService.syncSlice(
+        activeSessions: <PlaybackSession>[session],
+        playingSessionCount: 0,
+        focusedSessionId: session.id,
+        coverGeneration: 0,
+        isInitialized: true,
+      );
 
-    await tester.pumpWidget(fixture.build(const PlaylistTab()));
-    await tester.pumpAndSettle();
-    unawaited(
-      Navigator.of(
-        tester.element(find.byType(PlaylistTab)),
-      ).push(buildSessionDetailRoute(sessionId: session.id)),
-    );
-    await tester.pumpAndSettle();
-    final i18n = fixture.languageProvider;
-    await tester.tap(find.byTooltip(i18n.tr('audio_features')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text(i18n.tr('audio_detail_tags')));
-    await tester.pump(const Duration(milliseconds: 250));
-    await tester.runAsync(
-      () => Future<void>.delayed(const Duration(milliseconds: 300)),
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Original'));
-    await tester.pump();
-
-    final saveStarted = Completer<void>();
-    final releaseSave = Completer<void>();
-    addTearDown(() {
-      if (!releaseSave.isCompleted) releaseSave.complete();
-    });
-    fixture.persistenceRepository.beforeTimeSegmentLabelUpsert = () {
-      saveStarted.complete();
-      return releaseSave.future;
-    };
-    await tester.enterText(find.byType(TextField), 'Renamed');
-    await tester.pump(const Duration(milliseconds: 350));
-    await saveStarted.future;
-
-    await tester.tap(find.widgetWithText(FilledButton, i18n.tr('remove')));
-    await tester.pump();
-    await tester.runAsync(
-      () => Future<void>.delayed(const Duration(milliseconds: 50)),
-    );
-    fixture.persistenceRepository.beforeTimeSegmentLabelUpsert = null;
-    releaseSave.complete();
-    await tester.pump();
-    await tester.runAsync(
-      () => fixture.library.detailCacheService.waitForPendingOperations(),
-    );
-    List<TimeSegmentLabel>? remaining;
-    for (var attempt = 0; attempt < 100; attempt++) {
+      await tester.pumpWidget(fixture.build(const PlaylistTab()));
+      await tester.pumpAndSettle();
+      unawaited(
+        Navigator.of(
+          tester.element(find.byType(PlaylistTab)),
+        ).push(buildSessionDetailRoute(sessionId: session.id)),
+      );
+      await tester.pumpAndSettle();
+      final i18n = fixture.languageProvider;
+      await tester.tap(find.byTooltip(i18n.tr('audio_features')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(i18n.tr('audio_detail_tags')));
+      await tester.pump(const Duration(milliseconds: 250));
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 300)),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Original'));
       await tester.pump();
-      remaining = await tester.runAsync(
+
+      final saveStarted = Completer<void>();
+      final releaseSave = Completer<void>();
+      addTearDown(() {
+        if (!releaseSave.isCompleted) releaseSave.complete();
+      });
+      fixture.persistenceRepository.beforeTimeSegmentLabelUpsert = () {
+        saveStarted.complete();
+        return releaseSave.future;
+      };
+      await tester.enterText(find.byType(TextField), 'Renamed');
+      await tester.pump(const Duration(milliseconds: 350));
+      await saveStarted.future;
+
+      await tester.tap(find.widgetWithText(FilledButton, i18n.tr('remove')));
+      await tester.pump();
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 50)),
+      );
+      fixture.persistenceRepository.beforeTimeSegmentLabelUpsert = null;
+      releaseSave.complete();
+      await tester.pump();
+      await tester.runAsync(
+        () => fixture.library.detailCacheService.waitForPendingOperations(),
+      );
+      List<TimeSegmentLabel>? remaining;
+      for (var attempt = 0; attempt < 100; attempt++) {
+        await tester.pump();
+        remaining = await tester.runAsync(
+          () => fixture.persistenceRepository.loadTimeSegmentLabels(trackKey),
+        );
+        if (remaining!.isEmpty) break;
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 10)),
+        );
+      }
+      expect(remaining, isEmpty);
+      final undo = find.textContaining(i18n.tr('undo'));
+      for (var attempt = 0; attempt < 100 && undo.evaluate().isEmpty; attempt++) {
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 10)),
+        );
+        await tester.pump(const Duration(milliseconds: 10));
+      }
+      expect(undo, findsOneWidget);
+      await tester.tap(undo);
+      await tester.pump();
+      for (var attempt = 0;
+          attempt < 100 && find.text('Renamed').evaluate().isEmpty;
+          attempt++) {
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 10)),
+        );
+        await tester.pump(const Duration(milliseconds: 10));
+      }
+
+      final restored = await tester.runAsync(
         () => fixture.persistenceRepository.loadTimeSegmentLabels(trackKey),
       );
-      if (remaining!.isEmpty) break;
-      await tester.runAsync(
-        () => Future<void>.delayed(const Duration(milliseconds: 10)),
-      );
-    }
-    expect(remaining, isEmpty);
-  });
+      expect(restored, hasLength(1));
+      expect(restored!.single.id, 'label-to-delete');
+      expect(restored.single.name, 'Renamed');
+      expect(restored.single.start, const Duration(seconds: 5));
+      expect(restored.single.end, const Duration(seconds: 10));
+      expect(restored.single.colorValue, kTimeSegmentLabelPalette.first);
+      expect(find.text('Renamed'), findsOneWidget);
+    },
+  );
 
   testWidgets(
     'playlist cards render circular covers without duration overlays',
@@ -4188,6 +4402,13 @@ void main() {
       find.ancestor(
         of: find.byType(PlaybackQueueEditPage),
         matching: find.byType(BottomSheet),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byType(PlaybackQueueEditPage),
+        matching: find.byIcon(Icons.keyboard_arrow_down_rounded),
       ),
       findsOneWidget,
     );
@@ -5108,6 +5329,113 @@ void main() {
       await tester.runAsync(
         () => Future<void>.delayed(const Duration(milliseconds: 50)),
       );
+    },
+  );
+
+  testWidgets(
+    'PlaylistSelectionIndicator performs 450ms fade-in and fade-out',
+    (tester) async {
+      final checkmarkFinder = find.byKey(
+        const ValueKey<String>('playlist_selection_indicator_session-fade-test'),
+      );
+
+      // Initial state: not selected, indicator child is hidden
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: PlaylistSelectionIndicator(
+              sessionId: 'session-fade-test',
+              isSelected: false,
+            ),
+          ),
+        ),
+      );
+
+      expect(checkmarkFinder, findsNothing);
+
+      // Transition to selected
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: PlaylistSelectionIndicator(
+              sessionId: 'session-fade-test',
+              isSelected: true,
+            ),
+          ),
+        ),
+      );
+
+      // First frame after change: AnimatedSwitcher creates the child
+      await tester.pump();
+      expect(checkmarkFinder, findsOneWidget);
+
+      final animatedSwitcherFinder = find.byType(AnimatedSwitcher);
+      final switcher = tester.widget<AnimatedSwitcher>(animatedSwitcherFinder);
+      expect(switcher.duration, const Duration(milliseconds: 450));
+      expect(switcher.reverseDuration, const Duration(milliseconds: 450));
+
+      // Mid-animation: at 225ms, opacity is partial (0 < opacity < 1)
+      await tester.pump(const Duration(milliseconds: 225));
+      final fadeTransitionFinder = find
+          .ancestor(
+            of: checkmarkFinder,
+            matching: find.byType(FadeTransition),
+          )
+          .first;
+      expect(fadeTransitionFinder, findsOneWidget);
+      final midOpacity =
+          tester.widget<FadeTransition>(fadeTransitionFinder).opacity.value;
+      expect(midOpacity, greaterThan(0.0));
+      expect(midOpacity, lessThan(1.0));
+
+      // After remaining 225ms (450ms total), opacity reaches 1.0
+      await tester.pump(const Duration(milliseconds: 225));
+      final fullOpacity =
+          tester.widget<FadeTransition>(fadeTransitionFinder).opacity.value;
+      expect(fullOpacity, closeTo(1.0, 0.001));
+
+      // Now deselect: transition to isSelected = false
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: PlaylistSelectionIndicator(
+              sessionId: 'session-fade-test',
+              isSelected: false,
+            ),
+          ),
+        ),
+      );
+
+      // Mid reverse-animation: at 225ms, checkmark is still present and fading out
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 225));
+      expect(checkmarkFinder, findsOneWidget);
+      final fadeOutOpacity =
+          tester.widget<FadeTransition>(fadeTransitionFinder).opacity.value;
+      expect(fadeOutOpacity, greaterThan(0.0));
+      expect(fadeOutOpacity, lessThan(1.0));
+
+      // After remaining reverse duration (total 475ms > 450ms), checkmark finishes fading out and is removed
+      await tester.pump(const Duration(milliseconds: 250));
+      expect(checkmarkFinder, findsNothing);
+
+      // Verify reduced motion uses Duration.zero
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: MediaQuery(
+            data: MediaQueryData(disableAnimations: true),
+            child: Scaffold(
+              body: PlaylistSelectionIndicator(
+                sessionId: 'session-fade-test',
+                isSelected: true,
+              ),
+            ),
+          ),
+        ),
+      );
+      final disabledSwitcher = tester.widget<AnimatedSwitcher>(animatedSwitcherFinder);
+      expect(disabledSwitcher.duration, Duration.zero);
+      expect(disabledSwitcher.reverseDuration, Duration.zero);
     },
   );
 
@@ -7138,49 +7466,77 @@ void main() {
     },
   );
 
-  testWidgets('exit button size in landscape matches portrait', (tester) async {
-    await _pumpSubtitleDetail(
-      tester: tester,
-      subtitleTrack: SubtitleTrack(sourcePath: 'empty.srt', cues: const []),
-      initialPosition: Duration.zero,
-    );
+  for (final (platform, screenSize, contentTop) in [
+    (TargetPlatform.android, const Size(1080, 2400), 40.0),
+    (TargetPlatform.android, const Size(2400, 1080), 40.0),
+    (TargetPlatform.windows, const Size(3840, 2400), 48.0),
+  ]) {
+    for (final topInset in [0.0, 24.0]) {
+      testWidgets(
+        'detail close button floats without moving content on ${platform.name} '
+        '${screenSize.width} with top inset $topInset',
+        (tester) async {
+          debugDefaultTargetPlatformOverride = platform;
+          try {
+            tester.view.padding = FakeViewPadding(top: topInset * 3);
+            tester.view.viewPadding = FakeViewPadding(top: topInset * 3);
+            addTearDown(tester.view.resetPadding);
+            addTearDown(tester.view.resetViewPadding);
+            await _pumpSubtitleDetail(
+              tester: tester,
+              subtitleTrack: SubtitleTrack(
+                sourcePath: 'empty.srt',
+                cues: const [],
+              ),
+              initialPosition: Duration.zero,
+              physicalSize: screenSize,
+            );
 
-    final portraitButton = tester.widget<IconButton>(
-      find.widgetWithIcon(IconButton, Icons.keyboard_arrow_down_rounded),
-    );
-    expect(
-      portraitButton.constraints,
-      const BoxConstraints(minWidth: 32, minHeight: 24),
-    );
-    expect(portraitButton.padding, EdgeInsets.zero);
-    final portraitIcon = tester.widget<Icon>(
-      find.byIcon(Icons.keyboard_arrow_down_rounded),
-    );
-    expect(portraitIcon.size, 22.0);
-
-    await tester.pumpWidget(const SizedBox.shrink());
-    await tester.pumpAndSettle();
-
-    await _pumpSubtitleDetail(
-      tester: tester,
-      subtitleTrack: SubtitleTrack(sourcePath: 'empty.srt', cues: const []),
-      initialPosition: Duration.zero,
-      physicalSize: const Size(2400, 1080),
-    );
-
-    final landscapeButton = tester.widget<IconButton>(
-      find.widgetWithIcon(IconButton, Icons.keyboard_arrow_down_rounded),
-    );
-    expect(
-      landscapeButton.constraints,
-      const BoxConstraints(minWidth: 32, minHeight: 24),
-    );
-    expect(landscapeButton.padding, EdgeInsets.zero);
-    final landscapeIcon = tester.widget<Icon>(
-      find.byIcon(Icons.keyboard_arrow_down_rounded),
-    );
-    expect(landscapeIcon.size, 22.0);
-  });
+            final button = find.byKey(
+              const ValueKey('session_detail_close_button'),
+            );
+            expect(button, findsOneWidget);
+            final floatingButton = find.ancestor(
+              of: button,
+              matching: find.byType(HeaderFloatingButton),
+            );
+            final buttonRect = tester.getRect(floatingButton);
+            expect(buttonRect.left, 16);
+            expect(buttonRect.top, topInset + 6);
+            expect(buttonRect.size, const Size.square(38));
+            expect(
+              tester.getRect(find.byType(SessionDetailContent)).top,
+              contentTop,
+            );
+            final decorations = tester.widgetList<DecoratedBox>(
+              find.descendant(
+                of: floatingButton,
+                matching: find.byType(DecoratedBox),
+              ),
+            );
+            final background = decorations
+                .map((widget) => widget.decoration)
+                .whereType<BoxDecoration>()
+                .firstWhere((decoration) => decoration.color != null)
+                .color!;
+            expect(background.a, closeTo(0.5, 0.01));
+            if (topInset > 0) {
+              final artwork = find.byKey(
+                const ValueKey('artwork_subtitle-session'),
+              );
+              expect(buttonRect.overlaps(tester.getRect(artwork)), isTrue);
+            }
+            await tester.tap(button);
+            await tester.pumpAndSettle();
+            expect(find.byType(SessionDetailPage), findsNothing);
+            expect(find.byType(PlaylistTab), findsOneWidget);
+          } finally {
+            debugDefaultTargetPlatformOverride = null;
+          }
+        },
+      );
+    }
+  }
 
   testWidgets(
     'secondary controls has 6 evenly spaced buttons and navigates to work detail',
@@ -7323,6 +7679,10 @@ void main() {
         const ValueKey('playback_secondary_controls'),
       );
       expect(secondaryControlsFinder, findsOneWidget);
+      final closeButton = find.byKey(
+        const ValueKey('session_detail_close_button'),
+      );
+      expect(closeButton, findsOneWidget);
 
       final tuneButtonFinder = find.byIcon(Icons.tune_rounded);
       expect(tuneButtonFinder, findsOneWidget);
@@ -7332,6 +7692,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byKey(const ValueKey('segments_landscape')), findsOneWidget);
+      expect(closeButton, findsNothing);
       final headerRect = tester.getRect(find.byType(SegmentPanelPageHeader));
       final surfaceRect = tester.getRect(
         find.byKey(
@@ -7391,7 +7752,7 @@ void main() {
       );
       final panelPage = find.descendant(
         of: find.byKey(const ValueKey('segments_landscape')),
-        matching: find.byType(PageView),
+        matching: find.byKey(const ValueKey('playback_console_page_stack')),
       );
       final contentPaddings = tester
           .widgetList<Padding>(
@@ -7411,6 +7772,7 @@ void main() {
 
       expect(find.byKey(const ValueKey('segments_landscape')), findsNothing);
       expect(secondaryControlsFinder, findsOneWidget);
+      expect(closeButton, findsOneWidget);
     },
     variant: const TargetPlatformVariant({
       TargetPlatform.android,
@@ -7431,6 +7793,10 @@ void main() {
         const ValueKey('playback_secondary_controls'),
       );
       expect(secondaryControlsFinder, findsOneWidget);
+      final closeButton = find.byKey(
+        const ValueKey('session_detail_close_button'),
+      );
+      expect(closeButton, findsOneWidget);
 
       final tuneButtonFinder = find.byIcon(Icons.tune_rounded);
       expect(tuneButtonFinder, findsOneWidget);
@@ -7453,6 +7819,18 @@ void main() {
       );
       // Secondary controls capsule is hidden in portrait
       expect(secondaryControlsFinder, findsNothing);
+      expect(closeButton, findsNothing);
+
+      await tester.tap(find.byKey(const ValueKey('close_console_panel')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('segments')), findsNothing);
+      expect(secondaryControlsFinder, findsOneWidget);
+      expect(closeButton, findsOneWidget);
+
+      await tester.tap(closeButton);
+      await tester.pumpAndSettle();
+      expect(find.byType(SessionDetailPage), findsNothing);
+      expect(find.byType(PlaylistTab), findsOneWidget);
     },
   );
 

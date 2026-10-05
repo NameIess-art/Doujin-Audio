@@ -193,4 +193,75 @@ void main() {
     updateDetail(second, 'Zeta');
     expect(sortedNames(), ['First', 'Second']);
   });
+
+  test('name sorting follows work name display and natural title order', () {
+    final first = _LazyFolderNode('RJ100', '/music/RJ100');
+    final second = _LazyFolderNode('RJ200', '/music/RJ200');
+    final third = _LazyFolderNode('RJ300', '/music/RJ300');
+    for (final (folder, title) in [
+      (first, 'Zulu'),
+      (second, '  Alpha 10  '),
+      (third, 'Alpha 2'),
+    ]) {
+      library.detailCacheService.markChanged(
+        AudioDetail.empty(
+          AudioDetailTarget.libraryRootFolder(folder.path),
+        ).copyWith(workTitle: title),
+      );
+    }
+
+    List<LibraryNode> sorted(WorkNameDisplay display, bool ascending) =>
+        sortLibraryNodes(
+          nodes: [first, second, third],
+          criterion: LibrarySortCriterion.name,
+          ascending: ascending,
+          groupByLibrary: false,
+          library: library,
+          workNameDisplay: display,
+        );
+
+    expect(sorted(WorkNameDisplay.workTitle, true), [third, second, first]);
+    expect(sorted(WorkNameDisplay.workTitle, false), [first, second, third]);
+    expect(sorted(WorkNameDisplay.folderName, true), [first, second, third]);
+    expect(sorted(WorkNameDisplay.folderName, false), [third, second, first]);
+    expect(
+      sortLibraryNodes(
+        nodes: [first, second, third],
+        criterion: LibrarySortCriterion.name,
+        ascending: true,
+        groupByLibrary: false,
+        library: library,
+        pinnedPaths: {first.path},
+      ),
+      [first, third, second],
+    );
+  });
+
+  test('name sorting falls back to visible folder and track names', () {
+    final missing = _folder('Alpha', '/missing');
+    final blank = _folder('Beta', '/blank');
+    final nested = FolderNode('Delta', '/nested', depth: 1);
+    final track = TrackNode(_NoMetadataTrack('Gamma', '/gamma.mp3'));
+    library.detailCacheService
+      ..markChanged(
+        AudioDetail.empty(
+          AudioDetailTarget.libraryRootFolder(blank.path),
+        ).copyWith(workTitle: '   '),
+      )
+      ..markChanged(
+        AudioDetail.empty(
+          AudioDetailTarget.libraryRootFolder(nested.path),
+        ).copyWith(workTitle: 'A hidden title'),
+      );
+    expect(
+      sortLibraryNodes(
+        nodes: [track, nested, blank, missing],
+        criterion: LibrarySortCriterion.name,
+        ascending: true,
+        groupByLibrary: false,
+        library: library,
+      ),
+      [missing, blank, nested, track],
+    );
+  });
 }

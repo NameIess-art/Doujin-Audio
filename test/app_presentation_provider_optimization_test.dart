@@ -1,5 +1,9 @@
+import 'dart:async';
+
 import 'package:doujin_audio/app/presentation/app_presentation_providers.dart';
 import 'package:doujin_audio/app/state/subtitle_settings_provider.dart';
+import 'package:doujin_audio/core/media/audio_detail.dart';
+import 'package:doujin_audio/core/media/path_matcher.dart';
 import 'package:doujin_audio/features/library/domain/library_node.dart';
 import 'package:doujin_audio/features/settings/application/settings_state.dart';
 import 'package:flutter/widgets.dart';
@@ -7,6 +11,20 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/app_runtime_test_fixture.dart';
+import 'support/test_persistence_repository.dart';
+
+class _WorkDetailRepository extends TestPersistenceRepository {
+  final ready = Completer<void>();
+  final details = <String, AudioDetail>{};
+
+  @override
+  Future<AudioDetail?> load(AudioDetailTarget target) async {
+    await ready.future;
+    return details[PathMatcher.normalize(target.targetPath)]?.copyWith(
+      target: target,
+    );
+  }
+}
 
 void main() {
   testWidgets('global subtitles switch by target state and ignore parameters', (
@@ -165,6 +183,95 @@ void main() {
       await tester.pump();
       await tester.pump();
       expect(identical(sorted, detailSorted), isFalse);
+    },
+  );
+
+  testWidgets(
+    'library name sort reacts to loaded titles and display settings',
+    (tester) async {
+      final repository = _WorkDetailRepository();
+      final fixture = AppRuntimeWidgetTestFixture(
+        providedPersistenceRepository: repository,
+      );
+      addTearDown(fixture.dispose);
+      fixture.settingsRepository.syncSlice(isInitialized: true);
+      for (final (folder, title) in [('RJ100', 'Zulu'), ('RJ200', 'Alpha')]) {
+        final root = '/music/$folder';
+        repository.details[PathMatcher.normalize(root)] = AudioDetail.empty(
+          AudioDetailTarget.libraryRootFolder(root),
+        ).copyWith(workTitle: title);
+        fixture.library.addWatchedFolder(root, notify: false);
+        fixture.library.addTracks(
+          [
+            testMusicTrack(
+              name: 'Track',
+              path: '$root/track.mp3',
+              groupKey: root,
+              groupTitle: folder,
+            ),
+          ],
+          notify: false,
+          persist: false,
+        );
+      }
+      fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 0);
+      await tester.runAsync(fixture.library.ensureCardSnapshot);
+
+      List<LibraryNode>? sorted;
+      await tester.pumpWidget(
+        fixture.build(
+          Consumer(
+            builder: (context, ref, child) {
+              sorted = ref.watch(librarySortedTreeUiProvider);
+              return const SizedBox.shrink();
+            },
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(sorted!.map((node) => node.name), ['RJ100', 'RJ200']);
+
+      repository.ready.complete();
+      await tester.pumpAndSettle();
+      expect(sorted!.map((node) => node.name), ['RJ200', 'RJ100']);
+
+      fixture.settingsRepository
+        ..workNameDisplay = WorkNameDisplay.folderName
+        ..syncSlice(isInitialized: true);
+      await tester.pumpAndSettle();
+      expect(sorted!.map((node) => node.name), ['RJ100', 'RJ200']);
+      final folderSorted = sorted;
+      fixture.library.detailCacheService.markChanged(
+        repository.details[PathMatcher.normalize('/music/RJ100')]!.copyWith(
+          workTitle: 'Aardvark',
+        ),
+      );
+      fixture.library.syncPresentationState();
+      await tester.pumpAndSettle();
+      expect(identical(sorted, folderSorted), isTrue);
+
+      fixture.settingsRepository
+        ..workNameDisplay = WorkNameDisplay.workTitle
+        ..syncSlice(isInitialized: true);
+      await tester.pumpAndSettle();
+      expect(sorted!.map((node) => node.name), ['RJ100', 'RJ200']);
+
+      fixture.library.detailCacheService.markChanged(
+        repository.details[PathMatcher.normalize('/music/RJ100')]!.copyWith(
+          workTitle: 'Zulu',
+        ),
+      );
+      fixture.library.syncPresentationState();
+      await tester.pumpAndSettle();
+      expect(sorted!.map((node) => node.name), ['RJ200', 'RJ100']);
+
+      // Card providers still hold loaded titles after the detail cache is evicted.
+      fixture.library.detailCacheService.clear();
+      fixture.settingsRepository
+        ..librarySortAscending = false
+        ..syncSlice(isInitialized: true);
+      await tester.pumpAndSettle();
+      expect(sorted!.map((node) => node.name), ['RJ100', 'RJ200']);
     },
   );
 

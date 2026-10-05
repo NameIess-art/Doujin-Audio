@@ -571,9 +571,15 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
     _deletingSegment = true;
     _segmentNameDebounce?.cancel();
     _segmentSaveQueued = false;
+    final timeSegments = _timeSegments;
     try {
       await _segmentSaveCompletion?.future;
-      final backupSucceeded = await _timeSegments.deleteLabel(selected);
+      final labels = await timeSegments.loadLabels(selected.trackKey);
+      final removedLabel = labels
+          .where((label) => label.id == selected.id)
+          .firstOrNull;
+      if (removedLabel == null) return;
+      final backupSucceeded = await timeSegments.deleteLabel(removedLabel);
       if (!mounted || _segmentTrackKey != selected.trackKey) return;
       setState(() {
         _segmentLabels = _segmentLabels
@@ -594,9 +600,32 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
             ? AppFeedbackTone.destructive
             : AppFeedbackTone.warning,
         icon: Icons.sell_rounded,
+        duration: kUndoableRemovalFeedbackDuration,
+        actionLabel: i18n.tr('undo'),
+        onAction: () =>
+            unawaited(_restoreDeletedSegment(removedLabel, timeSegments)),
       );
     } finally {
       _deletingSegment = false;
+    }
+  }
+
+  Future<void> _restoreDeletedSegment(
+    TimeSegmentLabel label,
+    PlaybackTimeSegmentService timeSegments,
+  ) async {
+    final backupSucceeded = await timeSegments.saveLabel(label);
+    if (!mounted) return;
+    if (_segmentTrackKey == label.trackKey) {
+      await _loadSegmentLabels(label.trackKey);
+    }
+    if (!backupSucceeded && mounted) {
+      final i18n = ref.read(appLanguageProviderInstanceProvider);
+      showAppSnackBar(
+        context,
+        i18n.tr('audio_detail_backup_failed'),
+        tone: AppFeedbackTone.warning,
+      );
     }
   }
 

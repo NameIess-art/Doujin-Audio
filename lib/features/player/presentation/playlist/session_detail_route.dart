@@ -16,13 +16,9 @@ class SessionDetailRoute extends AppPreparedPageRoute<void> {
         reverseTransitionDuration: kAppMotionSlow,
         deferExitFinalization: true,
         pageBuilder: (context, animation, secondaryAnimation) =>
-            MediaQuery.removePadding(
-              context: context,
-              removeTop: true,
-              child: SessionDetailPage(
-                sessionId: sessionId,
-                revealBehindNotifier: _revealBehindNotifier,
-              ),
+            SessionDetailPage(
+              sessionId: sessionId,
+              revealBehindNotifier: _revealBehindNotifier,
             ),
         transitionsBuilder: (_, animation, secondaryAnimation, child) => child,
       ) {

@@ -965,6 +965,7 @@ void main() {
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     final firstCoverStarted = Completer<void>();
     var coverRequests = 0;
+    final coverRangeStarts = <int>[];
     unawaited(
       server.forEach((request) async {
         if (request.uri.path != '/cover.jpg') {
@@ -982,6 +983,7 @@ void main() {
               RegExp(r'^bytes=(\d+)-$').firstMatch(range ?? '')?.group(1) ?? '',
             ) ??
             0;
+        coverRangeStarts.add(start);
         if (start > 0) {
           request.response.statusCode = HttpStatus.partialContent;
           request.response.headers.set(
@@ -1025,11 +1027,23 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 30));
       await manager.pauseTask(1);
       await _waitForTaskStatus(manager, 1, AsmrDownloadTaskStatus.paused);
+      final staging = File(
+        path.join(
+          manager.getTask(1)!.workRootPath,
+          'cover',
+          'cover.cover.doujin.part',
+        ),
+      );
+      final pausedBytes = await staging.length();
+      expect(pausedBytes, greaterThan(0));
+      expect(pausedBytes, lessThan(coverBytes));
 
       await manager.resumeTask(1);
       await _waitForTaskStatus(manager, 1, AsmrDownloadTaskStatus.completed);
 
       expect(coverRequests, greaterThanOrEqualTo(2));
+      expect(coverRangeStarts, contains(pausedBytes));
+      expect(await staging.exists(), isFalse);
       expect(
         await File(
           path.join(manager.getTask(1)!.workRootPath, 'cover', 'cover.jpg'),
@@ -1282,6 +1296,95 @@ void main() {
       if (await tempDir.exists()) await tempDir.delete(recursive: true);
     }
   });
+
+  test(
+    'local library downloads save covers across drives and retry transient files',
+    () async {
+      final tempDir =
+          await (Platform.isWindows ? Directory.current : Directory.systemTemp)
+              .createTemp('asmr_download_library_cover_');
+      const folderName = 'RJ123456 已有作品';
+      final workDir = Directory(path.join(tempDir.path, folderName));
+      await workDir.create();
+      final metadata = File(path.join(workDir.path, 'doujin-audio.json'));
+      const metadataJson = '{"workTitle":"existing metadata"}';
+      await metadata.writeAsString(metadataJson);
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      const coverBytes = <int>[1, 2, 3, 4];
+      const trackBytes = <int>[5, 6, 7];
+      var trackRequests = 0;
+      var coverRequests = 0;
+      server.listen((request) async {
+        if (request.uri.path == '/cover') {
+          coverRequests++;
+          request.response.headers.contentType = ContentType('image', 'png');
+          request.response
+            ..contentLength = coverBytes.length
+            ..add(coverBytes);
+        } else {
+          trackRequests++;
+          if (trackRequests == 1) {
+            request.response.statusCode = HttpStatus.serviceUnavailable;
+          } else {
+            request.response
+              ..contentLength = trackBytes.length
+              ..add(trackBytes);
+          }
+        }
+        await request.response.close();
+      });
+      var cacheDirectoryRequests = 0;
+      final manager = AsmrDownloadManager(
+        stagingDirectoryProvider: () async {
+          cacheDirectoryRequests++;
+          return Directory.systemTemp;
+        },
+        automaticFileRetryDelay: Duration.zero,
+        persistTasks: false,
+      );
+      try {
+        final baseUrl = 'http://${server.address.host}:${server.port}';
+        await manager.startDownload(
+          work: _work(mainCoverUrl: '$baseUrl/cover'),
+          selectedRoots: [
+            _file(downloadUrl: '$baseUrl/track.mp3', size: trackBytes.length),
+          ],
+          destinationRoot: tempDir.path,
+          customWorkFolderName: folderName,
+          conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
+        );
+        await _waitForTaskStatus(manager, 1, AsmrDownloadTaskStatus.completed);
+
+        expect(cacheDirectoryRequests, 0);
+        expect(coverRequests, 1);
+        expect(trackRequests, 2);
+        expect(manager.getTask(1)?.failedFiles, 0);
+        expect(manager.getTask(1)?.skippedFiles, 1);
+        expect(await metadata.readAsString(), metadataJson);
+        expect(
+          await File(path.join(workDir.path, 'Track.mp3')).readAsBytes(),
+          trackBytes,
+        );
+        expect(
+          await File(
+            path.join(workDir.path, 'cover', 'cover.png'),
+          ).readAsBytes(),
+          coverBytes,
+        );
+        expect(
+          await workDir
+              .list(recursive: true)
+              .where((entry) => entry.path.endsWith('.doujin.part'))
+              .toList(),
+          isEmpty,
+        );
+      } finally {
+        await manager.shutdown();
+        await server.close(force: true);
+        await tempDir.delete(recursive: true);
+      }
+    },
+  );
 
   test('failed local replacement restores the previous file', () async {
     final tempDir = await Directory.systemTemp.createTemp(

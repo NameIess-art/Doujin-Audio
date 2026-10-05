@@ -9,6 +9,7 @@ import 'package:doujin_audio/app/localization/app_language_zh.dart';
 import 'package:doujin_audio/app/theme/app_styles.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
 import 'package:doujin_audio/core/media/audio_detail.dart';
+import 'package:doujin_audio/core/media/music_track.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/core/widgets/async_cover_image.dart';
 import 'package:doujin_audio/core/widgets/library_like_cards.dart';
@@ -16,6 +17,10 @@ import 'package:doujin_audio/core/widgets/marquee_text.dart';
 import 'package:doujin_audio/core/widgets/scroll_activity_gate.dart';
 import 'package:doujin_audio/core/widgets/shimmer_loading.dart';
 import 'package:doujin_audio/core/widgets/top_page_header.dart';
+import 'package:doujin_audio/features/library/presentation/library_card_artwork.dart';
+import 'package:doujin_audio/features/library/presentation/library_tab_tree_widgets.dart';
+
+import 'support/app_runtime_test_fixture.dart';
 
 Widget _buildSurface(Widget child) => MaterialApp(
   theme: ThemeData.dark(useMaterial3: true),
@@ -523,7 +528,11 @@ void main() {
     expect(LibraryLikeCardMetrics.titleBlockHeight, 38);
     expect(LibraryLikeCardMetrics.actionButtonSize, 40);
     expect(LibraryLikeCardMetrics.coverRadius, 8);
-    expect(LibraryLikeCardMetrics.cardRadius, 10);
+    expect(LibraryLikeCardMetrics.coverDistance, 8);
+    expect(
+      LibraryLikeCardMetrics.cardRadius,
+      LibraryLikeCardMetrics.coverRadius + LibraryLikeCardMetrics.coverDistance,
+    );
     expect(LibraryLikeCardMetrics.coverAspectRatio, kStandardCoverAspectRatio);
 
     expect(
@@ -1199,4 +1208,170 @@ void main() {
       }
     }
   });
+
+  testWidgets(
+    'LibrarySelectionIndicator performs 450ms fade-in and fade-out with 22x22 cutout border',
+    (tester) async {
+      final checkmarkFinder = find.byKey(
+        const ValueKey<String>('library_selection_indicator_lib-fade-test'),
+      );
+
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: LibrarySelectionIndicator(
+              path: 'lib-fade-test',
+              isSelected: false,
+            ),
+          ),
+        ),
+      );
+
+      expect(checkmarkFinder, findsNothing);
+
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: LibrarySelectionIndicator(
+              path: 'lib-fade-test',
+            ),
+          ),
+        ),
+      );
+
+      await tester.pump();
+      expect(checkmarkFinder, findsOneWidget);
+
+      final switcherFinder = find.byType(AnimatedSwitcher);
+      final switcher = tester.widget<AnimatedSwitcher>(switcherFinder);
+      expect(switcher.duration, const Duration(milliseconds: 450));
+      expect(switcher.reverseDuration, const Duration(milliseconds: 450));
+
+      expect(tester.getSize(checkmarkFinder), const Size(22.0, 22.0));
+      final container = tester.widget<Container>(checkmarkFinder);
+      final decoration = container.decoration as BoxDecoration;
+      expect(decoration.shape, BoxShape.circle);
+      expect(decoration.border?.top.width, 2.0);
+
+      // Verify mid-animation opacity
+      await tester.pump(const Duration(milliseconds: 225));
+      final fadeFinder = find
+          .ancestor(
+            of: checkmarkFinder,
+            matching: find.byType(FadeTransition),
+          )
+          .first;
+      final midOpacity =
+          tester.widget<FadeTransition>(fadeFinder).opacity.value;
+      expect(midOpacity, greaterThan(0.0));
+      expect(midOpacity, lessThan(1.0));
+
+      // After remaining duration
+      await tester.pump(const Duration(milliseconds: 225));
+      final fullOpacity =
+          tester.widget<FadeTransition>(fadeFinder).opacity.value;
+      expect(fullOpacity, closeTo(1.0, 0.001));
+
+      // Deselect
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: LibrarySelectionIndicator(
+              path: 'lib-fade-test',
+              isSelected: false,
+            ),
+          ),
+        ),
+      );
+
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 225));
+      expect(checkmarkFinder, findsOneWidget);
+
+      await tester.pump(const Duration(milliseconds: 250));
+      expect(checkmarkFinder, findsNothing);
+    },
+  );
+
+  testWidgets(
+    'LibraryPinnedIndicator renders 22x22 circle with cutout border and pin icon',
+    (tester) async {
+      final pinFinder = find.byKey(
+        const ValueKey<String>('library_pinned_pin-test'),
+      );
+
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: LibraryPinnedIndicator(
+              path: 'pin-test',
+            ),
+          ),
+        ),
+      );
+
+      expect(pinFinder, findsOneWidget);
+      expect(tester.getSize(pinFinder), const Size(22.0, 22.0));
+      final container = tester.widget<Container>(pinFinder);
+      final decoration = container.decoration as BoxDecoration;
+      expect(decoration.shape, BoxShape.circle);
+      expect(decoration.border?.top.width, 2.0);
+      expect(find.byIcon(Icons.push_pin_rounded), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'SingleMediaFileCardContent places selection checkmark at bottom-left and pin at top-right',
+    (tester) async {
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+
+      final track = MusicTrack(
+        path: '/test/audio.mp3',
+        displayName: 'audio.mp3',
+        groupKey: '/test',
+        groupTitle: 'test',
+        groupSubtitle: '',
+        isSingle: true,
+      );
+
+      await tester.pumpWidget(
+        fixture.build(
+          SingleMediaFileCardContent(
+            track: track,
+            title: 'audio.mp3',
+            detail: null,
+            detailLoading: false,
+            onPlay: () {},
+            isSelected: true,
+            isPinned: true,
+          ),
+        ),
+      );
+
+      final selectionPosition = tester.widget<Positioned>(
+        find
+            .ancestor(
+              of: find.byType(LibrarySelectionIndicator),
+              matching: find.byType(Positioned),
+            )
+            .first,
+      );
+      expect(selectionPosition.left, -2);
+      expect(selectionPosition.bottom, -2);
+      expect(selectionPosition.top, isNull);
+
+      final pinPosition = tester.widget<Positioned>(
+        find
+            .ancestor(
+              of: find.byType(LibraryPinnedIndicator),
+              matching: find.byType(Positioned),
+            )
+            .first,
+      );
+      expect(pinPosition.right, -2);
+      expect(pinPosition.top, -2);
+      expect(pinPosition.bottom, isNull);
+    },
+  );
 }

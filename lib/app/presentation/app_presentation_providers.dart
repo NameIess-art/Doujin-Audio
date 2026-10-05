@@ -167,6 +167,14 @@ final librarySortedTreeUiProvider = Provider<List<LibraryNode>>((ref) {
       (state) => state.value?.librarySortCriterion ?? LibrarySortCriterion.name,
     ),
   );
+  final workNameDisplay = criterion == LibrarySortCriterion.name
+      ? ref.watch(
+          settingsStateProvider.select(
+            (state) =>
+                state.value?.workNameDisplay ?? WorkNameDisplay.workTitle,
+          ),
+        )
+      : WorkNameDisplay.folderName;
   final ascending = ref.watch(
     settingsStateProvider.select(
       (state) => state.value?.librarySortAscending ?? true,
@@ -201,6 +209,11 @@ final librarySortedTreeUiProvider = Provider<List<LibraryNode>>((ref) {
     ascending: ascending,
     groupByLibrary: groupByLibrary,
     library: libraryFacade,
+    workNameDisplay: workNameDisplay,
+    // Read each card's detail provider, including works outside the viewport.
+    detailForTarget: workNameDisplay == WorkNameDisplay.workTitle
+        ? (target) => ref.watch(libraryDetailForTargetProvider(target)).value
+        : null,
     pinnedPaths: pinnedPaths,
   );
 });

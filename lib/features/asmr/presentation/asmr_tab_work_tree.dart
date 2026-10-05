@@ -1,19 +1,71 @@
 part of 'asmr_tab.dart';
 
+const Color _asmrSelectionCheckmarkColor = Color(0xFF4CAF50);
+const Duration _asmrSelectionFadeDuration = Duration(milliseconds: 450);
+
 class _AsmrSelectionIndicator extends StatelessWidget {
-  const _AsmrSelectionIndicator();
+  const _AsmrSelectionIndicator({
+    this.workId,
+    this.isSelected = true,
+  });
+
+  final String? workId;
+  final bool isSelected;
 
   @override
-  Widget build(BuildContext context) => Container(
-    width: 24,
-    height: 24,
-    decoration: BoxDecoration(
-      shape: BoxShape.circle,
-      color: const Color(0xFF4CAF50),
-      border: Border.all(color: Colors.white, width: 1.5),
-    ),
-    child: const Icon(Icons.check_rounded, size: 16, color: Colors.white),
-  );
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final duration = MediaQuery.disableAnimationsOf(context)
+        ? Duration.zero
+        : _asmrSelectionFadeDuration;
+    final surfaceBorderColor = isSelected
+        ? Color.alphaBlend(
+            cs.primaryContainer.withValues(alpha: 0.15),
+            cs.surface,
+          )
+        : cs.surface;
+    return IgnorePointer(
+      child: ExcludeSemantics(
+        child: AnimatedSwitcher(
+          duration: duration,
+          reverseDuration: duration,
+          switchInCurve: Curves.easeInOut,
+          switchOutCurve: Curves.easeInOut,
+          transitionBuilder: (child, animation) {
+            return FadeTransition(
+              opacity: animation,
+              child: child,
+            );
+          },
+          child: isSelected
+              ? Container(
+                  key: workId == null
+                      ? const ValueKey<String>('asmr_selection_indicator')
+                      : ValueKey<String>('asmr_selection_indicator_$workId'),
+                  width: 22,
+                  height: 22,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: _asmrSelectionCheckmarkColor,
+                    border: Border.all(color: surfaceBorderColor, width: 2),
+                  ),
+                  child: const Icon(
+                    Icons.check_rounded,
+                    size: 14,
+                    color: Colors.white,
+                  ),
+                )
+              : SizedBox.shrink(
+                  key: workId == null
+                      ? const ValueKey<String>('asmr_selection_indicator_hidden')
+                      : ValueKey<String>(
+                          'asmr_selection_indicator_hidden_$workId',
+                        ),
+                ),
+        ),
+      ),
+    );
+  }
 }
 
 class _AsmrWorkTreeCard extends ConsumerStatefulWidget {

@@ -11,6 +11,7 @@ import '../../../../core/media/time_text_formatters.dart';
 import '../../../../core/widgets/app_buttons.dart';
 import '../../../../core/widgets/app_dialog.dart';
 import '../../../../core/widgets/app_feedback.dart';
+import '../../../../core/widgets/app_transitions.dart';
 import '../../../../core/widgets/scroll_activity_gate.dart';
 import '../../../../core/widgets/top_page_header.dart';
 import '../../../../core/widgets/windows_horizontal_wheel_scroll.dart';
@@ -71,35 +72,26 @@ class TimeSegmentPanel extends StatefulWidget {
 }
 
 class _TimeSegmentPanelState extends State<TimeSegmentPanel> {
-  late final PageController _pageController;
-  int _pageIndex = 2;
-
-  @override
-  void initState() {
-    super.initState();
-    _pageController = PageController(initialPage: _pageIndex);
-  }
+  final _pageIndex = ValueNotifier<int>(2);
+  double _pageDragDistance = 0;
 
   @override
   void dispose() {
-    _pageController.dispose();
+    _pageIndex.dispose();
     super.dispose();
   }
 
-  void _handlePageChanged(int index) {
-    if (_pageIndex == index) return;
-    setState(() => _pageIndex = index);
+  void _animateToPanelPage(int index) {
+    if (index < 0 || index >= 5 || _pageIndex.value == index) return;
+    AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
+    _pageIndex.value = index;
   }
 
-  void _animateToPanelPage(int index) {
-    if (_pageIndex == index) return;
-    AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
-    setState(() => _pageIndex = index);
-    _pageController.animateToPage(
-      index,
-      duration: const Duration(milliseconds: 180),
-      curve: Curves.easeOutCubic,
-    );
+  void _handlePageDragEnd(DragEndDetails details) {
+    final velocity = details.primaryVelocity ?? 0;
+    if (_pageDragDistance.abs() < 48 && velocity.abs() < 350) return;
+    final direction = velocity.abs() >= 350 ? velocity : _pageDragDistance;
+    _animateToPanelPage(_pageIndex.value + (direction < 0 ? 1 : -1));
   }
 
   @override
@@ -150,52 +142,62 @@ class _TimeSegmentPanelState extends State<TimeSegmentPanel> {
                     return;
                   }
                   final target =
-                      _pageIndex + (signal.scrollDelta.dy > 0 ? 1 : -1);
+                      _pageIndex.value + (signal.scrollDelta.dy > 0 ? 1 : -1);
                   if (target < 0 || target >= 5) return;
                   GestureBinding.instance.pointerSignalResolver.register(
                     signal,
                     (_) => _animateToPanelPage(target),
                   );
                 },
-                child: PageView(
-                  controller: _pageController,
-                  onPageChanged: _handlePageChanged,
-                  children: [
-                    EqualizerPage(
-                      session: widget.session,
-                      playback: widget.playback,
-                      topInset: pageTopInset,
-                    ),
-                    AudioFeaturesPage(
-                      session: widget.session,
-                      playback: widget.playback,
-                      topInset: pageTopInset,
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.only(top: pageTopInset),
-                      child: SpeedWheelPage(
-                        key: ValueKey<String>('speed_${widget.session.id}'),
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onHorizontalDragStart: (_) => _pageDragDistance = 0,
+                  onHorizontalDragUpdate: (details) =>
+                      _pageDragDistance += details.primaryDelta ?? 0,
+                  onHorizontalDragEnd: _handlePageDragEnd,
+                  child: AppFadeThroughIndexedStack.lazy(
+                    key: const ValueKey('playback_console_page_stack'),
+                    indexListenable: _pageIndex,
+                    duration: kAppMotionSlow,
+                    itemCount: 5,
+                    contentRevision: Object(),
+                    itemBuilder: (context, index) => switch (index) {
+                      0 => EqualizerPage(
                         session: widget.session,
                         playback: widget.playback,
+                        topInset: pageTopInset,
                       ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.only(top: pageTopInset),
-                      child: _buildSegmentPage(
-                        context,
-                        selected: selected,
-                        activeColor: activeColor,
-                        loopActive: loopActive,
-                      ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.only(top: pageTopInset),
-                      child: VolumeBalancePage(
+                      1 => AudioFeaturesPage(
                         session: widget.session,
                         playback: widget.playback,
+                        topInset: pageTopInset,
                       ),
-                    ),
-                  ],
+                      2 => Padding(
+                        padding: const EdgeInsets.only(top: pageTopInset),
+                        child: SpeedWheelPage(
+                          key: ValueKey<String>('speed_${widget.session.id}'),
+                          session: widget.session,
+                          playback: widget.playback,
+                        ),
+                      ),
+                      3 => Padding(
+                        padding: const EdgeInsets.only(top: pageTopInset),
+                        child: _buildSegmentPage(
+                          context,
+                          selected: selected,
+                          activeColor: activeColor,
+                          loopActive: loopActive,
+                        ),
+                      ),
+                      _ => Padding(
+                        padding: const EdgeInsets.only(top: pageTopInset),
+                        child: VolumeBalancePage(
+                          session: widget.session,
+                          playback: widget.playback,
+                        ),
+                      ),
+                    },
+                  ),
                 ),
               ),
             ),
@@ -206,18 +208,21 @@ class _TimeSegmentPanelState extends State<TimeSegmentPanel> {
           left: 0,
           right: 0,
           height: headerHeight,
-          child: SegmentPanelPageHeader(
-            pageIndex: _pageIndex,
-            onSelected: _animateToPanelPage,
-            onClose: widget.onClose,
-            closeTooltip: i18n.tr('close'),
-            labels: [
-              i18n.tr('equalizer'),
-              i18n.tr('audio_features'),
-              i18n.tr('playback_speed'),
-              i18n.tr('audio_detail_tags'),
-              i18n.tr('volume_balance'),
-            ],
+          child: ValueListenableBuilder<int>(
+            valueListenable: _pageIndex,
+            builder: (context, pageIndex, _) => SegmentPanelPageHeader(
+              pageIndex: pageIndex,
+              onSelected: _animateToPanelPage,
+              onClose: widget.onClose,
+              closeTooltip: i18n.tr('close'),
+              labels: [
+                i18n.tr('equalizer'),
+                i18n.tr('audio_features'),
+                i18n.tr('playback_speed'),
+                i18n.tr('audio_detail_tags'),
+                i18n.tr('volume_balance'),
+              ],
+            ),
           ),
         ),
       ],

@@ -303,17 +303,22 @@ class RootFolderCardContent extends ConsumerWidget {
                   maxWidth: isPinned ? (coverWidth - 32) : (coverWidth - 8),
                 ),
               ),
-            if (isSelected)
-              const Positioned(
-                left: 4,
-                bottom: 4,
-                child: LibrarySelectionIndicator(),
+            Positioned(
+              left: -2,
+              bottom: -2,
+              child: LibrarySelectionIndicator(
+                path: folderPath,
+                isSelected: isSelected,
               ),
+            ),
             if (isPinned)
               Positioned(
-                right: 4,
-                top: 4,
-                child: LibraryPinnedIndicator(path: folderPath),
+                right: -2,
+                top: -2,
+                child: LibraryPinnedIndicator(
+                  path: folderPath,
+                  isSelected: isSelected,
+                ),
               ),
           ],
         );
@@ -461,17 +466,22 @@ class SingleMediaFileCardContent extends StatelessWidget {
                   maxWidth: isPinned ? (coverWidth - 32) : (coverWidth - 8),
                 ),
               ),
-            if (isSelected)
-              const Positioned(
-                left: 4,
-                bottom: 4,
-                child: LibrarySelectionIndicator(),
+            Positioned(
+              left: -2,
+              bottom: -2,
+              child: LibrarySelectionIndicator(
+                path: track.path,
+                isSelected: isSelected,
               ),
+            ),
             if (isPinned)
               Positioned(
-                right: 4,
-                top: 4,
-                child: LibraryPinnedIndicator(path: track.path),
+                right: -2,
+                top: -2,
+                child: LibraryPinnedIndicator(
+                  path: track.path,
+                  isSelected: isSelected,
+                ),
               ),
           ],
         );

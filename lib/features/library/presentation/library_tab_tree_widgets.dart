@@ -29,54 +29,119 @@ import '../../../app/theme/app_styles.dart';
 import 'library_tab_ui_helpers.dart';
 import 'library_card_artwork.dart';
 
+const Color _librarySelectionCheckmarkColor = Color(0xFF4CAF50);
+const Duration _librarySelectionFadeDuration = Duration(milliseconds: 450);
+
 class LibrarySelectionIndicator extends StatelessWidget {
-  const LibrarySelectionIndicator({super.key});
-
-  @override
-  Widget build(BuildContext context) => Container(
-    width: 24,
-    height: 24,
-    decoration: BoxDecoration(
-      shape: BoxShape.circle,
-      color: const Color(0xFF4CAF50),
-      border: Border.all(color: Colors.white, width: 1.5),
-    ),
-    child: const Icon(Icons.check_rounded, size: 16, color: Colors.white),
-  );
-}
-
-class LibraryPinnedIndicator extends StatelessWidget {
-  const LibraryPinnedIndicator({super.key, this.path});
+  const LibrarySelectionIndicator({
+    super.key,
+    this.path,
+    this.isSelected = true,
+  });
 
   final String? path;
+  final bool isSelected;
 
   @override
   Widget build(BuildContext context) {
-    final pinColor = Theme.of(context).colorScheme.primary;
+    final cs = Theme.of(context).colorScheme;
+    final duration = MediaQuery.disableAnimationsOf(context)
+        ? Duration.zero
+        : _librarySelectionFadeDuration;
+    final surfaceBorderColor = isSelected
+        ? Color.alphaBlend(
+            cs.primaryContainer.withValues(alpha: 0.15),
+            cs.surface,
+          )
+        : cs.surface;
     final normalizedPath = path == null ? null : PathMatcher.normalize(path!);
+    return IgnorePointer(
+      child: ExcludeSemantics(
+        child: AnimatedSwitcher(
+          duration: duration,
+          reverseDuration: duration,
+          switchInCurve: Curves.easeInOut,
+          switchOutCurve: Curves.easeInOut,
+          transitionBuilder: (child, animation) {
+            return FadeTransition(
+              opacity: animation,
+              child: child,
+            );
+          },
+          child: isSelected
+              ? Container(
+                  key: normalizedPath == null
+                      ? const ValueKey<String>('library_selection_indicator')
+                      : ValueKey<String>(
+                          'library_selection_indicator_$normalizedPath',
+                        ),
+                  width: 22,
+                  height: 22,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: _librarySelectionCheckmarkColor,
+                    border: Border.all(color: surfaceBorderColor, width: 2),
+                  ),
+                  child: const Icon(
+                    Icons.check_rounded,
+                    size: 14,
+                    color: Colors.white,
+                  ),
+                )
+              : SizedBox.shrink(
+                  key: normalizedPath == null
+                      ? const ValueKey<String>(
+                          'library_selection_indicator_hidden',
+                        )
+                      : ValueKey<String>(
+                          'library_selection_indicator_hidden_$normalizedPath',
+                        ),
+                ),
+        ),
+      ),
+    );
+  }
+}
+
+class LibraryPinnedIndicator extends StatelessWidget {
+  const LibraryPinnedIndicator({
+    super.key,
+    this.path,
+    this.color,
+    this.isSelected = false,
+  });
+
+  final String? path;
+  final Color? color;
+  final bool isSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final pinColor = color ?? cs.primary;
+    final normalizedPath = path == null ? null : PathMatcher.normalize(path!);
+    final surfaceBorderColor = isSelected
+        ? Color.alphaBlend(
+            cs.primaryContainer.withValues(alpha: 0.15),
+            cs.surface,
+          )
+        : cs.surface;
     return IgnorePointer(
       child: ExcludeSemantics(
         child: Container(
           key: normalizedPath == null
               ? null
               : ValueKey<String>('library_pinned_$normalizedPath'),
-          width: 20,
-          height: 20,
+          width: 22,
+          height: 22,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             color: pinColor,
-            border: Border.all(color: Colors.white, width: 1.5),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.28),
-                blurRadius: 4,
-                offset: const Offset(0, 1),
-              ),
-            ],
+            border: Border.all(color: surfaceBorderColor, width: 2),
           ),
           child: const Icon(
             Icons.push_pin_rounded,
-            size: 12,
+            size: 13,
             color: Colors.white,
           ),
         ),
@@ -112,15 +177,20 @@ class LibraryLeadingIndicators extends StatelessWidget {
             if (isPinned)
               Positioned(
                 top: 0,
-                left: 2,
-                child: LibraryPinnedIndicator(path: path),
+                left: 1,
+                child: LibraryPinnedIndicator(
+                  path: path,
+                  isSelected: isSelected,
+                ),
               ),
-            if (isSelected)
-              const Positioned(
-                bottom: 0,
-                left: 0,
-                child: LibrarySelectionIndicator(),
+            Positioned(
+              bottom: 0,
+              left: 1,
+              child: LibrarySelectionIndicator(
+                path: path,
+                isSelected: isSelected,
               ),
+            ),
           ],
         ),
       ),

@@ -32,63 +32,76 @@ class _AsmrWorkCover extends ConsumerWidget {
     return SizedBox(
       width: width,
       height: height,
-      child: ClipRRect(
-        clipBehavior: Clip.hardEdge,
-        borderRadius: BorderRadius.circular(LibraryLikeCardMetrics.coverRadius),
-        child: Stack(
-          children: [
-            SizedBox(
-              width: width,
-              height: height,
-              child: url.isEmpty
-                  ? CoverFallbackArtwork(seed: url, compact: true)
-                  : AsyncRemoteCoverImage(
-                      onImageError: library
-                          .coverArtworkCacheService
-                          .reportArtworkReadFailure,
-                      url: url,
-                      future: coverUi.deferredRemoteCover(
-                        url,
-                        context: context,
-                      ),
-                      initialPath: library.resolvedCoverPathForRemoteCover(url),
-                      retryFutureBuilder: () =>
-                          coverUi.deferredRemoteCover(url, context: context),
-                      retryDelay: const Duration(seconds: 5),
-                      maxRetryAttempts: 2,
-                      fit: BoxFit.cover,
-                      cacheWidth: coverCacheWidth,
-                      useDefaultCacheWidth: false,
-                      loadingBuilder: (_) => CoverLoadingArtwork(
-                        placeholder: CoverFallbackArtwork(
-                          seed: url,
-                          compact: true,
-                        ),
-                      ),
-                      fallbackBuilder: (_) =>
-                          CoverFallbackArtwork(seed: url, compact: true),
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          SizedBox(
+            width: width,
+            height: height,
+            child: ClipRRect(
+              clipBehavior: Clip.hardEdge,
+              borderRadius:
+                  BorderRadius.circular(LibraryLikeCardMetrics.coverRadius),
+              child: Stack(
+                children: [
+                  SizedBox(
+                    width: width,
+                    height: height,
+                    child: url.isEmpty
+                        ? CoverFallbackArtwork(seed: url, compact: true)
+                        : AsyncRemoteCoverImage(
+                            onImageError: library
+                                .coverArtworkCacheService
+                                .reportArtworkReadFailure,
+                            url: url,
+                            future: coverUi.deferredRemoteCover(
+                              url,
+                              context: context,
+                            ),
+                            initialPath:
+                                library.resolvedCoverPathForRemoteCover(url),
+                            retryFutureBuilder: () => coverUi
+                                .deferredRemoteCover(url, context: context),
+                            retryDelay: const Duration(seconds: 5),
+                            maxRetryAttempts: 2,
+                            fit: BoxFit.cover,
+                            cacheWidth: coverCacheWidth,
+                            useDefaultCacheWidth: false,
+                            loadingBuilder: (_) => CoverLoadingArtwork(
+                              placeholder: CoverFallbackArtwork(
+                                seed: url,
+                                compact: true,
+                              ),
+                            ),
+                            fallbackBuilder: (_) =>
+                                CoverFallbackArtwork(seed: url, compact: true),
+                          ),
+                  ),
+                  if (duration != null && duration! > Duration.zero)
+                    Positioned(
+                      right: 4,
+                      bottom: 4,
+                      child: DurationOverlay(duration: duration!),
                     ),
+                ],
+              ),
             ),
-            if (rjCode.trim().isNotEmpty)
-              Positioned(
-                left: 4,
-                top: 4,
-                child: RjCodeOverlay(rjCode: rjCode, maxWidth: width - 8),
-              ),
-            if (duration != null && duration! > Duration.zero)
-              Positioned(
-                right: 4,
-                bottom: 4,
-                child: DurationOverlay(duration: duration!),
-              ),
-            if (isSelected)
-              const Positioned(
-                left: 4,
-                bottom: 4,
-                child: _AsmrSelectionIndicator(),
-              ),
-          ],
-        ),
+          ),
+          if (rjCode.trim().isNotEmpty)
+            Positioned(
+              left: 4,
+              top: 4,
+              child: RjCodeOverlay(rjCode: rjCode, maxWidth: width - 8),
+            ),
+          Positioned(
+            left: -2,
+            bottom: -2,
+            child: _AsmrSelectionIndicator(
+              workId: rjCode.isNotEmpty ? rjCode : url,
+              isSelected: isSelected,
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -250,10 +250,15 @@ class AsmrDownloadTransferService {
       return const DownloadWriteResult.failure(bytesDownloaded: 0);
     }
 
-    final stagingFile = await _outputs.persistentStagingFile(
-      task.workRootPath,
-      item.relativePath,
-    );
+    // Local commits rename the staging file, which must stay on the target volume.
+    final stagingFile = PathMatcher.isContentUri(task.workRootPath)
+        ? await _outputs.persistentStagingFile(
+            task.workRootPath,
+            item.relativePath,
+          )
+        : File(
+            '${_planner.resolveLocalPathWithin(task.workRootPath, item.relativePath)}.doujin.part',
+          );
     final stagingExisted = await stagingFile.exists();
     if (!stagingExisted) {
       _outputs.createdOutputPaths[workId]?.add(stagingFile.path);

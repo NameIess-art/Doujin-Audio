@@ -3682,8 +3682,8 @@ void main() {
             )
             .first,
       );
-      expect(pinPosition.right, 4);
-      expect(pinPosition.top, 4);
+      expect(pinPosition.right, -2);
+      expect(pinPosition.top, -2);
       expect(pinPosition.left, isNull);
 
       // Swipe card now shows unpin

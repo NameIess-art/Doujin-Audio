@@ -6,6 +6,7 @@ import 'package:path/path.dart' as path;
 
 import '../../../../app/state/app_runtime_providers.dart';
 import '../../../../app/state/subtitle_settings_provider.dart';
+import '../../../../app/theme/app_styles.dart';
 import '../../../../core/media/path_matcher.dart';
 import '../../../../core/widgets/app_bottom_sheet.dart';
 import '../../../../core/widgets/app_feedback.dart';
@@ -183,18 +184,189 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
       }
       final selected = await showDialog<WorkTextFile>(
         context: context,
-        builder: (dialogContext) => SimpleDialog(
-          title: Text(i18n.tr('subtitle_script_generate')),
-          children: [
-            for (final file in files)
-              SimpleDialogOption(
-                onPressed: () => Navigator.pop(dialogContext, file),
-                child: Text(
-                  file.relativePath.isEmpty ? file.name : file.relativePath,
+        builder: (dialogContext) {
+          final theme = Theme.of(dialogContext);
+          final cs = theme.colorScheme;
+          return SimpleDialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(AppRadius.dialog),
+              side: BorderSide(
+                color: cs.outlineVariant.withValues(alpha: 0.35),
+                width: 0.5,
+              ),
+            ),
+            backgroundColor: cs.surfaceContainerHigh,
+            surfaceTintColor: Colors.transparent,
+            titlePadding: const EdgeInsets.fromLTRB(20, 20, 16, 12),
+            contentPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            title: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: cs.primaryContainer.withValues(alpha: 0.6),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Icon(
+                        Icons.text_snippet_rounded,
+                        color: cs.primary,
+                        size: 22,
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            i18n.tr('subtitle_script_generate'),
+                            style: theme.textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            i18n.tr('subtitle_script_hint'),
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: cs.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    IconButton(
+                      icon: const Icon(Icons.close_rounded, size: 20),
+                      visualDensity: VisualDensity.compact,
+                      color: cs.onSurfaceVariant,
+                      tooltip: i18n.tr('cancel'),
+                      onPressed: () => Navigator.pop(dialogContext),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Divider(
+                  height: 1,
+                  thickness: 0.5,
+                  color: cs.outlineVariant.withValues(alpha: 0.35),
+                ),
+              ],
+            ),
+            children: [
+              ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.sizeOf(context).height * 0.45,
+                ),
+                child: ScrollConfiguration(
+                  behavior: ScrollConfiguration.of(
+                    dialogContext,
+                  ).copyWith(scrollbars: false),
+                  child: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                      for (final file in files) () {
+                        final displayPath = file.relativePath.isEmpty
+                            ? file.name
+                            : file.relativePath;
+                        final ext = path.extension(file.name).toLowerCase();
+                        final isMd = ext == '.md';
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 4),
+                          child: Material(
+                            color: cs.surfaceContainerHighest.withValues(
+                              alpha: 0.4,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              side: BorderSide(
+                                color: cs.outlineVariant.withValues(
+                                  alpha: 0.3,
+                                ),
+                                width: 0.5,
+                              ),
+                            ),
+                            clipBehavior: Clip.antiAlias,
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(12),
+                              splashColor: cs.primary.withValues(alpha: 0.16),
+                              hoverColor: cs.primary.withValues(alpha: 0.08),
+                              onTap: () => Navigator.pop(dialogContext, file),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 14,
+                                  vertical: 11,
+                                ),
+                                child: Row(
+                                  children: [
+                                    Container(
+                                      width: 34,
+                                      height: 34,
+                                      decoration: BoxDecoration(
+                                        color: isMd
+                                            ? cs.secondaryContainer.withValues(
+                                                alpha: 0.7,
+                                              )
+                                            : cs.tertiaryContainer.withValues(
+                                                alpha: 0.7,
+                                              ),
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: Center(
+                                        child: Text(
+                                          isMd ? 'MD' : 'TXT',
+                                          style: TextStyle(
+                                            fontSize: 10.5,
+                                            fontWeight: FontWeight.w700,
+                                            color: isMd
+                                                ? cs.onSecondaryContainer
+                                                : cs.onTertiaryContainer,
+                                            letterSpacing: 0.5,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Text(
+                                        displayPath,
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: theme.textTheme.bodyMedium?.copyWith(
+                                          fontWeight: FontWeight.w600,
+                                          color: cs.onSurface,
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Icon(
+                                      Icons.arrow_forward_ios_rounded,
+                                      size: 13,
+                                      color: cs.onSurfaceVariant.withValues(
+                                        alpha: 0.6,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        );
+                      }(),
+                    ],
+                  ),
                 ),
               ),
+            ),
           ],
-        ),
+          );
+        },
       );
       if (!mounted || selected == null) return;
       final selectedPath = selected.path;
@@ -345,19 +517,251 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
     }
     final targetLanguage = await showDialog<String>(
       context: context,
-      builder: (dialogContext) => SimpleDialog(
-        title: Text(i18n.tr('subtitle_choose_language')),
-        children: [
-          SimpleDialogOption(
-            onPressed: () => Navigator.pop(dialogContext, 'zh'),
-            child: Text(i18n.tr('subtitle_language_zh')),
+      builder: (dialogContext) {
+        final theme = Theme.of(dialogContext);
+        final cs = theme.colorScheme;
+        return SimpleDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppRadius.dialog),
+            side: BorderSide(
+              color: cs.outlineVariant.withValues(alpha: 0.35),
+              width: 0.5,
+            ),
           ),
-          SimpleDialogOption(
-            onPressed: () => Navigator.pop(dialogContext, 'en'),
-            child: Text(i18n.tr('subtitle_language_en')),
+          backgroundColor: cs.surfaceContainerHigh,
+          surfaceTintColor: Colors.transparent,
+          titlePadding: const EdgeInsets.fromLTRB(20, 20, 16, 12),
+          contentPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          title: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: cs.primaryContainer.withValues(alpha: 0.6),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(
+                      Icons.translate_rounded,
+                      color: cs.primary,
+                      size: 22,
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          i18n.tr('subtitle_choose_language'),
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          i18n.tr('subtitle_translate_hint'),
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: cs.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  IconButton(
+                    icon: const Icon(Icons.close_rounded, size: 20),
+                    visualDensity: VisualDensity.compact,
+                    color: cs.onSurfaceVariant,
+                    tooltip: i18n.tr('cancel'),
+                    onPressed: () => Navigator.pop(dialogContext),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Divider(
+                height: 1,
+                thickness: 0.5,
+                color: cs.outlineVariant.withValues(alpha: 0.35),
+              ),
+            ],
           ),
-        ],
-      ),
+          children: [
+            () {
+              final isZh = i18n.locale.languageCode == 'zh';
+              final isEn = i18n.locale.languageCode == 'en';
+              final zhSubtitle = isZh
+                  ? 'Chinese (Simplified)'
+                  : '中文（简体）';
+              final enSubtitle = isEn
+                  ? '英语'
+                  : 'English';
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: Material(
+                      color: cs.surfaceContainerHighest.withValues(alpha: 0.4),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        side: BorderSide(
+                          color: cs.outlineVariant.withValues(alpha: 0.3),
+                          width: 0.5,
+                        ),
+                      ),
+                      clipBehavior: Clip.antiAlias,
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(14),
+                        splashColor: cs.primary.withValues(alpha: 0.16),
+                        hoverColor: cs.primary.withValues(alpha: 0.08),
+                        onTap: () => Navigator.pop(dialogContext, 'zh'),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 12,
+                          ),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 36,
+                                height: 36,
+                                decoration: BoxDecoration(
+                                  color: cs.primary.withValues(alpha: 0.14),
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: Center(
+                                  child: Text(
+                                    'ZH',
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w700,
+                                      color: cs.primary,
+                                      letterSpacing: 0.5,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 14),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      i18n.tr('subtitle_language_zh'),
+                                      style: theme.textTheme.bodyLarge?.copyWith(
+                                        fontWeight: FontWeight.w600,
+                                        color: cs.onSurface,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 1),
+                                    Text(
+                                      zhSubtitle,
+                                      style: theme.textTheme.bodySmall?.copyWith(
+                                        color: cs.onSurfaceVariant,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Icon(
+                                Icons.arrow_forward_ios_rounded,
+                                size: 14,
+                                color: cs.onSurfaceVariant.withValues(alpha: 0.6),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: Material(
+                      color: cs.surfaceContainerHighest.withValues(alpha: 0.4),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        side: BorderSide(
+                          color: cs.outlineVariant.withValues(alpha: 0.3),
+                          width: 0.5,
+                        ),
+                      ),
+                      clipBehavior: Clip.antiAlias,
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(14),
+                        splashColor: cs.secondary.withValues(alpha: 0.16),
+                        hoverColor: cs.secondary.withValues(alpha: 0.08),
+                        onTap: () => Navigator.pop(dialogContext, 'en'),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 12,
+                          ),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 36,
+                                height: 36,
+                                decoration: BoxDecoration(
+                                  color: cs.secondary.withValues(alpha: 0.14),
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: Center(
+                                  child: Text(
+                                    'EN',
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w700,
+                                      color: cs.secondary,
+                                      letterSpacing: 0.5,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 14),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      i18n.tr('subtitle_language_en'),
+                                      style: theme.textTheme.bodyLarge?.copyWith(
+                                        fontWeight: FontWeight.w600,
+                                        color: cs.onSurface,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 1),
+                                    Text(
+                                      enSubtitle,
+                                      style: theme.textTheme.bodySmall?.copyWith(
+                                        color: cs.onSurfaceVariant,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Icon(
+                                Icons.arrow_forward_ios_rounded,
+                                size: 14,
+                                color: cs.onSurfaceVariant.withValues(alpha: 0.6),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            }(),
+          ],
+        );
+      },
     );
     if (!mounted || targetLanguage == null) return;
     if (!await _confirmModelDownload(SubtitleModelStore.translation)) return;
@@ -665,11 +1069,24 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
                                 ? cs.primary
                                 : cs.onSurface.withValues(alpha: 0.38),
                           ),
-                          title: Text(i18n.tr('subtitle_script_generate')),
+                          title: Text(
+                            i18n.tr('subtitle_script_generate'),
+                            style: theme.textTheme.bodyLarge?.copyWith(
+                              fontWeight: FontWeight.w600,
+                              color: generateEnabled
+                                  ? null
+                                  : cs.onSurface.withValues(alpha: 0.38),
+                            ),
+                          ),
                           subtitle: Text(
                             i18n.tr(
                               generationUnavailableKey ??
                                   'subtitle_script_hint',
+                            ),
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: generateEnabled
+                                  ? cs.onSurfaceVariant
+                                  : cs.onSurface.withValues(alpha: 0.38),
                             ),
                           ),
                           trailing:
@@ -682,7 +1099,13 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
                                     strokeWidth: 2,
                                   ),
                                 )
-                              : const Icon(Icons.chevron_right_rounded),
+                              : Icon(
+                                  Icons.chevron_right_rounded,
+                                  size: 20,
+                                  color: generateEnabled
+                                      ? null
+                                      : cs.onSurface.withValues(alpha: 0.38),
+                                ),
                           onTap: generateEnabled
                               ? () => _pickScriptFile(subtitles)
                               : null,
@@ -703,13 +1126,26 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
                                 ? cs.primary
                                 : cs.onSurface.withValues(alpha: 0.38),
                           ),
-                          title: Text(i18n.tr('subtitle_translate')),
+                          title: Text(
+                            i18n.tr('subtitle_translate'),
+                            style: theme.textTheme.bodyLarge?.copyWith(
+                              fontWeight: FontWeight.w600,
+                              color: translateEnabled
+                                  ? null
+                                  : cs.onSurface.withValues(alpha: 0.38),
+                            ),
+                          ),
                           subtitle: Text(
                             i18n.tr(
                               generationUnavailableKey ??
                                   (subtitleLanguage == SubtitleLanguage.other
                                       ? 'subtitle_non_japanese'
                                       : 'subtitle_translate_hint'),
+                            ),
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: translateEnabled
+                                  ? cs.onSurfaceVariant
+                                  : cs.onSurface.withValues(alpha: 0.38),
                             ),
                           ),
                           trailing:
@@ -722,7 +1158,13 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
                                     strokeWidth: 2,
                                   ),
                                 )
-                              : const Icon(Icons.chevron_right_rounded),
+                              : Icon(
+                                  Icons.chevron_right_rounded,
+                                  size: 20,
+                                  color: translateEnabled
+                                      ? null
+                                      : cs.onSurface.withValues(alpha: 0.38),
+                                ),
                           onTap: translateEnabled
                               ? () => _translateSubtitle(subtitleLanguage)
                               : null,

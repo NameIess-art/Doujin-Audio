@@ -36,7 +36,8 @@ class LibraryLikeCardMetrics {
   static const double titleBlockHeight = 38;
   static const double coverAspectRatio = kStandardCoverAspectRatio;
   static const double coverRadius = 8;
-  static const double cardRadius = 10;
+  static const double coverDistance = AppSpacing.xs;
+  static const double cardRadius = coverRadius + coverDistance;
   static const double actionButtonSize = 40;
   static const double compactActionButtonLayoutSize = 32;
   static const double listHorizontalPadding = AppSpacing.xs;

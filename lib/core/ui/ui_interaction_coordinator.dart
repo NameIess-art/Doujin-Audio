@@ -52,12 +52,14 @@ class UiInteractionCoordinator extends ChangeNotifier {
     _navigationSources.remove(source);
     _navigationAllowed.value = _navigationSources.isEmpty;
     endInteraction(source);
+    _scheduleCommitFrame();
   }
 
   void cancelNavigation(Object source) {
     _navigationSources.remove(source);
     _navigationAllowed.value = _navigationSources.isEmpty;
     cancelInteraction(source);
+    _scheduleCommitFrame();
   }
 
   void beginInteraction(Object source) {
@@ -108,6 +110,7 @@ class UiInteractionCoordinator extends ChangeNotifier {
     int? generation,
     int priority = 100,
     bool allowDuringInteraction = false,
+    bool allowDuringScroll = false,
     required VoidCallback commit,
   }) {
     _pendingCommits[key] = _PendingCommit(
@@ -115,6 +118,7 @@ class UiInteractionCoordinator extends ChangeNotifier {
       generation: generation,
       priority: priority,
       allowDuringInteraction: allowDuringInteraction,
+      allowDuringScroll: allowDuringScroll,
       commit: commit,
     );
     _scheduleCommitFrame();
@@ -185,7 +189,7 @@ class UiInteractionCoordinator extends ChangeNotifier {
     var committedAny = false;
     for (final pending in commits) {
       if (committedAny && stopwatch.elapsed >= budget) break;
-      if (isInteracting && !pending.allowDuringInteraction) continue;
+      if (!_canRunCommit(pending)) continue;
       if (!identical(_pendingCommits[pending.key], pending)) continue;
       _pendingCommits.remove(pending.key);
       pending.commit();
@@ -194,12 +198,12 @@ class UiInteractionCoordinator extends ChangeNotifier {
     if (_hasRunnableCommits) _scheduleCommitFrame();
   }
 
-  bool get _hasRunnableCommits =>
-      _pendingCommits.isNotEmpty &&
-      (!isInteracting ||
-          _pendingCommits.values.any(
-            (commit) => commit.allowDuringInteraction,
-          ));
+  bool _canRunCommit(_PendingCommit commit) =>
+      !isInteracting ||
+      commit.allowDuringInteraction ||
+      (commit.allowDuringScroll && _navigationAllowed.value);
+
+  bool get _hasRunnableCommits => _pendingCommits.values.any(_canRunCommit);
 
   @visibleForTesting
   void flushPendingCommitsForTest() {
@@ -264,6 +268,7 @@ class _PendingCommit {
     required this.generation,
     required this.priority,
     required this.allowDuringInteraction,
+    required this.allowDuringScroll,
     required this.commit,
   });
 
@@ -271,6 +276,7 @@ class _PendingCommit {
   final int? generation;
   final int priority;
   final bool allowDuringInteraction;
+  final bool allowDuringScroll;
   final VoidCallback commit;
 }
 

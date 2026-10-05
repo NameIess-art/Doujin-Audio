@@ -239,6 +239,63 @@ void main() {
     coordinator.dispose();
   });
 
+  for (final cancelled in [false, true]) {
+    testWidgets(
+      'scroll commits resume after navigation ${cancelled ? 'is cancelled' : 'ends'} while scrolling continues',
+      (tester) async {
+        final coordinator = UiInteractionCoordinator();
+        addTearDown(coordinator.dispose);
+        final scroll = Object();
+        final navigation = Object();
+        var artwork = 0;
+        var backgroundCommitted = false;
+        var unrestrictedCommitted = false;
+        coordinator.beginInteraction(scroll);
+        coordinator.scheduleCommit(
+          key: 'artwork',
+          allowDuringScroll: true,
+          commit: () => artwork = 1,
+        );
+        coordinator.scheduleCommit(
+          key: 'background',
+          commit: () => backgroundCommitted = true,
+        );
+        await tester.pump();
+        expect(artwork, 1);
+        expect(backgroundCommitted, isFalse);
+
+        coordinator.beginNavigation(navigation);
+        coordinator.scheduleCommit(
+          key: 'artwork',
+          allowDuringScroll: true,
+          commit: () => artwork = 2,
+        );
+        coordinator.scheduleCommit(
+          key: 'unrestricted',
+          allowDuringInteraction: true,
+          commit: () => unrestrictedCommitted = true,
+        );
+        await tester.pump();
+        expect(artwork, 1);
+        expect(unrestrictedCommitted, isTrue);
+        if (cancelled) {
+          coordinator.cancelNavigation(navigation);
+        } else {
+          coordinator.endNavigation(navigation);
+        }
+        await tester.pump();
+        expect(coordinator.isInteracting, isTrue);
+        expect(artwork, 2);
+        expect(backgroundCommitted, isFalse);
+
+        coordinator.cancelInteraction(scroll);
+        await tester.pump(coordinator.idleDelay);
+        await tester.pump();
+        expect(backgroundCommitted, isTrue);
+      },
+    );
+  }
+
   testWidgets('drops commits from stale generations', (tester) async {
     final coordinator = UiInteractionCoordinator();
     final generation = coordinator.beginGeneration();

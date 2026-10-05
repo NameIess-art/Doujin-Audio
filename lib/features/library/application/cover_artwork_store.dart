@@ -16,12 +16,6 @@ const String coverArtworkStoreIndexFileName = 'index.json';
 
 enum CoverArtworkNamespace { remote, embedded, generated, legacy }
 
-typedef RemoteCoverValidation = ({
-  DateTime checkedAt,
-  String? etag,
-  String? lastModified,
-});
-
 String _canonicalLogicalKey(String value) {
   for (final prefix in const [
     'folder:',
@@ -63,7 +57,6 @@ final class CoverArtworkStore {
   final Future<Directory> Function() _temporaryDirectory;
   final Map<String, String> _bindings = <String, String>{};
   final Map<String, String> _legacyAliases = <String, String>{};
-  final Map<String, RemoteCoverValidation> _remoteValidation = {};
   Future<void>? _initializeFuture;
   Future<void> _operations = Future<void>.value();
   late Directory _root;
@@ -102,22 +95,6 @@ final class CoverArtworkStore {
             (decoded['version'] == 1 || decoded['version'] == 2)) {
           _decodeMap(decoded['bindings'], _bindings);
           _decodeMap(decoded['legacyAliases'], _legacyAliases);
-          final validation = decoded['remoteValidation'];
-          if (validation is Map) {
-            for (final entry in validation.entries) {
-              final data = entry.value;
-              if (data is! Map) continue;
-              final checkedAt = DateTime.tryParse(
-                data['checkedAt']?.toString() ?? '',
-              );
-              if (checkedAt == null) continue;
-              _remoteValidation[entry.key.toString()] = (
-                checkedAt: checkedAt,
-                etag: data['etag'] as String?,
-                lastModified: data['lastModified'] as String?,
-              );
-            }
-          }
         }
       }
     } catch (_) {
@@ -322,21 +299,6 @@ final class CoverArtworkStore {
     return _enqueue<void>(_persistIndex);
   }
 
-  RemoteCoverValidation? remoteValidation(String key) => _remoteValidation[key];
-
-  Future<void> saveRemoteValidation(
-    String key,
-    RemoteCoverValidation validation,
-  ) {
-    final epoch = _clearEpoch;
-    return _enqueue<void>(() async {
-      await initialize();
-      if (epoch != _clearEpoch || _remoteValidation[key] == validation) return;
-      _remoteValidation[key] = validation;
-      await _persistIndex();
-    });
-  }
-
   Future<int> migrateLegacyCaches({bool Function()? shouldCancel}) {
     return _enqueue<int>(() async {
       await initialize();
@@ -399,7 +361,6 @@ final class CoverArtworkStore {
       if (await _root.exists()) await _root.delete(recursive: true);
       _bindings.clear();
       _legacyAliases.clear();
-      _remoteValidation.clear();
       await _root.create(recursive: true);
       await _persistIndex();
       return deletedBytes;
@@ -455,14 +416,6 @@ final class CoverArtworkStore {
       'version': 2,
       'bindings': _bindings,
       'legacyAliases': _legacyAliases,
-      'remoteValidation': {
-        for (final entry in _remoteValidation.entries)
-          entry.key: {
-            'checkedAt': entry.value.checkedAt.toUtc().toIso8601String(),
-            'etag': entry.value.etag,
-            'lastModified': entry.value.lastModified,
-          },
-      },
     });
     try {
       await partial.writeAsString(payload, flush: true);

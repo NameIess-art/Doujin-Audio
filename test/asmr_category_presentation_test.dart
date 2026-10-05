@@ -100,6 +100,81 @@ void main() {
 
   for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
     testWidgets(
+      'ASMR adjacent preparation does not activate data on $platform',
+      (tester) async {
+        final controller = _PresentationController(createTestAsmrServices())
+          ..cacheValid = false;
+        final fixture = AppRuntimeWidgetTestFixture();
+        final activeTab = ValueNotifier<int>(0);
+        final completed = <int>[];
+        addTearDown(activeTab.dispose);
+        addTearDown(controller.dispose);
+        addTearDown(fixture.dispose);
+        await tester.pumpWidget(
+          fixture.build(
+            AppFadeThroughIndexedStack.lazy(
+              indexListenable: activeTab,
+              prepareAdjacentPage: true,
+              separateHeader: true,
+              itemCount: 2,
+              onTransitionCompleted: completed.add,
+              itemBuilder: (_, index) => index == 0
+                  ? const Center(child: Text('Local page'))
+                  : AsmrTab(
+                      key: const ValueKey('prepared_asmr'),
+                      tabIndex: 1,
+                      activeTabIndexListenable: activeTab,
+                    ),
+            ),
+            overrides: [
+              asmrLibraryControllerProvider.overrideWithValue(controller),
+            ],
+          ),
+        );
+        expect(find.byType(AsmrTab, skipOffstage: false), findsNothing);
+        await tester.pump(interaction.idleDelay);
+        await tester.pumpAndSettle();
+        final hidden = find.byKey(
+          const ValueKey('prepared_asmr'),
+          skipOffstage: false,
+        );
+        expect(hidden, findsOneWidget);
+        expect(TickerMode.valuesOf(tester.element(hidden)).enabled, isFalse);
+        expect(find.text('Local page'), findsOneWidget);
+        expect(activeTab.value, 0);
+        expect(completed, isEmpty);
+        expect(controller.initializations, 0);
+        expect(controller.categoryLoads, 0);
+        expect(controller.accountRestores, 0);
+
+        // In-memory projection reads do not count as catalog/account requests.
+        final hiddenProjectionReads = controller.categoryReads;
+        expect(hiddenProjectionReads, lessThanOrEqualTo(1));
+        controller.publish('Activated work');
+        await tester.pumpAndSettle();
+        expect(controller.categoryReads, hiddenProjectionReads);
+        expect(controller.initializations, 0);
+        expect(controller.categoryLoads, 0);
+        expect(controller.accountRestores, 0);
+
+        activeTab.value = 1;
+        await tester.pumpAndSettle();
+        await tester.pump(interaction.idleDelay);
+        await tester.pumpAndSettle();
+        expect(activeTab.value, 1);
+        expect(completed, [1]);
+        expect(controller.initializations, 1);
+        expect(controller.categoryLoads, 1);
+        expect(controller.accountRestores, 1);
+        expect(controller.categoryReads, greaterThan(hiddenProjectionReads));
+        expect(find.text('Activated work'), findsOneWidget);
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+      variant: TargetPlatformVariant({platform}),
+    );
+
+    testWidgets(
       'ASMR empty search uses root cache on its first frame on $platform',
       (tester) async {
         final controller = _PresentationController(createTestAsmrServices());
@@ -501,6 +576,7 @@ class _PresentationController extends AsmrLibraryController {
   String lastSearchQuery = '';
   int initializations = 0;
   int categoryLoads = 0;
+  int accountRestores = 0;
   bool cacheValid = true;
   AppLanguage _presentationLanguage = AppLanguage.zh;
 
@@ -603,7 +679,9 @@ class _PresentationController extends AsmrLibraryController {
   }
 
   @override
-  Future<void> restoreAsmrAccountSession({bool force = false}) async {}
+  Future<void> restoreAsmrAccountSession({bool force = false}) async {
+    accountRestores++;
+  }
 
   @override
   Future<void> syncAsmrAccount({bool force = false}) async {}

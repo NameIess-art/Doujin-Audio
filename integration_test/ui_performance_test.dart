@@ -119,7 +119,7 @@ void main() {
       reason: 'Unsupported PERF_SCENARIO=$_scenario',
     );
     expect(
-      const {'baseline', 'idle', 'resume', 'memory-pressure'},
+      const {'baseline', 'idle', 'resume', 'os-resume', 'memory-pressure'},
       contains(_transitionCondition),
       reason: 'Unsupported PERF_TRANSITION_CONDITION=$_transitionCondition',
     );
@@ -920,12 +920,68 @@ Map<String, Object> _imageCacheSample() {
   };
 }
 
-Future<void> _prepareTransitionCondition(WidgetTester tester) async {
+final class _MemoryPressureProbe with WidgetsBindingObserver {
+  int count = 0;
+
+  @override
+  void didHaveMemoryPressure() => count++;
+}
+
+Future<Map<String, Object>> _prepareTransitionCondition(
+  WidgetTester tester,
+) async {
   final binding = tester.binding;
+  if (_transitionCondition == 'os-resume') {
+    expect(
+      Platform.isAndroid,
+      true,
+      reason: 'os-resume requires Android and an external ADB driver',
+    );
+    return (await tester.runAsync(() async {
+      final paused = Completer<void>();
+      final resumed = Completer<void>();
+      final backgroundWatch = Stopwatch();
+      final memoryPressure = _MemoryPressureProbe();
+      binding.addObserver(memoryPressure);
+      final listener = AppLifecycleListener(
+        onStateChange: (state) {
+          if (state == AppLifecycleState.paused && !paused.isCompleted) {
+            backgroundWatch.start();
+            paused.complete();
+          } else if (state == AppLifecycleState.resumed &&
+              paused.isCompleted &&
+              !resumed.isCompleted) {
+            backgroundWatch.stop();
+            resumed.complete();
+          }
+        },
+      );
+      try {
+        // The host sends HOME, waits, then activates the existing .perf task.
+        // Do not synthesize lifecycle events or kill the process in this case.
+        debugPrint('PAGE_TRANSITION_OS_BACKGROUND_READY');
+        await paused.future.timeout(const Duration(seconds: 30));
+        await resumed.future.timeout(
+          const Duration(seconds: _idleSeconds + 120),
+        );
+        expect(
+          backgroundWatch.elapsed,
+          greaterThanOrEqualTo(const Duration(seconds: _idleSeconds)),
+        );
+        return <String, Object>{
+          'observedBackgroundMs': backgroundWatch.elapsedMilliseconds,
+          'observedMemoryPressureEvents': memoryPressure.count,
+        };
+      } finally {
+        listener.dispose();
+        binding.removeObserver(memoryPressure);
+      }
+    }))!;
+  }
   if (_transitionCondition == 'memory-pressure') {
     binding.handleMemoryPressure();
     await tester.pump();
-    return;
+    return const {};
   }
   if (_transitionCondition == 'resume') {
     binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
@@ -945,6 +1001,7 @@ Future<void> _prepareTransitionCondition(WidgetTester tester) async {
       binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
     }
   }
+  return const {};
 }
 
 // Captures the route created by the production card callback, without a
@@ -999,6 +1056,8 @@ Map<String, Object> _pageTransitionReport(
   'conditionApplication': 'Once before each opening cycle, starting on Library',
   'lifecycleSource': _transitionCondition == 'resume'
       ? 'Test binding lifecycle simulation; not OS background or surface recreation'
+      : _transitionCondition == 'os-resume'
+      ? 'External ADB HOME and activity activation; observed OS paused/resumed events'
       : 'No simulated background transition',
   'resumeRuntime': playing
       ? 'Started runtime with real playback'
@@ -1008,7 +1067,7 @@ Map<String, Object> _pageTransitionReport(
       : 'No simulated memory pressure',
   'samplingLimits':
       'Synthetic library/ASMR metadata and optional cover files; no cold-process restart, '
-      'OS task snapshot or renderer surface-loss measurement. ImageCache counters '
+      'OS task snapshot or renderer surface-loss trace. ImageCache counters '
       'exclude GPU textures, Dart heap and native player memory.',
   'conditions': samples.conditions,
   'rounds': samples.rounds,
@@ -1168,13 +1227,15 @@ Future<_TransitionSamples> _measurePageTransitions(
       'opening': opening,
       'condition': _transitionCondition,
       'requestedWaitSeconds':
-          _transitionCondition == 'idle' || _transitionCondition == 'resume'
+          _transitionCondition == 'idle' ||
+              _transitionCondition == 'resume' ||
+              _transitionCondition == 'os-resume'
           ? _idleSeconds
           : 0,
       'imageCacheBeforeCondition': _imageCacheSample(),
     };
     final conditionStarted = DateTime.now();
-    await _prepareTransitionCondition(tester);
+    conditionSample.addAll(await _prepareTransitionCondition(tester));
     conditionSample['conditionElapsedMs'] = DateTime.now()
         .difference(conditionStarted)
         .inMilliseconds;

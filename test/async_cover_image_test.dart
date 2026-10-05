@@ -5,6 +5,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -207,7 +208,7 @@ void main() {
           }
 
           final interactionSource = Object();
-          UiInteractionCoordinator.instance.beginInteraction(interactionSource);
+          UiInteractionCoordinator.instance.beginNavigation(interactionSource);
           await tester.pumpWidget(page());
           await tester.pump();
           if (cached) {
@@ -225,7 +226,7 @@ void main() {
                   .tracked,
               isFalse,
             );
-            UiInteractionCoordinator.instance.cancelInteraction(
+            UiInteractionCoordinator.instance.cancelNavigation(
               interactionSource,
             );
             await tester.pump();
@@ -695,10 +696,11 @@ void main() {
     },
   );
 
-  testWidgets('AsyncCoverImage retries when the first path is empty', (
+  testWidgets('AsyncCoverImage retries an empty path during interaction', (
     tester,
   ) async {
     var calls = 0;
+    UiInteractionCoordinator.instance.beginInteraction(Object());
 
     Future<String?> resolveCoverPath() async {
       calls += 1;
@@ -943,12 +945,14 @@ void main() {
     expect(tester.element(find.text('saved.image')), same(element));
   });
 
-  testWidgets('AsyncCoverImage defers completed cover during interaction', (
+  testWidgets('AsyncCoverImage defers completed cover during navigation', (
     tester,
   ) async {
     final completer = Completer<String?>();
     final interactionSource = Object();
-    UiInteractionCoordinator.instance.beginInteraction(interactionSource);
+    final scrollSource = Object();
+    UiInteractionCoordinator.instance.beginInteraction(scrollSource);
+    UiInteractionCoordinator.instance.beginNavigation(interactionSource);
 
     await tester.pumpWidget(
       MaterialApp(
@@ -969,10 +973,80 @@ void main() {
     await tester.pump();
     expect(find.text('loading'), findsOneWidget);
 
-    UiInteractionCoordinator.instance.finishInteractionsForTest();
+    UiInteractionCoordinator.instance.endNavigation(interactionSource);
     await tester.pump();
+    expect(UiInteractionCoordinator.instance.isInteracting, isTrue);
     expect(find.text('loaded:cover.png'), findsOneWidget);
+    UiInteractionCoordinator.instance.finishInteractionsForTest();
   });
+
+  for (final scrolling in [false, true]) {
+    testWidgets(
+      'cold cover resolves and decodes during ${scrolling ? 'a scroll drag' : 'a general interaction'}',
+      (tester) async {
+        final path = Completer<String?>();
+        final provider = _ControlledImageProvider();
+        final interactionSource = Object();
+        addTearDown(provider.evict);
+        await tester.pumpWidget(
+          MaterialApp(
+            home: ScrollActivityGate(
+              idleDelay: const Duration(seconds: 2),
+              child: ListView(
+                children: [
+                  SizedBox(
+                    height: 200,
+                    child: AsyncCoverImage(
+                      future: path.future,
+                      imageBuilder: (_, _) => RetryingImage(
+                        retryKey: provider,
+                        imageProviderBuilder: () => provider,
+                        fallbackBuilder: (_) => const Text('decoding'),
+                      ),
+                      loadingBuilder: (_) => const Text('loading'),
+                      fallbackBuilder: (_) => const Text('fallback'),
+                    ),
+                  ),
+                  const SizedBox(height: 1000),
+                ],
+              ),
+            ),
+          ),
+        );
+        final TestGesture? gesture;
+        if (scrolling) {
+          gesture = await tester.startGesture(
+            tester.getCenter(find.byType(ListView)),
+          );
+          await gesture.moveBy(const Offset(0, -40));
+          await tester.pump();
+        } else {
+          gesture = null;
+          UiInteractionCoordinator.instance.beginInteraction(interactionSource);
+        }
+        expect(UiInteractionCoordinator.instance.isInteracting, isTrue);
+        expect(provider.loadCount, 0);
+
+        path.complete('cover.png');
+        await tester.pump();
+        await tester.pump();
+        expect(find.text('loading'), findsNothing);
+        expect(provider.loadCount, 1);
+        provider.complete(await _createTestImage());
+        await tester.pumpAndSettle();
+        expect(UiInteractionCoordinator.instance.isInteracting, isTrue);
+        expect(find.text('decoding'), findsNothing);
+        expect(tester.widget<RawImage>(find.byType(RawImage)).image, isNotNull);
+        await gesture?.up();
+        await tester.pumpWidget(const SizedBox.shrink());
+        UiInteractionCoordinator.instance.cancelInteraction(interactionSource);
+      },
+      variant: const TargetPlatformVariant({
+        TargetPlatform.android,
+        TargetPlatform.windows,
+      }),
+    );
+  }
 
   testWidgets('AsyncCoverImage clears image when request key changes', (
     tester,
@@ -1002,10 +1076,11 @@ void main() {
     expect(find.text('loading'), findsOneWidget);
   });
 
-  testWidgets('RetryingImage rebuilds its provider after an image error', (
+  testWidgets('RetryingImage retries an image error during interaction', (
     tester,
   ) async {
     var providerBuilds = 0;
+    UiInteractionCoordinator.instance.beginInteraction(Object());
 
     await tester.pumpWidget(
       MaterialApp(
@@ -1037,9 +1112,10 @@ void main() {
   });
 
   testWidgets(
-    'RetryingImage waits for idle before initial load and source changes',
+    'RetryingImage waits for navigation before initial load and source changes',
     (tester) async {
       final interactionSource = Object();
+      final scrollSource = Object();
       final firstProvider = _ControlledImageProvider();
       final secondProvider = _ControlledImageProvider();
 
@@ -1058,27 +1134,29 @@ void main() {
         );
       }
 
-      UiInteractionCoordinator.instance.beginInteraction(interactionSource);
+      UiInteractionCoordinator.instance.beginInteraction(scrollSource);
+      UiInteractionCoordinator.instance.beginNavigation(interactionSource);
       await tester.pumpWidget(buildCover('first', firstProvider));
 
       expect(firstProvider.loadCount, 0);
       expect(find.text('loading:first'), findsOneWidget);
       expect(find.byType(Image), findsNothing);
 
-      UiInteractionCoordinator.instance.cancelInteraction(interactionSource);
+      UiInteractionCoordinator.instance.endNavigation(interactionSource);
       await tester.pump();
 
+      expect(UiInteractionCoordinator.instance.isInteracting, isTrue);
       expect(firstProvider.loadCount, 1);
       expect(find.byType(Image), findsOneWidget);
 
-      UiInteractionCoordinator.instance.beginInteraction(interactionSource);
+      UiInteractionCoordinator.instance.beginNavigation(interactionSource);
       await tester.pumpWidget(buildCover('second', secondProvider));
 
       expect(secondProvider.loadCount, 0);
       expect(find.text('loading:second'), findsOneWidget);
       expect(find.byType(Image), findsNothing);
 
-      UiInteractionCoordinator.instance.cancelInteraction(interactionSource);
+      UiInteractionCoordinator.instance.cancelNavigation(interactionSource);
       await tester.pump();
 
       expect(secondProvider.loadCount, 1);
@@ -1118,7 +1196,7 @@ void main() {
 
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump();
-      UiInteractionCoordinator.instance.beginInteraction(interactionSource);
+      UiInteractionCoordinator.instance.beginNavigation(interactionSource);
       await tester.pumpWidget(buildCover());
       await tester.pump();
 
@@ -1271,6 +1349,98 @@ void main() {
     );
     expect(find.byType(ImageFiltered), findsOneWidget);
   });
+
+  testWidgets(
+    'tile cover reuses its blurred drawing until its image or size changes',
+    (tester) async {
+      final firstProvider = _ControlledImageProvider();
+      final secondProvider = _ControlledImageProvider();
+      Widget subject(_ControlledImageProvider provider, double width) {
+        return MaterialApp(
+          home: Center(
+            child: SizedBox(
+              width: width,
+              height: 90,
+              child: RetryingImage(
+                retryKey: provider,
+                imageProviderBuilder: () => provider,
+                fallbackBuilder: (_) => const ColoredBox(color: Colors.pink),
+                displayMode: CoverImageDisplayMode.tile,
+              ),
+            ),
+          ),
+        );
+      }
+
+      await tester.pumpWidget(subject(firstProvider, 120));
+      final firstImage = await _createTestImage();
+      addTearDown(firstImage.dispose);
+      firstProvider.complete(firstImage);
+      await tester.pumpAndSettle();
+      // Both foreground and backdrop must share the same decode completer.
+      expect(firstProvider.loadCount, 1);
+
+      final filterFinder = find.byType(ImageFiltered);
+      final filter = tester.renderObject<RenderBox>(filterFinder);
+      final backdropFinder = find.descendant(
+        of: filterFinder,
+        matching: find.byType(RawImage),
+      );
+      final backdrop = tester.renderObject<RenderImage>(backdropFinder);
+      final stack = tester.renderObject<RenderStack>(
+        find
+            .descendant(
+              of: find.byType(RetryingImage),
+              matching: find.byType(Stack),
+            )
+            .first,
+      );
+      final layer = filter.debugLayer;
+      expect(layer, isA<ImageFilterLayer>());
+
+      var backdropPaints = 0;
+      var parentPaints = 0;
+      final previousPaintCallback = debugOnProfilePaint;
+      debugOnProfilePaint = (object) {
+        previousPaintCallback?.call(object);
+        if (identical(object, backdrop)) backdropPaints += 1;
+        if (identical(object, stack)) parentPaints += 1;
+      };
+
+      try {
+        for (var frame = 0; frame < 3; frame++) {
+          // A sibling repaint must not re-record the static blurred image.
+          stack.markNeedsPaint();
+          await tester.pump();
+        }
+        expect(parentPaints, 3);
+        expect(backdropPaints, 0);
+        expect(filter.debugLayer, same(layer));
+
+        await tester.pumpWidget(subject(firstProvider, 180));
+        expect(backdropPaints, greaterThan(0));
+        expect(filter.size.width, 180);
+        expect(firstProvider.loadCount, 1);
+
+        final sizeChangePaints = backdropPaints;
+        await tester.pumpWidget(subject(secondProvider, 180));
+        final secondImage = await _createTestImage();
+        addTearDown(secondImage.dispose);
+        secondProvider.complete(secondImage);
+        await tester.pumpAndSettle();
+        final updatedBackdrop = tester.renderObject<RenderImage>(backdropFinder);
+        expect(backdropPaints, greaterThan(sizeChangePaints));
+        expect(updatedBackdrop.image!.isCloneOf(secondImage), isTrue);
+        expect(secondProvider.loadCount, 1);
+      } finally {
+        debugOnProfilePaint = previousPaintCallback;
+      }
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
 
   testWidgets(
     'file covers retain the placeholder during decoding',

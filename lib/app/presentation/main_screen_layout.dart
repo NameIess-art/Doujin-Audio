@@ -88,8 +88,10 @@ extension _MainScreenLayout on _MainScreenState {
               child: AppFadeThroughIndexedStack.lazy(
                 key: const ValueKey<String>('main_page_stack'),
                 separateHeader: true,
+                prepareAdjacentPage: true,
                 indexListenable: _activePageIndex,
                 itemCount: destinations.length,
+                contentRevision: (showLocal, showAsmr),
                 itemBuilder: pageShell,
                 duration: kAppMotionSlow,
                 onTransitionCompleted: _handlePageTransitionCompleted,

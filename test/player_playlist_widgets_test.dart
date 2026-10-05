@@ -9,9 +9,11 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     show ProviderContainer, ProviderScope;
+import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'support/runtime_test_models.dart';
 import 'package:doujin_audio/app/presentation/app_presentation_providers.dart';
+import 'package:doujin_audio/app/presentation/app_orientation_controller.dart';
 import 'package:doujin_audio/app/state/app_runtime_providers.dart';
 import 'package:doujin_audio/app/state/subtitle_settings_provider.dart';
 import 'package:doujin_audio/app/theme/app_design_tokens.dart';
@@ -135,6 +137,7 @@ _pumpSubtitleDetail({
   List<MusicTrack>? queueTracks,
   bool preloadSubtitle = false,
   void Function(AppRuntimeWidgetTestFixture)? configureFixture,
+  List<Override> overrides = const [],
 }) async {
   tester.view.devicePixelRatio = 3;
   tester.view.physicalSize = physicalSize;
@@ -219,6 +222,7 @@ _pumpSubtitleDetail({
               ),
             ),
       subtitleService: subtitleService,
+      overrides: overrides,
     ),
   );
   await tester.pumpAndSettle();
@@ -5758,6 +5762,104 @@ void main() {
     await tester.pump(const Duration(milliseconds: 200));
     await tester.pumpAndSettle();
   });
+
+  testWidgets(
+    'portrait video fullscreen returns its only surface to landscape detail',
+    (tester) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+      final track = testMusicTrack(
+        name: 'Video',
+        path: '/videos/rotation.mp4',
+        groupKey: '/videos',
+        groupTitle: 'Videos',
+      ).copyWith(isVideo: true);
+      final setup = await _pumpSubtitleDetail(
+        tester: tester,
+        subtitleTrack: SubtitleTrack(sourcePath: 'empty.srt', cues: const []),
+        initialPosition: Duration.zero,
+        queueTracks: [track],
+        physicalSize: const Size(2880, 3840),
+        overrides: [
+          appOrientationControllerProvider.overrideWithValue(
+            AppOrientationController(
+              setPreferredOrientations: (_) async {},
+              setSystemUiMode: (_) async {},
+            ),
+          ),
+        ],
+      );
+      final session = setup.session
+        ..loadedPath = track.path
+        ..setOptimisticState(playing: true);
+      setup.fixture.playbackService.syncSlice(
+        activeSessions: [session],
+        playingSessionCount: 1,
+        focusedSessionId: session.id,
+        coverGeneration: 0,
+        isInitialized: true,
+      );
+      await tester.pumpAndSettle();
+      final inlineViewport = find.byType(
+        SessionVideoViewport,
+        skipOffstage: false,
+      );
+      final originalState = tester.state(inlineViewport);
+      expect(
+        tester.widget<SessionDetailContent>(find.byType(SessionDetailContent))
+            .isLandscape,
+        isFalse,
+      );
+      await tester.tap(
+        find.byKey(const ValueKey('session_video_tap_target')),
+      );
+      await tester.pump();
+      await tester.tap(find.byIcon(Icons.fullscreen_rounded));
+      await tester.pumpAndSettle();
+      expect(find.byType(SessionVideoFullscreenPage), findsOneWidget);
+      expect(
+        find.byType(NativeSessionVideoSurface, skipOffstage: false),
+        findsOneWidget,
+      );
+
+      tester.view.physicalSize = const Size(3840, 2880);
+      await tester.pumpAndSettle();
+      expect(tester.state(inlineViewport), same(originalState));
+      expect(
+        find.descendant(
+          of: inlineViewport,
+          matching: find.byType(NativeSessionVideoSurface, skipOffstage: false),
+        ),
+        findsNothing,
+      );
+      expect(
+        find.byType(NativeSessionVideoSurface, skipOffstage: false),
+        findsOneWidget,
+      );
+      await tester.tap(find.byKey(const ValueKey('fullscreen_video_exit')));
+      await tester.pumpAndSettle();
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 200)),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(SessionVideoFullscreenPage), findsNothing);
+      expect(
+        tester.widget<SessionDetailContent>(find.byType(SessionDetailContent))
+            .isLandscape,
+        isTrue,
+      );
+      expect(
+        find.descendant(
+          of: inlineViewport,
+          matching: find.byType(NativeSessionVideoSurface),
+        ),
+        findsOneWidget,
+      );
+      expect(tester.state(inlineViewport), same(originalState));
+      debugDefaultTargetPlatformOverride = null;
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets(
     'single-file queue cover fills the card and switcher shows an audio entry',

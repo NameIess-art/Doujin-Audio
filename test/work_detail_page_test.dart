@@ -1,6 +1,7 @@
 import 'package:doujin_audio/app/application/browse_page_state_store.dart';
 import 'package:doujin_audio/app/state/app_runtime_providers.dart';
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -17,6 +18,7 @@ import 'package:doujin_audio/core/media/dlsite_metadata.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
 import 'package:doujin_audio/core/platform/file_cache_platform_gateway.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
+import 'package:doujin_audio/core/ui/cover_image_retention.dart';
 import 'package:doujin_audio/core/widgets/app_feedback.dart';
 import 'package:doujin_audio/core/widgets/async_cover_image.dart';
 import 'package:doujin_audio/core/widgets/mobile_overlay_inset.dart';
@@ -36,6 +38,7 @@ import 'package:doujin_audio/features/library/presentation/work_image_viewer_pag
 import 'package:doujin_audio/features/settings/application/settings_state.dart';
 import 'package:doujin_audio/features/library/application/work_text_service.dart';
 import 'package:doujin_audio/features/library/application/cover_artwork_cache_service.dart';
+import 'package:doujin_audio/features/library/application/cover_artwork_store.dart';
 import 'package:doujin_audio/features/library/application/library_service.dart';
 import 'package:doujin_audio/features/library/application/library_organizer.dart';
 import 'package:doujin_audio/features/library/domain/library_node.dart';
@@ -2401,9 +2404,14 @@ void main() {
       );
     });
 
-    testWidgets('loads ASMR image URLs as network images', (tester) async {
+    testWidgets('loads ASMR image URLs through persistent artwork cache', (
+      tester,
+    ) async {
       SharedPreferences.setMockInitialValues(const <String, Object>{});
-      final fixture = AppRuntimeWidgetTestFixture();
+      final covers = _ControlledWorkDetailCoverService();
+      final fixture = AppRuntimeWidgetTestFixture(
+        coverArtworkCacheService: covers,
+      );
       addTearDown(fixture.dispose);
 
       await tester.pumpWidget(
@@ -2421,17 +2429,18 @@ void main() {
       );
       await tester.pump();
 
-      expect(find.byType(RetryingNetworkImage), findsOneWidget);
+      expect(find.byType(AsyncRemoteCoverImage), findsOneWidget);
       expect(find.byType(LocalCoverImage), findsNothing);
-      final foregroundImage = tester.widget<RetryingNetworkImage>(
+      final foregroundImage = tester.widget<AsyncRemoteCoverImage>(
         find.descendant(
           of: find.byKey(const ValueKey<String>('work_image_viewport')),
-          matching: find.byType(RetryingNetworkImage),
+          matching: find.byType(AsyncRemoteCoverImage),
         ),
       );
       expect(foregroundImage.fit, BoxFit.contain);
       expect(foregroundImage.displayMode, CoverImageDisplayMode.fill);
       expect(foregroundImage.cacheHeight, isNull);
+      expect(foregroundImage.useDefaultCacheWidth, isFalse);
       expect(
         find.descendant(
           of: find.byKey(const ValueKey<String>('work_image_viewport')),
@@ -2441,7 +2450,100 @@ void main() {
       );
 
       await tester.pumpWidget(const SizedBox.shrink());
+      covers.cover.complete(null);
     });
+
+    for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+      testWidgets('reuses and repairs cached viewer artwork on $platform', (
+        tester,
+      ) async {
+        SharedPreferences.setMockInitialValues(const <String, Object>{});
+        debugDefaultTargetPlatformOverride = platform;
+        addTearDown(() => debugDefaultTargetPlatformOverride = null);
+        final root = await tester.runAsync(
+          () => Directory.systemTemp.createTemp('作品图片 缓存 '),
+        );
+        addTearDown(() async {
+          if (await root!.exists()) await root.delete(recursive: true);
+        });
+        final bytes = base64Decode(
+          'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+        );
+        final artworkStore = CoverArtworkStore(
+          persistentDirectory: () async =>
+              Directory('${root!.path}/persistent'),
+          temporaryDirectory: () async => Directory('${root!.path}/temporary'),
+        );
+        var downloads = 0;
+        final covers = CoverArtworkCacheService(
+          libraryService: LibraryService(),
+          artworkStore: artworkStore,
+          remoteCoverDownloader: (url) async {
+            expect(url, 'https://example.com/remote.png');
+            downloads++;
+            return artworkStore.putBytes(
+              logicalKey: remoteCoverSearchKey(url)!,
+              bytes: bytes,
+              namespace: CoverArtworkNamespace.remote,
+            );
+          },
+        );
+        final fixture = AppRuntimeWidgetTestFixture(
+          coverArtworkCacheService: covers,
+        );
+        addTearDown(fixture.dispose);
+        const viewer = WorkImageViewerPage(
+          images: [
+            WorkImageItem(
+              name: 'remote.png',
+              path: 'https://example.com/remote.png',
+            ),
+          ],
+        );
+
+        Future<void> waitForArtwork() async {
+          for (var attempt = 0; attempt < 100; attempt++) {
+            await tester.pump(const Duration(milliseconds: 50));
+            await tester.runAsync(
+              () => Future<void>.delayed(const Duration(milliseconds: 10)),
+            );
+            if (find.byType(RetryingFileImage).evaluate().isNotEmpty &&
+                find.byType(CircularProgressIndicator).evaluate().isEmpty) {
+              return;
+            }
+          }
+          fail('Viewer artwork did not finish loading');
+        }
+
+        await tester.pumpWidget(fixture.build(viewer));
+        await waitForArtwork();
+        expect(downloads, 1);
+        final image = tester.widget<RetryingFileImage>(
+          find.byType(RetryingFileImage),
+        );
+        expect(image.path, contains('persistent'));
+        expect(image.fit, BoxFit.contain);
+        expect(image.displayMode, CoverImageDisplayMode.fill);
+        expect(image.useDefaultCacheWidth, isFalse);
+
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pumpWidget(fixture.build(viewer));
+        await waitForArtwork();
+        expect(downloads, 1);
+
+        await tester.pumpWidget(const SizedBox.shrink());
+        final provider = FileImage(File(image.path));
+        releaseRetainedCoverImage(provider);
+        await provider.evict();
+        await tester.runAsync(() => File(image.path).delete());
+        await tester.pumpWidget(fixture.build(viewer));
+        await waitForArtwork();
+        expect(downloads, 2);
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+        debugDefaultTargetPlatformOverride = null;
+      });
+    }
 
     testWidgets('empty images viewer uses theme surface background', (
       tester,

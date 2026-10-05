@@ -1723,6 +1723,222 @@ void main() {
     );
   }
 
+  for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+    testWidgets(
+      'idle prepares one neighbour without activating it on $platform',
+      (tester) async {
+        final index = ValueNotifier<int>(0);
+        addTearDown(index.dispose);
+        final coordinator = UiInteractionCoordinator.instance;
+        final builds = [0, 0, 0];
+        final layouts = [0, 0, 0];
+        final completed = <int>[];
+        await tester.pumpWidget(
+          MaterialApp(
+            home: AppFadeThroughIndexedStack.lazy(
+              indexListenable: index,
+              prepareAdjacentPage: true,
+              itemCount: 3,
+              onTransitionCompleted: completed.add,
+              itemBuilder: (_, page) {
+                builds[page]++;
+                return LayoutBuilder(
+                  builder: (context, constraints) {
+                    layouts[page]++;
+                    return _StateProbe(
+                      key: ValueKey(page),
+                      label: 'idle-$page',
+                    );
+                  },
+                );
+              },
+            ),
+          ),
+        );
+        expect(builds, [1, 0, 0]);
+        await tester.pump(coordinator.idleDelay);
+        await tester.pump();
+        expect(builds, [1, 1, 0]);
+        expect(layouts[1], 1);
+        expect(index.value, 0);
+        expect(completed, isEmpty);
+        expect(find.text('idle-1'), findsNothing);
+        final hidden = find.text('idle-1', skipOffstage: false);
+        final retained = tester.state(
+          find.byKey(const ValueKey(1), skipOffstage: false),
+        );
+        expect(TickerMode.valuesOf(tester.element(hidden)).enabled, isFalse);
+        expect(tester.renderObject<RenderBox>(hidden).hasSize, isTrue);
+        await tester.pump(const Duration(seconds: 1));
+        expect(builds, [1, 1, 0]);
+        expect(layouts[1], 1);
+
+        index.value = 1;
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 16));
+        expect(_translationFor(tester, 'idle-1').dx, lessThan(1));
+        expect(builds, [1, 1, 0]);
+        expect(tester.state(find.byKey(const ValueKey(1))), same(retained));
+        await tester.pumpAndSettle();
+        expect(completed, [1]);
+        // Disposing the stack also cancels the next neighbour's pending timer.
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump(const Duration(seconds: 1));
+        expect(builds[2], 0);
+        expect(tester.takeException(), isNull);
+      },
+      variant: TargetPlatformVariant({platform}),
+    );
+  }
+
+  testWidgets('idle preparation waits for interaction and lifecycle resume', (
+    tester,
+  ) async {
+    final index = ValueNotifier<int>(0);
+    addTearDown(index.dispose);
+    final coordinator = UiInteractionCoordinator.instance;
+    final source = Object();
+    final builds = [0, 0];
+    coordinator.beginInteraction(source);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AppFadeThroughIndexedStack.lazy(
+          indexListenable: index,
+          prepareAdjacentPage: true,
+          itemCount: 2,
+          itemBuilder: (_, page) {
+            builds[page]++;
+            return Text('lifecycle-$page');
+          },
+        ),
+      ),
+    );
+    await tester.pump(const Duration(seconds: 1));
+    expect(builds, [1, 0]);
+    coordinator.cancelInteraction(source);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    await tester.pump(const Duration(seconds: 1));
+    expect(builds, [1, 0]);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pump(coordinator.idleDelay);
+    await tester.pump();
+    expect(builds, [1, 1]);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+  });
+
+  testWidgets('queued idle layout is cancelled before backgrounding', (
+    tester,
+  ) async {
+    final index = ValueNotifier<int>(0);
+    addTearDown(index.dispose);
+    final layouts = [0, 0];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AppFadeThroughIndexedStack.lazy(
+          indexListenable: index,
+          prepareAdjacentPage: true,
+          itemCount: 2,
+          itemBuilder: (_, page) => LayoutBuilder(
+            builder: (_, constraints) {
+              layouts[page]++;
+              return Text('queued-$page');
+            },
+          ),
+        ),
+      ),
+    );
+    Timer(UiInteractionCoordinator.instance.idleDelay, () {
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    });
+    await tester.pump(UiInteractionCoordinator.instance.idleDelay);
+    await tester.pump();
+    expect(layouts, [1, 0]);
+    await tester.pumpWidget(const SizedBox.shrink());
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pump();
+  });
+
+  testWidgets('cancelled idle layout cannot mark an old size as prepared', (
+    tester,
+  ) async {
+    final index = ValueNotifier<int>(0);
+    final width = ValueNotifier<double>(300);
+    addTearDown(index.dispose);
+    addTearDown(width.dispose);
+    final sizes = [0.0, 0.0];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Center(
+          child: ValueListenableBuilder<double>(
+            valueListenable: width,
+            builder: (_, extent, _) => SizedBox(
+              width: extent,
+              height: 300,
+              child: AppFadeThroughIndexedStack.lazy(
+                indexListenable: index,
+                prepareAdjacentPage: true,
+                itemCount: 2,
+                itemBuilder: (_, page) => LayoutBuilder(
+                  builder: (_, constraints) {
+                    sizes[page] = constraints.maxWidth;
+                    return Text('cancelled-size-$page');
+                  },
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump(UiInteractionCoordinator.instance.idleDelay);
+    await tester.pump();
+    expect(sizes, [300, 300]);
+    width.value = 400;
+    await tester.pump();
+    expect(sizes, [400, 300]);
+    Timer(UiInteractionCoordinator.instance.idleDelay, () {
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    });
+    await tester.pump(UiInteractionCoordinator.instance.idleDelay);
+    expect(sizes, [400, 300]);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pump(UiInteractionCoordinator.instance.idleDelay);
+    await tester.pump();
+    expect(sizes, [400, 400]);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('zero duration does not prepare or flash neighbouring content', (
+    tester,
+  ) async {
+    final index = ValueNotifier<int>(0);
+    addTearDown(index.dispose);
+    final builds = [0, 0];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AppFadeThroughIndexedStack.lazy(
+          indexListenable: index,
+          prepareAdjacentPage: true,
+          duration: Duration.zero,
+          itemCount: 2,
+          itemBuilder: (_, page) {
+            builds[page]++;
+            return Text('instant-idle-$page');
+          },
+        ),
+      ),
+    );
+    await tester.pump(const Duration(seconds: 1));
+    expect(builds, [1, 0]);
+    expect(find.text('instant-idle-0'), findsOneWidget);
+    expect(find.text('instant-idle-1', skipOffstage: false), findsNothing);
+    index.value = 1;
+    await tester.pump();
+    expect(find.text('instant-idle-1'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   testWidgets('lazy stack skips unvisited pages during rapid switching', (
     tester,
   ) async {

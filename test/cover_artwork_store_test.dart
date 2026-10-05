@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:crypto/crypto.dart';
 import 'package:doujin_audio/features/library/application/cover_artwork_store.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as path;
@@ -129,6 +130,58 @@ void main() {
 
     expect(store.resolvedPath('missing'), isNull);
   });
+
+  test(
+    'old remote validation metadata cannot discard bindings or legacy aliases',
+    () async {
+      final store = createStore();
+      const key = 'remote-cover:https://example.com/cover.png';
+      final saved = await store.putBytes(
+        logicalKey: key,
+        bytes: base64Decode(
+          'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk'
+          '+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+        ),
+        namespace: CoverArtworkNamespace.remote,
+      );
+      final index = File(
+        path.join(store.rootPath!, coverArtworkStoreIndexFileName),
+      );
+      final legacyPath = path.join(temporaryDirectory.path, 'old-cover.image');
+      final original = jsonDecode(await index.readAsString()) as Map;
+      original['legacyAliases'] = {
+        sha256.convert(utf8.encode(path.normalize(legacyPath))).toString(): path
+            .relative(saved!, from: store.rootPath!),
+      };
+      for (final validation in <Object>[
+        {
+          key: {
+            'checkedAt': '2026-10-02T00:00:00.000Z',
+            'etag': '"old-cover"',
+            'lastModified': 'Fri, 02 Oct 2026 00:00:00 GMT',
+          },
+        },
+        {
+          key: {'checkedAt': '2026-10-02T00:00:00.000Z', 'etag': 123},
+        },
+        'malformed metadata',
+      ]) {
+        await index.writeAsString(
+          jsonEncode({...original, 'remoteValidation': validation}),
+        );
+        final restored = createStore();
+        await restored.initialize();
+        expect(await restored.validatedPath(key), saved);
+        expect(restored.resolveStoredPath(legacyPath), saved);
+        await restored.bind('folder:additional', 'content://covers/additional');
+        final rewritten = jsonDecode(await index.readAsString()) as Map;
+        expect(rewritten['version'], 2);
+        expect(rewritten.containsKey('remoteValidation'), isFalse);
+        expect(rewritten['bindings'][key], original['bindings'][key]);
+        expect(rewritten['legacyAliases'], original['legacyAliases']);
+      }
+    },
+  );
 
   test('restored synchronous lookups never query the filesystem', () async {
     final store = createStore();

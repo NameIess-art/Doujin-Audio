@@ -2,6 +2,7 @@ import 'package:doujin_audio/core/persistence/app_preferences.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_tab.dart';
 import 'package:doujin_audio/features/library/presentation/library_tab.dart';
+import 'package:doujin_audio/features/library/application/library_organizer.dart';
 import 'package:doujin_audio/features/player/presentation/playlist_tab.dart';
 import 'package:doujin_audio/features/settings/presentation/settings_providers.dart';
 import 'package:flutter/foundation.dart';
@@ -67,6 +68,58 @@ void main() {
     });
   });
   tearDown(UiInteractionCoordinator.instance.resetForTest);
+
+  testWidgets(
+    'LibraryTab refreshes a stale card snapshot on its first activation',
+    (tester) async {
+      var snapshotBuilds = 0;
+      final fixture = AppRuntimeWidgetTestFixture(
+        libraryCardSnapshotBuilder: (payload) async {
+          snapshotBuilds++;
+          return const LibraryOrganizer().buildCardTree(
+            tracks: payload.tracks,
+            watchedFolders: payload.watchedFolders,
+            watchedLibraries: payload.watchedLibraries,
+          );
+        },
+      );
+      final active = ValueNotifier<int>(1);
+      addTearDown(fixture.dispose);
+      addTearDown(active.dispose);
+      await fixture.library.ensureCardSnapshot();
+      fixture.libraryService.addWatchedFolder('/stale-library');
+      fixture.library.syncPresentationState(isInitialized: true);
+      snapshotBuilds = 0;
+      await tester.pumpWidget(
+        fixture.build(_pageHost(_page('LibraryTab', active), active)),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(snapshotBuilds, 0);
+      expect(fixture.library.state.isInitialized, isTrue);
+      expect(
+        fixture.library.state.treeSnapshotRevision,
+        lessThan(fixture.library.structureRevision),
+      );
+      final hiddenState = fixture.library.state;
+
+      // Change visibility only: no provider state or catalog notification.
+      active.value = 0;
+      await tester.pump();
+      expect(snapshotBuilds, 1);
+      await tester.pump();
+      expect(
+        fixture.library.state.treeSnapshotRevision,
+        fixture.library.structureRevision,
+      );
+      expect(hiddenState.isInitialized, fixture.library.state.isInitialized);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
 
   for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
     for (final name in ['LibraryTab', 'AsmrTab', 'PlaylistTab']) {

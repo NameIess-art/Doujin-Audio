@@ -688,6 +688,7 @@ class AppFadeThroughIndexedStack extends StatefulWidget {
     required this.indexListenable,
     required this.children,
     this.separateHeader = false,
+    this.prepareAdjacentPage = false,
     this.duration = const Duration(milliseconds: 350),
     this.onTransitionCompleted,
   }) : itemCount = children.length,
@@ -701,6 +702,7 @@ class AppFadeThroughIndexedStack extends StatefulWidget {
     required IndexedWidgetBuilder this.itemBuilder,
     this.contentRevision,
     this.separateHeader = false,
+    this.prepareAdjacentPage = false,
     this.duration = const Duration(milliseconds: 350),
     this.onTransitionCompleted,
   }) : children = List<Widget>.filled(itemCount, const SizedBox.shrink());
@@ -715,6 +717,9 @@ class AppFadeThroughIndexedStack extends StatefulWidget {
   /// Leave null to keep the initial widgets across parent rebuilds.
   final Object? contentRevision;
   final bool separateHeader;
+
+  /// Prepare one neighbouring page after idle without selecting it.
+  final bool prepareAdjacentPage;
   final Duration duration;
   final ValueChanged<int>? onTransitionCompleted;
 
@@ -724,7 +729,7 @@ class AppFadeThroughIndexedStack extends StatefulWidget {
 }
 
 class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   late final AnimationController _controller;
   late int _currentIndex;
   late int _targetIndex;
@@ -737,6 +742,10 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
   final Set<int> _preparedPages = {};
   BoxConstraints? _preparedConstraints;
   int? _pendingIndex;
+  int? _idlePreparationIndex;
+  Timer? _adjacentPreparationTimer;
+  bool _tickerEnabled = false;
+  bool _animationsDisabled = false;
 
   bool get _isLazy => widget.itemBuilder != null;
   int get _itemCount => widget.itemCount;
@@ -755,6 +764,63 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
     )..addStatusListener(_handleStatusChanged);
     _controller.value = 1;
     widget.indexListenable.addListener(_handleIndexChanged);
+    WidgetsBinding.instance.addObserver(this);
+    UiInteractionCoordinator.instance.addListener(_scheduleAdjacentPreparation);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _tickerEnabled = TickerMode.valuesOf(context).enabled;
+    _animationsDisabled = MediaQuery.disableAnimationsOf(context);
+    _scheduleAdjacentPreparation();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _scheduleAdjacentPreparation();
+  }
+
+  int? get _adjacentIndex {
+    if (_itemCount < 2) return null;
+    return _currentIndex + 1 < _itemCount
+        ? _currentIndex + 1
+        : _currentIndex - 1;
+  }
+
+  void _scheduleAdjacentPreparation() {
+    final coordinator = UiInteractionCoordinator.instance;
+    _adjacentPreparationTimer?.cancel();
+    _adjacentPreparationTimer = null;
+    if (!_canPrepareAdjacentPage) {
+      if (_idlePreparationIndex != null) {
+        setState(() => _idlePreparationIndex = null);
+      }
+      return;
+    }
+    if (_idlePreparationIndex != null) return;
+    final adjacent = _adjacentIndex;
+    if (adjacent == null || _preparedPages.contains(adjacent)) return;
+    // Keep startup and the navigation quiet tail free of speculative layout.
+    // Only one neighbour is built; no index changes or feature activation occur.
+    _adjacentPreparationTimer = Timer(coordinator.idleDelay, () {
+      _adjacentPreparationTimer = null;
+      if (!_canPrepareAdjacentPage || adjacent != _adjacentIndex) return;
+      setState(() => _idlePreparationIndex = adjacent);
+    });
+  }
+
+  bool get _canPrepareAdjacentPage {
+    final lifecycle = WidgetsBinding.instance.lifecycleState;
+    return mounted &&
+        widget.prepareAdjacentPage &&
+        widget.duration > Duration.zero &&
+        !_isAnimating &&
+        _pendingIndex == null &&
+        !UiInteractionCoordinator.instance.isInteracting &&
+        _tickerEnabled &&
+        !_animationsDisabled &&
+        (lifecycle == null || lifecycle == AppLifecycleState.resumed);
   }
 
   @override
@@ -798,6 +864,7 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
         }
       }
     }
+    _scheduleAdjacentPreparation();
   }
 
   void _resetLazyChildren() {
@@ -820,6 +887,7 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
     _controller.stop();
     _dirtyChildren.clear();
     _pendingIndex = null;
+    _idlePreparationIndex = null;
     _preparedPages.removeWhere((index) => index >= _itemCount);
     _isAnimating = false;
     _currentIndex = _safeIndex(widget.indexListenable.value);
@@ -837,6 +905,11 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
   void _handleIndexChanged() {
     if (!mounted || _itemCount == 0) return;
     final nextIndex = _safeIndex(widget.indexListenable.value);
+    _adjacentPreparationTimer?.cancel();
+    _adjacentPreparationTimer = null;
+    if (_idlePreparationIndex != null) {
+      setState(() => _idlePreparationIndex = null);
+    }
     if (_pendingIndex != null) setState(() => _pendingIndex = null);
     if (nextIndex == _targetIndex) {
       if (_isAnimating && _preparedPages.contains(nextIndex)) {
@@ -945,7 +1018,8 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
     final visible =
         index == _currentIndex ||
         index == _targetIndex ||
-        index == _pendingIndex;
+        index == _pendingIndex ||
+        index == _idlePreparationIndex;
     if (!visible) {
       return _lazyChildren[index] ?? const SizedBox.shrink();
     }
@@ -960,6 +1034,11 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
   @override
   void dispose() {
     widget.indexListenable.removeListener(_handleIndexChanged);
+    WidgetsBinding.instance.removeObserver(this);
+    UiInteractionCoordinator.instance.removeListener(
+      _scheduleAdjacentPreparation,
+    );
+    _adjacentPreparationTimer?.cancel();
     UiInteractionCoordinator.instance.cancelNavigation(_transitionInteraction);
     _controller.dispose();
     super.dispose();
@@ -969,11 +1048,13 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
     required Widget child,
     required bool visible,
     required bool preparing,
+    required bool idlePreparing,
   }) {
     final ticking = visible && !preparing;
     final interactive = ticking && !_isAnimating && _pendingIndex == null;
     return _AppPageOffstage(
-      offstage: !visible,
+      offstage: !visible || idlePreparing,
+      prepareLayout: idlePreparing,
       onVisibleLayout: _handleVisiblePageLayout,
       child: TickerMode(
         enabled: ticking,
@@ -993,7 +1074,7 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
     required bool outgoing,
     required bool incoming,
   }) {
-    final preparing = index == _pendingIndex;
+    final preparing = index == _pendingIndex || index == _idlePreparationIndex;
     final visible =
         preparing ||
         outgoing ||
@@ -1008,6 +1089,9 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
         final boundary = pageKey.currentContext?.findRenderObject();
         if (boundary is! RenderBox || !boundary.hasSize) return;
         _preparedPages.add(index);
+        if (_idlePreparationIndex == index) {
+          setState(() => _idlePreparationIndex = null);
+        }
         if (_pendingIndex == index) {
           _handleIndexChanged();
         }
@@ -1017,6 +1101,7 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
       child: _childAt(index),
       visible: visible,
       preparing: preparing,
+      idlePreparing: index == _idlePreparationIndex,
     );
     if (widget.duration == Duration.zero) {
       return KeyedSubtree(
@@ -1086,6 +1171,7 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
         if (index != _currentIndex &&
             index != _targetIndex &&
             index != _pendingIndex &&
+            index != _idlePreparationIndex &&
             (!_isLazy || _lazyChildren[index] != null))
           index,
       _currentIndex,
@@ -1094,6 +1180,11 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
           _pendingIndex != _targetIndex &&
           _pendingIndex != _currentIndex)
         _pendingIndex!,
+      if (_idlePreparationIndex != null &&
+          _idlePreparationIndex != _currentIndex &&
+          _idlePreparationIndex != _targetIndex &&
+          _idlePreparationIndex != _pendingIndex)
+        _idlePreparationIndex!,
     ];
     return IgnorePointer(
       ignoring: _isAnimating || _pendingIndex != null,
@@ -1123,8 +1214,10 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
         (index) =>
             index != _currentIndex &&
             index != _targetIndex &&
-            index != _pendingIndex,
+            index != _pendingIndex &&
+            index != _idlePreparationIndex,
       );
+      _scheduleAdjacentPreparation();
     }
   }
 }
@@ -1132,16 +1225,19 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
 class _AppPageOffstage extends Offstage {
   const _AppPageOffstage({
     required super.offstage,
+    required this.prepareLayout,
     required this.onVisibleLayout,
     required super.child,
   });
 
   final ValueChanged<BoxConstraints> onVisibleLayout;
+  final bool prepareLayout;
 
   @override
   RenderOffstage createRenderObject(BuildContext context) =>
       _RenderAppPageOffstage(
         offstage: offstage,
+        prepareLayout: prepareLayout,
         onVisibleLayout: onVisibleLayout,
       );
 
@@ -1152,14 +1248,23 @@ class _AppPageOffstage extends Offstage {
   ) {
     super.updateRenderObject(context, renderObject);
     renderObject.onVisibleLayout = onVisibleLayout;
+    renderObject.prepareLayout = prepareLayout;
   }
 }
 
 class _RenderAppPageOffstage extends RenderOffstage {
   _RenderAppPageOffstage({
     required super.offstage,
+    required bool prepareLayout,
     required this.onVisibleLayout,
-  });
+  }) : _prepareLayout = prepareLayout;
+
+  bool _prepareLayout;
+  set prepareLayout(bool value) {
+    if (_prepareLayout == value) return;
+    _prepareLayout = value;
+    markNeedsLayout();
+  }
 
   ValueChanged<BoxConstraints> onVisibleLayout;
 
@@ -1169,7 +1274,7 @@ class _RenderAppPageOffstage extends RenderOffstage {
     // element tree (scroll, expansion and provider state) without traversing a
     // cached list on each frame or window resize. Activation lays it out using
     // the latest constraints before painting or accepting input.
-    if (!offstage) {
+    if (!offstage || _prepareLayout) {
       onVisibleLayout(constraints);
       super.performLayout();
     }

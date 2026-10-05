@@ -6,7 +6,6 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/physics.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../app/presentation/app_presentation_providers.dart';
@@ -98,16 +97,6 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
       activeSessionDetailIdsProvider.notifier,
     );
     WidgetsBinding.instance.addObserver(this);
-    _systemUiRestored = false;
-    if (defaultTargetPlatform == TargetPlatform.android ||
-        defaultTargetPlatform == TargetPlatform.iOS) {
-      unawaited(
-        SystemChrome.setEnabledSystemUIMode(
-          SystemUiMode.manual,
-          overlays: const [SystemUiOverlay.bottom],
-        ),
-      );
-    }
     _dismissController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 180),
@@ -144,21 +133,9 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
         _closing;
   }
 
-  bool _systemUiRestored = false;
-
-  void _restoreSystemUiMode() {
-    if (_systemUiRestored) return;
-    _systemUiRestored = true;
-    if (defaultTargetPlatform == TargetPlatform.android ||
-        defaultTargetPlatform == TargetPlatform.iOS) {
-      unawaited(SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge));
-    }
-  }
-
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _restoreSystemUiMode();
     _dismissOperation++;
     UiInteractionCoordinator.instance.cancelInteraction(
       _dismissInteractionSource,

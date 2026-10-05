@@ -3,12 +3,14 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../app/presentation/app_presentation_providers.dart';
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../core/media/cover_image_resolution.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/async_cover_image.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/top_page_header.dart';
+import 'library_providers.dart';
 
 @immutable
 class WorkImageItem {
@@ -189,13 +191,33 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage> {
       ),
     );
     if (isRemoteImage) {
-      return RetryingNetworkImage(
-        url: imagePath,
-        fit: BoxFit.contain,
-        displayMode: CoverImageDisplayMode.fill,
-        useDefaultCacheWidth: false,
-        loadingBuilder: loadingIndicator,
-        fallbackBuilder: loadingIndicator,
+      return Consumer(
+        builder: (context, ref, _) {
+          final library = ref.read(libraryFacadeProvider);
+          ref.watch(
+            coverGenerationProvider.select(
+              (_) =>
+                  library.coverArtworkCacheService.revisionForScope(imagePath),
+            ),
+          );
+          final coverUi = ref.read(libraryCoverUiControllerProvider);
+          final resolved = library.resolvedCoverPathForRemoteCover(imagePath);
+          Future<String?> loadImage() =>
+              coverUi.deferredRemoteCover(imagePath, context: context);
+          return AsyncRemoteCoverImage(
+            url: imagePath,
+            future: resolved != null ? Future.value(resolved) : loadImage(),
+            initialPath: resolved,
+            retryFutureBuilder: loadImage,
+            onImageError:
+                library.coverArtworkCacheService.reportArtworkReadFailure,
+            fit: BoxFit.contain,
+            displayMode: CoverImageDisplayMode.fill,
+            useDefaultCacheWidth: false,
+            loadingBuilder: loadingIndicator,
+            fallbackBuilder: loadingIndicator,
+          );
+        },
       );
     }
     return RetryingFileImage(

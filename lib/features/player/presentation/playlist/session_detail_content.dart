@@ -64,6 +64,8 @@ class SessionDetailContent extends ConsumerStatefulWidget {
 }
 
 class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
+  // Reparent the artwork across orientations without losing fullscreen ownership.
+  final _artworkKey = GlobalKey();
   late final TextEditingController _segmentNameController;
   bool _segmentPanelExpanded = false;
   bool _segmentEditorVisible = false;
@@ -723,7 +725,7 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
       isLandscape: widget.isLandscape,
       padding: resolvedDetailPadding,
       segmentPanelExpanded: _segmentPanelExpanded,
-      artwork: widget.artworkWidget,
+      artwork: KeyedSubtree(key: _artworkKey, child: widget.artworkWidget),
       isVideo: track?.isVideo == true,
       title: displayName,
       sessionId: session.id,

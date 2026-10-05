@@ -7,17 +7,9 @@ import 'package:flutter/foundation.dart';
 
 import '../../../core/logging/app_log_service.dart';
 import 'cover_image_cache_policy.dart';
-import 'cover_artwork_store.dart';
 import '../../../core/media/path_matcher.dart';
 
 const String _asmrOneAcceptLanguage = 'zh-CN,zh;q=0.9,en;q=0.8';
-
-typedef RemoteCoverResponse = ({
-  Uint8List? bytes,
-  bool notModified,
-  String? etag,
-  String? lastModified,
-});
 
 /// Owns remote artwork transport and its bounded request lifetime.
 final class RemoteCoverDownloader {
@@ -54,10 +46,7 @@ final class RemoteCoverDownloader {
     }
   }
 
-  Future<RemoteCoverResponse?> fetch(
-    String remoteUrl, {
-    RemoteCoverValidation? validation,
-  }) async {
+  Future<Uint8List?> fetch(String remoteUrl) async {
     HttpClientRequest? request;
     try {
       final client = _remoteHttpClient ??= HttpClient();
@@ -68,23 +57,7 @@ final class RemoteCoverDownloader {
       for (final header in remoteCoverRequestHeadersForUrl(remoteUrl).entries) {
         request.headers.set(header.key, header.value);
       }
-      if (validation?.etag case final String etag) {
-        request.headers.set(HttpHeaders.ifNoneMatchHeader, etag);
-      } else if (validation?.lastModified case final String modified) {
-        request.headers.set(HttpHeaders.ifModifiedSinceHeader, modified);
-      }
       final response = await request.close().timeout(_requestTimeout);
-      final etag = response.headers.value(HttpHeaders.etagHeader);
-      final modified = response.headers.value(HttpHeaders.lastModifiedHeader);
-      if (response.statusCode == HttpStatus.notModified) {
-        await response.drain<void>();
-        return (
-          bytes: null,
-          notModified: true,
-          etag: etag ?? validation?.etag,
-          lastModified: modified ?? validation?.lastModified,
-        );
-      }
       if (response.statusCode < 200 || response.statusCode >= 300) {
         return null;
       }
@@ -107,16 +80,11 @@ final class RemoteCoverDownloader {
       if (totalBytes <= 0 || detectCoverMimeType('', headerBytes) == null) {
         return null;
       }
-      return (
-        bytes: bytes.takeBytes(),
-        notModified: false,
-        etag: etag,
-        lastModified: modified,
-      );
+      return bytes.takeBytes();
     } catch (error, stackTrace) {
       request?.abort(error, stackTrace);
       AppLogService.warning(
-        'Unable to cache remote notification cover.',
+        'Unable to cache remote artwork.',
         error: error,
         stackTrace: stackTrace,
       );

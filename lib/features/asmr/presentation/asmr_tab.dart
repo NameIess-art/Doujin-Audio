@@ -865,6 +865,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
                 ),
                 content: AppFadeThroughIndexedStack.lazy(
                   key: const ValueKey<String>('asmr_category_stack'),
+                  prepareAdjacentPage: true,
                   indexListenable: _activeCategoryIndex,
                   duration: kAppMotionSlow,
                   itemCount: _headerCategories.length,

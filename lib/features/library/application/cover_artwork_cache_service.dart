@@ -85,7 +85,7 @@ class CoverArtworkCacheService {
       now: now,
       isActiveCoverKey: isActiveCoverKey,
       onActiveCoverChanged: onActiveCoverChanged,
-      onCoverRefreshed: _remoteCoverRefreshed,
+      onCoverRepaired: _remoteCoverRepaired,
     );
     _sourceResolver = CoverArtworkSourceResolver(
       libraryService: libraryService,
@@ -458,10 +458,7 @@ class CoverArtworkCacheService {
   Future<String?> futureForRemoteCover(String url) =>
       _remoteCovers.resolve(url);
 
-  Future<String?> refreshRemoteCover(String url, {bool force = false}) =>
-      _remoteCovers.refresh(url, force: force);
-
-  void _remoteCoverRefreshed(String key) {
+  void _remoteCoverRepaired(String key) {
     _resolvedTrackCovers.remove(key);
     _resolvedTrackCoverFutures.remove(key);
     _playbackTrackCoverFutures.remove(key);

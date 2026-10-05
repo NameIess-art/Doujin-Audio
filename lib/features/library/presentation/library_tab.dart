@@ -100,6 +100,13 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     if (selected == _wasSelected) return;
     _wasSelected = selected;
     if (_isActive) {
+      final listState = ref.read(libraryListUiProvider);
+      if (listState.isInitialized) {
+        _ensureCardSnapshot(
+          libraryFacade: ref.read(libraryFacadeProvider),
+          snapshotRevision: listState.structureRevision,
+        );
+      }
       _ensureStartupRefreshStarted();
       if (_startupRefreshWaiting &&
           !UiInteractionCoordinator.instance.isInteracting) {

@@ -105,7 +105,7 @@ void main() {
   tearDown(UiInteractionCoordinator.instance.resetForTest);
 
   testWidgets(
-    'main pages lazily retain UI without activating paused playback sessions',
+    'main pages prepare one neighbour without activating paused playback sessions',
     (tester) async {
       debugDefaultTargetPlatformOverride = TargetPlatform.android;
       _setLogicalTestViewSize(tester, const Size(390, 820));
@@ -152,7 +152,9 @@ void main() {
       expect(harness.playback.sessions.length, 12);
       expect(libraryFinder, findsOneWidget);
       expect(asmrFinder, findsNothing);
-      expect(playlistFinder, findsNothing);
+      expect(playlistFinder, findsOneWidget);
+      expect(find.byType(PlaylistTab), findsNothing);
+      final preparedPlaylistState = tester.state(playlistFinder);
       final libraryState = tester.state(libraryFinder);
 
       Future<void> selectPage(String destination) async {
@@ -166,11 +168,13 @@ void main() {
       await selectPage('show_asmr_one');
       expect(asmrFinder, findsOneWidget);
       final asmrState = tester.state(asmrFinder);
-      expect(playlistFinder, findsNothing);
+      expect(tester.state(playlistFinder), same(preparedPlaylistState));
+      expect(find.byType(PlaylistTab), findsNothing);
 
       await selectPage('nav_sessions');
       expect(playlistFinder, findsOneWidget);
       final playlistState = tester.state(playlistFinder);
+      expect(playlistState, same(preparedPlaylistState));
       await tester.pump(const Duration(milliseconds: 900));
       await tester.pump();
       final scrollable = find
@@ -1576,7 +1580,7 @@ void main() {
       platformCalls.where(
         (call) => call.method == 'SystemChrome.setEnabledSystemUIMode',
       ),
-      isNotEmpty,
+      isEmpty,
     );
     navigator.pop();
     await tester.pump();
@@ -4019,6 +4023,92 @@ void main() {
     expect(MediaQuery.viewPaddingOf(tester.element(rail)).top, 24);
     debugDefaultTargetPlatformOverride = null;
   });
+
+  testWidgets(
+    'playback detail keeps system bars visible across portrait and landscape rotations',
+    (tester) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      _setLogicalTestViewSize(tester, const Size(800, 1400));
+      tester.view.padding = const FakeViewPadding(top: 32);
+      tester.view.viewPadding = const FakeViewPadding(top: 32);
+      final platformCalls = <MethodCall>[];
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+        platformCalls.add(call);
+        return null;
+      });
+      addTearDown(() {
+        debugDefaultTargetPlatformOverride = null;
+        tester.view.resetPadding();
+        tester.view.resetViewPadding();
+        messenger.setMockMethodCallHandler(SystemChannels.platform, null);
+      });
+      await _pumpAppShell(tester);
+      platformCalls.clear();
+      final navigator = Navigator.of(tester.element(find.byType(MainScreen)));
+      unawaited(
+        navigator.push(buildSessionDetailRoute(sessionId: 'orientation_session')),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        platformCalls.where(
+          (call) => call.method.startsWith('SystemChrome.setEnabledSystemUI'),
+        ),
+        isEmpty,
+      );
+      expect(tester.getRect(find.byType(SessionDetailContent)).top, 40);
+      tester.view.physicalSize = const Size(1400, 800);
+      tester.view.padding = const FakeViewPadding(top: 24);
+      tester.view.viewPadding = const FakeViewPadding(top: 24);
+      await tester.pumpAndSettle();
+      final closeButton = find.byKey(
+        const ValueKey('session_detail_close_button'),
+      );
+      final closeRect = tester.getRect(
+        find.ancestor(
+          of: closeButton,
+          matching: find.byType(HeaderFloatingButton),
+        ),
+      );
+      expect(closeRect.topLeft, const Offset(16, 30));
+      expect(tester.getRect(find.byType(SessionDetailContent)).top, 40);
+      tester.view.physicalSize = const Size(800, 1400);
+      tester.view.padding = const FakeViewPadding(top: 32);
+      tester.view.viewPadding = const FakeViewPadding(top: 32);
+      await tester.pumpAndSettle();
+      expect(tester.getRect(find.byType(SessionDetailContent)).top, 40);
+      expect(
+        platformCalls.where(
+          (call) => call.method.startsWith('SystemChrome.setEnabledSystemUI'),
+        ),
+        isEmpty,
+      );
+      tester.view.physicalSize = const Size(1400, 800);
+      tester.view.padding = const FakeViewPadding(top: 24);
+      tester.view.viewPadding = const FakeViewPadding(top: 24);
+      await tester.pumpAndSettle();
+      await tester.tap(closeButton);
+      await tester.pumpAndSettle();
+      unawaited(
+        navigator.push<void>(
+          buildAppPageRoute<void>(
+            context: navigator.context,
+            child: const Scaffold(
+              body: TopPageHeader(title: 'Detail', leading: BackButton()),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(tester.getRect(find.byType(HeaderFloatingButton)), closeRect);
+      navigator.pop();
+      await tester.pumpAndSettle();
+      await tester.pump(const Duration(milliseconds: 200));
+      debugDefaultTargetPlatformOverride = null;
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   for (final hideBeforeOpen in [false, true]) {
     testWidgets(

@@ -18,6 +18,7 @@ final class AppInteractionEffectsController {
        _interaction =
            interactionCoordinator ?? UiInteractionCoordinator.instance {
     _interaction.addListener(_syncInteractionState);
+    _interaction.navigationAllowed.addListener(_syncInteractionState);
     _syncInteractionState();
   }
 
@@ -32,7 +33,8 @@ final class AppInteractionEffectsController {
     if (_disposed) return;
     final paused = _interaction.isInteracting;
     _library.setInteractionPaused(paused);
-    _libraryCovers.setInteractionPaused(paused);
+    // Visible artwork can load during scrolling; only transitions defer it.
+    _libraryCovers.setInteractionPaused(!_interaction.navigationAllowed.value);
     _notifications.setSynchronizationPaused(paused);
     _warmup.setInteractionPaused(paused);
   }
@@ -41,6 +43,7 @@ final class AppInteractionEffectsController {
     if (_disposed) return;
     _disposed = true;
     _interaction.removeListener(_syncInteractionState);
+    _interaction.navigationAllowed.removeListener(_syncInteractionState);
     _library.setInteractionPaused(false);
     _libraryCovers.setInteractionPaused(false);
     _notifications.setSynchronizationPaused(false);

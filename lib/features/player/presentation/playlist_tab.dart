@@ -267,8 +267,29 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
   @override
   void initState() {
     super.initState();
+    widget.activeTabIndexListenable?.addListener(_handleActiveTabChanged);
     final controller = ref.read(mainScreenControllerProvider);
     initTabState(controller.scrollToTopTab, controller.stopScrollTab);
+  }
+
+  @override
+  void didUpdateWidget(covariant PlaylistTab oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.activeTabIndexListenable != widget.activeTabIndexListenable) {
+      oldWidget.activeTabIndexListenable?.removeListener(
+        _handleActiveTabChanged,
+      );
+      widget.activeTabIndexListenable?.addListener(_handleActiveTabChanged);
+    }
+    _handleActiveTabChanged();
+  }
+
+  void _handleActiveTabChanged() {
+    if (!mounted || !_isSelected || _initialPlaceholderDismissed) return;
+    // Hidden preparation may be followed by activation with unchanged data.
+    _scheduleInitialPlaceholderDismissal(
+      isInitialized: ref.read(playlistStructureUiProvider).isInitialized,
+    );
   }
 
   Future<void> _clearAllWithUndo(
@@ -355,6 +376,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
 
   @override
   void dispose() {
+    widget.activeTabIndexListenable?.removeListener(_handleActiveTabChanged);
     disposeTabState();
     _scrollController.dispose();
     super.dispose();

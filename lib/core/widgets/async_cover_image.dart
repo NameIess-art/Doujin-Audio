@@ -177,6 +177,7 @@ class _AsyncCoverImageState extends State<AsyncCoverImage> {
           UiInteractionCoordinator.instance.scheduleCommit(
             key: _commitKey,
             priority: 20,
+            allowDuringScroll: true,
             commit: () {
               if (!mounted || token != _token) return;
               final hasResolvedPath = path != null && path.isNotEmpty;
@@ -202,6 +203,7 @@ class _AsyncCoverImageState extends State<AsyncCoverImage> {
           UiInteractionCoordinator.instance.scheduleCommit(
             key: _commitKey,
             priority: 20,
+            allowDuringScroll: true,
             commit: () {
               if (!mounted || token != _token) return;
               if (!_isResolved ||
@@ -237,6 +239,7 @@ class _AsyncCoverImageState extends State<AsyncCoverImage> {
       UiInteractionCoordinator.instance.scheduleCommit(
         key: _retryCommitKey,
         priority: 20,
+        allowDuringScroll: true,
         commit: retry,
       );
     });
@@ -584,77 +587,6 @@ class _CoverFallbackTexturePainter extends CustomPainter {
   }
 }
 
-class RetryingNetworkImage extends ConsumerWidget {
-  const RetryingNetworkImage({
-    super.key,
-    required this.url,
-    required this.fallbackBuilder,
-    this.loadingBuilder,
-    this.fit,
-    this.alignment = Alignment.center,
-    this.cacheWidth,
-    this.cacheHeight,
-    this.color,
-    this.colorBlendMode,
-    this.useDefaultCacheWidth = true,
-    this.filterQuality = FilterQuality.medium,
-    this.gaplessPlayback = true,
-    this.retryDelay = const Duration(seconds: 2),
-    this.maxRetryAttempts = 12,
-    this.displayMode,
-  });
-
-  final String url;
-  final WidgetBuilder fallbackBuilder;
-  final WidgetBuilder? loadingBuilder;
-  final BoxFit? fit;
-  final AlignmentGeometry alignment;
-  final int? cacheWidth;
-  final int? cacheHeight;
-  final Color? color;
-  final BlendMode? colorBlendMode;
-  final bool useDefaultCacheWidth;
-  final FilterQuality filterQuality;
-  final bool gaplessPlayback;
-  final Duration retryDelay;
-  final int maxRetryAttempts;
-  final CoverImageDisplayMode? displayMode;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final trimmedUrl = url.trim();
-    if (trimmedUrl.isEmpty) {
-      return fallbackBuilder(context);
-    }
-    final effectiveCacheWidth = coverCacheWidth(
-      resolution: ref.watch(coverImageResolutionProvider),
-      cacheWidth: cacheWidth,
-      useDefaultCacheWidth: useDefaultCacheWidth,
-    );
-    final CoverImageDisplayMode effectiveDisplayMode =
-        displayMode ?? ref.watch(coverImageDisplayModeProvider);
-    return RetryingImage(
-      retryKey: (trimmedUrl, effectiveCacheWidth, cacheHeight),
-      imageProviderBuilder: () => ResizeImage.resizeIfNeeded(
-        effectiveCacheWidth,
-        cacheHeight,
-        NetworkImage(trimmedUrl),
-      ),
-      fallbackBuilder: fallbackBuilder,
-      loadingBuilder: loadingBuilder,
-      fit: fit,
-      alignment: alignment,
-      color: color,
-      colorBlendMode: colorBlendMode,
-      filterQuality: filterQuality,
-      gaplessPlayback: gaplessPlayback,
-      retryDelay: retryDelay,
-      maxRetryAttempts: maxRetryAttempts,
-      displayMode: effectiveDisplayMode,
-    );
-  }
-}
-
 class AsyncRemoteCoverImage extends StatelessWidget {
   const AsyncRemoteCoverImage({
     super.key,
@@ -677,6 +609,7 @@ class AsyncRemoteCoverImage extends StatelessWidget {
     this.duration = kCoverImageTransitionDuration,
     this.retryDelay = const Duration(seconds: 2),
     this.maxRetryAttempts = 12,
+    this.displayMode,
   });
 
   final String url;
@@ -697,6 +630,7 @@ class AsyncRemoteCoverImage extends StatelessWidget {
   final Duration duration;
   final Duration retryDelay;
   final int maxRetryAttempts;
+  final CoverImageDisplayMode? displayMode;
 
   final ValueChanged<String>? onImageError;
 
@@ -729,6 +663,8 @@ class AsyncRemoteCoverImage extends StatelessWidget {
           useDefaultCacheWidth: useDefaultCacheWidth,
           deferLoadDuringInteraction: deferLoadDuringInteraction,
           filterQuality: filterQuality,
+          displayMode: displayMode,
+          loadingBuilder: loadingBuilder,
           fallbackBuilder: fallbackBuilder,
         );
       },
@@ -873,8 +809,9 @@ class _RetryingImageState extends State<RetryingImage> {
   void initState() {
     super.initState();
     _loadEnabled =
-        !widget.deferLoadDuringInteraction || !_interaction.isInteracting;
-    _interaction.addListener(_handleInteractionChanged);
+        !widget.deferLoadDuringInteraction ||
+        _interaction.navigationAllowed.value;
+    _interaction.navigationAllowed.addListener(_handleNavigationChanged);
   }
 
   @override
@@ -885,7 +822,8 @@ class _RetryingImageState extends State<RetryingImage> {
       _interaction.cancelCommit(_retryCommitKey);
       _retryAttempt = 0;
       _loadEnabled =
-          !widget.deferLoadDuringInteraction || !_interaction.isInteracting;
+          !widget.deferLoadDuringInteraction ||
+          _interaction.navigationAllowed.value;
       _cacheCheckKey = null;
     }
   }
@@ -893,16 +831,15 @@ class _RetryingImageState extends State<RetryingImage> {
   @override
   void dispose() {
     _retryTimer?.cancel();
-    _interaction
-      ..removeListener(_handleInteractionChanged)
-      ..cancelCommit(_retryCommitKey);
+    _interaction.navigationAllowed.removeListener(_handleNavigationChanged);
+    _interaction.cancelCommit(_retryCommitKey);
     super.dispose();
   }
 
-  void _handleInteractionChanged() {
+  void _handleNavigationChanged() {
     if (!widget.deferLoadDuringInteraction ||
         !mounted ||
-        _interaction.isInteracting ||
+        !_interaction.navigationAllowed.value ||
         _loadEnabled) {
       return;
     }
@@ -966,6 +903,7 @@ class _RetryingImageState extends State<RetryingImage> {
       _interaction.scheduleCommit(
         key: _retryCommitKey,
         priority: 20,
+        allowDuringScroll: true,
         commit: retry,
       );
     });

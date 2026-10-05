@@ -793,7 +793,7 @@ void main() {
     await finishLibraryTest(tester, fixture);
   });
 
-  testWidgets('library cover lookups wait until scrolling becomes idle', (
+  testWidgets('library cover lookups continue while scrolling', (
     WidgetTester tester,
   ) async {
     final fixture = AppRuntimeWidgetTestFixture();
@@ -838,16 +838,11 @@ void main() {
           return <String, Object?>{'ok': true, 'value': null};
         });
 
-    await tester.pumpWidget(fixture.build(const LibraryTab()));
-    await tester.pump();
-    await tester.runAsync(
-      () => Future<void>.delayed(const Duration(milliseconds: 30)),
+    await tester.pumpWidget(
+      fixture.build(
+        LibraryTrackCoverThumbnail(track: runtimeGraph.library.library.single),
+      ),
     );
-    await tester.pump();
-
-    expect(trackCoverLookups, 0);
-
-    UiInteractionCoordinator.instance.cancelInteraction(interactionSource);
     for (var i = 0; i < 200 && trackCoverLookups == 0; i++) {
       await tester.pump(const Duration(milliseconds: 20));
       await tester.runAsync(
@@ -856,6 +851,8 @@ void main() {
     }
 
     expect(trackCoverLookups, greaterThan(0));
+    expect(UiInteractionCoordinator.instance.isInteracting, isTrue);
+    UiInteractionCoordinator.instance.cancelInteraction(interactionSource);
   });
 
   testWidgets(
@@ -921,14 +918,14 @@ void main() {
       ).obtainKey(ImageConfiguration.empty);
       final interaction = Object();
       addTearDown(() {
-        UiInteractionCoordinator.instance.cancelInteraction(interaction);
+        UiInteractionCoordinator.instance.cancelNavigation(interaction);
       });
       for (final surface in surfaces) {
         releaseRetainedCoverImages();
         PaintingBinding.instance.imageCache
           ..clear()
           ..clearLiveImages();
-        UiInteractionCoordinator.instance.beginInteraction(interaction);
+        UiInteractionCoordinator.instance.beginNavigation(interaction);
         Widget page() =>
             fixture.build(SizedBox(width: 240, height: 180, child: surface));
         await tester.pumpWidget(page());
@@ -945,7 +942,7 @@ void main() {
           PaintingBinding.instance.imageCache.statusForKey(imageKey).tracked,
           isFalse,
         );
-        UiInteractionCoordinator.instance.cancelInteraction(interaction);
+        UiInteractionCoordinator.instance.cancelNavigation(interaction);
         for (var tick = 0; tick < 100; tick++) {
           await tester.runAsync(
             () => Future<void>.delayed(const Duration(milliseconds: 10)),
@@ -960,11 +957,11 @@ void main() {
         expect(tester.widget<RawImage>(find.byType(RawImage)).image, isNotNull);
         await tester.pumpAndSettle();
         await tester.pumpWidget(const SizedBox.shrink());
-        UiInteractionCoordinator.instance.beginInteraction(interaction);
+        UiInteractionCoordinator.instance.beginNavigation(interaction);
         await tester.pumpWidget(page());
         await tester.pump();
         expect(tester.widget<RawImage>(find.byType(RawImage)).image, isNotNull);
-        UiInteractionCoordinator.instance.cancelInteraction(interaction);
+        UiInteractionCoordinator.instance.cancelNavigation(interaction);
         await tester.pumpWidget(const SizedBox.shrink());
       }
       await finishLibraryTest(tester, fixture);

@@ -72,16 +72,6 @@ Future<void> showSessionVideoFullscreen(
   } finally {
     await playback.setSessionTemporarySpeed(sessionId, null);
     await lease.release();
-    if (context.mounted &&
-        (defaultTargetPlatform == TargetPlatform.android ||
-            defaultTargetPlatform == TargetPlatform.iOS)) {
-      unawaited(
-        SystemChrome.setEnabledSystemUIMode(
-          SystemUiMode.manual,
-          overlays: const [SystemUiOverlay.bottom],
-        ),
-      );
-    }
   }
 }
 

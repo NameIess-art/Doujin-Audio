@@ -1,61 +1,71 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:doujin_audio/core/media/music_track.dart';
-
 import 'package:doujin_audio/features/library/application/cover_artwork_cache_service.dart';
 import 'package:doujin_audio/features/library/application/library_service.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  test(
-    'remote cover revalidation shares changed bytes across playback and survives restart',
-    () async {
-      final directory = await Directory.systemTemp.createTemp(
-        'remote_validation_',
-      );
-      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
-      addTearDown(() async {
-        await server.close(force: true);
-        await directory.delete(recursive: true);
-      });
-      var now = DateTime.utc(2026, 10, 2);
-      var requests = 0;
-      var version = 1;
-      var fail = false;
-      String? conditional;
-      server.listen((request) async {
-        requests++;
-        conditional = request.headers.value(HttpHeaders.ifNoneMatchHeader);
-        if (fail) {
-          request.response.statusCode = HttpStatus.serviceUnavailable;
-        } else if (conditional == '"$version"') {
-          request.response.statusCode = HttpStatus.notModified;
-        } else {
-          request.response.headers.set(HttpHeaders.etagHeader, '"$version"');
-          request.response.add([
-            0x89,
-            0x50,
-            0x4e,
-            0x47,
-            0x0d,
-            0x0a,
-            0x1a,
-            0x0a,
-            version,
-          ]);
-        }
+  late Directory directory;
+  late HttpServer server;
+  late LibraryService library;
+  late DateTime now;
+  late int requests;
+  late List<CoverArtworkCacheService> caches;
+  Future<void> Function(HttpRequest request)? respond;
+  final pngBytes = base64Decode(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk'
+    '+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+  );
+
+  setUp(() async {
+    directory = await Directory.systemTemp.createTemp('持久封面 cache ');
+    server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    library = LibraryService();
+    now = DateTime.utc(2026, 10, 2);
+    requests = 0;
+    caches = [];
+    respond = null;
+    server.listen((request) async {
+      requests++;
+      if (respond != null) {
+        await respond!(request);
+      } else {
+        request.response.add(pngBytes);
         await request.response.close();
-      });
-      final url = 'http://${server.address.address}:${server.port}/cover.png';
-      final library = LibraryService();
-      final cache = CoverArtworkCacheService(
-        libraryService: library,
-        persistentDirectory: () async => directory,
-        now: () => now,
-      );
-      addTearDown(library.dispose);
-      addTearDown(cache.dispose);
+      }
+    });
+  });
+
+  tearDown(() async {
+    for (final cache in caches) {
+      await cache.dispose();
+    }
+    await library.dispose();
+    await server.close(force: true);
+    await directory.delete(recursive: true);
+  });
+
+  CoverArtworkCacheService createCache() {
+    final cache = CoverArtworkCacheService(
+      libraryService: library,
+      persistentDirectory: () async => directory,
+      now: () => now,
+    );
+    caches.add(cache);
+    return cache;
+  }
+
+  String url(String name) =>
+      'http://${server.address.address}:${server.port}/$name.png';
+
+  test(
+    'remote artwork remains durable without requests after aging or offline restart',
+    () async {
+      final coverUrl = url('cover');
+      final cache = createCache();
       final track = MusicTrack(
         path: 'https://example.com/stream',
         displayName: 'work',
@@ -63,9 +73,13 @@ void main() {
         groupTitle: 'work',
         groupSubtitle: '',
         isSingle: false,
-        remoteCoverUrl: url,
+        remoteCoverUrl: coverUrl,
       );
-      final first = await cache.futureForRemoteCover(url);
+      final pending = cache.futureForRemoteCover(coverUrl);
+      expect(identical(cache.futureForRemoteCover(coverUrl), pending), isTrue);
+      final first = await pending;
+      expect(first, isNotNull);
+      expect(await File(first!).readAsBytes(), pngBytes);
       final playback = cache.futureForPlaybackTrack(track);
       var synchronous = false;
       unawaited(playback.then<void>((_) => synchronous = true));
@@ -73,45 +87,125 @@ void main() {
       expect(await playback, first);
       expect(requests, 1);
       now = now.add(const Duration(hours: 25));
-      expect(await cache.futureForRemoteCover(url), first);
-      await cache.refreshRemoteCover(url);
-      expect(requests, 2);
-      expect(conditional, '"1"');
+      expect(await cache.futureForRemoteCover(coverUrl), first);
+      now = now.add(const Duration(days: 365));
+      expect(await cache.futureForRemoteCover(coverUrl), first);
+      await Future<void>.delayed(Duration.zero);
+      expect(requests, 1);
       expect(cache.generation, 0);
-      version = 2;
-      final second = await cache.refreshRemoteCover(url, force: true);
-      expect(second, isNot(first));
-      expect(cache.generation, 1);
-      expect(cache.resolvedForPlaybackTrack(track), second);
-      expect(await cache.futureForPlaybackTrack(track), second);
-      final restarted = CoverArtworkCacheService(
-        libraryService: library,
-        persistentDirectory: () async => directory,
-        now: () => now,
-      );
-      addTearDown(restarted.dispose);
+
+      await cache.dispose();
+      final restarted = createCache();
       await restarted.initialize();
-      expect(restarted.resolvedForPlaybackTrack(track), second);
-      expect(await restarted.futureForRemoteCover(url), second);
-      expect(requests, 3);
-      fail = true;
-      expect(await cache.refreshRemoteCover(url, force: true), second);
-      expect(cache.resolvedForRemoteCover(url), second);
-      expect(cache.generation, 1);
-      final failedRequestCount = requests;
-      now = now.add(const Duration(minutes: 10));
-      expect(await cache.refreshRemoteCover(url), second);
-      expect(requests, failedRequestCount);
-      final offlineRestart = CoverArtworkCacheService(
-        libraryService: library,
-        persistentDirectory: () async => directory,
-        now: () => now,
-      );
-      addTearDown(offlineRestart.dispose);
+      expect(restarted.resolvedForPlaybackTrack(track), first);
+      expect(await restarted.futureForRemoteCover(coverUrl), first);
+      await Future<void>.delayed(Duration.zero);
+      expect(requests, 1);
+
+      await restarted.dispose();
+      await server.close(force: true);
+      final offlineRestart = createCache();
       await offlineRestart.initialize();
-      expect(await offlineRestart.futureForRemoteCover(url), second);
-      await offlineRestart.refreshRemoteCover(url);
-      expect(requests, failedRequestCount);
+      expect(await offlineRestart.futureForRemoteCover(coverUrl), first);
+      expect(await offlineRestart.futureForPlaybackTrack(track), first);
+      offlineRestart.trimMemory();
+      expect(await offlineRestart.futureForRemoteCover(coverUrl), first);
+      expect(await File(first).readAsBytes(), pngBytes);
+      expect(requests, 1);
+    },
+  );
+
+  test(
+    'different URLs are fetched once and share identical durable bytes',
+    () async {
+      final cache = createCache();
+      final first = await cache.futureForRemoteCover(url('first'));
+      final second = await cache.futureForRemoteCover(url('second'));
+      expect(first, isNotNull);
+      expect(second, first);
+      expect(requests, 2);
+      expect(await cache.futureForRemoteCover(url('first')), first);
+      expect(await cache.futureForRemoteCover(url('second')), second);
+      expect(requests, 2);
+    },
+  );
+
+  for (final missing in [false, true]) {
+    test(
+      '${missing ? 'missing' : 'corrupt'} remote artifact repairs at the same path and notifies',
+      () async {
+        final cache = createCache();
+        final coverUrl = url('repair');
+        final saved = await cache.futureForRemoteCover(coverUrl);
+        expect(saved, isNotNull);
+        if (missing) {
+          await File(saved!).delete();
+        } else {
+          await File(saved!).writeAsString('corrupt image');
+        }
+        final previousGeneration = cache.generation;
+        final repaired = cache.generationChanges.firstWhere(
+          (generation) => generation > previousGeneration,
+        );
+        cache.reportArtworkReadFailure(saved);
+        await repaired.timeout(const Duration(seconds: 2));
+        expect(await cache.futureForRemoteCover(coverUrl), saved);
+        expect(await File(saved).readAsBytes(), pngBytes);
+        expect(requests, 2);
+      },
+    );
+  }
+
+  test(
+    'explicit clearing downloads again and retires in-flight artwork',
+    () async {
+      final cache = createCache();
+      final coverUrl = url('clear');
+      final saved = await cache.futureForRemoteCover(coverUrl);
+      expect(saved, isNotNull);
+      expect(await cache.clearPersistentCache(), pngBytes.length);
+      expect(await File(saved!).exists(), isFalse);
+      expect(cache.resolvedForRemoteCover(coverUrl), isNull);
+      expect(await cache.futureForRemoteCover(coverUrl), saved);
+      expect(requests, 2);
+
+      final started = Completer<void>();
+      final release = Completer<void>();
+      respond = (request) async {
+        started.complete();
+        await release.future;
+        request.response.add(pngBytes);
+        await request.response.close();
+      };
+      final pendingUrl = url('pending');
+      final pending = cache.futureForRemoteCover(pendingUrl);
+      await started.future.timeout(const Duration(seconds: 2));
+      final generation = cache.generation;
+      final retired = cache.generationChanges.firstWhere(
+        (value) => value > generation,
+      );
+      final clearing = cache.clearPersistentCache();
+      await retired.timeout(const Duration(seconds: 2));
+      release.complete();
+      expect(await pending, isNull);
+      await clearing;
+      expect(cache.resolvedForRemoteCover(pendingUrl), isNull);
+      expect(
+        directory
+            .listSync(recursive: true)
+            .whereType<File>()
+            .where(
+              (file) =>
+                  file.path.endsWith('.image') || file.path.endsWith('.part'),
+            ),
+        isEmpty,
+      );
+      final restarted = createCache();
+      await restarted.initialize();
+      expect(restarted.resolvedForRemoteCover(pendingUrl), isNull);
+      respond = null;
+      expect(await restarted.futureForRemoteCover(pendingUrl), isNotNull);
+      expect(requests, 4);
     },
   );
 

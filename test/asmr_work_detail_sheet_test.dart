@@ -415,9 +415,9 @@ void main() {
           ..clearLiveImages();
         final interaction = Object();
         addTearDown(() {
-          UiInteractionCoordinator.instance.cancelInteraction(interaction);
+          UiInteractionCoordinator.instance.cancelNavigation(interaction);
         });
-        UiInteractionCoordinator.instance.beginInteraction(interaction);
+        UiInteractionCoordinator.instance.beginNavigation(interaction);
         await tester.pumpWidget(
           fixture.build(
             SizedBox(width: 200, height: 150, child: cardArtwork),
@@ -441,7 +441,7 @@ void main() {
           PaintingBinding.instance.imageCache.statusForKey(sharedKey).tracked,
           isFalse,
         );
-        UiInteractionCoordinator.instance.cancelInteraction(interaction);
+        UiInteractionCoordinator.instance.cancelNavigation(interaction);
         for (var tick = 0; tick < 100; tick++) {
           await tester.runAsync(
             () => Future<void>.delayed(const Duration(milliseconds: 10)),
@@ -462,7 +462,7 @@ void main() {
         );
         await tester.pumpAndSettle();
         await tester.pumpWidget(const SizedBox.shrink());
-        UiInteractionCoordinator.instance.beginInteraction(interaction);
+        UiInteractionCoordinator.instance.beginNavigation(interaction);
         await tester.pumpWidget(
           fixture.build(
             SizedBox(width: 200, height: 150, child: cardArtwork),
@@ -475,7 +475,7 @@ void main() {
           tester.widget<RawImage>(find.byType(RawImage)).image,
           isNotNull,
         );
-        UiInteractionCoordinator.instance.cancelInteraction(interaction);
+        UiInteractionCoordinator.instance.cancelNavigation(interaction);
         expect(
           sharedKey,
           await resizeFileImageIfNeeded(

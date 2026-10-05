@@ -113,14 +113,17 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
       :playbackGeometryKey,
       :onReportPlaybackRect,
     ) = widget;
-    final motionDuration = _disableAnimations
-        ? Duration.zero
-        : const Duration(milliseconds: 300);
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final isLandscapeLayout =
         defaultTargetPlatform == TargetPlatform.windows ||
         MediaQuery.orientationOf(context) == Orientation.landscape;
+    // Keep the landscape shell in sync with NavigationRail's width animation.
+    final motionDuration = _disableAnimations
+        ? Duration.zero
+        : isLandscapeLayout
+        ? kThemeAnimationDuration
+        : const Duration(milliseconds: 300);
     final double expandedWidth = isLandscapeLayout ? 260 : 292;
     final double collapsedWidth = isLandscapeLayout ? 80 : 92;
     final double containerWidth = isMenuCollapsed

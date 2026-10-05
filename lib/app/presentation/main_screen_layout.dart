@@ -181,15 +181,17 @@ extension _MainScreenLayout on _MainScreenState {
 
     final entries = destinations.asMap().entries.toList();
     final activeIndex = selectedIndex.clamp(0, destinations.length - 1);
-    // ASMR.ONE occupies the first slot. Keep that motion anchor independent
-    // of selection, then show the active destination once the icons overlap.
+    // Keep the active destination on top throughout collapsing and expanding,
+    // smoothly folding inactive destinations beneath it.
     final collapsed = stackProgress == 1;
-    final layeredEntries = [if (!collapsed) ...entries.skip(1), entries.first];
+    final layeredEntries = [
+      if (!collapsed) ...entries.where((entry) => entry.key != activeIndex),
+      entries[activeIndex],
+    ];
     final items = layeredEntries.map((entry) {
       final index = entry.key;
-      final destinationIndex = index == 0 && collapsed ? activeIndex : index;
-      final item = destinations[destinationIndex];
-      final selected = destinationIndex == activeIndex;
+      final item = destinations[index];
+      final selected = index == activeIndex;
       final label = item.labelKey == 'show_asmr_one'
           ? 'ASMR.ONE'
           : i18n.tr(item.labelKey);
@@ -200,6 +202,63 @@ extension _MainScreenLayout on _MainScreenState {
           expandedWidth * (index + 0.5) / destinations.length -
           kActiveSessionCarouselDockHeight / 2;
       final progress = index == 0 ? anchorProgress : stackProgress;
+      final inactiveOpacity = selected
+          ? 1.0
+          : (1.0 - stackProgress).clamp(0.0, 1.0);
+      final inactiveScale = selected
+          ? 1.0
+          : (1.0 - 0.15 * stackProgress).clamp(0.0, 1.0);
+
+      final iconStack = Stack(
+        alignment: Alignment.center,
+        children: [
+          AnimatedContainer(
+            duration: MediaQuery.disableAnimationsOf(context)
+                ? Duration.zero
+                : const Duration(milliseconds: 300),
+            curve: Curves.easeOutCubic,
+            width: selected ? 44 : 0,
+            height: selected ? 44 : 0,
+            decoration: BoxDecoration(
+              color: selected
+                  ? activeColor.withValues(alpha: 0.11)
+                  : Colors.transparent,
+              shape: BoxShape.circle,
+            ),
+          ),
+          AnimatedSwitcher(
+            duration: MediaQuery.disableAnimationsOf(context)
+                ? Duration.zero
+                : kAppMotionFast,
+            switchInCurve: Curves.easeOutCubic,
+            switchOutCurve: Curves.easeInCubic,
+            transitionBuilder: (child, animation) =>
+                buildAppScaleFadeTransition(
+                  context: context,
+                  animation: animation,
+                  child: child,
+                  beginScale: 0.9,
+                ),
+            child: Icon(
+              selected ? item.selectedIcon : item.icon,
+              key: ValueKey<bool>(selected),
+              size: 28,
+              color: selected ? activeColor : inactive,
+            ),
+          ),
+        ],
+      );
+
+      final content = selected || stackProgress == 0
+          ? iconStack
+          : Opacity(
+              opacity: inactiveOpacity,
+              child: Transform.scale(
+                scale: inactiveScale,
+                child: iconStack,
+              ),
+            );
+
       return Positioned(
         left: expandedLeft * (1 - progress),
         top: 0,
@@ -222,46 +281,8 @@ extension _MainScreenLayout on _MainScreenState {
                   ),
                   onTap: isPlaybackExpanded && selected
                       ? onCurrentTap
-                      : () => _switchPage(destinationIndex),
-                  child: Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      AnimatedContainer(
-                        duration: MediaQuery.disableAnimationsOf(context)
-                            ? Duration.zero
-                            : const Duration(milliseconds: 250),
-                        curve: Curves.easeOutCubic,
-                        width: selected ? 44 : 0,
-                        height: selected ? 44 : 0,
-                        decoration: BoxDecoration(
-                          color: selected
-                              ? activeColor.withValues(alpha: 0.11)
-                              : Colors.transparent,
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-                      AnimatedSwitcher(
-                        duration: MediaQuery.disableAnimationsOf(context)
-                            ? Duration.zero
-                            : kAppMotionFast,
-                        switchInCurve: Curves.easeOutCubic,
-                        switchOutCurve: Curves.easeInCubic,
-                        transitionBuilder: (child, animation) =>
-                            buildAppScaleFadeTransition(
-                              context: context,
-                              animation: animation,
-                              child: child,
-                              beginScale: 0.9,
-                            ),
-                        child: Icon(
-                          selected ? item.selectedIcon : item.icon,
-                          key: ValueKey<bool>(selected),
-                          size: 28,
-                          color: selected ? activeColor : inactive,
-                        ),
-                      ),
-                    ],
-                  ),
+                      : () => _switchPage(index),
+                  child: content,
                 ),
               ),
             ),

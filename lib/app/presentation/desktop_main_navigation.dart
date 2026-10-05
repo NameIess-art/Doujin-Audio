@@ -115,7 +115,7 @@ class _DesktopMainNavigationState extends State<DesktopMainNavigation> {
     ) = widget;
     final motionDuration = _disableAnimations
         ? Duration.zero
-        : kThemeAnimationDuration;
+        : const Duration(milliseconds: 300);
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final isLandscapeLayout =

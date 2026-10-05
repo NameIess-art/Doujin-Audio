@@ -935,7 +935,7 @@ Future<void> _prepareTransitionCondition(WidgetTester tester) async {
   try {
     if (_transitionCondition == 'idle' || _transitionCondition == 'resume') {
       await tester.runAsync(
-        () => Future<void>.delayed(Duration(seconds: _idleSeconds)),
+        () => Future<void>.delayed(const Duration(seconds: _idleSeconds)),
       );
     }
   } finally {
@@ -956,6 +956,12 @@ final class _PerformanceRouteObserver extends NavigatorObserver {
   void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
     lastPushed = route is TransitionRoute<dynamic> ? route : null;
   }
+}
+
+bool _routeTransitionVisible(TransitionRoute<dynamic>? route) {
+  final progress = route?.animation?.value;
+  // A prepared route may report 1 before its deferred push and first layout.
+  return progress != null && progress > 0 && progress < 1;
 }
 
 Map<String, Object> _pageTransitionReport(
@@ -984,7 +990,9 @@ Map<String, Object> _pageTransitionReport(
   'frameSampleWindow':
       'Action invocation through 36 pumps at 16 ms; preparation and trailing UI frames included',
   'firstVisibleFrameMeasurement':
-      'UI frame commit with route progress > 0 or incoming slide within viewport; not display presentation time',
+      'UI frame commit with 0 < route progress < 1 or incoming slide within viewport; not display presentation time',
+  'firstVisibleFrameSampleWindow':
+      'First 10 action frames whose UI build finish is at or after the first visible UI commit',
   'firstVisibleProbe':
       'Retained slide elements resolved before timing; no widget-tree search in frame callbacks',
   'asmrDetailEntry': 'Real ASMR card onTap -> showAsmrWorkDetailSheet',
@@ -1076,6 +1084,16 @@ Future<_TransitionSamples> _measurePageTransitions(
     timings.retainWhere(
       (timing) => _frameStartedWithin(timing, started, finished),
     );
+    final firstVisibleTimings = firstVisible == null
+        ? <FrameTiming>[]
+        : timings
+              .where(
+                (timing) =>
+                    _frameTimestampWallUs(timing, FramePhase.buildFinish) >=
+                    firstVisible!,
+              )
+              .take(10)
+              .toList(growable: false);
     final result = <String, Object>{
       ..._summarizeRound(opening, timings),
       'transition': name,
@@ -1084,6 +1102,7 @@ Future<_TransitionSamples> _measurePageTransitions(
       'condition': _transitionCondition,
       'imageCacheBefore': cacheBefore,
       'imageCacheAfter': _imageCacheSample(),
+      'firstTenVisibleFrames': _summarizeRound(opening, firstVisibleTimings),
       'firstVisibleUiFrameLatencyUs': firstVisible == null
           ? -1
           : firstVisible! - started,
@@ -1196,7 +1215,7 @@ Future<_TransitionSamples> _measurePageTransitions(
       }, observeSlide('main_page_stack'));
       await settleTransition();
     }
-    final workTitle = find.text('Performance ASMR 1');
+    final workTitle = find.text('Performance ASMR 1').hitTestable();
     expect(workTitle, findsOneWidget);
     final workCard = find
         .ancestor(of: workTitle, matching: find.byType(InkWell))
@@ -1207,7 +1226,7 @@ Future<_TransitionSamples> _measurePageTransitions(
     await measure('work-asmr', opening, openWork!, () {
       final route = routeObserver.lastPushed;
       return route?.settings.name == workDetailRouteName &&
-          (route?.animation?.value ?? 0) > 0;
+          _routeTransitionVisible(route);
     });
     navigator.pop();
     await settleTransition();
@@ -1243,7 +1262,7 @@ Future<_TransitionSamples> _measurePageTransitions(
         } else {
           unawaited(navigator.push(route));
         }
-      }, () => route.animation!.value > 0);
+      }, () => _routeTransitionVisible(route));
       navigator.pop();
       await settleTransition();
     }
@@ -1800,12 +1819,14 @@ Map<String, Object> _summarizeRound(int round, List<FrameTiming> timings) {
 }
 
 bool _frameStartedWithin(FrameTiming timing, int startUs, int endUs) {
-  final buildStartWallUs =
-      timing.timestampInMicroseconds(FramePhase.rasterFinishWallTime) -
-      (timing.timestampInMicroseconds(FramePhase.rasterFinish) -
-          timing.timestampInMicroseconds(FramePhase.buildStart));
+  final buildStartWallUs = _frameTimestampWallUs(timing, FramePhase.buildStart);
   return buildStartWallUs >= startUs && buildStartWallUs <= endUs;
 }
+
+int _frameTimestampWallUs(FrameTiming timing, FramePhase phase) =>
+    timing.timestampInMicroseconds(FramePhase.rasterFinishWallTime) -
+    (timing.timestampInMicroseconds(FramePhase.rasterFinish) -
+        timing.timestampInMicroseconds(phase));
 
 Duration _percentile95(List<Duration> sorted) {
   if (sorted.isEmpty) return Duration.zero;

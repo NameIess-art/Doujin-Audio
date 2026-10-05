@@ -665,7 +665,7 @@ void main() {
       tester.getCenter(trailingDestination).dx,
       closeTo(expandedTrailingX, 0.1),
     );
-    await tester.pump(const Duration(milliseconds: 90));
+    await tester.pump(const Duration(milliseconds: 100));
     expect(
       find.byKey(
         const ValueKey<String>(
@@ -798,7 +798,7 @@ void main() {
     Future<List<List<double>>> sampleMotion() async {
       final frames = [iconPositions()];
       for (var frame = 0; frame < 10; frame++) {
-        await tester.pump(const Duration(milliseconds: 28));
+        await tester.pump(const Duration(milliseconds: 30));
         frames.add(iconPositions());
       }
       return frames;
@@ -2260,6 +2260,8 @@ void main() {
                 bottomInset: bottomInset,
                 child: ValueListenableBuilder<int>(
                   valueListenable: rebuild,
+                  // Recreate the tab to exercise an unrelated parent rebuild.
+                  // ignore: prefer_const_constructors
                   builder: (_, _, _) => AsmrTab(),
                 ),
               ),
@@ -4017,6 +4019,91 @@ void main() {
     expect(MediaQuery.viewPaddingOf(tester.element(rail)).top, 24);
     debugDefaultTargetPlatformOverride = null;
   });
+
+  for (final hideBeforeOpen in [false, true]) {
+    testWidgets(
+      'landscape playback close aligns with page back after status bar hides '
+      'before open $hideBeforeOpen',
+      (tester) async {
+        debugDefaultTargetPlatformOverride = TargetPlatform.android;
+        _setLogicalTestViewSize(tester, const Size(1400, 800));
+        tester.view.padding = const FakeViewPadding(top: 24);
+        tester.view.viewPadding = const FakeViewPadding(top: 24);
+        addTearDown(() {
+          debugDefaultTargetPlatformOverride = null;
+          tester.view.resetPadding();
+          tester.view.resetViewPadding();
+        });
+        await _pumpAppShell(tester);
+        final navigator = Navigator.of(tester.element(find.byType(MainScreen)));
+        unawaited(
+          navigator.push<void>(
+            buildAppPageRoute<void>(
+              context: navigator.context,
+              child: const Scaffold(
+                body: TopPageHeader(
+                  title: 'Detail',
+                  leading: BackButton(key: ValueKey('reference_back_button')),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        final referenceRect = tester.getRect(
+          find.ancestor(
+            of: find.byKey(const ValueKey('reference_back_button')),
+            matching: find.byType(HeaderFloatingButton),
+          ),
+        );
+        expect(referenceRect.topLeft, const Offset(16, 30));
+
+        if (hideBeforeOpen) {
+          tester.view.padding = FakeViewPadding.zero;
+          tester.view.viewPadding = FakeViewPadding.zero;
+          await tester.pump();
+        }
+        unawaited(
+          navigator.push<void>(
+            buildSessionDetailRoute(sessionId: 'orientation_session'),
+          ),
+        );
+        await tester.pumpAndSettle();
+        final contentRect = tester.getRect(find.byType(SessionDetailContent));
+        expect(contentRect.top, 40);
+        tester.view.padding = FakeViewPadding.zero;
+        tester.view.viewPadding = FakeViewPadding.zero;
+        await tester.pumpAndSettle();
+
+        final closeRect = tester.getRect(
+          find.ancestor(
+            of: find.byKey(const ValueKey('session_detail_close_button')),
+            matching: find.byType(HeaderFloatingButton),
+          ),
+        );
+        expect(closeRect, referenceRect);
+        expect(tester.getRect(find.byType(SessionDetailContent)), contentRect);
+        await tester.tap(
+          find.byKey(const ValueKey('session_detail_close_button')),
+        );
+        await tester.pumpAndSettle();
+        expect(
+          tester.getRect(
+            find.ancestor(
+              of: find.byKey(const ValueKey('reference_back_button')),
+              matching: find.byType(HeaderFloatingButton),
+            ),
+          ),
+          referenceRect,
+        );
+        navigator.pop();
+        await tester.pumpAndSettle();
+        await tester.pump(const Duration(milliseconds: 200));
+        expect(tester.takeException(), isNull);
+        debugDefaultTargetPlatformOverride = null;
+      },
+    );
+  }
 
   testWidgets('expanded landscape dock stays unchanged on detail routes', (
     tester,

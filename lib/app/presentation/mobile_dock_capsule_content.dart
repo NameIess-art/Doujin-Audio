@@ -51,7 +51,8 @@ class MobileDockCapsuleContentState extends State<MobileDockCapsuleContent>
   bool _tickerModeEnabled = true;
   bool _disableAnimations = false;
 
-  static const Duration _motionDuration = Duration(milliseconds: 280);
+  static const Duration _appearanceDuration = Duration(milliseconds: 280);
+  static const Duration _motionDuration = Duration(milliseconds: 300);
 
   @override
   void initState() {
@@ -62,7 +63,7 @@ class MobileDockCapsuleContentState extends State<MobileDockCapsuleContent>
     }
     _appearanceController = AnimationController(
       vsync: this,
-      duration: _motionDuration,
+      duration: _appearanceDuration,
       value: hasPlayback ? 1.0 : 0.0,
     );
     _appearanceCurve = CurvedAnimation(

@@ -447,7 +447,13 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
                       key: const ValueKey('session_detail_close_button'),
                       onPressed: onClose,
                       tooltip: i18n.tr('close'),
-                      icon: const Icon(Icons.keyboard_arrow_down_rounded),
+                      icon: Icon(
+                        Icons.keyboard_arrow_down_rounded,
+                        color: sessionDetailForeground(
+                          cs,
+                          SessionDetailForegroundLevel.muted,
+                        ),
+                      ),
                     ),
                   ),
                 ),

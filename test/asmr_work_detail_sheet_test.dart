@@ -403,13 +403,30 @@ void main() {
           ),
         );
         await tester.pumpAndSettle();
+        await tester.tap(find.text('收藏'));
+        await tester.pumpAndSettle();
+        final cardArtwork = tester.widget<AsyncRemoteCoverImage>(
+          find.byType(AsyncRemoteCoverImage).first,
+        );
+        await tester.pumpWidget(const SizedBox.shrink());
+        releaseRetainedCoverImages();
+        PaintingBinding.instance.imageCache
+          ..clear()
+          ..clearLiveImages();
         final interaction = Object();
         addTearDown(() {
           UiInteractionCoordinator.instance.cancelInteraction(interaction);
         });
         UiInteractionCoordinator.instance.beginInteraction(interaction);
-        await tester.tap(find.text('收藏'));
-        await tester.pump(const Duration(milliseconds: 400));
+        await tester.pumpWidget(
+          fixture.build(
+            SizedBox(width: 200, height: 150, child: cardArtwork),
+            overrides: [
+              asmrLibraryControllerProvider.overrideWithValue(controller),
+            ],
+          ),
+        );
+        await tester.pump();
         final card = find.byType(AsyncRemoteCoverImage).first;
         expect(
           tester.widget<AsyncRemoteCoverImage>(card).initialPath,
@@ -444,6 +461,21 @@ void main() {
           isNotNull,
         );
         await tester.pumpAndSettle();
+        await tester.pumpWidget(const SizedBox.shrink());
+        UiInteractionCoordinator.instance.beginInteraction(interaction);
+        await tester.pumpWidget(
+          fixture.build(
+            SizedBox(width: 200, height: 150, child: cardArtwork),
+            overrides: [
+              asmrLibraryControllerProvider.overrideWithValue(controller),
+            ],
+          ),
+        );
+        expect(
+          tester.widget<RawImage>(find.byType(RawImage)).image,
+          isNotNull,
+        );
+        UiInteractionCoordinator.instance.cancelInteraction(interaction);
         expect(
           sharedKey,
           await resizeFileImageIfNeeded(
@@ -452,6 +484,17 @@ void main() {
             useDefaultCacheWidth: false,
           ).obtainKey(ImageConfiguration.empty),
         );
+
+        await tester.pumpWidget(
+          fixture.build(
+            const AsmrTab(),
+            overrides: [
+              asmrLibraryControllerProvider.overrideWithValue(controller),
+            ],
+          ),
+        );
+        await tester.tap(find.text('收藏'));
+        await tester.pumpAndSettle();
 
         unawaited(
           showAsmrWorkDetailSheet(tester.element(find.byType(AsmrTab)), work),

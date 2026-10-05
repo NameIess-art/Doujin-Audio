@@ -475,7 +475,7 @@ class _RoutedPlaybackDock extends ConsumerStatefulWidget {
 }
 
 class _RoutedPlaybackDockState extends ConsumerState<_RoutedPlaybackDock> {
-  static const _duration = Duration(milliseconds: 280);
+  static const _duration = Duration(milliseconds: 300);
   Timer? _hideTimer;
   late bool _visible = widget.active;
   bool _expanded = false;

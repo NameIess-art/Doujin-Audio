@@ -123,6 +123,7 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp> {
   var _restoreOutcomeScheduled = false;
   var _runtimeBootstrapSettledNotified = false;
   double _stablePortraitTopPadding = 0;
+  double _stableLandscapeTopPadding = 0;
   StreamSubscription<VideoConversionResult>? _conversionSubscription;
 
   @override
@@ -268,19 +269,29 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp> {
                 _stablePortraitTopPadding = rawTop;
               }
 
-              final effectiveTop = !isLandscape && _stablePortraitTopPadding > 0
-                  ? math.max(rawTop, _stablePortraitTopPadding)
-                  : rawTop;
+              final isAndroidLandscape =
+                  defaultTargetPlatform == TargetPlatform.android &&
+                  mediaQuery.orientation == Orientation.landscape;
+              if (isAndroidLandscape) {
+                // Playback hides the status bar; retain the same header inset
+                // for the main page and every route in the navigator.
+                _stableLandscapeTopPadding = math.max(
+                  _stableLandscapeTopPadding,
+                  math.max(rawTop, mediaQuery.viewPadding.top),
+                );
+              }
+              final stableTop = isAndroidLandscape
+                  ? _stableLandscapeTopPadding
+                  : !isLandscape
+                  ? _stablePortraitTopPadding
+                  : 0.0;
+              final effectiveTop = math.max(rawTop, stableTop);
               final effectivePadding = effectiveTop != rawTop
                   ? mediaQuery.padding.copyWith(top: effectiveTop)
                   : mediaQuery.padding;
-              final effectiveViewPadding =
-                  !isLandscape && _stablePortraitTopPadding > 0
+              final effectiveViewPadding = stableTop > 0
                   ? mediaQuery.viewPadding.copyWith(
-                      top: math.max(
-                        mediaQuery.viewPadding.top,
-                        _stablePortraitTopPadding,
-                      ),
+                      top: math.max(mediaQuery.viewPadding.top, stableTop),
                     )
                   : mediaQuery.viewPadding;
 

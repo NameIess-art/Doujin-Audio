@@ -471,6 +471,19 @@ void main() {
           await _settleDetail(tester);
           Finder rowFade(String id) =>
               find.byKey(ValueKey('work_detail_entry_fade_$id'));
+          final audioRow = find.byKey(const ValueKey('audio:$folder/audio.mp3'));
+          final audioState = tester.state<State<WorkDetailEntryTile>>(audioRow);
+          int? entryIndex(String id) {
+            final delegate =
+                tester.widget<SliverList>(find.byType(SliverList)).delegate
+                    as SliverChildBuilderDelegate;
+            return delegate.findChildIndexCallback!(
+              ValueKey('work_detail_entry_fade_$id'),
+            );
+          }
+
+          expect(entryIndex('audio:$folder/audio.mp3'), 0);
+          expect(entryIndex('text:missing.txt'), isNull);
           expect(
             tester
                 .widget<FadeTransition>(rowFade('audio:$folder/audio.mp3'))
@@ -484,6 +497,11 @@ void main() {
               'relativePath': 'notes.txt',
               'path': '$folder/notes.txt',
             },
+            {
+              'name': 'readme.txt',
+              'relativePath': 'Extras/readme.txt',
+              'path': '$folder/Extras/readme.txt',
+            },
           ]);
           for (var attempt = 0; attempt < 50; attempt++) {
             await tester.runAsync(
@@ -493,6 +511,11 @@ void main() {
             if (find.text('notes.txt').evaluate().isNotEmpty) break;
           }
           expect(find.text('notes.txt'), findsOneWidget);
+          expect(entryIndex('folder:Extras'), 0);
+          expect(entryIndex('audio:$folder/audio.mp3'), 1);
+          expect(entryIndex('text:notes.txt'), 2);
+          expect(entryIndex('text:Extras/readme.txt'), isNull);
+          expect(tester.state(audioRow), same(audioState));
           expect(
             tester
                 .widget<FadeTransition>(rowFade('audio:$folder/audio.mp3'))
@@ -525,6 +548,7 @@ void main() {
           );
           await tester.pump(halfFadeDuration + const Duration(milliseconds: 1));
           await tester.pump();
+          expect(tester.state(audioRow), same(audioState));
           expect(
             tester
                 .widget<FadeTransition>(rowFade('text:notes.txt'))

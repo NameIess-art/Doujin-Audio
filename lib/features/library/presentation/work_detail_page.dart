@@ -110,6 +110,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
   Future<String?>? _coverFuture;
   Object? _entriesKey;
   List<WorkEntryItem> _currentEntries = const [];
+  Map<Key, int> _entryIndices = const {};
   WorkDirectorySnapshot? _directory;
   bool _preparingDirectory = false;
   int _directoryRequest = 0;
@@ -550,6 +551,12 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
           )
           .toList(growable: false);
     }
+    _entryIndices = {
+      for (var index = 0; index < _currentEntries.length; index++)
+        ValueKey(
+          'work_detail_entry_fade_${_currentEntries[index].type.name}:${_currentEntries[index].relativePath}',
+        ): index,
+    };
     return _currentEntries;
   }
 
@@ -1372,16 +1379,8 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
                                     );
                                   },
                                   childCount: currentEntries.length,
-                                  findChildIndexCallback: (key) {
-                                    final index = currentEntries.indexWhere(
-                                      (item) =>
-                                          key ==
-                                          ValueKey(
-                                            'work_detail_entry_fade_${item.type.name}:${item.relativePath}',
-                                          ),
-                                    );
-                                    return index < 0 ? null : index;
-                                  },
+                                  findChildIndexCallback: (key) =>
+                                      _entryIndices[key],
                                 ),
                               ),
                             ),
@@ -1408,11 +1407,13 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
                   ? const SizedBox.shrink()
                   : Positioned.fromRect(
                       rect: _departingSkeletonRect!,
-                      child: IgnorePointer(
-                        child: ExcludeSemantics(
-                          child: FadeTransition(
-                            opacity: ReverseAnimation(_directoryOpacity),
-                            child: _directorySkeleton(),
+                      child: AppPageContentTransition(
+                        child: IgnorePointer(
+                          child: ExcludeSemantics(
+                            child: FadeTransition(
+                              opacity: ReverseAnimation(_directoryOpacity),
+                              child: _directorySkeleton(),
+                            ),
                           ),
                         ),
                       ),

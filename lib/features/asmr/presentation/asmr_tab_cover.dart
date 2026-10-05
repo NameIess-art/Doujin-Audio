@@ -40,8 +40,9 @@ class _AsmrWorkCover extends ConsumerWidget {
             height: height,
             child: ClipRRect(
               clipBehavior: Clip.hardEdge,
-              borderRadius:
-                  BorderRadius.circular(LibraryLikeCardMetrics.coverRadius),
+              borderRadius: BorderRadius.circular(
+                LibraryLikeCardMetrics.coverRadius,
+              ),
               child: Stack(
                 children: [
                   SizedBox(
@@ -50,6 +51,7 @@ class _AsmrWorkCover extends ConsumerWidget {
                     child: url.isEmpty
                         ? CoverFallbackArtwork(seed: url, compact: true)
                         : AsyncRemoteCoverImage(
+                            deferLoadDuringInteraction: true,
                             onImageError: library
                                 .coverArtworkCacheService
                                 .reportArtworkReadFailure,
@@ -58,8 +60,8 @@ class _AsmrWorkCover extends ConsumerWidget {
                               url,
                               context: context,
                             ),
-                            initialPath:
-                                library.resolvedCoverPathForRemoteCover(url),
+                            initialPath: library
+                                .resolvedCoverPathForRemoteCover(url),
                             retryFutureBuilder: () => coverUi
                                 .deferredRemoteCover(url, context: context),
                             retryDelay: const Duration(seconds: 5),

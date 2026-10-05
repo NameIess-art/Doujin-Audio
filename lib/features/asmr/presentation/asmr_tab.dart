@@ -868,7 +868,15 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
                   indexListenable: _activeCategoryIndex,
                   duration: kAppMotionSlow,
                   itemCount: _headerCategories.length,
-                  contentRevision: Object(),
+                  // Retained categories need new widgets only when their
+                  // constructor inputs change, not for unrelated tab rebuilds.
+                  contentRevision: (
+                    !_activationCompleted,
+                    headerContentHeight,
+                    bottomInset,
+                    _isSelectionMode,
+                    _selectedWorkIds.join(','),
+                  ),
                   itemBuilder: (context, index) {
                     final category = _headerCategories[index];
                     return _AsmrCategoryList(

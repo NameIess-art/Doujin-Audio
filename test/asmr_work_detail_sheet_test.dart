@@ -403,14 +403,47 @@ void main() {
           ),
         );
         await tester.pumpAndSettle();
+        final interaction = Object();
+        addTearDown(() {
+          UiInteractionCoordinator.instance.cancelInteraction(interaction);
+        });
+        UiInteractionCoordinator.instance.beginInteraction(interaction);
         await tester.tap(find.text('收藏'));
-        await tester.pumpAndSettle();
+        await tester.pump(const Duration(milliseconds: 400));
         final card = find.byType(AsyncRemoteCoverImage).first;
         expect(
           tester.widget<AsyncRemoteCoverImage>(card).initialPath,
           cover.path,
         );
         final sharedKey = await imageKey(card);
+        expect(
+          find.descendant(of: card, matching: find.byType(Image)),
+          findsNothing,
+        );
+        expect(
+          PaintingBinding.instance.imageCache.statusForKey(sharedKey).tracked,
+          isFalse,
+        );
+        UiInteractionCoordinator.instance.cancelInteraction(interaction);
+        for (var tick = 0; tick < 100; tick++) {
+          await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 10)),
+          );
+          await tester.pump(const Duration(milliseconds: 20));
+          final images = tester.widgetList<RawImage>(
+            find.descendant(of: card, matching: find.byType(RawImage)),
+          );
+          if (images.any((image) => image.image != null)) break;
+        }
+        expect(
+          tester
+              .widget<RawImage>(
+                find.descendant(of: card, matching: find.byType(RawImage)),
+              )
+              .image,
+          isNotNull,
+        );
+        await tester.pumpAndSettle();
         expect(
           sharedKey,
           await resizeFileImageIfNeeded(

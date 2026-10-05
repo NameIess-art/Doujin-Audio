@@ -470,21 +470,35 @@ void main() {
     String name, {
     Color? backgroundColor,
     bool transparentPage = false,
+    VoidCallback? onBodyBuild,
+    VoidCallback? onBodyPaint,
+    VoidCallback? onHeaderPaint,
   }) => Scaffold(
     backgroundColor: transparentPage ? Colors.transparent : backgroundColor,
     body: Column(
       children: [
         AppPageHeaderTransition(
-          child: SizedBox(
-            key: ValueKey('$name-header'),
-            width: 100,
-            height: 38,
+          child: _DetailPaintProbe(
+            onPaint: onHeaderPaint ?? () {},
+            child: SizedBox(
+              key: ValueKey('$name-header'),
+              width: 100,
+              height: 38,
+            ),
           ),
         ),
         Expanded(
           child: AppPageContentTransition(
             backgroundColor: transparentPage ? backgroundColor : null,
-            child: SizedBox.expand(key: ValueKey('$name-body')),
+            child: Builder(
+              builder: (context) {
+                onBodyBuild?.call();
+                return _DetailPaintProbe(
+                  onPaint: onBodyPaint ?? () {},
+                  child: SizedBox.expand(key: ValueKey('$name-body')),
+                );
+              },
+            ),
           ),
         ),
       ],
@@ -498,6 +512,7 @@ void main() {
         final navigatorKey = GlobalKey<NavigatorState>();
         final surface = GlobalKey();
         var paints = 0;
+        var headerPaints = 0;
         var builds = 0;
         await tester.pumpWidget(
           RepaintBoundary(
@@ -512,12 +527,13 @@ void main() {
         final route = buildAppPageRoute<void>(
           context: navigatorKey.currentContext!,
           workDetailTransition: true,
-          child: _DetailPaintProbe(
-            onPaint: () => paints++,
-            child: _BuildCountingContent(
-              onBuild: () => builds++,
-              child: regions('whole-detail', backgroundColor: Colors.blue),
-            ),
+          child: regions(
+            'whole-detail',
+            backgroundColor: Colors.blue,
+            transparentPage: true,
+            onBodyBuild: () => builds++,
+            onBodyPaint: () => paints++,
+            onHeaderPaint: () => headerPaints++,
           ),
         );
         expect(route.transitionDuration, const Duration(milliseconds: 300));
@@ -551,6 +567,13 @@ void main() {
           tester.widget<Opacity>(headerOpacity).opacity,
           inExclusiveRange(0, 1),
         );
+        final preparedHeaderPaints = headerPaints;
+        expect(preparedHeaderPaints, 1);
+        expect(
+          find.ancestor(of: header, matching: find.byType(Transform)),
+          findsNothing,
+          reason: 'Header opacity no longer counter-translates a moving page.',
+        );
         for (var i = 0; i < 3; i++) {
           await tester.pump(const Duration(milliseconds: 75));
         }
@@ -562,6 +585,7 @@ void main() {
           1,
           reason: 'Translation reuses the recorded page layer.',
         );
+        expect(headerPaints, preparedHeaderPaints);
 
         navigatorKey.currentState!.pop();
         await tester.pump();
@@ -610,11 +634,67 @@ void main() {
           return pixel;
         });
         expect(color, const Color(0xfff44336));
+        expect(paints, 1, reason: 'Exit also reuses the content recording.');
+        expect(headerPaints, preparedHeaderPaints);
         await tester.pumpAndSettle();
         expect(
           find.byKey(const ValueKey('whole-detail-body'), skipOffstage: false),
           findsNothing,
         );
+        expect(tester.takeException(), isNull);
+      },
+    );
+
+    testWidgets(
+      'work detail overlays slide in route coordinates on $platform',
+      (tester) async {
+        final navigatorKey = GlobalKey<NavigatorState>();
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: ThemeData(platform: platform),
+            navigatorKey: navigatorKey,
+            home: const ColoredBox(color: Colors.red),
+          ),
+        );
+        final route = buildAppPageRoute<void>(
+          context: navigatorKey.currentContext!,
+          workDetailTransition: true,
+          child: const Stack(
+            children: [
+              AppPageContentTransition(
+                child: SizedBox.expand(key: ValueKey('detail-overlay-body')),
+              ),
+              Positioned(
+                left: 16,
+                top: 100,
+                width: 120,
+                height: 30,
+                child: AppPageContentTransition(
+                  child: ColoredBox(
+                    key: ValueKey('detail-narrow-overlay'),
+                    color: Colors.orange,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+        final body = find.byKey(const ValueKey('detail-overlay-body'));
+        final overlay = find.byKey(const ValueKey('detail-narrow-overlay'));
+        unawaited(navigatorKey.currentState!.push(route));
+        await tester.pump();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 150));
+        expect(tester.getRect(body).left, greaterThan(0));
+        expect(tester.getRect(overlay).left - tester.getRect(body).left, 16);
+        await tester.pumpAndSettle();
+        navigatorKey.currentState!.pop();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 150));
+        expect(tester.getRect(body).left, greaterThan(0));
+        expect(tester.getRect(overlay).left - tester.getRect(body).left, 16);
+        await tester.pumpAndSettle();
+        expect(overlay, findsNothing);
         expect(tester.takeException(), isNull);
       },
     );

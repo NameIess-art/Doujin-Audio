@@ -2236,6 +2236,66 @@ void main() {
     await tester.pump(const Duration(seconds: 3));
   });
 
+  for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+    testWidgets(
+      'ASMR retains category widgets across unrelated rebuilds on $platform',
+      (tester) async {
+        debugDefaultTargetPlatformOverride = platform;
+        addTearDown(() => debugDefaultTargetPlatformOverride = null);
+        final fixture = AppRuntimeWidgetTestFixture();
+        final controller = _QueuedEmptyAsmrLibraryController(
+          services: createTestAsmrServices(),
+        );
+        final rebuild = ValueNotifier<int>(0);
+        final inset = ValueNotifier<double>(0);
+        addTearDown(fixture.dispose);
+        addTearDown(controller.dispose);
+        addTearDown(rebuild.dispose);
+        addTearDown(inset.dispose);
+        await tester.pumpWidget(
+          fixture.build(
+            ValueListenableBuilder<double>(
+              valueListenable: inset,
+              builder: (_, bottomInset, _) => MobileOverlayInset(
+                bottomInset: bottomInset,
+                child: ValueListenableBuilder<int>(
+                  valueListenable: rebuild,
+                  builder: (_, _, _) => AsmrTab(),
+                ),
+              ),
+            ),
+            overrides: [
+              asmrLibraryControllerProvider.overrideWithValue(controller),
+            ],
+          ),
+        );
+        await tester.pumpAndSettle();
+        final categories = find.byWidgetPredicate(
+          (widget) => widget.runtimeType.toString() == '_AsmrCategoryList',
+        );
+        final original = tester.widget(categories.first);
+        final state = tester.state(categories.first);
+        rebuild.value++;
+        await tester.pumpAndSettle();
+        expect(tester.widget(categories.first), same(original));
+
+        // A real constructor-input change still refreshes the retained page.
+        inset.value = 96;
+        await tester.pumpAndSettle();
+        expect(tester.widget(categories.first), isNot(same(original)));
+        expect(tester.state(categories.first), same(state));
+        final refreshed = tester.widget(categories.first);
+        rebuild.value++;
+        await tester.pumpAndSettle();
+        expect(tester.widget(categories.first), same(refreshed));
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump(const Duration(seconds: 3));
+        debugDefaultTargetPlatformOverride = null;
+      },
+    );
+  }
+
   testWidgets('inactive ASMR tab pauses category projections until return', (
     tester,
   ) async {
@@ -5683,6 +5743,7 @@ final class _QueuedEmptyAsmrLibraryController extends AsmrLibraryController {
     pageLanguageChanges.add(language);
     return true;
   }
+
   final List<Completer<void>> _collectedSearchRefreshes = <Completer<void>>[];
   final Completer<void> _initialCollectedRefresh = Completer<void>();
   final bool collectedHasMore;

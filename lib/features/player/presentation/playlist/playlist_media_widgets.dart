@@ -53,6 +53,7 @@ class SessionHeroArtwork extends ConsumerWidget {
               // detail route is being dragged.
               enabled: true,
               child: AsyncLocalCoverImage(
+                deferLoadDuringInteraction: true,
                 onImageError:
                     library.coverArtworkCacheService.reportArtworkReadFailure,
                 future: coverPathFuture,
@@ -189,6 +190,7 @@ class _SessionCoverThumbnailState extends ConsumerState<SessionCoverThumbnail> {
   Widget build(BuildContext context) {
     final library = ref.read(libraryFacadeProvider);
     final cover = AsyncLocalCoverImage(
+      deferLoadDuringInteraction: true,
       onImageError: library.coverArtworkCacheService.reportArtworkReadFailure,
       future: _futureFor(library),
       requestKey: (widget.sessionId, widget.track?.path),

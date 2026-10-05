@@ -103,6 +103,7 @@ class _LibraryCoverThumbnailState extends ConsumerState<LibraryCoverThumbnail> {
                 LibraryLikeCardMetrics.coverRadius,
               ),
               child: AsyncLocalCoverImage(
+                deferLoadDuringInteraction: true,
                 onImageError: libraryFacade
                     .coverArtworkCacheService
                     .reportArtworkReadFailure,
@@ -205,6 +206,7 @@ class _LibraryTrackCoverThumbnailState
               LibraryLikeCardMetrics.coverRadius,
             ),
             child: AsyncLocalCoverImage(
+              deferLoadDuringInteraction: true,
               onImageError: libraryFacade
                   .coverArtworkCacheService
                   .reportArtworkReadFailure,

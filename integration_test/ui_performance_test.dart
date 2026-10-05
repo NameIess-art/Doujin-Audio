@@ -47,8 +47,20 @@ import 'package:media_kit/media_kit.dart' show MediaKit;
 import '../test/support/app_runtime_test_fixture.dart';
 import '../test/support/test_persistence_repository.dart';
 
-const _frameBudget = Duration(microseconds: 16667);
+double get _displayRefreshRate =>
+    WidgetsBinding.instance.platformDispatcher.views.first.display.refreshRate;
+double get _refreshRate =>
+    _displayRefreshRate.isFinite && _displayRefreshRate > 0
+    ? _displayRefreshRate
+    : 60;
+Duration get _frameBudget =>
+    Duration(microseconds: (1000000 / _refreshRate).ceil());
 const _scenario = String.fromEnvironment('PERF_SCENARIO', defaultValue: 'core');
+const _transitionCondition = String.fromEnvironment(
+  'PERF_TRANSITION_CONDITION',
+  defaultValue: 'baseline',
+);
+const _idleSeconds = int.fromEnvironment('PERF_IDLE_SECONDS', defaultValue: 60);
 const _libraryItemOverride = int.fromEnvironment('PERF_LIBRARY_ITEMS');
 const _asmrItemOverride = int.fromEnvironment('PERF_ASMR_ITEMS');
 const _asmrTrackOverride = int.fromEnvironment('PERF_ASMR_TRACKS');
@@ -106,6 +118,12 @@ void main() {
       contains(_scenario),
       reason: 'Unsupported PERF_SCENARIO=$_scenario',
     );
+    expect(
+      const {'baseline', 'idle', 'resume', 'memory-pressure'},
+      contains(_transitionCondition),
+      reason: 'Unsupported PERF_TRANSITION_CONDITION=$_transitionCondition',
+    );
+    expect(_idleSeconds, greaterThanOrEqualTo(0));
     SharedPreferences.setMockInitialValues(const <String, Object>{
       AppPreferences.onboardingCompletedKey: true,
     });
@@ -161,6 +179,7 @@ void main() {
         ),
         navigatorObservers: <NavigatorObserver>[
           UiInteractionNavigatorObserver.instance,
+          _PerformanceRouteObserver(),
         ],
         overrides: <Override>[
           asmrLibraryControllerProvider.overrideWithValue(asmrController),
@@ -180,11 +199,11 @@ void main() {
     await tester.pumpAndSettle();
 
     if (_scenario == 'page-transitions') {
-      final rounds = await _measurePageTransitions(tester);
-      final report = _pageTransitionReport(rounds, playing: false);
+      final samples = await _measurePageTransitions(tester);
+      final report = _pageTransitionReport(samples, playing: false);
       binding.reportData = {'uiPerformance': report};
       debugPrint('UI_PERFORMANCE ${jsonEncode(report)}');
-      _expectFrameBudgets(rounds);
+      _expectFrameBudgets(samples.rounds);
       return;
     }
 
@@ -339,7 +358,10 @@ Future<void> _measureRealPlayback(
         excluding: !_semanticsEnabled,
         child: MainScreen(),
       ),
-      navigatorObservers: [UiInteractionNavigatorObserver.instance],
+      navigatorObservers: [
+        UiInteractionNavigatorObserver.instance,
+        _PerformanceRouteObserver(),
+      ],
       overrides: [
         asmrLibraryControllerProvider.overrideWithValue(asmrController),
       ],
@@ -357,15 +379,15 @@ Future<void> _measureRealPlayback(
     );
     final id = fixture.playback.sessions.keys.single;
     await _toggleRuntimeSession(tester, fixture, id, playing: true);
-    final rounds = await _measurePageTransitions(
+    final samples = await _measurePageTransitions(
       tester,
       localPath: tracks.first.path,
     );
     expect(fixture.playback.sessionById(id)!.state.playing, true);
-    final report = _pageTransitionReport(rounds, playing: true);
+    final report = _pageTransitionReport(samples, playing: true);
     binding.reportData = {'uiPerformance': report};
     debugPrint('UI_PERFORMANCE ${jsonEncode(report)}');
-    _expectFrameBudgets(rounds);
+    _expectFrameBudgets(samples.rounds);
     return;
   }
   final rounds = <Map<String, Object>>[];
@@ -883,8 +905,61 @@ List<PlaybackSession> _seedRuntime(
   return sessions;
 }
 
+typedef _TransitionSamples = ({
+  List<Map<String, Object>> rounds,
+  List<Map<String, Object>> conditions,
+});
+
+Map<String, Object> _imageCacheSample() {
+  final cache = PaintingBinding.instance.imageCache;
+  return {
+    'bytes': cache.currentSizeBytes,
+    'count': cache.currentSize,
+    'live': cache.liveImageCount,
+    'pending': cache.pendingImageCount,
+  };
+}
+
+Future<void> _prepareTransitionCondition(WidgetTester tester) async {
+  final binding = tester.binding;
+  if (_transitionCondition == 'memory-pressure') {
+    binding.handleMemoryPressure();
+    await tester.pump();
+    return;
+  }
+  if (_transitionCondition == 'resume') {
+    binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+    binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+  }
+  try {
+    if (_transitionCondition == 'idle' || _transitionCondition == 'resume') {
+      await tester.runAsync(
+        () => Future<void>.delayed(Duration(seconds: _idleSeconds)),
+      );
+    }
+  } finally {
+    if (_transitionCondition == 'resume') {
+      binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+      binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    }
+  }
+}
+
+// Captures the route created by the production card callback, without a
+// widget-tree traversal in the measured frame's visibility probe.
+final class _PerformanceRouteObserver extends NavigatorObserver {
+  TransitionRoute<dynamic>? lastPushed;
+
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    lastPushed = route is TransitionRoute<dynamic> ? route : null;
+  }
+}
+
 Map<String, Object> _pageTransitionReport(
-  List<Map<String, Object>> rounds, {
+  _TransitionSamples samples, {
   required bool playing,
 }) => {
   'scenario': _scenario,
@@ -898,6 +973,12 @@ Map<String, Object> _pageTransitionReport(
   'decodedImageCacheCount': PaintingBinding.instance.imageCache.currentSize,
   'libraryItems': playing ? 100 : _libraryItemCount,
   'asmrItems': playing ? 100 : _asmrItemCount,
+  'transitionCondition': _transitionCondition,
+  'idleSeconds': _idleSeconds,
+  'refreshRateHz': _refreshRate,
+  'frameBudgetSource': _displayRefreshRate.isFinite && _displayRefreshRate > 0
+      ? 'FlutterView.display.refreshRate'
+      : '60 Hz fallback',
   'frameBudgetUs': _frameBudget.inMicroseconds,
   'frameTimingDeliveryWaitMs': 2000,
   'frameSampleWindow':
@@ -906,15 +987,35 @@ Map<String, Object> _pageTransitionReport(
       'UI frame commit with route progress > 0 or incoming slide within viewport; not display presentation time',
   'firstVisibleProbe':
       'Retained slide elements resolved before timing; no widget-tree search in frame callbacks',
-  'rounds': rounds,
+  'asmrDetailEntry': 'Real ASMR card onTap -> showAsmrWorkDetailSheet',
+  'conditionApplication': 'Once before each opening cycle, starting on Library',
+  'lifecycleSource': _transitionCondition == 'resume'
+      ? 'Test binding lifecycle simulation; not OS background or surface recreation'
+      : 'No simulated background transition',
+  'resumeRuntime': playing
+      ? 'Started runtime with real playback'
+      : 'Presentation fixture; audio runtime not started',
+  'memoryPressureSource': _transitionCondition == 'memory-pressure'
+      ? 'Test binding handleMemoryPressure; not measured OS memory pressure'
+      : 'No simulated memory pressure',
+  'samplingLimits':
+      'Synthetic library/ASMR metadata and optional cover files; no cold-process restart, '
+      'OS task snapshot or renderer surface-loss measurement. ImageCache counters '
+      'exclude GPU textures, Dart heap and native player memory.',
+  'conditions': samples.conditions,
+  'rounds': samples.rounds,
 };
 
-Future<List<Map<String, Object>>> _measurePageTransitions(
+Future<_TransitionSamples> _measurePageTransitions(
   WidgetTester tester, {
   String localPath = '/profile/audio_1.mp3',
 }) async {
   final navigator = tester.state<NavigatorState>(find.byType(Navigator).first);
+  final routeObserver = navigator.widget.observers
+      .whereType<_PerformanceRouteObserver>()
+      .single;
   final rounds = <Map<String, Object>>[];
+  final conditions = <Map<String, Object>>[];
   final target = AudioDetailTarget.singleAudioFile(localPath);
   final localDetail = AudioDetail(
     target: target,
@@ -939,6 +1040,7 @@ Future<List<Map<String, Object>>> _measurePageTransitions(
     VoidCallback action,
     bool Function() visible,
   ) async {
+    final cacheBefore = _imageCacheSample();
     final timings = <FrameTiming>[];
     void collect(List<FrameTiming> values) => timings.addAll(values);
     WidgetsBinding.instance.addTimingsCallback(collect);
@@ -979,6 +1081,9 @@ Future<List<Map<String, Object>>> _measurePageTransitions(
       'transition': name,
       'opening': opening,
       'pass': opening == 1 ? 'initial' : 'repeat',
+      'condition': _transitionCondition,
+      'imageCacheBefore': cacheBefore,
+      'imageCacheAfter': _imageCacheSample(),
       'firstVisibleUiFrameLatencyUs': firstVisible == null
           ? -1
           : firstVisible! - started,
@@ -1040,6 +1145,21 @@ Future<List<Map<String, Object>>> _measurePageTransitions(
   for (var opening = 1; opening <= 3; opening++) {
     // Start each pass from Library, so first visits to the other tabs are measured.
     await _switchMainPage(tester, MainDestinationType.library);
+    final conditionSample = <String, Object>{
+      'opening': opening,
+      'condition': _transitionCondition,
+      'requestedWaitSeconds':
+          _transitionCondition == 'idle' || _transitionCondition == 'resume'
+          ? _idleSeconds
+          : 0,
+      'imageCacheBeforeCondition': _imageCacheSample(),
+    };
+    final conditionStarted = DateTime.now();
+    await _prepareTransitionCondition(tester);
+    conditionSample['conditionElapsedMs'] = DateTime.now()
+        .difference(conditionStarted)
+        .inMilliseconds;
+    conditionSample['imageCacheAfterCondition'] = _imageCacheSample();
     for (final destination in [
       MainDestinationType.playlist,
       MainDestinationType.settings,
@@ -1076,6 +1196,21 @@ Future<List<Map<String, Object>>> _measurePageTransitions(
       }, observeSlide('main_page_stack'));
       await settleTransition();
     }
+    final workTitle = find.text('Performance ASMR 1');
+    expect(workTitle, findsOneWidget);
+    final workCard = find
+        .ancestor(of: workTitle, matching: find.byType(InkWell))
+        .first;
+    final openWork = tester.widget<InkWell>(workCard).onTap;
+    expect(openWork, isNotNull);
+    routeObserver.lastPushed = null;
+    await measure('work-asmr', opening, openWork!, () {
+      final route = routeObserver.lastPushed;
+      return route?.settings.name == workDetailRouteName &&
+          (route?.animation?.value ?? 0) > 0;
+    });
+    navigator.pop();
+    await settleTransition();
     await _switchMainPage(tester, MainDestinationType.library);
     for (final (name, page) in <(String, Widget)>[
       (
@@ -1090,7 +1225,6 @@ Future<List<Map<String, Object>>> _measurePageTransitions(
         'work-local',
         WorkDetailPage.forLocal(target: target, initialDetail: localDetail),
       ),
-      ('work-asmr', WorkDetailPage.forAsmr(work: _buildAsmrWorks(1).first)),
     ]) {
       late PageRoute<void> route;
       await measure(name, opening, () {
@@ -1113,6 +1247,9 @@ Future<List<Map<String, Object>>> _measurePageTransitions(
       navigator.pop();
       await settleTransition();
     }
+    conditionSample['imageCacheAfterCycle'] = _imageCacheSample();
+    conditions.add(conditionSample);
+    debugPrint('PAGE_TRANSITION_CONDITION ${jsonEncode(conditionSample)}');
   }
   if (_profileCovers.isNotEmpty) {
     expect(
@@ -1122,7 +1259,7 @@ Future<List<Map<String, Object>>> _measurePageTransitions(
           'The cover fixture must decode images, not measure only fallbacks.',
     );
   }
-  return rounds;
+  return (rounds: rounds, conditions: conditions);
 }
 
 Future<List<Map<String, Object>>> _measureDetailComparison(
@@ -1602,7 +1739,7 @@ Map<String, Object> _assessPlaybackPerformance(
         nextFrameFeedbackObserved &&
         idle60SecondsSilent,
     'thresholds': {
-      'p95Us': 16667,
+      'p95Us': _frameBudget.inMicroseconds,
       'overBudgetPercent': 1,
       'idleP95DeltaUs': 1000,
     },

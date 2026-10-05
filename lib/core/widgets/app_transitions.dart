@@ -167,46 +167,61 @@ Widget _buildCoveringPageTransition({
   );
   final transition = ClipRect(
     child: LayoutBuilder(
-      builder: (context, constraints) => SlideTransition(
-        position: position,
-        child: RepaintBoundary(
-          child: _AppPageMotionScope(
-            key: contentKey,
-            configuration: (
-              animation,
-              secondaryAnimation,
-              constraints.maxWidth,
-              fadeHeader,
-            ),
-            contentBuilder: (context, content) =>
-                RepaintBoundary(child: content),
-            headerBuilder: (context, header) => AnimatedBuilder(
-              animation: Listenable.merge([animation, secondaryAnimation]),
-              child: header,
-              builder: (context, header) {
-                final incoming = Curves.easeOutCubic.transform(
-                  (animation.value / 0.6).clamp(0.0, 1.0),
-                );
-                final outgoing = Curves.easeOutCubic.transform(
-                  (secondaryAnimation.value / 0.6).clamp(0.0, 1.0),
-                );
-                // Cancel the page translation in route coordinates, even for
-                // headers narrower than the page, so menus change in place.
-                return Transform.translate(
-                  offset: Offset(-constraints.maxWidth * position.value.dx, 0),
-                  child: fadeHeader
-                      ? Opacity(
-                          opacity: incoming * (1 - outgoing),
-                          child: header,
-                        )
-                      : header,
-                );
-              },
-            ),
-            child: child,
+      builder: (context, constraints) {
+        final page = _AppPageMotionScope(
+          key: contentKey,
+          configuration: (
+            animation,
+            secondaryAnimation,
+            constraints.maxWidth,
+            fadeHeader,
+            workDetailTransition,
           ),
-        ),
-      ),
+          contentBuilder: (context, content) => workDetailTransition
+              ? AnimatedBuilder(
+                  animation: position,
+                  child: RepaintBoundary(child: content),
+                  builder: (context, content) => Transform.translate(
+                    offset: Offset(constraints.maxWidth * position.value.dx, 0),
+                    child: content,
+                  ),
+                )
+              : RepaintBoundary(child: content),
+          headerBuilder: (context, header) => AnimatedBuilder(
+            animation: Listenable.merge([animation, secondaryAnimation]),
+            child: workDetailTransition
+                ? RepaintBoundary(child: header)
+                : header,
+            builder: (context, header) {
+              final incoming = Curves.easeOutCubic.transform(
+                (animation.value / 0.6).clamp(0.0, 1.0),
+              );
+              final outgoing = Curves.easeOutCubic.transform(
+                (secondaryAnimation.value / 0.6).clamp(0.0, 1.0),
+              );
+              final fadedHeader = fadeHeader
+                  ? Opacity(opacity: incoming * (1 - outgoing), child: header)
+                  : header!;
+              if (workDetailTransition) return fadedHeader;
+              // Generic routes translate the whole page; cancel that motion
+              // for headers narrower than the page so menus change in place.
+              return Transform.translate(
+                offset: Offset(-constraints.maxWidth * position.value.dx, 0),
+                child: fadedHeader,
+              );
+            },
+          ),
+          child: child,
+        );
+        // Keep header fades out of the moving content's recording/cache layer.
+        // Every detail region moves in route coordinates, including overlays.
+        return workDetailTransition
+            ? page
+            : SlideTransition(
+                position: position,
+                child: RepaintBoundary(child: page),
+              );
+      },
     ),
   );
   final interactive =

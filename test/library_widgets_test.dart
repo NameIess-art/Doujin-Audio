@@ -3957,7 +3957,7 @@ void main() {
 
   for (final kind in ['audio', 'covered audio', 'video']) {
     testWidgets(
-      'single $kind card plays on tap and edits from its menu',
+      'single $kind card plays temporarily on tap and edits from its menu',
       (tester) async {
         var prepareCalls = 0;
         var playCalls = 0;
@@ -3968,8 +3968,9 @@ void main() {
           final arguments = call.arguments as Map<Object?, Object?>?;
           if (call.method == NativePlaybackMethod.prepareSession) {
             prepareCalls++;
+            expect(arguments!['isTemporary'], isTrue);
             snapshot = {
-              'sessionId': arguments!['sessionId'],
+              'sessionId': arguments['sessionId'],
               'path': arguments['path'],
               'uri': arguments['uri'],
               'playing': false,
@@ -4057,16 +4058,40 @@ void main() {
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 350));
         for (var attempt = 0; attempt < 50 && playCalls == 0; attempt++) {
-          await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 10)));
+          await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 10)),
+          );
           await tester.pump(const Duration(milliseconds: 20));
         }
         expect(prepareCalls, 1);
         expect(playCalls, 1);
         expect(find.byType(WorkDetailPage), findsNothing);
         expect(
-          fixture.playback.activeSessions.single.currentTrackPath,
+          PathMatcher.normalize(
+            fixture.playback.activeSessions.single.currentTrackPath,
+          ),
           PathMatcher.normalize(track.path),
         );
+        final temporarySession = fixture.playback.activeSessions.single;
+        expect(temporarySession.isTemporary, isTrue);
+        expect(
+          fixture.playback.activeSessions.where(
+            (session) => !session.isTemporary,
+          ),
+          isEmpty,
+        );
+        expect(
+          find.text(
+            fixture.languageProvider.tr('session_created', {
+              'name': track.displayName,
+            }),
+          ),
+          findsNothing,
+        );
+        await tester.tap(title);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 350));
+        expect(fixture.playback.activeSessions.single, same(temporarySession));
         final card = find.ancestor(
           of: title,
           matching: find.byType(SwipeRevealCard),
@@ -4255,6 +4280,7 @@ void main() {
       final card = tester.widget<Card>(cardFinder.first);
       expect(card.color, Colors.transparent);
       expect(prepareCalls, 0);
+      expect(runtimeGraph.playback.activeSessions.single.isTemporary, isFalse);
       expect(
         PathMatcher.normalize(
           runtimeGraph.playback.activeSessions.single.currentTrackPath,

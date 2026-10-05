@@ -27,6 +27,20 @@ void main() {
     expect(tester.getSize(find.byType(AppBrandIcon)), const Size(80, 80));
     expect(find.byType(ShaderMask), findsNothing);
   });
+
+  testWidgets('app brand icon can tint its transparent outline', (
+    tester,
+  ) async {
+    const primary = Color(0xFF006C4C);
+    await tester.pumpWidget(
+      const MaterialApp(home: AppBrandIcon(size: 52, color: primary)),
+    );
+
+    final image = tester.widget<Image>(find.byType(Image));
+    expect((image.image as AssetImage).assetName, appBrandIconAsset);
+    expect(image.color, primary);
+    expect(image.colorBlendMode, BlendMode.srcIn);
+  });
 }
 
 String _renderedAsset(WidgetTester tester) {

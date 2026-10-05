@@ -655,11 +655,9 @@ class _SessionVideoFullscreenPageState
                                 ),
                             retryFutureBuilder: () =>
                                 library.playbackCoverPathFutureForTrack(track),
-                            seed: track!.displayName,
                             cacheWidth: coverCacheWidth,
                             useDefaultCacheWidth: coverCacheWidth != null,
                             fit: BoxFit.cover,
-                            iconSize: 72,
                           ),
                         ),
                       ),

@@ -717,13 +717,11 @@ class _DlsiteMetadataReviewPageState
                                     cacheWidth: coverCacheWidth,
                                     useDefaultCacheWidth:
                                         coverCacheWidth != null,
-                                    loadingBuilder: (_) => CoverLoadingArtwork(
-                                      placeholder: CoverFallbackArtwork(
-                                        seed: coverUrl,
-                                      ),
+                                    loadingBuilder: (_) => const CoverLoadingArtwork(
+                                      placeholder: CoverFallbackArtwork(),
                                     ),
                                     fallbackBuilder: (_) =>
-                                        CoverFallbackArtwork(seed: coverUrl),
+                                        const CoverFallbackArtwork(),
                                   ),
                                 ),
                               ),

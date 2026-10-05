@@ -362,6 +362,7 @@ class _FolderCoverSelectorState extends ConsumerState<FolderCoverSelector> {
           Card(
             key: const ValueKey('audio_detail_cover_placeholder'),
             margin: EdgeInsets.zero,
+            clipBehavior: Clip.antiAlias,
             color: cs.surfaceContainer,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(16),
@@ -369,7 +370,7 @@ class _FolderCoverSelectorState extends ConsumerState<FolderCoverSelector> {
             ),
             child: const AspectRatio(
               aspectRatio: kStandardCoverAspectRatio,
-              child: SizedBox.expand(),
+              child: CoverFallbackArtwork(),
             ),
           ),
         ],
@@ -429,7 +430,7 @@ class _FolderCoverSelectorState extends ConsumerState<FolderCoverSelector> {
                           cacheWidth: coverCacheWidth,
                           useDefaultCacheWidth: coverCacheWidth != null,
                           fallbackBuilder: (_) =>
-                              CoverFallbackArtwork(seed: _images[index]),
+                              const CoverFallbackArtwork(),
                         );
                       },
                     ),

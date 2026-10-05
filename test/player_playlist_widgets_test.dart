@@ -33,6 +33,7 @@ import 'package:doujin_audio/features/library/application/library_service.dart';
 import 'package:doujin_audio/features/library/presentation/work_detail_page.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/core/widgets/async_cover_image.dart';
+import 'package:doujin_audio/core/widgets/app_brand_icon.dart';
 import 'package:doujin_audio/core/widgets/duration_overlay.dart';
 import 'package:doujin_audio/core/widgets/app_feedback.dart';
 import 'package:doujin_audio/core/widgets/drag_only_scrollbar.dart';
@@ -5340,9 +5341,11 @@ void main() {
   });
 
   testWidgets(
-    'playlist item pinned indicator displays on top-right of cover or above selection checkmark when no cover',
+    'playlist pins and selection use cover corners including placeholders',
     (tester) async {
-      final fixture = AppRuntimeWidgetTestFixture();
+      final fixture = AppRuntimeWidgetTestFixture(
+        coverArtworkCacheService: _RecordingPlaybackCoverCacheService(),
+      );
       addTearDown(fixture.dispose);
 
       final trackWithCover = MusicTrack(
@@ -5455,7 +5458,28 @@ void main() {
       // Verify it is NOT displayed with text '置顶' next to loop mode
       expect(find.text('置顶'), findsNothing);
 
-      // 2. Session without cover: pushpin indicator is at the top-left, text is shifted right
+      final placeholderCover = find.byKey(
+        ValueKey<String>('playlist_cover_${sessionNoCover.id}'),
+      );
+      expect(placeholderCover, findsOneWidget);
+      expect(tester.getSize(placeholderCover), const Size.square(52));
+      expect(
+        find.descendant(
+          of: placeholderCover,
+          matching: find.byType(CoverFallbackArtwork),
+        ),
+        findsOneWidget,
+      );
+      final placeholderIcon = tester.widget<AppBrandIcon>(
+        find.descendant(
+          of: placeholderCover,
+          matching: find.byType(AppBrandIcon),
+        ),
+      );
+      expect(
+        placeholderIcon.color,
+        Theme.of(tester.element(placeholderCover)).colorScheme.primary,
+      );
       final pinNoCoverFinder = find.byKey(
         ValueKey<String>('playlist_session_pinned_${sessionNoCover.id}'),
       );
@@ -5463,7 +5487,9 @@ void main() {
       final noCoverTextFinder = find.text('Track No Cover');
       final pinNoCoverRect = tester.getRect(pinNoCoverFinder);
       final noCoverTextRect = tester.getRect(noCoverTextFinder);
-      // Text is to the right of the pushpin indicator
+      final placeholderRect = tester.getRect(placeholderCover);
+      expect(pinNoCoverRect.center.dx, greaterThan(placeholderRect.center.dx));
+      expect(pinNoCoverRect.center.dy, lessThan(placeholderRect.center.dy));
       expect(noCoverTextRect.left > pinNoCoverRect.right, isTrue);
 
       // 3. In selection mode (更多模式), select the session without cover
@@ -5478,8 +5504,9 @@ void main() {
       final checkmarkRect = tester.getRect(checkmarkFinder);
       final pinNoCoverRectAfter = tester.getRect(pinNoCoverFinder);
 
-      // The pushpin icon is ABOVE the green checkmark icon
       expect(pinNoCoverRectAfter.bottom < checkmarkRect.top, isTrue);
+      expect(checkmarkRect.center.dx, pinNoCoverRectAfter.center.dx);
+      expect(checkmarkRect.center.dy, greaterThan(placeholderRect.center.dy));
 
       // 4. In selection mode, select session with cover and verify symmetry
       final trackCoverCardFinder = find.byKey(
@@ -5509,6 +5536,94 @@ void main() {
         () => Future<void>.delayed(const Duration(milliseconds: 50)),
       );
     },
+  );
+
+  testWidgets(
+    'empty and uncovered playback queues keep a themed placeholder cover',
+    (tester) async {
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(
+        notificationsChannel,
+        (_) async => <String, Object?>{'ok': true, 'value': null},
+      );
+      addTearDown(
+        () => messenger.setMockMethodCallHandler(notificationsChannel, null),
+      );
+      final fixture = AppRuntimeWidgetTestFixture(
+        coverArtworkCacheService: _RecordingPlaybackCoverCacheService(),
+      );
+      addTearDown(fixture.dispose);
+      final session = fixture.runtimeGraph.playback.createPlaybackQueue(
+        'Empty queue',
+      );
+      addTearDown(session.shutdown);
+      fixture.playbackService.syncSlice(
+        activeSessions: <PlaybackSession>[session],
+        playingSessionCount: 0,
+        focusedSessionId: session.id,
+        coverGeneration: 0,
+        isInitialized: true,
+      );
+      await tester.pumpWidget(fixture.build(const PlaylistTab()));
+      await tester.pumpAndSettle();
+      final cover = find.byKey(const ValueKey('playback_queue_cover_grid'));
+      expect(cover, findsOneWidget);
+      expect(tester.getSize(cover), const Size.square(52));
+      final icon = tester.widget<AppBrandIcon>(
+        find.descendant(of: cover, matching: find.byType(AppBrandIcon)),
+      );
+      expect(icon.color, Theme.of(tester.element(cover)).colorScheme.primary);
+      expect(
+        find.byKey(const ValueKey('playback_queue_cover_dividers')),
+        findsNothing,
+      );
+      expect(
+        tester.getRect(cover).right,
+        lessThan(tester.getRect(find.text('Empty queue')).left),
+      );
+      final track = testMusicTrack(
+        name: 'Uncovered audio',
+        path: '/imports/uncovered.mp3',
+        groupKey: '__single_files__',
+        groupTitle: 'Imported files',
+        isSingle: true,
+      );
+      session
+        ..currentTrackPath = track.path
+        ..playbackQueue = PlaybackQueueDefinition(
+          name: 'Empty queue',
+          entries: [
+            PlaybackQueueEntry(
+              id: 'uncovered',
+              kind: PlaybackQueueEntryKind.track,
+              title: track.displayName,
+              tracks: [track],
+            ),
+          ],
+        );
+      fixture.playbackService.markActiveSessionsDirty();
+      fixture.playbackService.syncSlice(
+        activeSessions: [session],
+        playingSessionCount: 0,
+        focusedSessionId: session.id,
+        coverGeneration: 0,
+        isInitialized: true,
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.descendant(of: cover, matching: find.byType(AppBrandIcon)),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('playback_queue_cover_dividers')),
+        findsNothing,
+      );
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
   );
 
   testWidgets(

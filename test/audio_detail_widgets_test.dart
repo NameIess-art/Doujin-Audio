@@ -1316,6 +1316,13 @@ void main() {
       const ValueKey('audio_detail_cover_placeholder'),
     );
     expect(placeholder, findsOneWidget);
+    expect(
+      find.descendant(
+        of: placeholder,
+        matching: find.byType(CoverFallbackArtwork),
+      ),
+      findsOneWidget,
+    );
 
     await tester.pump();
     expect(placeholder, findsNothing);

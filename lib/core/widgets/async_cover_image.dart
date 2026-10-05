@@ -11,6 +11,7 @@ import '../media/cover_image_resolution.dart';
 import '../ui/visual_settings_providers.dart';
 import '../ui/cover_image_retention.dart';
 import '../ui/ui_interaction_coordinator.dart';
+import 'app_brand_icon.dart';
 import 'app_transitions.dart';
 import 'scroll_activity_gate.dart';
 
@@ -295,17 +296,12 @@ class LocalCoverImage extends StatelessWidget {
     super.key,
     this.onImageError,
     this.path,
-    required this.seed,
     this.cacheWidth,
     this.cacheHeight,
     this.useDefaultCacheWidth = true,
     this.deferLoadDuringInteraction = false,
     this.fit,
     this.alignment = Alignment.center,
-    this.icon,
-    this.compact = false,
-    this.iconSize,
-    this.showIcon = false,
     this.color,
     this.colorBlendMode,
     this.filterQuality = FilterQuality.medium,
@@ -313,31 +309,16 @@ class LocalCoverImage extends StatelessWidget {
   });
 
   final String? path;
-  final String seed;
   final int? cacheWidth;
   final int? cacheHeight;
   final bool useDefaultCacheWidth;
   final bool deferLoadDuringInteraction;
   final BoxFit? fit;
   final AlignmentGeometry alignment;
-  final IconData? icon;
-  final bool compact;
-  final double? iconSize;
-  final bool showIcon;
   final Color? color;
   final BlendMode? colorBlendMode;
   final FilterQuality filterQuality;
   final CoverImageDisplayMode? displayMode;
-
-  Widget _fallback(BuildContext context, {bool? showIconOverride}) {
-    return CoverFallbackArtwork(
-      seed: seed,
-      icon: icon,
-      showIcon: showIconOverride ?? showIcon,
-      compact: compact,
-      iconSize: iconSize,
-    );
-  }
 
   final ValueChanged<String>? onImageError;
 
@@ -345,7 +326,7 @@ class LocalCoverImage extends StatelessWidget {
   Widget build(BuildContext context) {
     final resolvedPath = path;
     if (resolvedPath == null || resolvedPath.isEmpty) {
-      return _fallback(context);
+      return const CoverFallbackArtwork();
     }
     return RetryingFileImage(
       path: resolvedPath,
@@ -360,7 +341,7 @@ class LocalCoverImage extends StatelessWidget {
       colorBlendMode: colorBlendMode,
       filterQuality: filterQuality,
       displayMode: displayMode,
-      fallbackBuilder: (context) => _fallback(context),
+      fallbackBuilder: (_) => const CoverFallbackArtwork(),
     );
   }
 }
@@ -373,21 +354,15 @@ class AsyncLocalCoverImage extends StatelessWidget {
     this.requestKey,
     this.initialPath,
     this.retryFutureBuilder,
-    required this.seed,
     this.cacheWidth,
     this.cacheHeight,
     this.useDefaultCacheWidth = true,
     this.deferLoadDuringInteraction = false,
     this.fit,
     this.alignment = Alignment.center,
-    this.icon,
-    this.compact = false,
-    this.iconSize,
-    this.showIcon = false,
     this.color,
     this.colorBlendMode,
     this.filterQuality = FilterQuality.medium,
-    this.hideIconWhileLoading = true,
     this.duration = kCoverImageTransitionDuration,
     this.displayMode,
   });
@@ -396,39 +371,28 @@ class AsyncLocalCoverImage extends StatelessWidget {
   final Object? requestKey;
   final String? initialPath;
   final Future<String?> Function()? retryFutureBuilder;
-  final String seed;
   final int? cacheWidth;
   final int? cacheHeight;
   final bool useDefaultCacheWidth;
   final bool deferLoadDuringInteraction;
   final BoxFit? fit;
   final AlignmentGeometry alignment;
-  final IconData? icon;
-  final bool compact;
-  final double? iconSize;
-  final bool showIcon;
   final Color? color;
   final BlendMode? colorBlendMode;
   final FilterQuality filterQuality;
-  final bool hideIconWhileLoading;
   final Duration duration;
   final CoverImageDisplayMode? displayMode;
 
-  Widget _cover(BuildContext context, String? path, {required bool loading}) {
+  Widget _cover(String? path) {
     return LocalCoverImage(
       path: path,
       onImageError: onImageError,
-      seed: seed,
       cacheWidth: cacheWidth,
       cacheHeight: cacheHeight,
       useDefaultCacheWidth: useDefaultCacheWidth,
       deferLoadDuringInteraction: deferLoadDuringInteraction,
       fit: fit,
       alignment: alignment,
-      icon: icon,
-      compact: compact,
-      iconSize: iconSize,
-      showIcon: loading && hideIconWhileLoading ? false : showIcon,
       color: color,
       colorBlendMode: colorBlendMode,
       filterQuality: filterQuality,
@@ -446,149 +410,31 @@ class AsyncLocalCoverImage extends StatelessWidget {
       initialPath: initialPath,
       retryFutureBuilder: retryFutureBuilder,
       duration: duration,
-      fallbackBuilder: (context) => _cover(context, null, loading: false),
-      loadingBuilder: (context) => CoverLoadingArtwork(
-        placeholder: _cover(context, null, loading: true),
-      ),
-      imageBuilder: (context, coverPath) =>
-          _cover(context, coverPath, loading: false),
+      fallbackBuilder: (_) => const CoverFallbackArtwork(),
+      loadingBuilder: (_) =>
+          const CoverLoadingArtwork(placeholder: CoverFallbackArtwork()),
+      imageBuilder: (_, coverPath) => _cover(coverPath),
     );
   }
 }
 
 class CoverFallbackArtwork extends StatelessWidget {
-  const CoverFallbackArtwork({
-    super.key,
-    this.seed,
-    this.icon,
-    this.showIcon = false,
-    this.iconSize,
-    this.compact = false,
-  });
-
-  final String? seed;
-  final IconData? icon;
-  final bool showIcon;
-  final double? iconSize;
-  final bool compact;
+  const CoverFallbackArtwork({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final normalizedSeed = seed?.trim();
-    final hash =
-        (normalizedSeed == null || normalizedSeed.isEmpty
-                ? 'doujin-audio'
-                : normalizedSeed)
-            .hashCode
-            .abs();
-    final colorPairs = isDark
-        ? const [
-            (Color(0xFF3C1825), Color(0xFF171A2D)),
-            (Color(0xFF24314B), Color(0xFF171827)),
-            (Color(0xFF2F2544), Color(0xFF161923)),
-            (Color(0xFF203834), Color(0xFF161824)),
-          ]
-        : const [
-            (Color(0xFFF3D9E0), Color(0xFFE5EAF4)),
-            (Color(0xFFE2EAF8), Color(0xFFF3E4EA)),
-            (Color(0xFFEAE2F4), Color(0xFFE8EEF2)),
-            (Color(0xFFE1F0EA), Color(0xFFF1E6EA)),
-          ];
-    final pair = colorPairs[hash % colorPairs.length];
-    final foreground = isDark
-        ? Colors.white.withValues(alpha: 0.82)
-        : cs.onSurface.withValues(alpha: 0.66);
-    final accent = Color.lerp(cs.primary, pair.$1, isDark ? 0.3 : 0.16)!;
-
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [pair.$1, pair.$2],
-        ),
-      ),
-      child: CustomPaint(
-        painter: _CoverFallbackTexturePainter(
-          accent: accent.withValues(alpha: isDark ? 0.18 : 0.16),
-          line: foreground.withValues(alpha: isDark ? 0.08 : 0.12),
-          seed: hash,
-        ),
-        child: Center(
-          child: AnimatedOpacity(
-            opacity: showIcon ? 1 : 0,
-            duration: const Duration(milliseconds: 180),
-            child: Icon(
-              icon ?? Icons.graphic_eq_rounded,
-              size: iconSize ?? (compact ? 24 : 34),
-              color: foreground,
-            ),
+    final primary = Theme.of(context).colorScheme.primary;
+    return ColoredBox(
+      color: primary.withValues(alpha: 0.08),
+      child: LayoutBuilder(
+        builder: (context, constraints) => Center(
+          child: AppBrandIcon(
+            size: constraints.biggest.shortestSide,
+            color: primary,
           ),
         ),
       ),
     );
-  }
-}
-
-class _CoverFallbackTexturePainter extends CustomPainter {
-  const _CoverFallbackTexturePainter({
-    required this.accent,
-    required this.line,
-    required this.seed,
-  });
-
-  final Color accent;
-  final Color line;
-  final int seed;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final shortest = size.shortestSide;
-    if (shortest <= 0) return;
-
-    // Decorative circles cross the edges but must stay inside the cover area.
-    canvas.save();
-    canvas.clipRect(Offset.zero & size);
-
-    final accentPaint = Paint()
-      ..color = accent
-      ..style = PaintingStyle.fill;
-    canvas.drawCircle(
-      Offset(size.width * (seed.isEven ? 0.22 : 0.78), size.height * 0.18),
-      shortest * 0.42,
-      accentPaint,
-    );
-    canvas.drawCircle(
-      Offset(size.width * (seed.isEven ? 0.84 : 0.16), size.height * 0.92),
-      shortest * 0.52,
-      accentPaint..color = accent.withValues(alpha: accent.a * 0.7),
-    );
-
-    final linePaint = Paint()
-      ..color = line
-      ..strokeWidth = (shortest * 0.018).clamp(1.0, 2.4)
-      ..strokeCap = StrokeCap.round;
-    final startX = size.width * 0.18;
-    final endX = size.width * 0.82;
-    for (var i = 0; i < 4; i++) {
-      final y = size.height * (0.36 + i * 0.1);
-      final delta = ((seed >> i) & 1) == 0 ? -1.0 : 1.0;
-      canvas.drawLine(
-        Offset(startX + shortest * 0.03 * delta, y),
-        Offset(endX - shortest * 0.04 * delta, y + shortest * 0.02 * delta),
-        linePaint,
-      );
-    }
-    canvas.restore();
-  }
-
-  @override
-  bool shouldRepaint(covariant _CoverFallbackTexturePainter oldDelegate) {
-    return oldDelegate.accent != accent ||
-        oldDelegate.line != line ||
-        oldDelegate.seed != seed;
   }
 }
 

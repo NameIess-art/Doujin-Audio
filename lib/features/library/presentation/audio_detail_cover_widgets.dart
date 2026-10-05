@@ -88,7 +88,7 @@ class _SingleFileCoverPreviewState
                   fit: BoxFit.cover,
                   cacheWidth: coverCacheWidth,
                   useDefaultCacheWidth: coverCacheWidth != null,
-                  fallbackBuilder: (_) => const SizedBox.shrink(),
+                  fallbackBuilder: (_) => const CoverFallbackArtwork(),
                 ),
               ),
             ),

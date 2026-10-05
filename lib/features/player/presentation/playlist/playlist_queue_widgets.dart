@@ -262,44 +262,34 @@ class _PlaybackQueueCardState extends ConsumerState<PlaybackQueueCard> {
                   padding: playlistRowPadding,
                   child: Row(
                     children: [
-                      if (coverItems.isNotEmpty) ...[
-                        Stack(
-                          clipBehavior: Clip.none,
-                          children: [
-                            _QueueCoverGrid(
-                              items: coverItems,
-                              coverCacheWidth: coverCacheWidth,
+                      Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          _QueueCoverGrid(
+                            items: coverItems,
+                            coverCacheWidth: coverCacheWidth,
+                          ),
+                          Positioned(
+                            right: -2,
+                            bottom: -2,
+                            child: PlaylistSelectionIndicator(
+                              sessionId: session.id,
+                              isSelected: isSelected,
                             ),
+                          ),
+                          if (isPinned)
                             Positioned(
+                              top: -2,
                               right: -2,
-                              bottom: -2,
-                              child: PlaylistSelectionIndicator(
+                              child: PlaylistPinnedIndicator(
                                 sessionId: session.id,
+                                color: activeColor,
                                 isSelected: isSelected,
                               ),
                             ),
-                            if (isPinned)
-                              Positioned(
-                                top: -2,
-                                right: -2,
-                                child: PlaylistPinnedIndicator(
-                                  sessionId: session.id,
-                                  color: activeColor,
-                                  isSelected: isSelected,
-                                ),
-                              ),
-                          ],
-                        ),
-                        const SizedBox(width: AppSpacing.xs),
-                      ] else ...[
-                        PlaylistLeadingIndicators(
-                          sessionId: session.id,
-                          isSelected: isSelected,
-                          isPinned: isPinned,
-                          isSelectionMode: isSelectionMode,
-                          pinColor: activeColor,
-                        ),
-                      ],
+                        ],
+                      ),
+                      const SizedBox(width: AppSpacing.xs),
                       Expanded(
                         child: Semantics(
                           button: true,
@@ -455,7 +445,9 @@ class _QueueCoverGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final content = items.length == 1
+    final content = items.isEmpty
+        ? const CoverFallbackArtwork()
+        : items.length == 1
         ? _buildCell(0)
         : Stack(
             fit: StackFit.expand,
@@ -559,9 +551,7 @@ class _QueueCoverSectorClipper extends CustomClipper<Path> {
 }
 
 class _QueueCoverDividerPainter extends CustomPainter {
-  const _QueueCoverDividerPainter({
-    required this.count,
-  });
+  const _QueueCoverDividerPainter({required this.count});
 
   static const Color _highlightColor = Color(0x60FFFFFF);
   static const double _strokeWidth = 1.0;
@@ -581,10 +571,8 @@ class _QueueCoverDividerPainter extends CustomPainter {
 
     for (var index = 0; index < count; index++) {
       final angle = _QueueCoverSectorClipper.startAngle(count, index);
-      final target = center + Offset(
-        radius * math.cos(angle),
-        radius * math.sin(angle),
-      );
+      final target =
+          center + Offset(radius * math.cos(angle), radius * math.sin(angle));
       canvas.drawLine(center, target, paint);
     }
   }

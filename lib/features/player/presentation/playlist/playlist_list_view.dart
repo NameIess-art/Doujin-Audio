@@ -12,7 +12,6 @@ import '../../../../app/theme/app_styles.dart';
 import '../../../../core/media/music_track.dart';
 import '../../../../core/widgets/app_feedback.dart';
 import '../../../../core/widgets/app_transitions.dart';
-import '../../../../core/widgets/async_cover_image.dart';
 import '../../../../core/widgets/shimmer_loading.dart';
 import '../../../../core/widgets/swipe_reveal_card.dart';
 import '../../../library/application/library_facade.dart';
@@ -128,61 +127,6 @@ class PlaylistPinnedIndicator extends StatelessWidget {
             size: 13,
             color: Colors.white,
           ),
-        ),
-      ),
-    );
-  }
-}
-
-class PlaylistLeadingIndicators extends StatelessWidget {
-  const PlaylistLeadingIndicators({
-    super.key,
-    required this.sessionId,
-    required this.isSelected,
-    required this.isPinned,
-    this.isSelectionMode = false,
-    this.pinColor,
-  });
-
-  final String sessionId;
-  final bool isSelected;
-  final bool isPinned;
-  final bool isSelectionMode;
-  final Color? pinColor;
-
-  @override
-  Widget build(BuildContext context) {
-    final showLeading = isPinned || isSelected || isSelectionMode;
-    if (!showLeading) {
-      return const SizedBox.shrink();
-    }
-    return Padding(
-      padding: const EdgeInsets.only(right: AppSpacing.xs),
-      child: SizedBox(
-        width: 24,
-        height: playlistCoverSize,
-        child: Stack(
-          clipBehavior: Clip.none,
-          children: [
-            if (isPinned)
-              Positioned(
-                top: 2,
-                left: 1,
-                child: PlaylistPinnedIndicator(
-                  sessionId: sessionId,
-                  color: pinColor,
-                  isSelected: isSelected,
-                ),
-              ),
-            Positioned(
-              bottom: 2,
-              left: 1,
-              child: PlaylistSelectionIndicator(
-                sessionId: sessionId,
-                isSelected: isSelected,
-              ),
-            ),
-          ],
         ),
       ),
     );
@@ -502,7 +446,6 @@ class SessionListCard extends ConsumerWidget {
         ? asmrBlue.withValues(alpha: isDark ? 0.18 : 0.14)
         : localPlayRose.withValues(alpha: isDark ? 0.16 : 0.12);
     final activeColor = isAsmrOne ? asmrBlue : localPlayRose;
-    final showCover = shouldShowPlaylistCoverArtwork(track, coverPath);
 
     final cardShape = isTemporary
         ? playlistTemporaryRowShape(context)
@@ -573,49 +516,37 @@ class SessionListCard extends ConsumerWidget {
                       padding: playlistRowPadding,
                       child: Row(
                         children: [
-                          if (showCover) ...[
-                            Stack(
-                              clipBehavior: Clip.none,
-                              children: [
-                                SessionCoverThumbnail(
+                          Stack(
+                            clipBehavior: Clip.none,
+                            children: [
+                              SessionCoverThumbnail(
+                                sessionId: sessionId,
+                                track: track,
+                                coverPath: coverPath,
+                                coverGeneration: coverGeneration,
+                                coverCacheWidth: coverCacheWidth,
+                              ),
+                              Positioned(
+                                right: -2,
+                                bottom: -2,
+                                child: PlaylistSelectionIndicator(
                                   sessionId: sessionId,
-                                  track: track,
-                                  coverPath: coverPath,
-                                  coverGeneration: coverGeneration,
-                                  coverCacheWidth: coverCacheWidth,
+                                  isSelected: isSelected,
                                 ),
+                              ),
+                              if (isPinned)
                                 Positioned(
+                                  top: -2,
                                   right: -2,
-                                  bottom: -2,
-                                  child: PlaylistSelectionIndicator(
+                                  child: PlaylistPinnedIndicator(
                                     sessionId: sessionId,
                                     isSelected: isSelected,
+                                    color: isAsmrOne ? asmrBlue : localPlayRose,
                                   ),
                                 ),
-                                if (isPinned)
-                                  Positioned(
-                                    top: -2,
-                                    right: -2,
-                                    child: PlaylistPinnedIndicator(
-                                      sessionId: sessionId,
-                                      isSelected: isSelected,
-                                      color: isAsmrOne
-                                          ? asmrBlue
-                                          : localPlayRose,
-                                    ),
-                                  ),
-                              ],
-                            ),
-                            const SizedBox(width: AppSpacing.xs),
-                          ] else ...[
-                            PlaylistLeadingIndicators(
-                              sessionId: sessionId,
-                              isSelected: isSelected,
-                              isPinned: isPinned,
-                              isSelectionMode: isSelectionMode,
-                              pinColor: isAsmrOne ? asmrBlue : localPlayRose,
-                            ),
-                          ],
+                            ],
+                          ),
+                          const SizedBox(width: AppSpacing.xs),
                           Expanded(
                             child: Semantics(
                               button: true,

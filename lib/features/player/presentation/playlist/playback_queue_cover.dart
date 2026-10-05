@@ -50,7 +50,6 @@ class QueueTrackCoverState extends ConsumerState<QueueTrackCover> {
       future: _future!,
       requestKey: widget.track.path,
       initialPath: widget.coverPath,
-      seed: widget.track.displayName,
       cacheWidth: widget.coverCacheWidth,
       useDefaultCacheWidth: widget.coverCacheWidth != null,
       fit: BoxFit.cover,

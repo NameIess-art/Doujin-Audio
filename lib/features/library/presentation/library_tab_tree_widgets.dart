@@ -838,24 +838,26 @@ class _TrackNodeWidget extends ConsumerWidget {
     final useFeaturedSingleCard =
         track.isVideo || hasDisplayableCoverArtwork(track, resolvedCoverPath);
 
-    Future<void> playSingleTrack({bool? autoPlay}) async {
+    Future<void> playSingleTrack({bool temporary = false}) async {
       unawaited(
         AppInteractionFeedback.trigger(
           AppInteractionFeedbackType.tap,
           context: context,
         ),
       );
-      final created = await playback.spawnSession(
-        track,
-        autoPlay: autoPlay ?? (track.isVideo ? true : null),
-      );
+      final succeeded = temporary
+          ? await playback.playDirect([track])
+          : await playback.spawnSession(
+              track,
+              autoPlay: track.isVideo ? true : null,
+            );
       if (!context.mounted) return;
-      if (created) {
+      if (succeeded && !temporary) {
         showLibrarySessionCreatedSnack(
           context,
           i18n.tr('session_created', {'name': track.displayName}),
         );
-      } else {
+      } else if (!succeeded) {
         showAppSnackBar(
           context,
           i18n.tr('operation_failed_retry'),
@@ -920,7 +922,7 @@ class _TrackNodeWidget extends ConsumerWidget {
             onLongPress: onLongPress,
             onTap: isSelectionMode
                 ? onToggleSelect
-                : () => unawaited(playSingleTrack(autoPlay: true)),
+                : () => unawaited(playSingleTrack(temporary: true)),
             child: useFeaturedCard
                 ? ListTile(
                     contentPadding: LibraryLikeCardMetrics.rootTilePadding,

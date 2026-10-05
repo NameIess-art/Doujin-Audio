@@ -55,8 +55,11 @@ class SubtitleMenuSheet extends ConsumerStatefulWidget {
 }
 
 class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
+  final GlobalKey _menuKey = GlobalKey();
   bool _importing = false;
   SubtitleModelSpec? _checkingModel;
+  List<WorkTextFile>? _scriptFiles;
+  double? _scriptMenuHeight;
 
   @override
   void initState() {
@@ -150,8 +153,9 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
     );
   }
 
-  Future<void> _pickScriptFile(PlaybackSubtitleService subtitles) async {
+  Future<void> _pickScriptFile() async {
     if (_importing) return;
+    final menuHeight = _menuKey.currentContext!.size!.height;
     setState(() => _importing = true);
     try {
       final i18n = ref.read(appLanguageProviderInstanceProvider);
@@ -172,7 +176,6 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
                 })
                 .toList(growable: false);
       if (!mounted) return;
-      setState(() => _importing = false);
       if (files.isEmpty) {
         showAppSnackBar(
           context,
@@ -182,193 +185,34 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
         );
         return;
       }
-      final selected = await showDialog<WorkTextFile>(
-        context: context,
-        builder: (dialogContext) {
-          final theme = Theme.of(dialogContext);
-          final cs = theme.colorScheme;
-          return SimpleDialog(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(AppRadius.dialog),
-              side: BorderSide(
-                color: cs.outlineVariant.withValues(alpha: 0.35),
-                width: 0.5,
-              ),
-            ),
-            backgroundColor: cs.surfaceContainerHigh,
-            surfaceTintColor: Colors.transparent,
-            titlePadding: const EdgeInsets.fromLTRB(20, 20, 16, 12),
-            contentPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-            title: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Container(
-                      width: 40,
-                      height: 40,
-                      decoration: BoxDecoration(
-                        color: cs.primaryContainer.withValues(alpha: 0.6),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Icon(
-                        Icons.text_snippet_rounded,
-                        color: cs.primary,
-                        size: 22,
-                      ),
-                    ),
-                    const SizedBox(width: 14),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            i18n.tr('subtitle_script_generate'),
-                            style: theme.textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            i18n.tr('subtitle_script_hint'),
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: cs.onSurfaceVariant,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    IconButton(
-                      icon: const Icon(Icons.close_rounded, size: 20),
-                      visualDensity: VisualDensity.compact,
-                      color: cs.onSurfaceVariant,
-                      tooltip: i18n.tr('cancel'),
-                      onPressed: () => Navigator.pop(dialogContext),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                Divider(
-                  height: 1,
-                  thickness: 0.5,
-                  color: cs.outlineVariant.withValues(alpha: 0.35),
-                ),
-              ],
-            ),
-            children: [
-              ConstrainedBox(
-                constraints: BoxConstraints(
-                  maxHeight: MediaQuery.sizeOf(context).height * 0.45,
-                ),
-                child: ScrollConfiguration(
-                  behavior: ScrollConfiguration.of(
-                    dialogContext,
-                  ).copyWith(scrollbars: false),
-                  child: SingleChildScrollView(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                      for (final file in files) () {
-                        final displayPath = file.relativePath.isEmpty
-                            ? file.name
-                            : file.relativePath;
-                        final ext = path.extension(file.name).toLowerCase();
-                        final isMd = ext == '.md';
-                        return Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 4),
-                          child: Material(
-                            color: cs.surfaceContainerHighest.withValues(
-                              alpha: 0.4,
-                            ),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              side: BorderSide(
-                                color: cs.outlineVariant.withValues(
-                                  alpha: 0.3,
-                                ),
-                                width: 0.5,
-                              ),
-                            ),
-                            clipBehavior: Clip.antiAlias,
-                            child: InkWell(
-                              borderRadius: BorderRadius.circular(12),
-                              splashColor: cs.primary.withValues(alpha: 0.16),
-                              hoverColor: cs.primary.withValues(alpha: 0.08),
-                              onTap: () => Navigator.pop(dialogContext, file),
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 14,
-                                  vertical: 11,
-                                ),
-                                child: Row(
-                                  children: [
-                                    Container(
-                                      width: 34,
-                                      height: 34,
-                                      decoration: BoxDecoration(
-                                        color: isMd
-                                            ? cs.secondaryContainer.withValues(
-                                                alpha: 0.7,
-                                              )
-                                            : cs.tertiaryContainer.withValues(
-                                                alpha: 0.7,
-                                              ),
-                                        borderRadius: BorderRadius.circular(8),
-                                      ),
-                                      child: Center(
-                                        child: Text(
-                                          isMd ? 'MD' : 'TXT',
-                                          style: TextStyle(
-                                            fontSize: 10.5,
-                                            fontWeight: FontWeight.w700,
-                                            color: isMd
-                                                ? cs.onSecondaryContainer
-                                                : cs.onTertiaryContainer,
-                                            letterSpacing: 0.5,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      child: Text(
-                                        displayPath,
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: theme.textTheme.bodyMedium?.copyWith(
-                                          fontWeight: FontWeight.w600,
-                                          color: cs.onSurface,
-                                        ),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Icon(
-                                      Icons.arrow_forward_ios_rounded,
-                                      size: 13,
-                                      color: cs.onSurfaceVariant.withValues(
-                                        alpha: 0.6,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                        );
-                      }(),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ],
-          );
-        },
-      );
-      if (!mounted || selected == null) return;
+      setState(() {
+        _scriptFiles = files;
+        _scriptMenuHeight = menuHeight;
+      });
+    } catch (_) {
+      if (mounted) {
+        showAppSnackBar(
+          context,
+          ref
+              .read(appLanguageProviderInstanceProvider)
+              .tr('subtitle_task_failed'),
+          tone: AppFeedbackTone.warning,
+          icon: Icons.error_outline_rounded,
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _importing = false);
+    }
+  }
+
+  Future<void> _selectScriptFile(
+    PlaybackSubtitleService subtitles,
+    WorkTextFile selected,
+  ) async {
+    if (_importing || _scriptFiles == null) return;
+    setState(() => _scriptFiles = null);
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
+    try {
       final selectedPath = selected.path;
       if (path.extension(selected.name).toLowerCase() == '.txt' &&
           await subtitles.isTimedSubtitleFile(selectedPath)) {
@@ -863,44 +707,139 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
             activeTrack?.cues.isNotEmpty == true &&
             subtitleLanguage != SubtitleLanguage.other;
         final isOffsetZero = activeOffset == Duration.zero;
+        final scriptFiles = _scriptFiles;
+        const menuPadding = EdgeInsets.fromLTRB(20, 8, 20, 20);
+        final header = SizedBox(
+          key: const ValueKey('subtitle_menu_header'),
+          height: 48,
+          child: Row(
+            children: [
+              Icon(
+                scriptFiles == null
+                    ? Icons.subtitles_rounded
+                    : Icons.text_snippet_rounded,
+                color: cs.primary,
+                size: 24,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  i18n.tr(
+                    scriptFiles == null
+                        ? 'subtitles'
+                        : 'subtitle_script_generate',
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+              if (scriptFiles != null)
+                IconButton(
+                  key: const ValueKey('subtitle_script_back'),
+                  icon: const Icon(Icons.arrow_back_rounded),
+                  tooltip: i18n.tr('back'),
+                  color: cs.primary,
+                  onPressed: () => setState(() => _scriptFiles = null),
+                ),
+            ],
+          ),
+        );
+        final cardDecoration = BoxDecoration(
+          color: cs.surfaceContainerHighest.withValues(alpha: 0.45),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: cs.outlineVariant.withValues(alpha: 0.35),
+            width: 0.5,
+          ),
+        );
+        final scriptContent = scriptFiles == null
+            ? null
+            : SafeArea(
+                child: Padding(
+                  padding: menuPadding,
+                  child: Column(
+                    key: const ValueKey('subtitle_script_selection'),
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      header,
+                      const SizedBox(height: 16),
+                      Expanded(
+                        child: ScrollConfiguration(
+                          behavior: ScrollConfiguration.of(
+                            context,
+                          ).copyWith(scrollbars: false),
+                          child: SingleChildScrollView(
+                            key: const ValueKey('subtitle_script_files'),
+                            child: Container(
+                              decoration: cardDecoration,
+                              clipBehavior: Clip.antiAlias,
+                              child: Column(
+                                children: [
+                                  for (
+                                    var index = 0;
+                                    index < scriptFiles.length;
+                                    index++
+                                  ) ...[
+                                    if (index > 0)
+                                      Divider(
+                                        height: 1,
+                                        thickness: 0.5,
+                                        indent: 16,
+                                        endIndent: 16,
+                                        color: cs.outlineVariant.withValues(
+                                          alpha: 0.35,
+                                        ),
+                                      ),
+                                    ListTile(
+                                      leading: Icon(
+                                        Icons.text_snippet_rounded,
+                                        color: cs.primary,
+                                      ),
+                                      title: Text(
+                                        scriptFiles[index].relativePath.isEmpty
+                                            ? scriptFiles[index].name
+                                            : scriptFiles[index].relativePath,
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: theme.textTheme.bodyLarge
+                                            ?.copyWith(
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                      ),
+                                      onTap: () => _selectScriptFile(
+                                        subtitles,
+                                        scriptFiles[index],
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
 
-        return SafeArea(
+        final menu = SafeArea(
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
+            padding: menuPadding,
             child: SingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  // Title Row
-                  Row(
-                    children: [
-                      Icon(
-                        Icons.subtitles_rounded,
-                        color: cs.primary,
-                        size: 24,
-                      ),
-                      const SizedBox(width: 10),
-                      Text(
-                        i18n.tr('subtitles'),
-                        style: theme.textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
-                  ),
+                  header,
                   const SizedBox(height: 16),
 
                   // Switches Card
                   Container(
-                    decoration: BoxDecoration(
-                      color: cs.surfaceContainerHighest.withValues(alpha: 0.45),
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(
-                        color: cs.outlineVariant.withValues(alpha: 0.35),
-                        width: 0.5,
-                      ),
-                    ),
+                    decoration: cardDecoration,
                     child: Column(
                       children: [
                         SwitchListTile(
@@ -1106,9 +1045,7 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
                                       ? null
                                       : cs.onSurface.withValues(alpha: 0.38),
                                 ),
-                          onTap: generateEnabled
-                              ? () => _pickScriptFile(subtitles)
-                              : null,
+                          onTap: generateEnabled ? _pickScriptFile : null,
                         ),
                         Divider(
                           height: 1,
@@ -1350,6 +1287,19 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
                 ],
               ),
             ),
+          ),
+        );
+        return PopScope(
+          canPop: scriptFiles == null,
+          onPopInvokedWithResult: (didPop, _) {
+            if (!didPop && _scriptFiles != null) {
+              setState(() => _scriptFiles = null);
+            }
+          },
+          child: SizedBox(
+            key: _menuKey,
+            height: scriptFiles == null ? null : _scriptMenuHeight,
+            child: scriptContent ?? menu,
           ),
         );
       },

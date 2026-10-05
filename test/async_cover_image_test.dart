@@ -16,6 +16,7 @@ import 'package:doujin_audio/features/settings/application/settings_state.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/ui/cover_image_retention.dart';
 import 'package:doujin_audio/core/ui/visual_settings_providers.dart';
+import 'package:doujin_audio/core/widgets/app_brand_icon.dart';
 import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:doujin_audio/core/widgets/async_cover_image.dart';
 import 'package:doujin_audio/core/widgets/scroll_activity_gate.dart';
@@ -114,9 +115,43 @@ void main() {
 
   tearDown(UiInteractionCoordinator.instance.resetForTest);
 
+  testWidgets('fallback cover uses the theme-colored brand at every size', (
+    tester,
+  ) async {
+    for (final brightness in Brightness.values) {
+      for (final size in const [Size.square(52), Size(120, 90)]) {
+        final scheme = ColorScheme.fromSeed(
+          seedColor: Colors.green,
+          brightness: brightness,
+        );
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: ThemeData(colorScheme: scheme),
+            home: Center(
+              child: SizedBox.fromSize(
+                size: size,
+                child: const CoverFallbackArtwork(),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final brand = tester.widget<AppBrandIcon>(find.byType(AppBrandIcon));
+        final image = tester.widget<Image>(find.byType(Image));
+        expect(brand.size, size.shortestSide);
+        expect(image.color, scheme.primary);
+        expect(image.colorBlendMode, BlendMode.srcIn);
+        expect((image.image as AssetImage).assetName, appBrandIconAsset);
+        expect(find.byType(Icon), findsNothing);
+        expect(tester.takeException(), isNull);
+      }
+    }
+  });
+
   for (final brightness in Brightness.values) {
     for (final size in const [Size(360, 240), Size(360, 120), Size(960, 240)]) {
-      testWidgets('fallback texture stays inside $size in $brightness', (
+      testWidgets('fallback artwork stays inside $size in $brightness', (
         tester,
       ) async {
         const margin = 80.0;
@@ -137,9 +172,7 @@ void main() {
                 child: Center(
                   child: SizedBox.fromSize(
                     size: size,
-                    child: const CoverFallbackArtwork(
-                      seed: 'video_2026-01-21_02-06-55.flac',
-                    ),
+                    child: const CoverFallbackArtwork(),
                   ),
                 ),
               ),
@@ -186,14 +219,12 @@ void main() {
     ),
     'LocalCoverImage': (path) => LocalCoverImage(
       path: path,
-      seed: 'cover',
       cacheWidth: 8,
       deferLoadDuringInteraction: true,
     ),
     'AsyncLocalCoverImage': (path) => AsyncLocalCoverImage(
       future: Completer<String?>().future,
       initialPath: path,
-      seed: 'cover',
       cacheWidth: 8,
       deferLoadDuringInteraction: true,
     ),
@@ -251,13 +282,25 @@ void main() {
               ),
             ),
           );
+          final coverImages = find.byWidgetPredicate(
+            (widget) => widget is Image && widget.image is! AssetImage,
+          );
+          final coverFrames = find.byElementPredicate((element) {
+            if (element.widget is! RawImage) return false;
+            var isBrandIcon = false;
+            element.visitAncestorElements((ancestor) {
+              isBrandIcon = ancestor.widget is AppBrandIcon;
+              return !isBrandIcon;
+            });
+            return !isBrandIcon;
+          });
           Future<void> finishFileDecode() async {
             for (var attempt = 0; attempt < 50; attempt++) {
               await tester.runAsync(
                 () => Future<void>.delayed(const Duration(milliseconds: 10)),
               );
               await tester.pump();
-              final images = tester.widgetList<RawImage>(find.byType(RawImage));
+              final images = tester.widgetList<RawImage>(coverFrames);
               if (images.any((image) => image.image != null)) return;
             }
             fail('File cover did not decode');
@@ -275,14 +318,14 @@ void main() {
           await tester.pumpWidget(page());
           await tester.pump();
           if (cached) {
-            expect(find.byType(Image), findsOneWidget);
+            expect(coverImages, findsOneWidget);
             expect(
-              tester.widget<RawImage>(find.byType(RawImage)).image,
+              tester.widget<RawImage>(coverFrames).image,
               isNotNull,
             );
             expect(find.byType(CoverLoadingArtwork), findsNothing);
           } else {
-            expect(find.byType(Image), findsNothing);
+            expect(coverImages, findsNothing);
             expect(
               PaintingBinding.instance.imageCache
                   .statusForKey(cacheKey)
@@ -293,11 +336,11 @@ void main() {
               interactionSource,
             );
             await tester.pump();
-            expect(find.byType(Image), findsOneWidget);
+            expect(coverImages, findsOneWidget);
             await finishFileDecode();
             await tester.pumpAndSettle();
             expect(
-              tester.widget<RawImage>(find.byType(RawImage)).image,
+              tester.widget<RawImage>(coverFrames).image,
               isNotNull,
             );
           }
@@ -360,7 +403,7 @@ void main() {
         home: SizedBox(
           width: 120,
           height: 90,
-          child: LocalCoverImage(path: '', seed: 'empty-cover'),
+          child: LocalCoverImage(path: ''),
         ),
       ),
     );
@@ -379,31 +422,27 @@ void main() {
     expect(coverCacheWidth(resolution: CoverImageResolution.original), isNull);
   });
 
-  testWidgets('AsyncLocalCoverImage hides the fallback icon while loading', (
-    tester,
-  ) async {
-    final completer = Completer<String?>();
+  testWidgets(
+    'AsyncLocalCoverImage shows the brand placeholder while loading',
+    (tester) async {
+      final completer = Completer<String?>();
 
-    await tester.pumpWidget(
-      MaterialApp(
-        home: SizedBox(
-          width: 120,
-          height: 90,
-          child: AsyncLocalCoverImage(
-            future: completer.future,
-            seed: 'loading-cover',
+      await tester.pumpWidget(
+        MaterialApp(
+          home: SizedBox(
+            width: 120,
+            height: 90,
+            child: AsyncLocalCoverImage(future: completer.future),
           ),
         ),
-      ),
-    );
+      );
 
-    expect(find.byType(CoverLoadingArtwork), findsOneWidget);
-    expect(find.byType(CoverFallbackArtwork), findsOneWidget);
-    final hiddenIcon = tester.widget<AnimatedOpacity>(
-      find.byType(AnimatedOpacity),
-    );
-    expect(hiddenIcon.opacity, 0);
-  });
+      expect(find.byType(CoverLoadingArtwork), findsOneWidget);
+      expect(find.byType(CoverFallbackArtwork), findsOneWidget);
+      expect(find.byType(AppBrandIcon), findsOneWidget);
+      expect(find.byType(AnimatedOpacity), findsNothing);
+    },
+  );
 
   testWidgets('AsyncLocalCoverImage shows fallback after a null result', (
     tester,
@@ -415,10 +454,7 @@ void main() {
         home: SizedBox(
           width: 120,
           height: 90,
-          child: AsyncLocalCoverImage(
-            future: completer.future,
-            seed: 'missing-cover',
-          ),
+          child: AsyncLocalCoverImage(future: completer.future),
         ),
       ),
     );
@@ -428,10 +464,8 @@ void main() {
 
     expect(find.byType(CoverLoadingArtwork), findsNothing);
     expect(find.byType(CoverFallbackArtwork), findsOneWidget);
-    final hiddenIcon = tester.widget<AnimatedOpacity>(
-      find.byType(AnimatedOpacity),
-    );
-    expect(hiddenIcon.opacity, 0);
+    expect(find.byType(AppBrandIcon), findsOneWidget);
+    expect(find.byType(AnimatedOpacity), findsNothing);
   });
 
   testWidgets('AsyncCoverImage shows fallback artwork while loading', (
@@ -447,8 +481,7 @@ void main() {
           child: AsyncCoverImage(
             future: completer.future,
             imageBuilder: (_, path) => Text('loaded:$path'),
-            fallbackBuilder: (_) =>
-                const CoverFallbackArtwork(seed: 'pending-cover'),
+            fallbackBuilder: (_) => const CoverFallbackArtwork(),
           ),
         ),
       ),

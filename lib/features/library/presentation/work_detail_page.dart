@@ -1168,10 +1168,10 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
         fit: BoxFit.cover,
         cacheWidth: cacheWidth,
         useDefaultCacheWidth: cacheWidth != null,
-        loadingBuilder: (_) => CoverLoadingArtwork(
-          placeholder: CoverFallbackArtwork(seed: displayTitle),
+        loadingBuilder: (_) => const CoverLoadingArtwork(
+          placeholder: CoverFallbackArtwork(),
         ),
-        fallbackBuilder: (_) => CoverFallbackArtwork(seed: displayTitle),
+        fallbackBuilder: (_) => const CoverFallbackArtwork(),
       );
     } else if (widget.isLocal) {
       final library = ref.read(libraryFacadeProvider);
@@ -1201,18 +1201,10 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
         requestKey: resolved,
         initialPath: resolved,
         retryFutureBuilder: retryCover,
-        seed: coverPath ?? displayTitle,
         fit: BoxFit.cover,
-        showIcon: true,
-        icon: Icons.album_rounded,
       );
     } else {
-      coverWidget = LocalCoverImage(
-        seed: displayTitle,
-        fit: BoxFit.cover,
-        showIcon: true,
-        icon: Icons.album_rounded,
-      );
+      coverWidget = const LocalCoverImage(fit: BoxFit.cover);
     }
 
     return Scaffold(

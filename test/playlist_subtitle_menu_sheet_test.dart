@@ -13,6 +13,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:doujin_audio/app/localization/app_language_provider.dart';
 import 'package:doujin_audio/app/state/app_runtime_providers.dart';
 import 'package:doujin_audio/core/media/subtitle_parser.dart';
+import 'package:doujin_audio/core/widgets/app_bottom_sheet.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
 import 'package:doujin_audio/features/library/application/library_facade.dart';
 import 'package:doujin_audio/features/library/application/library_service.dart';
@@ -709,7 +710,11 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(texts.requestedFolder, folder);
-    expect(find.byType(SimpleDialog), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('subtitle_script_selection')),
+      findsOneWidget,
+    );
+    expect(find.byType(SimpleDialog), findsNothing);
     expect(find.text('説明.TXT'), findsOneWidget);
     expect(find.text('台本/トラック１.md'), findsOneWidget);
     expect(find.text('book.pdf'), findsNothing);
@@ -771,7 +776,11 @@ void main() {
     await tester.ensureVisible(script);
     await tester.tap(script);
     await tester.pumpAndSettle();
-    expect(find.byType(SimpleDialog), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('subtitle_script_selection')),
+      findsOneWidget,
+    );
+    expect(find.byType(SimpleDialog), findsNothing);
     await tester.tap(find.text('script.md'));
     await tester.pumpAndSettle();
     expect(find.byType(AlertDialog), findsOneWidget);
@@ -928,109 +937,167 @@ void main() {
     expect(find.byType(SimpleDialog), findsNothing);
   });
 
-  testWidgets(
-    'script recognition dialog displays styled header, format badges, and close button',
-    (tester) async {
-      const folder = '/library/work';
-      const scriptPath = '/library/work/script.md';
-      final texts = _WorkTexts(const [
-        WorkTextFile(
-          name: 'notes.txt',
-          relativePath: 'notes.txt',
-          path: '/library/work/notes.txt',
-        ),
-        WorkTextFile(
-          name: 'script.md',
-          relativePath: 'subfolder/script.md',
-          path: scriptPath,
-        ),
-      ]);
-      final service = _ScriptSelectionService();
-      final language = AppLanguageProvider();
-      await tester.pumpWidget(
-        ProviderScope(
-          overrides: [
-            appLanguageProviderInstanceProvider.overrideWithValue(language),
-            playbackSubtitleServiceProvider.overrideWithValue(service),
-            libraryFacadeProvider.overrideWithValue(
-              _workLibrary(folder, '/library/work/audio.mp3'),
+  for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+    for (final fileCount in [2, 30]) {
+      testWidgets(
+        'script selection keeps subtitle sheet geometry on $platform with $fileCount files',
+        (tester) async {
+          tester.view.physicalSize = platform == TargetPlatform.windows
+              ? const Size(1280, 800)
+              : const Size(375, 812);
+          tester.view.devicePixelRatio = 1;
+          addTearDown(tester.view.resetPhysicalSize);
+          addTearDown(tester.view.resetDevicePixelRatio);
+          const folder = '/library/work';
+          const audioPath = '/library/work/audio.mp3';
+          const scriptPath = '/library/work/script.md';
+          final texts = _WorkTexts([
+            const WorkTextFile(
+              name: 'notes.txt',
+              relativePath: 'notes.txt',
+              path: '/library/work/notes.txt',
             ),
-            workTextServiceProvider.overrideWithValue(texts),
-          ],
-          child: MaterialApp(
-            home: Scaffold(
-              body: SubtitleMenuSheet(
-                session: _createSnapshot(trackPath: '/library/work/audio.mp3'),
-                generationUnavailableReason: () => null,
+            const WorkTextFile(
+              name: 'script.md',
+              relativePath: 'subfolder/script.md',
+              path: scriptPath,
+            ),
+            for (var index = 2; index < fileCount; index++)
+              WorkTextFile(
+                name: 'script_$index.md',
+                relativePath: 'very_long_script_folder_name/script_$index.md',
+                path: '/library/work/script_$index.md',
+              ),
+          ]);
+          final service = _ScriptSelectionService();
+          addTearDown(service.dispose);
+          final language = AppLanguageProvider();
+          await language.setLanguage(AppLanguage.zh);
+          addTearDown(language.dispose);
+          await tester.pumpWidget(
+            ProviderScope(
+              overrides: [
+                appLanguageProviderInstanceProvider.overrideWithValue(language),
+                playbackSubtitleServiceProvider.overrideWithValue(service),
+                libraryFacadeProvider.overrideWithValue(
+                  _workLibrary(folder, audioPath),
+                ),
+                workTextServiceProvider.overrideWithValue(texts),
+              ],
+              child: MaterialApp(
+                home: Scaffold(
+                  body: Builder(
+                    builder: (context) => TextButton(
+                      onPressed: () => AppBottomSheet.show<void>(
+                        context: context,
+                        builder: (_) => ClipRect(
+                          child: SubtitleMenuSheet(
+                            session: _createSnapshot(trackPath: audioPath),
+                            generationUnavailableReason: () => null,
+                          ),
+                        ),
+                      ),
+                      child: const Text('Open'),
+                    ),
+                  ),
+                ),
               ),
             ),
-          ),
-        ),
+          );
+          await tester.tap(find.text('Open'));
+          await tester.pumpAndSettle();
+          final sheet = find.byType(BottomSheet);
+          final originalRect = tester.getRect(sheet);
+          final header = find.byKey(const ValueKey('subtitle_menu_header'));
+          final originalHeaderStyle = tester
+              .widget<Text>(find.text(language.tr('subtitles')))
+              .style;
+          final scriptTile = find.byKey(const ValueKey('subtitle_script_tile'));
+          Future<void> openScriptSelection() async {
+            await tester.ensureVisible(scriptTile);
+            await tester.tap(scriptTile);
+            await tester.pumpAndSettle();
+          }
+
+          await openScriptSelection();
+          final selection = find.byKey(
+            const ValueKey('subtitle_script_selection'),
+          );
+          final back = find.byKey(const ValueKey('subtitle_script_back'));
+          expect(selection, findsOneWidget);
+          expect(find.byType(SimpleDialog), findsNothing);
+          expect(tester.getRect(sheet), originalRect);
+          expect(
+            find.text(language.tr('subtitle_script_generate')),
+            findsOneWidget,
+          );
+          expect(find.text(language.tr('subtitle_script_hint')), findsNothing);
+          expect(
+            tester
+                .widget<Text>(
+                  find.text(language.tr('subtitle_script_generate')),
+                )
+                .style,
+            originalHeaderStyle,
+          );
+          expect(find.byIcon(Icons.arrow_back_rounded), findsOneWidget);
+          expect(
+            tester.getCenter(back).dx,
+            greaterThan(tester.getCenter(header).dx),
+          );
+          expect(
+            tester.getCenter(back).dy,
+            closeTo(tester.getCenter(header).dy, 0.01),
+          );
+          expect(find.text('notes.txt'), findsOneWidget);
+          expect(find.text('subfolder/script.md'), findsOneWidget);
+          expect(
+            find.descendant(of: selection, matching: find.byType(Scrollbar)),
+            findsNothing,
+          );
+          if (fileCount > 2) {
+            final scrollable = tester.state<ScrollableState>(
+              find.descendant(of: selection, matching: find.byType(Scrollable)),
+            );
+            expect(scrollable.position.maxScrollExtent, greaterThan(0));
+            scrollable.position.jumpTo(scrollable.position.maxScrollExtent);
+            await tester.pump();
+            expect(
+              find
+                  .text(
+                    'very_long_script_folder_name/script_${fileCount - 1}.md',
+                  )
+                  .hitTestable(),
+              findsOneWidget,
+            );
+            expect(tester.getRect(sheet), originalRect);
+          }
+          await tester.tap(back);
+          await tester.pumpAndSettle();
+          expect(selection, findsNothing);
+          expect(find.text(language.tr('subtitles')), findsOneWidget);
+          expect(tester.getRect(sheet), originalRect);
+          await openScriptSelection();
+          await tester.binding.handlePopRoute();
+          await tester.pumpAndSettle();
+          expect(selection, findsNothing);
+          expect(sheet, findsOneWidget);
+          expect(tester.getRect(sheet), originalRect);
+          await openScriptSelection();
+          await tester.tap(find.text('subfolder/script.md'));
+          await tester.pumpAndSettle();
+          expect(service.selectedScript, scriptPath);
+          expect(selection, findsNothing);
+          expect(sheet, findsOneWidget);
+          await tester.binding.handlePopRoute();
+          await tester.pumpAndSettle();
+          expect(sheet, findsNothing);
+          expect(tester.takeException(), isNull);
+        },
+        variant: TargetPlatformVariant({platform}),
       );
-      await tester.pumpAndSettle();
-
-      final scriptTile = find.byKey(const ValueKey('subtitle_script_tile'));
-      await tester.ensureVisible(scriptTile);
-      await tester.tap(scriptTile);
-      await tester.pumpAndSettle();
-
-      final dialogFinder = find.byType(SimpleDialog);
-      expect(dialogFinder, findsOneWidget);
-      expect(find.byIcon(Icons.text_snippet_rounded), findsNWidgets(2)); // tile + dialog header
-      expect(find.text(language.tr('subtitle_script_generate')), findsNWidgets(2));
-      expect(find.text(language.tr('subtitle_script_hint')), findsNWidgets(2));
-      expect(find.text('TXT'), findsOneWidget);
-      expect(find.text('MD'), findsOneWidget);
-      expect(find.text('notes.txt'), findsOneWidget);
-      expect(find.text('subfolder/script.md'), findsOneWidget);
-
-      // Verify item highlight indicators are rounded rectangles conforming to items
-      final scriptInkWells = tester.widgetList<InkWell>(
-        find.descendant(
-          of: dialogFinder,
-          matching: find.byType(InkWell),
-        ),
-      ).where((i) => i.borderRadius != null).toList();
-      expect(scriptInkWells, hasLength(2));
-      for (final inkWell in scriptInkWells) {
-        expect(inkWell.borderRadius, BorderRadius.circular(12));
-      }
-
-      final scriptMaterials = tester.widgetList<Material>(
-        find.descendant(
-          of: dialogFinder,
-          matching: find.byType(Material),
-        ),
-      ).where((m) => m.shape is RoundedRectangleBorder && (m.shape as RoundedRectangleBorder).borderRadius == BorderRadius.circular(12));
-      expect(scriptMaterials, hasLength(2));
-
-      // Verify scrollbar is removed
-      expect(
-        find.descendant(
-          of: dialogFinder,
-          matching: find.byType(Scrollbar),
-        ),
-        findsNothing,
-      );
-      expect(
-        find.descendant(
-          of: dialogFinder,
-          matching: find.byType(RawScrollbar),
-        ),
-        findsNothing,
-      );
-
-      // Verify close button dismisses dialog
-      final closeButton = find.descendant(
-        of: dialogFinder,
-        matching: find.byIcon(Icons.close_rounded),
-      );
-      expect(closeButton, findsOneWidget);
-      await tester.tap(closeButton);
-      await tester.pumpAndSettle();
-      expect(find.byType(SimpleDialog), findsNothing);
-    },
-  );
+    }
+  }
 
   testWidgets(
     'translation language dialog displays styled header, language badges, and close button',

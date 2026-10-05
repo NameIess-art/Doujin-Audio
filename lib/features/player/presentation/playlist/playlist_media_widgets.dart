@@ -62,11 +62,9 @@ class SessionHeroArtwork extends ConsumerWidget {
                   track?.path ?? session.currentTrackPath,
                 ),
                 initialPath: initialCoverPath,
-                seed: track?.displayName ?? track?.path ?? sessionId,
                 cacheWidth: coverCacheWidth,
                 useDefaultCacheWidth: false,
                 fit: BoxFit.cover,
-                iconSize: 56,
               ),
             ),
             Positioned.fill(
@@ -197,13 +195,10 @@ class _SessionCoverThumbnailState extends ConsumerState<SessionCoverThumbnail> {
       initialPath: widget.coverPath,
       retryFutureBuilder: () =>
           library.playbackCoverPathFutureForTrack(widget.track),
-      seed: widget.track?.displayName ?? widget.sessionId,
       cacheWidth: widget.coverCacheWidth,
       useDefaultCacheWidth: widget.coverCacheWidth != null,
       fit: BoxFit.cover,
       displayMode: CoverImageDisplayMode.fill,
-      compact: true,
-      iconSize: 26,
     );
     return SizedBox(
       key: ValueKey<String>('playlist_cover_${widget.sessionId}'),

@@ -568,7 +568,7 @@ class _QueueAudioEditCard extends ConsumerWidget {
                         child: SizedBox.square(
                           dimension: playlistCoverSize,
                           child: track == null
-                              ? CoverFallbackArtwork(seed: title)
+                              ? const CoverFallbackArtwork()
                               : QueueTrackCover(
                                   track: track!,
                                   coverPath: resolvedCoverPath,

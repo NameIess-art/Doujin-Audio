@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import '../../app/theme/app_styles.dart';
 
 class AppBottomSheet {
+  static const contentPadding = EdgeInsets.fromLTRB(20, 8, 20, 12);
+
   /// Shows a standardized bottom sheet with a drag handle and rounded top corners.
   static Duration reverseAnimationDurationOf(BuildContext context) =>
       MediaQuery.disableAnimationsOf(context)
@@ -73,6 +75,42 @@ class AppBottomSheet {
           child: RepaintBoundary(child: builder(ctx)),
         ),
       ),
+    );
+  }
+}
+
+class AppBottomSheetHeader extends StatelessWidget {
+  const AppBottomSheetHeader({
+    super.key,
+    required this.icon,
+    required this.title,
+    this.trailing,
+    this.iconKey,
+  });
+
+  final IconData icon;
+  final String title;
+  final Widget? trailing;
+  final Key? iconKey;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Row(
+      children: [
+        Icon(icon, key: iconKey, size: 24, color: theme.colorScheme.primary),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text(
+            title,
+            style: theme.textTheme.titleLarge?.copyWith(
+              fontSize: 22,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+        if (trailing != null) ...[const SizedBox(width: 12), trailing!],
+      ],
     );
   }
 }

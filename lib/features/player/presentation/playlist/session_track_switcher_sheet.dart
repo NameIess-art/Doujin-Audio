@@ -7,6 +7,7 @@ import '../../../../core/media/natural_sort.dart';
 import '../../../../core/media/path_display.dart';
 import '../../../../core/media/path_matcher.dart';
 import '../../../../core/media/time_text_formatters.dart';
+import '../../../../core/widgets/app_bottom_sheet.dart';
 import '../../../../core/widgets/app_transitions.dart';
 import '../../application/playback_session_snapshot.dart';
 import '../../domain/playback_queue.dart';
@@ -47,7 +48,7 @@ class SessionTrackSwitcherSheet extends StatelessWidget {
       width: double.infinity,
       child: ListView.builder(
         shrinkWrap: tree.length <= 8,
-        padding: const EdgeInsets.fromLTRB(16, 4, 12, 24),
+        padding: AppBottomSheet.contentPadding,
         keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
         itemCount: tree.length + 1,
         itemBuilder: (context, index) {
@@ -217,30 +218,16 @@ class _QueueSheetHeader extends StatelessWidget {
       context,
       listen: false,
     ).read(appLanguageProviderInstanceProvider);
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(2, 0, 2, 6),
-      child: Row(
-        children: [
-          Icon(Icons.queue_music_rounded, size: 20, color: cs.primary),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              i18n.tr('switch_audio'),
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w800,
-                color: cs.onSurface,
-              ),
-            ),
-          ),
-          Text(
-            count.toString(),
-            style: Theme.of(context).textTheme.labelMedium?.copyWith(
-              color: cs.onSurfaceVariant,
-              fontWeight: FontWeight.w800,
-              fontFeatures: const [FontFeature.tabularFigures()],
-            ),
-          ),
-        ],
+    return AppBottomSheetHeader(
+      icon: Icons.queue_music_rounded,
+      title: i18n.tr('switch_audio'),
+      trailing: Text(
+        count.toString(),
+        style: Theme.of(context).textTheme.labelMedium?.copyWith(
+          color: cs.onSurfaceVariant,
+          fontWeight: FontWeight.w800,
+          fontFeatures: const [FontFeature.tabularFigures()],
+        ),
       ),
     );
   }

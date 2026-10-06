@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/presentation/app_settings_group_card.dart';
 import '../../../core/widgets/unified_dropdown.dart';
+import '../../../core/widgets/app_bottom_sheet.dart';
 import '../../../app/state/subtitle_settings_provider.dart';
 
 import 'subtitle_window_preview_card.dart';
@@ -47,7 +48,7 @@ class SubtitleWindowSettingsSheet extends StatelessWidget {
         const contentTopPadding =
             _previewTopInset + _previewHeight + _previewBottomGap;
 
-        return SizedBox(
+        final panel = SizedBox(
           width: double.infinity,
           child: Stack(
             children: [
@@ -274,6 +275,21 @@ class SubtitleWindowSettingsSheet extends StatelessWidget {
                   ),
                 ),
               ),
+            ],
+          ),
+        );
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: AppBottomSheet.contentPadding,
+                child: AppBottomSheetHeader(
+                  icon: Icons.subtitles_outlined,
+                  title: i18n.tr('subtitle_window_settings'),
+                ),
+              ),
+              Flexible(child: panel),
             ],
           ),
         );

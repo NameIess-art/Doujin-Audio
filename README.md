@@ -4,6 +4,8 @@
 
 # Doujin Audio
 
+简体中文 | [English](README.en.md) | [日本語](README.ja.md)
+
 Doujin Audio 是一款面向 ASMR、同人音声与本地媒体库的 Android / Windows 音频播放器，采用 Flutter 构建共享界面与业务逻辑，Android 播放核心使用 Media3 / ExoPlayer，Windows 使用 libmpv。应用将本地存储媒体、ASMR.ONE 在线流式内容与自定义播放队列统一置于多会话体系中管理。
 
 当前版本以 [`pubspec.yaml`](pubspec.yaml) 为唯一版本源；正式安装包与版本更新均通过 GitHub Release 分发：[GitHub Latest Release](https://github.com/NameIess-art/Doujin-Audio/releases/latest)。
@@ -33,6 +35,24 @@ Doujin Audio 是一款面向 ASMR、同人音声与本地媒体库的 Android / 
 3. 点击作品或音频条目开始播放。在线资源位于 ASMR.ONE 页面，账号功能需登录。Windows 卡片操作使用右键菜单；关闭主窗口后应用留在托盘，需结束播放并退出时使用托盘“退出”。
 
 应用采用本地优先设计：本地媒体库索引、用户设置和播放状态完全存储在设备本地。网络请求用于 ASMR.ONE 在线资源、DLsite 元数据、GitHub 版本更新，以及首次下载字幕处理模型；ASMR.ONE 在线字幕会先保存为本地文件再加载。文件访问与悬浮窗等权限均在使用对应功能时按需申请。
+
+## 应用截图
+
+以下 5 张截图来自应用实际界面，已裁去顶部系统状态栏，并对封面、作品与曲目名称、字幕及实际元数据进行马赛克处理；导航、字段标签和操作控件保留原貌。
+
+<table>
+  <tr>
+    <td align="center"><strong>ASMR.ONE 页面</strong><br><img src="docs/screenshots/asmr-one.png" alt="ASMR.ONE 页面，封面与作品信息已打马赛克" width="420"></td>
+    <td align="center"><strong>本地音频库页面</strong><br><img src="docs/screenshots/local-library.png" alt="本地音频库页面，封面与媒体信息已打马赛克" width="420"></td>
+  </tr>
+  <tr>
+    <td align="center"><strong>播放列表页面</strong><br><img src="docs/screenshots/playlists.png" alt="播放列表页面，封面与曲目名称已打马赛克" width="420"></td>
+    <td align="center"><strong>作品详细信息页</strong><br><img src="docs/screenshots/work-details.png" alt="作品详细信息页，封面与实际元数据已打马赛克" width="420"></td>
+  </tr>
+  <tr>
+    <td colspan="2" align="center"><strong>播放详细页</strong><br><img src="docs/screenshots/playback-details.png" alt="播放详细页，封面、曲目名称与字幕已打马赛克" width="420"></td>
+  </tr>
+</table>
 
 ## 主要功能
 

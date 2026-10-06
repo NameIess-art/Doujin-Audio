@@ -158,18 +158,16 @@ Future<_TaskRemovalAction?> _showTaskRemovalMenu(
       return SafeArea(
         top: false,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          padding: AppBottomSheet.contentPadding,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Padding(
-                padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-                child: Text(
-                  title,
-                  style: Theme.of(sheetContext).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
+                padding: const EdgeInsets.only(bottom: 8),
+                child: AppBottomSheetHeader(
+                  icon: Icons.delete_outline_rounded,
+                  title: title,
                 ),
               ),
               ListTile(

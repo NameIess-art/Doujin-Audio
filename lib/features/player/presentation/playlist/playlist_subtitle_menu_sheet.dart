@@ -708,43 +708,26 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
             subtitleLanguage != SubtitleLanguage.other;
         final isOffsetZero = activeOffset == Duration.zero;
         final scriptFiles = _scriptFiles;
-        const menuPadding = EdgeInsets.fromLTRB(20, 8, 20, 20);
-        final header = SizedBox(
+        const menuPadding = AppBottomSheet.contentPadding;
+        final header = ConstrainedBox(
           key: const ValueKey('subtitle_menu_header'),
-          height: 48,
-          child: Row(
-            children: [
-              Icon(
-                scriptFiles == null
-                    ? Icons.subtitles_rounded
-                    : Icons.text_snippet_rounded,
-                color: cs.primary,
-                size: 24,
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  i18n.tr(
-                    scriptFiles == null
-                        ? 'subtitles'
-                        : 'subtitle_script_generate',
+          constraints: const BoxConstraints(minHeight: 48),
+          child: AppBottomSheetHeader(
+            icon: scriptFiles == null
+                ? Icons.subtitles_rounded
+                : Icons.text_snippet_rounded,
+            title: i18n.tr(
+              scriptFiles == null ? 'subtitles' : 'subtitle_script_generate',
+            ),
+            trailing: scriptFiles == null
+                ? null
+                : IconButton(
+                    key: const ValueKey('subtitle_script_back'),
+                    icon: const Icon(Icons.arrow_back_rounded),
+                    tooltip: i18n.tr('back'),
+                    color: cs.primary,
+                    onPressed: () => setState(() => _scriptFiles = null),
                   ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-              if (scriptFiles != null)
-                IconButton(
-                  key: const ValueKey('subtitle_script_back'),
-                  icon: const Icon(Icons.arrow_back_rounded),
-                  tooltip: i18n.tr('back'),
-                  color: cs.primary,
-                  onPressed: () => setState(() => _scriptFiles = null),
-                ),
-            ],
           ),
         );
         final cardDecoration = BoxDecoration(

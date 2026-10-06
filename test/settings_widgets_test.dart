@@ -7,6 +7,7 @@ import 'package:doujin_audio/app/localization/app_language_provider.dart';
 import 'support/runtime_test_models.dart';
 import 'package:doujin_audio/core/ui/ui_operation_service.dart';
 import 'package:doujin_audio/core/widgets/mobile_overlay_inset.dart';
+import 'package:doujin_audio/core/widgets/app_bottom_sheet.dart';
 import 'package:doujin_audio/core/widgets/subtitle_window_visual.dart';
 import 'package:doujin_audio/app/state/subtitle_settings_provider.dart';
 import 'package:doujin_audio/features/settings/application/settings_repository.dart';
@@ -711,12 +712,35 @@ void main() {
         const ValueKey('asmr_download_folder_name_header_icon'),
       );
       expect(headerIcon, findsOneWidget);
-      expect(tester.widget<Icon>(headerIcon).size, 28);
+      expect(tester.widget<Icon>(headerIcon).size, 24);
       expect(
         tester.widget<Icon>(headerIcon).icon,
         Icons.drive_file_rename_outline,
       );
       expect(find.byType(CheckboxListTile), findsNWidgets(4));
+      expect(find.byType(AppBottomSheetHeader), findsOneWidget);
+      for (final tile in tester.widgetList<CheckboxListTile>(
+        find.byType(CheckboxListTile),
+      )) {
+        expect(tile.controlAffinity, ListTileControlAffinity.leading);
+        expect(tile.checkboxShape, isA<CircleBorder>());
+        expect(tile.dense, isNull);
+        expect(tile.visualDensity, const VisualDensity(vertical: -1));
+      }
+      final optionInkWells = tester.widgetList<InkWell>(
+        find.descendant(
+          of: find.byType(CheckboxListTile),
+          matching: find.byType(InkWell),
+        ),
+      );
+      expect(optionInkWells, hasLength(4));
+      for (final ink in optionInkWells) {
+        final shape = ink.customBorder! as RoundedRectangleBorder;
+        final radius = shape.borderRadius.resolve(TextDirection.ltr);
+        expect(radius.topLeft, radius.topRight);
+        expect(radius.topLeft, radius.bottomLeft);
+        expect(radius.topLeft, radius.bottomRight);
+      }
 
       final workTitleCheckbox = tester.widget<CheckboxListTile>(
         find.widgetWithText(
@@ -1090,6 +1114,13 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text(i18n.tr('subtitle_window_preview')), findsOneWidget);
+    expect(
+      find.widgetWithText(
+        AppBottomSheetHeader,
+        i18n.tr('subtitle_window_settings'),
+      ),
+      findsOneWidget,
+    );
     expect(find.text(i18n.tr('font_color')), findsOneWidget);
     expect(i18n.tr('font_color'), '文字颜色');
     expect(

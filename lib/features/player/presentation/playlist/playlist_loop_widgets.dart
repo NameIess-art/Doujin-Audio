@@ -69,8 +69,6 @@ class _LoopModeSheetState extends State<LoopModeSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final cs = theme.colorScheme;
     final i18n = ProviderScope.containerOf(
       context,
       listen: false,
@@ -80,7 +78,7 @@ class _LoopModeSheetState extends State<LoopModeSheet> {
       builder: (context, constraints) {
         return SafeArea(
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
+            padding: AppBottomSheet.contentPadding,
             child: SizedBox(
               width: constraints.maxWidth,
               child: Column(
@@ -93,24 +91,10 @@ class _LoopModeSheetState extends State<LoopModeSheet> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          Row(
-                            children: [
-                              Icon(
-                                Icons.repeat_rounded,
-                                key: const ValueKey('loop_mode_header_icon'),
-                                color: cs.primary,
-                                size: 28,
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Text(
-                                  i18n.tr('loop_mode_title'),
-                                  style: theme.textTheme.headlineSmall?.copyWith(
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                                ),
-                              ),
-                            ],
+                          AppBottomSheetHeader(
+                            icon: Icons.repeat_rounded,
+                            iconKey: const ValueKey('loop_mode_header_icon'),
+                            title: i18n.tr('loop_mode_title'),
                           ),
                           const SizedBox(height: 18),
                           SegmentedButton<bool>(

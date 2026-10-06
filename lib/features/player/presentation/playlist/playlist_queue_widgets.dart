@@ -277,16 +277,16 @@ class _PlaybackQueueCardState extends ConsumerState<PlaybackQueueCard> {
                               isSelected: isSelected,
                             ),
                           ),
-                          if (isPinned)
-                            Positioned(
-                              top: -2,
-                              right: -2,
-                              child: PlaylistPinnedIndicator(
-                                sessionId: session.id,
-                                color: activeColor,
-                                isSelected: isSelected,
-                              ),
+                          Positioned(
+                            top: -2,
+                            right: -2,
+                            child: PlaylistPinnedIndicator(
+                              isPinned: isPinned,
+                              sessionId: session.id,
+                              color: activeColor,
+                              isSelected: isSelected,
                             ),
+                          ),
                         ],
                       ),
                       const SizedBox(width: AppSpacing.xs),

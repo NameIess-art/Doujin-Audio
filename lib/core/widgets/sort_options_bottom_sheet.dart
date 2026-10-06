@@ -125,7 +125,7 @@ class _SortOptionsSheetState<T> extends State<_SortOptionsSheet<T>> {
       builder: (context, constraints) {
         return SafeArea(
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
+            padding: AppBottomSheet.contentPadding,
             child: SizedBox(
               width: constraints.maxWidth,
               child: Column(
@@ -138,11 +138,9 @@ class _SortOptionsSheetState<T> extends State<_SortOptionsSheet<T>> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          Text(
-                            widget.title,
-                            style: theme.textTheme.headlineSmall?.copyWith(
-                              fontWeight: FontWeight.w800,
-                            ),
+                          AppBottomSheetHeader(
+                            icon: Icons.sort_rounded,
+                            title: widget.title,
                           ),
                           const SizedBox(height: 18),
                           RadioGroup<T>(

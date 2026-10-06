@@ -23,7 +23,7 @@ import 'playlist_shared_helpers.dart';
 const double playlistListHorizontalPadding = AppSpacing.xs;
 
 const Color _playlistSelectionCheckmarkColor = Color(0xFF4CAF50);
-const Duration _playlistSelectionFadeDuration = Duration(milliseconds: 450);
+const Duration _playlistIndicatorFadeDuration = Duration(milliseconds: 450);
 
 class PlaylistSelectionIndicator extends StatelessWidget {
   const PlaylistSelectionIndicator({
@@ -40,7 +40,7 @@ class PlaylistSelectionIndicator extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     final duration = MediaQuery.disableAnimationsOf(context)
         ? Duration.zero
-        : _playlistSelectionFadeDuration;
+        : _playlistIndicatorFadeDuration;
     final surfaceBorderColor = isSelected
         ? Color.alphaBlend(
             cs.primaryContainer.withValues(alpha: 0.15),
@@ -95,15 +95,20 @@ class PlaylistPinnedIndicator extends StatelessWidget {
     required this.sessionId,
     this.color,
     this.isSelected = false,
+    this.isPinned = true,
   });
 
   final String sessionId;
   final Color? color;
   final bool isSelected;
+  final bool isPinned;
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final duration = MediaQuery.disableAnimationsOf(context)
+        ? Duration.zero
+        : _playlistIndicatorFadeDuration;
     final pinColor = color ?? cs.primary;
     final surfaceBorderColor = isSelected
         ? Color.alphaBlend(
@@ -113,20 +118,28 @@ class PlaylistPinnedIndicator extends StatelessWidget {
         : cs.surface;
     return IgnorePointer(
       child: ExcludeSemantics(
-        child: Container(
-          key: ValueKey<String>('playlist_session_pinned_$sessionId'),
-          width: 22,
-          height: 22,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: pinColor,
-            border: Border.all(color: surfaceBorderColor, width: 2),
-          ),
-          child: const Icon(
-            Icons.push_pin_rounded,
-            size: 13,
-            color: Colors.white,
-          ),
+        child: AnimatedSwitcher(
+          duration: duration,
+          reverseDuration: duration,
+          switchInCurve: Curves.easeInOut,
+          switchOutCurve: Curves.easeInOut,
+          child: isPinned
+              ? Container(
+                  key: ValueKey<String>('playlist_session_pinned_$sessionId'),
+                  width: 22,
+                  height: 22,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: pinColor,
+                    border: Border.all(color: surfaceBorderColor, width: 2),
+                  ),
+                  child: const Icon(
+                    Icons.push_pin_rounded,
+                    size: 13,
+                    color: Colors.white,
+                  ),
+                )
+              : const SizedBox.shrink(),
         ),
       ),
     );
@@ -534,16 +547,16 @@ class SessionListCard extends ConsumerWidget {
                                   isSelected: isSelected,
                                 ),
                               ),
-                              if (isPinned)
-                                Positioned(
-                                  top: -2,
-                                  right: -2,
-                                  child: PlaylistPinnedIndicator(
-                                    sessionId: sessionId,
-                                    isSelected: isSelected,
-                                    color: isAsmrOne ? asmrBlue : localPlayRose,
-                                  ),
+                              Positioned(
+                                top: -2,
+                                right: -2,
+                                child: PlaylistPinnedIndicator(
+                                  isPinned: isPinned,
+                                  sessionId: sessionId,
+                                  isSelected: isSelected,
+                                  color: isAsmrOne ? asmrBlue : localPlayRose,
                                 ),
+                              ),
                             ],
                           ),
                           const SizedBox(width: AppSpacing.xs),

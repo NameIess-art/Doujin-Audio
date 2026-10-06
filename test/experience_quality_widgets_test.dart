@@ -19,6 +19,7 @@ import 'package:doujin_audio/core/widgets/shimmer_loading.dart';
 import 'package:doujin_audio/core/widgets/top_page_header.dart';
 import 'package:doujin_audio/features/library/presentation/library_card_artwork.dart';
 import 'package:doujin_audio/features/library/presentation/library_tab_tree_widgets.dart';
+import 'package:doujin_audio/features/player/presentation/playlist/playlist_list_view.dart';
 
 import 'support/app_runtime_test_fixture.dart';
 
@@ -1285,6 +1286,79 @@ void main() {
       expect(checkmarkFinder, findsNothing);
     },
   );
+
+  for (final kind in [
+    'library',
+    'library anonymous',
+    'playlist',
+    'library leading',
+  ]) {
+    Widget buildPinned(bool pinned, {bool disableAnimations = false}) {
+      final indicator = switch (kind) {
+        'library' => LibraryPinnedIndicator(path: 'fade-pin', isPinned: pinned),
+        'library anonymous' => LibraryPinnedIndicator(isPinned: pinned),
+        'playlist' => PlaylistPinnedIndicator(
+          sessionId: 'fade-pin',
+          isPinned: pinned,
+        ),
+        _ => LibraryLeadingIndicators(
+          path: 'fade-pin',
+          isSelected: false,
+          isPinned: pinned,
+        ),
+      };
+      return MaterialApp(
+        home: Scaffold(
+          body: MediaQuery(
+            data: MediaQueryData(disableAnimations: disableAnimations),
+            child: SizedBox(height: 52, child: indicator),
+          ),
+        ),
+      );
+    }
+
+    testWidgets('$kind pin fades in and out over 450ms', (tester) async {
+      final pin = find.byIcon(Icons.push_pin_rounded);
+      double opacity() => tester
+          .widgetList<FadeTransition>(
+            find.ancestor(of: pin, matching: find.byType(FadeTransition)),
+          )
+          .fold(1.0, (value, fade) => value * fade.opacity.value);
+
+      await tester.pumpWidget(buildPinned(false));
+      expect(pin, findsNothing);
+      await tester.pumpWidget(buildPinned(true));
+      await tester.pump();
+      expect(opacity(), 0);
+      await tester.pump(const Duration(milliseconds: 225));
+      expect(opacity(), closeTo(0.5, 0.01));
+      await tester.pump(const Duration(milliseconds: 225));
+      expect(opacity(), 1);
+      await tester.pump(const Duration(milliseconds: 1));
+
+      await tester.pumpWidget(buildPinned(false));
+      await tester.pump();
+      expect(pin, findsOneWidget);
+      expect(opacity(), 1);
+      await tester.pump(const Duration(milliseconds: 225));
+      expect(opacity(), closeTo(0.5, 0.01));
+      await tester.pump(const Duration(milliseconds: 225));
+      await tester.pump(const Duration(milliseconds: 1));
+      expect(pin, findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('$kind pin respects disabled animations', (tester) async {
+      await tester.pumpWidget(buildPinned(false, disableAnimations: true));
+      await tester.pumpWidget(buildPinned(true, disableAnimations: true));
+      await tester.pump();
+      expect(find.byIcon(Icons.push_pin_rounded), findsOneWidget);
+      await tester.pumpWidget(buildPinned(false, disableAnimations: true));
+      await tester.pump();
+      expect(find.byIcon(Icons.push_pin_rounded), findsNothing);
+      expect(tester.binding.hasScheduledFrame, isFalse);
+    });
+  }
 
   testWidgets(
     'LibraryPinnedIndicator renders 22x22 circle with cutout border and pin icon',

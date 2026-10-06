@@ -30,7 +30,7 @@ import 'library_tab_ui_helpers.dart';
 import 'library_card_artwork.dart';
 
 const Color _librarySelectionCheckmarkColor = Color(0xFF4CAF50);
-const Duration _librarySelectionFadeDuration = Duration(milliseconds: 450);
+const Duration _libraryIndicatorFadeDuration = Duration(milliseconds: 450);
 
 class LibrarySelectionIndicator extends StatelessWidget {
   const LibrarySelectionIndicator({
@@ -47,7 +47,7 @@ class LibrarySelectionIndicator extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     final duration = MediaQuery.disableAnimationsOf(context)
         ? Duration.zero
-        : _librarySelectionFadeDuration;
+        : _libraryIndicatorFadeDuration;
     final surfaceBorderColor = isSelected
         ? Color.alphaBlend(
             cs.primaryContainer.withValues(alpha: 0.15),
@@ -109,15 +109,20 @@ class LibraryPinnedIndicator extends StatelessWidget {
     this.path,
     this.color,
     this.isSelected = false,
+    this.isPinned = true,
   });
 
   final String? path;
   final Color? color;
   final bool isSelected;
+  final bool isPinned;
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final duration = MediaQuery.disableAnimationsOf(context)
+        ? Duration.zero
+        : _libraryIndicatorFadeDuration;
     final pinColor = color ?? cs.primary;
     final normalizedPath = path == null ? null : PathMatcher.normalize(path!);
     final surfaceBorderColor = isSelected
@@ -128,22 +133,30 @@ class LibraryPinnedIndicator extends StatelessWidget {
         : cs.surface;
     return IgnorePointer(
       child: ExcludeSemantics(
-        child: Container(
-          key: normalizedPath == null
-              ? null
-              : ValueKey<String>('library_pinned_$normalizedPath'),
-          width: 22,
-          height: 22,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: pinColor,
-            border: Border.all(color: surfaceBorderColor, width: 2),
-          ),
-          child: const Icon(
-            Icons.push_pin_rounded,
-            size: 13,
-            color: Colors.white,
-          ),
+        child: AnimatedSwitcher(
+          duration: duration,
+          reverseDuration: duration,
+          switchInCurve: Curves.easeInOut,
+          switchOutCurve: Curves.easeInOut,
+          child: isPinned
+              ? Container(
+                  key: normalizedPath == null
+                      ? const ValueKey<String>('library_pinned')
+                      : ValueKey<String>('library_pinned_$normalizedPath'),
+                  width: 22,
+                  height: 22,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: pinColor,
+                    border: Border.all(color: surfaceBorderColor, width: 2),
+                  ),
+                  child: const Icon(
+                    Icons.push_pin_rounded,
+                    size: 13,
+                    color: Colors.white,
+                  ),
+                )
+              : const SizedBox.shrink(),
         ),
       ),
     );
@@ -164,36 +177,45 @@ class LibraryLeadingIndicators extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (!isPinned && !isSelected) {
-      return const SizedBox.shrink();
-    }
-    return Padding(
-      padding: const EdgeInsets.only(right: AppSpacing.xs),
-      child: SizedBox(
-        width: 24,
-        child: Stack(
-          clipBehavior: Clip.none,
-          children: [
-            if (isPinned)
-              Positioned(
-                top: 0,
-                left: 1,
-                child: LibraryPinnedIndicator(
-                  path: path,
-                  isSelected: isSelected,
+    final duration = MediaQuery.disableAnimationsOf(context)
+        ? Duration.zero
+        : _libraryIndicatorFadeDuration;
+    return AnimatedSwitcher(
+      duration: duration,
+      reverseDuration: duration,
+      switchInCurve: Curves.easeInOut,
+      switchOutCurve: Curves.easeInOut,
+      child: !isPinned && !isSelected
+          ? const SizedBox.shrink()
+          : Padding(
+              key: const ValueKey<String>('library_leading_indicators'),
+              padding: const EdgeInsets.only(right: AppSpacing.xs),
+              child: SizedBox(
+                width: 24,
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    Positioned(
+                      top: 0,
+                      left: 1,
+                      child: LibraryPinnedIndicator(
+                        isPinned: isPinned,
+                        path: path,
+                        isSelected: isSelected,
+                      ),
+                    ),
+                    Positioned(
+                      bottom: 0,
+                      left: 1,
+                      child: LibrarySelectionIndicator(
+                        path: path,
+                        isSelected: isSelected,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-            Positioned(
-              bottom: 0,
-              left: 1,
-              child: LibrarySelectionIndicator(
-                path: path,
-                isSelected: isSelected,
-              ),
             ),
-          ],
-        ),
-      ),
     );
   }
 }

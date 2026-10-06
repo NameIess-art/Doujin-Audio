@@ -4,6 +4,39 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  testWidgets('sheet header wraps large text beside its icon and action', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: MediaQuery(
+            data: MediaQueryData(textScaler: TextScaler.linear(2)),
+            child: SizedBox(
+              width: 320,
+              child: AppBottomSheetHeader(
+                icon: Icons.subtitles_rounded,
+                title: 'Subtitle settings and script selection',
+                trailing: Icon(Icons.arrow_back_rounded),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    final title = find.text('Subtitle settings and script selection');
+    expect(tester.getSize(title).height, greaterThan(44));
+    expect(
+      tester.getRect(find.byIcon(Icons.subtitles_rounded)).right,
+      lessThan(tester.getRect(title).left),
+    );
+    expect(
+      tester.getRect(title).right,
+      lessThan(tester.getRect(find.byIcon(Icons.arrow_back_rounded)).left),
+    );
+    expect(tester.takeException(), isNull);
+  });
+
   for (final platform in [TargetPlatform.windows, TargetPlatform.android]) {
     testWidgets(
       '$platform bottom sheet hides scrollbar and remains scrollable',

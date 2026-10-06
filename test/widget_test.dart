@@ -5586,7 +5586,7 @@ void main() {
     expect(find.byKey(const ValueKey('loop_mode_scope_row')), findsOneWidget);
     final headerIcon = find.byKey(const ValueKey('loop_mode_header_icon'));
     expect(headerIcon, findsOneWidget);
-    expect(tester.widget<Icon>(headerIcon).size, 28);
+    expect(tester.widget<Icon>(headerIcon).size, 24);
     expect(tester.widget<Icon>(headerIcon).icon, Icons.repeat_rounded);
     await tester.tap(find.text(harness.language.tr('single_loop')));
     await tester.pump();

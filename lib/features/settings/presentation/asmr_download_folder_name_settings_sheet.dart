@@ -6,6 +6,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/localization/app_language_provider.dart';
 import '../../../app/state/app_runtime_providers.dart';
+import '../../../app/theme/app_design_tokens.dart';
+import '../../../core/widgets/app_bottom_sheet.dart';
 import '../../asmr/domain/asmr_download.dart';
 
 class AsmrDownloadFolderNameSettingsSheet extends ConsumerStatefulWidget {
@@ -72,6 +74,9 @@ class _AsmrDownloadFolderNameSettingsSheetState
   Widget build(BuildContext context) {
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     final cs = Theme.of(context).colorScheme;
+    final optionShape = RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(AppDesignTokens.of(context).radiusCard),
+    );
     final unselected = AsmrDownloadFolderNameField.values
         .where((field) => !_selected.contains(field))
         .toList(growable: false);
@@ -81,30 +86,14 @@ class _AsmrDownloadFolderNameSettingsSheetState
         width: double.infinity,
         child: ListView(
           shrinkWrap: true,
-          padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+          padding: AppBottomSheet.contentPadding,
           children: [
-            Row(
-              children: [
-                Icon(
-                  Icons.drive_file_rename_outline,
-                  key: const ValueKey('asmr_download_folder_name_header_icon'),
-                  color: cs.primary,
-                  size: 28,
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    i18n.tr('asmr_download_folder_name_setting'),
-                    style: Theme.of(
-                      context,
-                    ).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                ),
-              ],
+            AppBottomSheetHeader(
+              icon: Icons.drive_file_rename_outline,
+              iconKey: const ValueKey('asmr_download_folder_name_header_icon'),
+              title: i18n.tr('asmr_download_folder_name_setting'),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 18),
             ReorderableListView.builder(
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
@@ -115,6 +104,7 @@ class _AsmrDownloadFolderNameSettingsSheetState
                 final field = _selected[index];
                 return CheckboxListTile(
                   key: ValueKey(('selected', field)),
+                  shape: optionShape,
                   value: true,
                   onChanged: _selected.length > 1
                       ? (_) => _remove(field)
@@ -131,7 +121,10 @@ class _AsmrDownloadFolderNameSettingsSheetState
                       color: cs.onSurfaceVariant,
                     ),
                   ),
-                  dense: true,
+                  controlAffinity: ListTileControlAffinity.leading,
+                  checkboxShape: const CircleBorder(),
+                  visualDensity: const VisualDensity(vertical: -1),
+                  activeColor: cs.primary,
                   contentPadding: EdgeInsets.zero,
                 );
               },
@@ -139,6 +132,7 @@ class _AsmrDownloadFolderNameSettingsSheetState
             for (final field in unselected)
               CheckboxListTile(
                 key: ValueKey(('unselected', field)),
+                shape: optionShape,
                 value: false,
                 onChanged: (_) => _add(field),
                 title: Text(
@@ -146,7 +140,10 @@ class _AsmrDownloadFolderNameSettingsSheetState
                   overflow: TextOverflow.visible,
                   asmrDownloadFolderNameFieldLabel(i18n, field),
                 ),
-                dense: true,
+                controlAffinity: ListTileControlAffinity.leading,
+                checkboxShape: const CircleBorder(),
+                visualDensity: const VisualDensity(vertical: -1),
+                activeColor: cs.primary,
                 contentPadding: EdgeInsets.zero,
               ),
             const SizedBox(height: 8),

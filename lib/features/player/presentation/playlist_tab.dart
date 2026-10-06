@@ -823,23 +823,14 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
           final timerState = ref.watch(timerStateProvider).value ?? timer.state;
           return SafeArea(
             child: SingleChildScrollView(child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+              padding: AppBottomSheet.contentPadding,
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Row(
-                    children: [
-                      Icon(Icons.timer_outlined, color: cs.primary, size: 22),
-                      const SizedBox(width: 10),
-                      Text(
-                        i18n.tr('timer_title'),
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ],
+                  AppBottomSheetHeader(
+                    icon: Icons.timer_outlined,
+                    title: i18n.tr('timer_title'),
                   ),
                   if (timerState.active || timerState.duration != null) ...[
                     SwitchListTile(

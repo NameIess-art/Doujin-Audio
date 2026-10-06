@@ -307,15 +307,15 @@ class RootFolderCardContent extends ConsumerWidget {
                 isSelected: isSelected,
               ),
             ),
-            if (isPinned)
-              Positioned(
-                right: -2,
-                top: -2,
-                child: LibraryPinnedIndicator(
-                  path: folderPath,
-                  isSelected: isSelected,
-                ),
+            Positioned(
+              right: -2,
+              top: -2,
+              child: LibraryPinnedIndicator(
+                isPinned: isPinned,
+                path: folderPath,
+                isSelected: isSelected,
               ),
+            ),
           ],
         );
       },
@@ -470,15 +470,15 @@ class SingleMediaFileCardContent extends StatelessWidget {
                 isSelected: isSelected,
               ),
             ),
-            if (isPinned)
-              Positioned(
-                right: -2,
-                top: -2,
-                child: LibraryPinnedIndicator(
-                  path: track.path,
-                  isSelected: isSelected,
-                ),
+            Positioned(
+              right: -2,
+              top: -2,
+              child: LibraryPinnedIndicator(
+                isPinned: isPinned,
+                path: track.path,
+                isSelected: isSelected,
               ),
+            ),
           ],
         );
       },

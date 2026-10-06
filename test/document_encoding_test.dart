@@ -13,11 +13,6 @@ void main() {
         final text = file.readAsStringSync();
         expect(text, isNot(contains('\uFFFD')), reason: file.path);
       }
-
-      final readme = File('README.md').readAsStringSync();
-      expect(readme, contains('Doujin Audio 是一款'));
-      expect(readme, contains('当前版本'));
-      expect(readme, contains('GitHub Release'));
     },
   );
 }

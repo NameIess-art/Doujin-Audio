@@ -2347,10 +2347,18 @@ void main() {
     await tester.enterText(searchField, 'ocean');
     await tester.pump(const Duration(milliseconds: 250));
     await pumpUntilFound(tester, find.text('Ocean Waves', findRichText: true));
+    final transition = tester.widget<PlaceholderContentTransition>(
+      searchContentTransition,
+    );
     expect(
       find.descendant(
         of: searchContentTransition,
-        matching: find.byType(FadeTransition),
+        matching: find.byWidgetPredicate(
+          (widget) =>
+              widget is FadeTransition &&
+              (identical(widget.child, transition.placeholder) ||
+                  identical(widget.child, transition.content)),
+        ),
       ),
       findsNWidgets(2),
     );
@@ -2370,6 +2378,10 @@ void main() {
       tester,
       find.byKey(const ValueKey<String>('library_search_results_all')),
     );
+
+    await pumpUntilFound(tester, find.text('Soft Rain', findRichText: true));
+    expect(find.text('Ocean Waves', findRichText: true), findsOneWidget);
+    expect(tester.widget<TextField>(searchField).controller!.text, isEmpty);
 
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.runAsync(

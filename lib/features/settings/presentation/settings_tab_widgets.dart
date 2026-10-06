@@ -273,7 +273,6 @@ class _UpdateSettingsTile extends StatelessWidget {
       listen: false,
     ).read(appLanguageProviderInstanceProvider);
     final cs = Theme.of(context).colorScheme;
-    final tokens = AppDesignTokens.of(context);
     final busy = checking || downloading;
 
     return ListTile(
@@ -309,9 +308,6 @@ class _UpdateSettingsTile extends StatelessWidget {
               ),
       ),
       contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(tokens.radiusControl),
-      ),
     );
   }
 }

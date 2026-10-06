@@ -26,9 +26,6 @@ List<Widget> _buildSettingsPlaybackSection({
               ),
               title: _settingsTitle(i18n.tr('allow_video_playback')),
               secondary: _settingsIcon(Icons.videocam_rounded, cs.onSurface),
-              shape: const RoundedRectangleBorder(
-                borderRadius: AppRadius.borderCard,
-              ),
             );
           },
         ),
@@ -47,9 +44,6 @@ List<Widget> _buildSettingsPlaybackSection({
               ),
               title: _settingsTitle(i18n.tr('asmr_playback_cache')),
               secondary: _settingsIcon(Icons.cached_rounded, cs.onSurface),
-              shape: const RoundedRectangleBorder(
-                borderRadius: AppRadius.borderCard,
-              ),
             );
           },
         ),
@@ -68,9 +62,6 @@ List<Widget> _buildSettingsPlaybackSection({
               ),
               title: _settingsTitle(i18n.tr('record_playback_progress')),
               secondary: _settingsIcon(Icons.restore_rounded, cs.onSurface),
-              shape: const RoundedRectangleBorder(
-                borderRadius: AppRadius.borderCard,
-              ),
             );
           },
         ),

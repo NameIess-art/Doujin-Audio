@@ -638,16 +638,20 @@ void main() {
           expect(find.text('notes.txt', skipOffstage: false), findsNothing);
           expect(find.text('picture.jpg', skipOffstage: false), findsNothing);
           expect(
-            find.byType(LocalCoverImage, skipOffstage: false),
+            find.byType(AsyncLocalCoverImage, skipOffstage: false),
             findsOneWidget,
           );
           expect(
             tester
-                .widget<LocalCoverImage>(
-                  find.byType(LocalCoverImage, skipOffstage: false),
+                .widget<AsyncLocalCoverImage>(
+                  find.byType(AsyncLocalCoverImage, skipOffstage: false),
                 )
-                .path,
+                .initialPath,
             isNot('$folder/cover.jpg'),
+          );
+          expect(
+            find.byType(LocalCoverImage, skipOffstage: false),
+            findsNothing,
           );
           await _settleDetail(tester);
           await tester.pump(const Duration(milliseconds: 200));
@@ -1566,8 +1570,8 @@ void main() {
         }
         await tester.pump();
 
-        final headerCover = tester.widget<LocalCoverImage>(
-          find.byType(LocalCoverImage).first,
+        final headerCover = tester.widget<AsyncLocalCoverImage>(
+          find.byType(AsyncLocalCoverImage).first,
         );
         expect(
           coverCacheWidth(

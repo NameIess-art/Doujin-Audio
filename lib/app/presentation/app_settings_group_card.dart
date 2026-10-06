@@ -49,6 +49,17 @@ class AppSettingsCard extends StatelessWidget {
     final tokens = AppDesignTokens.of(context);
     final outerRadius = tokens.radiusCard;
     const innerRadius = 6.0;
+    final shape = RoundedRectangleBorder(
+      borderRadius: BorderRadius.only(
+        topLeft: Radius.circular(isFirst ? outerRadius : innerRadius),
+        topRight: Radius.circular(isFirst ? outerRadius : innerRadius),
+        bottomLeft: Radius.circular(isLast ? outerRadius : innerRadius),
+        bottomRight: Radius.circular(isLast ? outerRadius : innerRadius),
+      ),
+      side: BorderSide(
+        color: cs.outlineVariant.withValues(alpha: tokens.subtleBorderAlpha),
+      ),
+    );
     return Padding(
       padding: EdgeInsets.only(bottom: bottomSpacing ?? (isLast ? 0 : 3)),
       child: Card(
@@ -56,20 +67,12 @@ class AppSettingsCard extends StatelessWidget {
         color: cs.surfaceContainerLow,
         elevation: 0,
         margin: EdgeInsets.zero,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.only(
-            topLeft: Radius.circular(isFirst ? outerRadius : innerRadius),
-            topRight: Radius.circular(isFirst ? outerRadius : innerRadius),
-            bottomLeft: Radius.circular(isLast ? outerRadius : innerRadius),
-            bottomRight: Radius.circular(isLast ? outerRadius : innerRadius),
-          ),
-          side: BorderSide(
-            color: cs.outlineVariant.withValues(
-              alpha: tokens.subtleBorderAlpha,
-            ),
-          ),
+        shape: shape,
+        child: ListTileTheme.merge(
+          // The card owns the border; an ink border would also add tile padding.
+          shape: shape.copyWith(side: BorderSide.none),
+          child: child,
         ),
-        child: child,
       ),
     );
   }

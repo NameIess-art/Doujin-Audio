@@ -4835,7 +4835,18 @@ void main() {
   testWidgets(
     'playback queue audio edit page renders floating capsule section headers and scrolls on add',
     (tester) async {
-      final fixture = AppRuntimeWidgetTestFixture();
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(
+        notificationsChannel,
+        (_) async => <String, Object?>{'ok': true, 'value': null},
+      );
+      addTearDown(
+        () => messenger.setMockMethodCallHandler(notificationsChannel, null),
+      );
+      final fixture = AppRuntimeWidgetTestFixture(
+        coverArtworkCacheService: _RecordingPlaybackCoverCacheService(),
+      );
       addTearDown(fixture.dispose);
       final track1 = testMusicTrack(
         name: 'Track 1',
@@ -4909,6 +4920,22 @@ void main() {
         findsOneWidget,
       );
       expect(find.byType(HeaderFloatingSurface), findsNWidgets(4));
+      final placeholders = find.byType(CoverFallbackArtwork);
+      expect(placeholders, findsNWidgets(2));
+      for (final placeholder in placeholders.evaluate()) {
+        final cover = find.byElementPredicate(
+          (element) => identical(element, placeholder),
+        );
+        final labels = find.descendant(
+          of: find.ancestor(of: cover, matching: find.byType(Card)).first,
+          matching: find.byType(Text),
+        );
+        expect(tester.getSize(cover), const Size.square(52));
+        expect(
+          tester.getRect(cover).right,
+          lessThan(tester.getRect(labels.first).left),
+        );
+      }
 
       // Add audio to queue
       final addButtons = find.byTooltip(
@@ -4922,8 +4949,21 @@ void main() {
         find.byTooltip(fixture.languageProvider.tr('remove')),
         findsOneWidget,
       );
+      expect(placeholders, findsNWidgets(3));
+      final primary = Theme.of(
+        tester.element(find.byType(PlaybackQueueAudioEditPage)),
+      ).colorScheme.primary;
+      for (final icon in tester.widgetList<AppBrandIcon>(
+        find.byType(AppBrandIcon),
+      )) {
+        expect(icon.color, primary);
+      }
       await tester.pump(const Duration(seconds: 10));
     },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
   );
 
   testWidgets(

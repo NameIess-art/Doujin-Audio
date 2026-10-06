@@ -52,9 +52,6 @@ List<Widget> _buildSettingsUpdateSection({
               ),
               title: _settingsTitle(i18n.tr('auto_check_updates')),
               secondary: _settingsIcon(Icons.update_rounded, cs.onSurface),
-              shape: const RoundedRectangleBorder(
-                borderRadius: AppRadius.borderCard,
-              ),
             );
           },
         ),

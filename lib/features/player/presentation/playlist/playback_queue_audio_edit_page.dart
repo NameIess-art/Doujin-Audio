@@ -532,15 +532,6 @@ class _QueueAudioEditCard extends ConsumerWidget {
     final resolvedCoverPath = resolvedTrack == null
         ? null
         : library.resolvedPlaybackCoverPathForTrack(resolvedTrack);
-    if (resolvedTrack != null && resolvedCoverPath == null) {
-      unawaited(library.playbackCoverPathFutureForTrack(resolvedTrack));
-    }
-    final showCover =
-        shouldShowPlaylistCoverArtwork(resolvedTrack, resolvedCoverPath) ||
-        (resolvedTrack != null &&
-            (resolvedTrack.isVideo ||
-                !resolvedTrack.isSingle ||
-                resolvedCoverPath != null));
     return Card(
       margin: EdgeInsets.zero,
       elevation: 0,
@@ -563,29 +554,27 @@ class _QueueAudioEditCard extends ConsumerWidget {
                 ),
                 child: Row(
                   children: [
-                    if (showCover) ...[
-                      ClipOval(
-                        child: SizedBox.square(
-                          dimension: playlistCoverSize,
-                          child: track == null
-                              ? const CoverFallbackArtwork()
-                              : QueueTrackCover(
-                                  track: track!,
-                                  coverPath: resolvedCoverPath,
-                                  coverCacheWidth: coverCacheWidthForResolution(
-                                    ref.watch(
-                                      settingsStateProvider.select(
-                                        (state) =>
-                                            state.value?.coverImageResolution ??
-                                            CoverImageResolution.balanced,
-                                      ),
+                    ClipOval(
+                      child: SizedBox.square(
+                        dimension: playlistCoverSize,
+                        child: resolvedTrack == null
+                            ? const CoverFallbackArtwork()
+                            : QueueTrackCover(
+                                track: resolvedTrack,
+                                coverPath: resolvedCoverPath,
+                                coverCacheWidth: coverCacheWidthForResolution(
+                                  ref.watch(
+                                    settingsStateProvider.select(
+                                      (state) =>
+                                          state.value?.coverImageResolution ??
+                                          CoverImageResolution.balanced,
                                     ),
                                   ),
                                 ),
-                        ),
+                              ),
                       ),
-                      const SizedBox(width: AppSpacing.xs),
-                    ],
+                    ),
+                    const SizedBox(width: AppSpacing.xs),
                     Expanded(
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,

@@ -864,15 +864,21 @@ void main() {
     (tester) async {
       final fixture = AppRuntimeWidgetTestFixture();
       addTearDown(fixture.dispose);
-      addTearDown(releaseRetainedCoverImages);
       final directory = (await tester.runAsync(
         () => Directory.systemTemp.createTemp('interaction_card_cover_'),
       ))!;
       addTearDown(() async {
+        releaseRetainedCoverImages();
         PaintingBinding.instance.imageCache
           ..clear()
           ..clearLiveImages();
-        await directory.delete(recursive: true);
+        try {
+          if (await directory.exists()) {
+            await directory.delete(recursive: true);
+          }
+        } on FileSystemException {
+          // Windows can briefly retain file handles in the image decoder.
+        }
       });
       final coverPath = '${directory.path}${Platform.pathSeparator}cover.png';
       final track = testMusicTrack(
@@ -915,11 +921,19 @@ void main() {
           coverPathFuture: SynchronousFuture(coverPath),
         ),
       ];
-      final imageKey = await resizeFileImageIfNeeded(
+      final coverProvider = resizeFileImageIfNeeded(
         path: coverPath,
         cacheWidth: 600,
         useDefaultCacheWidth: false,
-      ).obtainKey(ImageConfiguration.empty);
+      );
+      final imageKey = await coverProvider.obtainKey(ImageConfiguration.empty);
+      final coverImage = find.byWidgetPredicate(
+        (widget) => widget is Image && widget.image == coverProvider,
+      );
+      final decodedCover = find.descendant(
+        of: coverImage,
+        matching: find.byType(RawImage),
+      );
       final interaction = Object();
       addTearDown(() {
         UiInteractionCoordinator.instance.cancelNavigation(interaction);
@@ -941,7 +955,7 @@ void main() {
           coverPath,
           reason: '${surface.runtimeType} must exercise a known file path',
         );
-        expect(find.byType(Image), findsNothing);
+        expect(coverImage, findsNothing);
         expect(
           PaintingBinding.instance.imageCache.statusForKey(imageKey).tracked,
           isFalse,
@@ -953,21 +967,25 @@ void main() {
           );
           await tester.pump();
           if (tester
-              .widgetList<RawImage>(find.byType(RawImage))
+              .widgetList<RawImage>(decodedCover)
               .any((image) => image.image != null)) {
             break;
           }
         }
-        expect(tester.widget<RawImage>(find.byType(RawImage)).image, isNotNull);
+        expect(tester.widget<RawImage>(decodedCover).image, isNotNull);
         await tester.pumpAndSettle();
         await tester.pumpWidget(const SizedBox.shrink());
         UiInteractionCoordinator.instance.beginNavigation(interaction);
         await tester.pumpWidget(page());
         await tester.pump();
-        expect(tester.widget<RawImage>(find.byType(RawImage)).image, isNotNull);
+        expect(tester.widget<RawImage>(decodedCover).image, isNotNull);
         UiInteractionCoordinator.instance.cancelNavigation(interaction);
         await tester.pumpWidget(const SizedBox.shrink());
       }
+      releaseRetainedCoverImages();
+      PaintingBinding.instance.imageCache
+        ..clear()
+        ..clearLiveImages();
       await finishLibraryTest(tester, fixture);
     },
     variant: const TargetPlatformVariant({

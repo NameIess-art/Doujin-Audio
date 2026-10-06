@@ -339,7 +339,6 @@ void main() {
             : const Size(1000, 1800);
         addTearDown(tester.view.resetDevicePixelRatio);
         addTearDown(tester.view.resetPhysicalSize);
-        addTearDown(releaseRetainedCoverImages);
         final directory = (await tester.runAsync(
           () => Directory.systemTemp.createTemp('shared_asmr_cover_'),
         ))!;
@@ -355,6 +354,7 @@ void main() {
           ),
         );
         addTearDown(() async {
+          releaseRetainedCoverImages();
           PaintingBinding.instance.imageCache
             ..clear()
             ..clearLiveImages();
@@ -433,10 +433,22 @@ void main() {
           cover.path,
         );
         final sharedKey = await imageKey(card);
-        expect(
-          find.descendant(of: card, matching: find.byType(Image)),
-          findsNothing,
+        final coverProvider = resizeFileImageIfNeeded(
+          path: cover.path,
+          cacheWidth: coverCacheWidthForResolution(resolution),
+          useDefaultCacheWidth: false,
         );
+        final coverImage = find.descendant(
+          of: card,
+          matching: find.byWidgetPredicate(
+            (widget) => widget is Image && widget.image == coverProvider,
+          ),
+        );
+        final decodedCover = find.descendant(
+          of: coverImage,
+          matching: find.byType(RawImage),
+        );
+        expect(coverImage, findsNothing);
         expect(
           PaintingBinding.instance.imageCache.statusForKey(sharedKey).tracked,
           isFalse,
@@ -447,19 +459,10 @@ void main() {
             () => Future<void>.delayed(const Duration(milliseconds: 10)),
           );
           await tester.pump(const Duration(milliseconds: 20));
-          final images = tester.widgetList<RawImage>(
-            find.descendant(of: card, matching: find.byType(RawImage)),
-          );
+          final images = tester.widgetList<RawImage>(decodedCover);
           if (images.any((image) => image.image != null)) break;
         }
-        expect(
-          tester
-              .widget<RawImage>(
-                find.descendant(of: card, matching: find.byType(RawImage)),
-              )
-              .image,
-          isNotNull,
-        );
+        expect(tester.widget<RawImage>(decodedCover).image, isNotNull);
         await tester.pumpAndSettle();
         await tester.pumpWidget(const SizedBox.shrink());
         UiInteractionCoordinator.instance.beginNavigation(interaction);
@@ -471,10 +474,7 @@ void main() {
             ],
           ),
         );
-        expect(
-          tester.widget<RawImage>(find.byType(RawImage)).image,
-          isNotNull,
-        );
+        expect(tester.widget<RawImage>(decodedCover).image, isNotNull);
         UiInteractionCoordinator.instance.cancelNavigation(interaction);
         expect(
           sharedKey,

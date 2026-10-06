@@ -539,8 +539,12 @@ void main() {
     );
 
     final requestedPaths = <String>[];
+    // Windows paths ignore case; Android and Linux paths retain it.
+    final targetPath = Platform.isWindows
+        ? videoPath.toUpperCase()
+        : path.join(directory.path, '.', 'standalone-video.mp4');
     final duration = await runtimeGraph.library.calculateMissingLibraryDuration(
-      videoPath.toUpperCase(),
+      targetPath,
       durationReader: (trackPath) async {
         requestedPaths.add(trackPath);
         return const Duration(minutes: 7, seconds: 12);

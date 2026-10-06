@@ -19,6 +19,7 @@ import 'package:doujin_audio/core/widgets/top_page_header.dart';
 import 'package:doujin_audio/app/state/app_runtime_providers.dart';
 import 'package:doujin_audio/app/theme/theme_provider.dart';
 import 'package:doujin_audio/app/theme/app_styles.dart';
+import 'package:doujin_audio/app/presentation/app_settings_group_card.dart';
 import 'package:doujin_audio/core/widgets/app_feedback.dart';
 import 'package:doujin_audio/core/persistence/app_preferences.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -904,6 +905,68 @@ void main() {
     ]);
     await tester.pumpWidget(const SizedBox());
   });
+
+  testWidgets(
+    'settings item ink follows each card corner shape',
+    (tester) async {
+      final harness = AppRuntimeWidgetTestFixture();
+      addTearDown(harness.dispose);
+      await tester.pumpWidget(harness.build(const SettingsTab()));
+      await tester.pumpAndSettle();
+
+      void expectMatchingInkCorners() {
+        final settingsCards = find.byType(AppSettingsCard);
+        expect(settingsCards, findsWidgets);
+        for (final element in settingsCards.evaluate()) {
+          final settingsCard = find.byWidget(element.widget);
+          final card = tester.widget<Card>(
+            find.descendant(of: settingsCard, matching: find.byType(Card)).first,
+          );
+          final tiles = find.descendant(
+            of: settingsCard,
+            matching: find.byType(ListTile),
+          );
+          expect(tiles, findsWidgets);
+          for (final tileElement in tiles.evaluate()) {
+            final ink = tester.widget<InkWell>(
+              find.descendant(
+                of: find.byWidget(tileElement.widget),
+                matching: find.byType(InkWell),
+              ).first,
+            );
+            expect(ink.customBorder, isA<RoundedRectangleBorder>());
+            expect(
+              (ink.customBorder! as RoundedRectangleBorder).borderRadius,
+              (card.shape! as RoundedRectangleBorder).borderRadius,
+              reason: 'The item highlight must follow its card corners.',
+            );
+          }
+        }
+      }
+
+      expectMatchingInkCorners();
+      final i18n = harness.languageProvider;
+      for (final category in [
+        'section_common',
+        'section_appearance',
+        'section_playback',
+        'section_asmr_download',
+        'section_updates_permissions',
+      ]) {
+        final entry = find.text(i18n.tr(category));
+        await tester.ensureVisible(entry);
+        await tester.tap(entry);
+        await tester.pumpAndSettle();
+        expectMatchingInkCorners();
+        await tester.tap(find.byIcon(Icons.arrow_back_rounded));
+        await tester.pumpAndSettle();
+      }
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
 
   testWidgets('settings home uses separated category cards', (tester) async {
     final harness = AppRuntimeWidgetTestFixture();

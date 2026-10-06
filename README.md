@@ -24,9 +24,19 @@
 | Android x86_64 | `DoujinAudio-android-x64-<tag>.apk` | x86_64 平板、模拟器及兼容设备 |
 | Windows x64 | `DoujinAudio-windows-x64-<tag>-setup.exe` | Windows 10/11，当前用户安装 |
 
+对应的 SHA256 校验文件：
+
+```text
+DoujinAudio-android-universal-<tag>.apk.sha256
+DoujinAudio-android-arm64-<tag>.apk.sha256
+DoujinAudio-android-armv7-<tag>.apk.sha256
+DoujinAudio-android-x64-<tag>.apk.sha256
+DoujinAudio-windows-x64-<tag>-setup.exe.sha256
+```
+
 官方仅通过 GitHub Release 分发，不提供应用商店 AAB 或 iOS 版本。当前版本以 [`pubspec.yaml`](pubspec.yaml) 为准。
 
-> **旧版本升级：**当前 Android 应用 ID 为 `com.doujin.audio`，作为独立应用安装，无法覆盖更名前的版本或继承其私有数据。`.dabackup` 恢复要求平台和格式兼容，备份数据库版本不得高于应用支持的版本；不自动迁移更名前的数据或旧备份格式。
+> **旧版本升级：**当前 Android 应用 ID 为 `com.doujin.audio`，作为独立应用安装，不能覆盖更名前的版本，也不会继承其私有数据。`.dabackup` 恢复要求平台和格式兼容，备份数据库版本不得高于应用支持的版本；不自动迁移更名前的数据或旧备份格式。
 
 ### 第一次使用
 

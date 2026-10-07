@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'page_translation_scope.dart';
 
 class WorkDetailHeaderDelegate extends SliverPersistentHeaderDelegate {
   WorkDetailHeaderDelegate({
@@ -102,7 +103,7 @@ class WorkDetailHeaderDelegate extends SliverPersistentHeaderDelegate {
                           ? null
                           : () => onCopyMetadata(title),
                       borderRadius: BorderRadius.circular(8),
-                      child: Text(
+                      child: WorkPageTranslationText(
                         title,
                         maxLines: 3,
                         overflow: TextOverflow.ellipsis,
@@ -210,7 +211,7 @@ class WorkDetailHeaderDelegate extends SliverPersistentHeaderDelegate {
                         borderRadius: BorderRadius.circular(12),
                         child: Padding(
                           padding: const EdgeInsets.symmetric(vertical: 10),
-                          child: Text(
+                          child: WorkPageTranslationText(
                             circleName.isNotEmpty ? circleName : '--',
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,

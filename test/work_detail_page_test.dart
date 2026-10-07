@@ -1618,6 +1618,14 @@ void main() {
           tester.getSize(editFloatingButton),
           tester.getSize(backFloatingButton),
         );
+        expect(
+          tester
+              .widgetList<HeaderFloatingSurface>(
+                find.byType(HeaderFloatingSurface),
+              )
+              .map((surface) => surface.backgroundOpacity),
+          everyElement(0.5),
+        );
 
         expect(find.text('Test Local Work Title'), findsOneWidget);
         expect(find.text('RJ123456 - Test Work'), findsNothing);
@@ -1836,7 +1844,23 @@ void main() {
             )
             .top,
       );
-      expect(tester.getRect(statusCapsule).right, 304);
+      final translationButton = find.ancestor(
+        of: find.byKey(const ValueKey<String>('work_detail_translation')),
+        matching: find.byType(HeaderFloatingButton),
+      );
+      expect(
+        tester.getRect(statusCapsule).right,
+        lessThan(tester.getRect(translationButton).left),
+      );
+      expect(tester.getRect(translationButton).right, 304);
+      expect(
+        tester
+            .widgetList<HeaderFloatingSurface>(
+              find.byType(HeaderFloatingSurface),
+            )
+            .map((surface) => surface.backgroundOpacity),
+        everyElement(0.5),
+      );
       expect(find.text('|'), findsOneWidget);
       expect(tester.widget<Text>(find.text('RJ9999')).style?.fontSize, 13);
       expect(

@@ -369,12 +369,13 @@ void main() {
     final notifications = NotificationFacade.create(
       service: PlaybackNotificationService(),
     );
-    var clears = 0;
+    final clears = <String>[];
     final controller = SettingsCommandController(
       settings: settings,
       playback: playback,
+      clearBrowseCaches: () async => clears.add('runtime'),
       clearApplicationCacheFiles: () async {
-        clears++;
+        clears.add('files');
         return 17;
       },
     );
@@ -383,7 +384,7 @@ void main() {
     addTearDown(notifications.dispose);
 
     expect(await controller.clearApplicationCache(), 17);
-    expect(clears, 1);
+    expect(clears, ['runtime', 'files']);
   });
 }
 

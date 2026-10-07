@@ -3,7 +3,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/ui/interaction_deferred_stream.dart';
 import '../application/library_facade.dart';
 import '../application/library_state_models.dart';
+import '../application/page_translation_service.dart';
 import '../application/work_text_service.dart';
+
+final pageTranslationServiceProvider = Provider<PageTranslationService>((ref) {
+  final service = PageTranslationService();
+  ref.onDispose(service.dispose);
+  return service;
+});
 
 final libraryFacadeProvider = Provider<LibraryFacade>((ref) {
   throw UnimplementedError(

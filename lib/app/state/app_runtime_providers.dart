@@ -194,6 +194,9 @@ final settingsCommandControllerProvider = Provider<SettingsCommandController>((
       ref.read(browsePageStateStoreProvider).clear();
       ref.read(asmrLibraryControllerProvider)?.clearRuntimeCaches();
       await ref.read(workTextServiceProvider).clearDirectoryCache();
+      if (ref.exists(pageTranslationServiceProvider)) {
+        await ref.read(pageTranslationServiceProvider).clearCache();
+      }
     },
   );
 });

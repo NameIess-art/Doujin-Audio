@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../../../app/localization/app_language_provider.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/windows_horizontal_wheel_scroll.dart';
+import 'page_translation_scope.dart';
 
 class WorkDetailBreadcrumbs extends StatefulWidget {
   const WorkDetailBreadcrumbs({
@@ -114,7 +115,7 @@ class _WorkDetailBreadcrumbsState extends State<WorkDetailBreadcrumbs> {
                             horizontal: 4,
                             vertical: 4,
                           ),
-                          child: Text(
+                          child: WorkPageTranslationText(
                             widget.segments[i],
                             style: TextStyle(
                               fontWeight: i == widget.segments.length - 1

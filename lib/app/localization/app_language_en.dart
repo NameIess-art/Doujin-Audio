@@ -33,7 +33,7 @@ const Map<String, String> appLanguageEn = {
       'Your library, settings, and playback state are stored on this device.',
   'privacy_summary_network_title': 'Optional network features',
   'privacy_summary_network_body':
-      'Network access is used only for features such as ASMR.ONE, metadata, and app updates.',
+      'Network access is used only for features such as ASMR.ONE, metadata, page translation, and app updates.',
   'privacy_summary_diagnostics_title': 'Diagnostics stay in your control',
   'privacy_summary_diagnostics_body':
       'Sanitized diagnostics are created only when you choose to export them.',
@@ -228,6 +228,17 @@ const Map<String, String> appLanguageEn = {
   'asmr_circle_label': 'Circle',
   'asmr_tags_label': 'Tags',
   'asmr_detail_title': 'Details',
+  'work_translation_translate': 'Translate page',
+  'work_translation_original': 'Show original',
+  'work_translation_loading': 'Translating, click to cancel',
+  'work_translation_unavailable':
+      'Page translation failed. Check your connection and try again.',
+  'work_translation_invalid_response':
+      'The translation service returned invalid content. Try again later.',
+  'work_translation_rate_limited':
+      'The translation service is rate limited. Try again later.',
+  'work_translation_unusual_traffic':
+      'Google detected unusual traffic from this network. Check your connection or try again later.',
   'asmr_detail_readonly_hint':
       'Read-only mode. Editing and drag sorting are not supported.',
   'asmr_detail_load_failed':
@@ -865,7 +876,8 @@ const Map<String, String> appLanguageEn = {
   'subtitle_model_download_failed': 'Model download failed. Try again.',
   'subtitle_download_in_background': 'Download in background',
   'subtitle_model_space_unknown': 'Unknown',
-  'import_subtitle_hint': 'Select subtitles to rename and move into the audio folder',
+  'import_subtitle_hint':
+      'Select subtitles to rename and move into the audio folder',
   'subtitle_imported': 'Subtitle imported successfully',
   'subtitle_loaded_file': 'Loaded: {file}',
   'subtitle_import_failed':

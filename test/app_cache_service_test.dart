@@ -192,6 +192,47 @@ void main() {
     }
   });
 
+  test(
+    'translation cache is counted and cleared without deleting source files',
+    () async {
+      const channel = MethodChannel('plugins.flutter.io/path_provider');
+      final tempDirectory = await Directory.systemTemp.createTemp(
+        'translation_cache_cleanup_',
+      );
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(channel, (call) async {
+        if (call.method == 'getTemporaryDirectory') return tempDirectory.path;
+        return null;
+      });
+      addTearDown(() async {
+        messenger.setMockMethodCallHandler(channel, null);
+        if (await tempDirectory.exists()) {
+          await tempDirectory.delete(recursive: true);
+        }
+      });
+      final cacheDirectory = Directory(
+        '${tempDirectory.path}${Platform.pathSeparator}page_translations',
+      );
+      await cacheDirectory.create();
+      final cache = File(
+        '${cacheDirectory.path}${Platform.pathSeparator}cache.json',
+      );
+      await cache.writeAsBytes(List<int>.filled(23, 1));
+      final source = File(
+        '${tempDirectory.path}${Platform.pathSeparator}source.txt',
+      );
+      await source.writeAsString('source');
+
+      expect(await AppCacheService.estimateDartCacheBytes(), 23);
+      await AppCacheService.clearAllCaches();
+
+      expect(await cache.exists(), isFalse);
+      expect(await AppCacheService.estimateDartCacheBytes(), 0);
+      expect(await source.readAsString(), 'source');
+    },
+  );
+
   test('scheduled cache enforcement coalesces repeated requests', () async {
     const channel = MethodChannel('plugins.flutter.io/path_provider');
     final tempDirectory = await Directory.systemTemp.createTemp(

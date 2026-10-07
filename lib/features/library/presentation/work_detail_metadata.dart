@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../core/widgets/windows_horizontal_wheel_scroll.dart';
+import 'page_translation_scope.dart';
 
 const double _workMetadataCapsuleRadius = 14;
 const EdgeInsets _workMetadataCapsulePadding = EdgeInsets.symmetric(
@@ -118,8 +119,9 @@ class WorkDetailMetadata extends StatelessWidget {
               color: cs.outlineVariant.withValues(alpha: isDark ? 0.3 : 0.45),
             ),
           ),
-          child: Text(
-            displayLabel,
+          child: WorkPageTranslationText(
+            tag.startsWith('#') ? tag.substring(1) : tag,
+            prefix: '#',
             style: TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w500,

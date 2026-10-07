@@ -45,6 +45,7 @@ import 'dlsite_metadata_review_page.dart';
 import 'audio_detail_sheet.dart' show showAudioDetailEditor;
 import 'library_providers.dart';
 import 'library_removal_feedback.dart';
+import 'page_translation_scope.dart';
 import 'work_image_viewer_page.dart';
 import 'work_text_viewer_page.dart';
 
@@ -1054,7 +1055,10 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      WorkPageTranslationHost(child: _buildPage(context));
+
+  Widget _buildPage(BuildContext context) {
     final Object? visibilityKey;
     if (widget.isLocal) {
       visibilityKey = ref.watch(undoableRemovalStateProvider).hiddenKeys;
@@ -1413,6 +1417,7 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
             left: 16,
             child: AppPageHeaderTransition(
               child: HeaderFloatingButton(
+                backgroundOpacity: 0.5,
                 child: IconButton(
                   key: const ValueKey<String>('work_detail_back_button'),
                   icon: const Icon(Icons.arrow_back_rounded),
@@ -1422,59 +1427,72 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
               ),
             ),
           ),
-          if (hasSubtitle != null)
-            Positioned(
-              top: topSafeArea + 6,
-              right: 16,
-              child: AppPageHeaderTransition(
-                child: HeaderFloatingSurface(
-                  key: const ValueKey<String>('work_detail_subtitle_status'),
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        hasSubtitle
-                            ? Icons.subtitles_rounded
-                            : Icons.subtitles_off_rounded,
-                        size: 16,
-                        color: hasSubtitle ? asmrBlue : cs.onSurfaceVariant,
+          Positioned(
+            top: topSafeArea + 6,
+            right: 16,
+            child: AppPageHeaderTransition(
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (hasSubtitle != null) ...[
+                    HeaderFloatingSurface(
+                      backgroundOpacity: 0.5,
+                      key: const ValueKey<String>(
+                        'work_detail_subtitle_status',
                       ),
-                      const SizedBox(width: 5),
-                      Text(
-                        i18n.tr(
-                          hasSubtitle
-                              ? 'asmr_has_subtitle'
-                              : 'asmr_no_subtitle',
-                        ),
-                        style: Theme.of(context).textTheme.labelMedium
-                            ?.copyWith(
-                              fontWeight: FontWeight.w600,
-                              color: hasSubtitle
-                                  ? asmrBlue
-                                  : cs.onSurfaceVariant,
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            hasSubtitle
+                                ? Icons.subtitles_rounded
+                                : Icons.subtitles_off_rounded,
+                            size: 16,
+                            color: hasSubtitle ? asmrBlue : cs.onSurfaceVariant,
+                          ),
+                          const SizedBox(width: 5),
+                          ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 100),
+                            child: Text(
+                              i18n.tr(
+                                hasSubtitle
+                                    ? 'asmr_has_subtitle'
+                                    : 'asmr_no_subtitle',
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: Theme.of(context).textTheme.labelMedium
+                                  ?.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                    color: hasSubtitle
+                                        ? asmrBlue
+                                        : cs.onSurfaceVariant,
+                                  ),
                             ),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
-                ),
+                    ),
+                    const SizedBox(width: 6),
+                  ],
+                  if (widget.isLocal) ...[
+                    HeaderFloatingButton(
+                      backgroundOpacity: 0.5,
+                      child: IconButton(
+                        key: const ValueKey<String>('work_detail_edit'),
+                        onPressed: _handleLocalEdit,
+                        tooltip: i18n.tr('edit'),
+                        icon: const Icon(Icons.edit_rounded),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                  ],
+                  const WorkPageTranslationButton(backgroundOpacity: 0.5),
+                ],
               ),
             ),
-          if (widget.isLocal)
-            Positioned(
-              top: topSafeArea + 6,
-              right: 16,
-              child: AppPageHeaderTransition(
-                child: HeaderFloatingButton(
-                  child: IconButton(
-                    key: const ValueKey<String>('work_detail_edit'),
-                    onPressed: _handleLocalEdit,
-                    tooltip: i18n.tr('edit'),
-                    icon: const Icon(Icons.edit_rounded),
-                  ),
-                ),
-              ),
-            ),
+          ),
         ],
       ),
     );

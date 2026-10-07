@@ -261,6 +261,7 @@ class AppCacheService {
       roots.add(Directory(path.join(tempDir.path, 'video_frames')));
       roots.add(Directory(path.join(tempDir.path, 'doujin_audio_covers')));
       roots.add(Directory(path.join(tempDir.path, 'exports')));
+      roots.add(Directory(path.join(tempDir.path, 'page_translations')));
     } catch (_) {
       // Temporary cache roots are optional and may be unavailable on startup.
     }

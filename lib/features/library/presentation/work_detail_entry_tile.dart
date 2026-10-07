@@ -7,6 +7,7 @@ import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/mobile_overlay_inset.dart';
 import '../../../core/widgets/unified_popup_menu.dart';
 import 'work_detail_entries.dart';
+import 'page_translation_scope.dart';
 
 class WorkDetailEntryTile extends StatefulWidget {
   const WorkDetailEntryTile({
@@ -133,8 +134,9 @@ class _WorkDetailEntryTileState extends State<WorkDetailEntryTile> {
           selectedTileColor: widget.accentColor.withValues(alpha: 0.16),
           selectedColor: widget.accentColor,
           leading: Icon(icon, color: color),
-          title: Text(
+          title: WorkPageTranslationText(
             item.name,
+            fileName: !isFolder,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: isFolder

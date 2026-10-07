@@ -14,6 +14,8 @@ import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/top_page_header.dart';
 import '../application/work_text_service.dart';
 import 'library_providers.dart';
+import 'page_translation_scope.dart';
+import 'translated_markdown_body.dart';
 
 class WorkTextViewerPage extends ConsumerStatefulWidget {
   const WorkTextViewerPage({
@@ -262,11 +264,13 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
     final cs = theme.colorScheme;
     final file = _currentFile;
     final hasMultipleFiles = widget.files.length > 1;
+    final canTranslate = !_loading && !_loadFailed &&
+        file != null && !file.isPdf && _content.isNotEmpty;
 
     final bottomPadding = MediaQuery.paddingOf(context).bottom;
     final contentTopInset = AppPageHeaderMetrics.contentTopInset(context);
 
-    return Scaffold(
+    final page = Scaffold(
       backgroundColor: cs.surface,
       body: PageHeaderInset(
         topInset: contentTopInset,
@@ -295,6 +299,11 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
                           ? Icons.article_rounded
                           : Icons.description_rounded),
                 title: file?.displayName ?? i18n.tr('script_text_viewer_title'),
+                trailing: canTranslate
+                    ? const WorkPageTranslationButton(
+                        buttonKey: 'work_text_translation',
+                      )
+                    : null,
                 leading: IconButton(
                   icon: const Icon(Icons.arrow_back_rounded),
                   tooltip: MaterialLocalizations.of(context).backButtonTooltip,
@@ -312,6 +321,7 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
         ),
       ),
     );
+    return WorkPageTranslationHost(key: ValueKey(_loadGeneration), child: page);
   }
 
   Widget _buildContent(
@@ -545,7 +555,7 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
               width: double.infinity,
               child: _buildFadeInContent(
                 context: context,
-                child: MarkdownBody(
+                child: TranslatedMarkdownBody(
                   data: _visibleContent,
                   styleSheet: MarkdownStyleSheet.fromTheme(theme).copyWith(
                     p: theme.textTheme.bodyLarge?.copyWith(
@@ -611,7 +621,7 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
               width: double.infinity,
               child: _buildFadeInContent(
                 context: context,
-                child: Text(
+                child: WorkPageTranslationText(
                   _visibleContent,
                   style: theme.textTheme.bodyLarge?.copyWith(
                     height: 1.65,

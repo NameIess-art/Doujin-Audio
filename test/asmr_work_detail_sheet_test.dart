@@ -273,7 +273,7 @@ void main() {
       await tester.pump(coordinator.idleDelay);
       await tester.pumpAndSettle();
 
-      String nearestVisibleCover({Set<String> excluded = const {}}) {
+      List<String> nearestVisibleCovers({Set<String> excluded = const {}}) {
         final viewport = tester.getRect(find.byType(ListView));
         final covers = find.byType(AsyncRemoteCoverImage).evaluate().where((
           element,
@@ -290,10 +290,18 @@ void main() {
           );
         });
         expect(covers, isNotEmpty);
-        return (covers.first.widget as AsyncRemoteCoverImage).url;
+        return covers
+            .map((element) => (element.widget as AsyncRemoteCoverImage).url)
+            .toList();
       }
 
-      final firstFocus = nearestVisibleCover();
+      final concurrentLoads = defaultTargetPlatform == TargetPlatform.windows
+          ? 4
+          : 1;
+      final initialCovers = nearestVisibleCovers()
+          .take(concurrentLoads)
+          .toList();
+      final firstFocus = initialCovers.first;
       expect(
         firstFocus,
         isNot(
@@ -304,18 +312,20 @@ void main() {
               .url,
         ),
       );
-      expect(cache.started, [firstFocus]);
+      expect(cache.started, initialCovers);
 
       final list = tester.widget<ListView>(find.byType(ListView));
       list.controller!.jumpTo(600);
       await tester.pump(const Duration(milliseconds: 400));
       await tester.pumpAndSettle();
-      final nextFocus = nearestVisibleCover(excluded: {firstFocus});
+      final nextFocus = nearestVisibleCovers(
+        excluded: initialCovers.toSet(),
+      ).first;
       expect(nextFocus, isNot(firstFocus));
       cache.pending[firstFocus]!.complete(null);
       await tester.pump();
       await tester.pump();
-      expect(cache.started, [firstFocus, nextFocus]);
+      expect(cache.started, [...initialCovers, nextFocus]);
 
       cache.releaseAll();
       await tester.pumpWidget(const SizedBox.shrink());
@@ -446,7 +456,18 @@ void main() {
         );
         final decodedCover = find.descendant(
           of: coverImage,
-          matching: find.byType(RawImage),
+          // The loading artwork has its own Image/RawImage. Wait for the cover
+          // provider's pixels, rather than the brand icon in its placeholder.
+          matching: find.byElementPredicate((element) {
+            if (element.widget is! RawImage) return false;
+            Image? owner;
+            element.visitAncestorElements((ancestor) {
+              if (ancestor.widget is! Image) return true;
+              owner = ancestor.widget as Image;
+              return false;
+            });
+            return owner?.image == coverProvider;
+          }),
         );
         expect(coverImage, findsNothing);
         expect(

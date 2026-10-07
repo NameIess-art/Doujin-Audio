@@ -4169,7 +4169,15 @@ void main() {
         ),
       );
       expect(closeRect.topLeft, const Offset(16, 30));
-      expect(tester.getRect(find.byType(SessionDetailContent)).top, 40);
+      expect(tester.getRect(find.byType(SessionDetailContent)).top, 0);
+      expect(
+        tester
+            .getRect(
+              find.byKey(const ValueKey('title_marquee_orientation_session')),
+            )
+            .top,
+        40,
+      );
       tester.view.physicalSize = const Size(800, 1400);
       tester.view.padding = const FakeViewPadding(top: 32);
       tester.view.viewPadding = const FakeViewPadding(top: 32);
@@ -4257,7 +4265,12 @@ void main() {
         );
         await tester.pumpAndSettle();
         final contentRect = tester.getRect(find.byType(SessionDetailContent));
-        expect(contentRect.top, 40);
+        expect(contentRect.top, 0);
+        final title = find.byKey(
+          const ValueKey('title_marquee_orientation_session'),
+        );
+        final titleRect = tester.getRect(title);
+        expect(titleRect.top, 40);
         tester.view.padding = FakeViewPadding.zero;
         tester.view.viewPadding = FakeViewPadding.zero;
         await tester.pumpAndSettle();
@@ -4270,6 +4283,7 @@ void main() {
         );
         expect(closeRect, referenceRect);
         expect(tester.getRect(find.byType(SessionDetailContent)), contentRect);
+        expect(tester.getRect(title), titleRect);
         await tester.tap(
           find.byKey(const ValueKey('session_detail_close_button')),
         );

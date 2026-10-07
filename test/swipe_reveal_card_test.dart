@@ -9,12 +9,94 @@ import 'package:doujin_audio/core/widgets/swipe_reveal_card.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/app/theme/theme_provider.dart';
 import 'package:doujin_audio/features/player/presentation/playlist/playlist_shared_helpers.dart';
+import 'package:doujin_audio/features/player/presentation/playlist/playlist_list_view.dart';
+import 'package:doujin_audio/features/library/presentation/library_tab_tree_widgets.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   final coordinator = UiInteractionCoordinator.instance;
   setUp(coordinator.resetForTest);
   tearDown(coordinator.resetForTest);
+
+  for (final kind in ['library', 'playlist']) {
+    testWidgets('$kind pin fades only after the entry closes', (tester) async {
+      var pinned = true;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: SizedBox(
+                width: 260,
+                height: 96,
+                child: StatefulBuilder(
+                  builder: (context, setState) => SwipeRevealCard(
+                    shape: const RoundedRectangleBorder(),
+                    actionLabel: 'Remove',
+                    removeTooltip: 'Remove',
+                    onRemove: () {},
+                    leadingActionLabel: 'Unpin',
+                    leadingActionTooltip: 'Unpin',
+                    leadingActionIcon: Icons.push_pin_rounded,
+                    animateLeadingActionClose: true,
+                    onLeadingAction: () => setState(() => pinned = false),
+                    child: Row(
+                      children: [
+                        if (kind == 'library')
+                          LibraryPinnedIndicator(
+                            path: 'entry',
+                            isPinned: pinned,
+                          )
+                        else
+                          PlaylistPinnedIndicator(
+                            sessionId: 'entry',
+                            isPinned: pinned,
+                          ),
+                        const Text('Entry'),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      final entry = find.text('Entry');
+      final closedRect = tester.getRect(entry);
+      final pin = find.descendant(
+        of: find.byType(
+          kind == 'library' ? LibraryPinnedIndicator : PlaylistPinnedIndicator,
+        ),
+        matching: find.byIcon(Icons.push_pin_rounded),
+      );
+      double opacity() => tester
+          .widgetList<FadeTransition>(
+            find.ancestor(of: pin, matching: find.byType(FadeTransition)),
+          )
+          .fold(1.0, (value, fade) => value * fade.opacity.value);
+
+      await tester.drag(entry, const Offset(180, 0));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Unpin'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 110));
+      expect(pinned, isTrue);
+      expect(opacity(), 1);
+      expect(tester.getRect(entry), isNot(closedRect));
+      await tester.pump(const Duration(milliseconds: 111));
+      await tester.pump();
+      await tester.pump();
+      expect(pinned, isFalse);
+      expect(tester.getRect(entry), closedRect);
+      expect(pin, findsOneWidget);
+      expect(opacity(), 1);
+      await tester.pump(const Duration(milliseconds: 225));
+      expect(opacity(), closeTo(0.5, 0.01));
+      await tester.pumpAndSettle();
+      expect(pin, findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+  }
 
   testWidgets(
     'async data waits through dragging and settling, then resumes while open',

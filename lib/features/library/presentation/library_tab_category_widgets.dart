@@ -613,6 +613,7 @@ class AudioLibraryCategoryEntryCard extends ConsumerWidget {
             target: entry.target,
           ),
         ),
+        animateLeadingActionClose: true,
         onLeadingAction: () => unawaited(
           saveSettingsWithFeedback(
             context,

@@ -746,6 +746,7 @@ class _FolderNodeWidgetState extends ConsumerState<LibraryFolderNodeWidget> {
               ),
             )
           : null,
+      animateLeadingActionClose: true,
       onLeadingAction: isRootFolder
           ? () => unawaited(
               saveSettingsWithFeedback(
@@ -907,6 +908,7 @@ class _TrackNodeWidget extends ConsumerWidget {
             AudioDetailTarget.singleAudioFile(track.path),
           ),
         ),
+        animateLeadingActionClose: true,
         onLeadingAction: () => unawaited(
           saveSettingsWithFeedback(
             context,

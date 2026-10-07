@@ -45,6 +45,7 @@ class SwipeRevealCard extends StatefulWidget {
     this.color,
     this.closedColor,
     this.onLeadingAction,
+    this.animateLeadingActionClose = false,
     this.leadingActionLabel,
     this.leadingActionTooltip,
     this.leadingActionIcon = Icons.download_rounded,
@@ -81,6 +82,7 @@ class SwipeRevealCard extends StatefulWidget {
   final Color? color;
   final Color? closedColor;
   final VoidCallback? onLeadingAction;
+  final bool animateLeadingActionClose;
   final String? leadingActionLabel;
   final String? leadingActionTooltip;
   final IconData leadingActionIcon;
@@ -116,6 +118,8 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
   bool _revealedFromStart = false;
   bool _dragStartFromStart = false;
   double _displayedWidth = 0;
+  VoidCallback? _actionAfterClose;
+  final _contentKey = GlobalKey();
   final Object _interactionSource = Object();
 
   void _beginMotion() {
@@ -197,6 +201,7 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
   }
 
   void _resetPaneState() {
+    _actionAfterClose = null;
     UiInteractionCoordinator.instance.cancelInteraction(_interactionSource);
     _displayedWidth = 0;
     _revealedWidth = 0;
@@ -230,15 +235,28 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
   }
 
   void _runActionAfterPaneClose(VoidCallback? action) {
-    if (action == null) return;
+    if (action == null || _actionAfterClose != null) return;
     if (widget.closeAfterPrimaryAction && action == widget.onRemove) {
       unawaited(_runPrimaryActionThenClose());
       return;
     }
-    _closePane(immediate: true);
+    _actionAfterClose = action;
+    if (!widget.animateLeadingActionClose ||
+        action != widget.onLeadingAction ||
+        _displayedWidth == 0) {
+      _closePane(immediate: true);
+      _runClosedAction();
+    } else {
+      _closePane();
+    }
+  }
+
+  void _runClosedAction() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      action();
+      final action = _actionAfterClose;
+      _actionAfterClose = null;
+      action?.call();
     });
   }
 
@@ -312,7 +330,9 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
   }
 
   void _handleHorizontalDragStart(DragStartDetails details) {
-    if (!widget.enabled || !_tickerModeEnabled) return;
+    if (!widget.enabled || !_tickerModeEnabled || _actionAfterClose != null) {
+      return;
+    }
     // The target may already be zero while the closing animation is visible.
     _dragStartRevealedWidth = _displayedWidth;
     _dragStartFromStart = _revealedFromStart;
@@ -324,7 +344,9 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
   }
 
   void _handleHorizontalDragUpdate(DragUpdateDetails details) {
-    if (!widget.enabled || !_tickerModeEnabled) return;
+    if (!widget.enabled || !_tickerModeEnabled || _actionAfterClose != null) {
+      return;
+    }
     _dragDx += details.delta.dx;
     _dragDy += details.delta.dy;
 
@@ -496,7 +518,11 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
       );
     }
 
-    final closedContent = Builder(builder: buildClosedContent);
+    // Preserve child animations when the swipe transform is removed on close.
+    final closedContent = Builder(
+      key: _contentKey,
+      builder: buildClosedContent,
+    );
     if (defaultTargetPlatform == TargetPlatform.windows) {
       return Padding(
         padding: widget.margin,
@@ -534,6 +560,7 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
             onHorizontalDragUpdate: _handleHorizontalDragUpdate,
             onHorizontalDragEnd: _handleHorizontalDragEnd,
             onSecondaryTap: () {
+              if (_actionAfterClose != null) return;
               _beginMotion();
               setState(() {
                 final opening = !_isOpen;
@@ -601,6 +628,9 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                             if (!_dragAccepted) _revealedFromStart = false;
                           }
                         });
+                        if (_revealedWidth == 0 && _actionAfterClose != null) {
+                          _runClosedAction();
+                        }
                       });
                     },
                     builder: (context, value, child) {

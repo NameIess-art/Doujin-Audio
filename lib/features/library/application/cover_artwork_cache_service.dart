@@ -29,8 +29,10 @@ import '../../../core/platform/file_cache_platform_gateway.dart';
 import '../../../core/media/path_matcher.dart';
 
 const String _folderCoverSelectionsKey = 'folder_cover_selections_v1';
-const int _resolvedTrackCoverLimit = 600;
-const int _resolvedFolderCoverLimit = 300;
+int get _resolvedTrackCoverLimit =>
+    defaultTargetPlatform == TargetPlatform.windows ? 1200 : 600;
+int get _resolvedFolderCoverLimit =>
+    defaultTargetPlatform == TargetPlatform.windows ? 1200 : 300;
 const int _manualCoverValidityLimit = 1200;
 
 Map<String, T> _coverKeyMap<T>() => LinkedHashMap<String, T>(
@@ -224,13 +226,16 @@ class CoverArtworkCacheService {
     if (pathValue != null &&
         pathValue.isNotEmpty &&
         !PathMatcher.isRemoteUri(pathValue)) {
-      final resolved = _resolvedTrackCovers[PathMatcher.normalize(pathValue)];
+      final resolved = _readResolvedCover(
+        _resolvedTrackCovers,
+        PathMatcher.normalize(pathValue),
+      );
       if (resolved != null) return resolved;
     }
     final coverSearchKey = coverSearchKeyForTrack(track, trackPath: trackPath);
     if (coverSearchKey != null) {
       final resolved =
-          _resolvedTrackCovers[coverSearchKey] ??
+          _readResolvedCover(_resolvedTrackCovers, coverSearchKey) ??
           _artworkStore.resolvedPath(_trackStoreKey(coverSearchKey, track));
       if (resolved != null) return resolved;
     }
@@ -283,7 +288,7 @@ class CoverArtworkCacheService {
   String? resolvedForFolder(String folderPath) {
     final normalizedFolderPath = PathMatcher.normalize(folderPath);
     final resolved =
-        _resolvedFolderCovers[normalizedFolderPath] ??
+        _readResolvedCover(_resolvedFolderCovers, normalizedFolderPath) ??
         _artworkStore.resolvedPath(_folderStoreKey(normalizedFolderPath));
     if (resolved != null) return resolved;
     final selected = _folderCoverSelections[normalizedFolderPath];
@@ -321,12 +326,32 @@ class CoverArtworkCacheService {
         track?.remoteCoverUrl != null) {
       return futureForRemoteCover(track!.remoteCoverUrl!);
     }
-    final key = coverSearchKeyForTrack(track, trackPath: trackPath);
-    final warm = key == null ? null : _resolvedTrackCovers[key];
-    if (warm != null) {
-      return _resolvedTrackCoverFutures[key] ?? SynchronousFuture(warm);
+    return cachedFutureForTrack(track, trackPath: trackPath) ??
+        _resolveCoverPathForTrack(track, trackPath: trackPath);
+  }
+
+  // Display paths can be provisional; only completed lookups may bypass the
+  // discovery queue (for example, a folder cover while extracting track art).
+  Future<String?>? cachedFutureForTrack(
+    MusicTrack? track, {
+    String? trackPath,
+  }) {
+    if (PathMatcher.isRemoteUri(trackPath ?? track?.path ?? '') &&
+        track?.remoteCoverUrl != null) {
+      return cachedFutureForRemoteCover(track!.remoteCoverUrl!);
     }
-    return _resolveCoverPathForTrack(track, trackPath: trackPath);
+    final key = coverSearchKeyForTrack(track, trackPath: trackPath);
+    if (key == null || !_resolvedTrackCovers.containsKey(key)) return null;
+    final warm = _readResolvedCover(_resolvedTrackCovers, key);
+    // Explicit file bindings must still be validated after a previous miss.
+    if (warm == null &&
+        (track?.manualCoverPath != null || track?.coverCachePath != null)) {
+      return null;
+    }
+    return _resolvedTrackCoverFutures.putIfAbsent(
+      key,
+      () => SynchronousFuture(warm),
+    );
   }
 
   Future<String?> futureForPlaybackTrack(
@@ -447,13 +472,22 @@ class CoverArtworkCacheService {
   }
 
   Future<String?> futureForFolder(String folderPath) {
-    final key = PathMatcher.normalize(folderPath);
-    final warm = _resolvedFolderCovers[key];
-    if (warm != null) {
-      return _resolvedFolderCoverFutures[key] ?? SynchronousFuture(warm);
-    }
-    return _resolveCoverPathForFolder(folderPath);
+    return cachedFutureForFolder(folderPath) ??
+        _resolveCoverPathForFolder(folderPath);
   }
+
+  Future<String?>? cachedFutureForFolder(String folderPath) {
+    final key = PathMatcher.normalize(folderPath);
+    if (!_resolvedFolderCovers.containsKey(key)) return null;
+    final warm = _readResolvedCover(_resolvedFolderCovers, key);
+    return _resolvedFolderCoverFutures.putIfAbsent(
+      key,
+      () => SynchronousFuture(warm),
+    );
+  }
+
+  Future<String?>? cachedFutureForRemoteCover(String url) =>
+      _remoteCovers.cachedFutureFor(url);
 
   Future<String?> futureForRemoteCover(String url) =>
       _remoteCovers.resolve(url);
@@ -1008,6 +1042,13 @@ class CoverArtworkCacheService {
         revision == _coverKeyRevision(key);
   }
 
+  String? _readResolvedCover(Map<String, String?> cache, String key) {
+    if (!cache.containsKey(key)) return null;
+    final value = cache.remove(key);
+    cache[key] = value;
+    return value;
+  }
+
   void _trimResolvedCache<T>(
     Map<String, T> cache,
     int maxEntries, {
@@ -1388,11 +1429,6 @@ class CoverArtworkCacheService {
 
   Future<String?> _resolveCoverPathForFolder(String folderPath) {
     final normalizedFolderPath = PathMatcher.normalize(folderPath);
-
-    if (_resolvedFolderCovers.containsKey(normalizedFolderPath) &&
-        _resolvedFolderCovers[normalizedFolderPath] == null) {
-      return _resolvedFolderCoverFutures[normalizedFolderPath]!;
-    }
 
     final inFlight = _folderCoverFutures[normalizedFolderPath];
     if (inFlight != null) return inFlight;

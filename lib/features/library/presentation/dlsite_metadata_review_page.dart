@@ -17,6 +17,7 @@ import '../../../core/media/path_display.dart';
 import '../../../core/media/time_text_formatters.dart';
 import '../../../core/logging/app_log_service.dart';
 import '../../../core/ui/ui_operation_service.dart';
+import '../../../core/ui/ui_interaction_coordinator.dart';
 import '../../../core/ui/visual_settings_providers.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/async_cover_image.dart';
@@ -183,6 +184,7 @@ class _DlsiteMetadataReviewPageState
 
   @override
   void dispose() {
+    UiInteractionCoordinator.instance.cancelCommit(_durationCommitKey);
     _scrollController.dispose();
     _titleController.dispose();
     _folderNameController.dispose();
@@ -218,6 +220,7 @@ class _DlsiteMetadataReviewPageState
   }
 
   void _initializeEditor() {
+    UiInteractionCoordinator.instance.cancelCommit(_durationCommitKey);
     _durationController.removeListener(_markDurationEdited);
     final detail = widget.detail;
     final metadata = DlsiteMetadata(
@@ -242,9 +245,19 @@ class _DlsiteMetadataReviewPageState
     _durationController.addListener(_markDurationEdited);
     final generation = ++_durationCalculationGeneration;
     if (detail.duration == null) {
-      unawaited(_completeEditorDuration(detail.target, generation));
+      UiInteractionCoordinator.instance.scheduleCommit(
+        key: _durationCommitKey,
+        commit: () {
+          if (mounted) {
+            unawaited(_completeEditorDuration(detail.target, generation));
+          }
+        },
+      );
     }
   }
+
+  String get _durationCommitKey =>
+      'metadata_editor_${identityHashCode(this)}_duration';
 
   void _markDurationEdited() => _durationEdited = true;
 
@@ -434,7 +447,7 @@ class _DlsiteMetadataReviewPageState
                   missingOnly: widget.missingOnly,
                 ),
           );
-      if (!mounted) return;
+      if (!mounted || ModalRoute.of(context)?.isCurrent != true) return;
       if (result.coverFailed) {
         showAppSnackBar(
           context,
@@ -446,7 +459,7 @@ class _DlsiteMetadataReviewPageState
       }
       _finish(DlsiteMetadataReviewResult.applied(result.detail, _saveCover));
     } catch (_) {
-      if (!mounted) return;
+      if (!mounted || ModalRoute.of(context)?.isCurrent != true) return;
       setState(() {
         _saving = false;
       });
@@ -461,6 +474,9 @@ class _DlsiteMetadataReviewPageState
   }
 
   Future<void> _saveEdits(DlsiteMetadata edited) async {
+    final paths = ref.read(audioPathCoordinatorProvider);
+    final library = ref.read(libraryFacadeProvider);
+    final operations = ref.read(uiOperationServiceProvider);
     try {
       var detail = _editingDetail ?? widget.detail;
       var backupFailed = false;
@@ -469,35 +485,32 @@ class _DlsiteMetadataReviewPageState
         throw const FormatException('Folder name cannot be empty.');
       }
       if (folderName != PathDisplay.fileName(detail.target.targetPath)) {
-        final renameResult = await ref
-            .read(audioPathCoordinatorProvider)
-            .renameAudioDetailTargetToName(detail, folderName);
+        final renameResult = await paths.renameAudioDetailTargetToName(
+          detail,
+          folderName,
+        );
         detail = renameResult.detail;
         _editingDetail = detail;
         backupFailed = renameResult.backupFailed;
       }
-      final saveResult = await ref
-          .read(uiOperationServiceProvider)
-          .run<AudioDetailSaveResult>(
-            scope: _operationScope,
-            labelKey: 'audio_detail_save_failed',
-            task: (_) => ref
-                .read(libraryFacadeProvider)
-                .saveAudioDetail(
-                  detail.copyWith(
-                    rjCode: edited.rjCode,
-                    workTitle: edited.workTitle,
-                    circleName: edited.circleName,
-                    voiceActors: edited.voiceActors,
-                    tags: edited.tags,
-                    releaseDate: edited.releaseDate,
-                    duration: edited.duration,
-                    rating: edited.rating,
-                  ),
-                  preserveExistingDuration: !_durationEdited,
-                ),
-          );
-      if (!mounted) return;
+      final saveResult = await operations.run<AudioDetailSaveResult>(
+        scope: _operationScope,
+        labelKey: 'audio_detail_save_failed',
+        task: (_) => library.saveAudioDetail(
+          detail.copyWith(
+            rjCode: edited.rjCode,
+            workTitle: edited.workTitle,
+            circleName: edited.circleName,
+            voiceActors: edited.voiceActors,
+            tags: edited.tags,
+            releaseDate: edited.releaseDate,
+            duration: edited.duration,
+            rating: edited.rating,
+          ),
+          preserveExistingDuration: !_durationEdited,
+        ),
+      );
+      if (!mounted || ModalRoute.of(context)?.isCurrent != true) return;
       if (backupFailed || saveResult.documentFailed) {
         showAppSnackBar(
           context,
@@ -509,7 +522,7 @@ class _DlsiteMetadataReviewPageState
       }
       _finish(DlsiteMetadataReviewResult.applied(saveResult.detail, false));
     } catch (_) {
-      if (!mounted) return;
+      if (!mounted || ModalRoute.of(context)?.isCurrent != true) return;
       setState(() => _saving = false);
       showAppSnackBar(
         context,
@@ -547,7 +560,9 @@ class _DlsiteMetadataReviewPageState
       onCompleted(result);
       return;
     }
-    Navigator.of(context).pop(result);
+    if (ModalRoute.of(context)?.isCurrent == true) {
+      Navigator.of(context).pop(result);
+    }
   }
 
   @override
@@ -566,7 +581,15 @@ class _DlsiteMetadataReviewPageState
       ref.watch(coverImageResolutionProvider),
     );
 
-    final bottomInset = MediaQuery.paddingOf(context).bottom + 78;
+    final hasBatchNavigation =
+        widget.onBatchNavigate != null ||
+        (widget.batchIndex != null && widget.batchTotal != null);
+    final stackBottomActions =
+        hasBatchNavigation && MediaQuery.sizeOf(context).width < 360;
+    final bottomInset =
+        MediaQuery.paddingOf(context).bottom +
+        78 +
+        (stackBottomActions ? 54 : 0);
     final reviewTitle = widget.editing
         ? i18n.tr('audio_detail_edit_info')
         : i18n.tr('dlsite_review_title');
@@ -589,9 +612,6 @@ class _DlsiteMetadataReviewPageState
         : defaultHeaderHeight;
     final listTopPadding = effectiveHeaderHeight + 8;
 
-    final hasBatchNavigation =
-        widget.onBatchNavigate != null ||
-        (widget.batchIndex != null && widget.batchTotal != null);
     final hasCandidateNavigation = _candidates.length > 1 && !_loading;
 
     final Widget? headerTrailing = hasCandidateNavigation
@@ -756,7 +776,10 @@ class _DlsiteMetadataReviewPageState
             if (hasBatchNavigation)
               Positioned(
                 left: 16,
-                bottom: 16 + MediaQuery.paddingOf(context).bottom,
+                bottom:
+                    16 +
+                    MediaQuery.paddingOf(context).bottom +
+                    (stackBottomActions ? 54 : 0),
                 child: AppPageContentTransition(
                   child: ReviewWorkNavigation(
                     skeleton: _loading,

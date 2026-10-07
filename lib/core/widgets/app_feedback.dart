@@ -10,6 +10,7 @@ import '../ui/app_interaction_feedback_settings.dart';
 import '../ui/undoable_removal_service.dart';
 import '../ui/ui_operation_service.dart';
 import '../logging/app_log_service.dart';
+import 'mobile_overlay_inset.dart';
 
 enum AppFeedbackTone { info, success, warning, destructive }
 
@@ -259,6 +260,8 @@ void showPendingUndoableRemovalFeedback(
   final nextMessage = count == 1 ? message : batchMessage(count);
   if (_activeFeedbackReplacementGroup == _undoableRemovalFeedbackGroup &&
       identical(_activeFeedbackReplacementOwner, service) &&
+      _activeFeedbackOverlay ==
+          (MobileOverlayInset.menuOverlayOf(context) ?? Overlay.of(context)) &&
       _activeFeedbackUpdateMessage != null) {
     _activeFeedbackUpdateMessage!(nextMessage);
     _activeFeedbackResetDuration?.call();
@@ -314,7 +317,8 @@ void _showTopFeedback(
   bool showCountdown = false,
   bool showActionCountdown = false,
 }) {
-  final overlay = Overlay.of(context, rootOverlay: true);
+  final overlay =
+      MobileOverlayInset.menuOverlayOf(context) ?? Overlay.of(context);
   final resolvedIcon = icon ?? _defaultIconForTone(tone);
   if (provideHapticFeedback) {
     unawaited(
@@ -387,6 +391,7 @@ void _showTopFeedback(
   _activeDataNotifier = dataNotifier;
 
   late final OverlayEntry entry;
+  late final VoidCallback removeWhenUnmounted;
   var removed = false;
   void removeEntry(AppFeedbackDismissReason reason) {
     if (removed) return;
@@ -405,9 +410,18 @@ void _showTopFeedback(
       _activeDataNotifier = null;
     }
     dataNotifier.dispose();
+    entry.removeListener(removeWhenUnmounted);
     entry.remove();
+    entry.dispose();
     callback?.call(reason);
   }
+
+  removeWhenUnmounted = () {
+    if (!entry.mounted) {
+      // Overlay disposal also ends the undo window; finish outside teardown.
+      scheduleMicrotask(() => removeEntry(AppFeedbackDismissReason.replaced));
+    }
+  };
 
   entry = OverlayEntry(
     builder: (overlayContext) {
@@ -430,8 +444,7 @@ void _showTopFeedback(
             RenderBox? targetBox;
             bool findCanvas(Element element) {
               final key = element.widget.key;
-              if (key is ValueKey<String> &&
-                  key.value.startsWith('main_page_canvas_')) {
+              if (key is ValueKey<String> && key.value == 'main_page_canvas') {
                 final box = element.findRenderObject();
                 if (box is RenderBox && box.hasSize) {
                   targetBox = box;
@@ -546,6 +559,7 @@ void _showTopFeedback(
   };
   _activeFeedbackResetDuration = ([dur, cd]) =>
       animationKey.currentState?.resetDuration(dur, cd);
+  entry.addListener(removeWhenUnmounted);
 }
 
 class _FeedbackAnimationWrapper extends StatefulWidget {

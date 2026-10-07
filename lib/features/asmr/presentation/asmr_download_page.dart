@@ -68,6 +68,11 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
   Future<void> _bootstrap() async {
     var destinationMissing = false;
     try {
+      final i18n = ref.read(appLanguageProviderInstanceProvider);
+      final findWork = _work == null ? ref.read(asmrWorkFinderProvider) : null;
+      final libraryController = ref.read(asmrLibraryControllerProvider);
+      final downloadManager = ref.read(asmrDownloadManagerProvider);
+      final settings = ref.read(settingsRepositoryProvider);
       final result = await ref
           .read(uiOperationServiceProvider)
           .run<
@@ -82,15 +87,11 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
                 if (rjCode == null || rjCode.isEmpty) {
                   throw StateError('No RJ code provided');
                 }
-                final language = ref
-                    .read(appLanguageProviderInstanceProvider)
-                    .language;
-                work = await ref.read(asmrWorkFinderProvider)(
+                work = await findWork!(
                   rjCode,
-                  language: language,
+                  language: i18n.language,
                 );
                 if (work == null) {
-                  final i18n = ref.read(appLanguageProviderInstanceProvider);
                   throw StateError(
                     i18n.tr('audio_detail_asmr_work_not_found', {'rj': rjCode}),
                   );
@@ -100,13 +101,10 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
                 }
               }
 
-              final libraryController = ref.read(asmrLibraryControllerProvider);
-              final downloadManager = ref.read(asmrDownloadManagerProvider);
               if (libraryController == null || downloadManager == null) {
                 throw StateError('ASMR services are not configured.');
               }
 
-              final settings = ref.read(settingsRepositoryProvider);
               final tree = await libraryController.ensureTrackTree(work);
               await downloadManager.initialize();
               final customRoot = widget.customDestinationRoot?.trim();
@@ -187,6 +185,7 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
   }
 
   Future<void> _chooseDestination() async {
+    final route = ModalRoute.of(context);
     final downloadManager = ref.read(asmrDownloadManagerProvider);
     if (downloadManager == null) return;
     final settings = ref.read(settingsRepositoryProvider);
@@ -194,11 +193,14 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
     final folder = await downloadManager.pickDestinationFolder(
       dialogTitle: i18n.tr('asmr_download_choose_path'),
     );
-    if (!mounted || folder == null || folder.trim().isEmpty) {
+    if (!mounted ||
+        route?.isCurrent != true ||
+        folder == null ||
+        folder.trim().isEmpty) {
       return;
     }
     await settings.setAsmrDownloadDestinationRoot(folder);
-    if (!mounted) return;
+    if (!mounted || route?.isCurrent != true) return;
     setState(() {
       _destinationRoot = folder.trim();
     });
@@ -214,6 +216,7 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
     final selection = _selection;
     if (work == null || selection == null) return;
     if (_starting) return;
+    final route = ModalRoute.of(context);
 
     final asmrBlue = AppDesignTokens.of(context).asmrAccent;
     final downloadManager = ref.read(asmrDownloadManagerProvider);
@@ -249,12 +252,18 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
     if (destination == null || destination.isEmpty) {
       await _chooseDestination();
       destination = _destinationRoot?.trim();
-      if (!mounted || destination == null || destination.isEmpty) {
+      if (!mounted ||
+          route?.isCurrent != true ||
+          destination == null ||
+          destination.isEmpty) {
         return;
       }
     }
-    if (!await downloadManager.destinationExists(destination)) {
-      if (!mounted) return;
+    final destinationExists = await downloadManager.destinationExists(
+      destination,
+    );
+    if (!mounted || route?.isCurrent != true) return;
+    if (!destinationExists) {
       setState(() {
         _destinationRoot = null;
       });
@@ -267,7 +276,10 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
       );
       await _chooseDestination();
       destination = _destinationRoot?.trim();
-      if (!mounted || destination == null || destination.isEmpty) {
+      if (!mounted ||
+          route?.isCurrent != true ||
+          destination == null ||
+          destination.isEmpty) {
         return;
       }
     }
@@ -293,7 +305,7 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
               customWorkFolderName: widget.customWorkFolderName,
             ),
           );
-      if (!mounted) return;
+      if (!mounted || route?.isCurrent != true) return;
       showAppSnackBar(
         context,
         i18n.tr('asmr_download_added_to_list'),
@@ -301,10 +313,9 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
         icon: Icons.checklist_rounded,
         iconColor: asmrBlue,
       );
-      if (!mounted) return;
       unawaited(Navigator.of(context).maybePop());
     } catch (_) {
-      if (!mounted) return;
+      if (!mounted || route?.isCurrent != true) return;
       showAppSnackBar(
         context,
         i18n.tr('asmr_download_failed_next_step'),
@@ -336,6 +347,18 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
     final asmrBlue = tokens.asmrAccent;
     final onAsmrBlue = tokens.onAsmrAccent;
     final hasDestination = (_destinationRoot?.trim().isNotEmpty ?? false);
+    final compactHeader = MediaQuery.sizeOf(context).width < 400;
+    final destinationLabel = i18n.tr(
+      hasDestination
+          ? 'asmr_download_change_path'
+          : 'asmr_download_choose_path',
+    );
+    final destinationIcon = hasDestination
+        ? Icons.folder_rounded
+        : Icons.folder_open_rounded;
+    final chooseDestination = (_starting || _loading)
+        ? null
+        : _chooseDestination;
     final bottomInset = MediaQuery.of(context).viewPadding.bottom;
     final listBottomPadding = 76 + bottomInset;
 
@@ -513,29 +536,35 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
                       : null,
                   trailing: widget.customWorkFolderName != null
                       ? null
+                      : compactHeader
+                      ? HeaderFloatingButton(
+                          child: IconButton(
+                            tooltip: destinationLabel,
+                            onPressed: chooseDestination,
+                            icon: Icon(
+                              destinationIcon,
+                              size: 18,
+                              color: asmrBlue,
+                            ),
+                          ),
+                        )
                       : HeaderFloatingSurface(
                           padding: const EdgeInsets.symmetric(horizontal: 12),
                           child: InkWell(
                             borderRadius: BorderRadius.circular(19),
-                            onTap: (_starting || _loading)
-                                ? null
-                                : _chooseDestination,
+                            onTap: chooseDestination,
                             child: Center(
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
                                   Icon(
-                                    hasDestination
-                                        ? Icons.folder_rounded
-                                        : Icons.folder_open_rounded,
+                                    destinationIcon,
                                     size: 18,
                                     color: asmrBlue,
                                   ),
                                   const SizedBox(width: 6),
                                   Text(
-                                    hasDestination
-                                        ? i18n.tr('asmr_download_change_path')
-                                        : i18n.tr('asmr_download_choose_path'),
+                                    destinationLabel,
                                     style: Theme.of(context)
                                         .textTheme
                                         .labelMedium

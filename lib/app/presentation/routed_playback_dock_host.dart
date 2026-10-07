@@ -27,10 +27,20 @@ class RoutedPlaybackDockHost extends ConsumerStatefulWidget {
     super.key,
     required this.navigatorKey,
     required this.builder,
+    this.playbackNavigatorKey,
+    this.geometry,
+    this.enabled = true,
+    this.menuDismiss,
+    this.backgroundColor,
   });
 
   final GlobalKey<NavigatorState> navigatorKey;
   final RoutedPlaybackDockAppBuilder builder;
+  final GlobalKey<NavigatorState>? playbackNavigatorKey;
+  final PlaybackDockGeometryController? geometry;
+  final bool enabled;
+  final ValueNotifier<VoidCallback?>? menuDismiss;
+  final Color? backgroundColor;
 
   @override
   ConsumerState<RoutedPlaybackDockHost> createState() =>
@@ -52,7 +62,19 @@ class _RoutedPlaybackDockHostState
     _routeObserver = _RootPageRouteObserver(_routeRevision);
     // Keep the dock below newly pushed routes before their first frame.
     _routeRevision.addListener(_syncRoutedPlaybackDock);
-    _playbackDockGeometry = PlaybackDockGeometryController();
+    _playbackDockGeometry = widget.geometry ?? PlaybackDockGeometryController();
+  }
+
+  @override
+  void didUpdateWidget(RoutedPlaybackDockHost oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.enabled != widget.enabled) {
+      if (widget.enabled) {
+        _scheduleRoutedPlaybackDockSync();
+      } else {
+        _removeRoutedPlaybackDock();
+      }
+    }
   }
 
   @override
@@ -60,7 +82,7 @@ class _RoutedPlaybackDockHostState
     _routedPlaybackDockEntry?.remove();
     _routedPlaybackDockEntry?.dispose();
     _routeObserver.dispose();
-    _playbackDockGeometry.dispose();
+    if (widget.geometry == null) _playbackDockGeometry.dispose();
     _routeRevision.removeListener(_syncRoutedPlaybackDock);
     _routeRevision.dispose();
     super.dispose();
@@ -85,7 +107,7 @@ class _RoutedPlaybackDockHostState
   }
 
   void _syncRoutedPlaybackDock() {
-    if (_routeObserver.workDetailOpenedFromPlayback) {
+    if (!widget.enabled) {
       _removeRoutedPlaybackDock();
       return;
     }
@@ -196,7 +218,8 @@ class _RoutedPlaybackDockHostState
                       ),
                   covered: routeAboveWorkDetail,
                   departing: routeDeparting,
-                  navigatorKey: widget.navigatorKey,
+                  navigatorKey:
+                      widget.playbackNavigatorKey ?? widget.navigatorKey,
                   currentRoute: _routeObserver.topRoute,
                   geometry: _playbackDockGeometry,
                 ),
@@ -223,8 +246,8 @@ class _RoutedPlaybackDockHostState
         final supportsRoutedDock =
             mediaQuery.size.width >= 300 && mediaQuery.size.height >= 300;
         final reserveWorkDetailDockInset =
+            widget.enabled &&
             isWorkDetailRoute &&
-            !_routeObserver.workDetailOpenedFromPlayback &&
             supportsRoutedDock &&
             hasOverlaySessions;
         final routeDockInset = reserveWorkDetailDockInset
@@ -236,11 +259,14 @@ class _RoutedPlaybackDockHostState
         return MobileOverlayInset(
           bottomInset: routeDockInset,
           menuOverlayKey: _menuOverlayKey,
+          menuDismiss: widget.menuDismiss,
           child: Stack(
             fit: StackFit.expand,
             children: [
               ColoredBox(
-                color: Theme.of(context).colorScheme.surface,
+                color:
+                    widget.backgroundColor ??
+                    Theme.of(context).colorScheme.surface,
                 child: navigatorChild!,
               ),
               Overlay(key: _menuOverlayKey),
@@ -270,17 +296,6 @@ class _RootPageRouteObserver extends NavigatorObserver {
   List<PageRoute<dynamic>> get routes => List.unmodifiable(_routes);
   bool get suppressDockForSessionDetail => _sessionDetailPopups.isNotEmpty;
   bool get isWorkDetailDeparting => _departingWorkDetailRoutes.isNotEmpty;
-
-  bool get workDetailOpenedFromPlayback {
-    final detail =
-        _departingWorkDetailRoutes.lastOrNull ??
-        lastRouteNamed(workDetailRouteName);
-    if (detail == null) return false;
-    final index = _routes.indexOf(detail);
-    // A popped detail remains in the overlay until its exit finishes.
-    final origins = index < 0 ? _routes : _routes.take(index);
-    return origins.any((route) => route is SessionDetailRoute);
-  }
 
   PageRoute<dynamic>? lastRouteNamed(String name) {
     for (var index = _routes.length - 1; index >= 0; index--) {

@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../features/player/presentation/playback_providers.dart';
 import '../state/app_runtime_providers.dart';
+import 'work_detail_navigation.dart';
 
 class TogglePlayPauseIntent extends Intent {
   const TogglePlayPauseIntent();
@@ -80,11 +81,21 @@ class GlobalShortcuts extends ConsumerWidget {
     if (!control && !alt && key == LogicalKeyboardKey.escape) {
       final navigator =
           navigatorKey?.currentState ?? Navigator.maybeOf(routeContext);
-      if (navigator == null || !navigator.canPop()) {
-        return KeyEventResult.ignored;
+      if (navigator != null && navigator.canPop()) {
+        unawaited(navigator.maybePop());
+        return KeyEventResult.handled;
       }
-      unawaited(navigator.maybePop());
-      return KeyEventResult.handled;
+      final detail = WorkDetailNavigationScope.maybeOf(context);
+      final dismissMenu = detail?.menuDismiss.value;
+      if (dismissMenu != null) {
+        dismissMenu();
+        return KeyEventResult.handled;
+      }
+      if (detail?.navigatorKey.currentState?.canPop() == true) {
+        unawaited(detail!.navigatorKey.currentState!.maybePop());
+        return KeyEventResult.handled;
+      }
+      return KeyEventResult.ignored;
     }
     if (focusContext?.findAncestorStateOfType<EditableTextState>() != null) {
       return KeyEventResult.ignored;

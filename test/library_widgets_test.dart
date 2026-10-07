@@ -966,18 +966,25 @@ void main() {
             () => Future<void>.delayed(const Duration(milliseconds: 10)),
           );
           await tester.pump();
-          if (tester
-              .widgetList<RawImage>(decodedCover)
-              .any((image) => image.image != null)) {
+          // The loading artwork also contains a decoded RawImage (app icon).
+          // Wait for the requested cover rather than accepting that placeholder.
+          if (PaintingBinding.instance.imageCache
+              .statusForKey(imageKey)
+              .keepAlive) {
             break;
           }
         }
-        expect(tester.widget<RawImage>(decodedCover).image, isNotNull);
         await tester.pumpAndSettle();
+        expect(tester.widget<RawImage>(decodedCover).image, isNotNull);
         await tester.pumpWidget(const SizedBox.shrink());
         UiInteractionCoordinator.instance.beginNavigation(interaction);
         await tester.pumpWidget(page());
         await tester.pump();
+        expect(
+          decodedCover,
+          findsOneWidget,
+          reason: '${surface.runtimeType} must reuse the decoded cover on return',
+        );
         expect(tester.widget<RawImage>(decodedCover).image, isNotNull);
         UiInteractionCoordinator.instance.cancelNavigation(interaction);
         await tester.pumpWidget(const SizedBox.shrink());

@@ -1,8 +1,12 @@
 part of 'main_screen.dart';
 
 extension _MainScreenLayout on _MainScreenState {
-  Widget _buildBody({required bool isDesktop}) {
-    final layoutSize = _layoutViewSize();
+  Widget _buildBody(
+    BuildContext context, {
+    required bool isDesktop,
+    required bool isLandscapeLayout,
+  }) {
+    final layoutSize = MediaQuery.sizeOf(context);
     final width = layoutSize.width;
     final isLargeScreen = width >= 980;
     final radius = BorderRadius.circular(
@@ -20,9 +24,6 @@ extension _MainScreenLayout on _MainScreenState {
                   AppSpacing.sm,
                 ))
         : EdgeInsets.zero;
-    final isLandscapeLayout =
-        defaultTargetPlatform == TargetPlatform.windows ||
-        MediaQuery.orientationOf(context) == Orientation.landscape;
     final (:showLocal, :showAsmr) = ref.watch(
       settingsStateProvider.select(
         (s) => (
@@ -404,8 +405,9 @@ extension _MainScreenLayout on _MainScreenState {
   Widget _buildDesktopNavigation(
     BuildContext context,
     AppLanguageProvider i18n,
-    List<PlaybackSessionSnapshot> overlaySessions,
-  ) {
+    List<PlaybackSessionSnapshot> overlaySessions, {
+    required bool isMenuCollapsed,
+  }) {
     final (:showLocal, :showAsmr) = ref.watch(
       settingsStateProvider.select(
         (s) => (
@@ -421,7 +423,7 @@ extension _MainScreenLayout on _MainScreenState {
         showLocalLibrary: showLocal,
         showAsmrOne: showAsmr,
       ),
-      isMenuCollapsed: _isMenuCollapsed,
+      isMenuCollapsed: isMenuCollapsed,
       activePageIndex: _activePageIndex,
       menuIconKeys: _menuIconKeys,
       menuIconLinks: _menuIconLinks,

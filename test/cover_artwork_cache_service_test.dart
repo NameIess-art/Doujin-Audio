@@ -3,6 +3,7 @@ import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
 import 'package:doujin_audio/core/media/audio_detail.dart';
@@ -19,6 +20,77 @@ import 'package:doujin_audio/core/platform/file_cache_platform_gateway.dart';
 import 'package:doujin_audio/core/media/path_matcher.dart';
 
 void main() {
+  test(
+    'Windows retains long-list covers and evicts least recent results',
+    () async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+      final service = LibraryService();
+      final cover = await _temporaryCoverFile('windows_long_list');
+      var downloads = 0;
+      var scans = 0;
+      final tracks = [
+        for (var i = 0; i < 601; i++)
+          _track(path: '/library/track_$i.flac', groupKey: '/library'),
+      ];
+      service.library.addAll(tracks);
+      final cache = CoverArtworkCacheService(
+        libraryService: service,
+        filesystemImageScanner: (_, _) async {
+          scans++;
+          return [];
+        },
+        fileCacheGateway: _FakeFileCachePlatformGateway(
+          coversByPath: {
+            for (final track in tracks)
+              track.path: '/cache/${track.path}.image',
+          },
+        ),
+        remoteCoverDownloader: (_) async {
+          downloads++;
+          return cover.path;
+        },
+      );
+      addTearDown(cache.dispose);
+      addTearDown(service.dispose);
+      for (final track in tracks) {
+        await cache.futureForTrack(track);
+      }
+      expect(cache.cachedFutureForTrack(tracks.first), isNotNull);
+
+      for (var i = 0; i < 1200; i++) {
+        await cache.futureForFolder('/missing/folder_$i');
+        await cache.futureForRemoteCover('https://cover/$i');
+      }
+      final firstFolder = cache.cachedFutureForFolder('/missing/folder_0');
+      final firstRemote = cache.cachedFutureForRemoteCover('https://cover/0');
+      expect(firstFolder, isNotNull);
+      expect(firstRemote, isNotNull);
+      final scansBeforeReturn = scans;
+      expect(await cache.futureForFolder('/missing/folder_0'), isNull);
+      expect(await cache.futureForRemoteCover('https://cover/0'), cover.path);
+      expect(scans, scansBeforeReturn);
+      expect(downloads, 1200);
+      await cache.futureForFolder('/missing/folder_1200');
+      await cache.futureForRemoteCover('https://cover/1200');
+      expect(
+        cache.cachedFutureForFolder('/missing/folder_0'),
+        same(firstFolder),
+      );
+      expect(
+        cache.cachedFutureForRemoteCover('https://cover/0'),
+        same(firstRemote),
+      );
+      expect(cache.cachedFutureForFolder('/missing/folder_1'), isNull);
+      expect(cache.cachedFutureForRemoteCover('https://cover/1'), isNull);
+
+      cache.invalidateFolder('/missing/folder_0');
+      expect(cache.cachedFutureForFolder('/missing/folder_0'), isNull);
+      await cache.futureForFolder('/missing/folder_0');
+      expect(scans, greaterThan(scansBeforeReturn));
+    },
+  );
+
   test('import batch invalidates covers only after the final commit', () async {
     final library = LibraryService();
     final cache = CoverArtworkCacheService(libraryService: library);

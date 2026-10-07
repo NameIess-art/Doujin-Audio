@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/localization/app_language_provider.dart';
 import '../../../app/state/app_runtime_providers.dart';
+import '../../../core/ui/ui_interaction_coordinator.dart';
 import '../../../core/ui/visual_settings_providers.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/app_transitions.dart';
@@ -44,6 +45,7 @@ class _FolderCoverSelectorState extends ConsumerState<FolderCoverSelector> {
   bool _saving = false;
   int _currentIndex = 0;
   int? _targetVirtualPage;
+  String get _loadCommitKey => 'folder_cover_${identityHashCode(this)}_load';
 
   static int _pageForIndex(int index, int length) {
     if (length <= 1) return index;
@@ -67,11 +69,19 @@ class _FolderCoverSelectorState extends ConsumerState<FolderCoverSelector> {
       _loading = false;
       _pageController = PageController();
     }
-    unawaited(_load());
+    // Candidate discovery hashes images and extracts track artwork. Keep that
+    // work out of route transitions while showing the indexed cover immediately.
+    UiInteractionCoordinator.instance.scheduleCommit(
+      key: _loadCommitKey,
+      commit: () {
+        if (mounted) unawaited(_load());
+      },
+    );
   }
 
   @override
   void dispose() {
+    UiInteractionCoordinator.instance.cancelCommit(_loadCommitKey);
     _pageController?.dispose();
     super.dispose();
   }
@@ -429,6 +439,7 @@ class _FolderCoverSelectorState extends ConsumerState<FolderCoverSelector> {
                           fit: BoxFit.cover,
                           cacheWidth: coverCacheWidth,
                           useDefaultCacheWidth: coverCacheWidth != null,
+                          deferLoadDuringInteraction: true,
                           fallbackBuilder: (_) =>
                               const CoverFallbackArtwork(),
                         );
@@ -491,8 +502,10 @@ class _FolderCoverSelectorState extends ConsumerState<FolderCoverSelector> {
                         _CoverCaption(
                           text: '${_currentIndex + 1} / ${_images.length}',
                         ),
-                        _CoverCaption(
-                          text: i18n.tr('audio_detail_cover_swipe_hint'),
+                        Flexible(
+                          child: _CoverCaption(
+                            text: i18n.tr('audio_detail_cover_swipe_hint'),
+                          ),
                         ),
                       ],
                     ),
@@ -566,6 +579,8 @@ class _CoverCaption extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         child: Text(
           text,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
           style: const TextStyle(
             color: Color(0xFFF8F5F7),
             fontSize: 12,

@@ -15,6 +15,7 @@ Future<void> downloadAudioTargetFromAsmr({
   required WidgetRef ref,
   required AudioDetailTarget target,
 }) async {
+  final origin = ModalRoute.of(context);
   final i18n = ProviderScope.containerOf(
     context,
     listen: false,
@@ -41,7 +42,7 @@ Future<void> downloadAudioTargetFromAsmr({
     }
   }
 
-  if (!context.mounted) return;
+  if (!context.mounted || origin?.isCurrent == false) return;
 
   if (rjCode == null || rjCode.isEmpty) {
     showAppSnackBar(

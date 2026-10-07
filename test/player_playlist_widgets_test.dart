@@ -138,6 +138,9 @@ _pumpSubtitleDetail({
   Widget Function(PlaybackSessionSnapshot)? detailBuilder,
   List<MusicTrack>? queueTracks,
   bool preloadSubtitle = false,
+  bool openDetail = true,
+  VoidCallback? onSubtitleLoad,
+  List<NavigatorObserver> navigatorObservers = const [],
   void Function(AppRuntimeWidgetTestFixture)? configureFixture,
   List<Override> overrides = const [],
 }) async {
@@ -202,7 +205,10 @@ _pumpSubtitleDetail({
   );
   final subtitleService = PlaybackSubtitleService(
     trackResolver: (_) => track,
-    subtitleLoader: (_, _) => subtitleResult ?? Future.value(subtitleTrack),
+    subtitleLoader: (_, _) {
+      onSubtitleLoad?.call();
+      return subtitleResult ?? Future.value(subtitleTrack);
+    },
   );
   if (preloadSubtitle) await subtitleService.load(track.path);
   TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
@@ -225,12 +231,13 @@ _pumpSubtitleDetail({
               ),
             ),
       subtitleService: subtitleService,
+      navigatorObservers: navigatorObservers,
       overrides: overrides,
     ),
   );
   await tester.pumpAndSettle();
   coverCache.requestedPaths.clear();
-  if (detailBuilder == null) {
+  if (detailBuilder == null && openDetail) {
     unawaited(
       Navigator.of(
         tester.element(find.byType(PlaylistTab)),
@@ -339,6 +346,73 @@ void main() {
         expect(tester.takeException(), isNull);
       },
       variant: TargetPlatformVariant({platform}),
+    );
+  }
+
+  for (final (cachedSubtitle, closeDuringEntrance) in [
+    (false, false),
+    (true, false),
+    (false, true),
+  ]) {
+    testWidgets(
+      'Windows detail defers cold artwork and subtitle work '
+      '(cached subtitle: $cachedSubtitle, close early: $closeDuringEntrance)',
+      (tester) async {
+        final interaction = UiInteractionCoordinator.instance;
+        interaction.resetForTest();
+        addTearDown(interaction.resetForTest);
+        final observer = UiInteractionNavigatorObserver();
+        addTearDown(observer.dispose);
+        var subtitleLoads = 0;
+        final fixture = await _pumpSubtitleDetail(
+          tester: tester,
+          subtitleTrack: SubtitleTrack(
+            sourcePath: 'test.srt',
+            cues: const [
+              SubtitleCue(
+                start: Duration.zero,
+                end: Duration(seconds: 5),
+                text: 'Cached or deferred subtitle',
+              ),
+            ],
+          ),
+          initialPosition: Duration.zero,
+          physicalSize: const Size(3840, 2400),
+          openDetail: false,
+          preloadSubtitle: cachedSubtitle,
+          onSubtitleLoad: () => subtitleLoads++,
+          navigatorObservers: [observer],
+        );
+        expect(subtitleLoads, cachedSubtitle ? 1 : 0);
+        final navigator = Navigator.of(tester.element(find.byType(PlaylistTab)));
+        final route = buildSessionDetailRoute(sessionId: fixture.session.id);
+        unawaited(navigator.push(route));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 80));
+        expect(fixture.coverCache.requestedPaths, isEmpty);
+        expect(subtitleLoads, cachedSubtitle ? 1 : 0);
+        expect(
+          find.text('Cached or deferred subtitle'),
+          cachedSubtitle ? findsOneWidget : findsNothing,
+        );
+        if (closeDuringEntrance) navigator.pop();
+        for (var frame = 0; frame < 8; frame++) {
+          await tester.pump(const Duration(milliseconds: 100));
+        }
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 200)),
+        );
+        await tester.pump();
+        await tester.pump();
+        expect(
+          fixture.coverCache.requestedPaths.length,
+          closeDuringEntrance ? 0 : 1,
+        );
+        expect(subtitleLoads, closeDuringEntrance ? 0 : 1);
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+      variant: const TargetPlatformVariant({TargetPlatform.windows}),
     );
   }
 
@@ -8248,15 +8322,20 @@ void main() {
       await tester.pump(const Duration(milliseconds: 400));
       await tester.pump(const Duration(milliseconds: 400));
       expect(find.byType(WorkDetailPage), findsOneWidget);
-      expect(find.byType(SessionDetailPage, skipOffstage: false), findsWidgets);
+      await pumpUntilNotFound(
+        tester,
+        find.byType(SessionDetailPage, skipOffstage: false),
+      );
+      expect(find.byType(SessionDetailPage, skipOffstage: false), findsNothing);
 
-      // Returning keeps the live playback detail and its navigation context.
+      // The work detail returns directly to the main page.
       final backButton = find.byKey(const ValueKey('work_detail_back_button'));
       expect(backButton, findsOneWidget);
       await pumpUntilFound(
         tester,
         find.byWidgetPredicate(
-          (widget) => widget is IconButton &&
+          (widget) =>
+              widget is IconButton &&
               widget.key == const ValueKey('work_detail_back_button') &&
               widget.onPressed != null,
         ),
@@ -8265,76 +8344,116 @@ void main() {
       await tester.tap(backButton);
       await pumpUntilNotFound(tester, find.byType(WorkDetailPage));
       expect(find.byType(WorkDetailPage), findsNothing);
-      expect(find.byType(SessionDetailPage, skipOffstage: false), findsWidgets);
-      expect(find.byType(SessionDetailPage), findsOneWidget);
-      expect(find.byType(PlaylistTab, skipOffstage: false), findsOneWidget);
+      expect(find.byType(SessionDetailPage, skipOffstage: false), findsNothing);
+      expect(find.byType(PlaylistTab), findsOneWidget);
+      expect(
+        Navigator.of(tester.element(find.byType(PlaylistTab))).canPop(),
+        false,
+      );
     },
   );
 
-  testWidgets(
-    'work detail opened from playback preserves intermediate routes on exit',
-    (tester) async {
-      await _pumpSubtitleDetail(
-        tester: tester,
-        subtitleTrack: SubtitleTrack(sourcePath: 'empty.srt', cues: const []),
-        initialPosition: Duration.zero,
-      );
-      final navigator = Navigator.of(
-        tester.element(find.byType(SessionDetailPage)),
-      );
-      unawaited(
-        navigator.push<void>(
-          MaterialPageRoute<void>(
-            builder: (_) => const Scaffold(body: Text('Intermediate page')),
+  for (final remote in [false, true]) {
+    testWidgets(
+      'work detail opened from playback removes intermediate routes on exit (remote: $remote)',
+      (tester) async {
+        final pumped = await _pumpSubtitleDetail(
+          tester: tester,
+          physicalSize: defaultTargetPlatform == TargetPlatform.windows
+              ? const Size(3840, 2400)
+              : const Size(1080, 2400),
+          initialTrack: remote
+              ? MusicTrack(
+                  path: 'https://example.com/track.mp3',
+                  displayName: 'Remote track',
+                  groupKey: 'asmr-work-123456',
+                  groupTitle: 'Remote work',
+                  groupSubtitle: 'RJ123456',
+                  isSingle: false,
+                  remoteMetadataKind: 'asmr.one',
+                  remoteMetadata: const {'id': 123456, 'title': 'Remote work'},
+                )
+              : null,
+          subtitleTrack: SubtitleTrack(sourcePath: 'empty.srt', cues: const []),
+          initialPosition: Duration.zero,
+        );
+        final navigator = Navigator.of(
+          tester.element(find.byType(SessionDetailPage)),
+        );
+        unawaited(
+          navigator.push<void>(
+            MaterialPageRoute<void>(
+              builder: (_) => const Scaffold(body: Text('Intermediate page')),
+            ),
           ),
-        ),
-      );
-      await tester.pumpAndSettle();
-      unawaited(
-        navigator.push(buildSessionDetailRoute(sessionId: 'subtitle-session')),
-      );
-      await tester.pumpAndSettle();
+        );
+        await tester.pumpAndSettle();
+        unawaited(
+          navigator.push(
+            buildSessionDetailRoute(sessionId: 'subtitle-session'),
+          ),
+        );
+        await tester.pumpAndSettle();
 
-      await tester.tap(
-        find.byKey(const ValueKey('session_work_detail_button')),
-      );
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 450));
-      await tester.pump(const Duration(milliseconds: 450));
-      expect(find.byType(WorkDetailPage), findsOneWidget);
-      await tester.runAsync(
-        () => Future<void>.delayed(const Duration(milliseconds: 200)),
-      );
-      await tester.pump();
+        await tester.tap(
+          find.byKey(const ValueKey('session_work_detail_button')),
+        );
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 450));
+        await tester.pump(const Duration(milliseconds: 450));
+        expect(find.byType(WorkDetailPage), findsOneWidget);
+        await pumpUntilNotFound(
+          tester,
+          find.byType(SessionDetailPage, skipOffstage: false),
+        );
+        expect(
+          find.byType(SessionDetailPage, skipOffstage: false),
+          findsNothing,
+        );
+        expect(
+          find.text('Intermediate page', skipOffstage: false),
+          findsNothing,
+        );
+        expect(
+          pumped.fixture.playbackService.sessionById(pumped.session.id),
+          same(pumped.session),
+        );
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 200)),
+        );
+        await tester.pump();
 
-      await pumpUntilFound(
-        tester,
-        find.byWidgetPredicate(
-          (widget) => widget is IconButton &&
-              widget.key == const ValueKey('work_detail_back_button') &&
-              widget.onPressed != null,
-        ),
-      );
-      await tester.pump(const Duration(milliseconds: 450));
-      await tester.tap(find.byKey(const ValueKey('work_detail_back_button')));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 450));
-      expect(find.byType(SessionDetailPage), findsOneWidget);
-      expect(find.byType(PlaylistTab, skipOffstage: false), findsOneWidget);
-      navigator.pop();
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 450));
-      expect(find.text('Intermediate page'), findsOneWidget);
-      expect(find.byType(SessionDetailPage, skipOffstage: false), findsWidgets);
-      // Wait for SQLite-backed directory cache work in real async time before
-      // fixture disposal; navigation now keeps the intermediate routes alive.
-      await tester.runAsync(
-        () => Future<void>.delayed(const Duration(milliseconds: 200)),
-      );
-      await tester.pump();
-      expect(tester.takeException(), isNull);
-    },
-  );
+        await pumpUntilFound(
+          tester,
+          find.byWidgetPredicate(
+            (widget) =>
+                widget is IconButton &&
+                widget.key == const ValueKey('work_detail_back_button') &&
+                widget.onPressed != null,
+          ),
+        );
+        await tester.pump(const Duration(milliseconds: 450));
+        await tester.tap(find.byKey(const ValueKey('work_detail_back_button')));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 450));
+        expect(find.byType(PlaylistTab), findsOneWidget);
+        expect(navigator.canPop(), false);
+        expect(
+          find.byType(SessionDetailPage, skipOffstage: false),
+          findsNothing,
+        );
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 200)),
+        );
+        await tester.pump();
+        expect(tester.takeException(), isNull);
+      },
+      variant: const TargetPlatformVariant({
+        TargetPlatform.android,
+        TargetPlatform.windows,
+      }),
+    );
+  }
 
   testWidgets(
     'landscape session detail keeps secondary controls visible when feature menu is open',

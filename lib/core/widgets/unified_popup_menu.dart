@@ -82,6 +82,8 @@ class _UnifiedPopupMenuButtonState<T> extends State<UnifiedPopupMenuButton<T>>
   Future<void>? _closing;
   late final AnimationController _controller;
   final Object _interactionSource = Object();
+  ValueNotifier<VoidCallback?>? _menuDismiss;
+  VoidCallback? _dismissCallback;
 
   @override
   void initState() {
@@ -150,24 +152,30 @@ class _UnifiedPopupMenuButtonState<T> extends State<UnifiedPopupMenuButton<T>>
 
   void _showOverlay() {
     final box = _anchorKey.currentContext?.findRenderObject() as RenderBox?;
-    final overlay = Overlay.of(context, rootOverlay: true);
+    final overlay =
+        MobileOverlayInset.menuOverlayOf(context) ??
+        Overlay.of(context, rootOverlay: true);
     final overlayBox = overlay.context.findRenderObject() as RenderBox?;
     if (box == null || overlayBox == null) return;
 
     final anchorOffset = box.localToGlobal(Offset.zero, ancestor: overlayBox);
     final anchorRect = anchorOffset & box.size;
     final screenWidth = overlayBox.size.width;
-    final left = (anchorRect.right - widget.menuWidth).clamp(
+    final availableWidth = (screenWidth - 20).clamp(0.0, double.infinity);
+    final menuWidth = widget.menuWidth.clamp(0.0, availableWidth);
+    if (menuWidth == 0) return;
+    final left = (anchorRect.right - menuWidth).clamp(
       10.0,
-      screenWidth - widget.menuWidth - 10.0,
+      screenWidth - menuWidth - 10.0,
     );
-    final top = anchorRect.top.clamp(8.0, overlayBox.size.height - 64.0);
+    final maxTop = (overlayBox.size.height - 64).clamp(8.0, double.infinity);
+    final top = anchorRect.top.clamp(8.0, maxTop);
 
     _entry = OverlayEntry(
       builder: (overlayContext) {
         return _UnifiedPopupOverlay<T>(
           animation: _controller,
-          rect: Rect.fromLTWH(left, top, widget.menuWidth, anchorRect.height),
+          rect: Rect.fromLTWH(left, top, menuWidth, anchorRect.height),
           entries: widget.entries,
           onDismiss: _removeOverlay,
           onSelected: (value) async {
@@ -189,6 +197,10 @@ class _UnifiedPopupMenuButtonState<T> extends State<UnifiedPopupMenuButton<T>>
       },
     );
     UiInteractionCoordinator.instance.beginInteraction(_interactionSource);
+    _menuDismiss = MobileOverlayInset.menuDismissOf(context);
+    _menuDismiss?.value?.call();
+    _dismissCallback = () => unawaited(_removeOverlay());
+    _menuDismiss?.value = _dismissCallback;
     overlay.insert(_entry!);
     if (MediaQuery.maybeOf(context)?.disableAnimations ?? false) {
       _controller.value = 1;
@@ -228,6 +240,11 @@ class _UnifiedPopupMenuButtonState<T> extends State<UnifiedPopupMenuButton<T>>
 
   void _detachOverlay(OverlayEntry entry) {
     if (!identical(_entry, entry)) return;
+    if (identical(_menuDismiss?.value, _dismissCallback)) {
+      _menuDismiss?.value = null;
+    }
+    _menuDismiss = null;
+    _dismissCallback = null;
     _entry = null;
     entry.remove();
     entry.dispose();
@@ -609,6 +626,7 @@ Future<T?> showDockAwareMenu<T>({
   final themes = InheritedTheme.capture(from: context, to: null);
   final reducedMotion = MediaQuery.disableAnimationsOf(context);
   final hostRoute = ModalRoute.of(context);
+  final menuDismiss = MobileOverlayInset.menuDismissOf(context);
   late OverlayEntry entry;
   void cancelMenu() {
     if (completer.isCompleted) return;
@@ -630,12 +648,15 @@ Future<T?> showDockAwareMenu<T>({
       onResult: (value) {
         if (!completer.isCompleted) completer.complete(value);
       },
+      externallyManagedDismiss: menuDismiss != null,
     ),
   );
 
   UiInteractionCoordinator.instance.beginInteraction(interactionSource);
   tickerMode.addListener(cancelWhenHidden);
   dismissOn?.addListener(cancelMenu);
+  menuDismiss?.value?.call();
+  menuDismiss?.value = cancelMenu;
   overlayState.insert(entry);
   // A root overlay outlives its launching page. Remove its menu when that
   // route completes, including a pop before the menu's first layout.
@@ -643,6 +664,7 @@ Future<T?> showDockAwareMenu<T>({
   try {
     return await completer.future;
   } finally {
+    if (identical(menuDismiss?.value, cancelMenu)) menuDismiss?.value = null;
     tickerMode.removeListener(cancelWhenHidden);
     dismissOn?.removeListener(cancelMenu);
     entry.remove();
@@ -659,6 +681,7 @@ class _DockMenuOverlay<T> extends StatefulWidget {
     required this.reducedMotion,
     required this.interactionSource,
     required this.onResult,
+    required this.externallyManagedDismiss,
   });
 
   final RelativeRect position;
@@ -667,6 +690,7 @@ class _DockMenuOverlay<T> extends StatefulWidget {
   final bool reducedMotion;
   final Object interactionSource;
   final ValueChanged<T?> onResult;
+  final bool externallyManagedDismiss;
 
   @override
   State<_DockMenuOverlay<T>> createState() => _DockMenuOverlayState<T>();
@@ -760,9 +784,9 @@ class _DockMenuOverlayState<T> extends State<_DockMenuOverlay<T>>
       child: FocusScope(
         autofocus: true,
         child: PopScope(
-          canPop: false,
+          canPop: widget.externallyManagedDismiss,
           onPopInvokedWithResult: (didPop, _) {
-            if (!didPop) _dismiss(null);
+            if (!didPop && !widget.externallyManagedDismiss) _dismiss(null);
           },
           child: Stack(
             fit: StackFit.expand,
@@ -808,12 +832,25 @@ Future<T?> showUnifiedContextMenu<T>({
   required Offset globalPosition,
   required List<UnifiedMenuEntry<T>> entries,
 }) {
-  final box = Overlay.of(context).context.findRenderObject()! as RenderBox;
+  final localOverlay = MobileOverlayInset.menuOverlayOf(context);
+  final overlay = localOverlay ?? Overlay.of(context);
+  final box = overlay.context.findRenderObject()! as RenderBox;
   final point = box.globalToLocal(globalPosition);
+  final position = RelativeRect.fromRect(
+    point & Size.zero,
+    Offset.zero & box.size,
+  );
+  if (localOverlay != null) {
+    return showDockAwareMenu<T>(
+      context: context,
+      position: position,
+      entries: entries,
+    );
+  }
   return showMenu<T>(
     context: context,
     requestFocus: true,
-    position: RelativeRect.fromRect(point & Size.zero, Offset.zero & box.size),
+    position: position,
     items: [
       for (final entry in entries)
         if (entry.divider)

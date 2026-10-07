@@ -138,30 +138,42 @@ class _SessionSubtitlePanelState extends ConsumerState<SessionSubtitlePanel> {
       _applySubtitleTrack(trackPath, subtitles.trackSync(trackPath));
       return;
     }
-    unawaited(
-      subtitles
-          .load(trackPath)
-          .then(
-            (track) {
-              if (!mounted ||
-                  generation != _loadGeneration ||
-                  sessionId != widget.session.id ||
-                  !widget.subtitleEnabled) {
-                return;
-              }
-              _pendingSubtitle = () => _applySubtitleTrack(trackPath, track);
-              _schedulePendingSubtitle();
-            },
-            onError: (Object error, StackTrace stack) {
-              if (!mounted || generation != _loadGeneration) return;
-              AppLogService.warning(
-                'Detail subtitle failed to load',
-                error: error,
-                stackTrace: stack,
-              );
-            },
-          ),
-    );
+    void load() {
+      unawaited(
+        subtitles
+            .load(trackPath)
+            .then(
+              (track) {
+                if (!mounted ||
+                    generation != _loadGeneration ||
+                    sessionId != widget.session.id ||
+                    !widget.subtitleEnabled) {
+                  return;
+                }
+                _pendingSubtitle = () => _applySubtitleTrack(trackPath, track);
+                _schedulePendingSubtitle();
+              },
+              onError: (Object error, StackTrace stack) {
+                if (!mounted || generation != _loadGeneration) return;
+                AppLogService.warning(
+                  'Detail subtitle failed to load',
+                  error: error,
+                  stackTrace: stack,
+                );
+              },
+            ),
+      );
+    }
+
+    // Defer the read/decoding and service notifications as well as the result.
+    // Cached subtitles above remain available in the very first route frame.
+    if (widget.transitionActive?.value == true ||
+        UiInteractionCoordinator.instance.isInteracting) {
+      _pendingSubtitle = load;
+      _schedulePendingSubtitle();
+    } else {
+      load();
+    }
   }
 
   void _schedulePendingSubtitle() {

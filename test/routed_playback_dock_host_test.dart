@@ -208,26 +208,35 @@ void main() {
     );
 
     testWidgets(
-      'work detail opened from playback has no dock or bottom inset on $platform',
+      'work detail opened from playback shows dock and returns home on $platform',
       (tester) async {
         final navigator = await _pumpHost(tester, platform);
         final playback = buildSessionDetailRoute(sessionId: 'dock_session');
         unawaited(navigator.currentState!.push(playback));
         await tester.pumpAndSettle();
         final detail = _detailRoute(navigator);
-        unawaited(navigator.currentState!.push(detail));
+        unawaited(
+          navigator.currentState!.pushAndRemoveUntil(
+            detail,
+            (route) => route.isFirst,
+          ),
+        );
         await tester.pump();
         await tester.pump();
-        void expectNoDock() {
-          expect(_dock, findsNothing);
-          expect(MobileOverlayInset.of(tester.element(find.text('Detail'))), 0);
+        void expectDock() {
+          expect(_dock, findsOneWidget);
+          expect(
+            MobileOverlayInset.of(tester.element(find.text('Detail'))),
+            greaterThan(0),
+          );
         }
 
-        expectNoDock();
+        expectDock();
         await tester.pump(const Duration(milliseconds: 150));
-        expectNoDock();
+        expectDock();
         await tester.pumpAndSettle();
-        expectNoDock();
+        expectDock();
+        expect(playback.isActive, false);
         unawaited(
           navigator.currentState!.push(
             MaterialPageRoute<void>(
@@ -236,47 +245,29 @@ void main() {
           ),
         );
         await tester.pumpAndSettle();
-        expect(_dock, findsNothing);
+        expect(_dock, findsOneWidget);
+        expect(
+          tester
+              .widget<IgnorePointer>(
+                find.byKey(
+                  const ValueKey<String>('routed_playback_dock_interaction'),
+                  skipOffstage: false,
+                ),
+              )
+              .ignoring,
+          true,
+        );
         navigator.currentState!.pop();
         await tester.pumpAndSettle();
-        expectNoDock();
+        expectDock();
         navigator.currentState!.pop();
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 150));
-        expectNoDock();
-        await tester.pumpAndSettle();
-        expect(navigator.currentState!.canPop(), true);
-        expect(_dock, findsNothing);
-        navigator.currentState!.pop();
-        await tester.pumpAndSettle();
-        unawaited(navigator.currentState!.push(_detailRoute(navigator)));
-        await tester.pumpAndSettle();
         expect(_dock, findsOneWidget);
-        expect(
-          MobileOverlayInset.of(tester.element(find.text('Detail'))),
-          greaterThan(0),
-        );
-        unawaited(navigator.currentState!.push(
-          buildSessionDetailRoute(sessionId: 'dock_session'),
-        ));
         await tester.pumpAndSettle();
-        unawaited(navigator.currentState!.push(_detailRoute(navigator)));
-        await tester.pumpAndSettle();
+        expect(navigator.currentState!.canPop(), false);
+        expect(find.text('Home'), findsOneWidget);
         expect(_dock, findsNothing);
-        navigator.currentState!.pop();
-        await tester.pump();
-        await tester.pump(const Duration(milliseconds: 150));
-        expect(_dock, findsNothing);
-        expect(
-          MobileOverlayInset.of(tester.element(find.text('Detail').first)),
-          0,
-        );
-        await tester.pumpAndSettle();
-        navigator.currentState!.pop();
-        await tester.pumpAndSettle();
-        expect(_dock, findsOneWidget);
-        navigator.currentState!.pop();
-        await tester.pumpAndSettle();
         await tester.pump(UiInteractionCoordinator.instance.idleDelay);
         await tester.pumpWidget(const SizedBox.shrink());
         expect(tester.takeException(), isNull);

@@ -720,12 +720,34 @@ class HeaderActionPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: HeaderFloatingSurface(
-        padding: padding,
-        child: Row(mainAxisSize: MainAxisSize.min, children: children),
-      ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final fullWidth =
+            children.length * kMinInteractiveDimension +
+            padding.resolve(Directionality.of(context)).horizontal;
+        Widget actions = Row(
+          mainAxisSize: MainAxisSize.min,
+          children: children,
+        );
+        if (constraints.maxWidth < fullWidth) {
+          actions = IconButtonTheme(
+            data: IconButtonThemeData(
+              style: IconButton.styleFrom(
+                minimumSize: const Size(buttonWidth, buttonHeight),
+                maximumSize: const Size(buttonWidth, buttonHeight),
+                padding: EdgeInsets.zero,
+                visualDensity: VisualDensity.standard,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+            ),
+            child: actions,
+          );
+        }
+        return Align(
+          alignment: Alignment.centerLeft,
+          child: HeaderFloatingSurface(padding: padding, child: actions),
+        );
+      },
     );
   }
 }

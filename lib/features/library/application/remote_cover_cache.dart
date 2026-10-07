@@ -8,7 +8,8 @@ import '../../../core/media/path_matcher.dart';
 import 'cover_artwork_store.dart';
 import 'remote_cover_downloader.dart';
 
-const int _resolvedRemoteCoverLimit = 300;
+int get _resolvedRemoteCoverLimit =>
+    defaultTargetPlatform == TargetPlatform.windows ? 1200 : 300;
 
 /// Owns remote lookup deduplication, results and retry cooldowns.
 final class RemoteCoverCache {
@@ -52,14 +53,25 @@ final class RemoteCoverCache {
   String? resolvedFor(String url) {
     final key = remoteCoverSearchKey(url);
     if (key == null) return null;
-    return _resolved[key]?.path ?? _artworkStore.resolvedPath(key);
+    return _readResolvedCover(key)?.path ?? _artworkStore.resolvedPath(key);
+  }
+
+  Future<String?>? cachedFutureFor(String url) {
+    final key = remoteCoverSearchKey(url);
+    return key == null ? null : _readResolvedCover(key)?.future;
+  }
+
+  _ResolvedRemoteCover? _readResolvedCover(String key) {
+    final value = _resolved.remove(key);
+    if (value != null) _resolved[key] = value;
+    return value;
   }
 
   Future<String?> resolve(String url) {
     final key = remoteCoverSearchKey(url);
     if (_disposed || key == null) return Future<String?>.value();
-    final warm = _resolved[key];
-    if (warm != null) return warm.future;
+    final warm = _readResolvedCover(key)?.future;
+    if (warm != null) return warm;
     final inFlight = _pending[key];
     if (inFlight != null) return inFlight;
     final failure = _failures[key];

@@ -171,32 +171,41 @@ class _AsyncCoverImageState extends State<AsyncCoverImage> {
         _isResolved = false;
       }
     }
+    var bindingSynchronously = true;
     future
         .then((path) {
           if (!mounted || token != _token) return;
-          UiInteractionCoordinator.instance.scheduleCommit(
-            key: _commitKey,
-            priority: 20,
-            allowDuringScroll: true,
-            commit: () {
-              if (!mounted || token != _token) return;
-              final hasResolvedPath = path != null && path.isNotEmpty;
-              final nextPath = hasResolvedPath || !preserveResolvedPath
-                  ? path
-                  : _resolvedPath;
-              if (!_isResolved || _resolvedPath != nextPath) {
-                setState(() {
-                  _resolvedPath = nextPath;
-                  _isResolved = true;
-                });
-              }
-              if (path == null || path.isEmpty) {
-                _scheduleRetry(token);
-              } else {
-                _retryAttempt = 0;
-              }
-            },
-          );
+          void applyPath() {
+            if (!mounted || token != _token) return;
+            final hasResolvedPath = path != null && path.isNotEmpty;
+            final nextPath = hasResolvedPath || !preserveResolvedPath
+                ? path
+                : _resolvedPath;
+            if (!_isResolved || _resolvedPath != nextPath) {
+              setState(() {
+                _resolvedPath = nextPath;
+                _isResolved = true;
+              });
+            }
+            if (path == null || path.isEmpty) {
+              _scheduleRetry(token);
+            } else {
+              _retryAttempt = 0;
+            }
+          }
+
+          // A completed cache lookup must be visible on the first build, even
+          // while navigation defers new artwork discovery and decoding.
+          if (bindingSynchronously) {
+            applyPath();
+          } else {
+            UiInteractionCoordinator.instance.scheduleCommit(
+              key: _commitKey,
+              priority: 20,
+              allowDuringScroll: true,
+              commit: applyPath,
+            );
+          }
         })
         .catchError((_) {
           if (!mounted || token != _token) return;
@@ -217,6 +226,7 @@ class _AsyncCoverImageState extends State<AsyncCoverImage> {
             },
           );
         });
+    bindingSynchronously = false;
   }
 
   void _scheduleRetry(int token) {
@@ -692,14 +702,14 @@ class _RetryingImageState extends State<RetryingImage> {
     var cachedSynchronously = false;
     unawaited(
       provider.obtainKey(configuration).then<void>((key) {
-        final isTracked = PaintingBinding.instance.imageCache
-            .statusForKey(key)
-            .tracked;
+        final status = PaintingBinding.instance.imageCache.statusForKey(key);
+        // A pending decode is tracked too, but has no pixels ready to reuse.
+        final hasDecodedImage = !status.pending && status.tracked;
         if (callbackIsSynchronous) {
-          cachedSynchronously = isTracked;
+          cachedSynchronously = hasDecodedImage;
           return;
         }
-        if (!isTracked ||
+        if (!hasDecodedImage ||
             !mounted ||
             _loadEnabled ||
             _cacheCheckKey != checkKey) {

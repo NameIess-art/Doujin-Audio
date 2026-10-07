@@ -31,6 +31,7 @@ import '../../features/video_converter/application/video_conversion_runner.dart'
 import '../../features/video_converter/presentation/video_conversion_dialog.dart';
 
 import 'routed_playback_dock_host.dart';
+import 'work_detail_navigation.dart';
 
 Widget createAudioPlayerApp({
   required bool shouldShowOnboarding,
@@ -120,6 +121,9 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp> {
   late final AppBootstrapController _runtimeBootstrapController;
   late final bool _shouldShowOnboarding;
   final _navigatorKey = GlobalKey<NavigatorState>();
+  late final _workDetailNavigation = WorkDetailNavigation(
+    rootNavigatorKey: _navigatorKey,
+  );
   var _restoreOutcomeScheduled = false;
   var _runtimeBootstrapSettledNotified = false;
   double _stablePortraitTopPadding = 0;
@@ -151,6 +155,7 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp> {
     _conversionSubscription?.cancel();
     _runtimeBootstrapController.removeListener(_handleRuntimeBootstrapState);
     _runtimeBootstrapController.dispose();
+    _workDetailNavigation.dispose();
     super.dispose();
   }
 
@@ -232,128 +237,137 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp> {
             ? themeProvider.darkTheme.colorScheme.surface
             : themeProvider.lightTheme.colorScheme.surface,
     };
-    return RoutedPlaybackDockHost(
-      navigatorKey: _navigatorKey,
-      builder: (context, routeObserver, playbackDockGeometry, wrapNavigator) =>
-          MaterialApp(
-            navigatorKey: _navigatorKey,
-            title: languageProvider.tr('app_title'),
-            debugShowCheckedModeBanner: false,
-            navigatorObservers: [
-              UiInteractionNavigatorObserver.instance,
+    return WorkDetailNavigationScope(
+      navigation: _workDetailNavigation,
+      child: RoutedPlaybackDockHost(
+        navigatorKey: _navigatorKey,
+        builder:
+            (
+              context,
               routeObserver,
-            ],
-            color: windowSurface,
-            locale: languageState.locale,
-            supportedLocales: AppLanguageProvider.supportedLocales,
-            localizationsDelegates: const [
-              GlobalMaterialLocalizations.delegate,
-              GlobalCupertinoLocalizations.delegate,
-              GlobalWidgetsLocalizations.delegate,
-            ],
-            theme: themeProvider.lightTheme,
-            darkTheme: themeProvider.darkTheme,
-            themeMode: themeProvider.themeMode,
-            scrollBehavior: const AppScrollBehavior().copyWith(
-              scrollbars: true,
-              physics: AppScrollBehavior.defaultScrollPhysics,
-            ),
-            builder: (context, child) {
-              final mediaQuery = MediaQuery.of(context);
-              final rawTop = mediaQuery.padding.top;
-              final isLandscape =
-                  defaultTargetPlatform == TargetPlatform.windows ||
-                  mediaQuery.orientation == Orientation.landscape;
+              playbackDockGeometry,
+              wrapNavigator,
+            ) => MaterialApp(
+              navigatorKey: _navigatorKey,
+              title: languageProvider.tr('app_title'),
+              debugShowCheckedModeBanner: false,
+              navigatorObservers: [
+                UiInteractionNavigatorObserver.instance,
+                routeObserver,
+              ],
+              color: windowSurface,
+              locale: languageState.locale,
+              supportedLocales: AppLanguageProvider.supportedLocales,
+              localizationsDelegates: const [
+                GlobalMaterialLocalizations.delegate,
+                GlobalCupertinoLocalizations.delegate,
+                GlobalWidgetsLocalizations.delegate,
+              ],
+              theme: themeProvider.lightTheme,
+              darkTheme: themeProvider.darkTheme,
+              themeMode: themeProvider.themeMode,
+              scrollBehavior: const AppScrollBehavior().copyWith(
+                scrollbars: true,
+                physics: AppScrollBehavior.defaultScrollPhysics,
+              ),
+              builder: (context, child) {
+                final mediaQuery = MediaQuery.of(context);
+                final rawTop = mediaQuery.padding.top;
+                final isLandscape =
+                    defaultTargetPlatform == TargetPlatform.windows ||
+                    mediaQuery.orientation == Orientation.landscape;
 
-              if (!isLandscape && rawTop > _stablePortraitTopPadding) {
-                _stablePortraitTopPadding = rawTop;
-              }
+                if (!isLandscape && rawTop > _stablePortraitTopPadding) {
+                  _stablePortraitTopPadding = rawTop;
+                }
 
-              final isAndroidLandscape =
-                  defaultTargetPlatform == TargetPlatform.android &&
-                  mediaQuery.orientation == Orientation.landscape;
-              if (isAndroidLandscape) {
-                // Playback hides the status bar; retain the same header inset
-                // for the main page and every route in the navigator.
-                _stableLandscapeTopPadding = math.max(
-                  _stableLandscapeTopPadding,
-                  math.max(rawTop, mediaQuery.viewPadding.top),
+                final isAndroidLandscape =
+                    defaultTargetPlatform == TargetPlatform.android &&
+                    mediaQuery.orientation == Orientation.landscape;
+                if (isAndroidLandscape) {
+                  // Playback hides the status bar; retain the same header inset
+                  // for the main page and every route in the navigator.
+                  _stableLandscapeTopPadding = math.max(
+                    _stableLandscapeTopPadding,
+                    math.max(rawTop, mediaQuery.viewPadding.top),
+                  );
+                }
+                final stableTop = isAndroidLandscape
+                    ? _stableLandscapeTopPadding
+                    : !isLandscape
+                    ? _stablePortraitTopPadding
+                    : 0.0;
+                final effectiveTop = math.max(rawTop, stableTop);
+                final effectivePadding = effectiveTop != rawTop
+                    ? mediaQuery.padding.copyWith(top: effectiveTop)
+                    : mediaQuery.padding;
+                final effectiveViewPadding = stableTop > 0
+                    ? mediaQuery.viewPadding.copyWith(
+                        top: math.max(mediaQuery.viewPadding.top, stableTop),
+                      )
+                    : mediaQuery.viewPadding;
+
+                final effectiveMediaQuery = mediaQuery.copyWith(
+                  padding: effectivePadding,
+                  viewPadding: effectiveViewPadding,
+                  disableAnimations:
+                      reduceAnimations || mediaQuery.disableAnimations,
                 );
-              }
-              final stableTop = isAndroidLandscape
-                  ? _stableLandscapeTopPadding
-                  : !isLandscape
-                  ? _stablePortraitTopPadding
-                  : 0.0;
-              final effectiveTop = math.max(rawTop, stableTop);
-              final effectivePadding = effectiveTop != rawTop
-                  ? mediaQuery.padding.copyWith(top: effectiveTop)
-                  : mediaQuery.padding;
-              final effectiveViewPadding = stableTop > 0
-                  ? mediaQuery.viewPadding.copyWith(
-                      top: math.max(mediaQuery.viewPadding.top, stableTop),
-                    )
-                  : mediaQuery.viewPadding;
 
-              final effectiveMediaQuery = mediaQuery.copyWith(
-                padding: effectivePadding,
-                viewPadding: effectiveViewPadding,
-                disableAnimations:
-                    reduceAnimations || mediaQuery.disableAnimations,
-              );
-
-              final navigatorChild =
-                  defaultTargetPlatform == TargetPlatform.windows
-                  ? ListenableBuilder(
-                      listenable: _runtimeBootstrapController,
-                      child: child ?? const SizedBox(),
-                      builder: (context, child) => GlobalShortcuts(
-                        enabled:
-                            _runtimeBootstrapController.state.phase ==
-                            AppBootstrapPhase.ready,
-                        navigatorKey: _navigatorKey,
-                        child: child!,
-                      ),
-                    )
-                  : child ?? const SizedBox();
-              final content = AppNavigationInputLock(
-                navigationAllowed:
-                    UiInteractionCoordinator.instance.navigationAllowed,
-                child: MediaQuery(
-                  data: effectiveMediaQuery,
-                  child: wrapNavigator(context, navigatorChild),
-                ),
-              );
-              if (defaultTargetPlatform == TargetPlatform.windows) {
-                return TooltipVisibility(visible: false, child: content);
-              }
-              return content;
-            },
-            home: OnboardingRuntimeGate(
-              showOnboarding: _shouldShowOnboarding,
-              runtimeController: _runtimeBootstrapController,
-              child: AppBootstrapGate(
-                controller: _runtimeBootstrapController,
-                disposeController: false,
-                readyBuilder: (_) =>
+                final navigatorChild =
                     defaultTargetPlatform == TargetPlatform.windows
-                    ? MainScreen(playbackDockGeometry: playbackDockGeometry)
-                    : GlobalShortcuts(
-                        child: MainScreen(
-                          playbackDockGeometry: playbackDockGeometry,
+                    ? ListenableBuilder(
+                        listenable: _runtimeBootstrapController,
+                        child: child ?? const SizedBox(),
+                        builder: (context, child) => GlobalShortcuts(
+                          enabled:
+                              _runtimeBootstrapController.state.phase ==
+                              AppBootstrapPhase.ready,
+                          navigatorKey: _navigatorKey,
+                          child: child!,
                         ),
-                      ),
-                loadingBuilder: (_) => const AppBootstrapLoadingView(),
-                failureBuilder: (_, state) => AppErrorView(
-                  error:
-                      state.error ??
-                      StateError('Unknown runtime startup failure'),
-                  stackTrace: state.stackTrace,
-                  onRetry: () => unawaited(_runtimeBootstrapController.retry()),
+                      )
+                    : child ?? const SizedBox();
+                final content = AppNavigationInputLock(
+                  navigationAllowed:
+                      UiInteractionCoordinator.instance.navigationAllowed,
+                  child: MediaQuery(
+                    data: effectiveMediaQuery,
+                    child: wrapNavigator(context, navigatorChild),
+                  ),
+                );
+                if (defaultTargetPlatform == TargetPlatform.windows) {
+                  return TooltipVisibility(visible: false, child: content);
+                }
+                return content;
+              },
+              home: OnboardingRuntimeGate(
+                showOnboarding: _shouldShowOnboarding,
+                runtimeController: _runtimeBootstrapController,
+                child: AppBootstrapGate(
+                  controller: _runtimeBootstrapController,
+                  disposeController: false,
+                  readyBuilder: (_) =>
+                      defaultTargetPlatform == TargetPlatform.windows
+                      ? MainScreen(playbackDockGeometry: playbackDockGeometry)
+                      : GlobalShortcuts(
+                          child: MainScreen(
+                            playbackDockGeometry: playbackDockGeometry,
+                          ),
+                        ),
+                  loadingBuilder: (_) => const AppBootstrapLoadingView(),
+                  failureBuilder: (_, state) => AppErrorView(
+                    error:
+                        state.error ??
+                        StateError('Unknown runtime startup failure'),
+                    stackTrace: state.stackTrace,
+                    onRetry: () =>
+                        unawaited(_runtimeBootstrapController.retry()),
+                  ),
                 ),
               ),
             ),
-          ),
+      ),
     );
   }
 

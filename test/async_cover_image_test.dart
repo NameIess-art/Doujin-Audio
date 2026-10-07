@@ -209,6 +209,47 @@ void main() {
     }
   }
 
+  testWidgets('pending cached decode cannot repaint a transitioning page', (
+    tester,
+  ) async {
+    final owner = await _createTestImage();
+    final provider = _ControlledImageProvider();
+    final cache = PaintingBinding.instance.imageCache;
+    final stream = provider.resolve(ImageConfiguration.empty);
+    final listener = ImageStreamListener((image, _) => image.dispose());
+    stream.addListener(listener);
+    addTearDown(() {
+      stream.removeListener(listener);
+      cache.clear();
+      cache.clearLiveImages();
+      owner.dispose();
+    });
+    expect(cache.statusForKey(provider).pending, isTrue);
+    final interaction = UiInteractionCoordinator.instance;
+    final navigation = Object();
+    interaction.beginNavigation(navigation);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: RetryingImage(
+          retryKey: provider,
+          imageProviderBuilder: () => provider,
+          loadingBuilder: (_) => const Text('Waiting for navigation'),
+          fallbackBuilder: (_) => const SizedBox.shrink(),
+        ),
+      ),
+    );
+    expect(find.byType(Image), findsNothing);
+    provider.complete(owner.clone());
+    await tester.pump();
+    expect(find.text('Waiting for navigation'), findsOneWidget);
+    interaction.endNavigation(navigation);
+    await tester.pump();
+    expect(find.byType(Image), findsOneWidget);
+    expect(provider.loadCount, 1);
+    await tester.pump(interaction.idleDelay);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   final deferredFileCovers = <String, Widget Function(String)>{
     'RetryingFileImage': (path) => RetryingFileImage(
       path: path,
@@ -969,6 +1010,39 @@ void main() {
     expect(find.text('loaded:saved.image'), findsOneWidget);
     expect(find.text('loading'), findsNothing);
   });
+
+  testWidgets(
+    'completed cover lookup is visible on the first frame during navigation',
+    (tester) async {
+      final navigation = Object();
+      UiInteractionCoordinator.instance.beginNavigation(navigation);
+      Widget page(String path) => MaterialApp(
+        home: AsyncCoverImage(
+          future: SynchronousFuture(path),
+          requestKey: path,
+          imageBuilder: (_, path) => Text(path),
+          fallbackBuilder: (_) => const Text('fallback'),
+          loadingBuilder: (_) => const Text('loading'),
+        ),
+      );
+
+      await tester.pumpWidget(page('first.image'));
+      expect(find.text('first.image'), findsOneWidget);
+      expect(find.text('loading'), findsNothing);
+      await tester.pumpWidget(page('second.image'));
+      expect(find.text('second.image'), findsOneWidget);
+      expect(find.text('first.image'), findsNothing);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpWidget(page('first.image'));
+      expect(find.text('first.image'), findsOneWidget);
+      expect(find.text('loading'), findsNothing);
+      expect(UiInteractionCoordinator.instance.pendingCommitCount, 0);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
 
   testWidgets('resolved cover survives refresh failure and retry exhaustion', (
     tester,

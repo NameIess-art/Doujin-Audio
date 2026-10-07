@@ -65,11 +65,18 @@ class _LibraryCoverThumbnailState extends ConsumerState<LibraryCoverThumbnail> {
         _lastCoverRevision != coverRevision) {
       _lastFolderPath = widget.folderPath;
       _lastCoverRevision = coverRevision;
-      _coverPathFuture = deferLibraryCardCoverLookup(
-        isMounted: () => mounted,
-        lookup: () =>
-            coverUi.deferredFolderCover(widget.folderPath, context: context),
-      );
+      _coverPathFuture =
+          ref
+              .read(libraryFacadeProvider)
+              .coverArtworkCacheService
+              .cachedFutureForFolder(widget.folderPath) ??
+          deferLibraryCardCoverLookup(
+            isMounted: () => mounted,
+            lookup: () => coverUi.deferredFolderCover(
+              widget.folderPath,
+              context: context,
+            ),
+          );
     }
     return _coverPathFuture!;
   }
@@ -165,11 +172,16 @@ class _LibraryTrackCoverThumbnailState
         _lastCoverRevision != coverRevision) {
       _lastTrackPath = widget.track.path;
       _lastCoverRevision = coverRevision;
-      _coverPathFuture = deferLibraryCardCoverLookup(
-        isMounted: () => mounted,
-        lookup: () =>
-            coverUi.deferredTrackCover(widget.track, context: context),
-      );
+      _coverPathFuture =
+          ref
+              .read(libraryFacadeProvider)
+              .coverArtworkCacheService
+              .cachedFutureForTrack(widget.track) ??
+          deferLibraryCardCoverLookup(
+            isMounted: () => mounted,
+            lookup: () =>
+                coverUi.deferredTrackCover(widget.track, context: context),
+          );
     }
     return _coverPathFuture!;
   }

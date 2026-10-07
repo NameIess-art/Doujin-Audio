@@ -10,11 +10,155 @@ import 'package:doujin_audio/features/library/application/library_service.dart';
 import 'package:doujin_audio/features/library/presentation/library_card_artwork.dart';
 import 'package:doujin_audio/features/library/presentation/library_cover_ui_controller.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/app_runtime_test_fixture.dart';
 
 void main() {
+  testWidgets(
+    'Windows cover loading does not wait for a slow first download',
+    (tester) async {
+      final cache = _RecordingCovers(blockAll: true);
+      final fixture = AppRuntimeWidgetTestFixture(
+        coverArtworkCacheService: cache,
+      );
+      final covers = LibraryCoverUiController(library: fixture.library);
+      addTearDown(fixture.dispose);
+      addTearDown(covers.dispose);
+      final futures = [
+        for (var i = 0; i < 6; i++)
+          covers.deferredRemoteCover('https://cover/$i'),
+      ];
+      expect(
+        covers.deferredRemoteCover('https://cover/0'),
+        same(futures.first),
+      );
+      await tester.pump();
+      expect(
+        cache.requests,
+        hasLength(defaultTargetPlatform == TargetPlatform.windows ? 4 : 1),
+      );
+      cache.release.complete();
+      await tester.pump();
+      await Future.wait(futures);
+      expect(cache.requests, hasLength(6));
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
+  testWidgets(
+    'known missing covers bypass paused queries when cards return',
+    (tester) async {
+      final service = LibraryService();
+      final cache = CoverArtworkCacheService(
+        libraryService: service,
+        filesystemImageScanner: (_, _) async => [],
+      );
+      final fixture = AppRuntimeWidgetTestFixture(
+        coverArtworkCacheService: cache,
+      );
+      final covers = LibraryCoverUiController(library: fixture.library);
+      addTearDown(service.dispose);
+      addTearDown(fixture.dispose);
+      addTearDown(covers.dispose);
+      const folder = '/library/missing';
+      await tester.runAsync(() => cache.futureForFolder(folder));
+      covers.setInteractionPaused(true);
+      await tester.pumpWidget(
+        fixture.build(
+          const LibraryCoverThumbnail(folderPath: folder),
+          overrides: [
+            libraryCoverUiControllerProvider.overrideWithValue(covers),
+          ],
+        ),
+      );
+      expect(find.byType(CoverLoadingArtwork), findsNothing);
+      expect(find.byType(CoverFallbackArtwork), findsWidgets);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpWidget(
+        fixture.build(
+          const LibraryCoverThumbnail(folderPath: folder),
+          overrides: [
+            libraryCoverUiControllerProvider.overrideWithValue(covers),
+          ],
+        ),
+      );
+      expect(find.byType(CoverLoadingArtwork), findsNothing);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
+  testWidgets(
+    'returning to a cached cover bypasses paused lookup and display queues',
+    (tester) async {
+      final interaction = UiInteractionCoordinator.instance;
+      interaction.resetForTest();
+      addTearDown(interaction.resetForTest);
+      var downloads = 0;
+      final service = LibraryService();
+      final cache = CoverArtworkCacheService(
+        libraryService: service,
+        remoteCoverDownloader: (_) async {
+          downloads++;
+          return '/cached.png';
+        },
+      );
+      final fixture = AppRuntimeWidgetTestFixture(
+        coverArtworkCacheService: cache,
+      );
+      final covers = LibraryCoverUiController(library: fixture.library);
+      addTearDown(service.dispose);
+      addTearDown(fixture.dispose);
+      addTearDown(covers.dispose);
+      const url = 'https://cover/cached';
+      Widget page() => fixture.build(
+        Builder(
+          builder: (context) => AsyncCoverImage(
+            future: covers.deferredRemoteCover(url, context: context),
+            imageBuilder: (_, path) => Text(path),
+            fallbackBuilder: (_) => const Text('fallback'),
+            loadingBuilder: (_) => const Text('loading'),
+          ),
+        ),
+        overrides: [libraryCoverUiControllerProvider.overrideWithValue(covers)],
+      );
+
+      await tester.pumpWidget(page());
+      await tester.pumpAndSettle();
+      expect(find.text('/cached.png'), findsOneWidget);
+      expect(downloads, 1);
+      await tester.pumpWidget(const SizedBox.shrink());
+      covers.setInteractionPaused(true);
+      interaction.beginNavigation(Object());
+      await tester.pumpWidget(page());
+      expect(find.text('/cached.png'), findsOneWidget);
+      expect(find.text('loading'), findsNothing);
+      expect(downloads, 1);
+      expect(interaction.pendingCommitCount, 0);
+
+      // Invalidating the artwork must restore normal cold lookup scheduling.
+      cache.invalidateAll();
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpWidget(page());
+      expect(find.text('/cached.png'), findsNothing);
+      expect(find.text('loading'), findsOneWidget);
+      expect(downloads, 1);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
   testWidgets('resetting first-frame protection resumes queued cover queries', (
     tester,
   ) async {
@@ -445,16 +589,18 @@ MusicTrack _track(int index) => MusicTrack(
 );
 
 class _RecordingCovers extends CoverArtworkCacheService {
-  _RecordingCovers({this.result}) : super(libraryService: LibraryService());
+  _RecordingCovers({this.result, this.blockAll = false})
+    : super(libraryService: LibraryService());
 
   final String? result;
+  final bool blockAll;
 
   final requests = <String>[];
   final release = Completer<void>();
 
   Future<String?> _record(String key) async {
     requests.add(key);
-    if (requests.length == 1) await release.future;
+    if (blockAll || requests.length == 1) await release.future;
     return result;
   }
 

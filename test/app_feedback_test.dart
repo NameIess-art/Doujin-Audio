@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/app/theme/app_design_tokens.dart';
 import 'package:doujin_audio/core/widgets/app_feedback.dart';
 import 'package:doujin_audio/core/widgets/confirm_action_dialog.dart';
+import 'package:doujin_audio/core/widgets/mobile_overlay_inset.dart';
 import 'package:doujin_audio/core/ui/undoable_removal_service.dart';
 
 Widget _feedbackApp({required Widget home}) {
@@ -478,7 +479,7 @@ void main() {
                 const SizedBox(width: 260, child: Text('NavigationMenu')),
                 Expanded(
                   child: KeyedSubtree(
-                    key: const ValueKey<String>('main_page_canvas_0'),
+                    key: const ValueKey<String>('main_page_canvas'),
                     child: Builder(
                       builder: (context) => TextButton(
                         onPressed: () {
@@ -544,7 +545,7 @@ void main() {
                 ),
                 const Expanded(
                   child: ColoredBox(
-                    key: ValueKey<String>('main_page_canvas_0'),
+                    key: ValueKey<String>('main_page_canvas'),
                     color: Colors.black,
                     child: SizedBox.expand(),
                   ),
@@ -564,6 +565,115 @@ void main() {
       await tester.pump(const Duration(seconds: 3));
       await tester.pumpAndSettle();
     });
+  }
+
+  for (final scopedOverlay in [false, true]) {
+    testWidgets(
+      'feedback follows split pages and resizing with scoped overlay $scopedOverlay',
+      (tester) async {
+        tester.view.physicalSize = const Size(1280, 800);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.reset);
+        final service = UndoableRemovalService();
+        addTearDown(service.dispose);
+        var commits = 0;
+        Widget trigger(String label) {
+          final button = Center(
+            child: Builder(
+              builder: (context) => TextButton(
+                onPressed: () => showUndoableRemovalFeedback(
+                  context,
+                  service: service,
+                  action: UndoableRemovalAction(
+                    key: UndoableRemovalKey('split', label),
+                    commit: () => commits++,
+                    undo: () {},
+                  ),
+                  message: '$label feedback',
+                  batchMessage: (count) => '$label feedback $count',
+                  undoLabel: 'Undo',
+                  failureMessage: 'Failed',
+                ),
+                child: Text(label),
+              ),
+            ),
+          );
+          if (!scopedOverlay) return button;
+          final overlayKey = GlobalKey<OverlayState>();
+          return MobileOverlayInset(
+            bottomInset: 0,
+            menuOverlayKey: overlayKey,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                button,
+                Overlay(key: overlayKey),
+              ],
+            ),
+          );
+        }
+
+        await tester.pumpWidget(
+          _feedbackApp(
+            home: Scaffold(
+              body: Row(
+                children: [
+                  const SizedBox(width: 260),
+                  Expanded(
+                    child: ColoredBox(
+                      key: const ValueKey('main_page_canvas'),
+                      color: Colors.black,
+                      child: trigger('Main'),
+                    ),
+                  ),
+                  const SizedBox(width: 1),
+                  Expanded(
+                    child: Navigator(
+                      key: const ValueKey('detail_navigator'),
+                      onGenerateRoute: (_) => MaterialPageRoute<void>(
+                        builder: (_) => Scaffold(body: trigger('Detail')),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+        final surface = find.byType(AppFeedbackSurface);
+        void expectPageBounds(String key) {
+          final page = tester.getRect(find.byKey(ValueKey(key)));
+          expect(tester.getTopLeft(surface).dx, page.left + 16);
+          expect(tester.getTopRight(surface).dx, page.right - 16);
+        }
+
+        await tester.tap(find.text('Main'));
+        await tester.pumpAndSettle();
+        expectPageBounds('main_page_canvas');
+        if (scopedOverlay) {
+          tester.view.physicalSize = const Size(1380, 800);
+          await tester.pumpAndSettle();
+          expectPageBounds('main_page_canvas');
+        }
+        await tester.tap(find.text('Detail'));
+        await tester.pumpAndSettle();
+        expectPageBounds('detail_navigator');
+        tester.view.physicalSize = const Size(1480, 800);
+        await tester.pumpAndSettle();
+        expectPageBounds('detail_navigator');
+        expect(tester.takeException(), isNull);
+        expect(service.state.pendingCount, 2);
+        await tester.tap(find.textContaining('Undo'));
+        await tester.pump();
+        expect(service.state.pendingCount, 0);
+        expect(commits, 0);
+        await tester.pumpAndSettle();
+      },
+      variant: const TargetPlatformVariant({
+        TargetPlatform.android,
+        TargetPlatform.windows,
+      }),
+    );
   }
 
   for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
@@ -612,6 +722,57 @@ void main() {
       });
     }
   }
+
+  testWidgets('disposing a page overlay commits its pending removal', (
+    tester,
+  ) async {
+    final service = UndoableRemovalService();
+    addTearDown(service.dispose);
+    var commits = 0;
+    final overlayKey = GlobalKey<OverlayState>();
+    await tester.pumpWidget(
+      _feedbackApp(
+        home: MobileOverlayInset(
+          bottomInset: 0,
+          menuOverlayKey: overlayKey,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              Scaffold(
+                body: Builder(
+                  builder: (context) => TextButton(
+                    onPressed: () => showUndoableRemovalFeedback(
+                      context,
+                      service: service,
+                      action: UndoableRemovalAction(
+                        key: const UndoableRemovalKey('page', 'track'),
+                        commit: () => commits++,
+                        undo: () {},
+                      ),
+                      message: 'Removed',
+                      batchMessage: (count) => 'Removed $count',
+                      undoLabel: 'Undo',
+                      failureMessage: 'Failed',
+                    ),
+                    child: const Text('Remove'),
+                  ),
+                ),
+              ),
+              Overlay(key: overlayKey),
+            ],
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Remove'));
+    await tester.pumpAndSettle();
+    expect(service.state.pendingCount, 1);
+    await tester.pumpWidget(_feedbackApp(home: const Scaffold()));
+    await tester.pumpAndSettle();
+    expect(service.state.pendingCount, 0);
+    expect(commits, 1);
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets('non-destructive confirmation uses the requested action', (
     tester,

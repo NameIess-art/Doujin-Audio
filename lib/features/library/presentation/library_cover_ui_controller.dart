@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
 
@@ -13,7 +14,13 @@ final class LibraryCoverUiController {
     required LibraryFacade library,
     WarmupScheduler? scheduler,
   }) : _library = library,
-       _scheduler = scheduler ?? WarmupScheduler(),
+       _scheduler =
+           scheduler ??
+           WarmupScheduler(
+             maxConcurrent: defaultTargetPlatform == TargetPlatform.windows
+                 ? 4
+                 : 1,
+           ),
        _interactionPaused = scheduler?.isPaused ?? false;
 
   final LibraryFacade _library;
@@ -34,6 +41,9 @@ final class LibraryCoverUiController {
     );
     return _deferredLookup(
       key: 'folder:$normalizedPath:$revision',
+      cached: _library.coverArtworkCacheService.cachedFutureForFolder(
+        folderPath,
+      ),
       context: context,
       lookup: () => _library.coverPathFutureForFolder(folderPath),
     );
@@ -51,6 +61,7 @@ final class LibraryCoverUiController {
     );
     return _deferredLookup(
       key: 'track:$coverKey:$revision',
+      cached: _library.coverArtworkCacheService.cachedFutureForTrack(track),
       context: context,
       lookup: () => _library.coverPathFutureForTrack(track),
     );
@@ -63,6 +74,9 @@ final class LibraryCoverUiController {
     );
     return _deferredLookup(
       key: 'remote:$normalizedUrl:$revision',
+      cached: _library.coverArtworkCacheService.cachedFutureForRemoteCover(
+        normalizedUrl,
+      ),
       context: context,
       lookup: () => _library.coverPathFutureForRemoteCover(normalizedUrl),
     );
@@ -70,10 +84,12 @@ final class LibraryCoverUiController {
 
   Future<String?> _deferredLookup({
     required String key,
+    required Future<String?>? cached,
     required BuildContext? context,
     required Future<String?> Function() lookup,
   }) {
     if (_disposed) return Future<String?>.value();
+    if (cached != null) return cached;
     final request = _deferredLookups.putIfAbsent(
       key,
       () => _DeferredCoverLookup(lookup),

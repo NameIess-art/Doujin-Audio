@@ -3,16 +3,291 @@ import 'dart:async';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/widgets/unified_popup_menu.dart';
 import 'package:doujin_audio/core/widgets/mobile_overlay_inset.dart';
+import 'package:doujin_audio/app/presentation/work_detail_navigation.dart';
 import 'package:doujin_audio/features/library/presentation/work_detail_entries.dart';
 import 'package:doujin_audio/features/library/presentation/work_detail_entry_tile.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'support/app_runtime_test_fixture.dart';
+
 void main() {
   final coordinator = UiInteractionCoordinator.instance;
   setUp(coordinator.resetForTest);
   tearDown(coordinator.resetForTest);
+
+  for (final width in [190.0, 360.0]) {
+    for (final contextMenu in [false, true]) {
+      testWidgets(
+        '${contextMenu ? 'context' : 'button'} menu stays within a $width pane',
+        (tester) async {
+          final overlayKey = GlobalKey<OverlayState>();
+          final menuDismiss = ValueNotifier<VoidCallback?>(null);
+          addTearDown(menuDismiss.dispose);
+          int? selected;
+          await tester.pumpWidget(
+            MaterialApp(
+              home: Scaffold(
+                body: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Padding(
+                    padding: const EdgeInsets.only(left: 80),
+                    child: SizedBox(
+                      key: const ValueKey('menu_region'),
+                      width: width,
+                      height: 360,
+                      child: MobileOverlayInset(
+                        bottomInset: 0,
+                        menuOverlayKey: overlayKey,
+                        menuDismiss: menuDismiss,
+                        child: Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            Align(
+                              alignment: Alignment.topRight,
+                              child: Builder(
+                                builder: (context) => contextMenu
+                                    ? TextButton(
+                                        onPressed: () async {
+                                          final box =
+                                              context.findRenderObject()!
+                                                  as RenderBox;
+                                          selected =
+                                              await showUnifiedContextMenu<int>(
+                                                context: context,
+                                                globalPosition: box
+                                                    .localToGlobal(
+                                                      Offset(
+                                                        box.size.width - 10,
+                                                        24,
+                                                      ),
+                                                    ),
+                                                entries: const [
+                                                  UnifiedMenuEntry.action(
+                                                    value: 1,
+                                                    label: 'Action',
+                                                  ),
+                                                ],
+                                              );
+                                        },
+                                        child: const Text('Menu'),
+                                      )
+                                    : UnifiedPopupMenuButton<int>(
+                                        icon: Icons.more_vert,
+                                        tooltip: 'Menu',
+                                        entries: const [
+                                          UnifiedMenuEntry.action(
+                                            value: 1,
+                                            label: 'Action',
+                                          ),
+                                        ],
+                                        onSelected: (value) => selected = value,
+                                      ),
+                              ),
+                            ),
+                            Overlay(key: overlayKey),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          );
+          await tester.tap(
+            contextMenu ? find.text('Menu') : find.byTooltip('Menu'),
+          );
+          await tester.pumpAndSettle();
+          final region = tester.getRect(
+            find.byKey(const ValueKey('menu_region')),
+          );
+          final menu = tester.getRect(
+            find
+                .ancestor(
+                  of: find.text('Action'),
+                  matching: find.byType(ClipRRect),
+                )
+                .first,
+          );
+          expect(menu.left, greaterThanOrEqualTo(region.left));
+          expect(menu.right, lessThanOrEqualTo(region.right));
+          expect(menu.top, greaterThanOrEqualTo(region.top));
+          expect(menu.bottom, lessThanOrEqualTo(region.bottom));
+          expect(menuDismiss.value, isNotNull);
+          await tester.tap(find.text('Action'));
+          await tester.pumpAndSettle();
+          expect(selected, 1);
+          expect(menuDismiss.value, isNull);
+          expect(tester.takeException(), isNull);
+        },
+      );
+    }
+  }
+
+  for (final contextMenu in [false, true]) {
+    testWidgets(
+      'Android back closes ${contextMenu ? 'context' : 'button'} menu before detail',
+      (tester) async {
+        final fixture = AppRuntimeWidgetTestFixture();
+        addTearDown(fixture.dispose);
+        final root = GlobalKey<NavigatorState>();
+        final navigation = WorkDetailNavigation(rootNavigatorKey: root);
+        final mainMenuOverlay = GlobalKey<OverlayState>();
+        addTearDown(navigation.dispose);
+        await tester.pumpWidget(
+          fixture.build(
+            WorkDetailNavigationScope(
+              navigation: navigation,
+              child: MaterialApp(
+                navigatorKey: root,
+                home: Scaffold(
+                  body: WorkDetailPane(
+                    isLandscape: true,
+                    sidebarWidth: 80,
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: SizedBox(
+                        width: 340,
+                        child: MobileOverlayInset(
+                          bottomInset: 0,
+                          menuOverlayKey: mainMenuOverlay,
+                          menuDismiss: navigation.menuDismiss,
+                          child: Stack(
+                            fit: StackFit.expand,
+                            children: [
+                              Center(
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Text('Main retained'),
+                                    Builder(
+                                      builder: (context) => TextButton(
+                                        onPressed: () => unawaited(
+                                          showDockAwareMenu<int>(
+                                            context: context,
+                                            position:
+                                                const RelativeRect.fromLTRB(
+                                                  50,
+                                                  150,
+                                                  50,
+                                                  150,
+                                                ),
+                                            entries: const [
+                                              UnifiedMenuEntry.action(
+                                                value: 2,
+                                                label: 'Main action',
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        child: const Text('Main menu'),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Overlay(key: mainMenuOverlay),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        unawaited(
+          navigation.open(
+            'detail',
+            (_) => MaterialPageRoute<void>(
+              builder: (context) => Scaffold(
+                body: Column(
+                  children: [
+                    const Text('Detail retained'),
+                    contextMenu
+                        ? TextButton(
+                            onPressed: () {
+                              final box =
+                                  context.findRenderObject()! as RenderBox;
+                              unawaited(
+                                showUnifiedContextMenu<int>(
+                                  context: context,
+                                  globalPosition: box.localToGlobal(
+                                    const Offset(100, 100),
+                                  ),
+                                  entries: const [
+                                    UnifiedMenuEntry.action(
+                                      value: 1,
+                                      label: 'Action',
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
+                            child: const Text('Menu'),
+                          )
+                        : UnifiedPopupMenuButton<int>(
+                            icon: Icons.more_vert,
+                            tooltip: 'Menu',
+                            entries: const [
+                              UnifiedMenuEntry.action(
+                                value: 1,
+                                label: 'Action',
+                              ),
+                            ],
+                            onSelected: (_) {},
+                          ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(
+          contextMenu ? find.text('Menu') : find.byTooltip('Menu'),
+        );
+        await tester.pumpAndSettle();
+        expect(navigation.menuDismiss.value, isNotNull);
+        await tester.binding.handlePopRoute();
+        await tester.pumpAndSettle();
+        expect(find.text('Action'), findsNothing);
+        expect(find.text('Detail retained'), findsOneWidget);
+        expect(navigation.isOpen, isTrue);
+        expect(navigation.menuDismiss.value, isNull);
+        await tester.tap(
+          contextMenu ? find.text('Menu') : find.byTooltip('Menu'),
+        );
+        await tester.pumpAndSettle();
+        final previousDismiss = navigation.menuDismiss.value;
+        await tester.tap(find.text('Main menu'));
+        await tester.pumpAndSettle();
+        expect(find.text('Action'), findsNothing);
+        expect(find.text('Main action'), findsOneWidget);
+        expect(navigation.menuDismiss.value, isNotNull);
+        expect(
+          identical(navigation.menuDismiss.value, previousDismiss),
+          isFalse,
+        );
+        await tester.binding.handlePopRoute();
+        await tester.pumpAndSettle();
+        expect(find.text('Main action'), findsNothing);
+        expect(navigation.isOpen, isTrue);
+        expect(navigation.menuDismiss.value, isNull);
+        await tester.binding.handlePopRoute();
+        await tester.pumpAndSettle();
+        expect(navigation.isOpen, isFalse);
+        expect(find.text('Main retained'), findsOneWidget);
+        await tester.pump(coordinator.idleDelay);
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
 
   testWidgets('popup releases curve listeners after each dismissal', (
     tester,

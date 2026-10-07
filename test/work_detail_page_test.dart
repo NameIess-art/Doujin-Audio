@@ -5,6 +5,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -1521,7 +1522,39 @@ void main() {
           ),
           findsOneWidget,
         );
+
+        if (defaultTargetPlatform == TargetPlatform.windows) {
+          await tester.tap(
+            find.text('Audio entry'),
+            buttons: kSecondaryMouseButton,
+            kind: PointerDeviceKind.mouse,
+          );
+        } else {
+          await tester.tap(more);
+        }
+        await _settleDetail(tester);
+        await tester.tap(find.text(fixture.languageProvider.tr('exclude')));
+        await _settleDetail(tester);
+        expect(find.text('Audio entry'), findsNothing);
+        final failures = await tester.runAsync(
+          fixture.undoableRemovalService.commitPending,
+        );
+        await _settleDetail(tester);
+        expect(failures, 0);
+        expect(fixture.library.trackByPath(tracks.first.path), isNull);
+        expect(find.text('Audio entry'), findsNothing);
+        expect(find.text('Video entry'), findsOneWidget);
+        playSucceeds = true;
+        await tester.tap(find.text('Video entry'));
+        await _settleDetail(tester);
+        expect(temporary.customQueueTracks?.map((track) => track.path), [
+          tracks.last.path,
+        ]);
       },
+      variant: const TargetPlatformVariant({
+        TargetPlatform.android,
+        TargetPlatform.windows,
+      }),
     );
 
     testWidgets(

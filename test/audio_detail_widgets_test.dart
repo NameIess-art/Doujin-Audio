@@ -1,4 +1,17 @@
 import 'dart:async';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:doujin_audio/features/asmr/presentation/asmr_download_page.dart';
+import 'package:doujin_audio/features/asmr/presentation/asmr_providers.dart';
+import 'package:doujin_audio/features/asmr/application/asmr_download_manager.dart';
+import 'package:doujin_audio/app/presentation/work_detail_navigation.dart';
+import 'package:doujin_audio/app/state/app_runtime_providers.dart';
+import 'package:doujin_audio/core/ui/ui_operation_service.dart';
+import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
+import 'package:doujin_audio/core/persistence/json_document_store.dart';
+import 'package:doujin_audio/features/library/application/audio_detail_repository.dart';
+import 'package:doujin_audio/features/library/application/library_facade.dart';
+import 'package:doujin_audio/features/library/presentation/library_providers.dart';
+import 'package:doujin_audio/features/library/presentation/library_download_actions.dart';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
@@ -17,7 +30,6 @@ import 'package:doujin_audio/core/widgets/shimmer_loading.dart';
 import 'package:doujin_audio/core/widgets/top_page_header.dart';
 import 'package:doujin_audio/features/library/presentation/dlsite_metadata_batch_page.dart';
 import 'package:doujin_audio/features/library/presentation/dlsite_metadata_review_page.dart';
-import 'package:doujin_audio/features/asmr/application/asmr_download_models.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_metadata_service.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
 import 'package:doujin_audio/features/library/application/cover_artwork_cache_service.dart';
@@ -66,6 +78,168 @@ class _PendingDlsiteMetadataService extends DlsiteMetadataService {
   }) => result.future;
 }
 
+class _PendingSubmissionOperations extends UiOperationService {
+  _PendingSubmissionOperations({this.work});
+
+  final AsmrWork? work;
+  final started = Completer<void>();
+  final release = Completer<void>();
+
+  @override
+  Future<T> run<T>({
+    required UiOperationScope scope,
+    required String labelKey,
+    required UiOperationTask<T> task,
+    FutureOr<void> Function(T value)? onSuccess,
+    FutureOr<void> Function(Object error, StackTrace stackTrace)? onError,
+    bool cancelPrevious = true,
+  }) {
+    if (scope == UiOperationScope.asmrDownloadInit) {
+      return Future.value(
+        (
+              tree: <AsmrTrackFile>[
+                AsmrTrackFile.fromJson(const {
+                  'hash': 'track',
+                  'title': 'track.mp3',
+                  'type': 'audio',
+                  'mediaDownloadUrl': 'https://example.com/track.mp3',
+                }),
+              ],
+              destinationRoot: '/downloads',
+              work: work!,
+            )
+            as T,
+      );
+    }
+    return super.run<T>(
+      scope: scope,
+      labelKey: labelKey,
+      task: (progress) async {
+        final result = await task(progress);
+        started.complete();
+        await release.future;
+        return result;
+      },
+      onSuccess: onSuccess,
+      onError: onError,
+      cancelPrevious: cancelPrevious,
+    );
+  }
+}
+
+class _SubmittedDownloads extends AsmrDownloadManager {
+  _SubmittedDownloads() : super(persistTasks: false);
+
+  final submitted = <int>[];
+
+  @override
+  Future<bool> destinationExists(String folderPath) async => true;
+
+  @override
+  Future<void> startDownload({
+    required AsmrWork work,
+    required List<AsmrTrackFile> selectedRoots,
+    required String destinationRoot,
+    required AsmrDownloadConflictPolicy conflictPolicy,
+    bool saveMetadata = true,
+    bool saveCover = true,
+    int automaticFileRetryCount = kDefaultAsmrDownloadRetryCount,
+    Iterable<AsmrDownloadFolderNameField> folderNameFields =
+        kDefaultAsmrDownloadFolderNameFields,
+    String? customWorkFolderName,
+  }) async {
+    submitted.add(work.id);
+  }
+}
+
+class _SubmittedDetails extends AudioDetailRepository {
+  _SubmittedDetails(AppRuntimeWidgetTestFixture fixture)
+    : super(databaseRepository: fixture.persistenceRepository);
+
+  AudioDetail? submitted;
+  Completer<AudioDetailLoadResult>? pendingLoad;
+
+  @override
+  Future<AudioDetailLoadResult> load(AudioDetailTarget target) =>
+      pendingLoad?.future ?? super.load(target);
+
+  @override
+  Future<AudioDetailSaveResult> save(AudioDetail detail) async {
+    submitted = detail;
+    return AudioDetailSaveResult(
+      detail: detail,
+      documentStatus: JsonDocumentWriteStatus.preserved,
+    );
+  }
+}
+
+Future<WorkDetailNavigation> _mountSubmissionNavigator(
+  WidgetTester tester,
+  AppRuntimeWidgetTestFixture fixture,
+  _PendingSubmissionOperations operations, {
+  AsmrDownloadManager? downloads,
+  LibraryFacade? library,
+}) async {
+  final navigation = WorkDetailNavigation(
+    rootNavigatorKey: GlobalKey<NavigatorState>(),
+  );
+  addTearDown(navigation.dispose);
+  await tester.pumpWidget(
+    fixture.build(
+      Navigator(
+        key: navigation.navigatorKey,
+        observers: [navigation.observer],
+        onGenerateRoute: (_) => MaterialPageRoute<void>(
+          builder: (_) => const Scaffold(body: Text('Main')),
+        ),
+      ),
+      overrides: [
+        uiOperationServiceProvider.overrideWithValue(operations),
+        if (library != null) libraryFacadeProvider.overrideWithValue(library),
+        if (downloads != null)
+          asmrDownloadManagerProvider.overrideWithValue(downloads),
+      ],
+    ),
+  );
+  unawaited(
+    navigation.open(
+      'A',
+      (_) => MaterialPageRoute<void>(
+        builder: (_) => const Scaffold(body: Text('Work A')),
+      ),
+    ),
+  );
+  await tester.pumpAndSettle();
+  return navigation;
+}
+
+Future<void> _replaceDuringSubmission(
+  WidgetTester tester,
+  WorkDetailNavigation navigation,
+  _PendingSubmissionOperations operations,
+  State oldPage,
+) async {
+  PageRoute<void>? replacement;
+  unawaited(
+    navigation.open(
+      'B',
+      (_) => replacement = MaterialPageRoute<void>(
+        builder: (_) => const Scaffold(body: Text('Work B')),
+      ),
+    ),
+  );
+  await tester.pump();
+  expect(oldPage.mounted, isTrue);
+  expect(replacement!.animation!.isCompleted, isFalse);
+  operations.release.complete();
+  await tester.pump();
+  expect(replacement!.isCurrent, isTrue);
+  await tester.pumpAndSettle();
+  expect(find.text('Work B'), findsOneWidget);
+  expect(oldPage.mounted, isFalse);
+  expect(tester.takeException(), isNull);
+}
+
 class _FakeAsmrMetadataService extends AsmrMetadataService {
   @override
   Future<DlsiteMetadata> fetchByRjCode(
@@ -102,6 +276,7 @@ class _DetailCoverCacheService extends CoverArtworkCacheService {
   final String? embeddedCoverPath;
   final String? currentCoverPath;
   final Future<List<String>>? candidatesFuture;
+  int candidateQueries = 0;
 
   @override
   Future<String?> futureForFolder(String folderPath) async => currentCoverPath;
@@ -120,7 +295,10 @@ class _DetailCoverCacheService extends CoverArtworkCacheService {
     bool includeVideoFrames = true,
     bool includeEmbeddedCovers = true,
     bool propagateFailure = false,
-  }) async => candidatesFuture ?? candidates;
+  }) async {
+    candidateQueries++;
+    return candidatesFuture ?? candidates;
+  }
 }
 
 void _expectPrimaryFilledButton(WidgetTester tester, Finder finder) {
@@ -148,6 +326,292 @@ void main() {
   tearDownAll(() async {
     await AppRuntimeTestFixture.disposeSharedDatabase(testDatabase);
   });
+
+  testWidgets('submitted download completion cannot close a replacement work', (
+    tester,
+  ) async {
+    final fixture = AppRuntimeWidgetTestFixture();
+    addTearDown(fixture.dispose);
+    final work = AsmrWork.fromJson(const {'id': 1, 'title': 'Work A'});
+    final operations = _PendingSubmissionOperations(work: work);
+    final downloads = _SubmittedDownloads();
+    addTearDown(downloads.dispose);
+    final navigation = await _mountSubmissionNavigator(
+      tester,
+      fixture,
+      operations,
+      downloads: downloads,
+    );
+    unawaited(
+      navigation.navigatorKey.currentState!.push<void>(
+        MaterialPageRoute(builder: (_) => AsmrDownloadPage(work: work)),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(Checkbox).first);
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('asmr_download_start_button')));
+    await tester.pump();
+    expect(operations.started.isCompleted, isTrue);
+    final oldPage = tester.state(find.byType(AsmrDownloadPage));
+    await _replaceDuringSubmission(tester, navigation, operations, oldPage);
+    expect(downloads.submitted, [work.id]);
+  });
+
+  testWidgets('submitted edit completion cannot close a replacement work', (
+    tester,
+  ) async {
+    final fixture = AppRuntimeWidgetTestFixture();
+    addTearDown(fixture.dispose);
+    final operations = _PendingSubmissionOperations();
+    final repository = _SubmittedDetails(fixture);
+    final library = LibraryFacade.create(
+      databaseRepository: fixture.persistenceRepository,
+      detailRepository: repository,
+      service: fixture.libraryService,
+    );
+    final navigation = await _mountSubmissionNavigator(
+      tester,
+      fixture,
+      operations,
+      library: library,
+    );
+    const target = AudioDetailTarget(
+      targetType: AudioDetailTargetType.singleAudioFile,
+      targetPath: '/library/submission-regression.mp3',
+    );
+    unawaited(
+      navigation.navigatorKey.currentState!.push<void>(
+        MaterialPageRoute(
+          builder: (_) => DlsiteMetadataReviewPage.edit(
+            detail: AudioDetail.empty(target).copyWith(duration: Duration.zero),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.descendant(
+        of: find.byKey(const ValueKey('metadata_edit_audio_detail_work_title')),
+        matching: find.byType(TextField),
+      ),
+      'Submitted title',
+    );
+    await tester.tap(find.byKey(const ValueKey('dlsite_review_confirm')));
+    await tester.pump();
+    expect(operations.started.isCompleted, isTrue);
+    await tester.pump();
+    final oldPage = tester.state(find.byType(DlsiteMetadataReviewPage));
+    await _replaceDuringSubmission(tester, navigation, operations, oldPage);
+    expect(repository.submitted!.workTitle, 'Submitted title');
+  });
+
+  testWidgets(
+    'delayed local download lookup cannot open on a replacement work',
+    (tester) async {
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      final repository = _SubmittedDetails(fixture)
+        ..pendingLoad = Completer<AudioDetailLoadResult>();
+      final library = LibraryFacade.create(
+        databaseRepository: fixture.persistenceRepository,
+        detailRepository: repository,
+        service: fixture.libraryService,
+      );
+      final navigation = await _mountSubmissionNavigator(
+        tester,
+        fixture,
+        _PendingSubmissionOperations(),
+        library: library,
+      );
+      const target = AudioDetailTarget(
+        targetType: AudioDetailTargetType.singleAudioFile,
+        targetPath: '/library/lookup-regression.mp3',
+      );
+      unawaited(
+        navigation.navigatorKey.currentState!.push<void>(
+          MaterialPageRoute(
+            builder: (_) => Consumer(
+              builder: (context, ref, _) => Scaffold(
+                body: TextButton(
+                  onPressed: () => downloadAudioTargetFromAsmr(
+                    context: context,
+                    ref: ref,
+                    target: target,
+                  ),
+                  child: const Text('Load download'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final oldContext = tester.element(find.text('Load download'));
+      await tester.tap(find.text('Load download'));
+      await tester.pump();
+      unawaited(
+        navigation.open(
+          'B',
+          (_) => MaterialPageRoute<void>(
+            builder: (_) => const Scaffold(body: Text('Work B')),
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(oldContext.mounted, isTrue);
+      repository.pendingLoad!.complete(
+        AudioDetailLoadResult(
+          detail: AudioDetail.empty(target).copyWith(rjCode: 'RJ123456'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Work B'), findsOneWidget);
+      expect(find.byType(AsmrDownloadPage), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'metadata editing preserves input when a narrow pane resizes',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(320, 800);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPhysicalSize);
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      await tester.pumpWidget(
+        fixture.build(
+          DlsiteMetadataReviewPage.edit(
+            detail: AudioDetail.empty(
+              const AudioDetailTarget(
+                targetType: AudioDetailTargetType.singleAudioFile,
+                targetPath: '/library/Work/audio.mp3',
+              ),
+            ).copyWith(duration: const Duration(minutes: 1)),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final field = find.descendant(
+        of: find.byKey(const ValueKey('metadata_edit_audio_detail_work_title')),
+        matching: find.byType(TextField),
+      );
+      await tester.enterText(field, 'Unsaved title');
+      final state = tester.state(find.byType(DlsiteMetadataReviewPage));
+      tester.view.physicalSize = const Size(510, 800);
+      await tester.pumpAndSettle();
+      expect(tester.state(find.byType(DlsiteMetadataReviewPage)), same(state));
+      expect(tester.widget<TextField>(field).controller!.text, 'Unsaved title');
+      expect(tester.takeException(), isNull);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
+  testWidgets(
+    'metadata review controls fit a narrow pane',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(320, 800);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPhysicalSize);
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      await fixture.languageProvider.setLanguage(AppLanguage.en);
+      final metadata = DlsiteMetadata(
+        rjCode: 'RJ123456',
+        workTitle: 'Work title',
+        circleName: 'Circle',
+        voiceActors: const [],
+        tags: const [],
+      );
+      DlsiteMetadataReviewResult? completion;
+      await tester.pumpWidget(
+        fixture.build(
+          DlsiteMetadataReviewPage(
+            detail: AudioDetail.empty(
+              const AudioDetailTarget(
+                targetType: AudioDetailTargetType.singleAudioFile,
+                targetPath: '/library/Work/audio.mp3',
+              ),
+            ),
+            initialCandidates: [
+              metadata,
+              metadata.copyWith(rjCode: 'RJ654321'),
+            ],
+            batchIndex: 2,
+            batchTotal: 3,
+            onBatchNavigate: (_) {},
+            onCompleted: (value) => completion = value,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final navigation = find.byKey(
+        const ValueKey('dlsite_review_work_navigation'),
+      );
+      final confirm = find.byKey(const ValueKey('dlsite_review_confirm'));
+      expect(
+        tester.getRect(navigation).bottom,
+        lessThan(tester.getRect(confirm).top),
+      );
+      await tester.tap(confirm);
+      await tester.pump();
+      expect(completion!.isConfirmed, isTrue);
+      expect(tester.takeException(), isNull);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
+
+  testWidgets(
+    'download header keeps its title readable in a narrow pane',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(320, 800);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPhysicalSize);
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      await fixture.languageProvider.setLanguage(AppLanguage.en);
+      await tester.pumpWidget(
+        fixture.build(
+          AsmrDownloadPage(
+            work: AsmrWork.fromJson(const {'id': 1, 'title': 'Work title'}),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      final title = find.text(
+        fixture.languageProvider.tr('asmr_download_title'),
+      );
+      expect(tester.getSize(title).width, greaterThan(50));
+      expect(
+        find.byTooltip(
+          fixture.languageProvider.tr('asmr_download_choose_path'),
+        ),
+        findsOneWidget,
+      );
+      tester.view.physicalSize = const Size(510, 800);
+      await tester.pumpAndSettle();
+      expect(
+        find.text(fixture.languageProvider.tr('asmr_download_choose_path')),
+        findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.windows,
+    }),
+  );
 
   testWidgets('metadata review skeleton matches the cover and field layout', (
     tester,
@@ -1132,6 +1596,11 @@ void main() {
 
     durationCompleter.complete(const Duration(minutes: 3));
     await tester.pump();
+    // Cover discovery starts after the frame that installs the selector.
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 50)),
+    );
+    await tester.pump();
   });
 
   testWidgets(
@@ -1260,6 +1729,64 @@ void main() {
       findsOneWidget,
     );
   });
+
+  for (final closeDuringEntrance in [false, true]) {
+    testWidgets(
+      'editor defers cover discovery during Windows entrance and '
+      '${closeDuringEntrance ? 'cancels it on close' : 'starts it after navigation'}',
+      (tester) async {
+        debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+        final interaction = UiInteractionCoordinator.instance;
+        interaction.resetForTest();
+        final observer = UiInteractionNavigatorObserver();
+        final covers = _DetailCoverCacheService(
+          currentCoverPath: '/covers/current.jpg',
+        );
+        final fixture = AppRuntimeWidgetTestFixture(
+          coverArtworkCacheService: covers,
+        );
+        addTearDown(() {
+          observer.dispose();
+          fixture.dispose();
+          interaction.resetForTest();
+          debugDefaultTargetPlatformOverride = null;
+        });
+        await tester.pumpWidget(
+          fixture.build(
+            const SizedBox.shrink(),
+            navigatorObservers: [observer],
+          ),
+        );
+        final navigator = tester.state<NavigatorState>(find.byType(Navigator));
+        unawaited(
+          navigator.push(
+            buildAppPageRoute<void>(
+              context: navigator.context,
+              child: DlsiteMetadataReviewPage.edit(
+                detail: AudioDetail.empty(
+                  const AudioDetailTarget(
+                    targetType: AudioDetailTargetType.libraryRootFolder,
+                    targetPath: '/library/Work',
+                  ),
+                ).copyWith(duration: const Duration(minutes: 1)),
+              ),
+            ),
+          ),
+        );
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 80));
+        expect(covers.candidateQueries, 0);
+        if (closeDuringEntrance) navigator.pop();
+        for (var frame = 0; frame < 8; frame++) {
+          await tester.pump(const Duration(milliseconds: 100));
+        }
+        expect(covers.candidateQueries, closeDuringEntrance ? 0 : 1);
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+        debugDefaultTargetPlatformOverride = null;
+      },
+    );
+  }
 
   testWidgets('folder cover remains visible while candidates load or fail', (
     WidgetTester tester,

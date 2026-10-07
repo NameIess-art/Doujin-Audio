@@ -10,6 +10,7 @@ import 'package:path/path.dart' as path;
 import '../../../app/localization/app_language_provider.dart';
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/presentation/app_presentation_providers.dart';
+import '../../../app/presentation/work_detail_navigation.dart';
 import '../../../core/media/audio_detail.dart';
 import '../../../core/media/music_track.dart';
 import '../../../core/media/path_matcher.dart';
@@ -92,28 +93,39 @@ const _multiValueSeparator = '\uFF0C';
 Future<void> showAudioDetailSheet(
   BuildContext context,
   AudioDetailTarget target, {
-  bool replace = false,
+  bool returnToMain = false,
   AudioDetail? initialDetail,
   String? initialCoverPath,
 }) async {
   final navigator = Navigator.of(context);
   final origin = ModalRoute.of(context);
-  final route = buildAppPageRoute<void>(
-    context: context,
-    settings: const RouteSettings(name: workDetailRouteName),
-    workDetailTransition: true,
-    child: WorkDetailPage.forLocal(
-      target: target,
-      initialDetail: initialDetail,
-      initialCoverPath: initialCoverPath,
-    ),
-  );
+  PageRoute<void> buildRoute(BuildContext routeContext) =>
+      buildAppPageRoute<void>(
+        context: routeContext,
+        settings: const RouteSettings(name: workDetailRouteName),
+        workDetailTransition: true,
+        child: WorkDetailPage.forLocal(
+          target: target,
+          initialDetail: initialDetail,
+          initialCoverPath: initialCoverPath,
+        ),
+      );
   await WidgetsBinding.instance.endOfFrame;
   if (!context.mounted || !navigator.mounted || origin?.isCurrent == false) {
     return;
   }
-  if (replace && navigator.canPop()) {
-    await navigator.pushReplacement<void, void>(route);
+  final detailNavigation = WorkDetailNavigationScope.maybeOf(context);
+  if (detailNavigation != null) {
+    await detailNavigation.open(
+      ('local', target),
+      buildRoute,
+      returnToMain: returnToMain,
+    );
+    return;
+  }
+  final route = buildRoute(context);
+  if (returnToMain) {
+    await navigator.pushAndRemoveUntil<void>(route, (route) => route.isFirst);
     return;
   }
   await navigator.push<void>(route);

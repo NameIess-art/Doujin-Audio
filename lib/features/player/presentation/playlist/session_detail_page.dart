@@ -88,6 +88,8 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
   String? _cachedTrackPath;
   int? _cachedCoverGeneration;
   Future<String?>? _cachedCoverFuture;
+  String get _coverCommitKey =>
+      'session_detail_${identityHashCode(this)}_cover';
   late final ActiveSessionDetailIdsNotifier _activeSessionDetailIdsNotifier;
 
   @override
@@ -137,6 +139,7 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
 
   @override
   void dispose() {
+    UiInteractionCoordinator.instance.cancelCommit(_coverCommitKey);
     WidgetsBinding.instance.removeObserver(this);
     _dismissOperation++;
     UiInteractionCoordinator.instance.cancelInteraction(
@@ -413,6 +416,22 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
                   _cachedCoverFuture = coverFutureForTrack(
                     ref.read(libraryFacadeProvider),
                     detailTrack,
+                    cachedOnly: true,
+                  );
+                  // Display indexed artwork first; discovery and extraction must
+                  // not compete with the route's moving first frames.
+                  UiInteractionCoordinator.instance.scheduleCommit(
+                    key: _coverCommitKey,
+                    commit: () {
+                      if (!mounted) return;
+                      final coverFuture = coverFutureForTrack(
+                        ref.read(libraryFacadeProvider),
+                        detailTrack,
+                      );
+                      setState(() {
+                        _cachedCoverFuture = coverFuture;
+                      });
+                    },
                   );
                 }
                 final coverPathFuture = _cachedCoverFuture!;

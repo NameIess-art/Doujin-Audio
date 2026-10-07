@@ -640,6 +640,7 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
         showAsmrWorkDetailSheet(
           context,
           AsmrWork.fromJson(track!.remoteMetadata!),
+          returnToMain: true,
         ),
       );
       return;
@@ -647,7 +648,7 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
     final target = track != null
         ? _paths.library.audioDetailTargetForTrack(track)
         : _paths.library.audioDetailTargetForPath(session.currentTrackPath);
-    unawaited(showAudioDetailSheet(context, target));
+    unawaited(showAudioDetailSheet(context, target, returnToMain: true));
   }
 
   @override

@@ -504,7 +504,9 @@ class UiInteractionNavigatorObserver extends NavigatorObserver {
   }
 
   @visibleForTesting
-  void resetForTest() {
+  void resetForTest() => dispose();
+
+  void dispose() {
     for (final route in _popRoutes) {
       route.unregisterPopEntry(_popEntry);
     }

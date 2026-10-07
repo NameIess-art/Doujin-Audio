@@ -61,6 +61,44 @@ Future<void> _jumpToEnd(WidgetTester tester, ScrollPosition position) async {
 }
 
 void main() {
+  testWidgets('deep download folders remain selectable in a narrow pane', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(320, 1000);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
+    var tree = [_node('leaf.mp3')];
+    for (var depth = 20; depth >= 0; depth--) {
+      tree = [_node('folder$depth', children: tree)];
+    }
+    final model = AsmrDownloadSelectionModel(tree);
+    await _pumpList(tester, model);
+    for (var depth = 1; depth <= 20; depth++) {
+      final folder = find.byKey(ValueKey('asmr_download_node_folder$depth'));
+      await tester.scrollUntilVisible(folder, 100);
+      await tester.tap(
+        find.descendant(of: folder, matching: find.byType(Text)),
+      );
+      await tester.pumpAndSettle();
+    }
+    final leaf = find.byKey(const ValueKey('asmr_download_node_leaf.mp3'));
+    await tester.scrollUntilVisible(leaf, 100);
+    expect(tester.takeException(), isNull);
+    final title = find.descendant(of: leaf, matching: find.text('leaf.mp3'));
+    expect(tester.getSize(title).width, greaterThan(40));
+    await tester.tap(title);
+    await tester.pumpAndSettle();
+    expect(model.stateForPath('leaf.mp3'), isTrue);
+    expect(model.selectedLeafCount(), 1);
+
+    tester.view.physicalSize = const Size(510, 1000);
+    await tester.pumpAndSettle();
+    expect(find.text('leaf.mp3'), findsOneWidget);
+    expect(model.stateForPath('leaf.mp3'), isTrue);
+    expect(tester.takeException(), isNull);
+  });
+
   for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
     testWidgets(
       'large download directory mounts only viewport rows on $platform',

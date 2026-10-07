@@ -12,6 +12,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/presentation/app_presentation_providers.dart';
+import '../../../app/presentation/work_detail_navigation.dart';
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/theme/app_design_tokens.dart';
 import '../../../core/media/audio_detail.dart';
@@ -529,16 +530,17 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
     final entries =
         _directory?.entriesAt(_currentPathSegments) ?? const <WorkEntryItem>[];
     if (widget.isLocal) {
+      final library = ref.read(libraryFacadeProvider);
       final removals = ref.read(undoableRemovalStateProvider);
-      _currentEntries = removals.hiddenKeys.isEmpty
-          ? entries
-          : entries
-                .where(
-                  (entry) =>
-                      entry.track == null ||
-                      !removals.isHidden(libraryRemovalKey(entry.track!.path)),
-                )
-                .toList(growable: false);
+      // The directory snapshot can outlive a committed library removal.
+      _currentEntries = entries
+          .where(
+            (entry) =>
+                entry.track == null ||
+                (library.trackByPath(entry.track!.path) != null &&
+                    !removals.isHidden(libraryRemovalKey(entry.track!.path))),
+          )
+          .toList(growable: false);
     } else {
       final controller = ref.read(asmrLibraryControllerProvider);
       _currentEntries = entries
@@ -591,7 +593,15 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
   Future<bool> _playAudioItem(WorkEntryItem item) async {
     if (widget.isLocal && item.track != null) {
       final playback = ref.read(playbackFacadeProvider);
-      final tracks = _localFolderNode?.allTracks ?? [item.track!];
+      final library = ref.read(libraryFacadeProvider);
+      final removals = ref.read(undoableRemovalStateProvider);
+      final tracks = (_localFolderNode?.allTracks ?? [item.track!])
+          .where(
+            (track) =>
+                library.trackByPath(track.path) != null &&
+                !removals.isHidden(libraryRemovalKey(track.path)),
+          )
+          .toList(growable: false);
       final index = tracks.indexWhere(
         (track) => track.path == item.track!.path,
       );
@@ -971,6 +981,10 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
     final result = await showAudioDetailEditor(context, ref, detail.target);
     final savedDetail = result?.detail;
     if (!mounted || savedDetail == null) return;
+    WorkDetailNavigationScope.maybeOf(context)?.updateIdentity(
+      ('local', _localTarget),
+      ('local', savedDetail.target),
+    );
     setState(() {
       _localTarget = savedDetail.target;
       _localDetail = savedDetail;
@@ -1061,7 +1075,12 @@ class _WorkDetailPageState extends ConsumerState<WorkDetailPage>
   Widget _buildPage(BuildContext context) {
     final Object? visibilityKey;
     if (widget.isLocal) {
-      visibilityKey = ref.watch(undoableRemovalStateProvider).hiddenKeys;
+      visibilityKey = (
+        ref.watch(undoableRemovalStateProvider).hiddenKeys,
+        ref.watch(
+          libraryStateProvider.select((state) => state.value?.contentRevision),
+        ),
+      );
     } else {
       // Observe user removals and undo without replacing this page's file tree.
       visibilityKey = ref.watch(

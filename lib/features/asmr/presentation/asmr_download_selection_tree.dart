@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -121,7 +123,18 @@ class AsmrDownloadNodeTile extends ConsumerWidget {
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context, WidgetRef ref) => LayoutBuilder(
+    builder: (context, constraints) {
+      // Deep trees must leave room for selection, file size and a readable title.
+      final indent = math.min(
+        _indentWidth * depth,
+        math.max(0.0, constraints.maxWidth - 180),
+      );
+      return _buildTile(context, ref, indent);
+    },
+  );
+
+  Widget _buildTile(BuildContext context, WidgetRef ref, double indent) {
     final cs = Theme.of(context).colorScheme;
     final tokens = AppDesignTokens.of(context);
     final asmrBlue = tokens.asmrAccent;
@@ -129,7 +142,6 @@ class AsmrDownloadNodeTile extends ConsumerWidget {
     ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     final value = selection.stateForPath(node.track.relativePath);
-    final indent = _indentWidth * depth;
 
     if (node.track.isFolder) {
       final hasChildren = node.children.isNotEmpty;

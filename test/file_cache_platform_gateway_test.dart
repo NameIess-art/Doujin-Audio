@@ -417,6 +417,94 @@ void main() {
     },
   );
 
+  test('new SAF translations use a create-only filename suffix', () async {
+    messenger.setMockMethodCallHandler(channel, (call) async {
+      calls.add(call);
+      return success('content://folder/new-translation');
+    });
+    final bytes = Uint8List.fromList([65]);
+    expect(
+      await gateway.saveTrackSubtitle(
+        trackPath: 'content://folder/audio',
+        groupKey: 'content://folder',
+        extension: '.srt',
+        createNew: true,
+        fileNameSuffix: '.translated.zh-CN',
+        bytes: bytes,
+      ),
+      'content://folder/new-translation',
+    );
+    expect(calls.single.method, FileCacheMethod.writeTrackSubtitle);
+    expect(calls.single.arguments, {
+      'trackPath': 'content://folder/audio',
+      'groupKey': 'content://folder',
+      'extension': '.srt',
+      'overwrite': false,
+      'createNew': true,
+      'fileNameSuffix': '.translated.zh-CN',
+      'bytes': bytes,
+    });
+    for (final overwrite in [false, true]) {
+      await expectLater(
+        gateway.saveTrackSubtitle(
+          trackPath: 'content://folder/audio',
+          extension: '.srt',
+          createNew: true,
+          fileNameSuffix: '.translated.en',
+          sourcePath: overwrite ? null : 'content://folder/original',
+          overwrite: overwrite,
+          bytes: bytes,
+        ),
+        throwsArgumentError,
+      );
+    }
+    expect(calls, hasLength(1));
+  });
+
+  test('SAF subtitle choices preserve opaque URIs and display names', () async {
+    messenger.setMockMethodCallHandler(channel, (call) async {
+      calls.add(call);
+      return success([
+        {'sourcePath': 'content://folder/123', 'name': 'voice.ja.srt'},
+        {
+          'sourcePath': 'content://folder/456',
+          'name': 'voice.mp3.translated.en.srt',
+        },
+      ]);
+    });
+    final files = await gateway.listTrackSubtitles(
+      trackPath: 'content://folder/audio',
+      groupKey: 'content://folder',
+    );
+    expect(files, [
+      (sourcePath: 'content://folder/123', name: 'voice.ja.srt'),
+      (sourcePath: 'content://folder/456', name: 'voice.mp3.translated.en.srt'),
+    ]);
+    expect(calls.single.method, FileCacheMethod.listTrackSubtitles);
+    expect(calls.single.arguments, {
+      'trackPath': 'content://folder/audio',
+      'groupKey': 'content://folder',
+    });
+    messenger.setMockMethodCallHandler(
+      channel,
+      (_) async => {
+        'ok': false,
+        'errorCode': 'subtitle_list_failed',
+        'error': 'No permission',
+      },
+    );
+    await expectLater(
+      gateway.listTrackSubtitles(trackPath: 'content://folder/audio'),
+      throwsA(
+        isA<PlatformException>().having(
+          (e) => e.code,
+          'code',
+          'subtitle_list_failed',
+        ),
+      ),
+    );
+  });
+
   test('writeTrackSubtitle targets the original subtitle URI', () async {
     messenger.setMockMethodCallHandler(channel, (call) async {
       calls.add(call);

@@ -58,20 +58,68 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
   }
 
   Future<void> _editText(int index) async {
+    String normalizeLines(String value) => value
+        .split(RegExp(r'\r?\n'))
+        .map((line) => line.trim())
+        .where((line) => line.isNotEmpty)
+        .join('\n');
+
     final cue = _cues![index];
     var text = cue.text;
+    final original = cue.originalText;
+    final bilingual =
+        original != null &&
+        original.trim().isNotEmpty &&
+        (cue.text == original || cue.text.startsWith('$original\n'));
+    var originalText = bilingual ? original : '';
+    var translatedText = bilingual && cue.text != original
+        ? cue.text.substring(original.length + 1)
+        : '';
     final i18n = ref.read(appLanguageProviderInstanceProvider);
-    final nextText = await showDialog<String>(
+    final next = await showDialog<({String text, String? originalText})>(
       context: context,
       builder: (context) => AlertDialog(
         title: Text(i18n.tr('subtitle_edit_text')),
-        content: TextFormField(
-          initialValue: cue.text,
-          onChanged: (value) => text = value,
-          autofocus: true,
-          minLines: 2,
-          maxLines: 8,
-          decoration: InputDecoration(hintText: i18n.tr('subtitle_edit_text')),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (bilingual) ...[
+                TextFormField(
+                  key: const ValueKey('subtitle_original_text'),
+                  initialValue: originalText,
+                  onChanged: (value) => originalText = value,
+                  autofocus: true,
+                  minLines: 2,
+                  maxLines: 8,
+                  decoration: InputDecoration(
+                    labelText: i18n.tr('subtitle_original_text'),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                TextFormField(
+                  key: const ValueKey('subtitle_translated_text'),
+                  initialValue: translatedText,
+                  onChanged: (value) => translatedText = value,
+                  minLines: 2,
+                  maxLines: 8,
+                  decoration: InputDecoration(
+                    labelText: i18n.tr('subtitle_translated_text'),
+                  ),
+                ),
+              ] else
+                TextFormField(
+                  initialValue: cue.text,
+                  onChanged: (value) => text = value,
+                  autofocus: true,
+                  minLines: 2,
+                  maxLines: 8,
+                  decoration: InputDecoration(
+                    hintText: i18n.tr('subtitle_edit_text'),
+                  ),
+                ),
+            ],
+          ),
         ),
         actions: [
           TextButton(
@@ -79,23 +127,35 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
             child: Text(i18n.tr('cancel')),
           ),
           FilledButton(
-            onPressed: () => Navigator.pop(context, text.trim()),
+            onPressed: () {
+              final source = normalizeLines(originalText);
+              final translated = normalizeLines(translatedText);
+              var combined = text.trim();
+              if (bilingual) {
+                combined = translated.isEmpty ? source : '$source\n$translated';
+              }
+              if (combined.isEmpty || (bilingual && source.isEmpty)) return;
+              Navigator.pop(context, (
+                text: combined,
+                originalText: bilingual ? source : null,
+              ));
+            },
             child: Text(i18n.tr('save')),
           ),
         ],
       ),
     );
     if (!mounted ||
-        nextText == null ||
-        nextText.isEmpty ||
-        nextText == cue.text) {
+        next == null ||
+        (next.text == cue.text && next.originalText == cue.originalText)) {
       return;
     }
     setState(() {
       _cues![index] = SubtitleCue(
         start: cue.start,
         end: cue.end,
-        text: nextText,
+        text: next.text,
+        originalText: next.originalText,
       );
       _dirty = true;
     });
@@ -177,7 +237,12 @@ class _SubtitleEditorPageState extends ConsumerState<SubtitleEditorPage> {
       return;
     }
     setState(() {
-      _cues![index] = SubtitleCue(start: next.$1, end: next.$2, text: cue.text);
+      _cues![index] = SubtitleCue(
+        start: next.$1,
+        end: next.$2,
+        text: cue.text,
+        originalText: cue.originalText,
+      );
       _dirty = true;
     });
   }

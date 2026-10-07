@@ -225,12 +225,16 @@ void main() {
   });
 
   test('translation task saves and applies bilingual subtitles', () async {
+    final original = File(p.setExtension(audioPath, '.srt'));
+    final originalText =
+        '1\n00:00:01,000 --> 00:00:03,000\n${_japaneseCue.text}\n';
+    await original.writeAsString(originalText);
     final engine = _FakeSubtitleAiEngine();
     final service = PlaybackSubtitleService(
       trackResolver: (_) => null,
       aiEngine: engine,
       subtitleLoader: (_, _) async =>
-          SubtitleTrack(sourcePath: 'source.srt', cues: const [_japaneseCue]),
+          SubtitleTrack(sourcePath: original.path, cues: const [_japaneseCue]),
       subtitlesDirectoryResolver: () async => subtitleDir,
     );
     expect(service.startTranslationGeneration(audioPath, 'zh'), isTrue);
@@ -259,7 +263,8 @@ void main() {
       reason: 'stage=${service.generationJob?.progress?.stage}',
     );
     final savedPath = service.trackSync(audioPath)!.sourcePath;
-    expect(savedPath, p.setExtension(audioPath, '.srt'));
+    expect(savedPath, '$audioPath.translated.zh-CN.srt');
+    expect(await original.readAsString(), originalText);
     expect(await File(savedPath).readAsString(), contains('今天天气'));
     expect(
       service.trackSync(audioPath)?.cues.single.text,
@@ -269,6 +274,53 @@ void main() {
       (await service.japaneseSourceCues(audioPath)).single.text,
       _japaneseCue.text,
     );
+  });
+
+  test('translation can be cancelled at the save commit boundary', () async {
+    final original = File(p.setExtension(audioPath, '.srt'));
+    final originalText =
+        '1\n00:00:01,000 --> 00:00:03,000\n${_japaneseCue.text}\n';
+    await original.writeAsString(originalText);
+    final engine = _FakeSubtitleAiEngine();
+    final service = PlaybackSubtitleService(
+      trackResolver: (_) => null,
+      aiEngine: engine,
+    );
+    addTearDown(service.dispose);
+    await service.load(audioPath);
+    var applied = false;
+    service.addListener(() {
+      final job = service.generationJob;
+      if (job?.progress?.stage == 'saving' &&
+          job?.cancellationRequested == false) {
+        service.cancelGeneration();
+      }
+    });
+    service.startTranslationGeneration(
+      audioPath,
+      'en',
+      onApplied: () => applied = true,
+    );
+    engine.translationResult.complete(
+      SubtitleDraft(
+        kind: SubtitleDraftKind.translation,
+        sourceLanguage: 'ja',
+        targetLanguage: 'en',
+        cues: [
+          SubtitleCue(
+            start: _japaneseCue.start,
+            end: _japaneseCue.end,
+            text: '${_japaneseCue.text}\nTranslated',
+          ),
+        ],
+      ),
+    );
+    await _waitForGeneration(service);
+    expect(service.generationJob?.status, SubtitleGenerationStatus.cancelled);
+    expect(service.trackSync(audioPath)?.sourcePath, original.path);
+    expect(await original.readAsString(), originalText);
+    expect(await File('$audioPath.translated.en.srt').exists(), isFalse);
+    expect(applied, isFalse);
   });
 
   test(

@@ -32,6 +32,7 @@ class _Translations extends TextTranslationService {
   Future<TextTranslationResult> translate(
     List<String> texts, {
     required String target,
+    String source = 'auto',
     required TextTranslationRequest request,
   }) async {
     final call = _Call(List.of(texts), target, request);
@@ -65,9 +66,13 @@ class _SubtitleFiles extends FileCachePlatformGateway {
     required Uint8List bytes,
     String? sourcePath,
     bool overwrite = false,
+    bool createNew = false,
+    String? fileNameSuffix,
   }) async {
     expect(extension, '.srt');
-    expect(overwrite, isTrue);
+    expect(overwrite, isFalse);
+    expect(createNew, isTrue);
+    expect(fileNameSuffix, anyOf('.translated.zh-CN', '.translated.en'));
     this.bytes = bytes;
     writes.add(utf8.decode(bytes));
     return 'saved.srt';
@@ -147,7 +152,7 @@ void main() {
   }
 
   test(
-    'duplicates map back to every cue and old translations are replaced',
+    'duplicates map back to every cue without dropping multiline source',
     () async {
       final translations = _Translations();
       final draft = await SubtitleAiEngine(translations: translations)
@@ -156,11 +161,14 @@ void main() {
             'zh',
             trackPath: 'audio.mp3',
           );
-      expect(translations.calls.single.texts.toSet(), {'同じ台詞です。'});
-      expect(
-        draft.cues.map((cue) => cue.text),
-        everyElement('同じ台詞です。\nTranslated 同じ台詞です。'),
-      );
+      expect(translations.calls.single.texts.toSet(), {
+        '同じ台詞です。\n旧译文',
+        '同じ台詞です。',
+      });
+      expect(draft.cues.map((cue) => cue.text), [
+        '同じ台詞です。\n旧译文\nTranslated 同じ台詞です。\n旧译文',
+        '同じ台詞です。\nTranslated 同じ台詞です。',
+      ]);
     },
   );
 
@@ -400,7 +408,9 @@ void main() {
           );
           expect(
             files.writes.single,
-            contains('${source.single.text}\n今天一起睡吧。'),
+            contains(
+              '${source.single.text}\n$subtitleTranslationBoundary今天一起睡吧。',
+            ),
           );
           expect(
             service.trackSync('audio.mp3')!.cues.single.text,

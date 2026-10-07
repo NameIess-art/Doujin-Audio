@@ -45,6 +45,7 @@ class _PendingTranslations extends TextTranslationService {
   Future<TextTranslationResult> translate(
     List<String> texts, {
     required String target,
+    String source = 'auto',
     required TextTranslationRequest request,
   }) {
     final result = Completer<TextTranslationResult>();
@@ -76,7 +77,7 @@ File _checkpoint(
   return File(
     path.join(
       directory.path,
-      '${_sourceKey('audio.mp3', 'zh')}_v2_$digest.json',
+      '${_sourceKey('audio.mp3', 'zh')}_v3_$digest.json',
     ),
   );
 }
@@ -84,13 +85,14 @@ File _checkpoint(
 Future<void> _writeCompleted(File file, SubtitleCue cue) => file
     .writeAsString(
       jsonEncode({
-        'version': 2,
+        'version': 3,
         'nextChunk': 1,
         'cues': [
           [
             cue.start.inMilliseconds,
             cue.end.inMilliseconds,
             '${cue.text}\n今天一起睡吧。',
+            cue.text,
           ],
         ],
       }),

@@ -11,6 +11,7 @@ import java.nio.charset.StandardCharsets
 import java.util.Locale
 
 private val subtitleExtensions = setOf("vtt", "webvtt", "lrc", "srt", "ass", "ssa", "txt")
+private val translatedSubtitlePattern = Regex("\\.translated\\.[a-z-]+(?:\\.\\d+)?\\.srt$", RegexOption.IGNORE_CASE)
 private val mediaExtensions = setOf(
     "mp3", "aac", "m4a", "ogg", "oga", "opus", "wav", "flac",
     "mp4", "mkv", "webm", "mov", "m4v", "avi", "3gp"
@@ -30,6 +31,7 @@ private fun subtitleStem(name: String): String {
 
 internal fun subtitleMatchRank(audioName: String, subtitleName: String): Int {
     if (subtitleName.substringAfterLast('.', "").lowercase(Locale.US) !in subtitleExtensions) return 10
+    if (isTranslatedSubtitle(subtitleName)) return 10
     val audioStem = subtitleStem(audioName)
     val subtitleStem = subtitleStem(subtitleName)
     return when {
@@ -38,6 +40,75 @@ internal fun subtitleMatchRank(audioName: String, subtitleName: String): Int {
         subtitleStem.startsWith("${audioStem}_") -> 2
         subtitleStem.startsWith("$audioStem ") -> 3
         else -> 10
+    }
+}
+
+internal fun isTranslatedSubtitle(name: String): Boolean =
+    translatedSubtitlePattern.containsMatchIn(name)
+
+internal fun isTrackSubtitle(audioName: String, subtitleName: String): Boolean =
+    if (isTranslatedSubtitle(subtitleName)) {
+        subtitleName.startsWith("$audioName.translated.", ignoreCase = true) &&
+            subtitleName.substringAfterLast('.', "").lowercase(Locale.US) in subtitleExtensions
+    } else subtitleMatchRank(audioName, subtitleName) < 10
+
+internal fun translatedSubtitleName(audioName: String, suffix: String, extension: String, version: Int = 1): String {
+    subtitleDestinationName(audioName, extension)
+    require(Regex("\\.translated\\.[A-Za-z-]+").matches(suffix)) { "Invalid translated subtitle suffix" }
+    require(version > 0) { "Invalid subtitle version" }
+    return audioName + suffix + (if (version == 1) "" else ".$version") + extension.lowercase(Locale.US)
+}
+
+internal fun listLocalTrackSubtitles(trackPath: String): List<HashMap<String, String>> {
+    val track = File(trackPath)
+    if (!track.isFile) throw IOException("Audio file does not exist: $trackPath")
+    return track.parentFile?.listFiles()?.filter { it.isFile && isTrackSubtitle(track.name, it.name) }
+        ?.sortedWith(compareBy<File> { subtitleMatchRank(track.name, it.name) }.thenBy { it.name.lowercase(Locale.US) })
+        ?.map { hashMapOf("sourcePath" to it.absolutePath, "name" to it.name) }
+        ?: throw IOException("Cannot read audio directory")
+}
+
+internal fun saveNewLocalTrackSubtitle(trackPath: String, extension: String, bytes: ByteArray, suffix: String): String {
+    val track = File(trackPath)
+    if (!track.isFile) throw IOException("Audio file does not exist: $trackPath")
+    synchronized(SubtitleOperations::class.java) {
+        var version = 1
+        while (true) {
+            val name = translatedSubtitleName(track.name, suffix, extension, version++)
+            val siblings = track.parentFile?.listFiles() ?: throw IOException("Cannot read audio directory")
+            if (siblings.any { it.name.equals(name, ignoreCase = true) }) continue
+            val target = File(track.parentFile, name)
+            if (!target.createNewFile()) continue
+            try {
+                target.writeBytes(bytes)
+                return target.absolutePath
+            } catch (error: Exception) {
+                if (!target.delete()) error.addSuppressed(IOException("Cannot remove incomplete subtitle"))
+                throw error
+            }
+        }
+    }
+}
+
+internal fun <T> createNewSubtitleDocument(
+    targetName: String, listFiles: () -> List<T>, name: (T) -> String,
+    sameDocument: (T, T) -> Boolean, create: () -> T?, write: (T) -> Boolean,
+    delete: (T) -> Boolean
+): T? {
+    val before = listFiles()
+    if (before.any { name(it).equals(targetName, ignoreCase = true) }) return null
+    val created = create() ?: throw IOException("Cannot create subtitle")
+    // A provider may return an existing URI from createDocument. Do not write or delete it.
+    if (before.any { sameDocument(it, created) }) throw IOException("Provider returned an existing subtitle")
+    try {
+        if (name(created) != targetName || listFiles().any {
+            name(it).equals(targetName, ignoreCase = true) && !sameDocument(it, created)
+        }) throw IOException("Provider changed or duplicated the subtitle name")
+        if (!write(created)) throw IOException("Cannot write subtitle")
+        return created
+    } catch (error: Exception) {
+        if (!delete(created)) error.addSuppressed(IOException("Cannot remove incomplete subtitle"))
+        throw error
     }
 }
 
@@ -85,6 +156,14 @@ internal fun saveLocalTrackSubtitle(
 }
 
 internal class SubtitleOperations(private val context: Context, private val storage: DocumentStorageOperations) {
+    fun list(trackPath: String, groupKey: String?): List<HashMap<String, String>> {
+        if (!trackPath.startsWith("content://")) return listLocalTrackSubtitles(trackPath)
+        val (folder, audioName) = documentTrackFolder(trackPath, groupKey)
+        return listReadableDirectoryDocuments(context, folder)
+            .filter { it.mime != DocumentsContract.Document.MIME_TYPE_DIR && isTrackSubtitle(audioName, it.name) }
+            .sortedWith(compareBy<DirectoryDocument> { subtitleMatchRank(audioName, it.name) }.thenBy { it.name.lowercase(Locale.US) })
+            .map { hashMapOf("sourcePath" to it.uri.toString(), "name" to it.name) }
+    }
     fun resolve(trackPath: String, groupKey: String?): HashMap<String, String>? {
         if (!trackPath.startsWith("content://")) return resolveFile(trackPath)
         return try { resolveDocument(trackPath, groupKey) } catch (_: Exception) { null }
@@ -134,7 +213,40 @@ internal class SubtitleOperations(private val context: Context, private val stor
         return result(best.absolutePath, best.name, text)
     }
 
-    fun write(trackPath: String, groupKey: String?, extension: String, bytes: ByteArray, sourcePath: String?, overwrite: Boolean): String {
+    @Synchronized
+    fun write(trackPath: String, groupKey: String?, extension: String, bytes: ByteArray, sourcePath: String?, overwrite: Boolean,
+        createNew: Boolean = false, fileNameSuffix: String? = null): String {
+        if (createNew) {
+            require(sourcePath == null && !overwrite) { "Independent subtitles cannot replace or move a source" }
+            val suffix = requireNotNull(fileNameSuffix) { "Missing subtitle filename suffix" }
+            translatedSubtitleName("track.mp3", suffix, extension)
+            if (!trackPath.startsWith("content://")) return saveNewLocalTrackSubtitle(trackPath, extension, bytes, suffix)
+            val (folder, audioName) = documentTrackFolder(trackPath, groupKey)
+            var version = 1
+            while (true) {
+                val name = translatedSubtitleName(audioName, suffix, extension, version++)
+                val saved = createNewSubtitleDocument(
+                    targetName = name,
+                    listFiles = { listReadableDirectoryDocuments(context, folder) },
+                    name = { it.name }, sameDocument = { first, second -> sameDocument(first.uri.toString(), second.uri.toString()) },
+                    create = {
+                        DocumentsContract.createDocument(context.contentResolver, folder, "text/plain", name)?.let { uri ->
+                            val projection = arrayOf(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
+                            val actualName = runCatching {
+                                context.contentResolver.query(uri, projection, null, null, null)?.use {
+                                    if (it.moveToFirst()) it.getString(it.getColumnIndexOrThrow(projection[0])) else null
+                                }
+                            }.getOrNull()
+                            DirectoryDocument(uri, actualName.orEmpty(), "text/plain")
+                        }
+                    },
+                    write = { document ->
+                        context.contentResolver.openOutputStream(document.uri, "w")?.use { it.write(bytes); it.flush(); true } ?: false
+                    }, delete = { storage.deleteDocumentPath(it.uri.toString()) }
+                )
+                if (saved != null) return saved.uri.toString()
+            }
+        }
         if (!trackPath.startsWith("content://")) {
             return saveLocalTrackSubtitle(trackPath, extension, bytes, sourcePath, overwrite, ::deleteSource, ::sameDocument)
         }

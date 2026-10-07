@@ -37,8 +37,9 @@ class _RecordingSubtitleService extends PlaybackSubtitleService {
 
 Future<void> _showEditor(
   WidgetTester tester,
-  PlaybackSubtitleService service,
-) async {
+  PlaybackSubtitleService service, {
+  bool normalPageTextScale = false,
+}) async {
   const trackPath = '/music/test.mp3';
   final language = AppLanguageProvider();
   await tester.runAsync(() => language.setLanguage(AppLanguage.zh));
@@ -49,7 +50,18 @@ Future<void> _showEditor(
         appLanguageProviderInstanceProvider.overrideWithValue(language),
         playbackSubtitleServiceProvider.overrideWithValue(service),
       ],
-      child: const MaterialApp(home: SubtitleEditorPage(trackPath: trackPath)),
+      child: MaterialApp(
+        home: Builder(
+          builder: (context) => normalPageTextScale
+              ? MediaQuery(
+                  data: MediaQuery.of(
+                    context,
+                  ).copyWith(textScaler: TextScaler.noScaling),
+                  child: const SubtitleEditorPage(trackPath: trackPath),
+                )
+              : const SubtitleEditorPage(trackPath: trackPath),
+        ),
+      ),
     ),
   );
   await tester.pump(const Duration(milliseconds: 250));
@@ -57,6 +69,184 @@ Future<void> _showEditor(
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  Finder bilingualField(String key) => find.descendant(
+    of: find.byKey(ValueKey(key)),
+    matching: find.byType(TextField),
+  );
+
+  for (final original in ['Changed original', 'Changed\noriginal\nlines']) {
+    testWidgets('bilingual text edits preserve updated source $original', (
+      tester,
+    ) async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      final service = _RecordingSubtitleService(const [
+        SubtitleCue(
+          start: Duration(seconds: 1),
+          end: Duration(seconds: 3),
+          text:
+              'Source\nsecond source line\nTranslation\nsecond translated line',
+          originalText: 'Source\nsecond source line',
+        ),
+      ]);
+      await _showEditor(tester, service);
+      await tester.tap(find.byKey(const ValueKey('subtitle_text_0')));
+      await tester.pumpAndSettle();
+      expect(find.byType(TextField), findsNWidgets(2));
+      expect(find.text('原文'), findsOneWidget);
+      expect(find.text('译文'), findsOneWidget);
+      expect(
+        tester
+            .widget<TextField>(bilingualField('subtitle_original_text'))
+            .controller
+            ?.text,
+        'Source\nsecond source line',
+      );
+      expect(
+        tester
+            .widget<TextField>(bilingualField('subtitle_translated_text'))
+            .controller
+            ?.text,
+        'Translation\nsecond translated line',
+      );
+      await tester.enterText(
+        bilingualField('subtitle_original_text'),
+        original,
+      );
+      await tester.enterText(
+        bilingualField('subtitle_translated_text'),
+        'New translation\nmore translation',
+      );
+      await tester.tap(find.byType(FilledButton));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('subtitle_time_0')));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField).first, '00:00:02.000');
+      await tester.enterText(find.byType(TextField).last, '00:00:04.000');
+      await tester.tap(find.byType(FilledButton));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithIcon(IconButton, Icons.save_rounded));
+      await tester.pump();
+      final saved = service.saved!.single;
+      expect(saved.text, '$original\nNew translation\nmore translation');
+      expect(saved.originalText, original);
+      expect(saved.start, const Duration(seconds: 2));
+      expect(saved.end, const Duration(seconds: 4));
+    });
+  }
+
+  testWidgets(
+    'cleared translation retains source boundary and can be restored',
+    (tester) async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      final service = _RecordingSubtitleService(const [
+        SubtitleCue(
+          start: Duration(seconds: 1),
+          end: Duration(seconds: 3),
+          text: 'Source\nTranslation',
+          originalText: 'Source',
+        ),
+      ]);
+      await _showEditor(tester, service);
+      await tester.tap(find.byKey(const ValueKey('subtitle_text_0')));
+      await tester.pumpAndSettle();
+      await tester.enterText(bilingualField('subtitle_original_text'), ' \n ');
+      await tester.tap(find.byType(FilledButton));
+      await tester.pumpAndSettle();
+      expect(find.byType(AlertDialog), findsOneWidget);
+      expect(service.saved, isNull);
+      await tester.enterText(
+        bilingualField('subtitle_original_text'),
+        'New source\nline',
+      );
+      await tester.enterText(bilingualField('subtitle_translated_text'), '');
+      await tester.tap(find.byType(FilledButton));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithIcon(IconButton, Icons.save_rounded));
+      await tester.pump();
+      expect(service.saved!.single.text, 'New source\nline');
+      expect(service.saved!.single.originalText, 'New source\nline');
+
+      await tester.tap(find.byKey(const ValueKey('subtitle_text_0')));
+      await tester.pumpAndSettle();
+      expect(find.byType(TextField), findsNWidgets(2));
+      expect(
+        tester
+            .widget<TextField>(bilingualField('subtitle_translated_text'))
+            .controller
+            ?.text,
+        '',
+      );
+      await tester.enterText(
+        bilingualField('subtitle_translated_text'),
+        'Restored translation',
+      );
+      await tester.tap(find.byType(FilledButton));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithIcon(IconButton, Icons.save_rounded));
+      await tester.pump();
+      expect(
+        service.saved!.single.text,
+        'New source\nline\nRestored translation',
+      );
+      expect(service.saved!.single.originalText, 'New source\nline');
+    },
+  );
+
+  testWidgets('bilingual dialog scrolls on a narrow screen with large text', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    await tester.binding.setSurfaceSize(const Size(320, 568));
+    tester.platformDispatcher.textScaleFactorTestValue = 2;
+    addTearDown(() async {
+      tester.platformDispatcher.clearTextScaleFactorTestValue();
+      await tester.binding.setSurfaceSize(null);
+    });
+    final service = _RecordingSubtitleService(const [
+      SubtitleCue(
+        start: Duration(seconds: 1),
+        end: Duration(seconds: 3),
+        text: 'Source\nTranslation',
+        originalText: 'Source',
+      ),
+    ]);
+    await _showEditor(tester, service, normalPageTextScale: true);
+    await tester.tap(find.byKey(const ValueKey('subtitle_text_0')));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(
+      find.descendant(
+        of: find.byType(AlertDialog),
+        matching: find.byType(SingleChildScrollView),
+      ),
+      findsOneWidget,
+    );
+    await tester.ensureVisible(bilingualField('subtitle_translated_text'));
+    await tester.enterText(
+      bilingualField('subtitle_translated_text'),
+      '  New translation\r\n \r\n  second line  \n\n',
+    );
+    await tester.ensureVisible(bilingualField('subtitle_original_text'));
+    await tester.enterText(
+      bilingualField('subtitle_original_text'),
+      '  New source\r\n \r\n  second source line  \n\n',
+    );
+    await tester.tap(find.byType(FilledButton));
+    await tester.pumpAndSettle();
+    expect(find.byType(AlertDialog), findsNothing);
+    expect(tester.takeException(), isNull);
+    await tester.tap(find.widgetWithIcon(IconButton, Icons.save_rounded));
+    await tester.pump();
+    expect(
+      service.saved!.single.originalText,
+      'New source\nsecond source line',
+    );
+    expect(
+      service.saved!.single.text,
+      'New source\nsecond source line\nNew translation\nsecond line',
+    );
+  });
 
   testWidgets('save feedback appears at the top and failure keeps the editor', (
     tester,

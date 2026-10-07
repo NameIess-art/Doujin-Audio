@@ -208,6 +208,63 @@ class _FailedTranslationService extends PlaybackSubtitleService {
   SubtitleGenerationJob get generationJob => job;
 }
 
+class _SubtitleSelectionService extends PlaybackSubtitleService {
+  _SubtitleSelectionService(this.files) : super(trackResolver: (_) => null);
+
+  final List<({String sourcePath, String name})> files;
+  String current = 'original.srt';
+  String? selected;
+  bool failLoading = false;
+  bool failSelection = false;
+  SubtitleGenerationJob? job;
+  Completer<void>? listingWait;
+  Completer<void>? selectionWait;
+
+  @override
+  SubtitleGenerationJob? get generationJob => job;
+
+  @override
+  bool hasResult(String trackPath) => true;
+
+  @override
+  SubtitleTrack trackSync(String trackPath) => SubtitleTrack(
+    sourcePath: current,
+    cues: const [
+      SubtitleCue(start: Duration.zero, end: Duration(seconds: 1), text: '原字幕'),
+    ],
+  );
+
+  @override
+  Future<List<({String sourcePath, String name})>> availableSubtitleFiles(
+    String trackPath,
+  ) async {
+    await listingWait?.future;
+    if (failLoading) throw StateError('Unable to list subtitles');
+    return files;
+  }
+
+  @override
+  Future<SubtitleTrack> selectSubtitleFile(
+    String trackPath,
+    String sourcePath,
+  ) async {
+    await selectionWait?.future;
+    if (failSelection) throw StateError('Unable to read subtitle');
+    selected = current = sourcePath;
+    notifyListeners();
+    return trackSync(trackPath);
+  }
+}
+
+class _SavingJob extends SubtitleGenerationJob {
+  _SavingJob(SubtitleDraftKind kind)
+    : super(trackPath: 'audio.mp3', kind: kind);
+
+  @override
+  SubtitleTaskProgress get progress =>
+      const SubtitleTaskProgress('saving', 0, '');
+}
+
 PlaybackSessionSnapshot _createSnapshot({required String trackPath}) {
   return PlaybackSessionSnapshot(
     id: 'test-session',
@@ -249,6 +306,211 @@ void main() {
     HttpOverrides.global = null;
     SharedPreferences.setMockInitialValues(<String, Object>{});
   });
+
+  Future<void> pumpSelectionMenu(
+    WidgetTester tester,
+    PlaybackSubtitleService service,
+    AppLanguageProvider language, {
+    double textScale = 1,
+    String trackPath = 'audio.mp3',
+    bool settle = true,
+  }) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appLanguageProviderInstanceProvider.overrideWithValue(language),
+          playbackSubtitleServiceProvider.overrideWithValue(service),
+        ],
+        child: MaterialApp(
+          builder: (context, child) => MediaQuery(
+            data: MediaQuery.of(
+              context,
+            ).copyWith(textScaler: TextScaler.linear(textScale)),
+            child: child!,
+          ),
+          home: Scaffold(
+            body: SubtitleMenuSheet(
+              session: _createSnapshot(trackPath: trackPath),
+            ),
+          ),
+        ),
+      ),
+    );
+    if (settle) await tester.pumpAndSettle();
+  }
+
+  for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+    testWidgets(
+      'subtitle selection shows full filenames and switches on $platform',
+      (tester) async {
+        tester.view.physicalSize = platform == TargetPlatform.windows
+            ? const Size(960, 600)
+            : const Size(375, 812);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        final longName =
+            '${List.filled(5, '長い字幕文件名_with_words_').join()}audio.mp3.translated.zh-CN.2.srt';
+        final service = _SubtitleSelectionService([
+          (sourcePath: 'original.srt', name: 'original.srt'),
+          (sourcePath: 'translation.srt', name: longName),
+        ]);
+        addTearDown(service.dispose);
+        final language = AppLanguageProvider();
+        addTearDown(language.dispose);
+        await pumpSelectionMenu(tester, service, language, textScale: 1.8);
+        final tile = find.byKey(const ValueKey('subtitle_select_tile'));
+        await tester.ensureVisible(tile);
+        await tester.tap(tile);
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(const ValueKey('subtitle_file_selection')),
+          findsOneWidget,
+        );
+        expect(find.byType(SimpleDialog), findsNothing);
+        final original = find.byKey(const ValueKey('original.srt'));
+        expect(
+          find.descendant(
+            of: original,
+            matching: find.byIcon(Icons.check_rounded),
+          ),
+          findsOneWidget,
+        );
+        final longTitle = find.text(longName);
+        expect(
+          tester.renderObject<RenderParagraph>(longTitle).didExceedMaxLines,
+          isFalse,
+        );
+        await tester.ensureVisible(longTitle);
+        await tester.tap(longTitle);
+        await tester.pumpAndSettle();
+        expect(service.selected, 'translation.srt');
+        expect(
+          find.byKey(const ValueKey('subtitle_file_selection')),
+          findsNothing,
+        );
+        expect(find.text(language.tr('subtitle_selected')), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      },
+      variant: TargetPlatformVariant({platform}),
+    );
+  }
+
+  testWidgets('subtitle selection reports empty and loading errors', (
+    tester,
+  ) async {
+    final language = AppLanguageProvider();
+    addTearDown(language.dispose);
+    final service = _SubtitleSelectionService([]);
+    addTearDown(service.dispose);
+    await pumpSelectionMenu(tester, service, language);
+    final tile = find.byKey(const ValueKey('subtitle_select_tile'));
+    await tester.ensureVisible(tile);
+    await tester.tap(tile);
+    await tester.pumpAndSettle();
+    expect(find.text(language.tr('subtitle_selection_empty')), findsOneWidget);
+    service.failLoading = true;
+    await tester.tap(tile);
+    await tester.pumpAndSettle();
+    expect(find.text(language.tr('subtitle_load_failed')), findsOneWidget);
+    expect(service.selected, isNull);
+    expect(find.byKey(const ValueKey('subtitle_file_selection')), findsNothing);
+  });
+
+  for (final selecting in [false, true]) {
+    testWidgets('late subtitle ${selecting ? 'selection' : 'listing'} ignores track changes', (tester) async {
+      final language = AppLanguageProvider();
+      addTearDown(language.dispose);
+      final service = _SubtitleSelectionService([
+        (sourcePath: 'translation.srt', name: 'audio.mp3.translated.en.srt'),
+      ]);
+      addTearDown(service.dispose);
+      await pumpSelectionMenu(tester, service, language);
+      final wait = Completer<void>();
+      if (!selecting) service.listingWait = wait;
+      final tile = find.byKey(const ValueKey('subtitle_select_tile'));
+      await tester.ensureVisible(tile);
+      await tester.tap(tile);
+      if (selecting) {
+        await tester.pumpAndSettle();
+        service.selectionWait = wait;
+        await tester.tap(find.text('audio.mp3.translated.en.srt'));
+      }
+      await tester.pump();
+      await pumpSelectionMenu(tester, service, language, trackPath: 'other.mp3', settle: false);
+      wait.complete();
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('subtitle_file_selection')), findsNothing);
+      expect(find.text(language.tr('subtitle_selected')), findsNothing);
+      expect(tester.widget<ListTile>(tile).enabled, isTrue);
+    });
+  }
+
+  testWidgets(
+    'subtitle selection is disabled during generation and preserves selection on failure',
+    (tester) async {
+      final language = AppLanguageProvider();
+      addTearDown(language.dispose);
+      final service = _SubtitleSelectionService([
+        (sourcePath: 'translation.srt', name: 'audio.mp3.translated.en.srt'),
+      ]);
+      addTearDown(service.dispose);
+      service.job = _SavingJob(SubtitleDraftKind.translation);
+      await pumpSelectionMenu(tester, service, language);
+      final tile = find.byKey(const ValueKey('subtitle_select_tile'));
+      expect(tester.widget<ListTile>(tile).onTap, isNull);
+      service.job = null;
+      service.notifyListeners();
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(tile);
+      await tester.tap(tile);
+      await tester.pumpAndSettle();
+      service.failSelection = true;
+      await tester.tap(find.text('audio.mp3.translated.en.srt'));
+      await tester.pumpAndSettle();
+      expect(service.current, 'original.srt');
+      expect(find.text(language.tr('subtitle_load_failed')), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('subtitle_file_selection')),
+        findsOneWidget,
+      );
+      await tester.tap(find.byKey(const ValueKey('subtitle_selection_back')));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('subtitle_file_selection')),
+        findsNothing,
+      );
+    },
+  );
+
+  for (final kind in SubtitleDraftKind.values) {
+    testWidgets('saving cancellation only enabled for translation: $kind', (
+      tester,
+    ) async {
+      final language = AppLanguageProvider();
+      addTearDown(language.dispose);
+      final service = _SubtitleSelectionService([])..job = _SavingJob(kind);
+      addTearDown(service.dispose);
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            appLanguageProviderInstanceProvider.overrideWithValue(language),
+          ],
+          child: MaterialApp(
+            home: Scaffold(body: SubtitleGenerationDialog(service: service)),
+          ),
+        ),
+      );
+      final cancelButton = find.ancestor(
+        of: find.text(language.tr('subtitle_pause_task')),
+        matching: find.byType(TextButton),
+      );
+      expect(
+        tester.widget<TextButton>(cancelButton).onPressed != null,
+        kind == SubtitleDraftKind.translation,
+      );
+    });
+  }
 
   for (final languageCode in AppLanguage.values) {
     testWidgets('translation errors are localized in ${languageCode.name}', (

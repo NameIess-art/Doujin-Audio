@@ -44,6 +44,7 @@ class PlatformChannelsTest {
             FileCacheMethods.RESOLVE_DOCUMENT_FILE_SYSTEM_PATH,
             FileCacheMethods.RESOLVE_TRACK_COVER,
             FileCacheMethods.RESOLVE_TRACK_SUBTITLE,
+            FileCacheMethods.LIST_TRACK_SUBTITLES,
             FileCacheMethods.RESOLVE_VIDEO_FRAME,
             FileCacheMethods.SCAN_FOLDER,
             FileCacheMethods.START_FOLDER_SCAN,

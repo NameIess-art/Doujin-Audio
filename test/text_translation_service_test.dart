@@ -49,10 +49,12 @@ void main() {
   Future<TextTranslationResult> translate(
     List<String> texts, {
     String target = 'zh-CN',
+    String source = 'auto',
     TextTranslationRequest? request,
   }) => service.translate(
     texts,
     target: target,
+    source: source,
     request: request ?? service.newRequest(),
   );
 
@@ -135,6 +137,87 @@ void main() {
       expect(requests, 1);
     },
   );
+
+  test(
+    'explicit source language is sent without automatic detection',
+    () async {
+      handler = (request) async {
+        expect(request.uri.queryParameters['sl'], 'ja');
+        expect(request.uri.queryParameters['tl'], 'en');
+        expect(await sources(request), ['\u8033\u304b\u304d']);
+        await respond(request, ['ear cleaning']);
+      };
+      final result = await translate(
+        ['\u8033\u304b\u304d'],
+        source: 'ja',
+        target: 'en',
+      );
+      expect(result.failure, isNull);
+      expect(result.translations, {'\u8033\u304b\u304d': 'ear cleaning'});
+      expect(requests, 1);
+    },
+  );
+
+  test(
+    'source languages use independent memory and disk cache entries',
+    () async {
+      handler = (request) async {
+        final language = request.uri.queryParameters['sl'];
+        await respond(request, ['translated from $language']);
+      };
+      await translate(['title']);
+      expect(service.cached('title', 'zh-CN', source: 'ja'), isNull);
+      await translate(['title'], source: 'ja');
+      expect(service.cached('title', 'zh-CN'), 'translated from auto');
+      expect(
+        service.cached('title', 'zh-CN', source: 'ja'),
+        'translated from ja',
+      );
+      await translate(['title']);
+      await translate(['title'], source: 'ja');
+      expect(requests, 2);
+      await documents.waitForWrites(2);
+      final saved = jsonDecode(utf8.decode(documents.bytes!)) as Map;
+      expect(saved['version'], 2);
+      expect(saved['entries'], [
+        ['zh-CN', 'auto', 'title', 'translated from auto'],
+        ['zh-CN', 'ja', 'title', 'translated from ja'],
+      ]);
+      service.dispose();
+      service = createService();
+      expect(
+        (await translate(['title'])).translations['title'],
+        'translated from auto',
+      );
+      expect(
+        (await translate(['title'], source: 'ja')).translations['title'],
+        'translated from ja',
+      );
+      expect(requests, 2);
+    },
+  );
+
+  test('version 1 cache is discarded and translated again', () async {
+    documents.bytes = Uint8List.fromList(
+      utf8.encode(
+        jsonEncode({
+          'version': 1,
+          'entries': [
+            ['zh-CN', 'title', 'old translation'],
+          ],
+        }),
+      ),
+    );
+    final result = await translate(['title']);
+    expect(result.translations, {'title': 'translated title'});
+    expect(requests, 1);
+    await documents.waitForWrites(1);
+    final saved = jsonDecode(utf8.decode(documents.bytes!)) as Map;
+    expect(saved['version'], 2);
+    expect(saved['entries'], [
+      ['zh-CN', 'auto', 'title', 'translated title'],
+    ]);
+  });
 
   test('file labels retain supported extensions and numbers are skipped', () {
     for (final suffix in ['.WAV', '.md', '.ssa', '.m4v', '.3gp']) {

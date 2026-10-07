@@ -55,7 +55,10 @@ String? get subtitleGenerationUnavailableReason =>
     );
 
 SubtitleLanguage classifySubtitleLanguage(List<SubtitleCue> cues) {
-  final sample = cues.take(40).map((cue) => cue.text).join();
+  final sample = cues
+      .take(40)
+      .map((cue) => cue.originalText ?? cue.text)
+      .join();
   final japanese = RegExp(r'[\u3040-\u30ff]').allMatches(sample).length;
   final han = RegExp(r'[\u3400-\u9fff]').allMatches(sample).length;
   final latin = RegExp(r'[A-Za-z]').allMatches(sample).length;

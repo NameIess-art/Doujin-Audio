@@ -107,7 +107,9 @@ class SubtitleGenerationDialog extends ConsumerWidget {
             if (running) ...[
               TextButton(
                 onPressed:
-                    job.cancellationRequested || progress?.stage == 'saving'
+                    job.cancellationRequested ||
+                        (progress?.stage == 'saving' &&
+                            job.kind != SubtitleDraftKind.translation)
                     ? null
                     : _service.cancelGeneration,
                 child: Text(i18n.tr('subtitle_pause_task')),

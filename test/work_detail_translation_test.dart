@@ -47,12 +47,13 @@ class _TranslationService extends TextTranslationService {
   final calls = <_TranslationCall>[];
 
   @override
-  String? cached(String text, String target) => null;
+  String? cached(String text, String target, {String source = 'auto'}) => null;
 
   @override
   Future<TextTranslationResult> translate(
     List<String> texts, {
     required String target,
+    String source = 'auto',
     required TextTranslationRequest request,
   }) {
     final call = _TranslationCall(List.of(texts), target, request);

@@ -107,6 +107,7 @@ abstract final class FileCacheMethod {
   static const String discoverRootImages = 'discoverRootImages';
   static const String resolveTrackCover = 'resolveTrackCover';
   static const String resolveTrackSubtitle = 'resolveTrackSubtitle';
+  static const String listTrackSubtitles = 'listTrackSubtitles';
   static const String writeTrackSubtitle = 'writeTrackSubtitle';
   static const String resolveVideoFrame = 'resolveVideoFrame';
   static const String resolveMediaDuration = 'resolveMediaDuration';

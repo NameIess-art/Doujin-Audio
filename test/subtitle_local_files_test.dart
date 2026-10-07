@@ -128,7 +128,7 @@ void main() {
   });
 
   test(
-    'old local subtitle associations cannot override an audio-folder file',
+    'persisted local subtitle choice takes precedence over automatic matching',
     () async {
       final directory = await Directory.systemTemp.createTemp(
         'subtitle_legacy_',
@@ -146,14 +146,15 @@ void main() {
         '1\n00:00:01,000 --> 00:00:03,000\nLocal file\n',
       );
       final service = PlaybackSubtitleService(trackResolver: (_) => null);
-      expect((await service.load(audio.path))?.cues.single.text, 'Local file');
+      expect((await service.load(audio.path))?.cues.single.text, 'Old cache');
       await service.saveEditedSubtitle(audio.path, editedCues);
       final restarted = PlaybackSubtitleService(trackResolver: (_) => null);
       expect(
-        path.equals((await restarted.load(audio.path))!.sourcePath, local.path),
+        path.equals((await restarted.load(audio.path))!.sourcePath, old.path),
         isTrue,
       );
-      expect((await old.readAsString()), contains('Old cache'));
+      expect((await old.readAsString()), contains(editedCues.single.text));
+      expect((await local.readAsString()), contains('Local file'));
     },
   );
   for (final extension in [
@@ -536,6 +537,8 @@ class _RecordingSubtitleGateway extends FileCachePlatformGateway {
     required Uint8List bytes,
     String? sourcePath,
     bool overwrite = false,
+    bool createNew = false,
+    String? fileNameSuffix,
   }) async {
     this.groupKey = groupKey;
     this.trackPath = trackPath;

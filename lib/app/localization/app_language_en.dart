@@ -835,6 +835,9 @@ const Map<String, String> appLanguageEn = {
   'turn_off_subtitle': 'Turn off subtitle',
   'subtitles': 'Subtitles',
   'import_subtitle': 'Import subtitle',
+  'subtitle_select': 'Select subtitle',
+  'subtitle_selection_empty': 'No subtitle files available',
+  'subtitle_selected': 'Subtitle selected',
   'subtitle_script_generate': 'Match script to audio',
   'subtitle_script_selection_title': 'Script selection',
   'subtitle_script_hint': 'Choose a TXT or MD script to create timed subtitles',
@@ -899,6 +902,8 @@ const Map<String, String> appLanguageEn = {
   'subtitle_all_removed':
       'All subtitles removed. Save to hide subtitles for this audio.',
   'subtitle_edit_text': 'Edit text',
+  'subtitle_original_text': 'Original text',
+  'subtitle_translated_text': 'Translated text',
   'subtitle_edit_time': 'Edit time range',
   'subtitle_start_time': 'Start time',
   'subtitle_end_time': 'End time',

@@ -59,7 +59,9 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
   bool _importing = false;
   SubtitleModelSpec? _checkingModel;
   List<WorkTextFile>? _scriptFiles;
-  double? _scriptMenuHeight;
+  List<({String sourcePath, String name})>? _subtitleFiles;
+  bool _subtitleBusy = false;
+  double? _selectionMenuHeight;
 
   @override
   void initState() {
@@ -73,11 +75,107 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
     }
   }
 
+  @override
+  void didUpdateWidget(SubtitleMenuSheet oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.session.currentTrackPath != widget.session.currentTrackPath) {
+      _subtitleFiles = null;
+      _scriptFiles = null;
+    }
+  }
+
   String _formatOffset(Duration offset) {
     final seconds = offset.inMilliseconds / 1000.0;
     if (offset == Duration.zero) return '0.0s';
     final sign = seconds > 0 ? '+' : '';
     return '$sign${seconds.toStringAsFixed(1)}s';
+  }
+
+  Future<void> _pickExistingSubtitle(PlaybackSubtitleService subtitles) async {
+    if (_importing ||
+        _subtitleBusy ||
+        subtitles.generationJob?.status == SubtitleGenerationStatus.running) {
+      return;
+    }
+    final menuHeight = _menuKey.currentContext!.size!.height;
+    final trackPath = widget.session.currentTrackPath;
+    setState(() => _subtitleBusy = true);
+    try {
+      final files = await subtitles.availableSubtitleFiles(trackPath);
+      if (!mounted || widget.session.currentTrackPath != trackPath) return;
+      if (files.isEmpty) {
+        showAppSnackBar(
+          context,
+          ref
+              .read(appLanguageProviderInstanceProvider)
+              .tr('subtitle_selection_empty'),
+          tone: AppFeedbackTone.warning,
+          icon: Icons.info_outline_rounded,
+        );
+        return;
+      }
+      setState(() {
+        _subtitleFiles = files;
+        _selectionMenuHeight = menuHeight;
+      });
+    } catch (_) {
+      if (mounted && widget.session.currentTrackPath == trackPath) {
+        showAppSnackBar(
+          context,
+          ref
+              .read(appLanguageProviderInstanceProvider)
+              .tr('subtitle_load_failed'),
+          tone: AppFeedbackTone.warning,
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _subtitleBusy = false);
+    }
+  }
+
+  Future<void> _selectSubtitleFile(
+    PlaybackSubtitleService subtitles,
+    String sourcePath,
+  ) async {
+    if (_subtitleBusy ||
+        subtitles.generationJob?.status == SubtitleGenerationStatus.running) {
+      return;
+    }
+    final trackPath = widget.session.currentTrackPath;
+    final sessionId = widget.session.id;
+    setState(() => _subtitleBusy = true);
+    try {
+      await subtitles.selectSubtitleFile(trackPath, sourcePath);
+      if (!mounted ||
+          widget.session.currentTrackPath != trackPath ||
+          widget.session.id != sessionId) {
+        return;
+      }
+      ref
+          .read(subtitleSettingsProvider.notifier)
+          .ensureSubtitlesEnabled(sessionId);
+      setState(() => _subtitleFiles = null);
+      showAppSnackBar(
+        context,
+        ref.read(appLanguageProviderInstanceProvider).tr('subtitle_selected'),
+        tone: AppFeedbackTone.success,
+        icon: Icons.check_circle_rounded,
+      );
+    } catch (_) {
+      if (mounted &&
+          widget.session.currentTrackPath == trackPath &&
+          widget.session.id == sessionId) {
+        showAppSnackBar(
+          context,
+          ref
+              .read(appLanguageProviderInstanceProvider)
+              .tr('subtitle_load_failed'),
+          tone: AppFeedbackTone.warning,
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _subtitleBusy = false);
+    }
   }
 
   Future<void> _pickSubtitleFile(
@@ -187,7 +285,7 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
       }
       setState(() {
         _scriptFiles = files;
-        _scriptMenuHeight = menuHeight;
+        _selectionMenuHeight = menuHeight;
       });
     } catch (_) {
       if (mounted) {
@@ -695,7 +793,13 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
             trackPath.isNotEmpty &&
             subtitles.canEditSubtitle(trackPath) &&
             !_importing &&
+            !_subtitleBusy &&
             !(generationBusy && generationJob?.trackPath == trackPath);
+        final selectionEnabled =
+            trackPath.isNotEmpty &&
+            !_importing &&
+            !_subtitleBusy &&
+            !generationBusy;
         final generateEnabled =
             importEnabled &&
             !generationBusy &&
@@ -709,10 +813,33 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
             subtitleLanguage != SubtitleLanguage.other;
         final isOffsetZero = activeOffset == Duration.zero;
         final scriptFiles = _scriptFiles;
+        final subtitleFiles = _subtitleFiles;
+        final selectingFiles = scriptFiles != null || subtitleFiles != null;
+        final selectionFiles =
+            subtitleFiles ??
+            scriptFiles
+                ?.map(
+                  (file) => (
+                    sourcePath: file.path,
+                    name: file.relativePath.isEmpty
+                        ? file.name
+                        : file.relativePath,
+                  ),
+                )
+                .toList(growable: false) ??
+            const <({String sourcePath, String name})>[];
+        final selectionBusy = _subtitleBusy || generationBusy;
         const menuPadding = AppBottomSheet.contentPadding;
-        Widget buildHeader({required bool selectingScript}) => ConstrainedBox(
+        Widget buildHeader({
+          required bool selectingScript,
+          bool selectingSubtitle = false,
+        }) => ConstrainedBox(
           key: ValueKey(
-            selectingScript ? 'subtitle_script_header' : 'subtitle_menu_header',
+            selectingSubtitle
+                ? 'subtitle_selection_header'
+                : selectingScript
+                ? 'subtitle_script_header'
+                : 'subtitle_menu_header',
           ),
           constraints: const BoxConstraints(minHeight: 48),
           child: AppBottomSheetHeader(
@@ -720,15 +847,28 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
                 ? Icons.text_snippet_rounded
                 : Icons.subtitles_rounded,
             title: i18n.tr(
-              selectingScript ? 'subtitle_script_selection_title' : 'subtitles',
+              selectingSubtitle
+                  ? 'subtitle_select'
+                  : selectingScript
+                  ? 'subtitle_script_selection_title'
+                  : 'subtitles',
             ),
-            trailing: selectingScript
+            trailing: selectingScript || selectingSubtitle
                 ? IconButton(
-                    key: const ValueKey('subtitle_script_back'),
+                    key: ValueKey(
+                      selectingSubtitle
+                          ? 'subtitle_selection_back'
+                          : 'subtitle_script_back',
+                    ),
                     icon: const Icon(Icons.arrow_back_rounded),
                     tooltip: i18n.tr('back'),
                     color: cs.primary,
-                    onPressed: () => setState(() => _scriptFiles = null),
+                    onPressed: _subtitleBusy
+                        ? null
+                        : () => setState(() {
+                            _scriptFiles = null;
+                            _subtitleFiles = null;
+                          }),
                   )
                 : null,
           ),
@@ -741,7 +881,7 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
             width: 0.5,
           ),
         );
-        final scriptContent = scriptFiles == null
+        final selectionContent = !selectingFiles
             ? null
             : ColoredBox(
                 color:
@@ -752,10 +892,17 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
                   child: Padding(
                     padding: menuPadding,
                     child: Column(
-                      key: const ValueKey('subtitle_script_selection'),
+                      key: ValueKey(
+                        subtitleFiles != null
+                            ? 'subtitle_file_selection'
+                            : 'subtitle_script_selection',
+                      ),
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        buildHeader(selectingScript: true),
+                        buildHeader(
+                          selectingScript: scriptFiles != null,
+                          selectingSubtitle: subtitleFiles != null,
+                        ),
                         const SizedBox(height: 16),
                         Expanded(
                           child: ScrollConfiguration(
@@ -763,7 +910,11 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
                               context,
                             ).copyWith(scrollbars: false),
                             child: SingleChildScrollView(
-                              key: const ValueKey('subtitle_script_files'),
+                              key: ValueKey(
+                                subtitleFiles != null
+                                    ? 'subtitle_files'
+                                    : 'subtitle_script_files',
+                              ),
                               child: Container(
                                 decoration: cardDecoration,
                                 clipBehavior: Clip.antiAlias,
@@ -771,7 +922,7 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
                                   children: [
                                     for (
                                       var index = 0;
-                                      index < scriptFiles.length;
+                                      index < selectionFiles.length;
                                       index++
                                     ) ...[
                                       if (index > 0)
@@ -785,25 +936,52 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
                                           ),
                                         ),
                                       ListTile(
+                                        key: subtitleFiles == null
+                                            ? null
+                                            : ValueKey(
+                                                selectionFiles[index]
+                                                    .sourcePath,
+                                              ),
+                                        enabled:
+                                            subtitleFiles == null ||
+                                            !selectionBusy,
                                         titleAlignment:
                                             ListTileTitleAlignment.top,
                                         leading: Icon(
-                                          Icons.text_snippet_rounded,
+                                          subtitleFiles != null
+                                              ? Icons.subtitles_rounded
+                                              : Icons.text_snippet_rounded,
                                           color: cs.primary,
                                         ),
                                         title: Text(
-                                          scriptFiles[index].relativePath.isEmpty
-                                              ? scriptFiles[index].name
-                                              : scriptFiles[index].relativePath,
+                                          selectionFiles[index].name,
                                           style: theme.textTheme.bodyLarge
                                               ?.copyWith(
                                                 fontWeight: FontWeight.w600,
                                               ),
                                         ),
-                                        onTap: () => _selectScriptFile(
-                                          subtitles,
-                                          scriptFiles[index],
-                                        ),
+                                        trailing:
+                                            subtitleFiles != null &&
+                                                selectionFiles[index]
+                                                        .sourcePath ==
+                                                    activeTrack?.sourcePath
+                                            ? Icon(
+                                                Icons.check_rounded,
+                                                color: cs.primary,
+                                              )
+                                            : null,
+                                        onTap: selectionBusy
+                                            ? null
+                                            : subtitleFiles != null
+                                            ? () => _selectSubtitleFile(
+                                                subtitles,
+                                                selectionFiles[index]
+                                                    .sourcePath,
+                                              )
+                                            : () => _selectScriptFile(
+                                                subtitles,
+                                                scriptFiles![index],
+                                              ),
                                       ),
                                     ],
                                   ],
@@ -927,6 +1105,44 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
+                        ListTile(
+                          key: const ValueKey('subtitle_select_tile'),
+                          enabled: selectionEnabled,
+                          leading: _subtitleBusy
+                              ? const SizedBox(
+                                  width: 24,
+                                  height: 24,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2.5,
+                                  ),
+                                )
+                              : Icon(
+                                  Icons.subtitles_rounded,
+                                  color: selectionEnabled
+                                      ? cs.primary
+                                      : cs.onSurface.withValues(alpha: 0.38),
+                                ),
+                          title: Text(
+                            i18n.tr('subtitle_select'),
+                            style: theme.textTheme.bodyLarge?.copyWith(
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          trailing: const Icon(
+                            Icons.chevron_right_rounded,
+                            size: 20,
+                          ),
+                          onTap: selectionEnabled
+                              ? () => _pickExistingSubtitle(subtitles)
+                              : null,
+                        ),
+                        Divider(
+                          height: 1,
+                          thickness: 0.5,
+                          indent: 16,
+                          endIndent: 16,
+                          color: cs.outlineVariant.withValues(alpha: 0.35),
+                        ),
                         ListTile(
                           key: const ValueKey('subtitle_import_tile'),
                           enabled: importEnabled,
@@ -1163,26 +1379,36 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        Row(
+                        Wrap(
+                          alignment: WrapAlignment.spaceBetween,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          spacing: 12,
+                          runSpacing: 8,
                           children: [
-                            Icon(
-                              Icons.sync_rounded,
-                              size: 20,
-                              color: !hasSubtitle
-                                  ? cs.onSurface.withValues(alpha: 0.38)
-                                  : cs.primary,
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.sync_rounded,
+                                  size: 20,
+                                  color: !hasSubtitle
+                                      ? cs.onSurface.withValues(alpha: 0.38)
+                                      : cs.primary,
+                                ),
+                                const SizedBox(width: 8),
+                                Flexible(
+                                  child: Text(
+                                    i18n.tr('subtitle_sync'),
+                                    style: theme.textTheme.titleSmall?.copyWith(
+                                      fontWeight: FontWeight.bold,
+                                      color: !hasSubtitle
+                                          ? cs.onSurface.withValues(alpha: 0.38)
+                                          : null,
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
-                            const SizedBox(width: 8),
-                            Text(
-                              i18n.tr('subtitle_sync'),
-                              style: theme.textTheme.titleSmall?.copyWith(
-                                fontWeight: FontWeight.bold,
-                                color: !hasSubtitle
-                                    ? cs.onSurface.withValues(alpha: 0.38)
-                                    : null,
-                              ),
-                            ),
-                            const Spacer(),
                             Container(
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 8,
@@ -1271,18 +1497,21 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
           ),
         );
         return PopScope(
-          canPop: scriptFiles == null,
+          canPop: !selectingFiles,
           onPopInvokedWithResult: (didPop, _) {
-            if (!didPop && _scriptFiles != null) {
-              setState(() => _scriptFiles = null);
+            if (!didPop && selectingFiles && !_subtitleBusy) {
+              setState(() {
+                _scriptFiles = null;
+                _subtitleFiles = null;
+              });
             }
           },
           child: SizedBox(
             key: _menuKey,
-            height: scriptFiles == null ? null : _scriptMenuHeight,
+            height: !selectingFiles ? null : _selectionMenuHeight,
             child: AppMenuContentTransition(
               primary: menu,
-              secondary: scriptContent,
+              secondary: selectionContent,
             ),
           ),
         );

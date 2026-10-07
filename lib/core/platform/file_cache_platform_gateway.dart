@@ -526,6 +526,88 @@ class FileCachePlatformGateway {
     return result.valueOrNull ?? false;
   }
 
+  Future<List<({String sourcePath, String name})>> listTrackSubtitles({
+    required String trackPath,
+    String? groupKey,
+  }) async {
+    if (!trackPath.startsWith('content://')) {
+      final files = await findSubtitleFilesForAudio(
+        trackPath,
+        includeTranslations: true,
+      );
+      return files
+          .map(
+            (file) => (sourcePath: file.path, name: path.basename(file.path)),
+          )
+          .toList(growable: false);
+    }
+    if (!_isAndroid()) throw UnsupportedError('SAF requires Android');
+    final result = await _client
+        .invoke<List<({String sourcePath, String name})>>(
+          FileCacheMethod.listTrackSubtitles,
+          arguments: {'trackPath': trackPath, 'groupKey': ?groupKey},
+          decode: (value) => (value as List)
+              .map((item) {
+                final entry = item as Map;
+                return (
+                  sourcePath: entry['sourcePath'] as String,
+                  name: entry['name'] as String,
+                );
+              })
+              .toList(growable: false),
+        );
+    if (result is NativeFailure<List<({String sourcePath, String name})>>) {
+      throw PlatformException(
+        code: result.code,
+        message: result.message,
+        details: result.details,
+      );
+    }
+    return result.valueOrNull ?? const [];
+  }
+
+  static Future<String> saveNewSubtitleFile({
+    required Directory directory,
+    required String fileName,
+    required Uint8List bytes,
+  }) async {
+    if (fileName.isEmpty ||
+        fileName.contains(RegExp(r'[/\\]')) ||
+        !supportedSubtitleExtensions.contains(
+          path.extension(fileName).toLowerCase(),
+        )) {
+      throw ArgumentError.value(fileName, 'fileName');
+    }
+    final names = await directory
+        .list(followLinks: false)
+        .map((entry) => path.basename(entry.path).toLowerCase())
+        .toSet();
+    final extension = path.extension(fileName);
+    final stem = path.withoutExtension(fileName);
+    for (var version = 1; ; version++) {
+      final name = version == 1 ? fileName : '$stem.$version$extension';
+      if (names.contains(name.toLowerCase())) continue;
+      final destination = File(path.join(directory.path, name));
+      try {
+        // Exclusive creation also protects against a concurrent save after listing.
+        await destination.create(exclusive: true);
+      } on FileSystemException {
+        if (await FileSystemEntity.type(destination.path) !=
+            FileSystemEntityType.notFound) {
+          continue;
+        }
+        rethrow;
+      }
+      try {
+        await destination.writeAsBytes(bytes, flush: true);
+        return destination.path;
+      } catch (_) {
+        await destination.delete();
+        rethrow;
+      }
+    }
+  }
+
   Future<String?> saveTrackSubtitle({
     required String trackPath,
     String? groupKey,
@@ -533,9 +615,20 @@ class FileCachePlatformGateway {
     required Uint8List bytes,
     String? sourcePath,
     bool overwrite = false,
+    bool createNew = false,
+    String? fileNameSuffix,
   }) async {
     if (!supportedSubtitleExtensions.contains(extension.toLowerCase())) {
       throw ArgumentError.value(extension, 'extension');
+    }
+    if (createNew &&
+        (sourcePath != null ||
+            overwrite ||
+            fileNameSuffix == null ||
+            !RegExp(r'^\.translated\.[a-zA-Z-]+$').hasMatch(fileNameSuffix))) {
+      throw ArgumentError(
+        'New subtitles require a translation suffix without replacement.',
+      );
     }
     if (trackPath.startsWith('content://') ||
         sourcePath?.startsWith('content://') == true) {
@@ -549,13 +642,29 @@ class FileCachePlatformGateway {
           'bytes': bytes,
           'sourcePath': ?sourcePath,
           'overwrite': overwrite,
+          if (createNew) 'createNew': true,
+          'fileNameSuffix': ?fileNameSuffix,
         },
         decode: (value) => value as String,
       );
+      if (result is NativeFailure<String>) {
+        throw PlatformException(
+          code: result.code,
+          message: result.message,
+          details: result.details,
+        );
+      }
       return result.valueOrNull;
     }
     if (!await File(trackPath).exists()) {
       throw FileSystemException('Audio file is unavailable', trackPath);
+    }
+    if (createNew) {
+      return saveNewSubtitleFile(
+        directory: Directory(path.dirname(trackPath)),
+        fileName: '${path.basename(trackPath)}$fileNameSuffix$extension',
+        bytes: bytes,
+      );
     }
     final destination = path.join(
       path.dirname(trackPath),

@@ -10,11 +10,13 @@ class SubtitleCue {
     required this.start,
     required this.end,
     required this.text,
+    this.originalText,
   });
 
   final Duration start;
   final Duration end;
   final String text;
+  final String? originalText;
 
   bool contains(Duration position) {
     return position >= start && position < end;
@@ -84,6 +86,8 @@ const Set<String> supportedSubtitleExtensions = {
   '.ssa',
   '.txt',
 };
+
+const subtitleTranslationBoundary = '<!--doujin-audio:translation-->';
 
 const Set<String> _subtitleMatchMediaExtensions = {
   '.mp3',
@@ -157,10 +161,25 @@ List<SubtitleCue> _parseSubtitleTrackByContent(String raw) {
 }
 
 Future<File?> findSubtitleFileForAudio(String audioPath) async {
+  final candidates = await findSubtitleFilesForAudio(audioPath);
+  return candidates.isEmpty ? null : candidates.first;
+}
+
+bool isTranslatedSubtitleFile(String fileName) => RegExp(
+  r'\.translated\.[a-z-]+(?:\.\d+)?\.srt$',
+  caseSensitive: false,
+).hasMatch(fileName);
+
+Future<List<File>> findSubtitleFilesForAudio(
+  String audioPath, {
+  bool includeTranslations = false,
+}) async {
   final audioFile = File(audioPath);
-  if (!await audioFile.exists()) return null;
+  if (!await audioFile.exists()) return const [];
   final directory = audioFile.parent;
   final stem = subtitleMatchStem(audioPath);
+  final translationPrefix = '${path.basename(audioPath)}.translated.'
+      .toLowerCase();
   final candidates = <File>[];
 
   try {
@@ -168,13 +187,17 @@ Future<File?> findSubtitleFileForAudio(String audioPath) async {
       if (entity is! File) continue;
       final extension = path.extension(entity.path).toLowerCase();
       if (!supportedSubtitleExtensions.contains(extension)) continue;
+      final name = path.basename(entity.path);
+      if (isTranslatedSubtitleFile(name) &&
+          (!includeTranslations ||
+              !name.toLowerCase().startsWith(translationPrefix))) {
+        continue;
+      }
       candidates.add(entity);
     }
   } catch (_) {
-    return null;
+    return const [];
   }
-
-  if (candidates.isEmpty) return null;
 
   int rank(File file) {
     final fileStem = subtitleMatchStem(file.path);
@@ -191,7 +214,7 @@ Future<File?> findSubtitleFileForAudio(String audioPath) async {
         ? rankResult
         : a.path.toLowerCase().compareTo(b.path.toLowerCase());
   });
-  return rank(candidates.first) < 10 ? candidates.first : null;
+  return candidates.where((file) => rank(file) < 10).toList(growable: false);
 }
 
 String subtitleMatchStem(String value) {
@@ -321,10 +344,8 @@ List<SubtitleCue> _parseWebVtt(String raw) {
       textLines.add(lines[i]);
       i++;
     }
-    final text = _normalizeCueText(textLines.join('\n'));
-    if (text.isNotEmpty) {
-      cues.add(SubtitleCue(start: timing.$1, end: timing.$2, text: text));
-    }
+    final cue = _timedCue(timing, textLines.join('\n'));
+    if (cue != null) cues.add(cue);
   }
 
   return cues;
@@ -354,13 +375,26 @@ List<SubtitleCue> _parseSrt(String raw) {
     final timing = _parseArrowTiming(lines[timingIndex]);
     if (timing == null) continue;
 
-    final text = _normalizeCueText(lines.skip(timingIndex + 1).join('\n'));
-    if (text.isEmpty) continue;
-
-    cues.add(SubtitleCue(start: timing.$1, end: timing.$2, text: text));
+    final cue = _timedCue(timing, lines.skip(timingIndex + 1).join('\n'));
+    if (cue != null) cues.add(cue);
   }
 
   return cues;
+}
+
+SubtitleCue? _timedCue((Duration, Duration) timing, String rawText) {
+  final text = _normalizeCueText(rawText);
+  if (text.isEmpty) return null;
+  final boundary = rawText.indexOf(subtitleTranslationBoundary);
+  final original = boundary < 0
+      ? null
+      : _normalizeCueText(rawText.substring(0, boundary));
+  return SubtitleCue(
+    start: timing.$1,
+    end: timing.$2,
+    text: text,
+    originalText: original?.isNotEmpty == true ? original : null,
+  );
 }
 
 List<SubtitleCue> _parseAss(String raw) {

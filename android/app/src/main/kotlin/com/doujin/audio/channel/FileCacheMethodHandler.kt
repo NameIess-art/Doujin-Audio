@@ -3,6 +3,7 @@ package com.doujin.audio.channel
 import com.doujin.audio.scanner.*
 import com.doujin.audio.storage.*
 import com.doujin.audio.subtitle.subtitleDestinationName
+import com.doujin.audio.subtitle.translatedSubtitleName
 import com.doujin.audio.subtitle.SubtitleExistsException
 
 import android.os.Handler
@@ -22,7 +23,7 @@ internal sealed interface FileCacheTaskResult<out T> {
 internal fun trackSubtitleWriteAction(
     arguments: ChannelArgumentReader,
     writePath: (String, ByteArray) -> Boolean,
-    writeTrack: (String, String?, String, ByteArray, String?, Boolean) -> String
+    writeTrack: (String, String?, String, ByteArray, String?, Boolean, Boolean, String?) -> String
 ): () -> Any {
     val bytes = arguments.requiredByteArray("bytes")
     if (arguments.optionalString("path") != null) {
@@ -37,7 +38,13 @@ internal fun trackSubtitleWriteAction(
         arguments.requiredString("sourcePath")
     }
     val overwrite = arguments.optionalBoolean("overwrite", false)
-    return { writeTrack(trackPath, groupKey, extension, bytes, sourcePath, overwrite) }
+    val createNew = arguments.optionalBoolean("createNew", false)
+    val suffix = arguments.optionalString("fileNameSuffix")
+    if (createNew) {
+        require(sourcePath == null && !overwrite) { "Independent subtitles cannot replace or move a source" }
+        translatedSubtitleName("track.mp3", arguments.requiredString("fileNameSuffix"), extension)
+    }
+    return { writeTrack(trackPath, groupKey, extension, bytes, sourcePath, overwrite, createNew, suffix) }
 }
 
 internal class FileCacheTaskExecutor {
@@ -346,6 +353,13 @@ internal class FileCacheMethodHandler(
                 val groupKey = arguments.optionalString("groupKey")
                 runAsync(result, errorCode = { "subtitle_resolve_failed" }) {
                     operations.resolveTrackSubtitle(trackPath, groupKey)
+                }
+            }
+            FileCacheMethods.LIST_TRACK_SUBTITLES -> {
+                val trackPath = arguments.requiredString("trackPath")
+                val groupKey = arguments.optionalString("groupKey")
+                runAsync(result, errorCode = { "subtitle_list_failed" }) {
+                    operations.listTrackSubtitles(trackPath, groupKey)
                 }
             }
             FileCacheMethods.WRITE_TRACK_SUBTITLE -> {

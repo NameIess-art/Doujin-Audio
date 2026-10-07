@@ -53,7 +53,7 @@ class TextTranslationResult {
   final TextTranslationFailure? failure;
 }
 
-typedef _TranslationKey = (String, String);
+typedef _TranslationKey = (String, String, String);
 
 class TextTranslationService {
   TextTranslationService({
@@ -112,8 +112,8 @@ class TextTranslationService {
     return request;
   }
 
-  String? cached(String text, String target) {
-    final key = (text, target);
+  String? cached(String text, String target, {String source = 'auto'}) {
+    final key = (text, source, target);
     final value = _memory.remove(key);
     if (value != null) _memory[key] = value;
     return value;
@@ -123,10 +123,12 @@ class TextTranslationService {
     List<String> texts, {
     required String target,
     required TextTranslationRequest request,
+    String source = 'auto',
   }) async {
     if (_disposed || request.cancelled) return TextTranslationResult();
     final task = _operations.then(
-      (_) => _translate(texts, target: target, request: request),
+      (_) =>
+          _translate(texts, target: target, source: source, request: request),
     );
     // A failed caller must not poison the queue for later page requests.
     _operations = task.then<void>((_) {}, onError: (Object _, StackTrace _) {});
@@ -140,6 +142,7 @@ class TextTranslationService {
   Future<TextTranslationResult> _translate(
     List<String> texts, {
     required String target,
+    required String source,
     required TextTranslationRequest request,
   }) async {
     final result = <String, String>{};
@@ -147,7 +150,7 @@ class TextTranslationService {
       if (request.cancelled || _disposed) return TextTranslationResult();
       final unique = texts.where(canTranslateText).toSet();
       for (final text in unique) {
-        final value = cached(text, target);
+        final value = cached(text, target, source: source);
         if (value != null) result[text] = value;
       }
       if (result.length == unique.length) {
@@ -156,7 +159,7 @@ class TextTranslationService {
       await request._active(_writes);
       final entries = await request._active(_readDisk());
       for (final text in unique.where((text) => !result.containsKey(text))) {
-        final key = (text, target);
+        final key = (text, source, target);
         final value = entries.remove(key);
         if (value == null) continue;
         entries[key] = value;
@@ -182,9 +185,9 @@ class TextTranslationService {
             await request._active(Future<void>.delayed(delay));
           }
         }
-        final translated = await _fetch(batch, target, request);
+        final translated = await _fetch(batch, source, target, request);
         for (var index = 0; index < batch.length; index++) {
-          final key = (batch[index], target);
+          final key = (batch[index], source, target);
           result[batch[index]] = translated[index];
           _remember(key, translated[index]);
           entries.remove(key);
@@ -215,6 +218,7 @@ class TextTranslationService {
 
   Future<List<String>> _fetch(
     List<String> texts,
+    String source,
     String target,
     TextTranslationRequest request,
   ) async {
@@ -226,7 +230,7 @@ class TextTranslationService {
       final uri = _endpoint.replace(
         queryParameters: {
           'client': 'dict-chrome-ex',
-          'sl': 'auto',
+          'sl': source,
           'tl': target,
         },
       );
@@ -322,19 +326,19 @@ class TextTranslationService {
       final snapshot = (await _store.read(location)).snapshot;
       if (snapshot == null) return entries;
       final decoded = jsonDecode(snapshot.text);
-      if (decoded is! Map || decoded['version'] != 1) return entries;
+      if (decoded is! Map || decoded['version'] != 2) return entries;
       final rows = decoded['entries'];
       if (rows is! List) return entries;
       for (final row in rows) {
         if (row is List &&
-            row.length == 3 &&
+            row.length == 4 &&
             row.every((value) => value is String)) {
-          final source = row[1] as String;
-          final translated = row[2] as String;
-          if (!canTranslateText(source) || translated.trim().isEmpty) {
+          final original = row[2] as String;
+          final translated = row[3] as String;
+          if (!canTranslateText(original) || translated.trim().isEmpty) {
             continue;
           }
-          entries[(source, row[0] as String)] = translated;
+          entries[(original, row[1] as String, row[0] as String)] = translated;
         }
       }
       while (entries.length > _diskCapacity) {
@@ -357,10 +361,10 @@ class TextTranslationService {
     final bytes = Uint8List.fromList(
       utf8.encode(
         jsonEncode({
-          'version': 1,
+          'version': 2,
           'entries': [
             for (final entry in entries.entries)
-              [entry.key.$2, entry.key.$1, entry.value],
+              [entry.key.$3, entry.key.$2, entry.key.$1, entry.value],
           ],
         }),
       ),

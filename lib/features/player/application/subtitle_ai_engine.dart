@@ -150,7 +150,7 @@ class SubtitleAiEngine {
       throw ArgumentError.value(targetLanguage, 'targetLanguage');
     }
     final originals = source
-        .map((cue) => cue.text.split('\n').first.trim())
+        .map((cue) => (cue.originalText ?? cue.text).trim())
         .toList();
     final workDir = Directory(
       path.join(
@@ -172,7 +172,7 @@ class SubtitleAiEngine {
     ];
     final identity = sha256.convert(utf8.encode(jsonEncode(input))).toString();
     final checkpoint = File(
-      path.join(workDir.path, '${sourceIdentity}_v2_$identity.json'),
+      path.join(workDir.path, '${sourceIdentity}_v3_$identity.json'),
     );
     final legacyIdentity = sha256
         .convert(
@@ -184,6 +184,7 @@ class SubtitleAiEngine {
       if (entry is File &&
           entry.path != checkpoint.path &&
           (name.startsWith('${sourceIdentity}_v2_') ||
+              name.startsWith('${sourceIdentity}_v3_') ||
               name == '$legacyIdentity.json')) {
         await entry.delete();
       }
@@ -230,7 +231,14 @@ class SubtitleAiEngine {
           end++;
         }
         final group = originals.sublist(offset, end);
-        final parts = group.map(textTranslationSegments).toList();
+        // Keep a cue's lines together so translation sees the complete sentence.
+        final parts = group
+            .map(
+              (text) => text.length <= textTranslationBatchMaxCharacters
+                  ? [text]
+                  : textTranslationSegments(text),
+            )
+            .toList();
         final texts = parts
             .expand((parts) => parts)
             .where(canTranslateText)
@@ -238,6 +246,7 @@ class SubtitleAiEngine {
         final task = _translations.translate(
           texts,
           target: targetLanguage == 'zh' ? 'zh-CN' : 'en',
+          source: 'ja',
           request: request,
         );
         final result = cancelled == null
@@ -258,15 +267,20 @@ class SubtitleAiEngine {
         }
         for (var index = 0; index < group.length; index++) {
           final original = source[offset + index];
+          // SRT reserves blank lines for cue separators, not paragraph breaks.
           final translated = parts[index]
               .map((part) => result.translations[part] ?? part)
               .join()
-              .trim();
+              .split(RegExp(r'\r?\n'))
+              .map((line) => line.trim())
+              .where((line) => line.isNotEmpty)
+              .join('\n');
           cues.add(
             SubtitleCue(
               start: original.start,
               end: original.end,
               text: '${group[index]}\n$translated',
+              originalText: group[index],
             ),
           );
         }
@@ -421,7 +435,7 @@ Future<_Checkpoint> _readCheckpoint(File file) async {
   }
   try {
     final data = jsonDecode(await file.readAsString()) as Map<String, dynamic>;
-    if (data['version'] != 2) {
+    if (data['version'] != 3) {
       return (nextChunk: 0, cues: <SubtitleCue>[]);
     }
     final cues = (data['cues'] as List).map((item) {
@@ -430,6 +444,7 @@ Future<_Checkpoint> _readCheckpoint(File file) async {
         start: Duration(milliseconds: cue[0] as int),
         end: Duration(milliseconds: cue[1] as int),
         text: cue[2] as String,
+        originalText: cue[3] as String,
       );
     }).toList();
     return (nextChunk: data['nextChunk'] as int, cues: cues);
@@ -446,7 +461,7 @@ Future<void> _writeCheckpoint(
   final temporary = File('${file.path}.tmp');
   await temporary.writeAsString(
     jsonEncode({
-      'version': 2,
+      'version': 3,
       'nextChunk': nextChunk,
       'cues': cues
           .map(
@@ -454,6 +469,7 @@ Future<void> _writeCheckpoint(
               cue.start.inMilliseconds,
               cue.end.inMilliseconds,
               cue.text,
+              cue.originalText,
             ],
           )
           .toList(),

@@ -111,10 +111,13 @@ internal class FileCacheOperations(context: Context) {
     fun resolveTrackSubtitle(path: String, groupKey: String?): HashMap<String, String>? =
         subtitles.resolve(path, groupKey)
 
+    fun listTrackSubtitles(trackPath: String, groupKey: String?): List<HashMap<String, String>> =
+        subtitles.list(trackPath, groupKey)
+
     fun writeTrackSubtitle(
         trackPath: String, groupKey: String?, extension: String,
-        bytes: ByteArray, sourcePath: String?, overwrite: Boolean
-    ): String = subtitles.write(trackPath, groupKey, extension, bytes, sourcePath, overwrite)
+        bytes: ByteArray, sourcePath: String?, overwrite: Boolean, createNew: Boolean = false, fileNameSuffix: String? = null
+    ): String = subtitles.write(trackPath, groupKey, extension, bytes, sourcePath, overwrite, createNew, fileNameSuffix)
 
     fun writeTrackSubtitle(path: String, bytes: ByteArray): Boolean =
         documentStorage.writeFileBytes(path, bytes)

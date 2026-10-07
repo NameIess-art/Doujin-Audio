@@ -264,8 +264,12 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
     final cs = theme.colorScheme;
     final file = _currentFile;
     final hasMultipleFiles = widget.files.length > 1;
-    final canTranslate = !_loading && !_loadFailed &&
-        file != null && !file.isPdf && _content.isNotEmpty;
+    final canTranslate =
+        !_loading &&
+        !_loadFailed &&
+        file != null &&
+        !file.isPdf &&
+        _content.isNotEmpty;
 
     final bottomPadding = MediaQuery.paddingOf(context).bottom;
     final contentTopInset = AppPageHeaderMetrics.contentTopInset(context);
@@ -299,9 +303,10 @@ class _WorkTextViewerPageState extends ConsumerState<WorkTextViewerPage> {
                           ? Icons.article_rounded
                           : Icons.description_rounded),
                 title: file?.displayName ?? i18n.tr('script_text_viewer_title'),
-                trailing: canTranslate
-                    ? const WorkPageTranslationButton(
+                trailing: file != null && !file.isPdf
+                    ? WorkPageTranslationButton(
                         buttonKey: 'work_text_translation',
+                        enabled: canTranslate,
                       )
                     : null,
                 leading: IconButton(

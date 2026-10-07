@@ -18,13 +18,16 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class _Documents extends Fake implements FileCachePlatformGateway {
-  _Documents(this.contents);
+  _Documents(this.contents, this.pendingReads);
   final Map<String, String> contents;
+  final Map<String, Completer<Uint8List?>> pendingReads;
   final reads = <String>[];
 
   @override
   Future<Uint8List?> readDocumentBytes(String filePath) async {
     reads.add(filePath);
+    final pending = pendingReads[filePath];
+    if (pending != null) return pending.future;
     final content = contents[filePath];
     return content == null ? null : Uint8List.fromList(utf8.encode(content));
   }
@@ -94,11 +97,13 @@ Future<({AppLanguageProvider language, _Documents documents})> _mount(
     '/works/Original script.txt': 'Original body',
   },
   List<WorkTextFile> files = const [_file],
+  Map<String, Completer<Uint8List?>> pendingReads = const {},
+  bool settle = true,
 }) async {
   final language = AppLanguageProvider();
   addTearDown(language.dispose);
   await language.setLanguage(AppLanguage.zh);
-  final documents = _Documents(contents);
+  final documents = _Documents(contents, pendingReads);
   final service = WorkTextService(platformGateway: documents);
   addTearDown(service.dispose);
   await tester.pumpWidget(
@@ -119,7 +124,7 @@ Future<({AppLanguageProvider language, _Documents documents})> _mount(
       ),
     ),
   );
-  await tester.pumpAndSettle();
+  if (settle) await tester.pumpAndSettle();
   return (language: language, documents: documents);
 }
 
@@ -131,6 +136,68 @@ void main() {
   tearDown(UiInteractionCoordinator.instance.resetForTest);
 
   for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
+    testWidgets(
+      'translation entry stays visible during file read on $platform',
+      (tester) async {
+        tester.view.physicalSize = platform == TargetPlatform.android
+            ? const Size(360, 800)
+            : const Size(960, 600);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        final translations = _Translations();
+        final pending = Completer<Uint8List?>();
+        final file = platform == TargetPlatform.android ? _file : _markdown;
+        final pendingReads = {file.path: pending};
+        final mounted = await _mount(
+          tester,
+          translations,
+          files: [file, _other],
+          pendingReads: pendingReads,
+          settle: false,
+        );
+        await _batch(tester);
+        expect(mounted.documents.reads, [file.path]);
+        expect(find.byKey(_button), findsOneWidget);
+        expect(
+          tester.widget<IconButton>(find.byKey(_button)).onPressed,
+          isNull,
+        );
+        final loadingRect = tester.getRect(find.byKey(_button));
+        await tester.tap(find.byKey(_button));
+        await _batch(tester);
+        expect(translations.calls, isEmpty);
+        pending.complete(Uint8List.fromList(utf8.encode('Original body')));
+        await tester.pumpAndSettle();
+        expect(tester.getRect(find.byKey(_button)), loadingRect);
+        expect(
+          tester.widget<IconButton>(find.byKey(_button)).onPressed,
+          isNotNull,
+        );
+        await tester.tap(find.byKey(_button));
+        await _batch(tester);
+        expect(translations.calls.single.texts, contains('Original body'));
+        translations.calls.single.complete();
+        await _batch(tester);
+        expect(find.text('zh-CN:Original body'), findsOneWidget);
+        final nextRead = Completer<Uint8List?>();
+        pendingReads[_other.path] = nextRead;
+        await tester.tap(find.byIcon(Icons.chevron_right_rounded));
+        await _batch(tester);
+        expect(find.byKey(_button), findsOneWidget);
+        expect(tester.widget<IconButton>(find.byKey(_button)).onPressed, isNull);
+        expect(find.byIcon(Icons.translate), findsOneWidget);
+        nextRead.complete(Uint8List(0));
+        await tester.pumpAndSettle();
+        expect(find.byKey(_button), findsOneWidget);
+        expect(tester.widget<IconButton>(find.byKey(_button)).onPressed, isNull);
+        expect(translations.calls, hasLength(1));
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+      variant: TargetPlatformVariant({platform}),
+    );
+
     testWidgets(
       'viewer translation stays top-right and restores original on $platform',
       (tester) async {

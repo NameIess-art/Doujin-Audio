@@ -237,10 +237,12 @@ class WorkPageTranslationButton extends StatelessWidget {
     super.key,
     this.buttonKey = 'work_detail_translation',
     this.backgroundOpacity = 1,
+    this.enabled = true,
   });
 
   final String buttonKey;
   final double backgroundOpacity;
+  final bool enabled;
 
   @override
   Widget build(BuildContext context) {
@@ -253,7 +255,7 @@ class WorkPageTranslationButton extends StatelessWidget {
         backgroundOpacity: backgroundOpacity,
         child: IconButton(
           key: ValueKey(buttonKey),
-          onPressed: state._toggle,
+          onPressed: enabled ? state._toggle : null,
           tooltip: state._i18n.tr(
             state._loading
                 ? 'work_translation_loading'

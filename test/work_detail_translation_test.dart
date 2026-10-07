@@ -230,6 +230,8 @@ void main() {
             ],
           ),
         );
+        expect(find.byKey(_button), findsOneWidget);
+        expect(find.byIcon(Icons.translate), findsOneWidget);
         await _settleDirectory(tester);
         expect(find.text('Original title'), findsOneWidget);
         expect(service.calls, isEmpty);
@@ -331,6 +333,8 @@ void main() {
             ],
           ),
         );
+        expect(find.byKey(_button), findsOneWidget);
+        expect(find.byIcon(Icons.translate), findsOneWidget);
         await _settleDirectory(tester);
         expect(find.text('Online title'), findsOneWidget);
         expect(service.calls, isEmpty);

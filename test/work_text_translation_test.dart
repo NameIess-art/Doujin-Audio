@@ -7,7 +7,7 @@ import 'package:doujin_audio/app/state/app_runtime_providers.dart';
 import 'package:doujin_audio/core/platform/file_cache_platform_gateway.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/widgets/top_page_header.dart';
-import 'package:doujin_audio/features/library/application/page_translation_service.dart';
+import 'package:doujin_audio/core/translation/text_translation_service.dart';
 import 'package:doujin_audio/features/library/application/work_text_service.dart';
 import 'package:doujin_audio/features/library/presentation/library_providers.dart';
 import 'package:doujin_audio/features/library/presentation/work_text_viewer_page.dart';
@@ -34,27 +34,27 @@ class _Call {
   _Call(this.texts, this.target, this.request);
   final List<String> texts;
   final String target;
-  final PageTranslationRequest request;
-  final result = Completer<PageTranslationResult>();
+  final TextTranslationRequest request;
+  final result = Completer<TextTranslationResult>();
 
   void complete() => result.complete(
-    PageTranslationResult(
+    TextTranslationResult(
       translations: {for (final text in texts) text: '$target:$text'},
     ),
   );
 }
 
-class _Translations extends PageTranslationService {
+class _Translations extends TextTranslationService {
   final calls = <_Call>[];
 
   @override
   String? cached(String text, String target) => null;
 
   @override
-  Future<PageTranslationResult> translate(
+  Future<TextTranslationResult> translate(
     List<String> texts, {
     required String target,
-    required PageTranslationRequest request,
+    required TextTranslationRequest request,
   }) {
     final call = _Call(List.of(texts), target, request);
     calls.add(call);
@@ -105,7 +105,7 @@ Future<({AppLanguageProvider language, _Documents documents})> _mount(
       overrides: [
         appLanguageProviderInstanceProvider.overrideWithValue(language),
         workTextServiceProvider.overrideWithValue(service),
-        pageTranslationServiceProvider.overrideWithValue(translations),
+        textTranslationServiceProvider.overrideWithValue(translations),
       ],
       child: MaterialApp(
         home: MediaQuery(

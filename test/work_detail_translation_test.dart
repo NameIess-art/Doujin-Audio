@@ -1,11 +1,11 @@
 import 'dart:async';
 
 import 'package:doujin_audio/core/app_language.dart';
+import 'package:doujin_audio/app/state/app_runtime_providers.dart';
 import 'package:doujin_audio/core/media/audio_detail.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
-import 'package:doujin_audio/features/library/application/page_translation_service.dart';
-import 'package:doujin_audio/features/library/presentation/library_providers.dart';
+import 'package:doujin_audio/core/translation/text_translation_service.dart';
 import 'package:doujin_audio/features/library/presentation/page_translation_scope.dart';
 import 'package:doujin_audio/features/library/presentation/work_detail_breadcrumbs.dart';
 import 'package:doujin_audio/features/library/presentation/work_detail_entries.dart';
@@ -13,6 +13,7 @@ import 'package:doujin_audio/features/library/presentation/work_detail_entry_til
 import 'package:doujin_audio/features/library/presentation/work_detail_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
@@ -24,15 +25,15 @@ class _TranslationCall {
   _TranslationCall(this.texts, this.target, this.request);
   final List<String> texts;
   final String target;
-  final PageTranslationRequest request;
-  final result = Completer<PageTranslationResult>();
+  final TextTranslationRequest request;
+  final result = Completer<TextTranslationResult>();
 
   void complete({
-    PageTranslationFailure? failure,
+    TextTranslationFailure? failure,
     Map<String, String> overrides = const {},
   }) {
     result.complete(
-      PageTranslationResult(
+      TextTranslationResult(
         translations: failure == null
             ? {for (final text in texts) text: '$target:$text', ...overrides}
             : const {},
@@ -42,17 +43,17 @@ class _TranslationCall {
   }
 }
 
-class _TranslationService extends PageTranslationService {
+class _TranslationService extends TextTranslationService {
   final calls = <_TranslationCall>[];
 
   @override
   String? cached(String text, String target) => null;
 
   @override
-  Future<PageTranslationResult> translate(
+  Future<TextTranslationResult> translate(
     List<String> texts, {
     required String target,
-    required PageTranslationRequest request,
+    required TextTranslationRequest request,
   }) {
     final call = _TranslationCall(List.of(texts), target, request);
     calls.add(call);
@@ -102,6 +103,26 @@ void main() {
   );
   tearDownAll(() => AppRuntimeTestFixture.disposeSharedDatabase(database));
   setUp(() => SharedPreferences.setMockInitialValues({}));
+
+  testWidgets('runtime shares translation service with subtitle engine', (
+    tester,
+  ) async {
+    final fixture = AppRuntimeWidgetTestFixture();
+    addTearDown(fixture.dispose);
+    TextTranslationService? shared;
+    await tester.pumpWidget(
+      fixture.build(
+        Consumer(
+          builder: (context, ref, _) {
+            shared = ref.read(textTranslationServiceProvider);
+            return const SizedBox.shrink();
+          },
+        ),
+      ),
+    );
+    expect(shared, same(fixture.runtimeGraph.subtitles.translationService));
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
 
   for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
     testWidgets(
@@ -204,7 +225,7 @@ void main() {
               ),
             ),
             overrides: [
-              pageTranslationServiceProvider.overrideWithValue(service),
+              textTranslationServiceProvider.overrideWithValue(service),
             ],
           ),
         );
@@ -305,7 +326,7 @@ void main() {
           fixture.build(
             WorkDetailPage.forAsmr(work: work),
             overrides: [
-              pageTranslationServiceProvider.overrideWithValue(service),
+              textTranslationServiceProvider.overrideWithValue(service),
             ],
           ),
         );
@@ -347,7 +368,7 @@ void main() {
         fixture.build(
           _scope(),
           overrides: [
-            pageTranslationServiceProvider.overrideWithValue(service),
+            textTranslationServiceProvider.overrideWithValue(service),
           ],
         ),
       );
@@ -375,7 +396,7 @@ void main() {
         fixture.build(
           _scope(),
           overrides: [
-            pageTranslationServiceProvider.overrideWithValue(service),
+            textTranslationServiceProvider.overrideWithValue(service),
           ],
         ),
       );
@@ -400,7 +421,7 @@ void main() {
         fixture.build(
           _scope(),
           overrides: [
-            pageTranslationServiceProvider.overrideWithValue(service),
+            textTranslationServiceProvider.overrideWithValue(service),
           ],
         ),
       );
@@ -442,7 +463,7 @@ void main() {
             ),
           ),
           overrides: [
-            pageTranslationServiceProvider.overrideWithValue(service),
+            textTranslationServiceProvider.overrideWithValue(service),
           ],
         ),
       );
@@ -478,7 +499,7 @@ void main() {
     await tester.pumpWidget(
       fixture.build(
         _scope(),
-        overrides: [pageTranslationServiceProvider.overrideWithValue(service)],
+        overrides: [textTranslationServiceProvider.overrideWithValue(service)],
       ),
     );
     await tester.tap(find.byKey(_button));
@@ -527,14 +548,14 @@ void main() {
         fixture.build(
           _scope(),
           overrides: [
-            pageTranslationServiceProvider.overrideWithValue(service),
+            textTranslationServiceProvider.overrideWithValue(service),
           ],
         ),
       );
       await tester.tap(find.byKey(_button));
       await _batch(tester);
       service.calls.single.complete(
-        failure: PageTranslationFailure.unavailable,
+        failure: TextTranslationFailure.unavailable,
       );
       await _batch(tester);
       await tester.pump(const Duration(seconds: 10));

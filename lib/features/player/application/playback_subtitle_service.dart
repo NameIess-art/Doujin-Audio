@@ -13,6 +13,7 @@ import '../../../core/media/music_track.dart';
 import '../../../core/media/subtitle_parser.dart';
 import '../../../core/platform/file_cache_platform_gateway.dart';
 import '../../../core/persistence/app_preferences.dart';
+import '../../../core/translation/text_translation_service.dart';
 import '../../library/application/work_text_service.dart';
 import 'subtitle_ai_engine.dart';
 import 'subtitle_generation.dart';
@@ -32,12 +33,14 @@ class SubtitleGenerationJob {
   SubtitleGenerationStatus _status = SubtitleGenerationStatus.running;
   SubtitleTaskProgress? _progress;
   String? _errorMessage;
+  String? _errorMessageKey;
   bool _cancelRequested = false;
   final Completer<void> _cancellation = Completer<void>();
 
   SubtitleGenerationStatus get status => _status;
   SubtitleTaskProgress? get progress => _progress;
   String? get errorMessage => _errorMessage;
+  String? get errorMessageKey => _errorMessageKey;
   bool get cancellationRequested => _cancelRequested;
 }
 
@@ -81,6 +84,7 @@ class PlaybackSubtitleService extends ChangeNotifier {
   SubtitleGenerationJob? _generationJob;
 
   SubtitleModelStore get modelStore => _aiEngine.modelStore;
+  TextTranslationService get translationService => _aiEngine.translationService;
   SubtitleGenerationJob? get generationJob => _generationJob;
   bool canEditSubtitle(String trackPath) =>
       _trackResolver(trackPath)?.isRemoteAsmr != true;
@@ -184,6 +188,21 @@ class PlaybackSubtitleService extends ChangeNotifier {
       }
     } on SubtitleTaskCancelled {
       job._status = SubtitleGenerationStatus.cancelled;
+    } on TextTranslationFailure catch (failure) {
+      if (job._cancelRequested) {
+        job._status = SubtitleGenerationStatus.cancelled;
+      } else {
+        job._errorMessageKey = switch (failure) {
+          TextTranslationFailure.unavailable => 'work_translation_unavailable',
+          TextTranslationFailure.invalidResponse =>
+            'work_translation_invalid_response',
+          TextTranslationFailure.rateLimited => 'work_translation_rate_limited',
+          TextTranslationFailure.unusualTraffic =>
+            'work_translation_unusual_traffic',
+        };
+        AppLogService.warning('subtitle_online_translation_failed_$failure');
+        job._status = SubtitleGenerationStatus.failed;
+      }
     } catch (error, stackTrace) {
       if (job._cancelRequested) {
         job._status = SubtitleGenerationStatus.cancelled;

@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:crypto/crypto.dart';
 import 'package:doujin_audio/core/media/subtitle_parser.dart';
 import 'package:doujin_audio/core/platform/file_cache_platform_gateway.dart';
+import 'package:doujin_audio/core/translation/text_translation_service.dart';
 import 'package:doujin_audio/features/player/application/playback_subtitle_service.dart';
 import 'package:doujin_audio/features/player/application/subtitle_ai_engine.dart';
 import 'package:doujin_audio/features/player/application/subtitle_generation.dart';
@@ -34,6 +35,23 @@ class _ScriptFiles extends FileCachePlatformGateway {
   @override
   Future<Uint8List?> readDocumentBytes(String uri) async =>
       Uint8List.fromList(utf8.encode('今日は一緒に眠りましょう。'));
+}
+
+class _PendingTranslations extends TextTranslationService {
+  final results = <Completer<TextTranslationResult>>[];
+  final requests = <TextTranslationRequest>[];
+
+  @override
+  Future<TextTranslationResult> translate(
+    List<String> texts, {
+    required String target,
+    required TextTranslationRequest request,
+  }) {
+    final result = Completer<TextTranslationResult>();
+    results.add(result);
+    requests.add(request);
+    return result.future;
+  }
 }
 
 const _source = SubtitleCue(
@@ -113,14 +131,14 @@ void main() {
     () async {
       final file = _checkpoint(checkpoints, _source);
       await _writeCompleted(file, _source);
-      final models = _PendingModels();
+      final translations = _PendingTranslations();
       final draft = await SubtitleAiEngine(
-        models: models,
+        translations: translations,
       ).prepareTranslation([_source], 'zh', trackPath: 'audio.mp3');
       expect(draft.cues.single.start, _source.start);
       expect(draft.cues.single.end, _source.end);
       expect(draft.cues.single.text, contains('今天一起睡吧。'));
-      expect(models.progress, isEmpty);
+      expect(translations.requests, isEmpty);
       expect(await file.exists(), isTrue);
     },
     skip: !Platform.isWindows && !Platform.isAndroid,
@@ -143,34 +161,38 @@ void main() {
         ),
       );
       await unrelated.writeAsString('{}');
-      final models = _PendingModels();
+      final translations = _PendingTranslations();
       final cancelled = Completer<void>();
       var requested = false;
-      final task = SubtitleAiEngine(models: models).prepareTranslation(
-        [
-          SubtitleCue(
-            start: const Duration(seconds: 5),
-            end: const Duration(seconds: 7),
-            text: _source.text,
-          ),
-        ],
-        'zh',
-        trackPath: 'audio.mp3',
-        isCancelled: () => requested,
-        cancellation: cancelled.future,
-      );
+      final task = SubtitleAiEngine(translations: translations)
+          .prepareTranslation(
+            [
+              SubtitleCue(
+                start: const Duration(seconds: 5),
+                end: const Duration(seconds: 7),
+                text: _source.text,
+              ),
+            ],
+            'zh',
+            trackPath: 'audio.mp3',
+            isCancelled: () => requested,
+            cancellation: cancelled.future,
+          );
       final assertion = expectLater(
         task,
         throwsA(isA<SubtitleTaskCancelled>()),
       );
-      await _waitUntil(() => models.progress.isNotEmpty);
+      await _waitUntil(() => translations.requests.isNotEmpty);
       expect(await old.exists(), isFalse);
       expect(await legacy.exists(), isFalse);
       expect(await unrelated.exists(), isTrue);
       requested = true;
       cancelled.complete();
       await assertion;
-      models.result.completeError(StateError('late shared download failure'));
+      expect(translations.requests.single.cancelled, isTrue);
+      translations.results.single.completeError(
+        StateError('late request failure'),
+      );
       await Future<void>.delayed(Duration.zero);
     },
     skip: !Platform.isWindows && !Platform.isAndroid,
@@ -186,86 +208,80 @@ void main() {
       );
       final partial = _checkpoint(checkpoints, _source, remaining: [second]);
       await _writeCompleted(partial, _source);
-      final models = _PendingModels();
+      final translations = _PendingTranslations();
       final cancelled = Completer<void>();
       var requested = false;
-      final task = SubtitleAiEngine(models: models).prepareTranslation(
-        [
-          SubtitleCue(
-            start: const Duration(seconds: 5),
-            end: const Duration(seconds: 7),
-            text: _source.text,
-          ),
-          second,
-        ],
-        'zh',
-        trackPath: 'audio.mp3',
-        isCancelled: () => requested,
-        cancellation: cancelled.future,
-      );
+      final task = SubtitleAiEngine(translations: translations)
+          .prepareTranslation(
+            [
+              SubtitleCue(
+                start: const Duration(seconds: 5),
+                end: const Duration(seconds: 7),
+                text: _source.text,
+              ),
+              second,
+            ],
+            'zh',
+            trackPath: 'audio.mp3',
+            isCancelled: () => requested,
+            cancellation: cancelled.future,
+          );
       final assertion = expectLater(
         task,
         throwsA(isA<SubtitleTaskCancelled>()),
       );
-      await _waitUntil(() => models.progress.isNotEmpty);
+      await _waitUntil(() => translations.requests.isNotEmpty);
       expect(await partial.exists(), isFalse);
       requested = true;
       cancelled.complete();
       await assertion;
-      models.result.complete('unused-model.gguf');
+      expect(translations.requests.single.cancelled, isTrue);
+      translations.results.single.complete(TextTranslationResult());
       await Future<void>.delayed(Duration.zero);
     },
     skip: !Platform.isWindows && !Platform.isAndroid,
   );
 
-  for (final script in [false, true]) {
-    test(
-      '${script ? 'script' : 'translation'} model wait cancels without blocking a new shared waiter',
-      () async {
-        final models = _PendingModels();
-        final service = PlaybackSubtitleService(
-          trackResolver: (_) => null,
-          aiEngine: SubtitleAiEngine(models: models, files: _ScriptFiles()),
-          subtitleLoader: (_, _) async =>
-              SubtitleTrack(sourcePath: 'source.srt', cues: [_source]),
-          subtitlesDirectoryResolver: () async => support,
-        );
-        bool start() => script
-            ? service.startScriptGeneration('audio.mp3', 'script.txt')
-            : service.startTranslationGeneration('audio.mp3', 'zh');
-        expect(start(), isTrue);
-        await _waitUntil(() => models.progress.length == 1);
-        models.progress.first(0.2, 20, 100);
-        final first = service.generationJob!;
-        service.cancelGeneration();
-        await _waitUntil(
-          () => first.status == SubtitleGenerationStatus.cancelled,
-        );
-        expect(models.result.isCompleted, isFalse);
-        expect(start(), isTrue);
-        await _waitUntil(() => models.progress.length == 2);
-        models.progress.first(0.8, 80, 100);
-        expect(first.progress?.fraction, 0.2);
-        expect(service.generationJob!.progress, isNull);
-        models.progress.last(0.6, 60, 100);
-        expect(service.generationJob!.progress?.fraction, 0.6);
-        models.result.completeError(StateError('shared model unavailable'));
-        await _waitUntil(
-          () =>
-              service.generationJob!.status == SubtitleGenerationStatus.failed,
-        );
-        expect(first.status, SubtitleGenerationStatus.cancelled);
-        expect(
-          service.generationJob!.errorMessage,
-          contains('shared model unavailable'),
-        );
-        expect(
-          service.trackSync('audio.mp3')?.cues.single.text,
-          script ? null : _source.text,
-        );
-        service.dispose();
-      },
-      skip: !Platform.isWindows && !Platform.isAndroid,
-    );
-  }
+  test(
+    'script model wait cancels without blocking a new shared waiter',
+    () async {
+      final models = _PendingModels();
+      final service = PlaybackSubtitleService(
+        trackResolver: (_) => null,
+        aiEngine: SubtitleAiEngine(models: models, files: _ScriptFiles()),
+        subtitleLoader: (_, _) async =>
+            SubtitleTrack(sourcePath: 'source.srt', cues: [_source]),
+        subtitlesDirectoryResolver: () async => support,
+      );
+      bool start() => service.startScriptGeneration('audio.mp3', 'script.txt');
+      expect(start(), isTrue);
+      await _waitUntil(() => models.progress.length == 1);
+      models.progress.first(0.2, 20, 100);
+      final first = service.generationJob!;
+      service.cancelGeneration();
+      await _waitUntil(
+        () => first.status == SubtitleGenerationStatus.cancelled,
+      );
+      expect(models.result.isCompleted, isFalse);
+      expect(start(), isTrue);
+      await _waitUntil(() => models.progress.length == 2);
+      models.progress.first(0.8, 80, 100);
+      expect(first.progress?.fraction, 0.2);
+      expect(service.generationJob!.progress, isNull);
+      models.progress.last(0.6, 60, 100);
+      expect(service.generationJob!.progress?.fraction, 0.6);
+      models.result.completeError(StateError('shared model unavailable'));
+      await _waitUntil(
+        () => service.generationJob!.status == SubtitleGenerationStatus.failed,
+      );
+      expect(first.status, SubtitleGenerationStatus.cancelled);
+      expect(
+        service.generationJob!.errorMessage,
+        contains('shared model unavailable'),
+      );
+      expect(service.trackSync('audio.mp3')?.cues.single.text, isNull);
+      service.dispose();
+    },
+    skip: !Platform.isWindows && !Platform.isAndroid,
+  );
 }

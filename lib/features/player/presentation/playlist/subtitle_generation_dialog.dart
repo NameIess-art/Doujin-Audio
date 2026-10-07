@@ -25,13 +25,11 @@ class SubtitleGenerationDialog extends ConsumerWidget {
         if (job == null) return const SizedBox.shrink();
         final running = job.status == SubtitleGenerationStatus.running;
         final progress = job.progress;
-        final model = _service.modelStore.snapshot(
-          job.kind == SubtitleDraftKind.script
-              ? SubtitleModelStore.japaneseCtc
-              : SubtitleModelStore.translation,
-        );
+        final model = job.kind == SubtitleDraftKind.script
+            ? _service.modelStore.snapshot(SubtitleModelStore.japaneseCtc)
+            : null;
         final downloading =
-            running && progress?.stage == 'download' && model.active;
+            running && progress?.stage == 'download' && model?.active == true;
         final stageKey = switch (progress?.stage) {
           'download' => 'subtitle_stage_download',
           'decoding' => 'subtitle_stage_decoding',
@@ -67,10 +65,13 @@ class SubtitleGenerationDialog extends ConsumerWidget {
               const SizedBox(height: 14),
               Text(i18n.tr(running ? stageKey : resultKey)),
               if (job.status == SubtitleGenerationStatus.failed &&
-                  job.errorMessage != null) ...[
+                  (job.errorMessageKey != null ||
+                      job.errorMessage != null)) ...[
                 const SizedBox(height: 8),
                 SelectableText(
-                  job.errorMessage!,
+                  job.errorMessageKey != null
+                      ? i18n.tr(job.errorMessageKey!)
+                      : job.errorMessage!,
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
               ],
@@ -79,7 +80,7 @@ class SubtitleGenerationDialog extends ConsumerWidget {
                 LinearProgressIndicator(
                   key: const ValueKey('subtitle_generation_progress'),
                   value: downloading
-                      ? model.fraction
+                      ? model!.fraction
                       : progress == null ||
                             progress.stage == 'decoding' ||
                             progress.stage == 'loading' ||
@@ -91,7 +92,7 @@ class SubtitleGenerationDialog extends ConsumerWidget {
                 Text(
                   downloading
                       ? i18n.tr('subtitle_model_download_progress', {
-                          'received': (model.received / 1048576)
+                          'received': (model!.received / 1048576)
                               .toStringAsFixed(1),
                           'total': (model.total / 1048576).toStringAsFixed(1),
                         })

@@ -608,7 +608,6 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
       },
     );
     if (!mounted || targetLanguage == null) return;
-    if (!await _confirmModelDownload(SubtitleModelStore.translation)) return;
     final subtitles = ref.read(playbackSubtitleServiceProvider);
     final settings = ref.read(subtitleSettingsProvider.notifier);
     final sessionId = widget.session.id;
@@ -703,7 +702,9 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
             _checkingModel == null &&
             generationUnavailableKey == null;
         final translateEnabled =
-            generateEnabled &&
+            importEnabled &&
+            !generationBusy &&
+            _checkingModel == null &&
             activeTrack?.cues.isNotEmpty == true &&
             subtitleLanguage != SubtitleLanguage.other;
         final isOffsetZero = activeOffset == Duration.zero;
@@ -1065,10 +1066,9 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
                           ),
                           subtitle: Text(
                             i18n.tr(
-                              generationUnavailableKey ??
-                                  (subtitleLanguage == SubtitleLanguage.other
-                                      ? 'subtitle_non_japanese'
-                                      : 'subtitle_translate_hint'),
+                              subtitleLanguage == SubtitleLanguage.other
+                                  ? 'subtitle_non_japanese'
+                                  : 'subtitle_translate_hint',
                             ),
                             style: theme.textTheme.bodySmall?.copyWith(
                               color: translateEnabled
@@ -1076,23 +1076,13 @@ class _SubtitleMenuSheetState extends ConsumerState<SubtitleMenuSheet> {
                                   : cs.onSurface.withValues(alpha: 0.38),
                             ),
                           ),
-                          trailing:
-                              _checkingModel?.name ==
-                                  SubtitleModelStore.translation.name
-                              ? const SizedBox(
-                                  width: 20,
-                                  height: 20,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                  ),
-                                )
-                              : Icon(
-                                  Icons.chevron_right_rounded,
-                                  size: 20,
-                                  color: translateEnabled
-                                      ? null
-                                      : cs.onSurface.withValues(alpha: 0.38),
-                                ),
+                          trailing: Icon(
+                            Icons.chevron_right_rounded,
+                            size: 20,
+                            color: translateEnabled
+                                ? null
+                                : cs.onSurface.withValues(alpha: 0.38),
+                          ),
                           onTap: translateEnabled
                               ? () => _translateSubtitle(subtitleLanguage)
                               : null,

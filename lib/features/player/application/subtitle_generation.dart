@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io';
 
@@ -92,61 +91,3 @@ List<String> scriptDialogueLines(String raw) {
   }
   return lines;
 }
-
-List<String> parseSubtitleTranslations(
-  String raw,
-  int expectedCount,
-  String targetLanguage,
-) {
-  final start = raw.indexOf('[');
-  final end = raw.lastIndexOf(']');
-  if (start < 0 || end <= start) {
-    throw const FormatException('Translation is not a JSON array');
-  }
-  final parsed = jsonDecode(raw.substring(start, end + 1));
-  if (parsed is! List || parsed.length != expectedCount) {
-    throw const FormatException('Translation count does not match source');
-  }
-  final result = <String>[];
-  for (var index = 0; index < expectedCount; index++) {
-    final item = parsed[index];
-    if (item is! Map || item['id'] != index || item['text'] is! String) {
-      throw const FormatException('Translation IDs do not match source');
-    }
-    final text = (item['text'] as String).trim();
-    if (!_matchesTranslationLanguage(text, targetLanguage)) {
-      throw const FormatException('Translation language does not match target');
-    }
-    result.add(text);
-  }
-  return result;
-}
-
-String parseSingleSubtitleTranslation(String raw, String targetLanguage) {
-  final response = raw.trim();
-  if (response.startsWith('[')) {
-    return parseSubtitleTranslations(response, 1, targetLanguage).single;
-  }
-  final text = response
-      .replaceFirst(
-        RegExp(r'^(?:简体中文|中文|English)\s*[:：]\s*', caseSensitive: false),
-        '',
-      )
-      .trim();
-  if (text.contains('\n') ||
-      text.startsWith('{') ||
-      text.startsWith('［') ||
-      text.contains('"id"') ||
-      !_matchesTranslationLanguage(text, targetLanguage)) {
-    throw const FormatException('Single subtitle translation is invalid');
-  }
-  return text;
-}
-
-bool _matchesTranslationLanguage(String text, String targetLanguage) =>
-    text.isNotEmpty &&
-    (targetLanguage == 'zh'
-        ? RegExp(r'[\u3400-\u9fff]').hasMatch(text)
-        : targetLanguage == 'en' &&
-              RegExp(r'[A-Za-z]').hasMatch(text) &&
-              !RegExp(r'[\u3040-\u30ff]').hasMatch(text));

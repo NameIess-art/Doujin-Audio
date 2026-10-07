@@ -232,7 +232,7 @@ const Map<String, String> appLanguageEn = {
   'work_translation_original': 'Show original',
   'work_translation_loading': 'Translating, click to cancel',
   'work_translation_unavailable':
-      'Page translation failed. Check your connection and try again.',
+      'Translation failed. Check your connection and try again.',
   'work_translation_invalid_response':
       'The translation service returned invalid content. Try again later.',
   'work_translation_rate_limited':
@@ -844,7 +844,7 @@ const Map<String, String> appLanguageEn = {
   'subtitle_script_continue': 'Continue matching',
   'subtitle_translate': 'Translate subtitles',
   'subtitle_translate_hint':
-      'Translate Japanese subtitles into Chinese or English',
+      'Translate Japanese subtitles into Chinese or English online with Google',
   'subtitle_non_japanese': 'The current subtitles are not Japanese',
   'subtitle_generating': 'Processing subtitles',
   'subtitle_generation_status': 'Subtitle task progress',
@@ -866,10 +866,11 @@ const Map<String, String> appLanguageEn = {
   'subtitle_choose_language': 'Choose translation language',
   'subtitle_language_zh': 'Simplified Chinese',
   'subtitle_language_en': 'English',
-  'subtitle_unsupported_32bit': 'This feature is unavailable on 32-bit Android',
+  'subtitle_unsupported_32bit':
+      'Script matching is unavailable on 32-bit Android',
   'subtitle_unsupported_platform':
       'This feature is unavailable on this platform',
-  'subtitle_model_download_title': 'Download subtitle model',
+  'subtitle_model_download_title': 'Download script matching model',
   'subtitle_model_download_message':
       'First use requires a {size} model download. Available space: {free}. The model will be verified and reused.',
   'subtitle_model_download_progress': 'Downloaded {received} / {total} MiB',

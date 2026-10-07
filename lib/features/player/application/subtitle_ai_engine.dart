@@ -16,6 +16,7 @@ import 'package:path_provider/path_provider.dart';
 import '../../../core/media/subtitle_parser.dart';
 import '../../../core/platform/file_cache_platform_gateway.dart';
 import '../../../core/platform/windows_media_tools.dart';
+import '../../../core/translation/text_translation_service.dart';
 import '../../library/application/work_text_service.dart';
 import 'subtitle_ctc_alignment.dart';
 import 'subtitle_generation.dart';
@@ -27,13 +28,17 @@ class SubtitleAiEngine {
   SubtitleAiEngine({
     SubtitleModelStore? models,
     FileCachePlatformGateway? files,
+    TextTranslationService? translations,
   }) : _models = models ?? SubtitleModelStore(),
-       _files = files ?? FileCachePlatformGateway.instance;
+       _files = files ?? FileCachePlatformGateway.instance,
+       _translations = translations ?? TextTranslationService();
 
   final SubtitleModelStore _models;
   final FileCachePlatformGateway _files;
+  final TextTranslationService _translations;
 
   SubtitleModelStore get modelStore => _models;
+  TextTranslationService get translationService => _translations;
 
   Future<SubtitleDraft?> prepareScript(
     String trackPath,
@@ -73,7 +78,7 @@ class SubtitleAiEngine {
       const bytesPerChunk = samplesPerChunk * 4;
       final totalChunks = (length / bytesPerChunk).ceil();
       onProgress?.call(const SubtitleTaskProgress('loading', 0, ''));
-      final worker = await _SubtitleWorker.open(model, 'asr');
+      final worker = await _SubtitleWorker.open(model);
       final reader = await decoded.open();
       try {
         await worker.beginScriptAlignment(lines);
@@ -141,7 +146,6 @@ class SubtitleAiEngine {
     bool Function()? isCancelled,
     Future<void>? cancellation,
   }) async {
-    _requireSupported();
     if (targetLanguage != 'zh' && targetLanguage != 'en') {
       throw ArgumentError.value(targetLanguage, 'targetLanguage');
     }
@@ -195,51 +199,79 @@ class SubtitleAiEngine {
         targetLanguage: targetLanguage,
       );
     }
-    final model = await _ensureModel(
-      SubtitleModelStore.translation,
-      onProgress,
-      isCancelled,
-      cancellation,
-    );
-    _checkCancelled(isCancelled);
-    onProgress?.call(const SubtitleTaskProgress('loading', 0, ''));
-    final worker = await _SubtitleWorker.open(model, 'chat');
+    final request = _translations.newRequest();
+    final cancelled = cancellation?.then<void>((_) => request.cancel());
     final cues = prior.cues.toList();
     try {
-      const groupSize = 4;
-      for (
-        var offset = prior.nextChunk;
-        offset < source.length;
-        offset += groupSize
-      ) {
+      final initialFraction = cues.length / source.length;
+      onProgress?.call(
+        SubtitleTaskProgress(
+          'translating',
+          initialFraction,
+          '${(initialFraction * 100).round()}%',
+        ),
+      );
+      var offset = prior.nextChunk;
+      while (offset < source.length) {
         _checkCancelled(isCancelled);
-        final group = originals.skip(offset).take(groupSize).toList();
-        List<String> translated;
-        try {
-          translated = await worker.translate(group, targetLanguage);
-        } on FormatException {
-          translated = [];
-          for (final line in group) {
-            translated.addAll(await worker.translate([line], targetLanguage));
+        if (request.cancelled) throw const SubtitleTaskCancelled();
+        // Cue groups retain positional mapping; the shared service deduplicates
+        // their text and serializes network batches with the same global limits.
+        var end = offset;
+        var characters = 0;
+        while (end < source.length &&
+            end - offset < textTranslationBatchMaxItems) {
+          final length = originals[end].length;
+          if (end > offset &&
+              characters + length > textTranslationBatchMaxCharacters) {
+            break;
           }
+          characters += length;
+          end++;
         }
-        if (translated.length != group.length ||
-            translated.any((text) => text.trim().isEmpty)) {
-          throw const FormatException(
-            'Translation did not preserve subtitle correspondence',
-          );
+        final group = originals.sublist(offset, end);
+        final parts = group.map(textTranslationSegments).toList();
+        final texts = parts
+            .expand((parts) => parts)
+            .where(canTranslateText)
+            .toList();
+        final task = _translations.translate(
+          texts,
+          target: targetLanguage == 'zh' ? 'zh-CN' : 'en',
+          request: request,
+        );
+        final result = cancelled == null
+            ? await task
+            : await Future.any<TextTranslationResult>([
+                task,
+                cancelled.then<TextTranslationResult>(
+                  (_) => throw const SubtitleTaskCancelled(),
+                ),
+              ]);
+        _checkCancelled(isCancelled);
+        if (request.cancelled) throw const SubtitleTaskCancelled();
+        if (result.failure != null) throw result.failure!;
+        if (texts.any(
+          (text) => result.translations[text]?.trim().isNotEmpty != true,
+        )) {
+          throw TextTranslationFailure.invalidResponse;
         }
         for (var index = 0; index < group.length; index++) {
           final original = source[offset + index];
+          final translated = parts[index]
+              .map((part) => result.translations[part] ?? part)
+              .join()
+              .trim();
           cues.add(
             SubtitleCue(
               start: original.start,
               end: original.end,
-              text: '${group[index]}\n${translated[index].trim()}',
+              text: '${group[index]}\n$translated',
             ),
           );
         }
-        await _writeCheckpoint(checkpoint, offset + group.length, cues);
+        await _writeCheckpoint(checkpoint, end, cues);
+        offset = end;
         final fraction = cues.length / source.length;
         onProgress?.call(
           SubtitleTaskProgress(
@@ -250,7 +282,7 @@ class SubtitleAiEngine {
         );
       }
     } finally {
-      await worker.close();
+      request.cancel();
     }
     return SubtitleDraft(
       cues: cues,
@@ -438,7 +470,7 @@ class _SubtitleWorker {
   final ReceivePort _port;
   final SendPort _commands;
 
-  static Future<_SubtitleWorker> open(String model, String mode) async {
+  static Future<_SubtitleWorker> open(String model) async {
     final port = ReceivePort();
     final ready = Completer<SendPort>();
     final subscription = port.listen((message) {
@@ -450,11 +482,7 @@ class _SubtitleWorker {
         }
       }
     });
-    final isolate = await Isolate.spawn(_workerMain, [
-      port.sendPort,
-      model,
-      mode,
-    ]);
+    final isolate = await Isolate.spawn(_workerMain, [port.sendPort, model]);
     try {
       final commands = await ready.future.timeout(const Duration(minutes: 5));
       await subscription.cancel();
@@ -466,14 +494,10 @@ class _SubtitleWorker {
     }
   }
 
-  Future<dynamic> _request(
-    String action,
-    Object? payload, [
-    Object? extra,
-  ]) async {
+  Future<dynamic> _request(String action, Object? payload) async {
     final reply = ReceivePort();
     try {
-      _commands.send([reply.sendPort, action, payload, extra]);
+      _commands.send([reply.sendPort, action, payload]);
       final result =
           await reply.first.timeout(const Duration(minutes: 10)) as List;
       if (result[0] != true) throw StateError(result[1].toString());
@@ -507,18 +531,10 @@ class _SubtitleWorker {
     }).toList();
   }
 
-  Future<List<String>> translate(List<String> text, String language) async {
-    final raw = await _request('translate', text, language) as String;
-    if (text.length == 1) {
-      return [parseSingleSubtitleTranslation(raw, language)];
-    }
-    return parseSubtitleTranslations(raw, text.length, language);
-  }
-
   Future<void> close() async {
     final reply = ReceivePort();
     try {
-      _commands.send([reply.sendPort, 'close', null, null]);
+      _commands.send([reply.sendPort, 'close', null]);
       await reply.first.timeout(const Duration(seconds: 10));
     } finally {
       reply.close();
@@ -531,27 +547,18 @@ class _SubtitleWorker {
 Future<void> _workerMain(List<Object> args) async {
   final outgoing = args[0] as SendPort;
   final model = args[1] as String;
-  final mode = args[2] as String;
   final incoming = ReceivePort();
   CrispasrSession? asr;
-  CrispasrChatSession? chat;
   SubtitleCtcAlignment? scriptAlignment;
   SendPort? closeReply;
   try {
-    if (mode == 'asr') {
-      asr = CrispasrSession.open(
-        model,
-        backend: 'wav2vec2',
-        nThreads: Platform.isWindows
-            ? math.min(12, Platform.numberOfProcessors)
-            : 4,
-      );
-    } else {
-      chat = CrispasrChatSession.open(
-        model,
-        params: const ChatOpenParams(nCtx: 2048, nGpuLayers: 0),
-      );
-    }
+    asr = CrispasrSession.open(
+      model,
+      backend: 'wav2vec2',
+      nThreads: Platform.isWindows
+          ? math.min(12, Platform.numberOfProcessors)
+          : 4,
+    );
     outgoing.send(incoming.sendPort);
     await for (final message in incoming) {
       final command = message as List;
@@ -564,7 +571,7 @@ Future<void> _workerMain(List<Object> args) async {
       try {
         switch (action) {
           case 'beginScriptAlignment':
-            final vocab = asr!.ctcVocab();
+            final vocab = asr.ctcVocab();
             if (vocab == null || vocab.isEmpty || vocab[0] != '<pad>') {
               throw StateError('CTC vocabulary is unavailable');
             }
@@ -579,7 +586,7 @@ Future<void> _workerMain(List<Object> args) async {
             final pcm = data[0] as Float32List;
             final start = data[1] as double;
             final duration = data[2] as double;
-            final (_, logits) = asr!.transcribeWithLogits(pcm);
+            final (_, logits) = asr.transcribeWithLogits(pcm);
             if (logits == null) {
               scriptAlignment!.addSilence(
                 startSeconds: start,
@@ -607,30 +614,6 @@ Future<void> _workerMain(List<Object> args) async {
                   )
                   .toList(),
             ]);
-          case 'translate':
-            final inputs = (command[2] as List).cast<String>();
-            final chinese = command[3] == 'zh';
-            final single = inputs.length == 1;
-            chat!.reset();
-            final answer = await chat.generate([
-              ChatMessage.system(
-                single
-                    ? chinese
-                          ? '你是日语字幕翻译员。将日语台词、拟声词和舞台说明翻译成自然的简体中文。只输出一句中文译文，必须包含汉字，不要输出日文、JSON、原文或解释。'
-                          : 'Translate this Japanese subtitle, sound effect, or stage direction into natural English. Output only one English translation, with no Japanese, JSON, original text, or explanation.'
-                    : chinese
-                    ? '你是日语字幕翻译员。请把每条日语字幕翻译成简体中文，绝对不要使用英文。只返回 JSON 数组，保持每条 id 和原顺序不变；每个 text 是简体中文译文，不要解释。'
-                    : 'Translate each Japanese subtitle to English. Return only a JSON array of exactly ${inputs.length} objects with integer id and translated text. Keep each id unchanged and in order. Preserve meaning. Do not add notes.',
-              ),
-              ChatMessage.user(
-                single
-                    ? chinese
-                          ? '日语：${inputs.single}\n简体中文：'
-                          : 'Japanese: ${inputs.single}\nEnglish:'
-                    : '${chinese ? '输入：' : ''}${jsonEncode(inputs.indexed.map((entry) => {'id': entry.$1, 'text': entry.$2}).toList())}${chinese ? '\n输出（简体中文）：' : ''}',
-              ),
-            ], params: const ChatGenerateParams(maxTokens: 400, temperature: 0.1));
-            reply!.send([true, answer]);
         }
       } catch (error) {
         reply?.send([false, error.toString()]);
@@ -640,7 +623,6 @@ Future<void> _workerMain(List<Object> args) async {
     outgoing.send(error.toString());
   } finally {
     asr?.close();
-    chat?.close();
     closeReply?.send([true, null]);
     incoming.close();
   }

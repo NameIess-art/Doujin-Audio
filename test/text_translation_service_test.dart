@@ -4,13 +4,13 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:doujin_audio/core/persistence/json_document_store.dart';
-import 'package:doujin_audio/features/library/application/page_translation_service.dart';
+import 'package:doujin_audio/core/translation/text_translation_service.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   late HttpServer server;
   late _Documents documents;
-  late PageTranslationService service;
+  late TextTranslationService service;
   late Future<void> Function(HttpRequest) handler;
   var requests = 0;
   var clock = DateTime.utc(2026, 10, 7);
@@ -26,7 +26,7 @@ void main() {
     await request.response.close();
   }
 
-  PageTranslationService createService({
+  TextTranslationService createService({
     Duration interval = Duration.zero,
     int memoryCapacity = 1000,
     int diskCapacity = 3000,
@@ -34,7 +34,7 @@ void main() {
     HttpClient Function()? clientFactory,
     DateTime Function()? now,
     Duration requestTimeout = const Duration(seconds: 20),
-  }) => PageTranslationService(
+  }) => TextTranslationService(
     endpoint: Uri.parse('http://127.0.0.1:${server.port}/translate_a/t'),
     documentStore: documents,
     temporaryDirectory: directory ?? () async => Directory.systemTemp,
@@ -46,10 +46,10 @@ void main() {
     diskCapacity: diskCapacity,
   );
 
-  Future<PageTranslationResult> translate(
+  Future<TextTranslationResult> translate(
     List<String> texts, {
     String target = 'zh-CN',
-    PageTranslationRequest? request,
+    TextTranslationRequest? request,
   }) => service.translate(
     texts,
     target: target,
@@ -138,13 +138,13 @@ void main() {
 
   test('file labels retain supported extensions and numbers are skipped', () {
     for (final suffix in ['.WAV', '.md', '.ssa', '.m4v', '.3gp']) {
-      final parts = pageTranslationText('track$suffix', fileName: true);
+      final parts = textTranslationText('track$suffix', fileName: true);
       expect(parts, (source: 'track', suffix: suffix));
       expect('translated${parts.suffix}', 'translated$suffix');
     }
-    expect(pageTranslationText('track.wav'), (source: 'track.wav', suffix: ''));
+    expect(textTranslationText('track.wav'), (source: 'track.wav', suffix: ''));
     expect(
-      pageTranslationText('title.ending', fileName: true).source,
+      textTranslationText('title.ending', fileName: true).source,
       'title.ending',
     );
     for (final text in [
@@ -156,51 +156,51 @@ void main() {
       'bj123',
       'VJ123',
     ]) {
-      expect(shouldTranslatePageText(text), isFalse, reason: text);
+      expect(canTranslateText(text), isFalse, reason: text);
     }
-    expect(shouldTranslatePageText('\u8033\u304b\u304d'), isTrue);
-    expect(shouldTranslatePageText('RJ123 title'), isTrue);
+    expect(canTranslateText('\u8033\u304b\u304d'), isTrue);
+    expect(canTranslateText('RJ123 title'), isTrue);
   });
 
   test('batches cap item count and UTF-16 length without splitting text', () {
     final items = List.generate(51, (index) => 'title $index');
-    expect(pageTranslationBatches(items).map((batch) => batch.length), [50, 1]);
+    expect(textTranslationBatches(items).map((batch) => batch.length), [50, 1]);
     final surrogateText = '\u{1F600}' * 1999;
     expect(surrogateText.length, 3998);
     expect(
-      pageTranslationBatches([
+      textTranslationBatches([
         surrogateText,
         'ab',
         'c',
       ]).map((batch) => batch.length),
       [2, 1],
     );
-    expect(pageTranslationBatches([]), isEmpty);
-    expect(() => pageTranslationBatches(['x' * 4001]), throwsArgumentError);
-    expect(shouldTranslatePageText('x' * 4001), isFalse);
+    expect(textTranslationBatches([]), isEmpty);
+    expect(() => textTranslationBatches(['x' * 4001]), throwsArgumentError);
+    expect(canTranslateText('x' * 4001), isFalse);
   });
 
   test('document segments preserve lines, whitespace and stable prefixes', () {
     const text = '  First line  \r\n\r\nSecond line\n\tThird line\t';
-    final segments = pageTranslationSegments(text);
+    final segments = textTranslationSegments(text);
     expect(segments.join(), text);
-    expect(segments.where(shouldTranslatePageText), [
+    expect(segments.where(canTranslateText), [
       'First line',
       'Second line',
       'Third line',
     ]);
     expect(
-      pageTranslationSegments('$text\nNext line').take(segments.length),
+      textTranslationSegments('$text\nNext line').take(segments.length),
       segments,
     );
-    expect(pageTranslationSegments('').join(), '');
+    expect(textTranslationSegments('').join(), '');
   });
 
   test(
     'document segments cap long lines without splitting surrogate pairs',
     () {
       final text = '${'x' * 3999}\u{1F600}${'y' * 4100}\n';
-      final segments = pageTranslationSegments(text);
+      final segments = textTranslationSegments(text);
       expect(segments.join(), text);
       for (final segment in segments) {
         expect(segment.length, lessThanOrEqualTo(4000));
@@ -228,7 +228,7 @@ void main() {
       () async {
         handler = (request) => respond(request, invalid);
         final result = await translate(['first', 'second']);
-        expect(result.failure, PageTranslationFailure.invalidResponse);
+        expect(result.failure, TextTranslationFailure.invalidResponse);
         expect(result.translations, isEmpty);
         expect(service.cached('first', 'zh-CN'), isNull);
         expect(requests, 1);
@@ -252,7 +252,7 @@ void main() {
     final result = await translate(
       List.generate(51, (index) => 'title $index'),
     );
-    expect(result.failure, PageTranslationFailure.unavailable);
+    expect(result.failure, TextTranslationFailure.unavailable);
     expect(result.translations.length, 50);
     expect(service.cached('title 0', 'zh-CN'), 'translated title 0');
     expect(service.cached('title 50', 'zh-CN'), isNull);
@@ -276,7 +276,7 @@ void main() {
       expect(documents.lastLocation?.name, 'cache.json');
       expect(
         documents.lastLocation?.basePath,
-        endsWith(pageTranslationCacheDirectoryName),
+        endsWith(textTranslationCacheDirectoryName),
       );
     },
   );
@@ -317,12 +317,12 @@ void main() {
         };
         expect(
           (await translate(['title'])).failure,
-          PageTranslationFailure.rateLimited,
+          TextTranslationFailure.rateLimited,
         );
         clock = clock.add(const Duration(seconds: 61));
         expect(
           (await translate(['title'])).failure,
-          PageTranslationFailure.rateLimited,
+          TextTranslationFailure.rateLimited,
         );
         expect(requests, 1);
         clock = clock.add(const Duration(seconds: 60));
@@ -350,12 +350,12 @@ void main() {
       };
       expect(
         (await translate(['title'])).failure,
-        PageTranslationFailure.unusualTraffic,
+        TextTranslationFailure.unusualTraffic,
       );
       clock = clock.add(const Duration(minutes: 4));
       expect(
         (await translate(['title'])).failure,
-        PageTranslationFailure.unusualTraffic,
+        TextTranslationFailure.unusualTraffic,
       );
       expect(requests, 1);
       clock = clock.add(const Duration(minutes: 1));
@@ -482,12 +482,12 @@ void main() {
     };
     expect(
       (await translate(['title'])).failure,
-      PageTranslationFailure.rateLimited,
+      TextTranslationFailure.rateLimited,
     );
     clock = clock.add(const Duration(seconds: 59));
     expect(
       (await translate(['title'])).failure,
-      PageTranslationFailure.rateLimited,
+      TextTranslationFailure.rateLimited,
     );
     expect(requests, 1);
     clock = clock.add(const Duration(seconds: 1));
@@ -553,7 +553,7 @@ void main() {
       };
       expect(
         (await translate(['title'])).failure,
-        PageTranslationFailure.invalidResponse,
+        TextTranslationFailure.invalidResponse,
       );
       expect(service.cached('title', 'zh-CN'), isNull);
     },
@@ -569,7 +569,7 @@ void main() {
     };
     expect(
       (await translate(['title'])).failure,
-      PageTranslationFailure.unavailable,
+      TextTranslationFailure.unavailable,
     );
     release.complete();
     expect(requests, 1);

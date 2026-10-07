@@ -6,21 +6,21 @@ import 'dart:typed_data';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 
-import '../../../core/logging/app_log_service.dart';
-import '../../../core/persistence/json_document_store.dart';
+import '../logging/app_log_service.dart';
+import '../persistence/json_document_store.dart';
 
-const pageTranslationBatchMaxCharacters = 4000;
-const pageTranslationBatchMaxItems = 50;
-const pageTranslationCacheDirectoryName = 'page_translations';
+const textTranslationBatchMaxCharacters = 4000;
+const textTranslationBatchMaxItems = 50;
+const textTranslationCacheDirectoryName = 'page_translations';
 
-enum PageTranslationFailure {
+enum TextTranslationFailure {
   unavailable,
   invalidResponse,
   rateLimited,
   unusualTraffic,
 }
 
-class PageTranslationRequest {
+class TextTranslationRequest {
   final Completer<void> _cancellation = Completer<void>();
   void Function()? _abort;
   void Function()? _onCancel;
@@ -43,20 +43,20 @@ class PageTranslationRequest {
   }
 }
 
-class PageTranslationResult {
-  PageTranslationResult({
+class TextTranslationResult {
+  TextTranslationResult({
     Map<String, String> translations = const {},
     this.failure,
   }) : translations = Map.unmodifiable(translations);
 
   final Map<String, String> translations;
-  final PageTranslationFailure? failure;
+  final TextTranslationFailure? failure;
 }
 
 typedef _TranslationKey = (String, String);
 
-class PageTranslationService {
-  PageTranslationService({
+class TextTranslationService {
+  TextTranslationService({
     HttpClient Function()? clientFactory,
     Uri? endpoint,
     JsonDocumentStore? documentStore,
@@ -89,20 +89,20 @@ class PageTranslationService {
   final int _memoryCapacity;
   final int _diskCapacity;
   final _memory = <_TranslationKey, String>{};
-  final _requests = <PageTranslationRequest>{};
+  final _requests = <TextTranslationRequest>{};
   Future<void> _operations = Future<void>.value();
   Future<void> _writes = Future<void>.value();
   Future<JsonDocumentLocation?>? _location;
   DateTime? _lastRequestAt;
   DateTime? _cooldownUntil;
-  PageTranslationFailure? _cooldownFailure;
+  TextTranslationFailure? _cooldownFailure;
   bool _disposed = false;
   int _cacheEpoch = 0;
 
   JsonDocumentStore get _store => _documentStore ??= DefaultJsonDocumentStore();
 
-  PageTranslationRequest newRequest() {
-    final request = PageTranslationRequest();
+  TextTranslationRequest newRequest() {
+    final request = TextTranslationRequest();
     request._onCancel = () => _requests.remove(request);
     if (_disposed) {
       request.cancel();
@@ -119,12 +119,12 @@ class PageTranslationService {
     return value;
   }
 
-  Future<PageTranslationResult> translate(
+  Future<TextTranslationResult> translate(
     List<String> texts, {
     required String target,
-    required PageTranslationRequest request,
+    required TextTranslationRequest request,
   }) async {
-    if (_disposed || request.cancelled) return PageTranslationResult();
+    if (_disposed || request.cancelled) return TextTranslationResult();
     final task = _operations.then(
       (_) => _translate(texts, target: target, request: request),
     );
@@ -133,25 +133,25 @@ class PageTranslationService {
     try {
       return await request._active(task);
     } on _TranslationCancelled {
-      return PageTranslationResult();
+      return TextTranslationResult();
     }
   }
 
-  Future<PageTranslationResult> _translate(
+  Future<TextTranslationResult> _translate(
     List<String> texts, {
     required String target,
-    required PageTranslationRequest request,
+    required TextTranslationRequest request,
   }) async {
     final result = <String, String>{};
     try {
-      if (request.cancelled || _disposed) return PageTranslationResult();
-      final unique = texts.where(shouldTranslatePageText).toSet();
+      if (request.cancelled || _disposed) return TextTranslationResult();
+      final unique = texts.where(canTranslateText).toSet();
       for (final text in unique) {
         final value = cached(text, target);
         if (value != null) result[text] = value;
       }
       if (result.length == unique.length) {
-        return PageTranslationResult(translations: result);
+        return TextTranslationResult(translations: result);
       }
       await request._active(_writes);
       final entries = await request._active(_readDisk());
@@ -167,10 +167,10 @@ class PageTranslationService {
           .where((text) => !result.containsKey(text))
           .toList();
       if (missing.isEmpty) _saveDisk(entries);
-      for (final batch in pageTranslationBatches(missing)) {
+      for (final batch in textTranslationBatches(missing)) {
         final cooldown = _cooldownUntil;
         if (cooldown != null && _now().isBefore(cooldown)) {
-          return PageTranslationResult(
+          return TextTranslationResult(
             translations: result,
             failure: _cooldownFailure,
           );
@@ -192,23 +192,23 @@ class PageTranslationService {
         }
         _saveDisk(entries);
       }
-      return PageTranslationResult(translations: result);
+      return TextTranslationResult(translations: result);
     } on _TranslationCancelled {
-      return PageTranslationResult(translations: result);
+      return TextTranslationResult(translations: result);
     } on _TranslationError catch (error) {
-      return PageTranslationResult(
+      return TextTranslationResult(
         translations: result,
         failure: error.failure,
       );
     } on IOException {
-      return PageTranslationResult(
+      return TextTranslationResult(
         translations: result,
-        failure: PageTranslationFailure.unavailable,
+        failure: TextTranslationFailure.unavailable,
       );
     } on TimeoutException {
-      return PageTranslationResult(
+      return TextTranslationResult(
         translations: result,
-        failure: PageTranslationFailure.unavailable,
+        failure: TextTranslationFailure.unavailable,
       );
     }
   }
@@ -216,7 +216,7 @@ class PageTranslationService {
   Future<List<String>> _fetch(
     List<String> texts,
     String target,
-    PageTranslationRequest request,
+    TextTranslationRequest request,
   ) async {
     if (request.cancelled) throw const _TranslationCancelled();
     final client = _clientFactory();
@@ -252,7 +252,7 @@ class PageTranslationService {
             .timeout(_requestTimeout)
             .onError<FormatException>(
               (_, _) => throw const _TranslationError(
-                PageTranslationFailure.invalidResponse,
+                TextTranslationFailure.invalidResponse,
               ),
             ),
       );
@@ -262,8 +262,8 @@ class PageTranslationService {
           body.toLowerCase().contains('unusual traffic');
       if (unusual || response.statusCode == 429 || response.statusCode == 403) {
         final failure = unusual
-            ? PageTranslationFailure.unusualTraffic
-            : PageTranslationFailure.rateLimited;
+            ? TextTranslationFailure.unusualTraffic
+            : TextTranslationFailure.rateLimited;
         var delay = Duration(minutes: unusual ? 5 : 1);
         final retry = response.headers.value(HttpHeaders.retryAfterHeader);
         final seconds = int.tryParse(retry ?? '');
@@ -283,7 +283,7 @@ class PageTranslationService {
         throw _TranslationError(failure);
       }
       if (response.statusCode != HttpStatus.ok) {
-        throw const _TranslationError(PageTranslationFailure.unavailable);
+        throw const _TranslationError(TextTranslationFailure.unavailable);
       }
       return _parse(body, texts.length);
     } finally {
@@ -305,7 +305,7 @@ class PageTranslationService {
     try {
       final root = await _temporaryDirectory();
       return JsonDocumentLocation.folderChild(
-        folder: path.join(root.path, pageTranslationCacheDirectoryName),
+        folder: path.join(root.path, textTranslationCacheDirectoryName),
         name: 'cache.json',
       );
     } on Object {
@@ -331,7 +331,7 @@ class PageTranslationService {
             row.every((value) => value is String)) {
           final source = row[1] as String;
           final translated = row[2] as String;
-          if (!shouldTranslatePageText(source) || translated.trim().isEmpty) {
+          if (!canTranslateText(source) || translated.trim().isEmpty) {
             continue;
           }
           entries[(source, row[0] as String)] = translated;
@@ -427,17 +427,17 @@ class PageTranslationService {
   }
 }
 
-List<List<String>> pageTranslationBatches(List<String> texts) {
+List<List<String>> textTranslationBatches(List<String> texts) {
   final batches = <List<String>>[];
   var current = <String>[];
   var characters = 0;
   for (final text in texts) {
-    if (text.length > pageTranslationBatchMaxCharacters) {
+    if (text.length > textTranslationBatchMaxCharacters) {
       throw ArgumentError.value(text.length, 'text.length');
     }
     if (current.isNotEmpty &&
-        (current.length == pageTranslationBatchMaxItems ||
-            characters + text.length > pageTranslationBatchMaxCharacters)) {
+        (current.length == textTranslationBatchMaxItems ||
+            characters + text.length > textTranslationBatchMaxCharacters)) {
       batches.add(current);
       current = [];
       characters = 0;
@@ -450,13 +450,13 @@ List<List<String>> pageTranslationBatches(List<String> texts) {
 }
 
 /// Keep line boundaries and surrounding whitespace out of translation requests.
-List<String> pageTranslationSegments(String text) {
+List<String> textTranslationSegments(String text) {
   final segments = <String>[];
   for (final line in RegExp(r'[^\r\n]+|[\r\n]+').allMatches(text)) {
     final value = line.group(0)!;
     var start = 0;
     while (start < value.length) {
-      var end = (start + pageTranslationBatchMaxCharacters).clamp(
+      var end = (start + textTranslationBatchMaxCharacters).clamp(
         0,
         value.length,
       );
@@ -492,7 +492,7 @@ final _fileSuffix = RegExp(
 final _workNumber = RegExp(r'^(RJ|BJ|VJ)\d+$', caseSensitive: false);
 final _letters = RegExp(r'\p{L}', unicode: true);
 
-({String source, String suffix}) pageTranslationText(
+({String source, String suffix}) textTranslationText(
   String text, {
   bool fileName = false,
 }) {
@@ -503,9 +503,9 @@ final _letters = RegExp(r'\p{L}', unicode: true);
   );
 }
 
-bool shouldTranslatePageText(String text) =>
+bool canTranslateText(String text) =>
     text.trim().isNotEmpty &&
-    text.length <= pageTranslationBatchMaxCharacters &&
+    text.length <= textTranslationBatchMaxCharacters &&
     _letters.hasMatch(text) &&
     !_workNumber.hasMatch(text.trim());
 
@@ -526,7 +526,7 @@ List<String> _parse(String body, int count) {
       return item;
     }).toList();
   } on FormatException {
-    throw const _TranslationError(PageTranslationFailure.invalidResponse);
+    throw const _TranslationError(TextTranslationFailure.invalidResponse);
   }
 }
 
@@ -536,5 +536,5 @@ class _TranslationCancelled implements Exception {
 
 class _TranslationError implements Exception {
   const _TranslationError(this.failure);
-  final PageTranslationFailure failure;
+  final TextTranslationFailure failure;
 }

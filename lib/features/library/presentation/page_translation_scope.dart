@@ -8,8 +8,7 @@ import '../../../app/localization/app_language_provider.dart';
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/top_page_header.dart';
-import '../application/page_translation_service.dart';
-import 'library_providers.dart';
+import '../../../core/translation/text_translation_service.dart';
 
 class WorkPageTranslationHost extends ConsumerStatefulWidget {
   const WorkPageTranslationHost({super.key, required this.child});
@@ -30,7 +29,7 @@ class _WorkPageTranslationHostState
   late final AppLanguageProvider _i18n;
   late String _target;
   Timer? _timer;
-  PageTranslationRequest? _request;
+  TextTranslationRequest? _request;
   bool _enabled = false;
   bool _busy = false;
   bool _failed = false;
@@ -93,7 +92,7 @@ class _WorkPageTranslationHostState
 
   void _updateActivity() {
     if (_active && !_failed) {
-      _request ??= ref.read(pageTranslationServiceProvider).newRequest();
+      _request ??= ref.read(textTranslationServiceProvider).newRequest();
       _schedule();
     } else {
       _stop();
@@ -110,7 +109,7 @@ class _WorkPageTranslationHostState
   }
 
   void _register(String text, VoidCallback listener) {
-    if (!shouldTranslatePageText(text)) return;
+    if (!canTranslateText(text)) return;
     _listeners.putIfAbsent(text, () => {}).add(listener);
     _schedule();
   }
@@ -152,7 +151,7 @@ class _WorkPageTranslationHostState
   Future<void> _translate() async {
     final request = _request;
     if (!_active || _failed || request == null || request.cancelled) return;
-    final service = ref.read(pageTranslationServiceProvider);
+    final service = ref.read(textTranslationServiceProvider);
     final missing = <String>[];
     final cached = <String>[];
     for (final text in _listeners.keys) {
@@ -172,7 +171,7 @@ class _WorkPageTranslationHostState
     }
     _busy = true;
     _status.value++;
-    final PageTranslationResult result;
+    final TextTranslationResult result;
     try {
       result = await service.translate(
         missing,
@@ -196,11 +195,11 @@ class _WorkPageTranslationHostState
     if (failure != null) {
       _failed = true;
       final key = switch (failure) {
-        PageTranslationFailure.unavailable => 'work_translation_unavailable',
-        PageTranslationFailure.invalidResponse =>
+        TextTranslationFailure.unavailable => 'work_translation_unavailable',
+        TextTranslationFailure.invalidResponse =>
           'work_translation_invalid_response',
-        PageTranslationFailure.rateLimited => 'work_translation_rate_limited',
-        PageTranslationFailure.unusualTraffic =>
+        TextTranslationFailure.rateLimited => 'work_translation_rate_limited',
+        TextTranslationFailure.unusualTraffic =>
           'work_translation_unusual_traffic',
       };
       showAppSnackBar(context, _i18n.tr(key), tone: AppFeedbackTone.warning);
@@ -297,7 +296,7 @@ class WorkPageTranslationText extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final parts = pageTranslationText(text, fileName: fileName);
+    final parts = textTranslationText(text, fileName: fileName);
     return WorkPageTranslationBuilder(
       texts: [parts.source],
       builder: (context, translate, _) => Text(
@@ -349,11 +348,11 @@ class _WorkPageTranslationBuilderState
         ?.state;
     _parts.removeWhere((text, _) => !widget.texts.contains(text));
     for (final text in widget.texts) {
-      _parts.putIfAbsent(text, () => pageTranslationSegments(text));
+      _parts.putIfAbsent(text, () => textTranslationSegments(text));
     }
     final sources = _parts.values
         .expand((parts) => parts)
-        .where(shouldTranslatePageText)
+        .where(canTranslateText)
         .toSet();
     for (final source in _sources) {
       if (host != _host || !sources.contains(source)) {

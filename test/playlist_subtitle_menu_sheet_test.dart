@@ -137,11 +137,18 @@ class _ScriptSelectionService extends PlaybackSubtitleService {
   }
 }
 
-class _DelayedModelStore extends SubtitleModelStore {
-  final checked = Completer<SubtitleModelStatus>();
+class _RecordingModelStore extends SubtitleModelStore {
+  int checks = 0;
 
   @override
-  Future<SubtitleModelStatus> status(SubtitleModelSpec spec) => checked.future;
+  Future<SubtitleModelStatus> status(SubtitleModelSpec spec) async {
+    checks++;
+    return const SubtitleModelStatus(
+      ready: true,
+      bytes: 0,
+      availableBytes: null,
+    );
+  }
 }
 
 class _PendingGenerationEngine extends SubtitleAiEngine {
@@ -177,6 +184,28 @@ class _RecordingGenerationService extends PlaybackSubtitleService {
           ],
         ),
       );
+}
+
+class _FailedTranslationJob extends SubtitleGenerationJob {
+  _FailedTranslationJob(this.key)
+    : super(trackPath: 'audio.mp3', kind: SubtitleDraftKind.translation);
+
+  final String key;
+
+  @override
+  SubtitleGenerationStatus get status => SubtitleGenerationStatus.failed;
+
+  @override
+  String get errorMessageKey => key;
+}
+
+class _FailedTranslationService extends PlaybackSubtitleService {
+  _FailedTranslationService(this.job) : super(trackResolver: (_) => null);
+
+  final SubtitleGenerationJob job;
+
+  @override
+  SubtitleGenerationJob get generationJob => job;
 }
 
 PlaybackSessionSnapshot _createSnapshot({required String trackPath}) {
@@ -220,6 +249,37 @@ void main() {
     HttpOverrides.global = null;
     SharedPreferences.setMockInitialValues(<String, Object>{});
   });
+
+  for (final languageCode in AppLanguage.values) {
+    testWidgets('translation errors are localized in ${languageCode.name}', (
+      tester,
+    ) async {
+      final language = AppLanguageProvider();
+      addTearDown(language.dispose);
+      await language.setLanguage(languageCode);
+      for (final key in const [
+        'work_translation_unavailable',
+        'work_translation_invalid_response',
+        'work_translation_rate_limited',
+        'work_translation_unusual_traffic',
+      ]) {
+        final service = _FailedTranslationService(_FailedTranslationJob(key));
+        addTearDown(service.dispose);
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [
+              appLanguageProviderInstanceProvider.overrideWithValue(language),
+            ],
+            child: MaterialApp(
+              home: Scaffold(body: SubtitleGenerationDialog(service: service)),
+            ),
+          ),
+        );
+        expect(find.text(language.tr(key)), findsOneWidget);
+        expect(find.text(key), findsNothing);
+      }
+    });
+  }
 
   for (final (name, hasExisting, confirm) in const [
     ('cancelled subtitle import preserves both files', true, false),
@@ -551,8 +611,50 @@ void main() {
     );
   });
 
+  testWidgets('32-bit restriction only disables script matching', (
+    tester,
+  ) async {
+    const audioPath = '/path/to/japanese_audio.mp3';
+    final service = _RecordingGenerationService(_PendingGenerationEngine());
+    await service.load(audioPath);
+    final language = AppLanguageProvider();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appLanguageProviderInstanceProvider.overrideWithValue(language),
+          playbackSubtitleServiceProvider.overrideWithValue(service),
+        ],
+        child: MaterialApp(
+          home: Scaffold(
+            body: SubtitleMenuSheet(
+              session: _createSnapshot(trackPath: audioPath),
+              generationUnavailableReason: () => 'subtitle_unsupported_32bit',
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<ListTile>(find.byKey(const ValueKey('subtitle_script_tile')))
+          .enabled,
+      isFalse,
+    );
+    expect(
+      find.text(language.tr('subtitle_unsupported_32bit')),
+      findsOneWidget,
+    );
+    final translation = find.byKey(const ValueKey('subtitle_translate_tile'));
+    expect(tester.widget<ListTile>(translation).enabled, isTrue);
+    await tester.ensureVisible(translation);
+    await tester.tap(translation);
+    await tester.pumpAndSettle();
+    expect(find.byType(SimpleDialog), findsOneWidget);
+  });
+
   testWidgets(
-    'translation opens progress immediately and can continue in background',
+    'online translation skips model checks and can continue in background',
     (tester) async {
       final directory = Directory.systemTemp.createTempSync(
         'subtitle_translation_',
@@ -561,7 +663,7 @@ void main() {
       final audioFile = File('${directory.path}/japanese_audio.mp3')
         ..writeAsBytesSync([0]);
       final audioPath = audioFile.path;
-      final models = _DelayedModelStore();
+      final models = _RecordingModelStore();
       final engine = _PendingGenerationEngine(models: models);
       final service = _RecordingGenerationService(engine);
       await service.load(audioPath);
@@ -588,18 +690,8 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byType(SimpleDialog), findsOneWidget);
       await tester.tap(find.text(language.tr('subtitle_language_zh')));
-      await tester.pump();
-      expect(
-        find.descendant(
-          of: translation,
-          matching: find.byType(CircularProgressIndicator),
-        ),
-        findsOneWidget,
-      );
-      models.checked.complete(
-        const SubtitleModelStatus(ready: true, bytes: 0, availableBytes: null),
-      );
       await tester.pump(const Duration(milliseconds: 300));
+      expect(models.checks, 0);
       expect(service.generationJob?.status, SubtitleGenerationStatus.running);
       expect(find.byType(SubtitleGenerationDialog), findsOneWidget);
       expect(

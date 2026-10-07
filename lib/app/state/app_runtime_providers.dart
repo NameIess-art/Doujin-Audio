@@ -7,6 +7,7 @@ import '../../features/settings/presentation/settings_providers.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/legacy.dart' show ChangeNotifierProvider;
 import 'package:flutter_riverpod/misc.dart' show Override;
+import '../../core/translation/text_translation_service.dart';
 
 import '../application/app_persistence_coordinator.dart';
 import '../application/browse_page_state_store.dart';
@@ -46,6 +47,12 @@ import '../../features/video_converter/application/video_conversion_coordinator.
 final themeProviderInstanceProvider = ChangeNotifierProvider<ThemeProvider>(
   (ref) => ThemeProvider(),
 );
+
+final textTranslationServiceProvider = Provider<TextTranslationService>((ref) {
+  final service = TextTranslationService();
+  ref.onDispose(service.dispose);
+  return service;
+});
 
 final browsePageStateStoreProvider = Provider<BrowsePageStateStore>((ref) {
   return BrowsePageStateStore();
@@ -194,9 +201,7 @@ final settingsCommandControllerProvider = Provider<SettingsCommandController>((
       ref.read(browsePageStateStoreProvider).clear();
       ref.read(asmrLibraryControllerProvider)?.clearRuntimeCaches();
       await ref.read(workTextServiceProvider).clearDirectoryCache();
-      if (ref.exists(pageTranslationServiceProvider)) {
-        await ref.read(pageTranslationServiceProvider).clearCache();
-      }
+      await ref.read(textTranslationServiceProvider).clearCache();
     },
   );
 });
@@ -289,6 +294,11 @@ List<Override> createAppRuntimeOverrides({
     libraryFacadeProvider.overrideWithValue(library),
     playbackFacadeProvider.overrideWithValue(playback),
     playbackSubtitleServiceProvider.overrideWithValue(subtitles),
+    textTranslationServiceProvider.overrideWith((ref) {
+      final service = subtitles.translationService;
+      ref.onDispose(service.dispose);
+      return service;
+    }),
     timerFacadeProvider.overrideWithValue(timer),
     notificationFacadeProvider.overrideWithValue(notifications),
     settingsRepositoryProvider.overrideWithValue(settings),

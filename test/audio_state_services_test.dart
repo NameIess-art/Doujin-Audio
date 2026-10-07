@@ -98,7 +98,6 @@ void main() {
           'asmrPlaybackCacheEnabled': true,
           'hapticFeedbackEnabled': false,
           'coverImageResolution': CoverImageResolution.ultraHigh.name,
-          'coverImageDisplayMode': CoverImageDisplayMode.tile.name,
           'preferEmbeddedCover': false,
           'asmrDownloadDestinationRoot': '/backup/asmr',
           'asmrDownloadConflictPolicy': AsmrDownloadConflictPolicy.skip.name,
@@ -136,7 +135,6 @@ void main() {
 
       expect(repository.slice.state.isInitialized, isTrue);
       expect(repository.coverImageResolution, CoverImageResolution.ultraHigh);
-      expect(repository.coverImageDisplayMode, CoverImageDisplayMode.tile);
       expect(repository.preferEmbeddedCover, isFalse);
       expect(repository.startupPage, StartupPage.asmrOne);
       expect(repository.asmrDownloadDestinationRoot, '/backup/asmr');
@@ -191,7 +189,6 @@ void main() {
         ..autoCheckUpdates = true
         ..dlsiteMetadataLanguage = ContentLanguagePreference.en
         ..asmrPlaybackCacheEnabled = true
-        ..coverImageDisplayMode = CoverImageDisplayMode.stretch
         ..asmrDownloadDestinationRoot = '/downloads/asmr'
         ..asmrDownloadConflictPolicy = AsmrDownloadConflictPolicy.skip
         ..audioDeviceDisconnectBehavior =
@@ -228,11 +225,6 @@ void main() {
               (state) => state.asmrPlaybackCacheEnabled,
               'asmr playback cache',
               isTrue,
-            )
-            .having(
-              (state) => state.coverImageDisplayMode,
-              'cover display mode',
-              CoverImageDisplayMode.stretch,
             )
             .having(
               (state) => state.asmrDownloadDestinationRoot,
@@ -346,7 +338,6 @@ void main() {
       );
       expect(state.reduceAnimations, isFalse);
       expect(state.portraitLockEnabled, isFalse);
-      expect(state.coverImageDisplayMode, CoverImageDisplayMode.fill);
       expect(state.preferEmbeddedCover, isFalse);
     });
 
@@ -445,26 +436,23 @@ void main() {
       },
     );
 
-    test('cover display mode persists with safe fallback', () async {
+    test('removed cover display mode is omitted when saving', () async {
+      final preferences = await SharedPreferences.getInstance();
+      await preferences.setString(
+        'playback_settings_v1',
+        json.encode(<String, Object?>{'coverImageDisplayMode': 'tile'}),
+      );
       final repository = SettingsRepository();
       addTearDown(repository.dispose);
 
-      await repository.setCoverImageDisplayMode(CoverImageDisplayMode.tile);
+      await repository.loadPersistedState();
+      expect(repository.slice.state, SettingsState(isInitialized: true));
 
-      final restored = SettingsRepository();
-      addTearDown(restored.dispose);
-      await restored.loadPersistedState();
-      expect(restored.coverImageDisplayMode, CoverImageDisplayMode.tile);
-
-      SharedPreferences.setMockInitialValues(<String, Object>{
-        'playback_settings_v1': json.encode(<String, Object?>{
-          'coverImageDisplayMode': 'unknown',
-        }),
-      });
-      final invalid = SettingsRepository();
-      addTearDown(invalid.dispose);
-      await invalid.loadPersistedState();
-      expect(invalid.coverImageDisplayMode, CoverImageDisplayMode.fill);
+      await repository.persist();
+      final saved =
+          json.decode(preferences.getString('playback_settings_v1')!)
+              as Map<String, dynamic>;
+      expect(saved, isNot(contains('coverImageDisplayMode')));
     });
 
     test(

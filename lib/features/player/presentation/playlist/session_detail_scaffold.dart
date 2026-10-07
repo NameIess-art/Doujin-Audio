@@ -229,104 +229,111 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
                             Orientation.landscape;
                     final topBarHeight = isWindows ? 48.0 : 40.0;
 
-                    return Column(
+                    return Stack(
+                      fit: StackFit.expand,
                       children: [
-                        // Preserve the content inset after floating the close button.
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 8),
-                          child: Builder(
-                            builder: (context) {
-                              final subtitles = ref.read(
-                                playbackSubtitleServiceProvider,
-                              );
-                              return ListenableBuilder(
-                                listenable: subtitles,
-                                builder: (context, _) {
-                                  final hasSubtitle = subtitles
-                                      .hasKnownSubtitle(
-                                        session.currentTrackPath,
-                                      );
-                                  final settings = ref.watch(
-                                    subtitleSettingsProvider.select(
-                                      (state) => (
-                                        state.isShowEnabled(session.id),
-                                        state.isGlobalEnabled(session.id),
-                                      ),
-                                    ),
-                                  );
-
-                                  return Row(
-                                    children: [
-                                      Expanded(
-                                        child: SizedBox(height: topBarHeight),
-                                      ),
-                                      if (hasSubtitle &&
-                                          settings.$1 &&
-                                          settings.$2) ...[
-                                        Icon(
-                                          Icons.subtitles_rounded,
-                                          color: sessionDetailForeground(
-                                            cs,
-                                            SessionDetailForegroundLevel.muted,
-                                          ),
-                                          size: isLandscape ? 20 : 18,
+                        Align(
+                          alignment: Alignment.topCenter,
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 8),
+                            child: Builder(
+                              builder: (context) {
+                                final subtitles = ref.read(
+                                  playbackSubtitleServiceProvider,
+                                );
+                                return ListenableBuilder(
+                                  listenable: subtitles,
+                                  builder: (context, _) {
+                                    final hasSubtitle = subtitles
+                                        .hasKnownSubtitle(
+                                          session.currentTrackPath,
+                                        );
+                                    final settings = ref.watch(
+                                      subtitleSettingsProvider.select(
+                                        (state) => (
+                                          state.isShowEnabled(session.id),
+                                          state.isGlobalEnabled(session.id),
                                         ),
-                                        SizedBox(width: isLandscape ? 8 : 6),
-                                      ],
-                                      Consumer(
-                                        builder: (context, ref, child) {
-                                          final transport = ref.watch(
-                                            sessionDetailTransportProvider(
-                                              session.id,
-                                            ),
-                                          );
-                                          final featureIcons =
-                                              sessionFeatureBadgeIcons(
-                                                showSubtitles: false,
-                                                channelSwapEnabled:
-                                                    transport
-                                                        ?.channelSwapEnabled ??
-                                                    session.channelSwapEnabled,
-                                                audioEffects:
-                                                    transport?.audioEffects ??
-                                                    session.audioEffects,
-                                                speed:
-                                                    transport?.speed ??
-                                                    session.speed,
-                                              );
-                                          if (featureIcons.isEmpty) {
-                                            return const SizedBox.shrink();
-                                          }
-                                          return Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              SessionFeatureIconRow(
-                                                featureIcons: featureIcons,
-                                                color: sessionDetailForeground(
-                                                  cs,
-                                                  SessionDetailForegroundLevel
-                                                      .muted,
-                                                ),
-                                                iconSize: isLandscape ? 20 : 18,
-                                                spacing: isLandscape ? 8 : 6,
-                                                alignment: WrapAlignment.end,
-                                              ),
-                                              SizedBox(
-                                                width: isLandscape ? 8 : 6,
-                                              ),
-                                            ],
-                                          );
-                                        },
                                       ),
-                                    ],
-                                  );
-                                },
-                              );
-                            },
+                                    );
+
+                                    return Row(
+                                      children: [
+                                        Expanded(
+                                          child: SizedBox(height: topBarHeight),
+                                        ),
+                                        if (hasSubtitle &&
+                                            settings.$1 &&
+                                            settings.$2) ...[
+                                          Icon(
+                                            Icons.subtitles_rounded,
+                                            color: sessionDetailForeground(
+                                              cs,
+                                              SessionDetailForegroundLevel
+                                                  .muted,
+                                            ),
+                                            size: isLandscape ? 20 : 18,
+                                          ),
+                                          SizedBox(width: isLandscape ? 8 : 6),
+                                        ],
+                                        Consumer(
+                                          builder: (context, ref, child) {
+                                            final transport = ref.watch(
+                                              sessionDetailTransportProvider(
+                                                session.id,
+                                              ),
+                                            );
+                                            final featureIcons =
+                                                sessionFeatureBadgeIcons(
+                                                  showSubtitles: false,
+                                                  channelSwapEnabled:
+                                                      transport
+                                                          ?.channelSwapEnabled ??
+                                                      session
+                                                          .channelSwapEnabled,
+                                                  audioEffects:
+                                                      transport?.audioEffects ??
+                                                      session.audioEffects,
+                                                  speed:
+                                                      transport?.speed ??
+                                                      session.speed,
+                                                );
+                                            if (featureIcons.isEmpty) {
+                                              return const SizedBox.shrink();
+                                            }
+                                            return Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                SessionFeatureIconRow(
+                                                  featureIcons: featureIcons,
+                                                  color: sessionDetailForeground(
+                                                    cs,
+                                                    SessionDetailForegroundLevel
+                                                        .muted,
+                                                  ),
+                                                  iconSize: isLandscape
+                                                      ? 20
+                                                      : 18,
+                                                  spacing: isLandscape ? 8 : 6,
+                                                  alignment: WrapAlignment.end,
+                                                ),
+                                                SizedBox(
+                                                  width: isLandscape ? 8 : 6,
+                                                ),
+                                              ],
+                                            );
+                                          },
+                                        ),
+                                      ],
+                                    );
+                                  },
+                                );
+                              },
+                            ),
                           ),
                         ),
-                        // Content area
-                        Expanded(
+                        Positioned.fill(
+                          top: isLandscape ? 0 : topBarHeight,
                           child: Builder(
                             builder: (context) {
                               Widget artworkWidget = AnimatedSwitcher(
@@ -367,7 +374,7 @@ class _SessionDetailScaffoldState extends ConsumerState<SessionDetailScaffold>
 
                               final detailPadding = EdgeInsets.fromLTRB(
                                 isLandscape ? 8 : 28,
-                                0,
+                                isLandscape ? topBarHeight : 0,
                                 isLandscape ? 8 : 28,
                                 isLandscape ? 8 : 8,
                               );

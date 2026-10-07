@@ -680,7 +680,6 @@ class SessionDetailContentState extends ConsumerState<SessionDetailContent> {
         timeSegmentLabels: visibleSegmentLabels,
         selectedSegmentId: selectedSegmentId,
         onManualSeek: _handleSegmentManualSeek,
-        isLandscape: widget.isLandscape,
       );
     }
 

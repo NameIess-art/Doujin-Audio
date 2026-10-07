@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../app/presentation/app_presentation_providers.dart';
-import '../../../../core/media/cover_image_resolution.dart';
 import '../../../../core/media/music_track.dart';
 import '../../../../core/widgets/async_cover_image.dart';
 
@@ -53,7 +52,6 @@ class QueueTrackCoverState extends ConsumerState<QueueTrackCover> {
       cacheWidth: widget.coverCacheWidth,
       useDefaultCacheWidth: widget.coverCacheWidth != null,
       fit: BoxFit.cover,
-      displayMode: CoverImageDisplayMode.fill,
     );
   }
 }

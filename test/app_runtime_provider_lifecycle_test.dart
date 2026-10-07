@@ -30,7 +30,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   test(
-    'visual settings follow Settings and share one stream subscription',
+    'cover resolution follows Settings with one stream subscription',
     () async {
       var subscriptions = 0;
       var cancellations = 0;
@@ -59,36 +59,21 @@ void main() {
         ],
       );
       final resolutions = <CoverImageResolution>[];
-      final displayModes = <CoverImageDisplayMode>[];
       container.listen(coverImageResolutionProvider, (_, next) {
         resolutions.add(next);
       }, fireImmediately: true);
-      container.listen(coverImageDisplayModeProvider, (_, next) {
-        displayModes.add(next);
-      }, fireImmediately: true);
       await container.pump();
       expect(resolutions, [CoverImageResolution.balanced]);
-      expect(displayModes, [CoverImageDisplayMode.fill]);
       states.add(SettingsState());
       await container.pump();
       states.add(SettingsState(converterFormat: 'flac'));
       await container.pump();
       expect(resolutions, [CoverImageResolution.balanced]);
-      expect(displayModes, [CoverImageDisplayMode.fill]);
-      states.add(
-        SettingsState(
-          coverImageResolution: CoverImageResolution.high,
-          coverImageDisplayMode: CoverImageDisplayMode.tile,
-        ),
-      );
+      states.add(SettingsState(coverImageResolution: CoverImageResolution.high));
       await container.pump();
       expect(resolutions, [
         CoverImageResolution.balanced,
         CoverImageResolution.high,
-      ]);
-      expect(displayModes, [
-        CoverImageDisplayMode.fill,
-        CoverImageDisplayMode.tile,
       ]);
       expect(subscriptions, 1);
       container.dispose();

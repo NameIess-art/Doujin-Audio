@@ -2280,12 +2280,6 @@ void main() {
           isTrue,
         );
         expect(
-          foregroundImages.every(
-            (image) => image.displayMode == CoverImageDisplayMode.fill,
-          ),
-          isTrue,
-        );
-        expect(
           find.descendant(
             of: viewport,
             matching: find.byType(CircularProgressIndicator),
@@ -2466,7 +2460,6 @@ void main() {
         ),
       );
       expect(foregroundImage.fit, BoxFit.contain);
-      expect(foregroundImage.displayMode, CoverImageDisplayMode.fill);
       expect(foregroundImage.cacheHeight, isNull);
       expect(foregroundImage.useDefaultCacheWidth, isFalse);
       expect(
@@ -2551,7 +2544,6 @@ void main() {
         );
         expect(image.path, contains('persistent'));
         expect(image.fit, BoxFit.contain);
-        expect(image.displayMode, CoverImageDisplayMode.fill);
         expect(image.useDefaultCacheWidth, isFalse);
 
         await tester.pumpWidget(const SizedBox.shrink());

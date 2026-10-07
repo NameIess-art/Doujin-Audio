@@ -43,7 +43,6 @@ class SettingsRepository {
   StartupPage startupPage = StartupPage.library;
   bool portraitLockEnabled = false;
   CoverImageResolution coverImageResolution = CoverImageResolution.balanced;
-  CoverImageDisplayMode coverImageDisplayMode = CoverImageDisplayMode.fill;
   bool preferEmbeddedCover = false;
   String? asmrDownloadDestinationRoot;
   AsmrDownloadConflictPolicy asmrDownloadConflictPolicy =
@@ -103,10 +102,6 @@ class SettingsRepository {
       coverImageResolution = CoverImageResolution.values.firstWhere(
         (value) => value.name == playback['coverImageResolution'],
         orElse: () => CoverImageResolution.balanced,
-      );
-      coverImageDisplayMode = CoverImageDisplayMode.values.firstWhere(
-        (value) => value.name == playback['coverImageDisplayMode'],
-        orElse: () => CoverImageDisplayMode.fill,
       );
       // Older builds stored this preference under the audio-only key.
       preferEmbeddedCover =
@@ -236,7 +231,6 @@ class SettingsRepository {
         'showAsmrOne': showAsmrOne,
         'workNameDisplay': workNameDisplay.name,
         'coverImageResolution': coverImageResolution.name,
-        'coverImageDisplayMode': coverImageDisplayMode.name,
         'preferEmbeddedCover': preferEmbeddedCover,
         'asmrDownloadDestinationRoot': asmrDownloadDestinationRoot,
         'asmrDownloadConflictPolicy': asmrDownloadConflictPolicy.name,
@@ -541,12 +535,6 @@ class SettingsRepository {
     afterSave: afterSave,
   );
 
-  Future<void> setCoverImageDisplayMode(CoverImageDisplayMode mode) =>
-      _setValue(
-        unchanged: () => coverImageDisplayMode == mode,
-        update: () => coverImageDisplayMode = mode,
-      );
-
   Future<void> setWorkNameDisplay(WorkNameDisplay mode) => _setValue(
     unchanged: () => workNameDisplay == mode,
     update: () => workNameDisplay = mode,
@@ -722,7 +710,6 @@ class SettingsRepository {
     startupPage = snapshot.startupPage;
     portraitLockEnabled = snapshot.portraitLockEnabled;
     coverImageResolution = snapshot.coverImageResolution;
-    coverImageDisplayMode = snapshot.coverImageDisplayMode;
     preferEmbeddedCover = snapshot.preferEmbeddedCover;
     asmrDownloadDestinationRoot = snapshot.asmrDownloadDestinationRoot;
     asmrDownloadConflictPolicy = snapshot.asmrDownloadConflictPolicy;
@@ -768,7 +755,6 @@ class SettingsRepository {
     startupPage = StartupPage.library;
     portraitLockEnabled = false;
     coverImageResolution = CoverImageResolution.balanced;
-    coverImageDisplayMode = CoverImageDisplayMode.fill;
     preferEmbeddedCover = false;
     asmrDownloadDestinationRoot = null;
     asmrDownloadConflictPolicy = AsmrDownloadConflictPolicy.overwrite;
@@ -840,7 +826,6 @@ class SettingsRepository {
       startupPage: startupPage,
       portraitLockEnabled: portraitLockEnabled,
       coverImageResolution: coverImageResolution,
-      coverImageDisplayMode: coverImageDisplayMode,
       preferEmbeddedCover: preferEmbeddedCover,
       asmrDownloadDestinationRoot: asmrDownloadDestinationRoot,
       asmrDownloadConflictPolicy: asmrDownloadConflictPolicy,

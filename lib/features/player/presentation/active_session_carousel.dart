@@ -22,7 +22,6 @@ import '../../../core/widgets/scroll_activity_gate.dart';
 import '../../../core/widgets/library_like_cards.dart';
 import '../application/playback_session_snapshot.dart';
 import '../application/playback_subtitle_service.dart';
-import '../../settings/application/settings_state.dart';
 import '../domain/audio_effects.dart';
 import '../../library/application/library_facade.dart';
 import 'playlist_tab.dart';

@@ -4654,8 +4654,8 @@ void main() {
     expect(
       tester
           .widget<AsyncLocalCoverImage>(find.byType(AsyncLocalCoverImage).first)
-          .displayMode,
-      CoverImageDisplayMode.fill,
+          .fit,
+      BoxFit.cover,
     );
     expect(
       tester

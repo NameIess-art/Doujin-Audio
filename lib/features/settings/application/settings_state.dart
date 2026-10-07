@@ -67,7 +67,6 @@ class SettingsState {
     this.startupPage = StartupPage.library,
     this.portraitLockEnabled = false,
     this.coverImageResolution = CoverImageResolution.balanced,
-    this.coverImageDisplayMode = CoverImageDisplayMode.fill,
     this.preferEmbeddedCover = false,
     this.asmrDownloadDestinationRoot,
     this.asmrDownloadConflictPolicy = AsmrDownloadConflictPolicy.overwrite,
@@ -116,7 +115,6 @@ class SettingsState {
   final StartupPage startupPage;
   final bool portraitLockEnabled;
   final CoverImageResolution coverImageResolution;
-  final CoverImageDisplayMode coverImageDisplayMode;
   final bool preferEmbeddedCover;
   final String? asmrDownloadDestinationRoot;
   final AsmrDownloadConflictPolicy asmrDownloadConflictPolicy;
@@ -161,7 +159,6 @@ class SettingsState {
         other.startupPage == startupPage &&
         other.portraitLockEnabled == portraitLockEnabled &&
         other.coverImageResolution == coverImageResolution &&
-        other.coverImageDisplayMode == coverImageDisplayMode &&
         other.preferEmbeddedCover == preferEmbeddedCover &&
         other.asmrDownloadDestinationRoot == asmrDownloadDestinationRoot &&
         other.asmrDownloadConflictPolicy == asmrDownloadConflictPolicy &&
@@ -210,7 +207,6 @@ class SettingsState {
     startupPage,
     portraitLockEnabled,
     coverImageResolution,
-    coverImageDisplayMode,
     preferEmbeddedCover,
     asmrDownloadDestinationRoot,
     asmrDownloadConflictPolicy,

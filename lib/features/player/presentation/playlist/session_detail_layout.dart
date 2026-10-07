@@ -38,102 +38,113 @@ class SessionDetailLayout extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     if (isLandscape) {
       return Padding(
-        padding: padding,
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            const spacing = 12.0;
-            const progressSpacing = 5.0;
-            const approxProgressBarHeight = 36.0;
-            final availableHeight = constraints.maxHeight;
-            final idealCoverHeight = max(
-              0.0,
-              availableHeight - approxProgressBarHeight - progressSpacing,
-            );
-            // Left side prioritizes filling vertical height: width equals idealCoverHeight
-            // Ensure right side has at least enough width for transport controls if possible
-            final maxLeftWidth = constraints.maxWidth > 500
-                ? max(0.0, constraints.maxWidth - 386)
-                : constraints.maxWidth * 0.5;
-            final leftWidth = min(idealCoverHeight, maxLeftWidth);
-
-            return Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                SizedBox(
-                  width: leftWidth,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Expanded(
-                        child: Center(
-                          child: AspectRatio(
-                            aspectRatio: 1.0,
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.only(
-                                topLeft: Radius.circular(
-                                  segmentPanelExpanded ? 19 : 16,
+        padding: EdgeInsets.only(
+          left: padding.left,
+          right: padding.right,
+          bottom: padding.bottom,
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Expanded(
+              key: const ValueKey('session_detail_left_column'),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Flexible(
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        final coverHeight = min(
+                          constraints.maxWidth * 3 / 4,
+                          max(0.0, constraints.maxHeight - padding.top),
+                        );
+                        final verticalSpace = max(
+                          0.0,
+                          (constraints.maxHeight - padding.top - coverHeight) /
+                              2,
+                        );
+                        return SizedBox(
+                          height: padding.top + verticalSpace + coverHeight,
+                          child: Stack(
+                            children: [
+                              Padding(
+                                padding: EdgeInsets.only(
+                                  top: padding.top + verticalSpace,
                                 ),
-                                topRight: Radius.circular(
-                                  segmentPanelExpanded ? 19 : 16,
-                                ),
-                                bottomLeft: const Radius.circular(16),
-                                bottomRight: const Radius.circular(16),
-                              ),
-                              child: Stack(
-                                fit: StackFit.expand,
-                                children: [
-                                  artwork,
-                                  if (segmentPanelExpanded)
-                                    Positioned.fill(
-                                      child: segmentPanelBuilder(
-                                        const ValueKey('segments_landscape'),
-                                      ),
+                                child: Align(
+                                  alignment: Alignment.bottomCenter,
+                                  heightFactor: 1,
+                                  child: AspectRatio(
+                                    aspectRatio: 4 / 3,
+                                    child: ClipRRect(
+                                      borderRadius: BorderRadius.circular(16),
+                                      child: artwork,
                                     ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: progressSpacing),
-                      RepaintBoundary(child: progress),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: spacing),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.only(
-                          left: 4,
-                          right: 4,
-                          bottom: 8,
-                        ),
-                        child: MarqueeText(
-                          key: ValueKey('title_marquee_$sessionId'),
-                          text: title,
-                          pauseDuration: const Duration(seconds: 1),
-                          style: Theme.of(context).textTheme.titleMedium
-                              ?.copyWith(
-                                color: sessionDetailForeground(
-                                  cs,
-                                  SessionDetailForegroundLevel.strong,
-                                  darkFallback: cs.onSurface,
+                                  ),
                                 ),
-                                fontWeight: FontWeight.w700,
                               ),
-                        ),
-                      ),
-                      Expanded(child: RepaintBoundary(child: subtitle)),
-                      transport,
-                    ],
+                              if (segmentPanelExpanded)
+                                Positioned.fill(
+                                  top: MediaQuery.paddingOf(context).top + 6,
+                                  child: ClipRRect(
+                                    borderRadius: const BorderRadius.only(
+                                      topLeft: Radius.circular(19),
+                                      topRight: Radius.circular(19),
+                                      bottomLeft: Radius.circular(16),
+                                      bottomRight: Radius.circular(16),
+                                    ),
+                                    child: segmentPanelBuilder(
+                                      const ValueKey('segments_landscape'),
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
                   ),
+                  const SizedBox(height: 5),
+                  RepaintBoundary(child: progress),
+                ],
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              key: const ValueKey('session_detail_right_column'),
+              child: Padding(
+                padding: EdgeInsets.only(top: padding.top),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.only(
+                        left: 4,
+                        right: 4,
+                        bottom: 8,
+                      ),
+                      child: MarqueeText(
+                        key: ValueKey('title_marquee_$sessionId'),
+                        text: title,
+                        pauseDuration: const Duration(seconds: 1),
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(
+                              color: sessionDetailForeground(
+                                cs,
+                                SessionDetailForegroundLevel.strong,
+                                darkFallback: cs.onSurface,
+                              ),
+                              fontWeight: FontWeight.w700,
+                            ),
+                      ),
+                    ),
+                    Expanded(child: RepaintBoundary(child: subtitle)),
+                    transport,
+                  ],
                 ),
-              ],
-            );
-          },
+              ),
+            ),
+          ],
         ),
       );
     }

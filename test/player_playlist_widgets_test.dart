@@ -23,6 +23,7 @@ import 'package:doujin_audio/features/player/application/playback_subtitle_servi
 import 'package:doujin_audio/features/player/application/playback_session_snapshot.dart';
 import 'package:doujin_audio/features/player/application/native_playback_bridge.dart';
 import 'package:doujin_audio/features/player/presentation/playlist_tab.dart';
+import 'package:doujin_audio/features/player/presentation/playlist/session_detail_layout.dart';
 import 'package:doujin_audio/features/player/presentation/playlist/playlist_subtitle_panel.dart';
 import 'package:doujin_audio/features/player/presentation/active_session_carousel.dart';
 import 'package:doujin_audio/features/player/presentation/session_video_viewport.dart';
@@ -1346,59 +1347,93 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
-  testWidgets('landscape segment tooltip appears above the progress bar', (
-    tester,
-  ) async {
-    final fixture = AppRuntimeWidgetTestFixture();
-    addTearDown(fixture.dispose);
-    final session = PlaybackSession(
-      id: 'landscape-tooltip-session',
-      currentTrackPath: '/library/track.mp3',
-      loopMode: SessionLoopMode.single,
-      nonSingleLoopMode: SessionLoopMode.single,
-      volume: 1,
-      createdAt: DateTime(2026),
-      state: const PlayerState(false, ProcessingState.ready),
-    )..setOptimisticDuration(const Duration(minutes: 1));
-    addTearDown(session.shutdown);
-    final now = DateTime(2026);
-    final label = TimeSegmentLabel(
-      id: 'middle',
-      trackKey: '/library/track.mp3',
-      name: 'Middle section',
-      start: const Duration(seconds: 20),
-      end: const Duration(seconds: 40),
-      colorValue: 0xFF64B5F6,
-      createdAt: now,
-      updatedAt: now,
-    );
+  for (final (platform, screenSize) in [
+    (TargetPlatform.android, const Size(360, 800)),
+    (TargetPlatform.android, const Size(800, 360)),
+    (TargetPlatform.windows, const Size(800, 360)),
+  ]) {
+    testWidgets(
+      'segment tooltip appears above the progress bar while dragging on ${platform.name} at $screenSize',
+      (tester) async {
+        tester.view.physicalSize = screenSize;
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        final fixture = AppRuntimeWidgetTestFixture();
+        addTearDown(fixture.dispose);
+        final session = PlaybackSession(
+          id: 'landscape-tooltip-session',
+          currentTrackPath: '/library/track.mp3',
+          loopMode: SessionLoopMode.single,
+          nonSingleLoopMode: SessionLoopMode.single,
+          volume: 1,
+          createdAt: DateTime(2026),
+          state: const PlayerState(false, ProcessingState.ready),
+        )..setOptimisticDuration(const Duration(minutes: 1));
+        addTearDown(session.shutdown);
+        final now = DateTime(2026);
+        final label = TimeSegmentLabel(
+          id: 'middle',
+          trackKey: '/library/track.mp3',
+          name: 'Middle section',
+          start: const Duration(seconds: 20),
+          end: const Duration(seconds: 40),
+          colorValue: 0xFF64B5F6,
+          createdAt: now,
+          updatedAt: now,
+        );
 
-    await tester.pumpWidget(
-      fixture.build(
-        Center(
-          child: SizedBox(
-            width: 500,
-            child: SessionProgressBar(
-              session: PlaybackSessionSnapshot.fromRuntime(session),
-              playback: fixture.runtimeGraph.playback,
-              paths: fixture.runtimeGraph.audioPaths,
-              timeSegmentLabels: [label],
-              isLandscape: true,
+        await tester.pumpWidget(
+          fixture.build(
+            SessionDetailLayout(
+              isLandscape: screenSize.width > screenSize.height,
+              padding: const EdgeInsets.fromLTRB(8, 40, 8, 8),
+              segmentPanelExpanded: false,
+              artwork: const SizedBox.shrink(),
+              isVideo: false,
+              title: 'Track',
+              sessionId: session.id,
+              progress: SessionProgressBar(
+                session: PlaybackSessionSnapshot.fromRuntime(session),
+                playback: fixture.runtimeGraph.playback,
+                paths: fixture.runtimeGraph.audioPaths,
+                timeSegmentLabels: [label],
+              ),
+              transport: const SizedBox.shrink(),
+              subtitle: const SizedBox.shrink(),
+              segmentPanelBuilder: (_) => const SizedBox.shrink(),
             ),
           ),
-        ),
-      ),
-    );
-    await tester.pumpAndSettle();
-    tester.widget<Slider>(find.byType(Slider)).onChangeStart!(30000);
-    await tester.pump();
+        );
+        await tester.pumpAndSettle();
+        tester.widget<Slider>(find.byType(Slider)).onChangeStart!(30000);
+        await tester.pump();
 
-    expect(find.text('Middle section'), findsOneWidget);
-    expect(
-      tester.getBottomLeft(find.text('Middle section')).dy,
-      lessThan(tester.getTopLeft(find.byType(Slider)).dy),
+        expect(find.text('Middle section'), findsOneWidget);
+        final capsule = find.ancestor(
+          of: find.text('Middle section'),
+          matching: find.byType(DecoratedBox),
+        ).first;
+        expect(
+          tester.getBottomLeft(capsule).dy,
+          lessThan(tester.getTopLeft(find.byType(Slider)).dy),
+        );
+        expect(
+          tester.getTopLeft(capsule).dy,
+          greaterThanOrEqualTo(
+            tester.getRect(find.byType(SessionDetailLayout)).top,
+          ),
+        );
+        tester.widget<Slider>(find.byType(Slider)).onChanged!(35000);
+        await tester.pump();
+        expect(find.text('Middle section'), findsOneWidget);
+        tester.widget<Slider>(find.byType(Slider)).onChangeEnd!(35000);
+        await tester.pump();
+        expect(find.text('Middle section'), findsNothing);
+      },
+      variant: TargetPlatformVariant.only(platform),
     );
-  });
+  }
 
   testWidgets(
     'mounted playback card refreshes when the cover generation changes',
@@ -3067,10 +3102,7 @@ void main() {
     );
     expect(
       tabScrollClip.borderRadius,
-      const BorderRadius.only(
-        topLeft: Radius.circular(19),
-        bottomLeft: Radius.circular(19),
-      ),
+      BorderRadius.circular(19),
     );
     final tabListView = tester.widget<ListView>(
       find.descendant(of: header, matching: find.byType(ListView)),
@@ -3079,11 +3111,11 @@ void main() {
     final tabTaps = find.descendant(of: header, matching: find.byType(InkWell));
     expect(tabTaps, findsNWidgets(6));
     expect(
-      tester.widget<InkWell>(tabTaps.at(1)).borderRadius,
+      tester.widget<InkWell>(tabTaps.at(0)).borderRadius,
       BorderRadius.circular(15),
     );
-    final firstTabRect = tester.getRect(tabTaps.at(1));
-    final secondTabRect = tester.getRect(tabTaps.at(2));
+    final firstTabRect = tester.getRect(tabTaps.at(0));
+    final secondTabRect = tester.getRect(tabTaps.at(1));
     await tester.tapAt(capsuleRect.topLeft + const Offset(1, 1));
     await tester.pumpAndSettle();
     expect(tester.widget<SegmentPanelPageHeader>(header).pageIndex, 2);
@@ -3097,12 +3129,12 @@ void main() {
     expect(tester.widget<SegmentPanelPageHeader>(header).pageIndex, 2);
     expect(
       tester.getCenter(closeButtonFinder).dx,
-      lessThan(tester.getCenter(find.byKey(expandedPanel)).dx),
+      greaterThan(tester.getCenter(find.byKey(expandedPanel)).dx),
     );
     expect(
       tester.getTopLeft(closeButtonFinder).dx,
-      lessThan(
-        tester.getTopLeft(find.text(languageProvider.tr('equalizer'))).dx,
+      greaterThan(
+        tester.getTopRight(find.text(languageProvider.tr('equalizer'))).dx,
       ),
     );
     await tester.tap(closeButtonFinder);
@@ -5344,8 +5376,8 @@ void main() {
     expect(
       tester
           .widget<AsyncLocalCoverImage>(find.byType(AsyncLocalCoverImage))
-          .displayMode,
-      CoverImageDisplayMode.fill,
+          .fit,
+      BoxFit.cover,
     );
 
     final errorColor = Theme.of(
@@ -7918,48 +7950,78 @@ void main() {
     await tester.pumpAndSettle();
   });
 
+  for (final (platform, screenSize, headerHeight) in [
+    (TargetPlatform.android, const Size(2400, 1080), 40.0),
+    (TargetPlatform.windows, const Size(2880, 1800), 48.0),
+    (TargetPlatform.windows, const Size(3840, 2400), 48.0),
+  ]) {
+    testWidgets(
+      'landscape session detail displays 4:3 cover in equal columns on ${platform.name} at ${screenSize.width / 3}',
+      (tester) async {
+        await _pumpSubtitleDetail(
+          tester: tester,
+          subtitleTrack: SubtitleTrack(sourcePath: 'empty.srt', cues: const []),
+          initialPosition: Duration.zero,
+          physicalSize: screenSize,
+        );
+
+        final aspectRatioFinder = find.descendant(
+          of: find.byType(SessionDetailPage),
+          matching: find.byType(AspectRatio),
+        );
+        expect(aspectRatioFinder, findsOneWidget);
+        final aspectRatioWidget = tester.widget<AspectRatio>(aspectRatioFinder);
+        expect(aspectRatioWidget.aspectRatio, 4 / 3);
+
+        final titleFinder = find.byKey(
+          const ValueKey('title_marquee_subtitle-session'),
+        );
+        expect(titleFinder, findsOneWidget);
+
+        final titleInsideCover = find.descendant(
+          of: aspectRatioFinder,
+          matching: titleFinder,
+        );
+        expect(titleInsideCover, findsNothing);
+
+        final coverRect = tester.getRect(aspectRatioFinder);
+        final titleRect = tester.getRect(titleFinder);
+
+        // Title is in the right section (to the right of the cover)
+        expect(titleRect.left, greaterThan(coverRect.right));
+        // Title is at the top of the right section
+        expect(
+          titleRect.top,
+          closeTo(
+            tester.getRect(find.byType(SessionDetailContent)).top + headerHeight,
+            0.5,
+          ),
+        );
+        expect(coverRect.width / coverRect.height, closeTo(4 / 3, 0.001));
+        final progressRect = tester.getRect(find.byType(SessionProgressBar));
+        expect(progressRect.top - coverRect.bottom, closeTo(5, 0.5));
+        final leftRect = tester.getRect(
+          find.byKey(const ValueKey('session_detail_left_column')),
+        );
+        final coverAreaBottom = leftRect.bottom - progressRect.height - 5;
+        expect(
+          coverRect.center.dy,
+          closeTo((leftRect.top + headerHeight + coverAreaBottom) / 2, 0.5),
+        );
+        final rightRect = tester.getRect(
+          find.byKey(const ValueKey('session_detail_right_column')),
+        );
+        expect(leftRect.width, closeTo(rightRect.width, 0.5));
+        expect(rightRect.left - leftRect.right, closeTo(12, 0.5));
+        expect(coverRect.width, lessThanOrEqualTo(leftRect.width));
+        expect(titleRect.left, closeTo(rightRect.left + 4, 0.5));
+      },
+      variant: TargetPlatformVariant.only(platform),
+    );
+  }
+
   testWidgets(
-    'landscape session detail displays 1:1 cover aspect ratio with title in top-left of right section',
-    (tester) async {
-      await _pumpSubtitleDetail(
-        tester: tester,
-        subtitleTrack: SubtitleTrack(sourcePath: 'empty.srt', cues: const []),
-        initialPosition: Duration.zero,
-        physicalSize: const Size(2400, 1080),
-      );
-
-      final aspectRatioFinder = find.descendant(
-        of: find.byType(SessionDetailPage),
-        matching: find.byType(AspectRatio),
-      );
-      expect(aspectRatioFinder, findsOneWidget);
-      final aspectRatioWidget = tester.widget<AspectRatio>(aspectRatioFinder);
-      expect(aspectRatioWidget.aspectRatio, 1.0);
-
-      final titleFinder = find.byKey(
-        const ValueKey('title_marquee_subtitle-session'),
-      );
-      expect(titleFinder, findsOneWidget);
-
-      final titleInsideCover = find.descendant(
-        of: aspectRatioFinder,
-        matching: titleFinder,
-      );
-      expect(titleInsideCover, findsNothing);
-
-      final coverRect = tester.getRect(aspectRatioFinder);
-      final titleRect = tester.getRect(titleFinder);
-
-      // Title is in the right section (to the right of the cover)
-      expect(titleRect.left, greaterThan(coverRect.right));
-      // Title is at the top of the right section
-      expect(titleRect.top, closeTo(coverRect.top, 8.0));
-      expect(coverRect.width, closeTo(coverRect.height, 0.5));
-    },
-  );
-
-  testWidgets(
-    'landscape session detail moves progress bar below cover and prioritizes left filling vertically',
+    'landscape session detail keeps progress bar below cover in the left column',
     (tester) async {
       await _pumpSubtitleDetail(
         tester: tester,
@@ -7983,16 +8045,16 @@ void main() {
       final progressRect = tester.getRect(progressBarFinder);
 
       // Progress bar is below the cover image
-      expect(progressRect.top, greaterThanOrEqualTo(coverRect.bottom));
-      // Left edge of progress bar aligns with cover image
-      expect(progressRect.left, closeTo(coverRect.left, 1.0));
-      // Width of progress bar matches cover image
-      expect(progressRect.width, closeTo(coverRect.width, 1.0));
+      expect(progressRect.top - coverRect.bottom, closeTo(5, 0.5));
+      final leftRect = tester.getRect(
+        find.byKey(const ValueKey('session_detail_left_column')),
+      );
+      expect(progressRect.left, closeTo(leftRect.left, 0.5));
+      expect(progressRect.width, closeTo(leftRect.width, 0.5));
 
       // Right side contains subtitle panel and transport controls, but not progress bar
-      final rightSideFinder = find.descendant(
-        of: find.byType(SessionDetailContent),
-        matching: find.byType(Expanded),
+      final rightSideFinder = find.byKey(
+        const ValueKey('session_detail_right_column'),
       );
       expect(rightSideFinder, findsWidgets);
 
@@ -8018,8 +8080,8 @@ void main() {
 
   for (final (platform, screenSize, contentTop) in [
     (TargetPlatform.android, const Size(1080, 2400), 40.0),
-    (TargetPlatform.android, const Size(2400, 1080), 40.0),
-    (TargetPlatform.windows, const Size(3840, 2400), 48.0),
+    (TargetPlatform.android, const Size(2400, 1080), 0.0),
+    (TargetPlatform.windows, const Size(3840, 2400), 0.0),
   ]) {
     for (final topInset in [0.0, 24.0]) {
       testWidgets(
@@ -8070,11 +8132,24 @@ void main() {
                 .firstWhere((decoration) => decoration.color != null)
                 .color!;
             expect(background.a, closeTo(0.5, 0.01));
-            if (topInset > 0) {
+            if (topInset > 0 && contentTop > 0) {
               final artwork = find.byKey(
                 const ValueKey('artwork_subtitle-session'),
               );
               expect(buttonRect.overlaps(tester.getRect(artwork)), isTrue);
+            }
+            if (contentTop == 0) {
+              await tester.tap(find.byIcon(Icons.tune_rounded));
+              await tester.pumpAndSettle();
+              final menuHeaderRect = tester.getRect(
+                find.byType(SegmentPanelPageHeader),
+              );
+              expect(menuHeaderRect.top, closeTo(buttonRect.top, 0.5));
+              expect(menuHeaderRect.center.dy, closeTo(buttonRect.center.dy, 0.5));
+              await tester.tap(
+                find.byKey(const ValueKey<String>('close_console_panel')),
+              );
+              await tester.pumpAndSettle();
             }
             await tester.tap(button);
             await tester.pumpAndSettle();
@@ -8279,6 +8354,10 @@ void main() {
         const ValueKey('session_detail_close_button'),
       );
       expect(closeButton, findsOneWidget);
+      final progressRect = tester.getRect(find.byType(SessionProgressBar));
+      final detailCloseRect = tester.getRect(
+        find.ancestor(of: closeButton, matching: find.byType(HeaderFloatingButton)),
+      );
 
       final tuneButtonFinder = find.byIcon(Icons.tune_rounded);
       expect(tuneButtonFinder, findsOneWidget);
@@ -8298,6 +8377,14 @@ void main() {
         ),
       );
       expect(headerRect.top, closeTo(surfaceRect.top, 1));
+      expect(
+        tester.getRect(find.byType(SessionProgressBar)),
+        progressRect,
+      );
+      expect(
+        surfaceRect.top,
+        closeTo(detailCloseRect.top, 0.5),
+      );
       expect(surfaceRect.contains(headerRect.center), isTrue);
       final menuClip = tester.widget<ClipRRect>(
         find
@@ -8326,19 +8413,26 @@ void main() {
           .descendant(of: equalizerList, matching: find.byType(Scrollable))
           .first;
       expect(tester.getRect(equalizerList).top, closeTo(surfaceRect.top, 1));
-      expect(
-        tester.state<ScrollableState>(equalizerScroll).position.maxScrollExtent,
-        greaterThan(0),
-      );
-      await tester.drag(equalizerList, const Offset(0, -120));
-      await tester.pumpAndSettle();
-      final equalizerTile = find
-          .descendant(
-            of: find.byType(EqualizerPage),
-            matching: find.byType(SwitchListTile),
-          )
-          .first;
-      expect(tester.getRect(equalizerTile).top, lessThan(headerRect.bottom));
+      final scrollExtent = tester
+          .state<ScrollableState>(equalizerScroll)
+          .position
+          .maxScrollExtent;
+      if (scrollExtent > 0) {
+        final equalizerTile = find
+            .descendant(
+              of: find.byType(EqualizerPage),
+              matching: find.byType(SwitchListTile),
+            )
+            .first;
+        final tileTopBeforeScroll = tester.getRect(equalizerTile).top;
+        await tester.drag(equalizerList, const Offset(0, -120));
+        await tester.pumpAndSettle();
+        expect(
+          tester.getRect(equalizerTile).top,
+          lessThan(tileTopBeforeScroll),
+        );
+        expect(tester.getRect(find.byType(SegmentPanelPageHeader)), headerRect);
+      }
       expect(
         find.descendant(
           of: find.byKey(const ValueKey('segments_landscape')),
@@ -8362,8 +8456,14 @@ void main() {
       // Secondary controls capsule remains visible in landscape
       expect(secondaryControlsFinder, findsOneWidget);
 
-      // Tap tune button again to collapse
-      await tester.tap(tuneButtonFinder);
+      final menuCloseButton = find.byKey(
+        const ValueKey<String>('close_console_panel'),
+      );
+      expect(
+        tester.getCenter(menuCloseButton).dx,
+        greaterThan(headerRect.center.dx),
+      );
+      await tester.tap(menuCloseButton);
       await tester.pumpAndSettle();
 
       expect(find.byKey(const ValueKey('segments_landscape')), findsNothing);

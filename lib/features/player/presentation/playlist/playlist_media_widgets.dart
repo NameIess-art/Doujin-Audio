@@ -8,7 +8,6 @@ import '../../../../core/media/music_track.dart';
 import '../../../../core/ui/visual_settings_providers.dart';
 import '../../../../core/widgets/async_cover_image.dart';
 import '../../../library/application/library_facade.dart';
-import '../../../settings/application/settings_state.dart';
 import '../../application/playback_session_snapshot.dart';
 import '../playback_providers.dart';
 import '../session_video_surface.dart';
@@ -198,7 +197,6 @@ class _SessionCoverThumbnailState extends ConsumerState<SessionCoverThumbnail> {
       cacheWidth: widget.coverCacheWidth,
       useDefaultCacheWidth: widget.coverCacheWidth != null,
       fit: BoxFit.cover,
-      displayMode: CoverImageDisplayMode.fill,
     );
     return SizedBox(
       key: ValueKey<String>('playlist_cover_${widget.sessionId}'),

@@ -33,7 +33,6 @@ class SessionProgressBar extends StatelessWidget {
     this.timeSegmentLabels = const <TimeSegmentLabel>[],
     this.selectedSegmentId,
     this.onManualSeek,
-    this.isLandscape = false,
   });
 
   final PlaybackSessionSnapshot session;
@@ -42,7 +41,6 @@ class SessionProgressBar extends StatelessWidget {
   final List<TimeSegmentLabel> timeSegmentLabels;
   final String? selectedSegmentId;
   final ValueChanged<Duration>? onManualSeek;
-  final bool isLandscape;
 
   @override
   Widget build(BuildContext context) {
@@ -66,7 +64,6 @@ class SessionProgressBar extends StatelessWidget {
       timeSegmentLabels: timeSegmentLabels,
       selectedSegmentId: selectedSegmentId,
       onManualSeek: onManualSeek,
-      isLandscape: isLandscape,
     );
   }
 }
@@ -80,7 +77,6 @@ class _ProgressSliderAndTimecodes extends StatefulWidget {
     required this.timeSegmentLabels,
     required this.selectedSegmentId,
     required this.onManualSeek,
-    required this.isLandscape,
   });
 
   final PlaybackSessionSnapshot session;
@@ -90,7 +86,6 @@ class _ProgressSliderAndTimecodes extends StatefulWidget {
   final List<TimeSegmentLabel> timeSegmentLabels;
   final String? selectedSegmentId;
   final ValueChanged<Duration>? onManualSeek;
-  final bool isLandscape;
 
   @override
   State<_ProgressSliderAndTimecodes> createState() =>
@@ -177,7 +172,6 @@ class _ProgressSliderAndTimecodesState
         onChangeStart: _handleSliderChangeStart,
         onChanged: _handleSliderChanged,
         onChangeEnd: _handleSliderChangeEnd,
-        isLandscape: widget.isLandscape,
       ),
     );
   }
@@ -385,7 +379,6 @@ class _ProgressSliderFrame extends StatefulWidget {
     required this.onChangeStart,
     required this.onChanged,
     required this.onChangeEnd,
-    required this.isLandscape,
   });
 
   final ValueListenable<_ProgressSliderValue> sliderValue;
@@ -398,7 +391,6 @@ class _ProgressSliderFrame extends StatefulWidget {
   final ValueChanged<double> onChangeStart;
   final ValueChanged<double> onChanged;
   final ValueChanged<double> onChangeEnd;
-  final bool isLandscape;
 
   @override
   State<_ProgressSliderFrame> createState() => _ProgressSliderFrameState();
@@ -464,10 +456,8 @@ class _ProgressSliderFrameState extends State<_ProgressSliderFrame> {
                 child: CompositedTransformFollower(
                   link: _layerLink,
                   showWhenUnlinked: false,
-                  followerAnchor: widget.isLandscape
-                      ? Alignment.bottomLeft
-                      : Alignment.topLeft,
-                  offset: Offset(value.left, widget.isLandscape ? -8 : 30),
+                  followerAnchor: Alignment.bottomLeft,
+                  offset: Offset(value.left, -8),
                   child: _TimeSegmentDragTooltip(labels: value.labels),
                 ),
               );

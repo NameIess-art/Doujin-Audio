@@ -12,7 +12,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/core/media/cover_image_resolution.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
 import 'package:doujin_audio/features/library/application/cover_image_cache_policy.dart';
-import 'package:doujin_audio/features/settings/application/settings_state.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/ui/cover_image_retention.dart';
 import 'package:doujin_audio/core/ui/visual_settings_providers.dart';
@@ -269,9 +268,6 @@ void main() {
             overrides: [
               coverImageResolutionProvider.overrideWithValue(
                 CoverImageResolution.balanced,
-              ),
-              coverImageDisplayModeProvider.overrideWithValue(
-                CoverImageDisplayMode.fill,
               ),
             ],
             child: MaterialApp(
@@ -1409,128 +1405,39 @@ void main() {
     expect(find.byType(RawImage), findsOneWidget);
   });
 
-  testWidgets('RetryingImage renders every cover display mode', (tester) async {
-    final imageBytes = base64Decode(
-      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
-    );
-
-    Widget subject(CoverImageDisplayMode mode) {
-      return MaterialApp(
-        home: SizedBox(
-          width: 120,
-          height: 90,
-          child: RetryingImage(
-            retryKey: mode,
-            imageProviderBuilder: () => MemoryImage(imageBytes),
-            fallbackBuilder: (_) => const Text('fallback'),
-            fit: BoxFit.cover,
-            displayMode: mode,
-          ),
-        ),
-      );
-    }
-
-    await tester.pumpWidget(subject(CoverImageDisplayMode.fill));
-    expect(tester.widget<Image>(find.byType(Image)).fit, BoxFit.cover);
-
-    await tester.pumpWidget(subject(CoverImageDisplayMode.stretch));
-    expect(tester.widget<Image>(find.byType(Image)).fit, BoxFit.fill);
-
-    await tester.pumpWidget(subject(CoverImageDisplayMode.tile));
-    final images = tester.widgetList<Image>(find.byType(Image)).toList();
-    expect(images, hasLength(2));
-    expect(
-      images.map((image) => image.fit),
-      containsAll(<BoxFit>[BoxFit.cover, BoxFit.contain]),
-    );
-    expect(find.byType(ImageFiltered), findsOneWidget);
-  });
-
   testWidgets(
-    'tile cover reuses its blurred drawing until its image or size changes',
+    'RetryingImage fills covers by default and preserves explicit image fit',
     (tester) async {
-      final firstProvider = _ControlledImageProvider();
-      final secondProvider = _ControlledImageProvider();
-      Widget subject(_ControlledImageProvider provider, double width) {
+      final imageBytes = base64Decode(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+      );
+      Widget subject({BoxFit? fit}) {
         return MaterialApp(
-          home: Center(
-            child: SizedBox(
-              width: width,
-              height: 90,
-              child: RetryingImage(
-                retryKey: provider,
-                imageProviderBuilder: () => provider,
-                fallbackBuilder: (_) => const ColoredBox(color: Colors.pink),
-                displayMode: CoverImageDisplayMode.tile,
-              ),
-            ),
+          home: SizedBox(
+            width: 120,
+            height: 90,
+            child: fit == null
+                ? RetryingImage(
+                    retryKey: 'cover',
+                    imageProviderBuilder: () => MemoryImage(imageBytes),
+                    fallbackBuilder: (_) => const Text('fallback'),
+                  )
+                : RetryingImage(
+                    retryKey: 'viewer',
+                    imageProviderBuilder: () => MemoryImage(imageBytes),
+                    fallbackBuilder: (_) => const Text('fallback'),
+                    fit: fit,
+                  ),
           ),
         );
       }
 
-      await tester.pumpWidget(subject(firstProvider, 120));
-      final firstImage = await _createTestImage();
-      addTearDown(firstImage.dispose);
-      firstProvider.complete(firstImage);
-      await tester.pumpAndSettle();
-      // Both foreground and backdrop must share the same decode completer.
-      expect(firstProvider.loadCount, 1);
+      await tester.pumpWidget(subject());
+      expect(tester.widget<Image>(find.byType(Image)).fit, BoxFit.cover);
+      expect(find.byType(ImageFiltered), findsNothing);
 
-      final filterFinder = find.byType(ImageFiltered);
-      final filter = tester.renderObject<RenderBox>(filterFinder);
-      final backdropFinder = find.descendant(
-        of: filterFinder,
-        matching: find.byType(RawImage),
-      );
-      final backdrop = tester.renderObject<RenderImage>(backdropFinder);
-      final stack = tester.renderObject<RenderStack>(
-        find
-            .descendant(
-              of: find.byType(RetryingImage),
-              matching: find.byType(Stack),
-            )
-            .first,
-      );
-      final layer = filter.debugLayer;
-      expect(layer, isA<ImageFilterLayer>());
-
-      var backdropPaints = 0;
-      var parentPaints = 0;
-      final previousPaintCallback = debugOnProfilePaint;
-      debugOnProfilePaint = (object) {
-        previousPaintCallback?.call(object);
-        if (identical(object, backdrop)) backdropPaints += 1;
-        if (identical(object, stack)) parentPaints += 1;
-      };
-
-      try {
-        for (var frame = 0; frame < 3; frame++) {
-          // A sibling repaint must not re-record the static blurred image.
-          stack.markNeedsPaint();
-          await tester.pump();
-        }
-        expect(parentPaints, 3);
-        expect(backdropPaints, 0);
-        expect(filter.debugLayer, same(layer));
-
-        await tester.pumpWidget(subject(firstProvider, 180));
-        expect(backdropPaints, greaterThan(0));
-        expect(filter.size.width, 180);
-        expect(firstProvider.loadCount, 1);
-
-        final sizeChangePaints = backdropPaints;
-        await tester.pumpWidget(subject(secondProvider, 180));
-        final secondImage = await _createTestImage();
-        addTearDown(secondImage.dispose);
-        secondProvider.complete(secondImage);
-        await tester.pumpAndSettle();
-        final updatedBackdrop = tester.renderObject<RenderImage>(backdropFinder);
-        expect(backdropPaints, greaterThan(sizeChangePaints));
-        expect(updatedBackdrop.image!.isCloneOf(secondImage), isTrue);
-        expect(secondProvider.loadCount, 1);
-      } finally {
-        debugOnProfilePaint = previousPaintCallback;
-      }
+      await tester.pumpWidget(subject(fit: BoxFit.contain));
+      expect(tester.widget<Image>(find.byType(Image)).fit, BoxFit.contain);
     },
     variant: const TargetPlatformVariant({
       TargetPlatform.android,
@@ -1547,15 +1454,10 @@ void main() {
             coverImageResolutionProvider.overrideWithValue(
               CoverImageResolution.balanced,
             ),
-            coverImageDisplayModeProvider.overrideWithValue(
-              CoverImageDisplayMode.tile,
-            ),
           ],
           child: MaterialApp(
             home: RetryingFileImage(
               path: 'missing-cover.png',
-              fit: BoxFit.cover,
-              displayMode: CoverImageDisplayMode.fill,
               fallbackBuilder: (_) => const SizedBox.shrink(),
             ),
           ),
@@ -1565,7 +1467,7 @@ void main() {
       final retryingImage = tester.widget<RetryingImage>(
         find.byType(RetryingImage),
       );
-      expect(retryingImage.displayMode, CoverImageDisplayMode.fill);
+      expect(tester.widget<Image>(find.byType(Image)).fit, BoxFit.cover);
       expect(retryingImage.deferLoadDuringInteraction, isFalse);
       expect(retryingImage.retainInImageCache, isTrue);
     },

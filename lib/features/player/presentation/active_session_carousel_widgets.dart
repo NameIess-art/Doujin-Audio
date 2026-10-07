@@ -768,7 +768,6 @@ class _ActiveSessionCover extends ConsumerWidget {
           useDefaultCacheWidth: false,
           deferLoadDuringInteraction: true,
           fit: BoxFit.cover,
-          displayMode: CoverImageDisplayMode.fill,
         ),
       ),
     );

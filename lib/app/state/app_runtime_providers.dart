@@ -312,16 +312,6 @@ List<Override> createAppRuntimeOverrides({
               .state
               .coverImageResolution;
     }),
-    coverImageDisplayModeProvider.overrideWith((ref) {
-      return ref.watch(
-            settingsStateProvider.select((s) => s.value?.coverImageDisplayMode),
-          ) ??
-          ref
-              .watch(settingsRepositoryProvider)
-              .slice
-              .state
-              .coverImageDisplayMode;
-    }),
     powerPlatformGatewayProvider.overrideWithValue(
       powerPlatformGateway ?? timer.powerPlatformService,
     ),

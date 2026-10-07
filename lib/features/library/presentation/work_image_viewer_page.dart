@@ -5,7 +5,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/presentation/app_presentation_providers.dart';
 import '../../../app/state/app_runtime_providers.dart';
-import '../../../core/media/cover_image_resolution.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/async_cover_image.dart';
 import '../../../core/widgets/app_transitions.dart';
@@ -212,7 +211,6 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage> {
             onImageError:
                 library.coverArtworkCacheService.reportArtworkReadFailure,
             fit: BoxFit.contain,
-            displayMode: CoverImageDisplayMode.fill,
             useDefaultCacheWidth: false,
             loadingBuilder: loadingIndicator,
             fallbackBuilder: loadingIndicator,
@@ -223,7 +221,6 @@ class _WorkImageViewerPageState extends ConsumerState<WorkImageViewerPage> {
     return RetryingFileImage(
       path: imagePath,
       fit: BoxFit.contain,
-      displayMode: CoverImageDisplayMode.fill,
       useDefaultCacheWidth: false,
       loadingBuilder: loadingIndicator,
       fallbackBuilder: loadingIndicator,

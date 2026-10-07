@@ -482,24 +482,10 @@ class SegmentPanelPageHeader extends StatelessWidget {
         borderRadius: BorderRadius.circular(19),
         child: Row(
           children: [
-            IconButton(
-              key: const ValueKey<String>('close_console_panel'),
-              tooltip: closeTooltip,
-              onPressed: onClose,
-              constraints: const BoxConstraints.tightFor(width: 36, height: 36),
-              padding: EdgeInsets.zero,
-              style: IconButton.styleFrom(
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              ),
-              icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 20),
-            ),
             Expanded(
               child: ClipRRect(
                 key: const ValueKey<String>('console_tab_scroll_clip'),
-                borderRadius: const BorderRadius.only(
-                  topLeft: Radius.circular(19),
-                  bottomLeft: Radius.circular(19),
-                ),
+                borderRadius: BorderRadius.circular(19),
                 child: WindowsHorizontalWheelScroll(
                   builder: (scrollController) => ListView.separated(
                     controller: scrollController,
@@ -550,6 +536,17 @@ class SegmentPanelPageHeader extends StatelessWidget {
                   ),
                 ),
               ),
+            ),
+            IconButton(
+              key: const ValueKey<String>('close_console_panel'),
+              tooltip: closeTooltip,
+              onPressed: onClose,
+              constraints: const BoxConstraints.tightFor(width: 36, height: 36),
+              padding: EdgeInsets.zero,
+              style: IconButton.styleFrom(
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 20),
             ),
           ],
         ),
